@@ -84,6 +84,73 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     "left: #{left}%; top: #{top}%; width: #{width}%; height: #{height}%;"
   end
 
+  def mobile_focus_pane(panes, highlight_pane_id, tmux_active_pane_id) when is_list(panes) do
+    Enum.find(panes, &pane_ui_active?(&1, highlight_pane_id, tmux_active_pane_id)) ||
+      Enum.find(panes, &(Map.get(&1, :active) == true)) ||
+      List.first(panes)
+  end
+
+  def mobile_focus_pane(_panes, _highlight_pane_id, _tmux_active_pane_id), do: nil
+
+  def mobile_focus_layout_style(nil, _bounds), do: ""
+
+  def mobile_focus_layout_style(pane, bounds) do
+    left = percentage(tmux_dimension(pane.left), bounds.width)
+    top = percentage(tmux_dimension(pane.top), bounds.height)
+    width = percentage(tmux_dimension(pane.width), bounds.width)
+    height = percentage(tmux_dimension(pane.height), bounds.height)
+    scale_x = mobile_focus_scale(bounds.width, pane.width)
+    scale_y = mobile_focus_scale(bounds.height, pane.height)
+
+    [
+      "--devide-mobile-pane-left: #{left}%",
+      "--devide-mobile-pane-top: #{top}%",
+      "--devide-mobile-pane-width: #{width}%",
+      "--devide-mobile-pane-height: #{height}%",
+      "--devide-mobile-pane-scale-x: #{scale_x}",
+      "--devide-mobile-pane-scale-y: #{scale_y}"
+    ]
+    |> Enum.join("; ")
+    |> Kernel.<>(";")
+  end
+
+  def mobile_pane_rails(panes, active_pane_id) when is_list(panes) do
+    active = Enum.find(panes, &(Map.get(&1, :id) == active_pane_id))
+
+    case active do
+      nil ->
+        []
+
+      active ->
+        active_rect = mobile_pane_rect(active)
+
+        panes
+        |> Enum.reject(&(Map.get(&1, :id) == active_pane_id))
+        |> Enum.flat_map(&mobile_pane_rail(active_rect, &1))
+        |> Enum.sort_by(fn rail ->
+          {mobile_pane_rail_order(rail.direction), rail.start, Map.get(rail.pane, :index, 0)}
+        end)
+    end
+  end
+
+  def mobile_pane_rails(_panes, _active_pane_id), do: []
+
+  def mobile_pane_rail_style(%{direction: :left, start: start, size: size}) do
+    "left: 0; top: #{start}%; height: #{size}%; width: var(--devide-mobile-pane-rail-hit);"
+  end
+
+  def mobile_pane_rail_style(%{direction: :right, start: start, size: size}) do
+    "right: 0; top: #{start}%; height: #{size}%; width: var(--devide-mobile-pane-rail-hit);"
+  end
+
+  def mobile_pane_rail_style(%{direction: :top, start: start, size: size}) do
+    "top: 0; left: #{start}%; width: #{size}%; height: var(--devide-mobile-pane-rail-hit);"
+  end
+
+  def mobile_pane_rail_style(%{direction: :bottom, start: start, size: size}) do
+    "bottom: 0; left: #{start}%; width: #{size}%; height: var(--devide-mobile-pane-rail-hit);"
+  end
+
   def tmux_dimension(value) when is_integer(value), do: max(value, 0)
   def tmux_dimension(_), do: 0
 
@@ -92,6 +159,101 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def percentage(value, total) do
     Float.round(value / total * 100, 4)
   end
+
+  defp mobile_focus_scale(total, value) do
+    total = tmux_dimension(total)
+    value = tmux_dimension(value)
+
+    if total > 0 and value > 0 do
+      Float.round(total / value, 4)
+    else
+      1
+    end
+  end
+
+  defp mobile_pane_rect(pane) do
+    %{
+      left: tmux_dimension(Map.get(pane, :left)),
+      top: tmux_dimension(Map.get(pane, :top)),
+      width: tmux_dimension(Map.get(pane, :width)),
+      height: tmux_dimension(Map.get(pane, :height))
+    }
+  end
+
+  defp mobile_pane_rail(active_rect, pane) do
+    other_rect = mobile_pane_rect(pane)
+
+    cond do
+      mobile_pane_right(other_rect) == active_rect.left and
+          mobile_pane_overlaps_y?(active_rect, other_rect) ->
+        mobile_vertical_rail(:left, active_rect, other_rect, pane)
+
+      other_rect.left == mobile_pane_right(active_rect) and
+          mobile_pane_overlaps_y?(active_rect, other_rect) ->
+        mobile_vertical_rail(:right, active_rect, other_rect, pane)
+
+      mobile_pane_bottom(other_rect) == active_rect.top and
+          mobile_pane_overlaps_x?(active_rect, other_rect) ->
+        mobile_horizontal_rail(:top, active_rect, other_rect, pane)
+
+      other_rect.top == mobile_pane_bottom(active_rect) and
+          mobile_pane_overlaps_x?(active_rect, other_rect) ->
+        mobile_horizontal_rail(:bottom, active_rect, other_rect, pane)
+
+      true ->
+        []
+    end
+  end
+
+  defp mobile_vertical_rail(direction, active_rect, other_rect, pane) do
+    with true <- active_rect.height > 0,
+         start <- max(active_rect.top, other_rect.top),
+         finish <- min(mobile_pane_bottom(active_rect), mobile_pane_bottom(other_rect)),
+         true <- finish > start do
+      [
+        %{
+          direction: direction,
+          pane: pane,
+          start: percentage(start - active_rect.top, active_rect.height),
+          size: percentage(finish - start, active_rect.height)
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp mobile_horizontal_rail(direction, active_rect, other_rect, pane) do
+    with true <- active_rect.width > 0,
+         start <- max(active_rect.left, other_rect.left),
+         finish <- min(mobile_pane_right(active_rect), mobile_pane_right(other_rect)),
+         true <- finish > start do
+      [
+        %{
+          direction: direction,
+          pane: pane,
+          start: percentage(start - active_rect.left, active_rect.width),
+          size: percentage(finish - start, active_rect.width)
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp mobile_pane_overlaps_y?(a, b),
+    do: a.top < mobile_pane_bottom(b) and mobile_pane_bottom(a) > b.top
+
+  defp mobile_pane_overlaps_x?(a, b),
+    do: a.left < mobile_pane_right(b) and mobile_pane_right(a) > b.left
+
+  defp mobile_pane_right(rect), do: rect.left + rect.width
+  defp mobile_pane_bottom(rect), do: rect.top + rect.height
+
+  defp mobile_pane_rail_order(:left), do: 0
+  defp mobile_pane_rail_order(:right), do: 1
+  defp mobile_pane_rail_order(:top), do: 2
+  defp mobile_pane_rail_order(:bottom), do: 3
 
   def window_activity_state(window, now \\ unix_now()) do
     case activity_age_seconds(Map.get(window, :activity), now) do
@@ -503,22 +665,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           nil
       end
 
+    mobile_focus_pane =
+      mobile_focus_pane(panes, assigns.ui_highlight_pane_id, assigns.tmux_active_pane_id)
+
+    mobile_focus_pane_id = if mobile_focus_pane, do: mobile_focus_pane.id
+
     assigns =
       assigns
       |> assign(:tmux_pane_bounds, bounds)
       |> assign(:active_tmux_window_panes, panes)
       |> assign(:terminal_surface_pane, surface_pane)
       |> assign(:active_tmux_session, assigns.tmux_session)
+      |> assign(:mobile_focus_pane, mobile_focus_pane)
+      |> assign(:mobile_focus_pane_id, mobile_focus_pane_id)
+      |> assign(:mobile_pane_rails, mobile_pane_rails(panes, mobile_focus_pane_id))
 
     ~H"""
     <div
       id={"tmux-pane-layout-" <> @workspace.id}
       data-active-pane-id={@ui_highlight_pane_id || @tmux_active_pane_id}
+      data-mobile-focus-layout={to_string(length(@active_tmux_window_panes) > 1)}
+      data-mobile-focus-pane-id={@mobile_focus_pane_id}
       data-bounds-cols={@tmux_pane_bounds.width}
       data-bounds-rows={@tmux_pane_bounds.height}
       data-resize-max={Terminals.tmux_resize_amount_max()}
       phx-hook="TmuxPaneResize"
       class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950"
+      style={mobile_focus_layout_style(@mobile_focus_pane, @tmux_pane_bounds)}
     >
       <%= if @terminal_surface_pane do %>
         <div
@@ -531,6 +704,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <div
             id={"terminal-surface-mount-" <> @workspace.id}
+            data-terminal-surface-mount="true"
             phx-update="ignore"
             class="h-full min-h-0 w-full overflow-hidden"
           >
@@ -554,6 +728,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-pane-height={tmux_dimension(pane.height)}
           data-pane-index={pane.index}
           data-window-id={pane.window_id}
+          data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
           data-pane-active={
             to_string(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id))
           }
@@ -612,6 +787,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-preview-session-mismatch={
             to_string(preview_session_mismatch?(preview, @active_tmux_session))
           }
+          data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
           data-viewport={preview_viewport_label(preview)}
           data-snapshot-mode={preview_snapshot_mode?(preview)}
           class={[
@@ -684,6 +860,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             </div>
           </div>
         </div>
+      <% end %>
+      <%= for rail <- @mobile_pane_rails do %>
+        <button
+          type="button"
+          phx-click="tmux:select_pane"
+          phx-value-pane-id={rail.pane.id}
+          data-mobile-pane-rail={rail.direction}
+          data-mobile-pane-target={rail.pane.id}
+          class="mobile-pane-rail group"
+          style={mobile_pane_rail_style(rail)}
+          title={"Focus pane #{rail.pane.index}: " <> pane_full_title(rail.pane)}
+          aria-label={"Focus pane #{rail.pane.index}: " <> pane_full_title(rail.pane)}
+        >
+          <span class={["mobile-pane-rail__track", mobile_pane_rail_track_class(rail.direction)]}>
+            <.icon name={mobile_pane_rail_icon(rail.direction)} class="size-3" />
+          </span>
+        </button>
       <% end %>
       <%= if @pane_history do %>
         <aside
@@ -779,6 +972,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     }
     |> Jason.encode!()
   end
+
+  defp mobile_pane_rail_icon(:left), do: "hero-chevron-left"
+  defp mobile_pane_rail_icon(:right), do: "hero-chevron-right"
+  defp mobile_pane_rail_icon(:top), do: "hero-chevron-up"
+  defp mobile_pane_rail_icon(:bottom), do: "hero-chevron-down"
+
+  defp mobile_pane_rail_track_class(:left),
+    do: "left-0 inset-y-1 w-[0.6rem] border-r border-sky-200/30"
+
+  defp mobile_pane_rail_track_class(:right),
+    do: "right-0 inset-y-1 w-[0.6rem] border-l border-sky-200/30"
+
+  defp mobile_pane_rail_track_class(:top),
+    do: "top-0 inset-x-1 h-[0.6rem] border-b border-sky-200/30"
+
+  defp mobile_pane_rail_track_class(:bottom),
+    do: "bottom-0 inset-x-1 h-[0.6rem] border-t border-sky-200/30"
 
   defp zoomed_tmux_pane(panes) do
     Enum.find(panes, &(Map.get(&1, :zoomed?) == true and Map.get(&1, :active) == true)) ||

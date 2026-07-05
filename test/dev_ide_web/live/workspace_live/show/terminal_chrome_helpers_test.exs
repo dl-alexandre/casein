@@ -186,6 +186,75 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
     end
   end
 
+  describe "mobile_focus_pane/3" do
+    test "prefers ui-highlight, then tmux-active, then first pane" do
+      panes = [
+        mobile_pane("%0", 0, 0, 0, 50, 40, false),
+        mobile_pane("%1", 1, 50, 0, 50, 40, true)
+      ]
+
+      assert TC.mobile_focus_pane(panes, "%0", "%1").id == "%0"
+      assert TC.mobile_focus_pane(panes, nil, "%1").id == "%1"
+
+      inactive = Enum.map(panes, &Map.put(&1, :active, false))
+      assert TC.mobile_focus_pane(inactive, nil, nil).id == "%0"
+    end
+  end
+
+  describe "mobile_focus_layout_style/2" do
+    test "exposes active pane percentages and scale factors as CSS variables" do
+      style =
+        TC.mobile_focus_layout_style(
+          mobile_pane("%1", 1, 50, 0, 50, 20, true),
+          %{width: 100, height: 40}
+        )
+
+      assert style =~ "--devide-mobile-pane-left: 50.0%"
+      assert style =~ "--devide-mobile-pane-top: 0.0%"
+      assert style =~ "--devide-mobile-pane-width: 50.0%"
+      assert style =~ "--devide-mobile-pane-height: 50.0%"
+      assert style =~ "--devide-mobile-pane-scale-x: 2.0"
+      assert style =~ "--devide-mobile-pane-scale-y: 2.0"
+    end
+  end
+
+  describe "mobile_pane_rails/2" do
+    test "splits a right rail by adjacent stacked panes" do
+      panes = [
+        mobile_pane("%0", 0, 0, 0, 50, 40, true),
+        mobile_pane("%1", 1, 50, 0, 50, 20, false),
+        mobile_pane("%2", 2, 50, 20, 50, 20, false)
+      ]
+
+      assert rail_summary(TC.mobile_pane_rails(panes, "%0")) == [
+               {:right, "%1", 0.0, 50.0},
+               {:right, "%2", 50.0, 50.0}
+             ]
+    end
+
+    test "shows left and bottom rails when the top-right pane is focused" do
+      panes = [
+        mobile_pane("%0", 0, 0, 0, 50, 40, false),
+        mobile_pane("%1", 1, 50, 0, 50, 20, true),
+        mobile_pane("%2", 2, 50, 20, 50, 20, false)
+      ]
+
+      assert rail_summary(TC.mobile_pane_rails(panes, "%1")) == [
+               {:left, "%0", 0.0, 100.0},
+               {:bottom, "%2", 0.0, 100.0}
+             ]
+    end
+
+    test "ignores panes that only touch diagonally" do
+      panes = [
+        mobile_pane("%0", 0, 0, 0, 50, 20, true),
+        mobile_pane("%1", 1, 50, 20, 50, 20, false)
+      ]
+
+      assert TC.mobile_pane_rails(panes, "%0") == []
+    end
+  end
+
   # ── activity timestamps / states ───────────────────────────────────────
 
   describe "parse_activity_timestamp/1" do
@@ -968,5 +1037,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
     test "shortens the raw tmux session when it is not a devide_ session" do
       assert TC.terminal_session_label("plain-session") == "plain-session"
     end
+  end
+
+  defp mobile_pane(id, index, left, top, width, height, active) do
+    %{
+      id: id,
+      index: index,
+      active: active,
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      window_id: "@0",
+      current_path: "/work/dev_ide",
+      current_command: "bash"
+    }
+  end
+
+  defp rail_summary(rails) do
+    Enum.map(rails, fn rail ->
+      {rail.direction, rail.pane.id, rail.start, rail.size}
+    end)
   end
 end

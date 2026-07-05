@@ -201,6 +201,41 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert html =~ "Other session: u-other"
       assert html =~ "active tmux_session=devide_alpha_u-active"
     end
+
+    test "renders mobile focus state and spatial pane rails" do
+      panes = [
+        %{pane("%0") | index: 0, active: true, left: 0, top: 0, width: 50, height: 40},
+        %{pane("%1") | index: 1, active: false, left: 50, top: 0, width: 50, height: 20},
+        %{pane("%2") | index: 2, active: false, left: 50, top: 20, width: 50, height: 20}
+      ]
+
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha", status: :running},
+          active_tmux_window_panes: panes,
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%0",
+          tmux_active_pane_id: "%0",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: "%0",
+          focused_pane_id: "pane-1",
+          pane_data: %{}
+        )
+
+      assert html =~ ~s(data-mobile-focus-layout="true")
+      assert html =~ ~s(data-mobile-focus-pane-id="%0")
+      assert html =~ "--devide-mobile-pane-left: 0.0%"
+      assert html =~ "--devide-mobile-pane-scale-x: 2.0"
+      assert html =~ ~s(data-terminal-surface-mount="true")
+      assert html =~ ~s(id="tmux-pane--0")
+      assert html =~ ~s(data-mobile-pane-active="true")
+      assert html =~ ~s(data-mobile-pane-rail="right")
+      assert html =~ ~s(phx-value-pane-id="%1")
+      assert html =~ ~s(phx-value-pane-id="%2")
+      assert html =~ "top: 50.0%; height: 50.0%"
+    end
   end
 
   describe "tmux_pane_geometry/1 pane history drawer" do
