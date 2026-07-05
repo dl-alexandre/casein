@@ -238,6 +238,45 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert html =~ ~s(phx-value-pane-id="%2")
       assert html =~ "top: 50.0%; height: 50.0%"
     end
+
+    test "keeps the focus layout and pane rails when the active pane is zoomed" do
+      # tmux-zoom collapses the rendered surface to the single zoomed pane, but the
+      # rails (and multi-pane detection) must survive so the user can still switch
+      # panes — otherwise a zoomed window is indistinguishable from a single pane.
+      panes = [
+        %{pane("%0") | index: 0, active: true, left: 0, top: 0, width: 50, height: 40}
+        |> Map.put(:zoomed?, true),
+        %{pane("%1") | index: 1, active: false, left: 50, top: 0, width: 50, height: 20},
+        %{pane("%2") | index: 2, active: false, left: 50, top: 20, width: 50, height: 20}
+      ]
+
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha", status: :running},
+          active_tmux_window_panes: panes,
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%0",
+          tmux_active_pane_id: "%0",
+          window_zoomed?: true,
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: "%0",
+          focused_pane_id: "pane-1",
+          pane_data: %{}
+        )
+
+      # Focus layout stays on and the zoom flag is exposed to the client hook.
+      assert html =~ ~s(data-mobile-focus-layout="true")
+      assert html =~ ~s(data-window-zoomed="true")
+      # Surface collapsed to the single zoomed pane...
+      assert html =~ ~s(id="tmux-pane--0")
+      refute html =~ ~s(id="tmux-pane--1")
+      # ...but the rails to the other panes still render.
+      assert html =~ ~s(data-mobile-pane-rail="right")
+      assert html =~ ~s(phx-value-pane-id="%1")
+      assert html =~ ~s(phx-value-pane-id="%2")
+    end
   end
 
   describe "tmux_pane_geometry/1 pane history drawer" do

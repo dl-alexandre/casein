@@ -672,7 +672,10 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     --devide-mobile-pane-rail-hit: 2.75rem;
   }
 
-  [data-mobile-focus-layout="true"] [data-terminal-surface-mount] {
+  /* When the pane is tmux-zoomed the surface already fills the window natively, so
+     skip the crop-transform (it would double-scale). The rails still render — the
+     focus layout stays on for a zoomed multi-pane window so you can switch panes. */
+  [data-mobile-focus-layout="true"]:not([data-window-zoomed="true"]) [data-terminal-surface-mount] {
     transform:
       scale(var(--devide-mobile-pane-scale, 1))
       translate(

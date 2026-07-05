@@ -653,12 +653,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
     now = unix_now()
 
-    # Status is derived once per pane per render (the template reads it in
-    # four attrs), against a single clock read.
+    # Full (uncollapsed) pane list for the active window. The mobile focus rails,
+    # the focus-pane pick, and multi-pane detection all read this so they survive
+    # tmux zoom: `renderable_tmux_window_panes/1` collapses the list to the single
+    # zoomed pane for the terminal *surface*, which would otherwise erase the pane
+    # rails and make a zoomed multi-pane window look like a single-pane one.
+    full_panes = Enum.sort_by(assigns.active_tmux_window_panes, & &1.index)
+
+    # Status is derived once per pane per render (the template reads it in four
+    # attrs), against a single clock read. Collapsed to the zoomed pane so only
+    # that surface section renders when zoomed.
     panes =
-      assigns.active_tmux_window_panes
+      full_panes
       |> renderable_tmux_window_panes()
-      |> Enum.sort_by(& &1.index)
       |> Enum.map(fn pane ->
         pane
         |> Map.put(:status, pane_status(pane, now))
@@ -675,7 +682,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       end
 
     mobile_focus_pane =
-      mobile_focus_pane(panes, assigns.ui_highlight_pane_id, assigns.tmux_active_pane_id)
+      mobile_focus_pane(full_panes, assigns.ui_highlight_pane_id, assigns.tmux_active_pane_id)
 
     mobile_focus_pane_id = if mobile_focus_pane, do: mobile_focus_pane.id
 
@@ -683,17 +690,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       assigns
       |> assign(:tmux_pane_bounds, bounds)
       |> assign(:active_tmux_window_panes, panes)
+      |> assign(:mobile_multi_pane?, length(full_panes) > 1)
       |> assign(:terminal_surface_pane, surface_pane)
       |> assign(:active_tmux_session, assigns.tmux_session)
       |> assign(:mobile_focus_pane, mobile_focus_pane)
       |> assign(:mobile_focus_pane_id, mobile_focus_pane_id)
-      |> assign(:mobile_pane_rails, mobile_pane_rails(panes, mobile_focus_pane_id))
+      |> assign(:mobile_pane_rails, mobile_pane_rails(full_panes, mobile_focus_pane_id))
 
     ~H"""
     <div
       id={"tmux-pane-layout-" <> @workspace.id}
       data-active-pane-id={@ui_highlight_pane_id || @tmux_active_pane_id}
-      data-mobile-focus-layout={to_string(length(@active_tmux_window_panes) > 1)}
+      data-mobile-focus-layout={to_string(@mobile_multi_pane?)}
       data-mobile-focus-pane-id={@mobile_focus_pane_id}
       data-window-zoomed={to_string(@window_zoomed?)}
       data-bounds-cols={@tmux_pane_bounds.width}
