@@ -6,7 +6,7 @@ defmodule DevIDE.Push.RegistryTest do
   across both maps, and the lazy dispatcher subscription a workspace token
   triggers.
   """
-  use DevIDE.TestCase, async: false
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Push.Registry
 
@@ -21,6 +21,11 @@ defmodule DevIDE.Push.RegistryTest do
 
     assert [%{token: "tok-1", platform: "ios", user_id: nil}] = Registry.tokens_for("ws-1")
     assert Registry.tokens_for("ws-other") == []
+
+    assert [device] = Registry.list_devices(limit: 5)
+    assert device.workspace_id == "ws-1"
+    assert device.provider_status == "active"
+    assert device.disabled_at == nil
   end
 
   test "carries an optional user_id on a workspace registration" do
@@ -75,6 +80,18 @@ defmodule DevIDE.Push.RegistryTest do
 
     assert Registry.tokens_for("ws-1") == []
     assert Registry.tokens_for_user("dev") == []
+  end
+
+  test "record_failure increments health and disables invalid tokens" do
+    :ok = Registry.register(%{workspace_id: "ws-1", token: "tok-bad", platform: "ios"})
+
+    :ok = Registry.record_failure("tok-bad", :invalid_token)
+
+    assert Registry.tokens_for("ws-1") == []
+    assert [device] = Registry.list_devices(limit: 5)
+    assert device.failure_count == 1
+    assert device.provider_status == "invalid"
+    assert %DateTime{} = device.disabled_at
   end
 
   test "a workspace registration subscribes the dispatcher to that workspace" do

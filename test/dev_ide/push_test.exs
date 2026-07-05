@@ -4,10 +4,11 @@ defmodule DevIDE.PushTest do
   an alert-worthy audit event fires for its workspace — and nothing else does.
   Runs against the app-supervised `Registry`/`Dispatcher` with a stub provider.
   """
-  use DevIDE.TestCase, async: false
+  use DevIde.DataCase, async: false
 
   alias DevIDE.{Audit, Push}
   alias DevIDE.Mobile.UserObserver
+  alias DevIDE.Notifications
 
   setup do
     prev_provider = Application.get_env(:dev_ide, :push_provider)
@@ -58,6 +59,13 @@ defmodule DevIDE.PushTest do
     assert notification.workspace_id == "pw-1"
     assert notification.title == "Blocked by policy"
     assert notification.reason == "not_allowlisted"
+
+    assert eventually(fn ->
+             case Notifications.list_for_user("dev") do
+               [%{type: "policy_blocked", workspace_id: "pw-1"}] -> true
+               _ -> false
+             end
+           end) == :ok
   end
 
   test "non-alert events do not push" do
@@ -79,8 +87,8 @@ defmodule DevIDE.PushTest do
   end
 
   test "new needs_review cards push once to the matching user's device" do
-    user_id = "push-user-#{System.unique_integer([:positive])}"
-    other_user_id = "push-other-#{System.unique_integer([:positive])}"
+    user_id = unique_user("push-user")
+    other_user_id = unique_user("push-other")
 
     :ok = UserObserver.clear(user_id)
     :ok = UserObserver.clear(other_user_id)
@@ -119,6 +127,13 @@ defmodule DevIDE.PushTest do
     assert notification.deep_link == "devide://review/needs_review%3Apw-1%3Arun-1"
     refute_receive {:pushed, "tok-other", "ios", _notification}, 300
 
+    assert eventually(fn ->
+             case Notifications.list_for_user(user_id) do
+               [%{type: "needs_review", source_type: "mobile_card"}] -> true
+               _ -> false
+             end
+           end) == :ok
+
     UserObserver.needs_review_changed(user_id, %{
       workspace_id: "pw-1",
       workspace_name: "Push Workspace",
@@ -130,8 +145,8 @@ defmodule DevIDE.PushTest do
   end
 
   test "user-scoped tokens receive new needs_review cards without workspace registration" do
-    user_id = "push-user-#{System.unique_integer([:positive])}"
-    other_user_id = "push-other-#{System.unique_integer([:positive])}"
+    user_id = unique_user("push-user")
+    other_user_id = unique_user("push-other")
 
     :ok = UserObserver.clear(user_id)
     :ok = UserObserver.clear(other_user_id)
@@ -157,7 +172,7 @@ defmodule DevIDE.PushTest do
   end
 
   test "mobile card dispatch dedupes user and workspace registrations for one token" do
-    user_id = "push-user-#{System.unique_integer([:positive])}"
+    user_id = unique_user("push-user")
     :ok = UserObserver.clear(user_id)
 
     attrs = %{user_id: user_id, token: "tok-dupe", platform: "ios"}
@@ -206,4 +221,10 @@ defmodule DevIDE.PushTest do
   end
 
   defp eventually(_fun, 0), do: :timeout
+
+  defp unique_user(prefix) do
+    user_id = "#{prefix}-#{System.unique_integer([:positive])}"
+    on_exit(fn -> UserObserver.stop(user_id) end)
+    user_id
+  end
 end

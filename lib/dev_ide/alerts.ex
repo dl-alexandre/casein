@@ -14,28 +14,32 @@ defmodule DevIDE.Alerts do
       severity: "warning",
       title: "Approval requested",
       channels: ["in_app", "push", "mobile"],
-      ttl_seconds: 86_400
+      ttl_seconds: 86_400,
+      dedupe_window_seconds: 600
     },
     "run.timed_out" => %{
       type: "run_timed_out",
       severity: "warning",
       title: "Run timed out",
       channels: ["in_app", "push"],
-      ttl_seconds: 86_400
+      ttl_seconds: 86_400,
+      dedupe_window_seconds: 600
     },
     "policy.blocked" => %{
       type: "policy_blocked",
       severity: "warning",
       title: "Blocked by policy",
       channels: ["in_app", "push"],
-      ttl_seconds: 3_600
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 300
     },
     "agent.blocked" => %{
       type: "agent_blocked",
       severity: "warning",
       title: "Agent blocked",
       channels: ["in_app", "push"],
-      ttl_seconds: 3_600
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 300
     }
   }
 
@@ -110,6 +114,7 @@ defmodule DevIDE.Alerts do
           metadata: notification_metadata(event),
           dedupe_key: dedupe_key(event, user_id, definition),
           ttl_seconds: definition.ttl_seconds,
+          dedupe_window_seconds: definition.dedupe_window_seconds,
           deep_link: deep_link(event),
           channels: definition.channels,
           default_delivery: Map.new(definition.channels, &{&1, true}),

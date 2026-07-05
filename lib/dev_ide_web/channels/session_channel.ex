@@ -26,6 +26,7 @@ defmodule DevIdeWeb.SessionChannel do
   alias DevIDE.Agents.Activity
   alias DevIDE.Alerts
   alias DevIDE.Mobile.UserObserver
+  alias DevIDE.Notifications
   alias DevIDE.Push
   alias DevIDE.Session.Snapshot
   alias DevIDE.Workspaces
@@ -200,8 +201,28 @@ defmodule DevIdeWeb.SessionChannel do
 
   defp maybe_push_alert(socket, event) do
     case Alerts.notification_for(event) do
-      nil -> :ok
-      notification -> push(socket, "alert", notification)
+      nil ->
+        :ok
+
+      notification ->
+        case current_user_id(socket) do
+          user_id when is_binary(user_id) ->
+            case Notifications.deliver_alert_event(event, user_id) do
+              {:ok, durable, _status} ->
+                if Notifications.channel_enabled?(durable, "in_app") do
+                  push(socket, "alert", Map.put(notification, :notification_id, durable.id))
+                end
+
+              :ignored ->
+                :ok
+
+              {:error, _changeset} ->
+                push(socket, "alert", notification)
+            end
+
+          _ ->
+            push(socket, "alert", notification)
+        end
     end
   end
 

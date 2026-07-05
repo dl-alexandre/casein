@@ -35,6 +35,8 @@ defmodule DevIDE.Notifications.Notification do
     field :read_at, :utc_datetime_usec
     field :resolved_at, :utc_datetime_usec
     field :muted_at, :utc_datetime_usec
+    field :occurrence_count, :integer, default: 1
+    field :last_seen_at, :utc_datetime_usec
 
     timestamps(type: :utc_datetime_usec)
   end
@@ -63,12 +65,15 @@ defmodule DevIDE.Notifications.Notification do
       :source_id,
       :read_at,
       :resolved_at,
-      :muted_at
+      :muted_at,
+      :occurrence_count,
+      :last_seen_at
     ])
     |> validate_required([:user_id, :type, :severity, :title])
     |> validate_inclusion(:severity, @severities)
     |> validate_channel_subset(:channels, @channels)
     |> validate_number(:ttl_seconds, greater_than: 0)
+    |> validate_number(:occurrence_count, greater_than: 0)
     |> validate_length(:user_id, max: 240)
     |> validate_length(:workspace_id, max: 240)
     |> validate_length(:session_id, max: 240)

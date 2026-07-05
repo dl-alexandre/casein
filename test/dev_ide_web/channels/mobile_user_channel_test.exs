@@ -778,6 +778,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
   end
 
   defp prepare_user(user_id) do
+    on_exit(fn -> UserObserver.stop(user_id) end)
     {:ok, _pid} = UserObserver.ensure_started(user_id)
     :ok = UserObserver.clear(user_id)
   end

@@ -32,6 +32,8 @@ defmodule DevIDE.NotificationsTest do
 
     assert notification.expires_at == DateTime.add(@now, 3_600, :second)
     assert notification.channels == ["in_app", "push"]
+    assert notification.occurrence_count == 1
+    assert notification.last_seen_at == @now
     assert notification.metadata == %{"review_count" => 2}
     assert notification.default_delivery == %{"push" => true}
     assert_receive {:notification_created, ^notification}, 1_000
@@ -63,8 +65,39 @@ defmodule DevIDE.NotificationsTest do
              Notifications.deliver(attrs, dedupe_window_seconds: 60, now: @now)
 
     assert deduped.id == first.id
+    assert deduped.occurrence_count == 2
+    assert deduped.metadata["occurrence_count"] == 2
+    assert_receive {:notification_updated, ^deduped}, 1_000
     refute_receive {:notification_created, _}, 100
     assert Repo.aggregate(Notification, :count) == 1
+  end
+
+  test "preferences filter channels and quiet hours suppress noisy delivery" do
+    assert {:ok, _prefs} =
+             Notifications.put_preferences("dev", %{
+               settings: %{
+                 "types" => %{
+                   "policy_blocked" => %{"channels" => %{"push" => false, "in_app" => true}}
+                 }
+               },
+               quiet_hours: %{"enabled" => true, "start" => "22:00", "end" => "08:00"}
+             })
+
+    attrs = %{
+      user_id: "dev",
+      workspace_id: "ws-1",
+      type: "policy_blocked",
+      severity: "warning",
+      title: "Blocked by policy",
+      channels: ["in_app", "push", "mobile"],
+      default_delivery: %{"in_app" => true, "push" => true, "mobile" => true}
+    }
+
+    assert Notifications.effective_channels(attrs, now: ~U[2026-07-04 12:00:00.000000Z]) ==
+             ["in_app", "mobile"]
+
+    assert Notifications.effective_channels(attrs, now: ~U[2026-07-04 23:00:00.000000Z]) ==
+             ["in_app"]
   end
 
   test "read and resolve lifecycle updates are scoped to the notification user" do
@@ -114,6 +147,7 @@ defmodule DevIDE.NotificationsTest do
     assert attrs.title == "Blocked by policy"
     assert attrs.body == "not_allowlisted"
     assert attrs.channels == ["in_app", "push"]
+    assert attrs.dedupe_window_seconds == 300
     assert attrs.source_type == "audit_event"
     assert attrs.source_id == event.id
     assert attrs.deep_link == "devide://session/ws-1"
