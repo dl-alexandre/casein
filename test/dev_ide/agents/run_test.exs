@@ -109,10 +109,25 @@ defmodule DevIDE.Agents.RunTest do
     end
 
     test "subscribe/2 returns a snapshot and streams data + exit to the subscriber", %{root: root} do
-      {ws, pid} = start_run(root, echo_cmd(["/bin/echo", "stream-me"]))
+      # Run forwards cmd_data only to a subscriber attached at that moment
+      # (earlier output is served via the snapshot buffer), so a bare echo races
+      # subscribe/2 under load. Gate the output on a sync file we create only
+      # after subscribing, so the forward branch is exercised deterministically.
+      sync = Path.join(root, "stream-go")
+
+      {ws, pid} =
+        start_run(
+          root,
+          echo_cmd([
+            "/bin/sh",
+            "-c",
+            "until [ -e '#{sync}' ]; do sleep 0.05; done; echo stream-me"
+          ])
+        )
 
       assert {:ok, snap} = Run.subscribe(pid)
       assert snap.workspace_id == ws
+      File.touch!(sync)
 
       # handle_info({:cmd_data, ...}) forwards to subscriber; final exit too.
       assert_receive {:agent_run_data, ^ws, :stdout, data}, 5_000
@@ -138,9 +153,17 @@ defmodule DevIDE.Agents.RunTest do
     test "hard timeout fires for a slow command and yields :timed_out", %{root: root} do
       # Tiny timeout_ms against a long sleep guarantees :hard_timeout wins.
       {ws, pid} = start_run(root, echo_cmd(["/bin/sleep", "30"]), timeout_ms: 50)
-      assert {:ok, _} = Run.subscribe(pid)
 
-      assert_receive {:agent_run_exit, ^ws, :timeout, :timed_out}, 5_000
+      # The 50ms timer can fire before subscribe/2 is processed (exit is only
+      # forwarded to an already-attached subscriber); the snapshot then reports
+      # the terminal state instead.
+      case Run.subscribe(pid) do
+        {:ok, %{status: :timed_out}} ->
+          :ok
+
+        {:ok, _snap} ->
+          assert_receive {:agent_run_exit, ^ws, :timeout, :timed_out}, 5_000
+      end
 
       snap = Run.state(pid)
       assert snap.status == :timed_out
