@@ -212,11 +212,13 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
   } do
     {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    # Give the attached (default shell) session tmux windows via the same
-    # sessions_updated event the SessionDirectory broadcasts.
-    %{socket: %{assigns: %{default_terminal_sid: sid}}} = :sys.get_state(view.pid)
-
-    info =
+    # Give the attached session tmux windows via the same sessions_updated
+    # event the SessionDirectory broadcasts. The sheet keys its window list off
+    # the *currently attached* terminal_sid, which can switch asynchronously
+    # after mount, and a genuine directory broadcast can clobber the injected
+    # windows before the click — so re-read the sid and re-inject on each
+    # attempt, and only stop once the injected windows actually rendered.
+    windows_for = fn sid ->
       DevIDE.Terminals.Session.Info.new_shell(workspace_id, sid,
         metadata: %{
           windows: [
@@ -226,12 +228,33 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
         }
       )
       |> Map.put(:tmux_session, "tmux-#{workspace_id}")
+    end
 
-    send(view.pid, {DevIDE.Terminals.SessionDirectory, {:sessions_updated, workspace_id, [info]}})
-    render(view)
+    html =
+      Enum.reduce_while(1..10, nil, fn _attempt, _acc ->
+        %{socket: %{assigns: assigns}} = :sys.get_state(view.pid)
+        sid = assigns[:terminal_sid] || assigns.default_terminal_sid
 
-    # Opening from the keybar chip lands on the attached session's window list.
-    html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+        send(
+          view.pid,
+          {DevIDE.Terminals.SessionDirectory,
+           {:sessions_updated, workspace_id, [windows_for.(sid)]}}
+        )
+
+        render(view)
+
+        # Opening from the keybar chip lands on the attached session's window list.
+        html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+
+        if html =~ ~s(data-mobile-nav-view="windows") and html =~ "editor" do
+          {:halt, html}
+        else
+          # Close the sheet again before retrying; the chip toggles.
+          view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+          {:cont, html}
+        end
+      end)
+
     assert html =~ ~s(data-mobile-nav-view="windows")
     assert html =~ ~s(data-mobile-nav-focus="windows")
     assert html =~ "Back to all sessions"
