@@ -241,6 +241,65 @@ ensure_terminal_tool() {
   bash "$script" "$@"
 }
 
+agent_runtime_passthrough() {
+  local runtime="$1"
+  local first="${2:-}"
+
+  case "$runtime:$first" in
+    codex:update|codex:doctor|codex:help|codex:--help|codex:-h|codex:version|codex:--version|codex:-V)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+agent_runtime_update_passthrough() {
+  local runtime="$1"
+  local first="${2:-}"
+
+  [[ "$runtime" == "codex" && "$first" == "update" ]]
+}
+
+exec_real_runtime() {
+  local runtime="$1"
+  shift || true
+
+  local bin
+  bin="$(real_agent_bin "$runtime")"
+  if [[ -z "$bin" ]]; then
+    echo "error: could not find executable for ${runtime}" >&2
+    exit 1
+  fi
+
+  exec "$bin" "$@"
+}
+
+run_codex_update() {
+  local bin status
+
+  bash "${DEVIDE_ROOT}/scripts/ensure-devbox-npm-prefix.sh" >&2
+
+  bin="$(real_agent_bin codex)"
+  if [[ -z "$bin" ]]; then
+    echo "error: could not find executable for codex" >&2
+    exit 1
+  fi
+
+  set +e
+  "$bin" "$@"
+  status=$?
+  set -e
+
+  if [[ "${DEVIDE_REINSTALL_SHIMS_AFTER_CODEX_UPDATE:-1}" != "0" ]]; then
+    if ! bash "${DEVIDE_ROOT}/scripts/install-agent-shims.sh" >&2; then
+      echo "warn: codex update completed but DevIDE shim reinstall failed" >&2
+    fi
+  fi
+
+  exit "$status"
+}
+
 launch_agent() {
   local runtime="${1:-}"
   shift || true
@@ -248,6 +307,14 @@ launch_agent() {
   if [[ -z "$runtime" ]]; then
     echo "error: missing runtime (grok|codex|claude|opencode|agent|...)" >&2
     exit 1
+  fi
+
+  if agent_runtime_update_passthrough "$runtime" "${1:-}"; then
+    run_codex_update "$@"
+  fi
+
+  if agent_runtime_passthrough "$runtime" "${1:-}"; then
+    exec_real_runtime "$runtime" "$@"
   fi
 
   agent_env_resolve
@@ -267,13 +334,7 @@ launch_agent() {
       # Arbitrary runtimes skip the launcher, so materialize here — fail open
       # but loudly.
       materialize_mcp_optional
-      local bin
-      bin="$(real_agent_bin "$runtime")"
-      if [[ -z "$bin" ]]; then
-        echo "error: could not find executable for ${runtime}" >&2
-        exit 1
-      fi
-      exec "$bin" "$@"
+      exec_real_runtime "$runtime" "$@"
       ;;
   esac
 }

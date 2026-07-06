@@ -143,7 +143,7 @@ chmod 600 "$AGENT_ENV"
 
 log "wrote ${AGENT_ENV}"
 
-log "ensuring npm global prefix is user-writable (~/.local) for codex update"
+log "ensuring npm global prefix is user-writable and separate from DevIDE shims"
 bash scripts/ensure-devbox-npm-prefix.sh
 
 log "ensuring Codex bubblewrap sandbox can create user namespaces"
