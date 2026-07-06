@@ -3398,6 +3398,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             end)
 
           {:error, reason} ->
+            stop_failed_pane_worker(worker)
             update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
         end
 
@@ -3418,6 +3419,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:ok, PaneWorker.get_handles(worker)}
   catch
     :exit, _reason -> {:error, :worker_exited}
+  end
+
+  defp stop_failed_pane_worker(worker) when is_pid(worker) do
+    Process.unlink(worker)
+    if Process.alive?(worker), do: Process.exit(worker, :kill)
+    :ok
   end
 
   defp pane_worker_alive?(%{worker: worker, ghostty_term: term})
