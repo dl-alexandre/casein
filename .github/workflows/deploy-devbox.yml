@@ -68,8 +68,21 @@ jobs:
           elixir-version: "1.18.4"
           otp-version: "27.2"
 
-      - name: Install tmux
-        run: sudo apt-get update -q && sudo apt-get install -y -q tmux
+      # The :pty suite must run against the same tmux the devbox runs. Pinned to
+      # 3.6b for in-pane OSC 11 client-color support (see scripts/install-tmux.sh
+      # and docs/subsystems/tmux_36b_cutover.md).
+      - name: Restore cached tmux 3.6b
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/tmux-3.6b
+          key: tmux-3.6b-${{ runner.os }}
+      - name: Install tmux 3.6b
+        run: |
+          export TMUX_PREFIX="$HOME/.local/tmux-3.6b"
+          export TMUX_INSTALL_SUDO=""
+          bash scripts/install-tmux.sh
+          echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
 
       - name: Cache deps and build
         uses: actions/cache@v6
