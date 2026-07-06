@@ -141,7 +141,7 @@ defmodule DevIde.MixProject do
       # Code-intelligence / deploy-planning tools — dev/test only:
       {:exograph, "~> 0.8", only: [:dev, :test], runtime: false},
       {:quackdb, "~> 0.5", only: [:dev, :test], runtime: false},
-      {:host_kit, "0.1.0-beta.5", only: [:dev, :test], runtime: false}
+      {:host_kit, "0.1.0-beta.7", only: [:dev, :test], runtime: false}
     ]
   end
 
