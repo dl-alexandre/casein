@@ -199,18 +199,26 @@ defmodule DevIDE.Agents.AuthProfileTest do
 
     File.chmod!(codex, 0o755)
 
-    env = [
+    # System.cmd/3 merges `env:` into the BEAM process environment on the devbox,
+    # so leaked DEVIDE_SCRIPTS/CODEX_HOME from tmux would invoke the real provider
+    # CLI (OAuth hang). env -i keeps only the vars this test needs.
+    signin_env = [
       {"DEVIDE_AGENT_AUTH_ROOT", root},
       {"HOME", home},
       {"DEV_IDE_API_TOKEN", "token"},
       {"DEVIDE_WORKSPACE_ID", "ws-1"},
       {"DEVIDE_WORKSPACE_NAME", "Sconde-Test"},
-      {"PATH", System.get_env("PATH") || "/usr/bin:/bin"}
+      {"PATH", "/usr/bin:/bin"},
+      {"SHELL", "/bin/bash"},
+      {"LANG", "C.UTF-8"}
     ]
 
+    env_args = Enum.flat_map(signin_env, fn {key, value} -> ["#{key}=#{value}"] end)
+
     assert {output, 0} =
-             System.cmd("bash", [devide, "agent", "auth", "signin", "codex"],
-               env: env,
+             System.cmd(
+               "env",
+               ["-i" | env_args ++ ["bash", devide, "agent", "auth", "signin", "codex"]],
                stderr_to_stdout: true
              )
 
