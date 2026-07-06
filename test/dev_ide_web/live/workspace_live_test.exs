@@ -2043,7 +2043,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {:preview_pane_removed, %{pane_id: "%2", workspace_id: "ws-1", preview_id: 1}}
+      {:pane_event,
+       %{
+         reason: :removed,
+         type: :preview,
+         pane_id: "%2",
+         workspace_id: "ws-1",
+         tmux_session: nil,
+         payload: %{}
+       }}
     )
 
     _html = render(view)
@@ -2373,7 +2381,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert socket_assigns(view, :terminal_surface_pane_id) == "%1"
   end
 
-  test "handle_info :preview_pane_registered assigns preview pane overlay state", %{
+  test "a generic :pane_event preview registration assigns preview pane overlay state", %{
     conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-opened-msg")
@@ -2733,18 +2741,26 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end
   end
 
+  # Preview lifecycle reaches the LiveView through the generic
+  # DevIDE.Panes.Events channel since the preview runtime cutover.
   defp broadcast_preview_pane(view, pane_id, url, workspace_id \\ "ws-1") do
     send(
       view.pid,
-      {:preview_pane_registered,
+      {:pane_event,
        %{
+         reason: :registered,
+         type: :preview,
          pane_id: pane_id,
          workspace_id: workspace_id,
-         url: url,
-         display_url: url,
-         preview_id: 1,
-         control_session_id: 1,
-         viewport: nil
+         tmux_session: nil,
+         payload: %{
+           workspace_id: workspace_id,
+           url: url,
+           display_url: url,
+           preview_id: 1,
+           control_session_id: 1,
+           viewport: nil
+         }
        }}
     )
 

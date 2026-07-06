@@ -76,6 +76,24 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     Phoenix.PubSub.broadcast(DevIde.PubSub, "preview:" <> workspace_id, message)
   end
 
+  # Preview lifecycle rides the generic DevIDE.Panes.Events channel since the
+  # preview runtime cutover; observations stay on the legacy "preview:" topic.
+  defp broadcast_pane_event(workspace_id, reason, pane_id, payload) do
+    Phoenix.PubSub.broadcast(
+      DevIde.PubSub,
+      DevIDE.Panes.Events.topic(workspace_id),
+      {:pane_event,
+       %{
+         reason: reason,
+         type: :preview,
+         pane_id: pane_id,
+         workspace_id: workspace_id,
+         tmux_session: nil,
+         payload: Map.put(payload, :workspace_id, workspace_id)
+       }}
+    )
+  end
+
   test "agent-driven preview observation does not crash the cockpit LiveView", %{
     conn: conn,
     workspace_id: workspace_id
@@ -106,31 +124,33 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
   } do
     {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    register = fn pane_id, display_url ->
-      broadcast(workspace_id, {
-        :preview_pane_registered,
-        %{
-          pane_id: pane_id,
-          workspace_id: workspace_id,
-          preview_id: "preview-#{pane_id}",
-          url: display_url,
-          display_url: display_url,
-          control_session_id: "sess-#{pane_id}"
-        }
+    register = fn pane_id, display_url, reason ->
+      broadcast_pane_event(workspace_id, reason, pane_id, %{
+        preview_id: "preview-#{pane_id}",
+        url: display_url,
+        display_url: display_url,
+        control_session_id: "sess-#{pane_id}"
       })
 
       assert render(view) =~ "workspace-main-header"
     end
 
-    register.("%70", "https://example.com/a")
-    register.("%71", "https://example.com/b")
+    register.("%70", "https://example.com/a", :registered)
+    register.("%71", "https://example.com/b", :registered)
 
     assert :sys.get_state(view.pid).socket.assigns.ui_highlight_pane_id == "%71"
 
-    # A heartbeat re-broadcast for the first pane (unchanged display URL) must not
-    # re-grab the highlight — doing so re-enters the focus path and flashes the
-    # live preview frame on every heartbeat.
-    register.("%70", "https://example.com/a")
+    # An explicit :heartbeat event for the first pane must not re-grab the
+    # highlight — doing so re-enters the focus path and flashes the live
+    # preview frame on every heartbeat.
+    register.("%70", "https://example.com/a", :heartbeat)
+
+    assert :sys.get_state(view.pid).socket.assigns.ui_highlight_pane_id == "%71"
+
+    # Legacy-shaped heartbeat detection is preserved too: a re-registration
+    # with an unchanged display URL is treated as a heartbeat even without the
+    # explicit reason.
+    register.("%70", "https://example.com/a", :registered)
 
     assert :sys.get_state(view.pid).socket.assigns.ui_highlight_pane_id == "%71"
   end
@@ -144,16 +164,11 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     preview_id = "preview-#{System.unique_integer([:positive])}"
     pane_id = "%42"
 
-    broadcast(workspace_id, {
-      :preview_pane_registered,
-      %{
-        pane_id: pane_id,
-        workspace_id: workspace_id,
-        preview_id: preview_id,
-        url: "https://example.com/start",
-        display_url: "https://example.com/start",
-        control_session_id: "sess-1"
-      }
+    broadcast_pane_event(workspace_id, :registered, pane_id, %{
+      preview_id: preview_id,
+      url: "https://example.com/start",
+      display_url: "https://example.com/start",
+      control_session_id: "sess-1"
     })
 
     # Drain the registration before observing.
@@ -192,18 +207,13 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     pane_ids = ["%52", "%53"]
 
     for pane_id <- pane_ids do
-      broadcast(workspace_id, {
-        :preview_pane_registered,
-        %{
-          pane_id: pane_id,
-          workspace_id: workspace_id,
-          preview_id: preview_id,
-          url: "https://example.com/start",
-          display_url: "https://example.com/start",
-          control_session_id: "sess-1",
-          shared: pane_id == "%53",
-          source_pane_id: if(pane_id == "%53", do: "%52")
-        }
+      broadcast_pane_event(workspace_id, :registered, pane_id, %{
+        preview_id: preview_id,
+        url: "https://example.com/start",
+        display_url: "https://example.com/start",
+        control_session_id: "sess-1",
+        shared: pane_id == "%53",
+        source_pane_id: if(pane_id == "%53", do: "%52")
       })
     end
 
@@ -258,16 +268,11 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     preview_id = "preview-#{System.unique_integer([:positive])}"
     pane_id = "%43"
 
-    broadcast(workspace_id, {
-      :preview_pane_registered,
-      %{
-        pane_id: pane_id,
-        workspace_id: workspace_id,
-        preview_id: preview_id,
-        url: "http://localhost:41034/",
-        display_url: "/preview-proxy/#{workspace_id}/41034/",
-        control_session_id: "sess-1"
-      }
+    broadcast_pane_event(workspace_id, :registered, pane_id, %{
+      preview_id: preview_id,
+      url: "http://localhost:41034/",
+      display_url: "/preview-proxy/#{workspace_id}/41034/",
+      control_session_id: "sess-1"
     })
 
     assert render(view) =~ "workspace-main-header"
@@ -292,5 +297,108 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
 
     assert pane.display_url ==
              "/preview-proxy/#{workspace_id}/41034/superadmin?preview_superadmin=1"
+  end
+
+  test "generic pane events drive the full preview lifecycle in the LiveView", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    pane_id = "%80"
+
+    broadcast_pane_event(workspace_id, :registered, pane_id, %{
+      preview_id: "preview-80",
+      url: "https://example.com/one",
+      display_url: "https://example.com/one",
+      control_session_id: "sess-80"
+    })
+
+    assert render(view) =~ "workspace-main-header"
+    assigns = :sys.get_state(view.pid).socket.assigns
+    assert assigns.preview_panes[pane_id].display_url == "https://example.com/one"
+    assert %{type: :preview} = assigns.feature_panes[pane_id]
+    assert assigns.ui_highlight_pane_id == pane_id
+
+    # A registry update with a changed display URL refreshes the assign and
+    # pushes the generic soft-reload event for the pane's iframe.
+    broadcast_pane_event(workspace_id, :updated, pane_id, %{
+      preview_id: "preview-80",
+      url: "https://example.com/two",
+      display_url: "https://example.com/two",
+      control_session_id: "sess-80"
+    })
+
+    assert render(view) =~ "workspace-main-header"
+
+    assert :sys.get_state(view.pid).socket.assigns.preview_panes[pane_id].display_url ==
+             "https://example.com/two"
+
+    assert_push_event(view, "devide:reload_preview_iframes", %{"pane_id" => ^pane_id})
+
+    # Removal drops the pane from both the derived and the generic assigns.
+    broadcast_pane_event(workspace_id, :removed, pane_id, %{})
+
+    assert render(view) =~ "workspace-main-header"
+    assigns = :sys.get_state(view.pid).socket.assigns
+    refute Map.has_key?(assigns.preview_panes, pane_id)
+    refute Map.has_key?(assigns.feature_panes, pane_id)
+  end
+
+  test "another workspace's pane events are refused", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    send(
+      view.pid,
+      {:pane_event,
+       %{
+         reason: :registered,
+         type: :preview,
+         pane_id: "%99",
+         workspace_id: "other-workspace",
+         tmux_session: nil,
+         payload: %{
+           workspace_id: "other-workspace",
+           url: "https://example.com/x",
+           display_url: "https://example.com/x"
+         }
+       }}
+    )
+
+    assert render(view) =~ "workspace-main-header"
+    refute Map.has_key?(:sys.get_state(view.pid).socket.assigns.preview_panes, "%99")
+  end
+
+  test "legacy preview lifecycle broadcasts are no-ops (state rides Panes.Events)", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    # The registry still dual-broadcasts on the legacy topic for its
+    # non-LiveView consumers; the LiveView must neither crash nor build state
+    # from it anymore.
+    broadcast(workspace_id, {
+      :preview_pane_registered,
+      %{
+        pane_id: "%90",
+        workspace_id: workspace_id,
+        preview_id: "preview-90",
+        url: "https://example.com/legacy",
+        display_url: "https://example.com/legacy",
+        control_session_id: "sess-90"
+      }
+    })
+
+    assert render(view) =~ "workspace-main-header"
+    assert Process.alive?(view.pid)
+    refute Map.has_key?(:sys.get_state(view.pid).socket.assigns.preview_panes, "%90")
+
+    broadcast(workspace_id, {:preview_pane_removed, %{pane_id: "%90"}})
+    assert render(view) =~ "workspace-main-header"
+    assert Process.alive?(view.pid)
   end
 end

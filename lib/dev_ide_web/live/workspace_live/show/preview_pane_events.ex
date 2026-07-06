@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   import DevIdeWeb.WorkspaceLive.Show.Context
 
   alias DevIDE.Agents
+  alias DevIDE.Panes
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -124,54 +125,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
     end
   end
 
-  def handle_info({:preview_pane_registered, payload}, socket) do
-    pane = preview_pane_payload(payload)
-
-    if preview_pane_workspace_match?(socket, pane.workspace_id) do
-      existing = Map.get(socket.assigns[:preview_panes] || %{}, pane.pane_id)
-
-      socket =
-        assign(
-          socket,
-          :preview_panes,
-          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
-        )
-
-      socket =
-        if preview_pane_heartbeat?(existing, pane) do
-          # A pure heartbeat re-broadcast (same display URL): keep the latest
-          # fields but don't re-highlight or restore tmux focus, which re-enters
-          # the focus path and churns the live preview on every heartbeat.
-          socket
-        else
-          socket
-          |> assign(:ui_highlight_pane_id, pane.pane_id)
-          |> refresh_terminal_surface_pane_id()
-          |> TerminalState.restore_operator_tmux_focus()
-        end
-
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info({:preview_pane_removed, payload}, socket) do
-    pane_id = payload_value(payload, :pane_id)
-    workspace_id = payload_value(payload, :workspace_id)
-
-    if preview_pane_workspace_match?(socket, workspace_id) do
-      socket =
-        socket
-        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-        |> maybe_clear_entered_preview_pane(pane_id)
-        |> refresh_terminal_surface_pane_id()
-
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
+  # Legacy "preview:" lifecycle messages still arrive (the registry
+  # dual-broadcasts so its non-LiveView consumers keep working), but the
+  # LiveView's preview state is maintained exclusively from the generic
+  # DevIDE.Panes.Events channel (`apply_pane_event/2`). No-op, don't crash.
+  def handle_info({:preview_pane_registered, _payload}, socket), do: {:noreply, socket}
+  def handle_info({:preview_pane_removed, _payload}, socket), do: {:noreply, socket}
 
   def handle_info(
         {:preview_observation,
@@ -235,15 +194,95 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   end
 
   @doc false
-  def load_preview_panes(%{id: workspace_id} = workspace, path_result) do
+  # Preview branch of the generic {:pane_event, evt} handler — the runtime
+  # cutover replacement for the legacy {:preview_pane_registered/_removed}
+  # clauses, one-for-one:
+  #
+  #   * :registered/:updated with a changed display URL → highlight the pane,
+  #     re-derive the Ghostty surface pane and restore operator tmux focus
+  #     (exactly the legacy non-heartbeat branch);
+  #   * :heartbeat — or any event whose display URL is unchanged (legacy CLI
+  #     heartbeats were detected that way) — refreshes the registration fields
+  #     without focus churn;
+  #   * a display-URL change on a known pane pushes the generic soft-reload
+  #     event: the overlay root is phx-update="ignore", so the iframe only
+  #     follows registry navigation through this push (it re-points src only
+  #     when it actually changed);
+  #   * :removed drops the pane, clears the entered state and re-derives the
+  #     terminal surface pane.
+  def apply_pane_event(socket, %{type: :preview, reason: :removed} = evt) do
+    socket
+    |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, evt.pane_id))
+    |> maybe_clear_entered_preview_pane(evt.pane_id)
+    |> refresh_terminal_surface_pane_id()
+  end
+
+  def apply_pane_event(socket, %{type: :preview} = evt) do
+    pane =
+      evt.payload
+      |> Map.put_new(:pane_id, evt.pane_id)
+      |> Map.put_new(:workspace_id, evt.workspace_id)
+      |> preview_pane_payload()
+
+    existing = Map.get(socket.assigns[:preview_panes] || %{}, pane.pane_id)
+
+    socket =
+      assign(
+        socket,
+        :preview_panes,
+        Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
+      )
+
+    socket =
+      if is_map(existing) and preview_pane_url_changed?(existing, pane) do
+        push_event(socket, "devide:reload_preview_iframes", %{"pane_id" => pane.pane_id})
+      else
+        socket
+      end
+
+    if evt.reason == :heartbeat or preview_pane_heartbeat?(existing, pane) do
+      # A pure heartbeat (same display URL): keep the latest fields but don't
+      # re-highlight or restore tmux focus, which re-enters the focus path and
+      # churns the live preview on every heartbeat.
+      socket
+    else
+      socket
+      |> assign(:ui_highlight_pane_id, pane.pane_id)
+      |> refresh_terminal_surface_pane_id()
+      |> TerminalState.restore_operator_tmux_focus()
+    end
+  end
+
+  def apply_pane_event(socket, _evt), do: socket
+
+  @doc false
+  # Mount/reconnect hydration for the generic :feature_panes assign: the
+  # Panes.snapshot/1 fold merged over every workspace id this viewer aliases
+  # (same id set the legacy preview loader used, so folder/manager-attached
+  # viewers keep seeing linked preview panes).
+  def load_feature_panes(%{id: workspace_id} = workspace, path_result) do
     workspace
     |> preview_pane_workspace_ids(workspace_id, path_result)
-    |> Enum.flat_map(&PreviewPanes.list_for_workspace/1)
-    |> Enum.map(fn registration ->
-      {registration.pane_id, preview_pane_payload(registration)}
-    end)
-    |> Map.new()
+    |> Enum.reduce(%{}, fn id, acc -> Map.merge(acc, Panes.snapshot(id)) end)
   end
+
+  @doc false
+  # The legacy-shaped :preview_panes assign derived from :feature_panes — the
+  # session bar, terminal chrome and focus logic keep consuming the enriched
+  # preview map (title/favicon added) while lifecycle flows only through
+  # Panes.Events.
+  def preview_panes_from_feature(feature_panes) do
+    for {pane_id, %{type: :preview, payload: payload}} <- feature_panes || %{}, into: %{} do
+      {pane_id, preview_pane_payload(Map.put_new(payload, :pane_id, pane_id))}
+    end
+  end
+
+  @doc false
+  # Workspace-alias gate for generic pane events (and legacy preview infos):
+  # accepts the workspace's own id, its viewer aliases, and the folder alias of
+  # the resolved host path.
+  def pane_event_workspace_match?(socket, workspace_id),
+    do: preview_pane_workspace_match?(socket, workspace_id)
 
   @doc false
   def preview_subscription_workspace_ids(socket) do
@@ -332,7 +371,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
       :terminal_surface_pane_id,
       TerminalChrome.terminal_surface_pane_id(
         active_window_panes,
-        socket.assigns[:preview_panes] || %{},
+        TerminalChrome.feature_pane_map(
+          socket.assigns[:preview_panes] || %{},
+          socket.assigns[:feature_panes] || %{}
+        ),
         socket.assigns[:tmux_active_pane_id],
         socket.assigns[:terminal_surface_pane_id]
       )

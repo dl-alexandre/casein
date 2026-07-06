@@ -11,8 +11,8 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   Flow:
     1. Mount Show for a 2-window tmux session (`@0` shell / 1 pane, `@1` tests /
        3 panes). Window `@1` is active and contains preview pane `%2`.
-    2. Register a preview pane on `%2` (the established `:preview_pane_registered`
-       PubSub seam, which also makes `%2` the selected preview).
+    2. Register a preview pane on `%2` (the generic `{:pane_event, ...}`
+       DevIDE.Panes.Events seam, which also makes `%2` the selected preview).
     3. Drive a real window switch to `@0` via the `tmux:select_window` event the
        LiveView handles (FakeTmuxAdapter flips the active window; the LiveView
        refreshes topology through `assign_tmux_topology`).
@@ -194,18 +194,26 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     }
   end
 
+  # Preview lifecycle reaches the LiveView through the generic
+  # DevIDE.Panes.Events channel since the preview runtime cutover.
   defp register_preview_pane(view, pane_id, url) do
     send(
       view.pid,
-      {:preview_pane_registered,
+      {:pane_event,
        %{
+         reason: :registered,
+         type: :preview,
          pane_id: pane_id,
          workspace_id: @workspace_id,
-         url: url,
-         display_url: url,
-         preview_id: 1,
-         control_session_id: 1,
-         viewport: nil
+         tmux_session: nil,
+         payload: %{
+           workspace_id: @workspace_id,
+           url: url,
+           display_url: url,
+           preview_id: 1,
+           control_session_id: 1,
+           viewport: nil
+         }
        }}
     )
 
