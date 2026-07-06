@@ -41,8 +41,14 @@ defmodule DevIDE.Proposals.AutoApply do
   """
   @spec watch(String.t(), String.t(), pid(), map()) :: {:ok, pid()} | {:error, term()}
   def watch(workspace_id, root, run_pid, run_ctx) do
+    # Causality handoff: outcome audit events emitted by the watcher task
+    # correlate back to the run-start context captured here.
+    signals_ctx = DevIDE.Signals.Context.snapshot()
+
     Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-      poll(workspace_id, root, run_pid, run_ctx, System.monotonic_time(:millisecond))
+      DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
+        poll(workspace_id, root, run_pid, run_ctx, System.monotonic_time(:millisecond))
+      end)
     end)
   end
 

@@ -104,4 +104,36 @@ defmodule DevIDE.Audit.EctoAdapterTest do
     assert stored.decision == :allow
     assert stored.reason == nil
   end
+
+  test "list_by_correlation returns only the chain, ascending" do
+    cid =
+      DevIDE.Signals.Context.with_new(fn ->
+        {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wcor"})
+        Process.sleep(2)
+        {:ok, _} = Audit.emit(%{action: "chain.second", workspace_id: "wcor"})
+        DevIDE.Signals.Context.current().trace_id
+      end)
+
+    {:ok, _} = Audit.emit(%{action: "unrelated", workspace_id: "wcor"})
+
+    chain = Audit.list_by_correlation(cid)
+    assert Enum.map(chain, & &1.action) == ["chain.first", "chain.second"]
+    assert Enum.all?(chain, &(&1.metadata["correlation_id"] == cid))
+  end
+
+  test "metadata truncation preserves the causality keys" do
+    huge = String.duplicate("x", 64 * 1024)
+
+    cid =
+      DevIDE.Signals.Context.with_new(fn ->
+        {:ok, _} = Audit.emit(%{action: "big", workspace_id: "wtc", metadata: %{"blob" => huge}})
+        DevIDE.Signals.Context.current().trace_id
+      end)
+
+    [stored] = Audit.recent_for("wtc", 1)
+    assert stored.metadata["truncated"] == true
+    assert stored.metadata["correlation_id"] == cid
+    refute Map.has_key?(stored.metadata, "blob")
+    assert [%{action: "big"}] = Audit.list_by_correlation(cid)
+  end
 end

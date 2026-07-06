@@ -70,6 +70,44 @@ defmodule DevIDE.AuditTest do
     assert event.metadata == %{source: "live", mode: :review}
   end
 
+  describe "causality" do
+    alias DevIDE.Signals.Context
+
+    test "emit inside a context stamps correlation and chains causation" do
+      {cid, first, second} =
+        Context.with_new(fn ->
+          cid = Context.current().trace_id
+          {:ok, first} = Audit.emit(%{action: "chain.first", workspace_id: "wc"})
+          {:ok, second} = Audit.emit(%{action: "chain.second", workspace_id: "wc"})
+          {cid, first, second}
+        end)
+
+      assert first.metadata["correlation_id"] == cid
+      refute Map.has_key?(first.metadata, "causation_id")
+      assert second.metadata["correlation_id"] == cid
+      assert second.metadata["causation_id"] == first.id
+    end
+
+    test "emit outside a context leaves metadata untouched" do
+      {:ok, e} = Audit.emit(%{action: "plain", workspace_id: "wp", metadata: %{"a" => 1}})
+      assert e.metadata == %{"a" => 1}
+    end
+
+    test "list_by_correlation returns the chain in causal order" do
+      cid =
+        Context.with_new(fn ->
+          {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wc"})
+          {:ok, _} = Audit.emit(%{action: "chain.second", workspace_id: "wc"})
+          Context.current().trace_id
+        end)
+
+      {:ok, _} = Audit.emit(%{action: "unrelated", workspace_id: "wc"})
+
+      assert Audit.list_by_correlation(cid) |> Enum.map(& &1.action) ==
+               ["chain.first", "chain.second"]
+    end
+  end
+
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
 end

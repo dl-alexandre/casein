@@ -132,6 +132,27 @@ defmodule DevIdeWeb.API.DeployWebhookControllerTest do
     assert error =~ "systemctl_failed"
   end
 
+  test "an accepted master push emits a correlated deploy.triggered root event", %{conn: conn} do
+    :ok = DevIDE.Audit.clear()
+    body = master_push_body()
+
+    conn =
+      signed_push(conn, body)
+      |> post(~p"/api/deploy_webhook", body)
+
+    assert %{"ok" => true, "triggered" => true} = json_response(conn, 200)
+    assert_receive :poller_triggered
+
+    [event] = DevIDE.Audit.recent_for("platform", 1)
+    assert event.action == "deploy.triggered"
+    assert event.actor_id == "github"
+    assert event.metadata["result"] == "ok"
+    assert is_binary(event.metadata["correlation_id"])
+
+    assert [%{action: "deploy.triggered"}] =
+             DevIDE.Audit.list_by_correlation(event.metadata["correlation_id"])
+  end
+
   defp master_push_body do
     Jason.encode!(%{
       "ref" => "refs/heads/master",

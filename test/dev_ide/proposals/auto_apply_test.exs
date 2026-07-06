@@ -62,6 +62,38 @@ defmodule DevIDE.Proposals.AutoApplyTest do
     )
   end
 
+  defmodule FakeRun do
+    @moduledoc false
+    use GenServer
+
+    def start_link(state), do: GenServer.start_link(__MODULE__, state)
+
+    @impl true
+    def init(state), do: {:ok, state}
+
+    @impl true
+    def handle_call(:state, _from, state), do: {:reply, state, state}
+  end
+
+  test "watch hands the causality snapshot to the watcher task", %{root: root} do
+    # Auto-apply left disabled: the watcher's skip event is the outcome probe.
+    :ok = Audit.subscribe(root)
+
+    {:ok, run_pid} =
+      FakeRun.start_link(%{status: :succeeded, output_kind: :proposal, started_at: nil})
+
+    cid =
+      DevIDE.Signals.Context.with_new(fn ->
+        {:ok, _task} = AutoApply.watch(root, root, run_pid, %{run_id: "r-ctx", command_id: "c"})
+        DevIDE.Signals.Context.current().trace_id
+      end)
+
+    assert_receive {:audit_event, %{action: "proposals.auto_apply_skipped", metadata: metadata}},
+                   2_000
+
+    assert metadata["correlation_id"] == cid
+  end
+
   test "non-succeeded or non-proposal runs are a silent no-op", %{root: root} do
     enable!()
     unlock!(root)

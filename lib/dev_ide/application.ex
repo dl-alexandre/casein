@@ -21,6 +21,11 @@ defmodule DevIde.Application do
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
     DevIDE.Terminals.CommandLog.ensure_table!()
 
+    # jido_signal extensions self-register only via @after_compile, which
+    # never fires for precompiled deps — without this, the trace extension
+    # is unknown at runtime and DevIDE.Signals.from_audit_event/1 raises.
+    _ = Jido.Signal.Ext.Registry.register(Jido.Signal.Ext.Trace)
+
     children =
       [
         DevIdeWeb.Telemetry,

@@ -3,6 +3,7 @@ defmodule DevIDE.Deployment.WebhookTrigger do
   Handles verified GitHub deploy webhooks by starting the deploy poller unit.
   """
 
+  alias DevIDE.Audit
   alias DevIDE.Deployment.{GithubWebhook, PollerTrigger}
 
   require Logger
@@ -16,7 +17,9 @@ defmodule DevIDE.Deployment.WebhookTrigger do
       :ok ->
         Logger.info("DevIDE deploy webhook accepted master push — starting poller")
 
-        PollerTrigger.trigger()
+        result = PollerTrigger.trigger()
+        emit_triggered(result)
+        result
 
       {:ignore, reason} ->
         {:ignored, reason}
@@ -25,4 +28,21 @@ defmodule DevIDE.Deployment.WebhookTrigger do
 
   def handle(event, _payload) when is_binary(event), do: {:ignored, "unsupported_event:#{event}"}
   def handle(_event, _payload), do: {:ignored, "missing_event"}
+
+  # Root provenance event for the deploy chain. The audit_events table
+  # requires a workspace_id, so platform-level events use a sentinel; the
+  # action is not in Alerts definitions, so no alert fires.
+  defp emit_triggered(result) do
+    Audit.emit!(%{
+      workspace_id: "platform",
+      actor_id: "github",
+      action: "deploy.triggered",
+      target_type: "service",
+      target_ref: "deploy-poller",
+      metadata: %{"result" => result_string(result)}
+    })
+  end
+
+  defp result_string(:ok), do: "ok"
+  defp result_string(other), do: inspect(other)
 end

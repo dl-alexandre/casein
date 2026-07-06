@@ -39,6 +39,11 @@ defmodule DevIDE.Audit.MemoryAdapter do
   end
 
   @impl DevIDE.Audit.Adapter
+  def list_by_correlation(correlation_id) do
+    GenServer.call(__MODULE__, {:list_by_correlation, correlation_id})
+  end
+
+  @impl DevIDE.Audit.Adapter
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks
@@ -68,6 +73,16 @@ defmodule DevIDE.Audit.MemoryAdapter do
         e.workspace_id == ws_id and is_binary(e.action) and String.starts_with?(e.action, prefix)
       end)
       |> Enum.take(n)
+
+    {:reply, matches, state}
+  end
+
+  def handle_call({:list_by_correlation, correlation_id}, _from, state) do
+    # Events are stored newest-first; the chain reads oldest-first.
+    matches =
+      state.events
+      |> Enum.filter(&(is_map(&1.metadata) and &1.metadata["correlation_id"] == correlation_id))
+      |> Enum.reverse()
 
     {:reply, matches, state}
   end

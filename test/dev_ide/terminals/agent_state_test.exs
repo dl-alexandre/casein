@@ -100,6 +100,19 @@ defmodule DevIDE.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "still blocked")
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
     end
+
+    test "blocked audit inherits the reporter's causality context" do
+      :ok = DevIDE.Audit.subscribe("ws-audit-ctx")
+
+      cid =
+        DevIDE.Signals.Context.with_new(fn ->
+          :ok = AgentState.report("ws-audit-ctx", "devide_alpha_u-dev", "%9", :blocked, "stuck")
+          DevIDE.Signals.Context.current().trace_id
+        end)
+
+      assert_receive {:audit_event, %{action: "agent.blocked", metadata: metadata}}
+      assert metadata["correlation_id"] == cid
+    end
   end
 
   describe "session_status/2" do

@@ -80,6 +80,15 @@ defmodule DevIDE.Audit.EctoAdapter do
   end
 
   @impl true
+  def list_by_correlation(correlation_id) when is_binary(correlation_id) do
+    Row
+    |> where([r], fragment("? ->> 'correlation_id' = ?", r.metadata, ^correlation_id))
+    |> order_by([r], asc: r.inserted_at)
+    |> Repo.all()
+    |> Enum.map(&to_event/1)
+  end
+
+  @impl true
   def clear do
     Repo.delete_all(Row)
     :ok
@@ -120,7 +129,11 @@ defmodule DevIDE.Audit.EctoAdapter do
     encoded = Jason.encode!(map)
 
     if byte_size(encoded) > @max_metadata_bytes do
-      %{"truncated" => true}
+      # Keep the causality keys queryable even when payload metadata is dropped.
+      encoded
+      |> Jason.decode!()
+      |> Map.take(["correlation_id", "causation_id"])
+      |> Map.put("truncated", true)
     else
       Jason.decode!(encoded)
     end

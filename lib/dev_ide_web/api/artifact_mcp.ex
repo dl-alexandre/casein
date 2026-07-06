@@ -71,26 +71,28 @@ defmodule DevIdeWeb.API.ArtifactMCP do
     args = Map.get(params, "arguments", %{}) || %{}
 
     result =
-      case Scope.resolve_tool_call(name, args,
-             surface: :artifact,
-             default_workspace_id: default_workspace_id,
-             require_workspace?: true
-           ) do
-        {:ok, scope} ->
-          case ArtifactTools.invoke(name, scope.args) do
-            {:ok, payload} = ok ->
-              _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, ok)
-              {:ok, payload}
+      DevIDE.Signals.Context.with_new(fn ->
+        case Scope.resolve_tool_call(name, args,
+               surface: :artifact,
+               default_workspace_id: default_workspace_id,
+               require_workspace?: true
+             ) do
+          {:ok, scope} ->
+            case ArtifactTools.invoke(name, scope.args) do
+              {:ok, payload} = ok ->
+                _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, ok)
+                {:ok, payload}
 
-            {:error, reason} = err ->
-              _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, err)
-              {:error, reason}
-          end
+              {:error, reason} = err ->
+                _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, err)
+                {:error, reason}
+            end
 
-        {:error, reason} = err ->
-          _ = MCPAudit.record_artifact(nil, name, args, err)
-          {:error, reason}
-      end
+          {:error, reason} = err ->
+            _ = MCPAudit.record_artifact(nil, name, args, err)
+            {:error, reason}
+        end
+      end)
 
     case result do
       {:ok, payload} ->

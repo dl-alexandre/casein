@@ -117,6 +117,8 @@ defmodule DevIde.MixProject do
       {:hammer, "~> 7.4"},
       # Agent MCP tool actions (validated params) — standalone, no agent runtime.
       {:jido_action, "~> 2.3"},
+      # CloudEvents envelope + IDs for audit causality — standalone, bus unused for now.
+      {:jido_signal, "~> 2.2"},
       {:ex_machina, "~> 2.8", only: :test},
       # elixir-vibe tooling (github.com/elixir-vibe) — code intelligence &
       # deploy primitives. Dev/test analysis tools are runtime: false so they

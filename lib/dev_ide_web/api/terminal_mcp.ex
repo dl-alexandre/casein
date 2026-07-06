@@ -88,30 +88,32 @@ defmodule DevIdeWeb.API.TerminalMCP do
     args = Map.get(params, "arguments", %{}) || %{}
 
     result =
-      case Scope.resolve_tool_call(name, args,
-             surface: :terminal,
-             default_workspace_id: default_workspace_id
-           ) do
-        {:ok, scope} ->
-          case TerminalTools.invoke(name, scope.args) do
-            {:ok, payload} = ok ->
-              _ = MCPAudit.record_terminal(name, scope.args, ok)
-              {:ok, payload}
+      DevIDE.Signals.Context.with_new(fn ->
+        case Scope.resolve_tool_call(name, args,
+               surface: :terminal,
+               default_workspace_id: default_workspace_id
+             ) do
+          {:ok, scope} ->
+            case TerminalTools.invoke(name, scope.args) do
+              {:ok, payload} = ok ->
+                _ = MCPAudit.record_terminal(name, scope.args, ok)
+                {:ok, payload}
 
-            {:error, reason} = err ->
-              _ = MCPAudit.record_terminal(name, scope.args, err)
-              {:error, reason}
+              {:error, reason} = err ->
+                _ = MCPAudit.record_terminal(name, scope.args, err)
+                {:error, reason}
 
-            :error ->
-              err = {:error, :invalid_tool_arguments}
-              _ = MCPAudit.record_terminal(name, scope.args, err)
-              err
-          end
+              :error ->
+                err = {:error, :invalid_tool_arguments}
+                _ = MCPAudit.record_terminal(name, scope.args, err)
+                err
+            end
 
-        {:error, reason} = err ->
-          _ = MCPAudit.record_terminal(name, args, err)
-          {:error, reason}
-      end
+          {:error, reason} = err ->
+            _ = MCPAudit.record_terminal(name, args, err)
+            {:error, reason}
+        end
+      end)
 
     case result do
       {:ok, payload} ->

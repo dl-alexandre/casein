@@ -11,5 +11,6 @@ defmodule DevIDE.Audit.Adapter do
               action_prefix :: String.t(),
               n :: pos_integer()
             ) :: [Event.t()]
+  @callback list_by_correlation(correlation_id :: String.t()) :: [Event.t()]
   @callback clear() :: :ok
 end
