@@ -70,18 +70,6 @@ if config_env() != :test do
       config :dev_ide, :lan_insecure_http, true
       config :dev_ide, :session_same_site, nil
     end
-
-    unless falsey_env?.("DEV_IDE_LAN_DIRECT_MODE") do
-      config :dev_ide, :lan_direct_mode, true
-    end
-
-    unless falsey_env?.("DEV_IDE_LAN_FRIENDLY_PATHS") do
-      config :dev_ide, :lan_friendly_paths, true
-    end
-  else
-    if truthy_env?.("DEV_IDE_LAN_DIRECT_MODE") do
-      config :dev_ide, :lan_direct_mode, true
-    end
   end
 
   if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
