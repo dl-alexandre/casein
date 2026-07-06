@@ -831,183 +831,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <% end %>
         </section>
       <% end %>
+      <%!-- One generic feature-pane overlay loop: any tmux pane occupied by a
+           feature pane gets its type-specific overlay component (preview
+           iframe / file editor). Adding a pane type means adding a component
+           clause here, not a new loop. --%>
       <%= for pane <- @active_tmux_window_panes,
-               preview = Map.get(@preview_panes, pane.id),
-               not is_nil(preview) do %>
-        <div
-          id={"preview-pane-" <> dom_fragment(pane.id)}
-          phx-update="ignore"
-          phx-hook="PreviewPaneOverlay"
-          data-pane-id={pane.id}
-          data-pane-rect={pane_rect_json(pane, @tmux_pane_bounds)}
-          data-display-url={preview.display_url}
-          data-playback-mode={preview_playback_mode?(preview)}
-          data-preview-tmux-session={preview_tmux_session(preview)}
-          data-active-tmux-session={@active_tmux_session}
-          data-preview-session-mismatch={
-            to_string(preview_session_mismatch?(preview, @active_tmux_session))
-          }
-          data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
-          data-viewport={preview_viewport_label(preview)}
-          data-snapshot-mode={preview_snapshot_mode?(preview)}
-          class={[
-            "preview-pane-overlay isolate overflow-hidden bg-zinc-950",
-            @entered_preview_pane_id == pane.id && "preview-pane-entered"
-          ]}
-        >
-          <%= if @tmux_mutations_enabled? and
-                    not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
-            <.pane_resize_handles pane_id={pane.id} prefix="preview-pane" z_class="z-30" />
-          <% end %>
-          <div
-            data-preview-shield
-            class="pointer-events-none absolute inset-0 z-10 bg-transparent"
-          >
-          </div>
-          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden bg-white">
-            <iframe
-              data-preview-iframe
-              data-src={preview.display_url}
-              title={preview_pane_title(preview)}
-              loading="lazy"
-              sandbox={preview_iframe_sandbox(preview)}
-              tabindex="-1"
+               entry = feature_overlay_entry(@preview_panes, @file_panes, pane.id),
+               not is_nil(entry) do %>
+        <%= case entry do %>
+          <% {:preview, preview} -> %>
+            <.preview_pane_overlay
+              pane={pane}
+              preview={preview}
+              bounds={@tmux_pane_bounds}
+              active_tmux_session={@active_tmux_session}
+              mobile_focus_pane_id={@mobile_focus_pane_id}
+              entered_preview_pane_id={@entered_preview_pane_id}
+              tmux_mutations_enabled?={@tmux_mutations_enabled?}
+              ui_highlight_pane_id={@ui_highlight_pane_id}
+              tmux_active_pane_id={@tmux_active_pane_id}
             />
-          </div>
-          <div
-            data-preview-status
-            class="pointer-events-none absolute inset-0 z-20 hidden items-center justify-center bg-zinc-950/78 px-4 text-center text-zinc-100 backdrop-blur-sm"
-          >
-            <div class="max-w-sm rounded border border-zinc-700 bg-zinc-950/90 p-3 shadow-xl">
-              <div data-preview-status-title class="text-sm font-semibold">
-                Preview is still loading
-              </div>
-              <div
-                data-preview-status-detail
-                class="mt-1 text-xs leading-5 text-zinc-300"
-              >
-              </div>
-              <div class="mt-3 flex items-center justify-center gap-2">
-                <button
-                  type="button"
-                  data-preview-reload
-                  class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-sky-400 hover:text-sky-100"
-                >
-                  Reload
-                </button>
-                <button
-                  type="button"
-                  data-preview-reopen
-                  class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-amber-400 hover:text-amber-100"
-                >
-                  Reopen
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="pointer-events-none absolute right-2 top-2 z-20 flex max-w-[calc(100%-1rem)] justify-end">
-            <div
-              title={preview_session_title(preview, @active_tmux_session)}
-              class={[
-                "max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
-                if(preview_session_mismatch?(preview, @active_tmux_session),
-                  do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
-                  else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
-                )
-              ]}
-            >
-              {preview_session_label(preview, @active_tmux_session)}
-            </div>
-          </div>
-        </div>
-      <% end %>
-      <%= for pane <- @active_tmux_window_panes,
-               file_pane = Map.get(@file_panes, pane.id),
-               not is_nil(file_pane) do %>
-        <%!-- File-pane overlay. The ROOT is diffed by LiveView (the tab strip is
-             server-rendered from the registry payload); only the inner editor
-             div is phx-update="ignore" so CodeMirror survives re-renders. The
-             FilePaneOverlay hook positions the root from data-pane-rect. --%>
-        <div
-          id={"file-pane-" <> dom_fragment(pane.id)}
-          phx-hook="FilePaneOverlay"
-          data-pane-id={pane.id}
-          data-pane-rect={pane_rect_json(pane, @tmux_pane_bounds)}
-          data-active-path={file_pane_active_path(file_pane)}
-          data-pane-active={
-            to_string(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id))
-          }
-          data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
-          class="file-pane-overlay isolate overflow-hidden border border-zinc-800/60 bg-zinc-950"
-        >
-          <%= if @tmux_mutations_enabled? and
-                    not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
-            <.pane_resize_handles pane_id={pane.id} prefix="file-pane" z_class="z-30" />
-          <% end %>
-          <div
-            data-file-pane-tabs
-            class="absolute inset-x-0 top-0 z-20 flex h-7 items-stretch overflow-x-auto border-b border-zinc-800 bg-zinc-900/95 text-[11px] text-zinc-300"
-            role="tablist"
-            aria-label="Open files"
-          >
-            <%= for tab <- file_pane_tabs(file_pane) do %>
-              <div
-                data-file-pane-tab
-                data-path={tab.path}
-                class={[
-                  "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
-                  if(tab.path == file_pane_active_path(file_pane),
-                    do: "bg-zinc-950 text-zinc-100",
-                    else: "hover:bg-zinc-800/70"
-                  )
-                ]}
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={to_string(tab.path == file_pane_active_path(file_pane))}
-                  title={tab.path}
-                  phx-click={
-                    JS.push("pane:input",
-                      value: %{"pane-id" => pane.id, "type" => "activate_tab", "path" => tab.path}
-                    )
-                  }
-                  class="flex min-w-0 items-center gap-1 px-2 font-mono"
-                >
-                  <span class="truncate">{tab.title}</span>
-                  <span
-                    data-dirty-dot
-                    class="hidden shrink-0 text-[9px] leading-none text-amber-400"
-                    aria-label="Unsaved changes"
-                  >
-                    ●
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  phx-click={
-                    JS.dispatch("devide:file-pane:close-tab",
-                      to: "[id='file-pane-" <> dom_fragment(pane.id) <> "']",
-                      detail: %{path: tab.path}
-                    )
-                  }
-                  title={"Close " <> tab.title}
-                  aria-label={"Close " <> tab.title}
-                  class="shrink-0 px-1 text-zinc-500 transition hover:text-zinc-100"
-                >
-                  ×
-                </button>
-              </div>
-            <% end %>
-          </div>
-          <div
-            id={"file-pane-editor-" <> dom_fragment(pane.id)}
-            data-file-pane-editor
-            phx-update="ignore"
-            class="file-pane-editor absolute inset-x-0 bottom-0 top-7 z-10 overflow-hidden bg-zinc-950"
-          >
-          </div>
-        </div>
+          <% {:file, file_pane} -> %>
+            <.file_pane_overlay
+              pane={pane}
+              file_pane={file_pane}
+              bounds={@tmux_pane_bounds}
+              mobile_focus_pane_id={@mobile_focus_pane_id}
+              tmux_mutations_enabled?={@tmux_mutations_enabled?}
+              ui_highlight_pane_id={@ui_highlight_pane_id}
+              tmux_active_pane_id={@tmux_active_pane_id}
+            />
+        <% end %>
       <% end %>
       <%= for rail <- @mobile_pane_rails do %>
         <button
@@ -1107,6 +961,219 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           </div>
         </aside>
       <% end %>
+    </div>
+    """
+  end
+
+  @doc """
+  Resolves which feature-pane overlay (if any) a tmux pane id hosts.
+
+  `preview_panes` is the enriched preview map (derived from `:feature_panes`),
+  `file_panes` the `:file` entries of `:feature_panes`. A tmux pane hosts at
+  most one feature pane; previews win if both registries ever claim one id.
+  """
+  def feature_overlay_entry(preview_panes, file_panes, pane_id) do
+    cond do
+      preview = Map.get(preview_panes || %{}, pane_id) -> {:preview, preview}
+      file_pane = Map.get(file_panes || %{}, pane_id) -> {:file, file_pane}
+      true -> nil
+    end
+  end
+
+  attr :pane, :map, required: true
+  attr :preview, :map, required: true
+  attr :bounds, :map, required: true
+  attr :active_tmux_session, :any, default: nil
+  attr :mobile_focus_pane_id, :any, default: nil
+  attr :entered_preview_pane_id, :any, default: nil
+  attr :tmux_mutations_enabled?, :boolean, required: true
+  attr :ui_highlight_pane_id, :any, default: nil
+  attr :tmux_active_pane_id, :any, default: nil
+
+  defp preview_pane_overlay(assigns) do
+    ~H"""
+    <div
+      id={"preview-pane-" <> dom_fragment(@pane.id)}
+      phx-update="ignore"
+      phx-hook="PreviewPaneOverlay"
+      data-pane-id={@pane.id}
+      data-pane-rect={pane_rect_json(@pane, @bounds)}
+      data-display-url={@preview.display_url}
+      data-playback-mode={preview_playback_mode?(@preview)}
+      data-preview-tmux-session={preview_tmux_session(@preview)}
+      data-active-tmux-session={@active_tmux_session}
+      data-preview-session-mismatch={
+        to_string(preview_session_mismatch?(@preview, @active_tmux_session))
+      }
+      data-mobile-pane-active={to_string(@pane.id == @mobile_focus_pane_id)}
+      data-viewport={preview_viewport_label(@preview)}
+      data-snapshot-mode={preview_snapshot_mode?(@preview)}
+      class={[
+        "preview-pane-overlay isolate overflow-hidden bg-zinc-950",
+        @entered_preview_pane_id == @pane.id && "preview-pane-entered"
+      ]}
+    >
+      <%= if @tmux_mutations_enabled? and
+                not pane_ui_active?(@pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
+        <.pane_resize_handles pane_id={@pane.id} prefix="preview-pane" z_class="z-30" />
+      <% end %>
+      <div
+        data-preview-shield
+        class="pointer-events-none absolute inset-0 z-10 bg-transparent"
+      >
+      </div>
+      <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden bg-white">
+        <iframe
+          data-preview-iframe
+          data-src={@preview.display_url}
+          title={preview_pane_title(@preview)}
+          loading="lazy"
+          sandbox={preview_iframe_sandbox(@preview)}
+          tabindex="-1"
+        />
+      </div>
+      <div
+        data-preview-status
+        class="pointer-events-none absolute inset-0 z-20 hidden items-center justify-center bg-zinc-950/78 px-4 text-center text-zinc-100 backdrop-blur-sm"
+      >
+        <div class="max-w-sm rounded border border-zinc-700 bg-zinc-950/90 p-3 shadow-xl">
+          <div data-preview-status-title class="text-sm font-semibold">
+            Preview is still loading
+          </div>
+          <div
+            data-preview-status-detail
+            class="mt-1 text-xs leading-5 text-zinc-300"
+          >
+          </div>
+          <div class="mt-3 flex items-center justify-center gap-2">
+            <button
+              type="button"
+              data-preview-reload
+              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-sky-400 hover:text-sky-100"
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              data-preview-reopen
+              class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-amber-400 hover:text-amber-100"
+            >
+              Reopen
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="pointer-events-none absolute right-2 top-2 z-20 flex max-w-[calc(100%-1rem)] justify-end">
+        <div
+          title={preview_session_title(@preview, @active_tmux_session)}
+          class={[
+            "max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
+            if(preview_session_mismatch?(@preview, @active_tmux_session),
+              do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
+              else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
+            )
+          ]}
+        >
+          {preview_session_label(@preview, @active_tmux_session)}
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :pane, :map, required: true
+  attr :file_pane, :map, required: true
+  attr :bounds, :map, required: true
+  attr :mobile_focus_pane_id, :any, default: nil
+  attr :tmux_mutations_enabled?, :boolean, required: true
+  attr :ui_highlight_pane_id, :any, default: nil
+  attr :tmux_active_pane_id, :any, default: nil
+
+  # File-pane overlay. The ROOT is diffed by LiveView (the tab strip is
+  # server-rendered from the registry payload); only the inner editor div is
+  # phx-update="ignore" so CodeMirror survives re-renders. The FilePaneOverlay
+  # hook positions the root from data-pane-rect.
+  defp file_pane_overlay(assigns) do
+    ~H"""
+    <div
+      id={"file-pane-" <> dom_fragment(@pane.id)}
+      phx-hook="FilePaneOverlay"
+      data-pane-id={@pane.id}
+      data-pane-rect={pane_rect_json(@pane, @bounds)}
+      data-active-path={file_pane_active_path(@file_pane)}
+      data-pane-active={
+        to_string(pane_ui_active?(@pane, @ui_highlight_pane_id, @tmux_active_pane_id))
+      }
+      data-mobile-pane-active={to_string(@pane.id == @mobile_focus_pane_id)}
+      class="file-pane-overlay isolate overflow-hidden border border-zinc-800/60 bg-zinc-950"
+    >
+      <%= if @tmux_mutations_enabled? and
+                not pane_ui_active?(@pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
+        <.pane_resize_handles pane_id={@pane.id} prefix="file-pane" z_class="z-30" />
+      <% end %>
+      <div
+        data-file-pane-tabs
+        class="absolute inset-x-0 top-0 z-20 flex h-7 items-stretch overflow-x-auto border-b border-zinc-800 bg-zinc-900/95 text-[11px] text-zinc-300"
+        role="tablist"
+        aria-label="Open files"
+      >
+        <%= for tab <- file_pane_tabs(@file_pane) do %>
+          <div
+            data-file-pane-tab
+            data-path={tab.path}
+            class={[
+              "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
+              if(tab.path == file_pane_active_path(@file_pane),
+                do: "bg-zinc-950 text-zinc-100",
+                else: "hover:bg-zinc-800/70"
+              )
+            ]}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={to_string(tab.path == file_pane_active_path(@file_pane))}
+              title={tab.path}
+              phx-click={
+                JS.push("pane:input",
+                  value: %{"pane-id" => @pane.id, "type" => "activate_tab", "path" => tab.path}
+                )
+              }
+              class="flex min-w-0 items-center gap-1 px-2 font-mono"
+            >
+              <span class="truncate">{tab.title}</span>
+              <span
+                data-dirty-dot
+                class="hidden shrink-0 text-[9px] leading-none text-amber-400"
+                aria-label="Unsaved changes"
+              >
+                ●
+              </span>
+            </button>
+            <button
+              type="button"
+              phx-click={
+                JS.dispatch("devide:file-pane:close-tab",
+                  to: "[id='file-pane-" <> dom_fragment(@pane.id) <> "']",
+                  detail: %{path: tab.path}
+                )
+              }
+              title={"Close " <> tab.title}
+              aria-label={"Close " <> tab.title}
+              class="shrink-0 px-1 text-zinc-500 transition hover:text-zinc-100"
+            >
+              ×
+            </button>
+          </div>
+        <% end %>
+      </div>
+      <div
+        id={"file-pane-editor-" <> dom_fragment(@pane.id)}
+        data-file-pane-editor
+        phx-update="ignore"
+        class="file-pane-editor absolute inset-x-0 bottom-0 top-7 z-10 overflow-hidden bg-zinc-950"
+      >
+      </div>
     </div>
     """
   end
