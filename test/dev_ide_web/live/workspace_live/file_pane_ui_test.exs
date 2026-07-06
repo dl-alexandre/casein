@@ -1,0 +1,300 @@
+defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
+  @moduledoc """
+  End-to-end LiveView coverage for the file-pane overlay UI:
+
+    * "tree:open_in_pane" splits a real (fake-tmux) pane off the active
+      terminal pane, registers it in DevIDE.FilePanes, switches the cockpit to
+      the terminal tab, renders the `#file-pane-*` overlay root with its
+      server-rendered tab strip, and pushes "file-pane:loaded".
+    * With no live tmux topology, "tree:open_in_pane" falls back to today's
+      tree:open (files tab).
+    * The feature-pane focus invariant: `tmux:select_pane` on a file pane is a
+      UI-only selection — the tmux adapter's select_pane is never called, so
+      Ghostty stays attached to the operator pane. Operator panes still get
+      real tmux focus.
+    * A `:heartbeat` pane event refreshes the registry state without focus
+      churn; `:removed` drops the overlay.
+  """
+  use DevIdeWeb.ConnCase, async: false
+
+  import Phoenix.LiveViewTest
+
+  alias DevIDE.FilePanes
+  alias DevIDE.Workspaces.State.MemoryAdapter
+
+  @workspace_id "ws-file-pane"
+  @file_pane_id "%2"
+
+  setup do
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+
+    workspace_root = Path.join(System.tmp_dir!(), "devide-file-pane-ui")
+    workspace_path = Path.join(workspace_root, @workspace_id)
+    File.rm_rf(workspace_path)
+    File.mkdir_p!(Path.join(workspace_path, "lib"))
+    File.write!(Path.join(workspace_path, "lib/foo.ex"), "defmodule Foo do\nend\n")
+
+    workspace_name = "alpha-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    MemoryAdapter.clear()
+    FilePanes.clear()
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      MemoryAdapter.clear()
+      FilePanes.clear()
+
+      restore_app(:workspaces_root, prev_root)
+      restore_app(:tmux_adapter, prev_tmux_adapter)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, prev_windows)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_panes, prev_panes)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, prev_test_pid)
+    end)
+
+    workspace_id = @workspace_id
+
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(
+          200,
+          Jason.encode!(%{
+            "id" => @workspace_id,
+            "name" => workspace_name,
+            "user" => "dev",
+            "status" => "running",
+            "type" => "v3",
+            "branch" => "main",
+            "path" => workspace_path
+          })
+        )
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+    end)
+
+    {:ok, tmux_session: tmux_session, workspace_path: workspace_path}
+  end
+
+  defp seed_topology(tmux_session, workspace_path, pane_ids) do
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: length(pane_ids),
+          activity: DateTime.utc_now() |> DateTime.to_unix(),
+          current_command: "bash"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session =>
+        pane_ids
+        |> Enum.with_index()
+        |> Enum.map(fn {id, index} ->
+          pane(id, "@1", index: index, active: index == 0, path: workspace_path)
+        end)
+    })
+  end
+
+  test "tree:open_in_pane splits a file pane, switches to the terminal tab, and renders the overlay",
+       %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+    seed_topology(tmux_session, workspace_path, ["%1"])
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+    render_async(view, 5_000)
+    flush_fake_tmux()
+
+    # Start from the files tab like the tree context menu would.
+    render_click(view, "switch_tab", %{"tab" => "files"})
+    render_click(view, "tree:open_in_pane", %{"path" => "lib/foo.ex"})
+
+    # The split was anchored on the operator pane %1.
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
+
+    # dev_ide restores tmux focus to the anchor so Ghostty keeps the operator
+    # pane (the focus-restore trick).
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    # Let the :pane_event broadcast land, then assert cockpit state.
+    render(view)
+    assert socket_assigns(view, :tab) == "terminal"
+
+    assert %{type: :file, payload: payload} =
+             socket_assigns(view, :feature_panes)[new_pane_id]
+
+    assert payload.active_path == "lib/foo.ex"
+
+    # Registry side: registered + persisted under the new pane id.
+    assert %{active_path: "lib/foo.ex"} = FilePanes.get_by_pane(new_pane_id)
+
+    # Overlay root + server-rendered tab strip.
+    assert has_element?(view, "[data-file-pane-tab][data-path='lib/foo.ex']")
+    assert render(view) =~ "foo.ex"
+
+    # The active tab content is pushed broadcast-with-id style.
+    assert_push_event(view, "file-pane:loaded", %{
+      pane_id: ^new_pane_id,
+      path: "lib/foo.ex",
+      content: "defmodule Foo do\nend\n"
+    })
+
+    # The Ghostty surface stays on the operator pane.
+    assert socket_assigns(view, :terminal_surface_pane_id) == "%1"
+  end
+
+  test "tree:open_in_pane falls back to the files tab when there is no live tmux pane",
+       %{conn: conn} do
+    # No fake topology seeded: the workspace has no live tmux panes.
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+    render_async(view, 5_000)
+
+    render_click(view, "tree:open_in_pane", %{"path" => "lib/foo.ex"})
+
+    assert socket_assigns(view, :tab) == "files"
+    assert %{path: "lib/foo.ex"} = socket_assigns(view, :open_file)
+    assert socket_assigns(view, :feature_panes) == %{}
+  end
+
+  test "tmux:select_pane on a file pane is UI-only — Ghostty never attaches to the holder",
+       %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+    seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+    render_async(view, 5_000)
+
+    register_file_pane(view, tmux_session)
+    render(view)
+
+    assert %{type: :file} = socket_assigns(view, :feature_panes)[@file_pane_id]
+    assert socket_assigns(view, :ui_highlight_pane_id) == @file_pane_id
+
+    # The overlay root renders over the holder pane's rectangle.
+    assert has_element?(view, "#file-pane--2")
+    assert has_element?(view, "[data-file-pane-tab][data-path='lib/foo.ex']")
+
+    flush_fake_tmux()
+
+    # Selecting the operator pane grants real tmux focus...
+    render_click(view, "tmux:select_pane", %{"pane-id" => "%1"})
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+    flush_fake_tmux()
+
+    # ...but selecting the file pane is a UI-only selection: no tmux focus
+    # change, the surface stays on the operator pane.
+    render_click(view, "tmux:select_pane", %{"pane-id" => @file_pane_id})
+    refute_receive {:fake_tmux_select_pane, ^tmux_session, @file_pane_id}, 200
+    assert socket_assigns(view, :ui_highlight_pane_id) == @file_pane_id
+    assert socket_assigns(view, :terminal_surface_pane_id) == "%1"
+  end
+
+  test "heartbeat pane events refresh state without focus churn; removed drops the overlay",
+       %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+    seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+    render_async(view, 5_000)
+
+    register_file_pane(view, tmux_session)
+    render(view)
+
+    # Move the UI selection back to the operator pane, then heartbeat.
+    render_click(view, "tmux:select_pane", %{"pane-id" => "%1"})
+    assert socket_assigns(view, :ui_highlight_pane_id) == "%1"
+    flush_fake_tmux()
+
+    send(view.pid, {:pane_event, pane_event(:heartbeat, tmux_session)})
+    render(view)
+
+    # State refreshed, but no re-highlight and no tmux focus calls.
+    assert %{type: :file} = socket_assigns(view, :feature_panes)[@file_pane_id]
+    assert socket_assigns(view, :ui_highlight_pane_id) == "%1"
+    refute_receive {:fake_tmux_select_pane, _session, _pane}, 200
+
+    # Removal drops the assign and the overlay.
+    send(view.pid, {:pane_event, pane_event(:removed, tmux_session, payload: %{})})
+    render(view)
+
+    assert socket_assigns(view, :feature_panes)[@file_pane_id] == nil
+    refute has_element?(view, "#file-pane--2")
+  end
+
+  # --- helpers -----------------------------------------------------------------
+
+  defp register_file_pane(view, tmux_session) do
+    send(view.pid, {:pane_event, pane_event(:registered, tmux_session)})
+    render(view)
+  end
+
+  defp pane_event(reason, tmux_session, opts \\ []) do
+    %{
+      reason: reason,
+      type: :file,
+      pane_id: @file_pane_id,
+      workspace_id: @workspace_id,
+      tmux_session: tmux_session,
+      payload:
+        Keyword.get(opts, :payload, %{
+          tabs: [%{path: "lib/foo.ex", title: "foo.ex", line: nil}],
+          active_path: "lib/foo.ex",
+          active: %{
+            path: "lib/foo.ex",
+            content: "defmodule Foo do\nend\n",
+            version: "v1",
+            line: nil
+          },
+          workspace_id: @workspace_id,
+          tmux_session: tmux_session
+        })
+    }
+  end
+
+  defp pane(id, window_id, opts) do
+    %{
+      id: id,
+      window_id: window_id,
+      index: Keyword.get(opts, :index, 0),
+      active: Keyword.get(opts, :active, false),
+      left: Keyword.get(opts, :index, 0) * 60,
+      top: 0,
+      width: 60,
+      height: 40,
+      current_command: "bash",
+      current_path: Keyword.get(opts, :path, "/tmp"),
+      activity: 0,
+      activity_flag: false,
+      bell: false,
+      unseen_changes: false
+    }
+  end
+
+  defp flush_fake_tmux do
+    receive do
+      {:fake_tmux_select_pane, _, _} -> flush_fake_tmux()
+    after
+      50 -> :ok
+    end
+  end
+
+  defp socket_assigns(view, key) do
+    :sys.get_state(view.pid).socket.assigns[key]
+  end
+
+  defp restore_app(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_app(key, value), do: Application.put_env(:dev_ide, key, value)
+end
