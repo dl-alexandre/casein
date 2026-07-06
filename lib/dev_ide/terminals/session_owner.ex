@@ -991,7 +991,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # OSC 10/11 reports at any time (tty_keys_colours), then answers in-pane
   # `\e]11;?` queries itself. On <= 3.4 there is no such parser, so the same
   # bytes would surface as key input inside a pane — hard version-gated, and a
-  # no-op until the tmux 3.6b cutover installs a new binary.
+  # no-op until the host tmux cutover installs a >= 3.6 binary (pinned 3.7).
   defp tmux_tracks_client_colors? do
     case DevIDE.Terminals.tmux_version() do
       {_major, _minor} = version -> version >= {3, 5}

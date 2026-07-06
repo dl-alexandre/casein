@@ -89,6 +89,11 @@ defmodule TmuxCtl.ClientExtraTest do
       assert Client.server_version() == {3, 6}
     end
 
+    test "parses the pinned host release (3.7)" do
+      script("3.7\n", 0)
+      assert Client.server_version() == {3, 7}
+    end
+
     test "parses a next- prerelease" do
       script("next-3.7\n", 0)
       assert Client.server_version() == {3, 7}
