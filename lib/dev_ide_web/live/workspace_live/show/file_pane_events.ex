@@ -3,10 +3,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   # DevIdeWeb.WorkspaceLive.Show (mirrors how FileEvents/PreviewPaneEvents are
   # delegated). Owns:
   #
-  #   * the generic "pane:input" event for :file feature panes — authorized via
-  #     DevIDE.Panes.get_by_pane/1 + workspace-alias match, `save` additionally
-  #     gated by Policy.can_edit_file? (mirrors FileEvents "file:save"), then
-  #     dispatched through Pane.impl(:file).handle_input/2;
+  #   * the generic "pane:input" event for feature panes — authorized via
+  #     DevIDE.Panes.get_by_pane/1 + workspace-alias match, then dispatched by
+  #     pane type: :file inputs go through Pane.impl(:file).handle_input/2
+  #     (`save` additionally gated by Policy.can_edit_file?, mirroring
+  #     FileEvents "file:save"), :preview inputs are handled by
+  #     PreviewPaneEvents.dispatch_preview_input/3;
   #   * "tree:open_in_pane" — the context-menu entry point that splits/reuses a
   #     file pane next to the active plain-terminal pane, falling back to
   #     today's "tree:open" (files tab) when no live tmux pane exists;
@@ -37,13 +39,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
     input = Map.drop(params, ["pane-id", "pane_id"])
 
     with true <- is_binary(pane_id) and pane_id != "",
-         {:file, payload} <- Panes.get_by_pane(pane_id),
+         {type, payload} when type in [:file, :preview] <- Panes.get_by_pane(pane_id),
          true <- pane_workspace_match?(socket, feature_value(payload, :workspace_id)) do
-      dispatch_file_input(socket, pane_id, payload, input)
+      case type do
+        :file -> dispatch_file_input(socket, pane_id, payload, input)
+        :preview -> PreviewPaneEvents.dispatch_preview_input(socket, pane_id, input)
+      end
     else
       _ ->
-        # Unknown pane, non-file pane (previews keep their legacy events until
-        # the runtime cutover), or another workspace's pane: refuse.
+        # Unknown pane, unknown pane type, or another workspace's pane: refuse.
         {:reply, %{error: "not_found"}, socket}
     end
   end

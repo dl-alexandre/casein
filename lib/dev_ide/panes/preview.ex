@@ -101,6 +101,7 @@ defmodule DevIDE.Panes.Preview do
       :reload -> normalize(PreviewPanes.reload(pane_id))
       :go_back -> normalize(PreviewPanes.go_back(pane_id))
       :go_forward -> normalize(PreviewPanes.go_forward(pane_id))
+      :close -> normalize(PreviewPanes.deregister(pane_id))
       :unknown -> {:error, :unsupported_preview_input}
     end
   end
@@ -148,6 +149,9 @@ defmodule DevIDE.Panes.Preview do
 
       t when t in ["go_forward", :go_forward] ->
         :go_forward
+
+      t when t in ["close", :close] ->
+        :close
 
       _ ->
         :unknown

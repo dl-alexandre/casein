@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
   alias DevIDE.Agents
   alias DevIDE.Panes
+  alias DevIDE.Panes.Pane
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -48,20 +49,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
     end
   end
 
+  # Thin translations into the generic pane:input route (single authorization
+  # and dispatch path). The session-bar header buttons still emit the legacy
+  # event names; the overlay hook emits pane:input directly.
   def handle_event("preview-pane:back", params, socket),
-    do: handle_preview_pane_history(socket, event_pane_id(params), :go_back)
+    do: legacy_preview_input(socket, params, "go_back")
 
   def handle_event("preview-pane:forward", params, socket),
-    do: handle_preview_pane_history(socket, event_pane_id(params), :go_forward)
+    do: legacy_preview_input(socket, params, "go_forward")
 
   def handle_event("preview-pane:refresh", params, socket),
-    do: handle_preview_pane_history(socket, event_pane_id(params), :reload)
+    do: legacy_preview_input(socket, params, "reload")
 
   def handle_event("preview-pane:recover", params, socket),
-    do: handle_preview_pane_recover(socket, event_pane_id(params))
+    do: legacy_preview_input(socket, params, "recover")
 
   def handle_event("preview-pane:close", params, socket),
-    do: handle_preview_pane_close(socket, event_pane_id(params))
+    do: legacy_preview_input(socket, params, "close")
 
   def handle_event("preview-pane:telemetry", params, socket) do
     case event_pane_id(params) do
@@ -607,61 +611,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
   defp preview_value(_value, _key), do: nil
 
-  defp handle_preview_pane_history(socket, pane_id, action)
-       when is_binary(pane_id) and action in [:go_back, :go_forward, :reload] do
-    record_preview_activity(socket, pane_id, to_string(action), %{"source" => "header"})
+  # Legacy event-name → generic pane:input translation. Routing through
+  # FilePaneEvents keeps a single authorization path (Panes.get_by_pane +
+  # workspace-alias match); a refused/unknown pane surfaces as the legacy
+  # flash instead of the silent JS reply.
+  defp legacy_preview_input(socket, params, type) do
+    case DevIdeWeb.WorkspaceLive.Show.FilePaneEvents.handle_event(
+           "pane:input",
+           Map.put(params, "type", type),
+           socket
+         ) do
+      {:reply, %{error: error}, socket} ->
+        {:noreply, put_flash(socket, :error, "Preview control failed: #{error}")}
 
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         {:ok, registration} <- apply(PreviewPanes, action, [pane_id]) do
-      preview = preview_pane_payload(registration)
-
-      socket =
-        socket
-        |> assign(
-          :preview_panes,
-          Map.put(socket.assigns[:preview_panes] || %{}, pane_id, preview)
-        )
-        |> assign(:entered_preview_pane_id, pane_id)
-        |> push_event("devide:reload_preview_iframes", %{
-          "pane_id" => pane_id,
-          "force" => true
-        })
-
-      {:noreply, socket}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Preview control failed: #{inspect(reason)}")}
+      other ->
+        other
     end
   end
 
-  defp handle_preview_pane_history(socket, _pane_id, _action),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
+  @doc false
+  # Generic pane:input dispatch for :preview panes. Called by FilePaneEvents
+  # AFTER pane authorization. Mirrors the legacy preview-pane:* handlers
+  # one-for-one; assign updates flow back through the registry's Panes.Events
+  # broadcasts (apply_pane_event/2) rather than being rebuilt here.
+  def dispatch_preview_input(socket, pane_id, %{"type" => "go_back"}),
+    do: preview_history_input(socket, pane_id, :go_back)
 
-  defp handle_preview_pane_close(socket, pane_id) when is_binary(pane_id) do
+  def dispatch_preview_input(socket, pane_id, %{"type" => "go_forward"}),
+    do: preview_history_input(socket, pane_id, :go_forward)
+
+  def dispatch_preview_input(socket, pane_id, %{"type" => "reload"}),
+    do: preview_history_input(socket, pane_id, :reload)
+
+  def dispatch_preview_input(socket, pane_id, %{"type" => "close"}) do
     record_preview_activity(socket, pane_id, "close", %{"source" => "header"})
 
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         :ok <- PreviewPanes.deregister(pane_id) do
-      socket =
-        socket
-        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-        |> maybe_clear_entered_preview_pane(pane_id)
+    case Pane.impl(:preview).handle_input(pane_id, %{"type" => "close"}) do
+      :ok ->
+        # The registry's :removed pane event confirms asynchronously; drop the
+        # pane eagerly so the overlay disappears on this render (legacy
+        # behavior).
+        {:noreply,
+         socket
+         |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+         |> assign(:feature_panes, Map.delete(socket.assigns[:feature_panes] || %{}, pane_id))
+         |> maybe_clear_entered_preview_pane(pane_id)}
 
-      {:noreply, socket}
-    else
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Preview close failed: #{inspect(reason)}")}
     end
   end
 
-  defp handle_preview_pane_close(socket, _pane_id),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
-
-  defp handle_preview_pane_recover(socket, pane_id) when is_binary(pane_id) do
+  # Recover is consciously preview-only: it kills the tmux pane and re-splits a
+  # fresh preview using viewer context (actor id, terminal cwd, the viewer's
+  # tmux session fallback), which the pane behaviour has no access to. It still
+  # arrives through the generic pane:input route and authorization.
+  def dispatch_preview_input(socket, pane_id, %{"type" => "recover"}) do
     record_preview_activity(socket, pane_id, "recover", %{"source" => "preview_status"})
 
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         %{url: url} = registration <- PreviewPanes.get_by_pane(pane_id),
+    with %{url: url} = registration <- PreviewPanes.get_by_pane(pane_id),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            registration.tmux_session || socket.assigns[:tmux_session],
          _kill_result <- TerminalState.tmux_adapter().kill_pane(tmux_session, pane_id),
@@ -670,6 +678,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
       {:noreply,
        socket
        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+       |> assign(:feature_panes, Map.delete(socket.assigns[:feature_panes] || %{}, pane_id))
        |> maybe_clear_entered_preview_pane(pane_id)}
     else
       nil ->
@@ -683,8 +692,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
     end
   end
 
-  defp handle_preview_pane_recover(socket, _pane_id),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
+  def dispatch_preview_input(socket, _pane_id, _input),
+    do: {:reply, %{error: "unsupported_input"}, socket}
+
+  defp preview_history_input(socket, pane_id, action)
+       when action in [:go_back, :go_forward, :reload] do
+    record_preview_activity(socket, pane_id, to_string(action), %{"source" => "header"})
+
+    case Pane.impl(:preview).handle_input(pane_id, %{"type" => Atom.to_string(action)}) do
+      :ok ->
+        # The updated registration arrives via the registry's :updated pane
+        # event; force-reload here because a same-URL refresh must still reload
+        # the iframe (the soft push only re-points src on a real URL change).
+        {:noreply,
+         socket
+         |> assign(:entered_preview_pane_id, pane_id)
+         |> push_event("devide:reload_preview_iframes", %{
+           "pane_id" => pane_id,
+           "force" => true
+         })}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Preview control failed: #{inspect(reason)}")}
+    end
+  end
 
   defp maybe_clear_entered_preview_pane(socket, pane_id) do
     if socket.assigns[:entered_preview_pane_id] == pane_id do

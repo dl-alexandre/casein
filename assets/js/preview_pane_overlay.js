@@ -346,8 +346,12 @@ export const PreviewPaneOverlay = {
       diagnostic: reason,
       recovery_attempts: this.recoveryAttempts
     })
-    this.pushEvent("preview-pane:recover", {
+    // Generic feature-pane input route (preview runtime cutover): the server
+    // authorizes the pane and dispatches by type — "recover" kills + re-splits
+    // the preview pane.
+    this.pushEvent("pane:input", {
       "pane-id": this.paneId,
+      type: "recover",
       reason
     })
   },
