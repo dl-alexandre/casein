@@ -157,7 +157,9 @@ terminal_report_worktree(
   agent?,
   runner_id?,
   session_id?,
-  tmux_session_id?
+  tmux_session_id?,
+  exit_status?,   # "landed" | "wip" | "handoff" — call again at session end
+  handoff?        # short status for the next agent/operator
 )
 ```
 

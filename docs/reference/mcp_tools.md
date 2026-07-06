@@ -85,7 +85,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names) | `session`\*, `keys`\*, `pane` | `send_keys/1` |
 | `terminal_send_command` | Type command + Enter into a targeted pane | `session`\*, `command`\*, `pane` | `send_command/1` |
 | `terminal_set_agent_label` | Set a DevIDE chrome label for an agent pane (`freeze` to pin) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |
-| `terminal_report_worktree` | Register an agent-created Git worktree under the workspace | `workspace_id`\*, `worktree_path`\*, `branch`, `agent`, `runner_id`, `session_id`, `tmux_session_id` | `report_worktree/1` |
+| `terminal_report_worktree` | Register an agent-created Git worktree under the workspace; re-call at session end with `exit_status`/`handoff` | `workspace_id`\*, `worktree_path`\*, `branch`, `agent`, `runner_id`, `session_id`, `tmux_session_id`, `exit_status`, `handoff` | `report_worktree/1` |
 
 ### Annotation tools (folded into the terminal surface)
 

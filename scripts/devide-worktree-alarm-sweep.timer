@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily DevIDE stale agent worktree alarm sweep
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+RandomizedDelaySec=15m
+Unit=devide-worktree-alarm-sweep.service
+
+[Install]
+WantedBy=timers.target

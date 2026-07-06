@@ -27,13 +27,16 @@ bash scripts/pre-push-check.sh
 
 This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with dev dependencies), deploy script syntax/sync, and `mix precommit.ci`. Use this instead of relying on a manual devbox deploy to prove durability. If the checkout is dirty with unrelated user/agent work, stage only your intended files and still run targeted tests plus this gate when possible; do not include unrelated dirty files in your commit.
 
-**Enforced by a committed git hook.** `.githooks/pre-push` runs this gate automatically and blocks any push to `master` that fails it (branch/WIP pushes are not gated). Git does not auto-apply committed hooks, so enable it once per checkout:
+**Enforced by committed git hooks.** Enable once per checkout (git does not auto-apply committed hooks):
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-This is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file). Bypass the hook deliberately with `git push --no-verify`.
+- **`.githooks/pre-commit`** — refuses commits on `master` in the **primary checkout** (read-only mirror of `origin/master`). Agent linked worktrees are not gated. Bypass: `git commit --no-verify` or `DEVIDE_ALLOW_MASTER_COMMIT=1`.
+- **`.githooks/pre-push`** — blocks any push to `master` unless `scripts/pre-push-check.sh` passes (branch/WIP pushes are not gated). Bypass: `git push --no-verify`.
+
+The pre-push hook is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file).
 
 **Sobelow suppressions: prefer inline, with a reason.** `mix precommit.ci` runs `sobelow --skip --exit`, which honours two suppression mechanisms — inline `# sobelow_skip ["Rule"]` annotations and the central `.sobelow-skips` ledger. For a *justified* false positive, suppress it with an inline annotation, not a new ledger entry: the annotation lives next to the code, travels with refactors, and is reviewable in the diff, whereas `.sobelow-skips` keys on line numbers that rot on edit. Put the reason on a comment line *above* a clean `# sobelow_skip` line, which must sit immediately above the def — sobelow parses the rest of the `sobelow_skip` line and crashes on prose after the `]`:
 
@@ -125,6 +128,28 @@ while another commits fixes to it). Before starting non-trivial work:
 - A workspace/subsystem under active large change should be treated as
   read-only by other agents until the change lands. See the shared-checkout
   hazards in the memory notes.
+
+### Agent session exit protocol (required)
+
+Before ending a session (or letting it go idle overnight), **every agent must
+leave an explicit handoff** so stale-worktree alarms do not bury shipped-quality
+work in archaeology. Pick exactly one:
+
+1. **Land it** — push the feature branch and open a PR (or push to `master` when
+   appropriate). Re-call `terminal_report_worktree` with `exit_status: "landed"`.
+2. **Pause intentionally** — commit with a `wip:` prefix (`git commit -m "wip: …"`)
+   and/or re-call `terminal_report_worktree` with `exit_status: "wip"` plus a
+   short `handoff` message (branch name, what's done, what's blocked).
+3. **Report status** — re-call `terminal_report_worktree` with
+   `exit_status: "handoff"` and a `handoff` message when you cannot push yet but
+   the worktree should stay discoverable.
+
+**Never** leave a dirty worktree with no report, no process, and no handoff. The
+daily `devide-worktree-alarm-sweep` timer (install:
+`bash scripts/ensure-devide-worktree-alarm-sweep.sh`) emits
+`workspace.agent_worktree_stale` audit events for worktrees older than 24h that
+fail this protocol. Clean, reported worktrees are reaped separately by
+`DevIDE.Runtimes.Reaper`; dirty ones are alarm-only until a human resolves them.
 
 ### Quick start after checkout changes
 
@@ -266,6 +291,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
+- `scripts/devide-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
+- `scripts/ensure-devide-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
+- `lib/dev_ide/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
 - `scripts/verify_agent_pairing.sh` — MCP smoke test
 - `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)
 - `.devbox-agent-prompt.txt` — copy-paste prompt for external agents

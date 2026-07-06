@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# Refuse commits on `master` in the primary (shared) checkout.
+#
+# Local `master` is a read-only mirror of `origin/master`; land work on a
+# branch in an agent worktree, then integrate via PR or fast-forward push.
+# Linked git worktrees (agent sessions under $TMPDIR/devide-agent-worktrees/)
+# are not gated — they should already be on agent/* branches.
+#
+# Enable with the other repo hooks:
+#   git config core.hooksPath .githooks
+#
+# Deliberate bypass (use sparingly):  git commit --no-verify
+# Operator override:                  DEVIDE_ALLOW_MASTER_COMMIT=1 git commit ...
+#
+set -euo pipefail
+
+if [ "${DEVIDE_ALLOW_MASTER_COMMIT:-0}" = "1" ]; then
+  exit 0
+fi
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+[ "$branch" = "master" ] || exit 0
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+[ -n "$root" ] || exit 0
+
+# Linked worktree: .git is a pointer file, not a directory.
+if [ -f "$root/.git" ]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+>>> pre-commit: refusing commit on master in the primary checkout ($root).
+
+>>> master is read-only here — create or use an agent worktree branch instead:
+>>>   bash scripts/launch-devide-agent.sh <runtime>
+>>> or:
+>>>   git fetch origin master && git worktree add -b agent/you/task-<stamp> \\
+>>>       "\${TMPDIR:-/tmp}/devide-agent-worktrees/agent-you-task-<stamp>" origin/master
+
+>>> Integrate via branch push + PR (or a fast-forward push after rebase).
+>>> Override once:  git commit --no-verify
+>>> Operator bypass: DEVIDE_ALLOW_MASTER_COMMIT=1 git commit ...
+EOF
+
+exit 1
