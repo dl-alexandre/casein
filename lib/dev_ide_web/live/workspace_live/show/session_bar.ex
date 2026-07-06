@@ -169,6 +169,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               data-window-tab-select
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
+              data-tmux-window-index={window.index}
               class="flex min-w-0 flex-1 items-center gap-1"
               title={"Select tmux window " <> window.full_title}
             >
