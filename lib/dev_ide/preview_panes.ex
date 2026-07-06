@@ -5,8 +5,10 @@ defmodule DevIDE.PreviewPanes do
   Registers via the `devide-preview` CLI or direct API calls, creates
   `Preview` + `ControlSession` records through `PreviewControl`, persists the
   pane binding for refresh/restart recovery, subscribes to tmux topology
-  updates to expire vanished panes, and broadcasts pane lifecycle on the
-  workspace preview PubSub topic.
+  updates to expire vanished panes, and broadcasts pane lifecycle on both the
+  legacy workspace preview PubSub topic (MCP tools, controllers) and the
+  generic `DevIDE.Panes.Events` channel (the web layer's feature-pane
+  pipeline).
   """
 
   use GenServer
@@ -14,6 +16,8 @@ defmodule DevIDE.PreviewPanes do
   import Ecto.Query
 
   alias DevIDE.Audit
+  alias DevIDE.Panes.Events, as: PaneEvents
+  alias DevIDE.Panes.Preview, as: PreviewPane
   alias DevIDE.PreviewActivity
   alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
@@ -363,7 +367,7 @@ defmodule DevIDE.PreviewPanes do
 
     if existing = get_by_pane(pane_id) do
       if truthy_param(attrs, "heartbeat") || truthy_param(attrs, :heartbeat) do
-        broadcast_registered(existing)
+        broadcast_registered(existing, :heartbeat)
         refresh_topology(existing.tmux_session)
         {:ok, existing, state}
       else
@@ -572,7 +576,7 @@ defmodule DevIDE.PreviewPanes do
         url when is_binary(url) and url != "" ->
           case do_sync_control_navigation(registration, url) do
             {:ok, :unchanged} ->
-              broadcast_registered(registration)
+              broadcast_registered(registration, :updated)
               {:ok, registration}
 
             {:error, :untrusted_preview_url} ->
@@ -586,7 +590,7 @@ defmodule DevIDE.PreviewPanes do
           end
 
         _ ->
-          broadcast_registered(registration)
+          broadcast_registered(registration, :updated)
           {:ok, registration}
       end
     else
@@ -666,7 +670,7 @@ defmodule DevIDE.PreviewPanes do
           {:ok, _persisted} = persist_registration(updated)
 
           :ets.insert(@table, {updated.pane_id, updated})
-          broadcast_registered(updated)
+          broadcast_registered(updated, :updated)
           record_activity(updated, activity_event(audit_action), activity_summary(audit_action))
           emit_audit!(audit_action, updated)
           updated
@@ -1543,7 +1547,16 @@ defmodule DevIDE.PreviewPanes do
 
   defp preview_title(url), do: "preview " <> url
 
-  defp broadcast_registered(registration) do
+  # Dual broadcast: every legacy "preview:" lifecycle broadcast also emits a
+  # generic DevIDE.Panes.Events event so the web layer can consume preview panes
+  # through the uniform feature-pane pipeline. The legacy topic stays — MCP
+  # tools, PreviewPaneController and Previews.Control consume it unchanged.
+  #
+  # `reason` mirrors the call site: `:registered` for a fresh registration,
+  # `:heartbeat` for a CLI heartbeat re-register (load-bearing — the LiveView
+  # suppresses tmux focus churn on heartbeats), `:updated` for URL/registration
+  # updates (navigation, control sync, snapshot swap, history actions).
+  defp broadcast_registered(registration, reason \\ :registered) do
     payload = broadcast_payload(registration)
 
     for workspace_id <- WorkspaceAliases.viewer_ids(registration.workspace_id) do
@@ -1552,6 +1565,8 @@ defmodule DevIDE.PreviewPanes do
         payload
       })
     end
+
+    broadcast_pane_event(registration, reason, PreviewPane.render_payload_from(registration))
 
     :ok
   end
@@ -1566,7 +1581,20 @@ defmodule DevIDE.PreviewPanes do
       })
     end
 
+    broadcast_pane_event(registration, :removed, %{})
+
     :ok
+  end
+
+  defp broadcast_pane_event(registration, reason, payload) do
+    PaneEvents.broadcast(%{
+      reason: reason,
+      type: :preview,
+      pane_id: registration.pane_id,
+      workspace_id: registration.workspace_id,
+      tmux_session: registration.tmux_session,
+      payload: payload
+    })
   end
 
   defp broadcast_payload(registration) do

@@ -3,10 +3,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   # DevIdeWeb.WorkspaceLive.Show (mirrors how FileEvents/PreviewPaneEvents are
   # delegated). Owns:
   #
-  #   * the generic "pane:input" event for :file feature panes — authorized via
-  #     DevIDE.Panes.get_by_pane/1 + workspace-alias match, `save` additionally
-  #     gated by Policy.can_edit_file? (mirrors FileEvents "file:save"), then
-  #     dispatched through Pane.impl(:file).handle_input/2;
+  #   * the generic "pane:input" event for feature panes — authorized via
+  #     DevIDE.Panes.get_by_pane/1 + workspace-alias match, then dispatched by
+  #     pane type: :file inputs go through Pane.impl(:file).handle_input/2
+  #     (`save` additionally gated by Policy.can_edit_file?, mirroring
+  #     FileEvents "file:save"), :preview inputs are handled by
+  #     PreviewPaneEvents.dispatch_preview_input/3;
   #   * "tree:open_in_pane" — the context-menu entry point that splits/reuses a
   #     file pane next to the active plain-terminal pane, falling back to
   #     today's "tree:open" (files tab) when no live tmux pane exists;
@@ -25,8 +27,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   alias DevIDE.Panes
   alias DevIDE.Panes.Pane
   alias DevIDE.Policy
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
@@ -37,13 +39,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
     input = Map.drop(params, ["pane-id", "pane_id"])
 
     with true <- is_binary(pane_id) and pane_id != "",
-         {:file, payload} <- Panes.get_by_pane(pane_id),
+         {type, payload} when type in [:file, :preview] <- Panes.get_by_pane(pane_id),
          true <- pane_workspace_match?(socket, feature_value(payload, :workspace_id)) do
-      dispatch_file_input(socket, pane_id, payload, input)
+      case type do
+        :file -> dispatch_file_input(socket, pane_id, payload, input)
+        :preview -> PreviewPaneEvents.dispatch_preview_input(socket, pane_id, input)
+      end
     else
       _ ->
-        # Unknown pane, non-file pane (previews keep their legacy events until
-        # the runtime cutover), or another workspace's pane: refuse.
+        # Unknown pane, unknown pane type, or another workspace's pane: refuse.
         {:reply, %{error: "not_found"}, socket}
     end
   end
@@ -93,11 +97,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
 
   def handle_info({:pane_event, evt}, socket) do
     if pane_workspace_match?(socket, evt.workspace_id) do
-      {:noreply,
-       socket
-       |> update_feature_panes(evt)
-       |> maybe_push_file_pane_loaded(evt)
-       |> maybe_apply_registered_focus(evt)}
+      socket = update_feature_panes(socket, evt)
+
+      socket =
+        case evt.type do
+          # Preview reactions (heartbeat focus guard, highlight/surface/focus
+          # restore, URL-change soft reload, entered-pane cleanup) live with
+          # the rest of the preview web logic.
+          :preview ->
+            PreviewPaneEvents.apply_pane_event(socket, evt)
+
+          _ ->
+            socket
+            |> maybe_push_file_pane_loaded(evt)
+            |> maybe_apply_registered_focus(evt)
+        end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -259,14 +275,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   defp format_active_error(nil), do: nil
   defp format_active_error(reason), do: format_file_error(reason)
 
-  defp pane_workspace_match?(socket, workspace_id) when is_binary(workspace_id) do
-    ws_id = socket.assigns.workspace.id
-
-    workspace_id == ws_id or
-      workspace_id in WorkspaceAliases.viewer_ids(ws_id)
-  end
-
-  defp pane_workspace_match?(_socket, _workspace_id), do: false
+  # One alias gate for every pane event, preview or file: the workspace's own
+  # id, its viewer aliases, and the folder alias of the resolved host path
+  # (matches the preview subscription set, so folder-attached viewers keep
+  # receiving events for linked workspaces).
+  defp pane_workspace_match?(socket, workspace_id),
+    do: PreviewPaneEvents.pane_event_workspace_match?(socket, workspace_id)
 
   defp event_pane_id(%{"pane-id" => pane_id}) when is_binary(pane_id), do: pane_id
   defp event_pane_id(%{"pane_id" => pane_id}) when is_binary(pane_id), do: pane_id

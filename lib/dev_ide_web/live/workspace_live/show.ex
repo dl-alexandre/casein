@@ -253,22 +253,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           :preview_surfaces,
           if(connected?(socket), do: DevIDE.Previews.discover_surfaces(ws), else: [])
         )
-        # Skip the preview-pane DB read on the static/disconnected render; the
+        # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}})
+        # for previews AND files, hydrated via Panes.snapshot/1 over the viewer's
+        # alias id set and kept live via DevIDE.Panes.Events. The legacy-shaped
+        # :preview_panes assign is a derivation of it (plus later, preview-only
+        # observation updates). Skipped on the static/disconnected render — the
         # connected mount (LiveView mounts twice) hydrates it a frame later.
         |> assign(
-          :preview_panes,
+          :feature_panes,
           if(connected?(socket),
-            do: PreviewPaneEvents.load_preview_panes(ws, path_result),
-            else: []
+            do: PreviewPaneEvents.load_feature_panes(ws, path_result),
+            else: %{}
           )
         )
-        # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}}),
-        # kept live via DevIDE.Panes.Events. Consumed ONLY for :file panes in
-        # this increment — previews keep their legacy :preview_panes assign
-        # until the runtime cutover. Skipped on the static render like previews.
-        |> assign(
-          :feature_panes,
-          if(connected?(socket), do: Panes.snapshot(id), else: %{})
+        |> then(
+          &assign(
+            &1,
+            :preview_panes,
+            PreviewPaneEvents.preview_panes_from_feature(&1.assigns.feature_panes)
+          )
         )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
@@ -1347,12 +1350,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Generic feature-pane lifecycle (DevIDE.Panes.Events). Consumed for :file
-  # panes only in this increment; FilePaneEvents maintains :feature_panes and
-  # handles the :heartbeat reason without focus churn.
+  # Generic feature-pane lifecycle (DevIDE.Panes.Events) for previews AND
+  # files: FilePaneEvents maintains the :feature_panes assign, routes :preview
+  # events to PreviewPaneEvents.apply_pane_event/2 (which derives the
+  # legacy-shaped :preview_panes assign) and handles the :heartbeat reason
+  # without tmux focus churn.
   def handle_info({:pane_event, _} = msg, socket),
     do: FilePaneEvents.handle_info(msg, socket)
 
+  # Legacy "preview:" lifecycle messages are no-ops in the LiveView since the
+  # runtime cutover (the topic itself stays for MCP/controller consumers and
+  # still carries :preview_observation below).
   def handle_info({:preview_pane_registered, _} = msg, socket),
     do: PreviewPaneEvents.handle_info(msg, socket)
 
@@ -2377,11 +2385,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
-  # Generic feature-pane lifecycle topic (alias-aware fan-out mirrors the
-  # preview subscription set — Panes.Events expands workspace aliases itself).
+  # Generic feature-pane lifecycle topic. Subscribes the exact alias id set the
+  # legacy preview subscription used (own id + viewer aliases + host-path folder
+  # alias) so preview lifecycle keeps reaching folder/manager-attached viewers
+  # after the runtime cutover.
   defp subscribe_pane_events(socket) do
     if connected?(socket) do
-      _ = Panes.Events.subscribe(socket.assigns.workspace.id)
+      for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
+        Phoenix.PubSub.subscribe(DevIde.PubSub, Panes.Events.topic(workspace_id))
+      end
     end
 
     socket
