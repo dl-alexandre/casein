@@ -403,6 +403,14 @@ export const WorkspaceLeader = {
           return
         }
 
+        const sidebarEl = target?.closest?.("[data-window-picker-sidebar]")
+
+        if (action === "window-picker" && sidebarEl && sidebarEl.offsetParent !== null) {
+          this._dispatchLeaderAction(target)
+          this._startSidebarHoldWatch(key, sidebarEl)
+          return
+        }
+
         // Desktop: hold the key to navigate with arrows, release to activate
         // the focused item. Quick tap leaves the dropdown open.
         this._dispatchLeaderAction(target)
@@ -522,6 +530,70 @@ export const WorkspaceLeader = {
         // Held but didn't navigate — dismiss and return to terminal
         detailsEl.removeAttribute("open")
         window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
+      }
+    }
+
+    window.addEventListener("keydown", onKeydown, true)
+    window.addEventListener("keyup", onKeyup, true)
+  },
+
+  // Sidebar rail: same hold-to-navigate semantics as the dropdown picker, but
+  // without opening/closing a <details> menu — the rail is always visible.
+  _startSidebarHoldWatch(key, sidebarEl) {
+    if (!sidebarEl) return
+
+    let inHoldMode = false
+    let navigated = false
+
+    const getItems = () =>
+      Array.from(sidebarEl.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && el.style.display !== "none" && !el.disabled
+      )
+
+    const holdTimer = setTimeout(() => {
+      inHoldMode = true
+      const items = getItems()
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
+      ;(active || items[0])?.focus()
+    }, 150)
+
+    const onKeydown = (e) => {
+      if (e.key === key) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (!inHoldMode) return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        e.stopPropagation()
+        const items = getItems()
+        if (!items.length) return
+        const idx = items.indexOf(document.activeElement)
+        const next = e.key === "ArrowDown"
+          ? (idx < 0 ? 0 : Math.min(idx + 1, items.length - 1))
+          : (idx < 0 ? items.length - 1 : Math.max(idx - 1, 0))
+        items[next].focus()
+        navigated = true
+      }
+    }
+
+    const onKeyup = (e) => {
+      if (e.key !== key) return
+      clearTimeout(holdTimer)
+      window.removeEventListener("keyup", onKeyup, true)
+      window.removeEventListener("keydown", onKeydown, true)
+
+      if (!inHoldMode) {
+        sidebarEl.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+        return
+      }
+
+      const focused = document.activeElement
+      if (navigated && sidebarEl.contains(focused) && focused.matches("[data-picker-item]")) {
+        focused.click()
+      } else {
+        window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
       }
     }
 

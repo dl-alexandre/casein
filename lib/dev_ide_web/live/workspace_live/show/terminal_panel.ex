@@ -13,39 +13,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
+            <div class="flex min-h-0 flex-1 overflow-hidden">
+              <%= if @window_picker_view == :sidebar and length(@tmux_window_tabs) > 0 do %>
+                <SessionBar.window_sidebar
+                  workspace_id={@workspace.id}
+                  path_base={@workspace_route}
+                  windows={@tmux_window_tabs}
+                  topology_version={@tmux_topology_structure_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                  class="pointer-coarse:hidden"
+                />
+              <% end %>
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
                         (@terminal_mode not in [:raw, :raw_ghostty] and
                            tmux_multi_pane_geometry?(assigns)) do %>
-                <.tmux_pane_geometry
-                  workspace={@workspace}
-                  active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
-                  preview_panes={@preview_panes}
-                  feature_panes={@feature_panes}
-                  tmux_session={@tmux_session}
-                  ui_highlight_pane_id={@ui_highlight_pane_id}
-                  tmux_active_pane_id={@tmux_active_pane_id}
-                  window_zoomed?={@window_zoomed?}
-                  tmux_mutations_enabled?={@tmux_mutations_enabled?}
-                  entered_preview_pane_id={@entered_preview_pane_id}
-                  terminal_surface_pane_id={@terminal_surface_pane_id}
-                  pane_history={@pane_history}
-                  terminal_themes={@terminal_themes}
-                  focused_pane_id={@focused_pane_id}
-                  pane_data={@pane_data}
-                  workspace_start_error={@workspace_start_error}
-                />
-              <% else %>
-                <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-                  <.raw_terminal_surface
+                  <.tmux_pane_geometry
                     workspace={@workspace}
-                    workspace_start_error={@workspace_start_error}
+                    active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
+                    preview_panes={@preview_panes}
+                    feature_panes={@feature_panes}
+                    tmux_session={@tmux_session}
+                    ui_highlight_pane_id={@ui_highlight_pane_id}
+                    tmux_active_pane_id={@tmux_active_pane_id}
+                    window_zoomed?={@window_zoomed?}
+                    tmux_mutations_enabled?={@tmux_mutations_enabled?}
+                    entered_preview_pane_id={@entered_preview_pane_id}
+                    terminal_surface_pane_id={@terminal_surface_pane_id}
+                    pane_history={@pane_history}
+                    terminal_themes={@terminal_themes}
                     focused_pane_id={@focused_pane_id}
                     pane_data={@pane_data}
-                    terminal_themes={@terminal_themes}
+                    workspace_start_error={@workspace_start_error}
                   />
-                </div>
-              <% end %>
+                <% else %>
+                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
+                    <.raw_terminal_surface
+                      workspace={@workspace}
+                      workspace_start_error={@workspace_start_error}
+                      focused_pane_id={@focused_pane_id}
+                      pane_data={@pane_data}
+                      terminal_themes={@terminal_themes}
+                    />
+                  </div>
+                <% end %>
+              </div>
             </div>
             <.mobile_key_bar {assigns} />
             <.mobile_nav_sheet {assigns} />

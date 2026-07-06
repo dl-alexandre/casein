@@ -10,10 +10,10 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
 | Field | Value |
 |-------|-------|
-| **Owner** | dalexandre / Codex |
-| **Branch** | `agent/codex/window-picker-sidebar-20260704` |
-| **Status** | Queued — blocked on `feat/worktree-session-core` and path-first picker/header coordination clearing. Fresh worktree created at `/tmp/devide-agent-worktrees/agent-codex-window-picker-sidebar-20260704`. |
-| **Paths (planned, not frozen by this entry yet)** | `lib/dev_ide_web/live/workspace_live/show.ex`, `lib/dev_ide_web/live/workspace_live/show/session_bar.ex`, `lib/dev_ide/command_palette/actions.ex`, `assets/js/window_picker_view.js`, `assets/js/workspace_leader.js`, new sidebar picker hook, related LiveView/JS tests |
+| **Owner** | dalexandre / Grok |
+| **Branch** | `agent/grok/window-picker-sidebar-20260706` |
+| **Status** | In progress — path-first navigation landed; adding `:sidebar` as third `@window_picker_view` mode. |
+| **Paths (frozen)** | `lib/dev_ide_web/live/workspace_live/show.ex`, `lib/dev_ide_web/live/workspace_live/show/session_bar.ex`, `lib/dev_ide_web/live/workspace_live/show/terminal_panel.ex`, `lib/dev_ide_web/live/workspace_live/show/workspace_shell.ex`, `lib/dev_ide_web/live/workspace_live/show/workspace_header.ex`, `lib/dev_ide/command_palette/actions.ex`, `assets/js/window_picker_view.js`, `assets/js/window_picker_sidebar.js`, `assets/js/workspace_leader.js`, related LiveView/JS tests |
 
 Direction of record: add `sidebar` as a third `@window_picker_view` mode backed
 by `@tmux_window_tabs` / `SessionBarVM.window_tabs/4`; render a desktop-only
