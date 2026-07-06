@@ -1415,6 +1415,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     blocked = Enum.filter(Audit.recent_for("ws-1", 10), &(&1.action == "policy.blocked"))
     assert length(blocked) == 1
+
+    # Regression: the ContextMenu hook's ctx:open must pass the gate — it
+    # shipped without being registered in @known_events, so every right-click
+    # menu in the cockpit was denied with the unknown-action flash.
+    render_hook(view, "ctx:open", %{
+      "menu" => "window_tab",
+      "ctx" => %{"windowId" => "@1"},
+      "x" => 10,
+      "y" => 10
+    })
+
+    assert has_element?(view, "#ctx-menu")
+
+    blocked = Enum.filter(Audit.recent_for("ws-1", 10), &(&1.action == "policy.blocked"))
+    assert length(blocked) == 1
+
+    render_hook(view, "ctx:close", %{})
+    refute has_element?(view, "#ctx-menu")
   end
 
   test "split OSC52 terminal output pushes clipboard write event", %{
