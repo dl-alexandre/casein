@@ -297,6 +297,45 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     assert [%{agent_status: "attention"}] = summary.sessions
   end
 
+  test "transcript activity enriches agent_title when hooks report working" do
+    ws = %Workspace{
+      id: "summary-ws",
+      name: "summary",
+      path: "/data/workspaces/alice/summary"
+    }
+
+    tmux_session = "devide_summary_transcript"
+    path = transcript_fixture!()
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 42}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/data/workspaces/alice/summary",
+          role: "agent"
+        }
+      ]
+    })
+
+    :ok =
+      AgentState.report("summary-ws", tmux_session, "%2", :working, nil, transcript_path: path)
+
+    summary = SessionSummary.build(ws)
+    session = hd(summary.sessions)
+
+    assert session.agent_title == "editing show.ex"
+  end
+
   test "manager branch wins over git fallback" do
     summary =
       SessionSummary.build(%Workspace{
@@ -407,4 +446,57 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp transcript_fixture! do
+    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+
+    auth_root =
+      Path.join([root, "summary-transcript-#{System.unique_integer([:positive])}", "auth"])
+
+    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+
+    path =
+      Path.join([
+        auth_root,
+        "profiles",
+        "alice",
+        "claude",
+        "projects",
+        "summary",
+        "session.jsonl"
+      ])
+
+    File.mkdir_p!(Path.dirname(path))
+
+    lines = [
+      %{
+        "uuid" => "u1",
+        "parentUuid" => nil,
+        "type" => "user",
+        "timestamp" => "2026-07-06T10:00:00.000Z",
+        "message" => %{"role" => "user", "content" => "Fix the bug"}
+      },
+      %{
+        "uuid" => "a1",
+        "parentUuid" => "u1",
+        "type" => "assistant",
+        "timestamp" => "2026-07-06T10:00:01.000Z",
+        "message" => %{
+          "role" => "assistant",
+          "content" => [
+            %{"type" => "text", "text" => "I'll read that file."},
+            %{
+              "type" => "tool_use",
+              "id" => "tool-1",
+              "name" => "Edit",
+              "input" => %{"file_path" => "/tmp/show.ex"}
+            }
+          ]
+        }
+      }
+    ]
+
+    File.write!(path, Enum.map_join(lines, "\n", &Jason.encode!/1) <> "\n")
+    path
+  end
 end

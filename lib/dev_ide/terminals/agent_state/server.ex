@@ -14,10 +14,11 @@ defmodule DevIDE.Terminals.AgentState.Server do
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, @registered_name))
   end
 
-  def report(workspace_id, tmux_session, pane_id, state, message, source, tool) do
+  def report(workspace_id, tmux_session, pane_id, state, message, source, tool, transcript_path) do
     GenServer.cast(
       @registered_name,
-      {:report, workspace_id, tmux_session, pane_id, state, message, source, tool}
+      {:report, workspace_id, tmux_session, pane_id, state, message, source, tool,
+       transcript_path}
     )
   end
 
@@ -83,7 +84,8 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
   @impl true
   def handle_cast(
-        {:report, workspace_id, tmux_session, pane_id, rstate, message, source, tool},
+        {:report, workspace_id, tmux_session, pane_id, rstate, message, source, tool,
+         transcript_path},
         state
       ) do
     key = {tmux_session, pane_id}
@@ -95,14 +97,20 @@ defmodule DevIDE.Terminals.AgentState.Server do
       source: source,
       tool: tool,
       workspace_id: workspace_id,
+      transcript_path: transcript_path,
       reported_at: now
     }
 
     case Map.get(state, key) do
-      %{state: ^rstate, message: ^message} = current ->
-        # Same state+message: refresh freshness silently, never broadcast. This is
+      %{state: ^rstate, message: ^message, transcript_path: ^transcript_path} = current ->
+        # Same state+message+path: refresh freshness silently, never broadcast. This is
         # what makes high-frequency PreToolUse hooks cheap for subscribers.
         {:noreply, Map.put(state, key, %{current | reported_at: now})}
+
+      %{state: ^rstate, message: ^message} = current ->
+        # State unchanged but transcript_path may have arrived late — refresh silently.
+        {:noreply,
+         Map.put(state, key, %{current | reported_at: now, transcript_path: transcript_path})}
 
       previous ->
         state = state |> Map.put(key, entry) |> trim_size()

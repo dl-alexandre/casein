@@ -277,6 +277,34 @@ with open(sys.argv[1], "w") as f:
 PY
 chmod 600 "${HOOKS_SETTINGS}"
 
+# --- Claude sidechat settings (read-only advisor; injected with --sidechat) ---
+SIDECHAT_SETTINGS="${STAGING}/claude-sidechat-settings.json"
+AGENT_STATE_HOOK="${AGENT_STATE_HOOK}" python3 - "${SIDECHAT_SETTINGS}" <<'PY'
+import json, os, sys
+
+command = f'"{os.environ["AGENT_STATE_HOOK"]}"'
+entry = [{"hooks": [{"type": "command", "command": command, "timeout": 5}]}]
+pretooluse = [{"matcher": "*", "hooks": [{"type": "command", "command": command, "timeout": 5}]}]
+
+settings = {
+    "hooks": {
+        "UserPromptSubmit": entry,
+        "PreToolUse": pretooluse,
+        "Notification": entry,
+        "Stop": entry,
+        "SessionStart": entry,
+        "SessionEnd": entry,
+    },
+    "permissions": {
+        "deny": ["Edit", "Write", "Bash"],
+    },
+}
+
+with open(sys.argv[1], "w") as f:
+    json.dump(settings, f, indent=2)
+PY
+chmod 600 "${SIDECHAT_SETTINGS}"
+
 ENV_SH="${STAGING}/env.sh"
 # Write atomically: a fresh temp inode (0600 under umask) that replaces the old
 # file via rename, so a concurrent reader never sees a partial file and any

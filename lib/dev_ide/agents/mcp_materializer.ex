@@ -249,6 +249,39 @@ defmodule DevIDE.Agents.MCPMaterializer do
     path = Path.join(staging, "claude-hooks-settings.json")
     :ok = write_file(path, Jason.encode!(settings, pretty: true) <> "\n")
     File.chmod(path, 0o600)
+    write_claude_sidechat_settings(staging, command)
+    :ok
+  end
+
+  # Read-only advisor launch (--sidechat): same hooks, deny Edit/Write/Bash.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_claude_sidechat_settings(staging, command) do
+    entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
+
+    pretooluse = [
+      %{
+        "matcher" => "*",
+        "hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]
+      }
+    ]
+
+    settings = %{
+      "hooks" => %{
+        "UserPromptSubmit" => entry,
+        "PreToolUse" => pretooluse,
+        "Notification" => entry,
+        "Stop" => entry,
+        "SessionStart" => entry,
+        "SessionEnd" => entry
+      },
+      "permissions" => %{
+        "deny" => ["Edit", "Write", "Bash"]
+      }
+    }
+
+    path = Path.join(staging, "claude-sidechat-settings.json")
+    :ok = write_file(path, Jason.encode!(settings, pretty: true) <> "\n")
+    File.chmod(path, 0o600)
     :ok
   end
 

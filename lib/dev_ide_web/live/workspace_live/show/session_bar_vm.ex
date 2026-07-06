@@ -545,7 +545,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp agent_state_label(:blocked, message),
     do: "Agent blocked: " <> (blank_to_nil(message) || "needs input")
 
-  defp agent_state_label(:working, _message), do: "Agent pane working"
+  defp agent_state_label(:working, message) do
+    case blank_to_nil(message) do
+      nil -> "Agent pane working"
+      detail -> "Agent working — " <> detail
+    end
+  end
+
   defp agent_state_label(:done, _message), do: "Agent done"
   defp agent_state_label(:idle, _message), do: "Agent idle"
 
