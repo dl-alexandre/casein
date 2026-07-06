@@ -5,8 +5,10 @@ defmodule DevIDE.PreviewPanes do
   Registers via the `devide-preview` CLI or direct API calls, creates
   `Preview` + `ControlSession` records through `PreviewControl`, persists the
   pane binding for refresh/restart recovery, subscribes to tmux topology
-  updates to expire vanished panes, and broadcasts pane lifecycle on the
-  workspace preview PubSub topic.
+  updates to expire vanished panes, and broadcasts pane lifecycle on both the
+  legacy workspace preview PubSub topic (MCP tools, controllers) and the
+  generic `DevIDE.Panes.Events` channel (the web layer's feature-pane
+  pipeline).
   """
 
   use GenServer

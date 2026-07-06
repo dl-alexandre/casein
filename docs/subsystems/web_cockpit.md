@@ -74,7 +74,9 @@ browser tab gets an independent durable session), a `tmux_session` name, a
 `workspace_capability` (`ChannelAuth.sign_terminal_capability` re-attach token),
 and a `socket_token` (`ChannelAuth.sign_user_token`) for the channel. It assigns
 the full socket state, subscribes (topology, session tabs, workspace mode,
-previews, browser control, pane labels) **only when `connected?`**, attaches the
+previews, generic pane events (`DevIDE.Panes.Events` — preview and file pane
+lifecycle since the preview runtime cutover), browser control, pane labels)
+**only when `connected?`**, attaches the
 `:authz_gate` hook, then `send(self(), :after_mount)` to defer PTY startup and
 all heavy reads out of mount for fast first paint.
 

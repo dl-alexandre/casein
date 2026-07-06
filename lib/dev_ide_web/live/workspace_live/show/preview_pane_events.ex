@@ -1,8 +1,28 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
-  # Preview-pane handle_event/handle_info clauses and helpers extracted verbatim
-  # from DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
-  # Show delegates "preview:open", every "preview-pane:*" event, and preview
-  # PubSub/browser-control infos here.
+  # Preview-pane web logic, delegated from DevIdeWeb.WorkspaceLive.Show.
+  #
+  # Since the preview runtime cutover, preview lifecycle flows through the
+  # generic feature-pane pipeline:
+  #
+  #   * registration/heartbeat/update/removal → DevIDE.Panes.Events
+  #     (`apply_pane_event/2`, invoked from FilePaneEvents' {:pane_event, _}
+  #     handler), which maintains the derived :preview_panes assign;
+  #   * back/forward/refresh/close/recover → the generic "pane:input" event
+  #     (`dispatch_preview_input/3`); the legacy "preview-pane:*" names are
+  #     thin translations kept for the session-bar buttons;
+  #   * mount hydration → Panes.snapshot/1 (`load_feature_panes/2` +
+  #     `preview_panes_from_feature/1`).
+  #
+  # Channels consciously kept preview-only (they survive the cutover because
+  # they are browser/preview domain concerns, not pane lifecycle):
+  #
+  #   * {:preview_observation, _} — live browser url/title pushed by
+  #     PreviewCtl on the legacy "preview:" topic; enriches the derived assign
+  #     (titles have no registry backing to flow through Panes.Events);
+  #   * {:browser_control, _} — MCP browser-control side channel (agent-driven
+  #     iframe reload / page reload / pane focus / visible click actions);
+  #   * "preview:open", "preview-pane:enter/exit/telemetry/snapshot-click" —
+  #     overlay UX + PreviewActivity feed for iframes/snapshots.
   @moduledoc false
 
   import Phoenix.Component
@@ -27,6 +47,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
     open_preview(socket, params)
   end
 
+  # enter/exit/telemetry/snapshot-click are consciously preview-only (they
+  # survive the runtime cutover): overlay UX state (the entered-pane CSS mode)
+  # and the PreviewActivity feed are iframe/snapshot concerns with no generic
+  # pane equivalent.
   def handle_event("preview-pane:enter", params, socket) do
     case event_pane_id(params) do
       pane_id when is_binary(pane_id) ->
@@ -136,6 +160,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   def handle_info({:preview_pane_registered, _payload}, socket), do: {:noreply, socket}
   def handle_info({:preview_pane_removed, _payload}, socket), do: {:noreply, socket}
 
+  # Consciously preview-only (survives the runtime cutover): agent-driven
+  # browser observations carry the live page's url/title, which exist only in
+  # the browser-control session — there is no registry state to flow through
+  # Panes.Events. They enrich the derived :preview_panes assign (and push the
+  # iframe reload on a URL change) exactly as before; the next registry
+  # broadcast for the pane rebuilds the entry from registry truth, which is
+  # also the legacy behavior.
   def handle_info(
         {:preview_observation,
          %{preview_id: preview_id, session_id: _session_id, observation: observation}},
@@ -173,6 +204,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
   def handle_info({:preview_observation, _payload}, socket), do: {:noreply, socket}
 
+  # The {:browser_control, _} clauses below are consciously preview-only
+  # (they survive the runtime cutover): they are the MCP browser-control side
+  # channel — agent tools pushing UI effects at the viewer — not pane
+  # lifecycle, and their non-LiveView consumers share the same topic.
   def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
     # An explicit agent reload tool: force the frame to reload even when the URL
     # is unchanged (the soft path only re-points src on a real URL change).
