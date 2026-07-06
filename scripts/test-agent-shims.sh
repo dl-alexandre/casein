@@ -139,8 +139,8 @@ echo shadow-claude"
   fi
 )
 
-run_installer_warns_when_bin_dir_off_path() (
-  echo "== installer warns but succeeds when ~/.local/bin is not on PATH =="
+run_installer_verifies_precedence_when_bin_dir_off_path() (
+  echo "== installer verifies precedence when ~/.local/bin is not on caller PATH =="
 
   local home err status
   home="$(mktemp -d)"
@@ -155,8 +155,13 @@ run_installer_warns_when_bin_dir_off_path() (
     bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null 2>"$err" || status=$?
 
   assert_eq "installer exit status without bin dir on PATH" "0" "$status"
-  if ! grep -q 'cannot verify shim precedence' "$err"; then
-    echo "FAIL: expected precedence warning on stderr, got:" >&2
+  if grep -q 'cannot verify shim precedence' "$err"; then
+    echo "FAIL: installer should verify precedence by prepending ~/.local/bin, got:" >&2
+    cat "$err" >&2
+    exit 1
+  fi
+  if grep -q 'PATH order defeats the DevIDE shims' "$err"; then
+    echo "FAIL: precedence check failed unexpectedly:" >&2
     cat "$err" >&2
     exit 1
   fi
@@ -200,7 +205,7 @@ main() {
   run_resolver_rejects_recorded_devide_shim
   run_installer_generated_shims_carry_marker
   run_installer_fails_when_shims_shadowed
-  run_installer_warns_when_bin_dir_off_path
+  run_installer_verifies_precedence_when_bin_dir_off_path
   run_launch_version_passthrough_skips_launcher
   echo "OK: agent shim checks passed"
 }

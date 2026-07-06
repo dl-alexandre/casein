@@ -96,17 +96,16 @@ path_contains_bin_dir() {
 # real agent binary. If PATH order defeats the shims, agents launch without
 # MCP injection and nothing else ever reports it — so make it loud here.
 # Non-interactive callers (systemd units, deploy poller) run with a minimal
-# PATH that legitimately omits BIN_DIR; that case warns instead of failing.
+# PATH that omits BIN_DIR; prepend it for this check so deploy logs still
+# catch shadowing without requiring the caller's environment to match tmux.
 verify_shim_precedence() {
   local name resolved resolved_target shim_target shadowed=0
 
   if ! path_contains_bin_dir; then
-    echo "warn: ${BIN_DIR} is not on PATH in this context — cannot verify shim precedence." >&2
-    echo "warn: interactive shells must list ${BIN_DIR} before any directory containing: ${RUNTIMES[*]}" >&2
-    return 0
+    PATH="${BIN_DIR}:${PATH:-}"
+    export PATH
+    hash -r
   fi
-
-  hash -r
   for name in "${RUNTIMES[@]}"; do
     resolved="$(command -v "$name" 2>/dev/null || true)"
     resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
