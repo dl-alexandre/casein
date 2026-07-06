@@ -550,7 +550,7 @@ defmodule DevIDE.RuntimesTest do
     assert [] = Runtimes.list_agent_worktrees("ws-not-git")
   end
 
-  test "discover_worktrees expires missing git-discovered worktrees only" do
+  test "discover_worktrees expires worktrees missing from git list and disk" do
     root = tmp_repo!("discover-expire")
     discovered = Path.join(root, "discovered")
     agent_reported = Path.join(root, "agent-reported")
@@ -568,11 +568,22 @@ defmodule DevIDE.RuntimesTest do
 
     git!(root, ["worktree", "remove", "--force", discovered])
     git!(root, ["worktree", "remove", "--force", agent_reported])
+    # Agent-reported worktree unlinked from git but still present on disk:
+    # the agent owns it, so it must survive this pass.
+    File.mkdir_p!(agent_reported)
 
     assert {:ok, %{expired: [expired]}} = Runtimes.discover_worktrees("ws-discover-expire")
 
     assert expired.worktree_path == discovered
     assert {:ok, %{status: "provisioned"}} = Runtimes.get_runtime(agent_runtime.id)
+
+    # Once the directory is gone there is nothing to reattach to — expire it.
+    File.rm_rf!(agent_reported)
+
+    assert {:ok, %{expired: [expired_agent]}} = Runtimes.discover_worktrees("ws-discover-expire")
+
+    assert expired_agent.id == agent_runtime.id
+    assert {:ok, %{status: "expired"}} = Runtimes.get_runtime(agent_runtime.id)
   end
 
   test "worktree reconciler caches discovery until forced" do

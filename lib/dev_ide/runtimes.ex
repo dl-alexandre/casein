@@ -109,8 +109,8 @@ defmodule DevIDE.Runtimes do
 
   This discovers `git worktree list --porcelain` entries from the workspace
   root, records linked worktrees as agent-worktree runtimes, and expires prior
-  Git-discovered records that no longer appear. Agent-reported runtimes are not
-  expired by this pass.
+  Git-discovered records that no longer appear. Agent-reported runtimes are
+  expired only once their worktree path no longer exists on disk.
   """
   @spec discover_worktrees(String.t()) ::
           {:ok, %{observed: [Runtime.t()], expired: [Runtime.t()], rejected: [map()]}}
@@ -144,7 +144,7 @@ defmodule DevIDE.Runtimes do
           end
         end)
 
-      expired = expire_missing_git_discovered_worktrees(record.external_id, linked)
+      expired = expire_missing_worktrees(record.external_id, linked)
 
       {:ok,
        %{
@@ -631,7 +631,7 @@ defmodule DevIDE.Runtimes do
     end)
   end
 
-  defp expire_missing_git_discovered_worktrees(workspace_id, linked_entries) do
+  defp expire_missing_worktrees(workspace_id, linked_entries) do
     linked_paths =
       linked_entries
       |> Enum.map(&Map.get(&1, "worktree"))
@@ -641,7 +641,7 @@ defmodule DevIDE.Runtimes do
 
     %{"workspace_id" => workspace_id}
     |> list_runtimes()
-    |> Enum.filter(&missing_git_discovered_worktree?(&1, linked_paths))
+    |> Enum.filter(&missing_worktree?(&1, linked_paths))
     |> Enum.reduce([], fn runtime, expired ->
       now = DateTime.utc_now()
       metadata = Map.put(runtime.metadata || %{}, "expired_by", "git_discovery")
@@ -657,7 +657,7 @@ defmodule DevIDE.Runtimes do
       case impl().update_runtime(
              updated,
              event(updated, runtime.status, "runtime_expired",
-               metadata: %{"reason" => "git_worktree_missing"}
+               metadata: %{"reason" => missing_worktree_reason(runtime)}
              )
            ) do
         {:ok, expired_runtime} -> [expired_runtime | expired]
@@ -667,14 +667,26 @@ defmodule DevIDE.Runtimes do
     |> Enum.reverse()
   end
 
-  defp missing_git_discovered_worktree?(%Runtime{} = runtime, linked_paths) do
+  # Git-discovered records expire as soon as `git worktree list` stops naming
+  # them. Agent-reported records are owned by the agent while their directory
+  # exists; once the path is gone from disk there is nothing left to reattach
+  # to, so they expire too instead of lingering in session directories.
+  defp missing_worktree?(%Runtime{} = runtime, linked_paths) do
     metadata = runtime.metadata || %{}
     path = runtime.worktree_path || Map.get(metadata, "worktree_path")
 
     agent_worktree_runtime?(runtime) and runtime.status not in ["cleaned", "expired"] and
-      Map.get(metadata, "source") == "git_discovery" and
       is_binary(path) and
-      not MapSet.member?(linked_paths, Path.expand(path))
+      not MapSet.member?(linked_paths, Path.expand(path)) and
+      (Map.get(metadata, "source") == "git_discovery" or not File.dir?(path))
+  end
+
+  defp missing_worktree_reason(%Runtime{metadata: metadata}) do
+    if Map.get(metadata || %{}, "source") == "git_discovery" do
+      "git_worktree_missing"
+    else
+      "worktree_path_missing"
+    end
   end
 
   defp agent_worktree_metadata(
