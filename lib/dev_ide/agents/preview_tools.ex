@@ -12,7 +12,7 @@ defmodule DevIDE.Agents.PreviewTools do
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews
-  alias DevIDE.Previews.{Surface, SurfaceResolver, Url, WorkspaceContext}
+  alias DevIDE.Previews.{PortProbe, Surface, SurfaceResolver, Url, WorkspaceContext}
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.{PreviewLauncher, Runtime}
   alias DevIDE.Terminals.{Tmux, TmuxTopology}
@@ -127,7 +127,10 @@ defmodule DevIDE.Agents.PreviewTools do
         "preview_surfaces",
         "List discoverable preview surfaces for a workspace (manager URLs, " <>
           "metadata localhost ports, and ports detected from tmux terminal output). " <>
-          "Pane-backed surfaces include separate server_active, pane_registered, " <>
+          "Loopback surfaces are TCP-probed at listing time: server_active is false and " <>
+          "server_status.liveness is \"dead\" when nothing accepts connections on the port " <>
+          "(stale runtime registrations); do not open those. Public URLs report liveness " <>
+          "\"unprobed\". Pane-backed surfaces include separate pane_registered, " <>
           "operator_visible, and visibility fields; do not treat a surface as visible " <>
           "unless operator_visible/browser_loaded is true. Call before preview_open_app " <>
           "to pick a surface name.",
@@ -521,15 +524,66 @@ defmodule DevIDE.Agents.PreviewTools do
     workspace = WorkspaceContext.prepare(workspace)
     active_by_origin = active_pane_registrations_by_origin(workspace)
 
+    surfaces =
+      Previews.discover_surfaces(
+        workspace,
+        surface_resolver_opts(params, runtime_required: false)
+      )
+
+    liveness = surface_liveness(surfaces)
+
     payload =
-      workspace
-      |> Previews.discover_surfaces(surface_resolver_opts(params, runtime_required: false))
-      |> Enum.map(&surface_payload(&1, active_by_origin, params))
-      |> Enum.sort_by(& &1.active, :desc)
+      surfaces
+      |> Enum.map(&surface_payload(&1, active_by_origin, params, liveness))
+      |> Enum.sort_by(&{&1.active, &1.server_active}, :desc)
+
+    recommendable = Enum.filter(payload, & &1.server_active)
+    recommendation = if recommendable == [], do: payload, else: recommendable
 
     {:ok,
      %{surfaces: payload}
-     |> put_preview_next("preview_open", preview_open_next_args(workspace, payload))}
+     |> put_preview_next(
+       "preview_open",
+       preview_open_next_args(workspace, recommendation, liveness)
+     )}
+  end
+
+  # Loopback registrations outlive their servers (a reaped worktree leaves its
+  # runtime surface behind), so listing probes each unique loopback port the
+  # same way preview_open's preflight would connect. Public URLs stay unprobed.
+  defp surface_liveness(surfaces) do
+    if Application.get_env(:dev_ide, :preview_surface_probe, true) do
+      surfaces
+      |> Enum.filter(&probeable_surface?/1)
+      |> Enum.map(& &1.port)
+      |> surface_prober().()
+    else
+      %{}
+    end
+  end
+
+  defp probeable_surface?(%Surface{} = surface) do
+    is_integer(surface.port) and Url.localhost_url?(surface.url)
+  end
+
+  defp surface_prober do
+    case Application.get_env(:dev_ide, :preview_surface_prober) do
+      {mod, fun} -> &apply(mod, fun, [&1])
+      fun when is_function(fun, 1) -> fun
+      _ -> &PortProbe.probe/1
+    end
+  end
+
+  defp surface_liveness_status(%Surface{} = surface, liveness) do
+    if probeable_surface?(surface) do
+      case Map.fetch(liveness, surface.port) do
+        {:ok, true} -> "alive"
+        {:ok, false} -> "dead"
+        :error -> "unprobed"
+      end
+    else
+      "unprobed"
+    end
   end
 
   # Index the live embedded preview panes for this workspace by origin so a
@@ -3568,12 +3622,16 @@ defmodule DevIDE.Agents.PreviewTools do
     |> Map.put(:next_arguments, args)
   end
 
-  defp preview_open_next_args(workspace, [surface | _]) do
+  defp preview_open_next_args(workspace, [surface | _], liveness) do
     args = %{workspace_id: workspace_id(workspace)}
+    port = Map.get(surface, :port)
+    # A public surface still carries its loopback port number; never steer the
+    # caller onto a port the listing probe just saw refuse connections.
+    port_recommendable? = is_integer(port) and Map.get(liveness, port, true)
 
     cond do
-      is_integer(Map.get(surface, :port)) ->
-        args |> Map.put(:mode, "localhost") |> Map.put(:port, surface.port) |> compact_map()
+      port_recommendable? ->
+        args |> Map.put(:mode, "localhost") |> Map.put(:port, port) |> compact_map()
 
       is_binary(Map.get(surface, :name)) and surface.name != "" ->
         args |> Map.put(:mode, "app") |> Map.put(:surface, surface.name) |> compact_map()
@@ -3583,7 +3641,7 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp preview_open_next_args(workspace, _surfaces),
+  defp preview_open_next_args(workspace, _surfaces, _liveness),
     do: %{workspace_id: workspace_id(workspace), mode: "app"} |> compact_map()
 
   defp first_element_args(session_id, [%{element_id: element_id} | _]),
@@ -3877,11 +3935,12 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp parse_port(_), do: {:error, :invalid_port}
 
-  defp surface_payload(%Surface{} = surface, active_by_origin, params) do
+  defp surface_payload(%Surface{} = surface, active_by_origin, params, liveness) do
     registration = Map.get(active_by_origin, Url.origin_of(surface.url))
     pane_id = registration && registration.pane_id
     visibility = surface_visibility(registration)
     operator_visible = visibility.browser_loaded == true
+    liveness_status = surface_liveness_status(surface, liveness)
 
     %{
       name: surface.name,
@@ -3894,8 +3953,8 @@ defmodule DevIDE.Agents.PreviewTools do
       tmux_session: surface.tmux_session,
       snapshot_mode: false,
       interaction_mode: "iframe",
-      server_active: true,
-      server_status: surface_server_status(surface, params),
+      server_active: liveness_status != "dead",
+      server_status: surface_server_status(surface, params, liveness_status),
       pane_registered: pane_id != nil,
       operator_visible: operator_visible,
       browser_loaded: visibility.browser_loaded,
@@ -3916,7 +3975,7 @@ defmodule DevIDE.Agents.PreviewTools do
     |> preview_visibility_from_activity()
   end
 
-  defp surface_server_status(%Surface{} = surface, params) do
+  defp surface_server_status(%Surface{} = surface, params, liveness_status) do
     scoped_session = string_param(params, :tmux_session)
     session_match? = is_nil(scoped_session) or surface.tmux_session in [nil, scoped_session]
 
@@ -3931,6 +3990,7 @@ defmodule DevIDE.Agents.PreviewTools do
 
     %{
       status: status,
+      liveness: liveness_status,
       port: surface.port,
       source: Atom.to_string(surface.source),
       tmux_session: surface.tmux_session,

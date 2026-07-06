@@ -479,7 +479,8 @@ defmodule DevIDE.Agents.TerminalTools do
          error
          |> Map.put(:workspace_id, workspace_id(params))
          |> Map.put(:sessions, error.candidate_sessions)
-         |> Map.put(:safe_to_mutate, false)}
+         |> Map.put(:safe_to_mutate, false)
+         |> put_ambiguous_recommendation(params)}
 
       {:error, :no_workspace_sessions} ->
         {:ok,
@@ -610,9 +611,22 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, command} <- string_arg(params, "command"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
       case tmux().send_command(session, command, target: pane.id) do
-        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+        :ok ->
+          report_dispatch_working(
+            params,
+            session,
+            pane.id,
+            command,
+            "terminal_send_agent_command"
+          )
+
+          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+
+        {:error, reason} ->
+          {:error, reason}
+
+        {out, _code} ->
+          {:error, String.trim(out)}
       end
     end
   end
@@ -623,17 +637,36 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, text} <- string_arg(params, "text"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
-      opts = [
-        target: pane.id,
-        submit: truthy?(Map.get(params, "submit") || Map.get(params, :submit))
-      ]
+      submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
+      opts = [target: pane.id, submit: submit?]
 
       case tmux().paste_text(session, text, opts) do
-        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+        :ok ->
+          if submit? do
+            report_dispatch_working(params, session, pane.id, text, "terminal_paste_agent_text")
+          end
+
+          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+
+        {:error, reason} ->
+          {:error, reason}
+
+        {out, _code} ->
+          {:error, String.trim(out)}
       end
     end
+  end
+
+  # Runtime-agnostic `working` edge: dispatching work into the agent pane means
+  # the agent is working, regardless of whether its runtime reports state
+  # hooks. Codex has no turn-start notify event, so without this its panes sit
+  # at their last state until the turn-complete report; Claude/Grok hook
+  # reports simply land moments later and supersede this one.
+  defp report_dispatch_working(params, session, pane_id, message, tool) do
+    AgentState.report(workspace_id(params), session, pane_id, :working, message,
+      source: :dispatch,
+      tool: tool
+    )
   end
 
   @doc "Send raw keys to a pane (defaults to the active pane)."
@@ -1081,6 +1114,39 @@ defmodule DevIDE.Agents.TerminalTools do
       safe_to_mutate: false,
       next_tool: "terminal_context"
     }
+  end
+
+  # Ambiguity stays safe-by-default (never an implicit mutation target), but
+  # agents still need a starting point: the operator's attached session beats
+  # any detached leftover, and recency breaks the remaining ties.
+  defp put_ambiguous_recommendation(payload, params) do
+    case recommend_session(payload.candidate_sessions) do
+      {session, reason} ->
+        payload
+        |> Map.put(:recommended_session, session)
+        |> Map.put(:recommendation_reason, reason)
+        |> Map.put(
+          :next_arguments,
+          compact(%{workspace_id: workspace_id(params), session: session})
+        )
+
+      nil ->
+        payload
+    end
+  end
+
+  defp recommend_session(candidates) do
+    {pool, reason} =
+      case Enum.filter(candidates, &(Map.get(&1, :attached) == true)) do
+        [] -> {candidates, "most_recent_activity"}
+        [only] -> {[only], "only_attached_session"}
+        attached -> {attached, "most_recently_active_attached_session"}
+      end
+
+    case Enum.max_by(pool, &(Map.get(&1, :activity) || 0), fn -> nil end) do
+      %{session: session} -> {session, reason}
+      _ -> nil
+    end
   end
 
   defp session_candidate(%{session: name} = session) do

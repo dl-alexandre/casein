@@ -195,13 +195,16 @@ defmodule Scripts.AgentWorktreeTest do
   test "devide shim passes codex update directly to the real CLI" do
     tmp = tmp_dir!("devide-codex-update-test")
     home = Path.join(tmp, "home")
-    real_bins = Path.join(home, ".devide/real-bins")
-    fake_codex = Path.join(real_bins, "codex")
+    npm_prefix = Path.join(home, ".local/share/npm-global")
+
+    fake_codex =
+      Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex")
+
     fake_bin = Path.join(tmp, "bin")
     fake_npm = Path.join(fake_bin, "npm")
     npm_set = Path.join(tmp, "npm-prefix-set")
 
-    File.mkdir_p!(real_bins)
+    File.mkdir_p!(Path.dirname(fake_codex))
     File.mkdir_p!(fake_bin)
 
     File.write!(fake_codex, """
@@ -238,13 +241,18 @@ defmodule Scripts.AgentWorktreeTest do
       System.cmd(
         "bash",
         [Path.join(@root, "scripts/devide"), "agent", "launch", "codex", "update"],
-        env: [{"HOME", home}, {"FAKE_NPM_SET", npm_set}, {"PATH", "#{fake_bin}:/usr/bin:/bin"}],
+        env: [
+          {"HOME", home},
+          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"FAKE_NPM_SET", npm_set},
+          {"PATH", "#{fake_bin}:/usr/bin:/bin"}
+        ],
         stderr_to_stdout: true
       )
 
     assert output =~ "fake codex <update>\n"
     assert output =~ "Installed DevIDE agent shims"
-    assert File.read!(npm_set) == Path.join(home, ".local/share/npm-global") <> "\n"
+    assert File.read!(npm_set) == npm_prefix <> "\n"
     assert File.read!(Path.join(home, ".local/bin/codex")) =~ "devide\" agent launch codex"
   end
 

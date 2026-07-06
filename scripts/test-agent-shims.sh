@@ -40,6 +40,7 @@ run_installer_rejects_bin_dir_candidate() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
+  unset DEV_IDE_NPM_PREFIX
   bin_dir="${HOME}/.local/bin"
   package_claude="${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude"
 
@@ -65,6 +66,7 @@ run_resolver_rejects_recorded_devide_shim() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
+  unset DEV_IDE_NPM_PREFIX
   real_dir="${home}/real-bin-dir"
   real_codex="${real_dir}/codex"
 

@@ -178,9 +178,23 @@ badges in the session bar and the workspace picker. State comes from two sources
 reconciled by staleness rules (a live title spinner always wins over a stale
 report; `blocked`/`done` are never inferred from the title):
 
-- **Explicit reports** via the MCP tool below. Launched Claude Code agents report
-  automatically through installed hooks (`scripts/devide-agent-state.sh`, wired by
-  a materialized `--settings` file; opt out with `DEVIDE_AGENT_STATE_HOOKS=0`).
+- **Explicit reports** via the MCP tool below. Launched agents report
+  automatically (opt out of all of it with `DEVIDE_AGENT_STATE_HOOKS=0`):
+  - **Claude Code**: hooks in a materialized `--settings` file run
+    `scripts/devide-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
+    Notification (blocked), Stop (done), SessionStart/End (idle).
+  - **Grok**: the launcher installs a global hook file
+    (`~/.grok/hooks/devide-agent-state.json`, from
+    `scripts/agent-hooks/grok-devide-agent-state.json`) that runs the same
+    script on the equivalent Grok events; `stop_failure` (turn died on an API
+    error) also maps to blocked. The hook command is env-guarded, so grok
+    sessions outside DevIDE pairing no-op silently.
+  - **Codex**: the launcher injects `-c notify=["…/devide-codex-notify.sh"]`;
+    `agent-turn-complete` reports done with the last assistant message. Codex
+    has no turn-start event — the working edge comes from dispatch (below).
+- **Dispatch reports**: a successful `terminal_send_agent_command` (or
+  `terminal_paste_agent_text` with `submit`) reports `working` for the target
+  pane itself, so every runtime gets a working edge the moment work is sent.
 - **Title heuristic** (`PaneState`) as a fallback when no live report exists.
 
 ```text
