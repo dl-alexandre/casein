@@ -479,7 +479,8 @@ defmodule DevIDE.Agents.TerminalTools do
          error
          |> Map.put(:workspace_id, workspace_id(params))
          |> Map.put(:sessions, error.candidate_sessions)
-         |> Map.put(:safe_to_mutate, false)}
+         |> Map.put(:safe_to_mutate, false)
+         |> put_ambiguous_recommendation(params)}
 
       {:error, :no_workspace_sessions} ->
         {:ok,
@@ -1081,6 +1082,39 @@ defmodule DevIDE.Agents.TerminalTools do
       safe_to_mutate: false,
       next_tool: "terminal_context"
     }
+  end
+
+  # Ambiguity stays safe-by-default (never an implicit mutation target), but
+  # agents still need a starting point: the operator's attached session beats
+  # any detached leftover, and recency breaks the remaining ties.
+  defp put_ambiguous_recommendation(payload, params) do
+    case recommend_session(payload.candidate_sessions) do
+      {session, reason} ->
+        payload
+        |> Map.put(:recommended_session, session)
+        |> Map.put(:recommendation_reason, reason)
+        |> Map.put(
+          :next_arguments,
+          compact(%{workspace_id: workspace_id(params), session: session})
+        )
+
+      nil ->
+        payload
+    end
+  end
+
+  defp recommend_session(candidates) do
+    {pool, reason} =
+      case Enum.filter(candidates, &(Map.get(&1, :attached) == true)) do
+        [] -> {candidates, "most_recent_activity"}
+        [only] -> {[only], "only_attached_session"}
+        attached -> {attached, "most_recently_active_attached_session"}
+      end
+
+    case Enum.max_by(pool, &(Map.get(&1, :activity) || 0), fn -> nil end) do
+      %{session: session} -> {session, reason}
+      _ -> nil
+    end
   end
 
   defp session_candidate(%{session: name} = session) do

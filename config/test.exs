@@ -126,6 +126,7 @@ config :dev_ide,
   preview_control_adapter: :memory,
   preview_proxy_enabled: false,
   preview_open_preflight: false,
+  preview_surface_probe: false,
   preview_pane_persistence_enabled: false,
   terminal_desktop_integration_enabled: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running

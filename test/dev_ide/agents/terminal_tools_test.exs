@@ -248,6 +248,56 @@ defmodule DevIDE.Agents.TerminalToolsTest do
              TerminalTools.invoke("terminal_context", %{"workspace_id" => "alpha"})
   end
 
+  test "terminal_context recommends the attached session when ambiguous" do
+    prefix = Tmux.workspace_session_prefix("alpha")
+    stale = prefix <> "_stale"
+    live = prefix <> "_live"
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      stale => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 900}],
+      live => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 5}]
+    })
+
+    # The detached session is more recent; the operator's attached one must win.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_session_meta, %{live => %{attached: true}})
+    on_exit(fn -> TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta) end)
+
+    assert {:ok, payload} =
+             TerminalTools.invoke("terminal_context", %{"workspace_id" => "alpha"})
+
+    assert payload.ambiguous
+    refute payload.safe_to_mutate
+    assert payload.recommended_session == live
+    assert payload.recommendation_reason == "only_attached_session"
+    assert payload.next_tool == "terminal_context"
+    assert payload.next_arguments == %{workspace_id: "alpha", session: live}
+  end
+
+  test "terminal_context recommends the most recent session when none is attached" do
+    prefix = Tmux.workspace_session_prefix("alpha")
+    older = prefix <> "_older"
+    newer = prefix <> "_newer"
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      older => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 10}],
+      newer => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 20}]
+    })
+
+    assert {:ok, payload} =
+             TerminalTools.invoke("terminal_context", %{"workspace_id" => "alpha"})
+
+    assert payload.ambiguous
+    assert payload.recommended_session == newer
+    assert payload.recommendation_reason == "most_recent_activity"
+    assert payload.next_arguments == %{workspace_id: "alpha", session: newer}
+  end
+
   test "terminal_paste_agent_text targets only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 
