@@ -14,6 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
@@ -615,6 +616,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     {:noreply,
      socket |> TerminalState.refresh_session_tabs() |> Show.assign_workspace_summaries()}
   end
+
+  # Cmd/Ctrl+Click on a detected file path in terminal output. Show routes all
+  # "terminal:" events here; the handler itself lives with the file-pane web
+  # logic (LinkResolver re-validation, pane anchoring, files-tab fallback).
+  def handle_event("terminal:open_file_link", params, socket),
+    do: FilePaneEvents.handle_event("terminal:open_file_link", params, socket)
 
   @send_agent_text_max_bytes 32 * 1024
 

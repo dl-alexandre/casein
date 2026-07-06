@@ -28,6 +28,7 @@ import {
   loadStoredDisplayZoom,
   saveStoredDisplayZoom
 } from "./terminal_display_zoom.mjs"
+import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -1130,7 +1131,182 @@ function renderPatched(hook, payload, upstreamRender) {
   const accepted = acceptRenderPayload(hook, payload)
   if (!accepted?.ok) return
 
+  // Keep the link store in step with every ACCEPTED frame, even ones whose
+  // paint is deferred behind an active selection — the store then converges
+  // with the grid on the deferred repaint. Dropped frames force a resync,
+  // whose full frame resets the store.
+  updateFileLinkStore(hook.__fileLinks, accepted.payload)
+  refreshFileLinkHover(hook)
+
   paintAcceptedPayload(hook, accepted.payload, upstreamRender)
+}
+
+// --- Terminal file links -------------------------------------------------------
+//
+// Server-detected file paths in terminal output (payload.file_links, scanned
+// in PaneWorker). Interaction model is selection-first: plain click and
+// drag-select are untouched; only Cmd/Ctrl reveals links (pointer cursor +
+// underline overlay) and Cmd/Ctrl+Click — handled in capture phase ahead of
+// the selection mousedown — opens the file in a file pane.
+
+function ensureFileLinkLayer(hook) {
+  if (hook.__fileLinkLayer?.isConnected) return hook.__fileLinkLayer
+
+  const host = hook.screen || hook.el
+  if (!host) return null
+
+  const layer = document.createElement("div")
+  layer.setAttribute("aria-hidden", "true")
+  Object.assign(layer.style, {
+    position: "absolute",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "6"
+  })
+  host.appendChild(layer)
+  hook.__fileLinkLayer = layer
+  return layer
+}
+
+function fileLinkAtEvent(hook, event) {
+  if (!terminalPreTarget(hook, event.target)) return null
+
+  const point = terminalCellPointFromEvent(hook, event)
+  if (!point) return null
+
+  const link = fileLinkAt(hook.__fileLinks, point.row, point.col)
+  return link ? {link, point} : null
+}
+
+// Underline the hovered link and show a pointer cursor — but only while
+// Cmd/Ctrl is held. Drawn as a pointer-events-none overlay positioned from
+// cell metrics (same approach as renderCellSelection), so it works in both
+// the DOM and canvas renderers.
+function setFileLinkHover(hook, hover) {
+  const layer = ensureFileLinkLayer(hook)
+  if (!layer) return
+
+  layer.innerHTML = ""
+  if (hook.pre) hook.pre.style.cursor = hover ? "pointer" : ""
+  if (!hover) return
+
+  const metrics = terminalCellMetrics(hook)
+  if (!metrics) return
+
+  const underline = document.createElement("div")
+  Object.assign(underline.style, {
+    position: "absolute",
+    left: `${metrics.paddingLeft + hover.link.from * metrics.width}px`,
+    top: `${metrics.paddingTop + (hover.point.row + 1) * metrics.height - 2}px`,
+    width: `${(hover.link.to - hover.link.from + 1) * metrics.width}px`,
+    height: "1px",
+    background: termVar("--devide-term-link") || "rgba(137, 180, 250, 0.9)"
+  })
+  layer.appendChild(underline)
+}
+
+function refreshFileLinkHover(hook, event) {
+  if (event) hook.__fileLinkPointerEvent = event
+
+  const pointer = hook.__fileLinkPointerEvent
+  if (!pointer || !hook.__fileLinkModifier) {
+    setFileLinkHover(hook, null)
+    return
+  }
+
+  setFileLinkHover(hook, fileLinkAtEvent(hook, pointer))
+}
+
+function setFileLinkModifier(hook, held) {
+  if (hook.__fileLinkModifier === held) return
+  hook.__fileLinkModifier = held
+  refreshFileLinkHover(hook)
+}
+
+// Frame pane identity: the render stream is keyed "ghostty-<pane_id>" and the
+// hook element carries that id. The server treats it as the primary anchor
+// hint and falls back to {row, col} geometry mapping.
+function fileLinkPaneId(hook) {
+  const id = hook.el?.id || ""
+  return id.startsWith("ghostty-") ? id.slice("ghostty-".length) : id
+}
+
+function installTerminalFileLinks(hook) {
+  hook.__fileLinks = new Map()
+  hook.__fileLinkModifier = false
+  hook.__fileLinkPointerEvent = null
+
+  // Capture phase, registered before the selection mousedown handler: a
+  // Cmd/Ctrl+Click on a link cell is consumed here (suppressing selection
+  // start and the vendor's focus handling for this event only). Everything
+  // else falls through to the selection-first mouse model unchanged.
+  hook.__onFileLinkMouseDown = (e) => {
+    if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+
+    const hover = fileLinkAtEvent(hook, e)
+    if (!hover) return
+
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    setFileLinkHover(hook, null)
+
+    hook.pushEvent("terminal:open_file_link", {
+      path: hover.link.path,
+      line: hover.link.line ?? null,
+      pane_id: fileLinkPaneId(hook),
+      row: hover.point.row,
+      col: hover.point.col
+    })
+  }
+
+  hook.__onFileLinkMouseMove = (e) => {
+    hook.__fileLinkModifier = e.metaKey || e.ctrlKey
+    refreshFileLinkHover(hook, e)
+  }
+
+  hook.__onFileLinkMouseLeave = () => {
+    hook.__fileLinkPointerEvent = null
+    setFileLinkHover(hook, null)
+  }
+
+  // Modifier transitions while the pointer rests on a link: reveal/hide the
+  // underline without waiting for the next mousemove.
+  hook.__onFileLinkModifierKey = (e) => {
+    if (e.key === "Meta" || e.key === "Control") {
+      setFileLinkModifier(hook, e.type === "keydown" || (e.metaKey || e.ctrlKey))
+    }
+  }
+
+  hook.__onFileLinkWindowBlur = () => setFileLinkModifier(hook, false)
+
+  hook.el.addEventListener("mousedown", hook.__onFileLinkMouseDown, true)
+  hook.el.addEventListener("mousemove", hook.__onFileLinkMouseMove)
+  hook.el.addEventListener("mouseleave", hook.__onFileLinkMouseLeave)
+  window.addEventListener("keydown", hook.__onFileLinkModifierKey)
+  window.addEventListener("keyup", hook.__onFileLinkModifierKey)
+  window.addEventListener("blur", hook.__onFileLinkWindowBlur)
+}
+
+function teardownTerminalFileLinks(hook) {
+  if (hook.__onFileLinkMouseDown) {
+    hook.el.removeEventListener("mousedown", hook.__onFileLinkMouseDown, true)
+    hook.el.removeEventListener("mousemove", hook.__onFileLinkMouseMove)
+    hook.el.removeEventListener("mouseleave", hook.__onFileLinkMouseLeave)
+    window.removeEventListener("keydown", hook.__onFileLinkModifierKey)
+    window.removeEventListener("keyup", hook.__onFileLinkModifierKey)
+    window.removeEventListener("blur", hook.__onFileLinkWindowBlur)
+    hook.__onFileLinkMouseDown = null
+    hook.__onFileLinkMouseMove = null
+    hook.__onFileLinkMouseLeave = null
+    hook.__onFileLinkModifierKey = null
+    hook.__onFileLinkWindowBlur = null
+  }
+
+  hook.__fileLinkLayer?.remove()
+  hook.__fileLinkLayer = null
+  hook.__fileLinks = null
+  hook.__fileLinkPointerEvent = null
+  hook.__fileLinkModifier = false
 }
 
 function refreshHookTheme(hook) {
@@ -1727,6 +1903,10 @@ const GhosttyTerminal = {
     reportViewportActive(this, true)
     applyTerminalLayout(this)
 
+    // Registered before the selection mousedown below so the capture-phase
+    // Cmd/Ctrl+Click link handler sees the event first.
+    installTerminalFileLinks(this)
+
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
     // <pre>, and the vendor disables its own cell selection when tmux enables
@@ -2279,6 +2459,8 @@ const GhosttyTerminal = {
       this.__selectionActive = false
       if (this.selectionLayer) this.selectionLayer.innerHTML = ""
     }
+
+    teardownTerminalFileLinks(this)
 
     this.__clipboardCleanup?.()
     this.__clipboardCleanup = null

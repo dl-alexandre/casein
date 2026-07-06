@@ -82,6 +82,112 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorkerTest do
     assert_receive {:DOWN, ^ref, :process, ^worker, :normal}
   end
 
+  describe "terminal file links" do
+    setup do
+      root =
+        Path.join(System.tmp_dir!(), "pane-worker-links-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(Path.join(root, "lib"))
+      File.write!(Path.join(root, "lib/foo.ex"), "defmodule Foo do\nend\n")
+
+      DevIDE.FilePanes.LinkResolver.clear_cache()
+
+      on_exit(fn ->
+        DevIDE.FilePanes.LinkResolver.clear_cache()
+        File.rm_rf(root)
+      end)
+
+      {:ok, root: root}
+    end
+
+    defp start_link_worker(root, pane_id) do
+      {:ok, worker} =
+        PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored",
+          workspace_id: "ws-links",
+          workspace_key: "alpha",
+          session_sid: "u-links",
+          loc: {:local, root},
+          backend: :session_owner,
+          terminal_module: FakeTerminals,
+          test_owner: self(),
+          cols: 80,
+          rows: 6
+        )
+
+      assert_receive {:fake_owner_attached, _owner_pid, ^worker, _, _, _}, 1_000
+      Process.unlink(worker)
+      worker
+    end
+
+    test "frames carry validated file_links for changed rows only", %{root: root} do
+      worker = start_link_worker(root, "pane-links")
+
+      handler_id = "pane-worker-link-scan-#{System.unique_integer([:positive])}"
+      test_pid = self()
+
+      :telemetry.attach(
+        handler_id,
+        [:dev_ide, :terminal, :link_scan],
+        fn _event, measurements, metadata, _cfg ->
+          send(test_pid, {:link_scan, measurements, metadata})
+        end,
+        nil
+      )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      send(worker, {:terminal_payload, :data, %{data: "lib/foo.ex:12 and lib/missing.ex:9"}})
+
+      assert_receive {:pane_frame, "pane-links", %{file_links: links}}, 1_000
+      assert [%{row: 0, path: "lib/foo.ex", line: 12, from: 0, to: 12}] = links
+
+      assert_receive {:link_scan, measurements, %{id: "ghostty-pane-links"}}, 1_000
+      assert measurements.candidates == 2
+      assert measurements.links == 1
+      assert is_integer(measurements.duration_us)
+
+      # Output on another row that repaints only that row: the incremental
+      # frame's file_links cover the changed row, not row 0 again.
+      send(worker, {:terminal_payload, :data, %{data: "\r\nmix.exs ok"}})
+
+      assert_receive {:pane_frame, "pane-links", payload}, 1_000
+
+      case payload do
+        %{file_links: more_links} ->
+          assert Enum.all?(more_links, &(&1.row != 0))
+
+        _ ->
+          # mix.exs does not exist under this root — no links attached.
+          refute Map.has_key?(payload, :file_links)
+      end
+
+      GenServer.stop(worker, :normal)
+    end
+
+    test "frames omit file_links when nothing on the changed rows resolves", %{root: root} do
+      worker = start_link_worker(root, "pane-nolinks")
+
+      send(worker, {:terminal_payload, :data, %{data: "hello lib/absent.ex world"}})
+
+      assert_receive {:pane_frame, "pane-nolinks", payload}, 1_000
+      refute Map.has_key?(payload, :file_links)
+
+      GenServer.stop(worker, :normal)
+    end
+
+    test "workers without a local loc never scan" do
+      worker = start_worker()
+
+      send(worker, {:terminal_payload, :data, %{data: "lib/foo.ex:12"}})
+
+      assert_receive {:pane_frame, "pane-gen-1", payload}, 1_000
+      refute Map.has_key?(payload, :file_links)
+    end
+  end
+
   test "terminal_owner_size resizes the local grid without owner_resize" do
     {:ok, worker} =
       PaneWorker.start_link(

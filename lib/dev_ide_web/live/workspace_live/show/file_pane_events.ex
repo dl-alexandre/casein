@@ -12,6 +12,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   #   * "tree:open_in_pane" — the context-menu entry point that splits/reuses a
   #     file pane next to the active plain-terminal pane, falling back to
   #     today's "tree:open" (files tab) when no live tmux pane exists;
+  #   * "terminal:open_file_link" — Cmd/Ctrl+Click on a scanner-detected path
+  #     in terminal output (delegated through TerminalEvents). Re-validates
+  #     the path via DevIDE.FilePanes.LinkResolver (never trusts the client),
+  #     anchors on the emitting pane, and opens the file at :line in a file
+  #     pane; unresolvable links fall back to the files tab;
   #   * {:pane_event, evt} PubSub (DevIDE.Panes.Events) — maintains the
   #     :feature_panes assign and pushes "file-pane:loaded" (broadcast-with-id,
   #     filtered client-side by pane id like ghostty:render) when a file pane's
@@ -24,9 +29,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   import DevIdeWeb.WorkspaceLive.Show.Context
 
   alias DevIDE.FilePanes
+  alias DevIDE.FilePanes.LinkResolver
   alias DevIDE.Panes
   alias DevIDE.Panes.Pane
   alias DevIDE.Policy
+  alias DevIDE.Workspaces
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
@@ -92,6 +99,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   end
 
   def handle_event("tree:open_in_pane", _params, socket), do: {:noreply, socket}
+
+  def handle_event("terminal:open_file_link", %{"path" => path} = params, socket)
+      when is_binary(path) do
+    line = parse_line(params["line"])
+
+    case local_link_root(socket.assigns.workspace) do
+      {:ok, root} ->
+        # Never trust the client payload: re-validate through the same
+        # resolver that admitted the link when the frame was scanned.
+        case LinkResolver.resolve(root, path) do
+          {:ok, rel} ->
+            open_link_in_pane(socket, rel, line, params)
+
+          {:error, :not_found} ->
+            # Existed at scan time but vanished (or a stale client store):
+            # the files-tab fallback surfaces the read error in place.
+            open_in_files_tab(socket, path)
+
+          {:error, _refused} ->
+            # Confinement failure (outside root / symlink escape / invalid):
+            # refuse outright — no files-tab retry for a forged path.
+            {:noreply, put_flash(socket, :error, "That link points outside the workspace.")}
+        end
+
+      _ ->
+        # No local root (remote workspace): link scanning is disabled there,
+        # so treat this as a plain open request. The files tab validates the
+        # path through FileAccess itself.
+        open_in_files_tab(socket, path)
+    end
+  end
+
+  def handle_event("terminal:open_file_link", _params, socket), do: {:noreply, socket}
 
   # --- handle_info --------------------------------------------------------------
 
@@ -224,6 +264,119 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   defp dispatch_file_input(socket, _pane_id, _payload, _input) do
     {:reply, %{error: "unsupported_input"}, socket}
   end
+
+  # --- terminal:open_file_link helpers ---------------------------------------------
+
+  defp local_link_root(workspace) do
+    case Workspaces.safe_host_loc(workspace) do
+      {:ok, {:local, root}} when is_binary(root) and root != "" -> {:ok, root}
+      _ -> :error
+    end
+  end
+
+  defp open_link_in_pane(socket, rel, line, params) do
+    tmux_session = socket.assigns[:tmux_session]
+    anchor = link_anchor_pane_id(socket, params)
+
+    if is_binary(tmux_session) and tmux_session != "" and is_binary(anchor) do
+      opts =
+        [
+          tmux_session: tmux_session,
+          anchor_pane_id: anchor,
+          line: line,
+          actor_id: current_actor_id(socket)
+        ]
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+      case FilePanes.open_file_in_pane(socket.assigns.workspace, rel, opts) do
+        {:ok, _result} ->
+          {:noreply,
+           socket
+           |> assign(:tab, "terminal")
+           |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)}
+
+        {:error, reason} when reason in [:no_tmux_session, :no_active_pane, :window_not_found] ->
+          open_in_files_tab(socket, rel)
+
+        {:error, reason} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not open file in a pane: #{format_file_error(reason)}"
+           )}
+      end
+    else
+      open_in_files_tab(socket, rel)
+    end
+  end
+
+  # Anchor identity for the split: the payload's pane_id when it names a live
+  # plain-terminal tmux pane (the frame key is primary); otherwise map the
+  # click's {row, col} grid cell onto the active window's pane rectangles —
+  # the shared Ghostty surface renders the WHOLE tmux window (splits drawn by
+  # tmux inside one grid), so this is the same cell geometry tmux_pane_style/2
+  # renders from. Last resort: the surface/active-pane fallback.
+  defp link_anchor_pane_id(socket, params) do
+    panes = TerminalChrome.active_tmux_window_panes(socket.assigns[:tmux_windows] || [])
+    pane_id = params["pane_id"]
+
+    cond do
+      operator_tmux_pane?(socket, panes, pane_id) ->
+        pane_id
+
+      pane = link_pane_at_cell(socket, panes, params["row"], params["col"]) ->
+        pane.id
+
+      true ->
+        anchor_pane_id(socket)
+    end
+  end
+
+  defp operator_tmux_pane?(socket, panes, pane_id) do
+    is_binary(pane_id) and pane_id != "" and
+      Enum.any?(panes, &(&1.id == pane_id)) and
+      not link_feature_pane?(socket, pane_id)
+  end
+
+  defp link_pane_at_cell(socket, panes, row, col) do
+    with {:ok, row} <- cell_int(row),
+         {:ok, col} <- cell_int(col) do
+      Enum.find(panes, fn pane ->
+        cell_in_pane?(pane, row, col) and not link_feature_pane?(socket, pane.id)
+      end)
+    else
+      _ -> nil
+    end
+  end
+
+  defp cell_in_pane?(pane, row, col) do
+    left = TerminalChrome.tmux_dimension(pane.left)
+    top = TerminalChrome.tmux_dimension(pane.top)
+    width = TerminalChrome.tmux_dimension(pane.width)
+    height = TerminalChrome.tmux_dimension(pane.height)
+
+    col >= left and col < left + width and row >= top and row < top + height
+  end
+
+  defp link_feature_pane?(socket, pane_id) do
+    TerminalChrome.feature_pane?(
+      socket.assigns[:preview_panes] || %{},
+      feature_panes(socket),
+      pane_id
+    )
+  end
+
+  defp cell_int(value) when is_integer(value) and value >= 0, do: {:ok, value}
+
+  defp cell_int(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {n, ""} when n >= 0 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp cell_int(_value), do: :error
 
   # --- helpers --------------------------------------------------------------------
 

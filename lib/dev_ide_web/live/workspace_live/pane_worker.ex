@@ -43,7 +43,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   """
   use GenServer
 
+  alias DevIDE.FilePanes.LinkResolver
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.FileLinkScanner
   alias DevIdeWeb.TerminalRender
 
   # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
@@ -161,6 +163,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          theme_bundle: Terminals.terminal_theme_bundle(preset),
          terminal_scheme: scheme,
          terminal_preset: preset,
+         # Local workspace root for terminal file-link detection; nil (remote
+         # or unknown loc) disables the frame scanner entirely.
+         link_root: link_root(opts),
          # Output draining state (see moduledoc). `out_buffer` is a reversed
          # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
          # `last_cells` is the diff baseline for the next frame. frame_epoch/seq
@@ -459,7 +464,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            frame_epoch: frame_epoch
          ) do
       {payload, cells} ->
-        payload = put_content_gen(payload, state.content_gen)
+        payload =
+          payload
+          |> put_content_gen(state.content_gen)
+          |> put_file_links(state, cells, id)
+
         send(state.parent, {:pane_frame, state.pane_id, payload})
         %{state | last_cells: cells, frame_seq: frame_seq, frame_epoch: frame_epoch}
 
@@ -467,6 +476,70 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         state
     end
   end
+
+  # --- terminal file-link detection ---------------------------------------------
+  #
+  # Scan the frame's changed rows for workspace file paths and attach the
+  # validated links as `payload.file_links`, so links ride the ghostty:render
+  # frame itself — transactionally consistent with the row content (no
+  # separate event, no seq races) and built HERE, off the LiveView process.
+  # Cost controls: local-root workspaces only, changed rows only, a cheap
+  # binary gate per row before any regex (FileLinkScanner), and a per-frame
+  # cap on uncached filesystem validations (LinkResolver).
+
+  defp link_root(opts) do
+    case Keyword.get(opts, :loc) do
+      {:local, root} when is_binary(root) and root != "" -> root
+      _ -> nil
+    end
+  end
+
+  defp put_file_links(payload, %{link_root: nil}, _cells, _id), do: payload
+
+  defp put_file_links(payload, state, cells, id) do
+    started = System.monotonic_time()
+
+    rows = scannable_rows(payload, cells)
+    candidates = FileLinkScanner.scan_rows(rows)
+    links = validate_links(state.link_root, candidates)
+
+    :telemetry.execute(
+      [:dev_ide, :terminal, :link_scan],
+      %{
+        duration_us:
+          System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
+        rows: length(rows),
+        candidates: length(candidates),
+        links: length(links)
+      },
+      %{id: id, full_frame?: payload[:full_frame] == true}
+    )
+
+    # Empty is omitted: the client clears link state for every repainted row
+    # (payload.rows / full frames) regardless, so absence means "no links".
+    if links == [], do: payload, else: Map.put(payload, :file_links, links)
+  end
+
+  defp validate_links(_root, []), do: []
+  defp validate_links(root, candidates), do: LinkResolver.validate_frame(root, candidates)
+
+  # Changed rows only on incremental frames; every row on a full frame.
+  defp scannable_rows(%{rows: rows}, cells) when is_list(rows) do
+    grid = List.to_tuple(cells)
+    grid_rows = tuple_size(grid)
+
+    for %{index: index} <- rows, index >= 0 and index < grid_rows do
+      {index, FileLinkScanner.row_text(elem(grid, index))}
+    end
+  end
+
+  defp scannable_rows(_payload, cells) when is_list(cells) do
+    cells
+    |> Enum.with_index()
+    |> Enum.map(fn {row, index} -> {index, FileLinkScanner.row_text(row)} end)
+  end
+
+  defp scannable_rows(_payload, _cells), do: []
 
   defp next_frame_position(state, true), do: {0, state.frame_epoch + 1}
   defp next_frame_position(state, false), do: {state.frame_seq + 1, state.frame_epoch}
