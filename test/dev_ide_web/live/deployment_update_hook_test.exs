@@ -26,7 +26,29 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
   setup do
     MemoryAdapter.clear()
 
-    # /workspaces mount fetches the workspace list from the manager over HTTP;
+    # Isolate from the box's real poller status file: on the devbox an actual
+    # deploy may be in flight, and its in-progress banner suppresses the
+    # update banner this file asserts on. Tests that need a status file set
+    # their own path on top of this.
+    prev_deploy = Application.get_env(:dev_ide, :deployment)
+
+    Application.put_env(
+      :dev_ide,
+      :deployment,
+      (prev_deploy || [])
+      |> Keyword.put(
+        :last_deploy_path,
+        Path.join(System.tmp_dir!(), "devide-no-deploy-#{System.unique_integer([:positive])}")
+      )
+    )
+
+    on_exit(fn ->
+      if prev_deploy,
+        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
+        else: Application.delete_env(:dev_ide, :deployment)
+    end)
+
+    # The dashboard mount fetches the workspace list from the manager over HTTP;
     # an empty list keeps the mount light — we only care about the on_mount hook.
     Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
