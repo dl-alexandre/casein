@@ -117,8 +117,11 @@ defmodule TmuxCtl.Test.FakeRunner do
   end
 
   defp window_line(w) do
-    "#{w.id}|#{w.index}|#{w.name}|#{active(w.active)}|#{w.panes}|#{w.activity}|#{w.current_command}"
+    "#{w.id}|#{w.index}|#{auto_rename(w)}|#{w.name}|#{active(w.active)}|#{w.panes}|#{w.activity}|#{w.current_command}"
   end
+
+  # Mirrors tmux `#{automatic-rename}`: 0 once a window is deliberately named.
+  defp auto_rename(w), do: if(Map.get(w, :manual_name, false), do: "0", else: "1")
 
   defp panes_output(session, opts \\ []) do
     prefix = Keyword.get(opts, :prefix, "")

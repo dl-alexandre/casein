@@ -118,18 +118,18 @@ defmodule TmuxCtl.ClientExtraTest do
   # --- list_session_windows/1 -------------------------------------------------
 
   test "list_session_windows parses multiple windows and edge fields" do
-    # @topology_window_fmt: id|index|name|active|panes|activity|current_command
+    # @topology_window_fmt: id|index|automatic-rename|name|active|panes|activity|current_command
     out =
       Enum.join(
         [
-          "@1|0|shell|1|2|17|bash",
-          "@2|1|editor|0|1|0|nvim",
+          "@1|0|1|shell|1|2|17|bash",
+          "@2|1|0|editor|0|1|0|nvim",
           # blank line is trimmed by String.split(trim: true)
           "",
           # malformed (too few fields) → dropped by parse_topology_window_line
           "garbage-no-pipes",
           # non-integer index/panes/activity fall back to defaults
-          "@3|x|build|0|y|z|make"
+          "@3|x||build|0|y|z|make"
         ],
         "\n"
       )
@@ -141,13 +141,22 @@ defmodule TmuxCtl.ClientExtraTest do
                id: "@1",
                index: 0,
                name: "shell",
+               manual_name: false,
                active: true,
                panes: 2,
                activity: 17,
                current_command: "bash"
              },
-             %{id: "@2", index: 1, name: "editor", active: false, panes: 1, activity: 0},
-             %{id: "@3", index: 0, name: "build", active: false, panes: 1, activity: 0}
+             %{
+               id: "@2",
+               index: 1,
+               name: "editor",
+               manual_name: true,
+               active: false,
+               panes: 1,
+               activity: 0
+             },
+             %{id: "@3", index: 0, name: "build", manual_name: false, active: false, panes: 1}
            ] = Client.list_session_windows(@session)
 
     assert_receive {:tmux_runner, ["list-windows", "-t", @session, "-F", _fmt]}
@@ -291,7 +300,7 @@ defmodule TmuxCtl.ClientExtraTest do
     out =
       Enum.join(
         [
-          "W|@1|0|shell|1|1|5|bash",
+          "W|@1|0|1|shell|1|1|5|bash",
           "P|@1|%1|0|1|0|0|120|40|bash|5|0|5|0|0|0|/workspace|1",
           # untagged line ignored by the comprehension binary match
           "noise"
@@ -318,15 +327,15 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- directory_inventory/0 --------------------------------------------------
 
-  # @directory_window_fmt: session|id|index|active|activity|current_command|name
+  # @directory_window_fmt: session|id|index|active|activity|current_command|automatic-rename|name
   # @directory_pane_fmt:   session|window_id|pane_id|active|current_command|pane_activity|
   #                        window_activity|current_path|@devide_pane_role|pane_title
   test "directory_inventory groups windows and panes by session" do
     out =
       Enum.join(
         [
-          "W|devide_a_main|@1|0|1|11|bash|shell",
-          "W|devide_b_main|@2|0|0|0|nvim|editor",
+          "W|devide_a_main|@1|0|1|11|bash|1|shell",
+          "W|devide_b_main|@2|0|0|0|nvim|0|editor",
           "P|devide_a_main|@1|%1|1|node|150|11|/work/a|operator|Agent title",
           # 5-field fallback for older fixtures without a role field.
           "P|devide_b_main|@2|%2|0|/work/b",
@@ -341,10 +350,13 @@ defmodule TmuxCtl.ClientExtraTest do
 
     assert {:ok, %{windows: windows, panes: panes}} = Client.directory_inventory()
 
-    assert [%{id: "@1", name: "shell", active: true, current_command: "bash"}] =
+    assert [
+             %{id: "@1", name: "shell", manual_name: false, active: true, current_command: "bash"}
+           ] =
              windows["devide_a_main"]
 
-    assert [%{id: "@2", name: "editor", active: false}] = windows["devide_b_main"]
+    assert [%{id: "@2", name: "editor", manual_name: true, active: false}] =
+             windows["devide_b_main"]
 
     assert [
              %{
@@ -374,7 +386,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- list_windows/0 ---------------------------------------------------------
 
-  # @list_windows_fmt: session|window_id|active|panes|automatic_rename|activity|current_command
+  # @list_windows_fmt: session|window_id|active|panes|automatic-rename|activity|current_command
   test "list_windows parses server-wide window list" do
     out =
       Enum.join(

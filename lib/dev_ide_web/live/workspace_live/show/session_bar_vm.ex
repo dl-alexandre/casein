@@ -231,6 +231,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       task_summary =
         blank_to_nil(Map.get(window, :task_summary) || Map.get(window, "task_summary"))
 
+      manual_name? =
+        (Map.get(window, :manual_name) || Map.get(window, "manual_name")) == true
+
       activity_state =
         effective_window_activity_state(
           window_activity_state(%{activity: Map.get(activity, id)}),
@@ -252,7 +255,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
         name: name,
-        display_name: task_summary || name,
+        display_name: window_display_name(manual_name?, task_summary, name),
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: quiet?,
         unseen_quiet?: unseen_quiet?,
@@ -656,6 +659,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
     attention = quiet_attention(quiet?, unseen_quiet?)
     name = window.name
+    manual_name? = Map.get(window, :manual_name) == true
 
     {activity_class, activity_label} =
       apply_agent_state(
@@ -670,7 +674,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       dom_frag: dom_fragment(window.id),
       index: window.index,
       name: name,
-      display_name: task_summary || name,
+      display_name: window_display_name(manual_name?, task_summary, name),
       active?: window.active,
       quiet?: quiet?,
       unseen_quiet?: unseen_quiet?,
@@ -705,6 +709,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalize_unseen_quiet_window_ids(%MapSet{} = ids), do: ids
   defp normalize_unseen_quiet_window_ids(ids) when is_list(ids), do: MapSet.new(ids)
   defp normalize_unseen_quiet_window_ids(_ids), do: MapSet.new()
+
+  # A deliberately named window (tmux automatic-rename off — the user renamed
+  # it, or it was created with an explicit name) keeps that name as its label;
+  # live pane-title task summaries only label auto-named windows. The summary
+  # still reaches the hover title via full_window_title/3.
+  defp window_display_name(true = _manual_name?, _task_summary, name), do: name
+  defp window_display_name(_manual_name?, task_summary, name), do: task_summary || name
 
   defp full_window_title(window, highlight_pane_id, task_summary) do
     title = window_full_title(window, highlight_pane_id)

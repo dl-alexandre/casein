@@ -10,6 +10,7 @@ defmodule TmuxCtl.Topology do
           id: String.t(),
           index: non_neg_integer(),
           name: String.t(),
+          manual_name: boolean(),
           active: boolean(),
           panes: pos_integer(),
           pane_list: [pane()],
@@ -79,7 +80,10 @@ defmodule TmuxCtl.Topology do
   @spec structure_version([map()], [map()]) :: non_neg_integer()
   def structure_version(windows, panes) do
     :erlang.phash2({
-      Enum.map(windows, &{&1.id, &1.index, &1.name, &1.active, &1.panes}),
+      Enum.map(
+        windows,
+        &{&1.id, &1.index, &1.name, Map.get(&1, :manual_name), &1.active, &1.panes}
+      ),
       Enum.map(panes, &{&1.id, &1.window_id, &1.index, &1.active, Map.get(&1, :role)})
     })
   end
