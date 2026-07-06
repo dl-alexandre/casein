@@ -63,10 +63,10 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          # Keep in sync with the toolchain pinned in the Dockerfile
-          # (ELIXIR_VERSION / OTP_VERSION build args).
-          elixir-version: "1.18.4"
-          otp-version: "27.2"
+          # Keep in sync with the toolchain in .tool-versions (what the devbox,
+          # mise, and the self-hosted PR gate run).
+          elixir-version: "1.20.0"
+          otp-version: "28.5"
 
       # The :pty suite must run against the same tmux the devbox runs. Pinned to
       # 3.6b for in-pane OSC 11 client-color support (see scripts/install-tmux.sh
@@ -90,9 +90,9 @@ jobs:
           path: |
             deps
             _build
-          key: mix-${{ runner.os }}-1.18.4-27.2-${{ hashFiles('mix.lock') }}
+          key: mix-${{ runner.os }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            mix-${{ runner.os }}-1.18.4-27.2-
+            mix-${{ runner.os }}-1.20.0-28.5-
 
       - name: Fetch dependencies
         run: mix deps.get

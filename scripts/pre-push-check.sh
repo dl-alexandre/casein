@@ -12,20 +12,23 @@ log() { printf '>>> %s\n' "$*"; }
 
 cd "${ROOT}"
 
+# Elixir runs through mise (reads .tool-versions) locally and on the self-hosted
+# runner, but GitHub-hosted runners have no mise. Fall back to plain `mix` when
+# mise is absent so one script drives both.
+if command -v mise >/dev/null 2>&1; then
+  MIX=(mise exec -- mix)
+else
+  MIX=(mix)
+fi
+
+# --- Cheap checks first: fail fast on trivial breakage (seconds, not minutes)
+# before paying for npm and the test suite. ---
+
 log "checking staged/worktree whitespace"
 git diff --check
 
-log "linting JS hooks"
-(
-  cd assets
-  NODE_ENV=development npm ci --include=dev
-  NODE_ENV=development npm run lint
-  NODE_ENV=development npm test
-)
-
-log "checking deploy script syntax and copied deploy artifacts"
+log "checking deploy script syntax"
 bash -n scripts/deploy-devbox-release.sh
-./scripts/check-deploy-sync.sh
 
 log "running hermetic shell unit tests (scoped-token validation/durability)"
 bash scripts/test-scoped-token-durability.sh
@@ -46,11 +49,33 @@ else
   log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
 fi
 
-log "fetching Elixir dependencies"
-mise exec -- mix deps.get
+log "linting JS hooks"
+(
+  cd assets
+  # Skip the (slow) `npm ci` when package-lock.json is unchanged since the last
+  # successful install — a sha256 stamp inside node_modules records what was
+  # installed. Benefits the local hook and the self-hosted runner, which now
+  # persists node_modules across runs (checkout clean:false). npm ci wipes
+  # node_modules, so the stamp is written *after* it succeeds.
+  stamp="node_modules/.package-lock.sha256"
+  want="$(sha256sum package-lock.json | awk '{print $1}')"
+  if [[ -d node_modules && -f "${stamp}" && "$(cat "${stamp}")" == "${want}" ]]; then
+    log "node_modules up to date (package-lock.json unchanged) — skipping npm ci"
+  else
+    NODE_ENV=development npm ci --include=dev
+    printf '%s\n' "${want}" >"${stamp}"
+  fi
+  NODE_ENV=development npm run lint
+  NODE_ENV=development npm test
+)
 
+log "fetching Elixir dependencies"
+"${MIX[@]}" deps.get
+
+# precommit.ci also runs ./scripts/check-deploy-sync.sh (via the mix.exs alias),
+# so it is not invoked standalone here — deploy-devbox.yml relies on the alias too.
 log "running read-only precommit checks"
-mise exec -- mix precommit.ci
+"${MIX[@]}" precommit.ci
 
 log "checking doc citations resolve (docs/subsystems, docs/reference)"
 ./scripts/check-doc-citations.sh

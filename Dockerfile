@@ -30,10 +30,10 @@
 # ---- Stage 1: build the release --------------------------------------
 # Builder and runtime share the same Debian release + build date so glibc
 # and friends match between the two images.
-ARG ELIXIR_VERSION=1.19.3
+ARG ELIXIR_VERSION=1.20.0
 ARG OTP_VERSION=28.5
 ARG DEBIAN_RELEASE=bookworm
-ARG DEBIAN_DATE=20260505
+ARG DEBIAN_DATE=20260610
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG RUNNER_IMAGE="debian:${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG DEV_IDE_REPO_ADAPTER=postgres
