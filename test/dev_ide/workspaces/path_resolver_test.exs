@@ -167,6 +167,17 @@ defmodule DevIDE.Workspaces.PathResolverTest do
       assert {:ok, %{workspace_path: ^plain}} = PathResolver.resolve(["plain"])
     end
 
+    test "the root itself never swallows its children", %{root: root} do
+      # Even when the root is a marker (a repo, or home == root), top-level
+      # directories under it are independent workspaces, not inner segments.
+      mark_git_dir!(root)
+      Application.put_env(:dev_ide, :home_workspace_path, root)
+      plain = mkdirs!(root, ["plain"])
+
+      assert {:ok, %{workspace_path: ^plain, inner_segments: []}} =
+               PathResolver.resolve(["plain"])
+    end
+
     test "the home workspace path is a workspace root marker", %{root: root} do
       homews = mkdirs!(root, ["homews"])
       mkdirs!(root, ["homews", "deep"])

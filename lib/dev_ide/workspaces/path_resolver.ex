@@ -3,7 +3,7 @@ defmodule DevIDE.Workspaces.PathResolver do
   Resolves URL path segments to workspace roots, and workspaces back to
   canonical path routes.
 
-  Successor to `DevIDE.LanPathResolver`: a URL like `/aws/myproject/lib`
+  A URL like `/aws/myproject/lib`
   resolves under `root/0` and then **walks up** to the nearest ancestor that
   is a workspace root — a directory containing `.git`, one matching a
   persisted `workspace_records.host_path`, or the configured
@@ -146,11 +146,13 @@ defmodule DevIDE.Workspaces.PathResolver do
     end
   end
 
-  # Nearest (deepest) ancestor of `path` — never above `root` — that is a
+  # Nearest (deepest) ancestor of `path` — strictly below `root` — that is a
   # workspace root: has `.git` (File.exists?/1, so worktree `.git` files
   # count), matches a persisted record's host_path, or is the configured
-  # home workspace path. Record matches are fetched in one batch query for
-  # the whole ancestor chain.
+  # home workspace path. The root itself is excluded: even when it is a
+  # marker (home == root, or a repo at the root) it must not swallow its
+  # children, which are independent workspaces. Record matches are fetched
+  # in one batch query for the whole ancestor chain.
   defp nearest_workspace_root(path, root) do
     chain = ancestor_chain(path, root)
     records = State.records_for_host_paths(chain)
@@ -164,7 +166,7 @@ defmodule DevIDE.Workspaces.PathResolver do
   defp ancestor_chain(path, root) do
     Stream.unfold(path, fn
       nil -> nil
-      ^root -> {root, nil}
+      ^root -> nil
       p -> {p, Path.dirname(p)}
     end)
     |> Enum.to_list()

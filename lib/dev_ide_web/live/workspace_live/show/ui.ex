@@ -41,6 +41,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
 
   def workspace_short_name(name), do: name
 
+  @doc """
+  Header breadcrumbs (path-first navigation Stage 3).
+
+  Root crumb links to the dashboard at `/`; in trusted LAN deployments the
+  workspace's parent directories follow, each linking to the dashboard scoped
+  to that directory (`/?dir=...`). The workspace name itself is rendered by the
+  shell right after this slot, so the trail stops at the parent. Untrusted
+  deployments (opaque id URLs) get only the root crumb — path shape stays out
+  of the page.
+  """
+  attr :workspace_route, :string, default: nil
+
+  def workspace_breadcrumbs(assigns) do
+    assigns =
+      Phoenix.Component.assign(assigns, :crumbs, breadcrumb_trail(assigns.workspace_route))
+
+    ~H"""
+    <nav class="flex min-w-0 shrink items-center gap-1" aria-label="Breadcrumb">
+      <.link navigate={~p"/"} class="shrink-0 text-primary hover:underline" title="Dashboard">
+        ←
+      </.link>
+      <span :for={crumb <- @crumbs} class="hidden min-w-0 items-center gap-1 sm:inline-flex">
+        <.link
+          navigate={~p"/?#{[dir: crumb.dir]}"}
+          class="max-w-32 truncate font-mono text-xs text-base-content/60 hover:text-base-content hover:underline"
+        >
+          {crumb.label}
+        </.link>
+        <span class="text-base-content/40" aria-hidden="true">/</span>
+      </span>
+    </nav>
+    """
+  end
+
+  @doc """
+  The intermediate directory crumbs for a workspace route: every segment above
+  the workspace itself, as `%{label, dir}` with `dir` the root-relative path
+  for the dashboard's `?dir=` param. Empty when path routes are untrusted or
+  the route has no parent directories.
+  """
+  def breadcrumb_trail(workspace_route) do
+    if is_binary(workspace_route) and DevIdeWeb.WorkspaceRoutes.path_routes_trusted?() do
+      segments =
+        workspace_route
+        |> String.trim_leading("/")
+        |> String.split("/", trim: true)
+        |> Enum.map(&URI.decode/1)
+
+      segments
+      |> Enum.drop(-1)
+      |> Enum.with_index(1)
+      |> Enum.map(fn {segment, index} ->
+        %{label: segment, dir: segments |> Enum.take(index) |> Path.join()}
+      end)
+    else
+      []
+    end
+  end
+
   def redundant_workspace_path?(workspace_name, path)
       when is_binary(workspace_name) and is_binary(path) do
     workspace_name = String.trim(workspace_name)

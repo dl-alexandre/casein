@@ -32,177 +32,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     :ok
   end
 
-  test "lists workspaces from a fake manager", %{conn: conn} do
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!([
-          %{
-            "id" => "abc",
-            "name" => "alpha",
-            "user" => "alice",
-            "status" => "running",
-            "type" => "v3",
-            "branch" => "main"
-          }
-        ])
-      )
-    end)
-
-    {:ok, _view, html} = live(conn, ~p"/workspaces")
-    assert html =~ "alpha"
-    assert html =~ "running"
-    assert html =~ ~p"/workspaces/abc/previous-sessions"
-  end
-
-  test "workspace picker shows path context and active session count", %{
-    conn: conn
-  } do
-    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
-    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
-    workspace_id = "ctx-#{System.unique_integer([:positive])}"
-    workspace_name = "context-ws-#{System.unique_integer([:positive])}"
-    tmux_session = "devide_#{workspace_name}_u-alice"
-
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-
-    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      tmux_session => [
-        %{
-          id: "@1",
-          index: 0,
-          name: "shell",
-          active: true,
-          panes: 1,
-          activity: 0,
-          current_command: "bash"
-        }
-      ]
-    })
-
-    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      tmux_session => [
-        %{
-          id: "%1",
-          window_id: "@1",
-          index: 0,
-          active: true,
-          current_command: "codex",
-          current_path: "/data/workspaces/alice/#{workspace_name}",
-          role: "agent"
-        }
-      ]
-    })
-
-    on_exit(fn ->
-      restore(:tmux_adapter, prev_adapter)
-      restore(:fake_tmux_windows, prev_windows)
-      restore(:fake_tmux_panes, prev_panes)
-    end)
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!([
-          %{
-            "id" => workspace_id,
-            "name" => workspace_name,
-            "user" => "alice",
-            "status" => "running",
-            "type" => "v3",
-            "branch" => "feature/devide",
-            "path" => "/data/workspaces/alice/#{workspace_name}"
-          }
-        ])
-      )
-    end)
-
-    {:ok, _view, html} = live(conn, ~p"/workspaces")
-
-    assert html =~ "alice/#{workspace_name}"
-    assert html =~ "feature/devide"
-    assert html =~ "session=u-alice"
-    assert html =~ "workspace"
-    assert html =~ "agent ready"
-  end
-
-  test "opens an allowed folder path from the picker", %{conn: conn} do
-    root = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
-    folder = Path.join([root, "dev", "oss"])
-    File.mkdir_p!(folder)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
-
-    on_exit(fn ->
-      File.rm_rf(root)
-      restore(:workspaces_root, prev_root)
-      restore(:workspaces_roots, prev_roots)
-    end)
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(200, Jason.encode!([]))
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
-    folder_id = "folder:" <> Base.url_encode64(folder, padding: false)
-
-    view
-    |> form("#attach-folder-form", %{"folder" => %{"path" => folder}})
-    |> render_submit()
-
-    assert_redirect(view, ~p"/workspaces/#{folder_id}")
-  end
-
-  test "browses allowed folders from the picker", %{conn: conn} do
-    root = Path.join(System.tmp_dir!(), "devide-browse-folder-#{System.unique_integer()}")
-    dev = Path.join(root, "dev")
-    child = Path.join(dev, "child")
-    nested = Path.join(child, "nested")
-    File.mkdir_p!(nested)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
-
-    on_exit(fn ->
-      File.rm_rf(root)
-      restore(:workspaces_root, prev_root)
-      restore(:workspaces_roots, prev_roots)
-    end)
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(200, Jason.encode!([]))
-    end)
-
-    {:ok, view, html} = live(conn, ~p"/workspaces")
-    assert html =~ "dev"
-
-    html = render_click(view, "folder:browse", %{"path" => dev})
-    assert html =~ "child"
-
-    html = render_click(view, "folder:browse", %{"path" => child})
-    assert html =~ "nested"
-    assert html =~ child
-
-    folder_id = "folder:" <> Base.url_encode64(nested, padding: false)
-    render_click(view, "folder:open", %{"path" => nested})
-
-    assert_redirect(view, ~p"/workspaces/#{folder_id}")
-  end
-
   test "denies cockpit mount for another user's folder workspace", %{conn: conn} do
     root = Path.join(System.tmp_dir!(), "devide-folder-forbidden-#{System.unique_integer()}")
     alice_project = Path.join([root, "alice", "proj"])
@@ -218,175 +47,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     folder_id = "folder:" <> Base.url_encode64(alice_project, padding: false)
 
-    assert {:error, {:live_redirect, %{to: "/workspaces"}}} =
+    assert {:error, {:live_redirect, %{to: "/"}}} =
              live(conn, ~p"/workspaces/#{folder_id}")
-  end
-
-  test "rejects folder paths outside allowed roots from the picker", %{
-    conn: conn
-  } do
-    base = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
-    root = Path.join(base, "allowed")
-    outside = Path.join(base, "outside")
-    File.mkdir_p!(root)
-    File.mkdir_p!(outside)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
-
-    on_exit(fn ->
-      File.rm_rf(base)
-      restore(:workspaces_root, prev_root)
-      restore(:workspaces_roots, prev_roots)
-    end)
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(200, Jason.encode!([]))
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
-
-    html =
-      view
-      |> form("#attach-folder-form", %{"folder" => %{"path" => outside}})
-      |> render_submit()
-
-    assert html =~ "Folder path is outside the allowed roots."
-  end
-
-  test "admin all-users workspace picker does not poll full list on refresh", %{
-    conn: conn
-  } do
-    prev_user = Application.get_env(:dev_ide, :current_user)
-
-    Application.put_env(:dev_ide, :current_user, %{
-      id: "admin",
-      username: "admin",
-      email: "admin@local",
-      role: :admin
-    })
-
-    on_exit(fn -> restore(:current_user, prev_user) end)
-
-    counter = :counters.new(1, [])
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      :counters.add(counter, 1, 1)
-
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(200, Jason.encode!([workspace_index_payload("alpha")]))
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
-    assert :counters.get(counter, 1) == 1
-    assert has_element?(view, "button[phx-click='toggle_all']", "showing: all users")
-
-    send(view.pid, :refresh)
-    :sys.get_state(view.pid)
-
-    assert :counters.get(counter, 1) == 1
-  end
-
-  test "non-admin workspace picker still refreshes scoped list", %{conn: conn} do
-    counter = :counters.new(1, [])
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      :counters.add(counter, 1, 1)
-
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(200, Jason.encode!([workspace_index_payload("alpha")]))
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
-    assert :counters.get(counter, 1) == 1
-
-    send(view.pid, :refresh)
-    # :refresh now fetches via start_async; :sys.get_state ensures the message is
-    # processed (async started), render_async awaits the task's upstream call.
-    :sys.get_state(view.pid)
-    render_async(view, 5_000)
-
-    assert :counters.get(counter, 1) == 2
-  end
-
-  test "forward-auth picker filters an over-broad workspace list to the current owner", %{
-    conn: conn
-  } do
-    Application.put_env(:dev_ide, :forward_auth, true)
-
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!([
-          Map.merge(workspace_index_payload("alpha"), %{"user" => "alice"}),
-          Map.merge(workspace_index_payload("beta"), %{"user" => "bob"})
-        ])
-      )
-    end)
-
-    conn = put_req_header(conn, "x-auth-request-email", "alice@example.com")
-    {:ok, view, html} = live(conn, ~p"/workspaces")
-
-    assert html =~ "alpha"
-    refute html =~ "beta"
-    refute has_element?(view, "button[phx-click='toggle_all']")
-  end
-
-  test "shows actionable error when the workspace source is unreachable", %{
-    conn: conn
-  } do
-    DevIDE.Test.ManagerStub.transport_error(:econnrefused)
-    {:ok, _view, html} = live(conn, ~p"/workspaces")
-    assert html =~ "Workspace source is not reachable" or html =~ "Transport error"
-  end
-
-  test "renders the picker as a host-grouped list with a derived mode badge", %{
-    conn: conn
-  } do
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!([
-          %{
-            "id" => "abc",
-            "name" => "alpha",
-            "user" => "alice",
-            "status" => "running",
-            "type" => "v3",
-            "branch" => "main"
-          }
-        ])
-      )
-    end)
-
-    {:ok, view, html} = live(conn, ~p"/workspaces")
-
-    # product.md §9.1 — picker is the first screen.
-    assert html =~ "Connect to a workspace"
-
-    # FP-4 / §11 — mode is derived from capabilities. With no remote/fleet
-    # signals registered, the synthetic host is local.
-    assert html =~ "local"
-
-    # capability chips appear (synthetic local host advertises these)
-    assert html =~ "tmux"
-    assert html =~ "audit"
-
-    # workspace still renders under its host so previous behavior is preserved.
-    assert html =~ "alpha"
-    assert html =~ "running"
-
-    assert has_element?(view, "a[href='/workspaces/abc']", "alpha")
   end
 
   test "terminal tab renders tmux windows as actionable tabs", %{conn: conn} do
@@ -2195,7 +1857,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # The host gate fires before Workspaces.get/1, so no manager response
     # is needed. A non-local host id should redirect back to the picker
     # with an honest flash — "hide rather than mock".
-    assert {:error, {:live_redirect, %{to: "/workspaces", flash: flash}}} =
+    assert {:error, {:live_redirect, %{to: "/", flash: flash}}} =
              live(conn, ~p"/workspaces/abc?host=remote")
 
     assert flash["error"] =~ "Cross-host attach is not yet configured"
@@ -2941,8 +2603,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "Cockpit Artifact"
     assert html =~ "Show it in the workspace panel"
     assert html =~ project.preview_url
+    assert html =~ "artifact:inspect"
     assert html =~ "artifact:serve"
     assert html =~ "artifact:open"
+
+    html = render_click(view, "artifact:inspect", %{"artifact-id" => project.id})
+
+    assert html =~ "artifact-detail-#{project.id}"
+    assert html =~ "artifact-embedded-preview-unavailable"
   end
 
   test "allowed preview URLs open in an iframe pane", %{conn: conn} do

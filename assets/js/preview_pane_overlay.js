@@ -1,3 +1,9 @@
+import {
+  applyOverlayRect,
+  bindPaneSectionGeometryObserver,
+  resolveOverlayRect,
+} from "./pane_overlay_rect.mjs"
+
 export const PreviewPaneOverlay = {
   mounted() {
     this.paneId = this.el.dataset.paneId
@@ -19,6 +25,7 @@ export const PreviewPaneOverlay = {
     this.snapshotMode = this.isSnapshotMode()
 
     this.applyRect()
+    this._sectionGeometryObserver = bindPaneSectionGeometryObserver(this.el, () => this.applyRect())
     this.bindTelemetry()
     this.applyDisplayUrl()
     this.applyViewportMode()
@@ -42,6 +49,8 @@ export const PreviewPaneOverlay = {
   },
 
   destroyed() {
+    this._sectionGeometryObserver?.disconnect()
+    this._sectionGeometryObserver = null
     this.pushTelemetry("overlay_destroyed", this.frameState())
     this.stopVisibilityHeartbeat()
     this.teardownTelemetry()
@@ -53,19 +62,8 @@ export const PreviewPaneOverlay = {
   },
 
   applyRect() {
-    const rect = this.parseRect(this.el.dataset.paneRect)
-    if (!rect) return
-
-    Object.assign(this.el.style, {
-      position: "absolute",
-      left: `${rect.left}%`,
-      top: `${rect.top}%`,
-      width: `${rect.width}%`,
-      height: `${rect.height}%`,
-      zIndex: this.entered ? "40" : "25",
-      pointerEvents: "auto",
-      contain: "layout"
-    })
+    const rect = resolveOverlayRect(this.el)
+    applyOverlayRect(this.el, rect, {entered: this.entered})
   },
 
   applyViewportMode() {
@@ -734,24 +732,6 @@ export const PreviewPaneOverlay = {
     })
 
     window.setTimeout(() => dot.remove(), 220)
-  },
-
-  parseRect(raw) {
-    if (!raw) return null
-    try {
-      const rect = JSON.parse(raw)
-      if (
-        typeof rect.left === "number" &&
-        typeof rect.top === "number" &&
-        typeof rect.width === "number" &&
-        typeof rect.height === "number"
-      ) {
-        return rect
-      }
-    } catch (_) {
-      return null
-    }
-    return null
   },
 
   parseViewport(raw) {

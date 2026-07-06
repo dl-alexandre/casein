@@ -47,7 +47,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
     end
 
     test "types/0 lists known pane types" do
-      assert Enum.sort(PaneBehaviour.types()) == [:preview, :terminal]
+      assert Enum.sort(PaneBehaviour.types()) == [:file, :preview, :terminal]
     end
   end
 

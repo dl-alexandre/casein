@@ -23,7 +23,7 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 | Module | File | Role |
 |---|---|---|
 | `DevIdeWeb.Router` | `lib/dev_ide_web/router.ex` | Route table + the `:browser`, `:preview_proxy`, `:api`, `:mcp_api` pipelines and CSP |
-| `DevIdeWeb.PageController` | `lib/dev_ide_web/controllers/page_controller.ex` | `GET /` redirects to `/workspaces`, or to the LAN default workspace (`home` unless overridden) when LAN direct mode is enabled |
+| `DevIdeWeb.LegacyWorkspaceController` | `lib/dev_ide_web/controllers/legacy_workspace_controller.ex` | `GET /workspaces` redirects to `/` (the picker was absorbed by the dashboard) |
 | `DevIdeWeb.PreviewArtifactController` | `lib/dev_ide_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
 | `DevIdeWeb.PreviewProxyController` | `lib/dev_ide_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
 | `DevIdeWeb.API.WorkspaceController` | `lib/dev_ide_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
@@ -66,8 +66,8 @@ The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
 
 | Method | Path | Controller / LiveView · action | Purpose |
 |---|---|---|---|
-| GET | `/` | `PageController` · `:home` | Redirect to `/workspaces`, or `/workspaces/:id` when a LAN profile (`DEV_IDE_LAN=true` or `DEV_IDE_LAN_INSECURE_HTTP=true`) and LAN direct mode are enabled (`DEV_IDE_DEFAULT_WORKSPACE`, default `home`) |
-| LIVE | `/workspaces` | `WorkspaceLive.Index` · `:index` | Workspace list (live session `:default`, `DeploymentUpdateHook`) |
+| LIVE | `/` | `WorkspaceLive.Dashboard` · `:index` | Filesystem-shaped dashboard: directory browser over the path root plus the workspace table (live session `:default`, `DeploymentUpdateHook`); `?dir=` browses subdirectories |
+| GET | `/workspaces` | `LegacyWorkspaceController` · `:index` | Redirect to `/` (picker absorbed by the dashboard) |
 | LIVE | `/workspaces/:id` | `WorkspaceLive.Show` · `:show` | Workspace cockpit (terminal/preview). URL query grammar in [`../deep_links.md`](../deep_links.md) |
 | GET | `/preview-artifacts/:workspace_id/:filename` | `PreviewArtifactController` · `:show` | Preview snapshot PNG; `?fit=preview` wraps it in a responsive HTML page |
 

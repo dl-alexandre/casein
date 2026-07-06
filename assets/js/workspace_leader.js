@@ -322,8 +322,8 @@ export const WorkspaceLeader = {
 
     this._clearLeader()
 
-    // 1–9: select tmux window by index
-    if (/^[1-9]$/.test(key)) {
+    // 0–9: select tmux window by index
+    if (/^[0-9]$/.test(key)) {
       this._dispatchLeaderAction(document.querySelector(`[data-tmux-window-index="${key}"]`))
       return
     }

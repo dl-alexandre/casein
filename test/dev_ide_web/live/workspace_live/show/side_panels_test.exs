@@ -727,9 +727,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "http://localhost:4100"
       assert html =~ "/tmp/artifacts/demo"
       assert html =~ "polish the dashboard"
+      assert html =~ "artifact:inspect"
       assert html =~ "artifact:serve"
       assert html =~ "artifact:open"
       assert html =~ ~s(phx-value-artifact-id="art-demo")
+    end
+
+    test "renders selected artifact detail with same-origin embedded preview" do
+      assigns = %{
+        artifact_projects: [
+          %{
+            id: "art-demo",
+            name: "Demo Artifact",
+            kind: "static",
+            status: "live",
+            branch: "artifact/demo",
+            preview_url: "/preview-proxy/workspace/4100/index.html",
+            worktree_path: "/tmp/artifacts/demo",
+            prompt_history: ["build the dashboard"],
+            updated_at: ~U[2026-07-04 02:00:00Z]
+          }
+        ],
+        artifact_projects_error: nil,
+        artifact_selected_id: "art-demo"
+      }
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ "artifact-detail-art-demo"
+      assert html =~ "artifact-embedded-preview"
+      assert html =~ ~s(src="/preview-proxy/workspace/4100/index.html")
+      assert html =~ "ring-primary/25"
+      refute html =~ "artifact-embedded-preview-unavailable"
+    end
+
+    test "renders selected artifact detail fallback for off-origin previews" do
+      assigns = %{
+        artifact_projects: [
+          %{
+            id: "art-demo",
+            name: "Demo Artifact",
+            kind: "static",
+            status: "live",
+            branch: "artifact/demo",
+            preview_url: "http://localhost:4100",
+            worktree_path: "/tmp/artifacts/demo",
+            prompt_history: ["build the dashboard"],
+            updated_at: ~U[2026-07-04 02:00:00Z]
+          }
+        ],
+        artifact_projects_error: nil,
+        artifact_selected_id: "art-demo"
+      }
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ "artifact-detail-art-demo"
+      assert html =~ "artifact-embedded-preview-unavailable"
+      assert html =~ "No embedded preview"
+      refute html =~ ~s(id="artifact-embedded-preview")
     end
 
     test "renders load errors above the empty state" do

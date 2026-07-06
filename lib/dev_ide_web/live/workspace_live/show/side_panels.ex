@@ -509,8 +509,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   attr :artifact_projects, :list, default: []
   attr :artifact_projects_error, :string, default: nil
+  attr :artifact_selected_id, :string, default: nil
 
   def artifact_gallery_panel(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :selected_artifact_project,
+        selected_artifact_project(assigns.artifact_projects, assigns.artifact_selected_id)
+      )
+
     ~H"""
     <section
       id="artifact-gallery-panel"
@@ -550,97 +558,122 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
           No artifacts yet.
         </div>
 
-        <div :if={@artifact_projects != []} class="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-          <article
-            :for={project <- @artifact_projects}
-            id={"artifact-card-" <> artifact_id(project)}
-            class="flex min-h-52 min-w-0 flex-col border border-base-300 bg-base-100 p-3 shadow-sm transition hover:border-primary/30 hover:shadow"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <h3
-                  class="truncate text-sm font-semibold text-base-content"
-                  title={artifact_name(project)}
-                >
-                  {artifact_name(project)}
-                </h3>
-                <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                  <span class={[
-                    "inline-flex items-center rounded border px-1.5 py-0.5 font-medium",
-                    artifact_status_class(artifact_status(project))
-                  ]}>
-                    {artifact_status(project)}
-                  </span>
-                  <span class="rounded border border-base-300 bg-base-200 px-1.5 py-0.5 font-mono text-base-content/60">
-                    {artifact_kind(project)}
-                  </span>
-                  <span
-                    :if={artifact_branch(project)}
-                    class="max-w-36 truncate rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-base-content/55"
-                    title={artifact_branch(project)}
-                  >
-                    {artifact_branch(project)}
-                  </span>
+        <div
+          :if={@artifact_projects != []}
+          class="grid h-full min-h-[28rem] gap-3 xl:grid-cols-[minmax(19rem,0.9fr)_minmax(24rem,1.1fr)]"
+        >
+          <div class="min-h-0 overflow-auto">
+            <div class="grid gap-3 2xl:grid-cols-2">
+              <article
+                :for={project <- @artifact_projects}
+                id={"artifact-card-" <> artifact_id(project)}
+                class={artifact_card_class(project, @artifact_selected_id)}
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <h3
+                      class="truncate text-sm font-semibold text-base-content"
+                      title={artifact_name(project)}
+                    >
+                      {artifact_name(project)}
+                    </h3>
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span class={[
+                        "inline-flex items-center rounded border px-1.5 py-0.5 font-medium",
+                        artifact_status_class(artifact_status(project))
+                      ]}>
+                        {artifact_status(project)}
+                      </span>
+                      <span class="rounded border border-base-300 bg-base-200 px-1.5 py-0.5 font-mono text-base-content/60">
+                        {artifact_kind(project)}
+                      </span>
+                      <span
+                        :if={artifact_branch(project)}
+                        class="max-w-36 truncate rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-base-content/55"
+                        title={artifact_branch(project)}
+                      >
+                        {artifact_branch(project)}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      phx-click="artifact:inspect"
+                      phx-value-artifact-id={artifact_id(project)}
+                      class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
+                      title="Inspect artifact"
+                      aria-label={"Inspect " <> artifact_name(project)}
+                    >
+                      <.icon name="hero-eye" class="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      phx-click="artifact:serve"
+                      phx-value-artifact-id={artifact_id(project)}
+                      class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
+                      title="Start artifact preview server"
+                      aria-label={"Start preview server for " <> artifact_name(project)}
+                    >
+                      <.icon name="hero-play" class="size-4" />
+                    </button>
+                    <button
+                      type="button"
+                      phx-click="artifact:open"
+                      phx-value-artifact-id={artifact_id(project)}
+                      disabled={!artifact_preview_available?(project)}
+                      class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-primary text-primary-content transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-base-300 disabled:bg-base-200 disabled:text-base-content/35"
+                      title="Open artifact preview"
+                      aria-label={"Open preview for " <> artifact_name(project)}
+                    >
+                      <.icon name="hero-arrow-top-right-on-square" class="size-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div class="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  phx-click="artifact:serve"
-                  phx-value-artifact-id={artifact_id(project)}
-                  class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
-                  title="Start artifact preview server"
-                  aria-label={"Start preview server for " <> artifact_name(project)}
-                >
-                  <.icon name="hero-play" class="size-4" />
-                </button>
-                <button
-                  type="button"
-                  phx-click="artifact:open"
-                  phx-value-artifact-id={artifact_id(project)}
-                  disabled={!artifact_preview_available?(project)}
-                  class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-primary text-primary-content transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-base-300 disabled:bg-base-200 disabled:text-base-content/35"
-                  title="Open artifact preview"
-                  aria-label={"Open preview for " <> artifact_name(project)}
-                >
-                  <.icon name="hero-arrow-top-right-on-square" class="size-4" />
-                </button>
-              </div>
-            </div>
 
-            <dl class="mt-3 grid gap-2 text-xs">
-              <div class="min-w-0">
-                <dt class="text-[10px] font-semibold uppercase text-base-content/40">Preview</dt>
-                <dd
-                  class="mt-0.5 truncate font-mono text-base-content/70"
-                  title={artifact_preview_url(project) || "Not started"}
-                >
-                  {artifact_preview_url(project) || "Not started"}
-                </dd>
-              </div>
-              <div class="min-w-0">
-                <dt class="text-[10px] font-semibold uppercase text-base-content/40">Worktree</dt>
-                <dd
-                  class="mt-0.5 truncate font-mono text-base-content/70"
-                  title={artifact_worktree_path(project)}
-                >
-                  {artifact_worktree_path(project)}
-                </dd>
-              </div>
-              <div :if={artifact_prompt_preview(project)} class="min-w-0">
-                <dt class="text-[10px] font-semibold uppercase text-base-content/40">
-                  Latest Prompt
-                </dt>
-                <dd class="mt-0.5 line-clamp-2 text-base-content/70">
-                  {artifact_prompt_preview(project)}
-                </dd>
-              </div>
-            </dl>
+                <dl class="mt-3 grid gap-2 text-xs">
+                  <div class="min-w-0">
+                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                      Preview
+                    </dt>
+                    <dd
+                      class="mt-0.5 truncate font-mono text-base-content/70"
+                      title={artifact_preview_url(project) || "Not started"}
+                    >
+                      {artifact_preview_url(project) || "Not started"}
+                    </dd>
+                  </div>
+                  <div class="min-w-0">
+                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                      Worktree
+                    </dt>
+                    <dd
+                      class="mt-0.5 truncate font-mono text-base-content/70"
+                      title={artifact_worktree_path(project)}
+                    >
+                      {artifact_worktree_path(project)}
+                    </dd>
+                  </div>
+                  <div :if={artifact_prompt_preview(project)} class="min-w-0">
+                    <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                      Latest Prompt
+                    </dt>
+                    <dd class="mt-0.5 line-clamp-2 text-base-content/70">
+                      {artifact_prompt_preview(project)}
+                    </dd>
+                  </div>
+                </dl>
 
-            <div class="mt-auto pt-3 text-[11px] text-base-content/45">
-              Updated {artifact_updated_label(project)}
+                <div class="mt-auto pt-3 text-[11px] text-base-content/45">
+                  Updated {artifact_updated_label(project)}
+                </div>
+              </article>
             </div>
-          </article>
+          </div>
+          <.artifact_detail_panel
+            :if={@selected_artifact_project}
+            project={@selected_artifact_project}
+          />
         </div>
       </div>
     </section>
@@ -652,6 +685,103 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
     "#{count} artifact" <> if(count == 1, do: "", else: "s")
   end
 
+  attr :project, :any, required: true
+
+  defp artifact_detail_panel(assigns) do
+    ~H"""
+    <aside
+      id={"artifact-detail-" <> artifact_id(@project)}
+      class="flex min-h-0 flex-col border border-base-300 bg-base-100"
+    >
+      <div class="flex shrink-0 items-start justify-between gap-3 border-b border-base-300 bg-base-200/40 px-3 py-2">
+        <div class="min-w-0">
+          <h3 class="truncate text-sm font-semibold text-base-content" title={artifact_name(@project)}>
+            {artifact_name(@project)}
+          </h3>
+          <p class="mt-0.5 truncate font-mono text-xs text-base-content/55">
+            {artifact_id(@project)}
+          </p>
+        </div>
+        <div class="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            phx-click="artifact:serve"
+            phx-value-artifact-id={artifact_id(@project)}
+            class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
+            title="Start artifact preview server"
+            aria-label={"Start preview server for " <> artifact_name(@project)}
+          >
+            <.icon name="hero-play" class="size-4" />
+          </button>
+          <button
+            type="button"
+            phx-click="artifact:open"
+            phx-value-artifact-id={artifact_id(@project)}
+            disabled={!artifact_preview_available?(@project)}
+            class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-primary text-primary-content transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-base-300 disabled:bg-base-200 disabled:text-base-content/35"
+            title="Open artifact preview"
+            aria-label={"Open preview for " <> artifact_name(@project)}
+          >
+            <.icon name="hero-arrow-top-right-on-square" class="size-4" />
+          </button>
+        </div>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-auto p-3">
+        <iframe
+          :if={artifact_embedded_preview_url(@project)}
+          id="artifact-embedded-preview"
+          src={artifact_embedded_preview_url(@project)}
+          class="h-full min-h-80 w-full border border-base-300 bg-white"
+          sandbox="allow-forms allow-modals allow-popups allow-scripts"
+          referrerpolicy="no-referrer"
+          title={"Embedded preview for " <> artifact_name(@project)}
+        ></iframe>
+
+        <div
+          :if={!artifact_embedded_preview_url(@project)}
+          id="artifact-embedded-preview-unavailable"
+          class="flex min-h-80 flex-col justify-center border border-dashed border-base-300 bg-base-200/35 p-5"
+        >
+          <div class="mx-auto flex size-10 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/55">
+            <.icon name="hero-window" class="size-5" />
+          </div>
+          <p class="mx-auto mt-3 max-w-md text-center text-sm text-base-content/65">
+            No embedded preview
+          </p>
+          <p class="mx-auto mt-1 max-w-md truncate text-center font-mono text-xs text-base-content/45">
+            {artifact_preview_url(@project) || "Preview server not started"}
+          </p>
+        </div>
+
+        <dl class="mt-3 grid gap-2 text-xs md:grid-cols-2">
+          <div class="min-w-0">
+            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Status</dt>
+            <dd class="mt-0.5 text-base-content/70">{artifact_status(@project)}</dd>
+          </div>
+          <div class="min-w-0">
+            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Kind</dt>
+            <dd class="mt-0.5 text-base-content/70">{artifact_kind(@project)}</dd>
+          </div>
+          <div class="min-w-0 md:col-span-2">
+            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Worktree</dt>
+            <dd
+              class="mt-0.5 truncate font-mono text-base-content/70"
+              title={artifact_worktree_path(@project)}
+            >
+              {artifact_worktree_path(@project)}
+            </dd>
+          </div>
+          <div :if={artifact_prompt_preview(@project)} class="min-w-0 md:col-span-2">
+            <dt class="text-[10px] font-semibold uppercase text-base-content/40">Latest Prompt</dt>
+            <dd class="mt-0.5 text-base-content/70">{artifact_prompt_preview(@project)}</dd>
+          </div>
+        </dl>
+      </div>
+    </aside>
+    """
+  end
+
   defp artifact_id(project), do: artifact_value(project, :id) || ""
   defp artifact_name(project), do: artifact_value(project, :name) || artifact_id(project)
   defp artifact_kind(project), do: artifact_value(project, :kind) || "static"
@@ -661,6 +791,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   defp artifact_worktree_path(project), do: artifact_value(project, :worktree_path) || ""
 
   defp artifact_preview_available?(project), do: is_binary(artifact_preview_url(project))
+
+  defp artifact_embedded_preview_url(project) do
+    case artifact_preview_url(project) do
+      "/" <> _ = url -> if(String.starts_with?(url, "//"), do: nil, else: url)
+      _ -> nil
+    end
+  end
+
+  defp artifact_card_class(project, selected_id) do
+    [
+      "flex min-h-52 min-w-0 flex-col border bg-base-100 p-3 shadow-sm transition hover:border-primary/30 hover:shadow",
+      artifact_id(project) == selected_id && "border-primary/50 ring-1 ring-primary/25",
+      artifact_id(project) != selected_id && "border-base-300"
+    ]
+  end
+
+  defp selected_artifact_project(projects, selected_id) when is_binary(selected_id) do
+    Enum.find(projects || [], &(artifact_id(&1) == selected_id))
+  end
+
+  defp selected_artifact_project(_projects, _selected_id), do: nil
 
   defp artifact_prompt_preview(project) do
     project

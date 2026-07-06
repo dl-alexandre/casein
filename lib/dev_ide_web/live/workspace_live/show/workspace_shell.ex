@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
+  import DevIdeWeb.WorkspaceLive.Show.HistoryPanel
 
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader,
     only: [
@@ -23,6 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
+  alias DevIdeWeb.NotificationsDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -129,7 +131,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <%= if @window_picker_view == :tabs do %>
                 <SessionBar.window_tabs
                   workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
+                  path_base={@workspace_route}
                   windows={@tmux_window_tabs}
                   topology_version={@tmux_topology_structure_version}
                   mutations_allowed?={@tmux_mutations_enabled?}
@@ -139,7 +141,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <% else %>
                 <SessionBar.window_dropdown
                   workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
+                  path_base={@workspace_route}
                   windows={@tmux_window_tabs}
                   session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
                   share_session_id={@terminal_sid}
@@ -257,7 +259,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
+                path_base={@workspace_route}
                 tabs={@session_tabs}
                 workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
@@ -282,6 +284,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             >
               C-b
             </button>
+            <NotificationsDrawer.notifications_bell
+              id={"notifications-bell-" <> @workspace.id}
+              unread_count={@notif_unread_count}
+            />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
             <button
               phx-click="terminal:toggle_chrome"
@@ -543,6 +549,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           :if={@tab == "artifacts"}
           artifact_projects={@artifact_projects}
           artifact_projects_error={@artifact_projects_error}
+          artifact_selected_id={@artifact_selected_id}
         />
         <.run_panel
           :if={@tab == "run"}
@@ -564,7 +571,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           id="proposal-panel"
           workspace={@workspace}
           current_user={@current_user}
-          lan_friendly_path={@lan_friendly_path}
           workspace_mode_source={@workspace_mode_source}
           db_isolation={@db_isolation}
           host_path={@host_path}
@@ -575,6 +581,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           log_ref={@log_ref}
           streams={@streams}
         />
+        <.history_panel
+          :if={@tab == "history"}
+          workspace_id={@workspace.id}
+          history_form={@history_form}
+          history_results={@history_results}
+          history_payload={@history_payload}
+          history_error={@history_error}
+          history_loaded?={@history_loaded?}
+        />
       </div>
     </div>
     <.live_component
@@ -583,7 +598,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       open={@audit_drawer_open}
       workspace={@workspace}
       current_user={@current_user}
-      lan_friendly_path={@lan_friendly_path}
+    />
+    <NotificationsDrawer.notifications_drawer
+      open={@notif_drawer_open}
+      loaded?={@notif_loaded?}
+      notifications={@notifications}
+      unread_count={@notif_unread_count}
+      user_id={@notif_user_id}
+      error={@notif_error}
+      info={@notif_info}
+      preferences={@notif_preferences}
+      preferences_form={@notif_preferences_form}
+      admin?={@notif_admin?}
+      device_stats={@notif_device_stats}
+      devices={@notif_devices}
     />
     <.leader_help_overlay />
     """
@@ -612,6 +640,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :terminal_mode,
       :tmux_windows,
       :preview_panes,
+      :feature_panes,
       :tmux_session,
       :ui_highlight_pane_id,
       :tmux_active_pane_id,
@@ -632,7 +661,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :default_terminal_sid,
       :shell_button_label,
       :shell_button_detail,
-      :lan_friendly_path,
+      :workspace_route,
       :active_window_pane_count,
       :tmux_window_tabs
     ])

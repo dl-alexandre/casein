@@ -24,7 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
 
   @max_audit_stream 50
 
-  @config_keys ~w(id open workspace current_user lan_friendly_path)a
+  @config_keys ~w(id open workspace current_user)a
 
   @impl true
   def update(%{insert_audit_event: event}, socket) do

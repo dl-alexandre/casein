@@ -51,7 +51,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     prev_window = socket.assigns[:tmux_active_window_id]
     prev_active_pane = socket.assigns[:tmux_active_pane_id]
-    preview_panes = socket.assigns[:preview_panes] || %{}
+
+    # Merged occupancy of preview + file panes: neither may host the Ghostty
+    # surface or count as an operator pane for focus purposes.
+    feature_panes =
+      TerminalChrome.feature_pane_map(
+        socket.assigns[:preview_panes] || %{},
+        socket.assigns[:feature_panes] || %{}
+      )
 
     # A real window switch (not the first load) — covers every path that
     # changes the active window: the dropdown, cycle/last, URL navigation, and
@@ -74,7 +81,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :terminal_surface_pane_id,
       TerminalChrome.terminal_surface_pane_id(
         active_window_panes,
-        preview_panes,
+        feature_panes,
         topology.active_pane_id,
         socket.assigns[:terminal_surface_pane_id]
       )
@@ -82,7 +89,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> sync_ui_highlight_pane_id(
       topology.active_pane_id,
       prev_active_pane,
-      preview_panes,
+      feature_panes,
       window_changed?
     )
     |> reset_entered_preview_on_window_change(window_changed?)
@@ -113,7 +120,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :tmux_topology_generation,
       Map.get(topology, :generation, socket.assigns[:tmux_topology_generation])
     )
-    |> restore_operator_tmux_focus(preview_panes)
+    |> restore_operator_tmux_focus(feature_panes)
     |> maybe_acknowledge_focused_active_quiet_window()
     |> assign_tmux_window_tabs()
     |> refresh_session_tab_attention()
@@ -168,16 +175,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   @doc """
   Keeps tmux focused on the sticky operator terminal pane.
 
-  Ghostty reads the tmux-active pane, so preview splits must not leave a
-  preview holder as the live PTY target.
+  Ghostty reads the tmux-active pane, so feature-pane splits (preview or file
+  holders) must not leave a holder pane as the live PTY target. `feature_panes`
+  is the merged `TerminalChrome.feature_pane_map/2` (defaults to the socket's).
   """
-  def restore_operator_tmux_focus(socket, preview_panes \\ nil) do
-    preview_panes = preview_panes || socket.assigns[:preview_panes] || %{}
+  def restore_operator_tmux_focus(socket, feature_panes \\ nil) do
+    feature_panes =
+      feature_panes ||
+        TerminalChrome.feature_pane_map(
+          socket.assigns[:preview_panes] || %{},
+          socket.assigns[:feature_panes] || %{}
+        )
+
     surface = socket.assigns[:terminal_surface_pane_id]
     active = socket.assigns[:tmux_active_pane_id]
 
     if connected?(socket) and is_binary(surface) and surface != "" and surface != active and
-         Map.has_key?(preview_panes, active) do
+         Map.has_key?(feature_panes, active) do
       case tmux_adapter().select_pane(socket.assigns.tmux_session, surface) do
         :ok -> socket
         {:error, _reason} -> socket

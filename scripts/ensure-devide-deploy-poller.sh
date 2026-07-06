@@ -37,10 +37,22 @@ SUDOERS_FILE="/etc/sudoers.d/devide-deploy-trigger"
 
 install_poller_trigger_sudoers() {
   log "installing sudoers drop-in for webhook poller trigger (${SUDOERS_FILE})"
-  printf '%s\n' 'devbox ALL=(root) NOPASSWD: /bin/systemctl start devide-deploy.service' |
+  printf '%s\n' \
+    'devbox ALL=(root) NOPASSWD: /bin/systemctl start devide-deploy.service' \
+    'devbox ALL=(root) NOPASSWD: /usr/bin/install -o devbox -g devbox -m 664 /tmp/last-deploy-*.json /run/devide/last-deploy.json' |
     sudo tee "${SUDOERS_FILE}" >/dev/null
   sudo chmod 440 "${SUDOERS_FILE}"
   sudo visudo -cf "${SUDOERS_FILE}" >/dev/null
+}
+
+ensure_last_deploy_status_file() {
+  local status_file="/run/devide/last-deploy.json"
+  sudo mkdir -p /run/devide
+  if [ ! -f "${status_file}" ]; then
+    sudo touch "${status_file}"
+  fi
+  sudo chown devbox:devbox "${status_file}"
+  sudo chmod 664 "${status_file}"
 }
 
 if [[ "$DISABLE" -eq 1 ]]; then
@@ -63,6 +75,7 @@ done
 
 sudo systemctl daemon-reload
 install_poller_trigger_sudoers
+ensure_last_deploy_status_file
 log "enabling ${TIMER}"
 sudo systemctl enable "$TIMER" >/dev/null
 

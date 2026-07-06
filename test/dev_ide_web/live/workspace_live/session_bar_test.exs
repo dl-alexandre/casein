@@ -1401,6 +1401,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(phx-hook="WindowTabStrip")
       assert html =~ "data-tab-scroller"
       assert html =~ "data-active-window"
+      assert html =~ ~s(data-tmux-window-index="0")
+      assert html =~ ~s(data-tmux-window-index="1")
       refute html =~ ~s(target="_blank")
     end
 

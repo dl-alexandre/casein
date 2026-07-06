@@ -65,9 +65,22 @@ defmodule DevIDE.Panes.Preview do
           url: reg.url,
           display_url: reg.display_url,
           viewport: reg.viewport,
-          mode: preview_mode(reg)
+          mode: preview_mode(reg),
+          tmux_session: Map.get(reg, :tmux_session),
+          shared: Map.get(reg, :shared, false),
+          source_pane_id: Map.get(reg, :source_pane_id),
+          preview_id: Map.get(reg, :preview_id),
+          control_session_id: Map.get(reg, :control_session_id),
+          pane_window_id: Map.get(reg, :pane_window_id)
         }
     end
+  end
+
+  @impl true
+  def list(workspace_id) when is_binary(workspace_id) do
+    workspace_id
+    |> PreviewPanes.list_for_workspace()
+    |> Enum.map(& &1.pane_id)
   end
 
   @impl true

@@ -150,7 +150,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
   } do
     {:ok, _} = State.set_mode(workspace_id, :manual)
 
-    assert {:error, {:live_redirect, %{to: "/workspaces", flash: flash}}} =
+    assert {:error, {:live_redirect, %{to: "/", flash: flash}}} =
              live(conn, ~p"/workspaces/#{workspace_id}?host=remote")
 
     assert flash["error"] =~ "Cross-host attach is not yet configured"

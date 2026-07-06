@@ -4,9 +4,9 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   """
 
   @directions ["h", "v"]
-  @types [:terminal, :preview]
+  @types [:terminal, :preview, :file]
 
-  @type pane_type :: :terminal | :preview
+  @type pane_type :: :terminal | :preview | :file
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
@@ -106,6 +106,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   def cast_type(value) when value in @types, do: value
   def cast_type("terminal"), do: :terminal
   def cast_type("preview"), do: :preview
+  def cast_type("file"), do: :file
   def cast_type(_), do: :terminal
 
   defp bool?(value), do: value in [true, "true", "1", 1]

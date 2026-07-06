@@ -18,7 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Files
   alias DevIDE.Labels
-  alias DevIDE.LanPathResolver
+  alias DevIDE.Workspaces.PathResolver
   alias DevIDE.Links.Markdown
   alias DevIDE.Links.Open
   alias DevIDE.Links.Resolver.Ctx
@@ -30,10 +30,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
+  alias DevIdeWeb.NotificationsDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIDE.Panes
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
+  alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -52,6 +56,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.Context
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [workspace_breadcrumbs: 1]
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceShell, only: [workspace_shell: 1]
 
   @ghostty_term_id "raw-term-ghostty"
@@ -110,20 +115,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     pane:zoom_focused pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
+    notifications:toggle notifications:close notifications:refresh
+    notifications:mark_read notifications:resolve notifications:mute
+    notifications:mark_all_read notifications:save_preferences
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
-    search:run annotation:open artifact:refresh artifact:serve artifact:open
+    search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
+    history:search history:clear history:refresh
     preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
+    pane:input
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
+    tree:open_in_pane
     file:rename_form file:rename_cancel file:rename_submit
     file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
+
+  # Cockpit tabs addressable via "switch_tab" and the `?tab=` deep-link query
+  # param (docs/deep_links.md). Unknown values are ignored.
+  @tabs ~w(terminal files search diff artifacts run proposals logs history)
 
   @impl true
   def mount(params, session, socket) do
@@ -185,7 +200,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # reconnect storms.
       workspace_capability =
         terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode,
-          lan_friendly_access?: is_binary(mount_workspace.lan_friendly_path)
+          pre_authorized?: PanelGate.path_access_pre_authorized?()
         )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
@@ -194,11 +209,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
-        # LAN-friendly mounts skip the user hook; panel components take
-        # current_user as an attr, so it must always exist (nil = anonymous
-        # LAN viewer, authorized via PanelGate.lan_friendly_access?).
+        # Panel components take current_user as an attr, so it must always
+        # exist (nil = anonymous LAN viewer, authorized via
+        # PanelGate.path_access_pre_authorized?).
         |> assign_new(:current_user, fn -> nil end)
-        |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
+        |> assign(:path_route, mount_workspace.path_route)
+        |> assign(:workspace_route, mount_workspace.workspace_route)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
@@ -244,6 +260,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             else: []
           )
         )
+        # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}}),
+        # kept live via DevIDE.Panes.Events. Consumed ONLY for :file panes in
+        # this increment — previews keep their legacy :preview_panes assign
+        # until the runtime cutover. Skipped on the static render like previews.
+        |> assign(
+          :feature_panes,
+          if(connected?(socket), do: Panes.snapshot(id), else: %{})
+        )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -278,6 +302,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_can_retry, false)
         |> assign(:artifact_projects, [])
         |> assign(:artifact_projects_error, nil)
+        |> assign(:artifact_selected_id, nil)
+        |> HistoryEvents.assign_defaults()
+        # Global notifications drawer (user-scoped, not workspace-scoped):
+        # subscribes to the viewer's notification topic and loads the unread
+        # badge count on the connected mount; the inbox list is lazy (opens).
+        |> NotificationsDrawerEvents.mount()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -336,6 +366,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_workspace_mode()
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
+        |> subscribe_pane_events()
         |> subscribe_browser_control()
         |> subscribe_open_links()
         |> subscribe_pane_labels()
@@ -361,13 +392,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            "Cross-host attach is not yet configured. " <>
              "The cockpit is host-aware but the runtime resolver only honors \"local\" today."
          )
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
 
       {:error, :forbidden} ->
         {:ok,
          socket
          |> put_flash(:error, "You do not have access to this workspace.")
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
 
       {:error, {:lan_path, reason}} ->
         {:ok, assign_lan_path_error(socket, params, reason)}
@@ -376,16 +407,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:ok,
          socket
          |> put_flash(:error, mount_error_message(reason))
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
     end
   end
 
-  defp resolve_mount_workspace(%{"id" => id}, user) do
-    if legacy_lan_home_workspace?(id) do
-      {:redirect, ~p"/"}
-    else
-      with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-        {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+  defp resolve_mount_workspace(%{"id" => id} = params, user) do
+    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+      # In trusted LAN mode, canonicalize onto the path route when the
+      # workspace has one. Untrusted deployments keep opaque id URLs (path
+      # routes expose host path shape — see WorkspaceRoutes). The bare "/"
+      # route is excluded because it is the dashboard, not a workspace mount —
+      # the path-root workspace (e.g. /workspaces/home) keeps serving at its
+      # id URL, as do workspaces outside the path root.
+      with true <- PanelGate.path_access_pre_authorized?(),
+           {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
+        {:redirect, route <> id_route_query(params)}
+      else
+        _ -> {:ok, %{workspace: workspace, path_route: nil, workspace_route: nil}}
       end
     end
   end
@@ -393,17 +431,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp resolve_mount_workspace(params, _user) do
     segments = Map.get(params, "lan_path", [])
 
-    case LanPathResolver.resolve(segments) do
-      {:ok, resolution} ->
-        with {:ok, workspace} <- Workspaces.workspace_for_host_path(resolution.path) do
-          {:ok, %{workspace: workspace, lan_friendly_path: resolution.route_path}}
-        end
+    # "/" itself routes to the dashboard, so a root mount can only arrive via
+    # an oddball URL the router normalized to empty segments — send it home.
+    if root_lan_path?(segments) do
+      {:redirect, ~p"/"}
+    else
+      resolve_path_mount(segments)
+    end
+  end
 
-      {:error, :disabled} ->
-        if root_lan_path?(segments) do
-          {:redirect, root_redirect_path()}
-        else
-          {:error, {:lan_path, :disabled}}
+  # Deep-link params that must survive the id→path canonicalization hop.
+  # `host` is dropped deliberately: path routes are local-only and
+  # ensure_local_host has already refused anything else.
+  @id_redirect_params ~w(session window pane zoom)
+  defp id_route_query(params) do
+    query =
+      params
+      |> Map.take(@id_redirect_params)
+      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+      |> URI.encode_query()
+
+    if query == "", do: "", else: "?" <> query
+  end
+
+  defp resolve_path_mount(segments) do
+    case PathResolver.resolve(segments) do
+      {:ok, resolution} ->
+        with {:ok, workspace} <-
+               Workspaces.workspace_for_host_path(resolution.workspace_path) do
+          {:ok,
+           %{
+             workspace: workspace,
+             path_route: resolution.route_path,
+             workspace_route: resolution.workspace_route
+           }}
         end
 
       {:error, reason} ->
@@ -411,58 +472,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp ensure_mount_workspace_access(%{workspace: ws, lan_friendly_path: nil}, user) do
-    ensure_workspace_access(ws, user)
+  # Access is decided by deployment mode, not URL shape: LAN deployments
+  # (without forward auth) pre-authorize every mount; everything else runs
+  # the owner/admin check for path URLs exactly as for /workspaces/:id.
+  defp ensure_mount_workspace_access(%{workspace: ws}, user) do
+    if PanelGate.path_access_pre_authorized?() do
+      :ok
+    else
+      ensure_workspace_access(ws, user)
+    end
   end
-
-  defp ensure_mount_workspace_access(%{lan_friendly_path: path}, _user) when is_binary(path),
-    do: :ok
 
   defp root_lan_path?(segments), do: segments in [nil, []]
 
-  defp legacy_lan_home_workspace?(id) do
-    id == "home" and
-      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
-      truthy?(Application.get_env(:dev_ide, :lan_mode))
-  end
-
-  defp truthy?(true), do: true
-  defp truthy?(value) when is_binary(value), do: value in ~w(1 true TRUE yes YES on ON)
-  defp truthy?(_value), do: false
-
-  defp root_redirect_path do
-    case direct_workspace_id() do
-      nil -> ~p"/workspaces"
-      workspace_id -> ~p"/workspaces/#{workspace_id}"
-    end
-  end
-
-  defp direct_workspace_id do
-    lan? = Application.get_env(:dev_ide, :lan_mode, false)
-    direct? = Application.get_env(:dev_ide, :lan_direct_mode, false)
-    workspace_id = Application.get_env(:dev_ide, :default_workspace)
-
-    if lan? and direct? and is_binary(workspace_id) and String.trim(workspace_id) != "" do
-      workspace_id
-    end
-  end
-
   defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
 
-  defp format_lan_path_error(:disabled), do: "friendly paths are disabled"
-  defp format_lan_path_error(:invalid_root), do: "LAN path root is not an absolute directory"
-  defp format_lan_path_error(:missing_root), do: "LAN path root is not configured"
+  defp format_lan_path_error(:invalid_root), do: "path root is not an absolute directory"
+  defp format_lan_path_error(:missing_root), do: "path root is not configured"
   defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
   defp format_lan_path_error(:invalid_path), do: "path is invalid"
-  defp format_lan_path_error(:outside_root), do: "path escapes the LAN root"
-  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the LAN root"
+  defp format_lan_path_error(:outside_root), do: "path escapes the path root"
+  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the path root"
   defp format_lan_path_error(:too_deep), do: "path is too deep"
   defp format_lan_path_error(:not_found), do: "directory was not found"
   defp format_lan_path_error(reason), do: inspect(reason)
 
   defp assign_lan_path_error(socket, params, reason) do
     segments = normalized_lan_path_segments(Map.get(params, "lan_path", []))
-    root = LanPathResolver.root()
+    root = PathResolver.root()
     relative_path = lan_error_relative_path(segments)
     route_path = lan_error_route_path(segments)
 
@@ -510,9 +547,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp lan_path_error_title(:not_found), do: "Directory not found"
   defp lan_path_error_title(:reserved_prefix), do: "Reserved path"
   defp lan_path_error_title(:invalid_path), do: "Invalid path"
-  defp lan_path_error_title(:outside_root), do: "Path outside LAN root"
-  defp lan_path_error_title(:symlink_escape), do: "Path outside LAN root"
-  defp lan_path_error_title(_reason), do: "LAN path unavailable"
+  defp lan_path_error_title(:outside_root), do: "Path outside the path root"
+  defp lan_path_error_title(:symlink_escape), do: "Path outside the path root"
+  defp lan_path_error_title(_reason), do: "Path unavailable"
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -533,19 +570,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_external_url(
-         %{workspace: %{id: id}, lan_friendly_path: friendly_path},
+         %{workspace: %{id: id}, path_route: path_route},
          host_id,
          params
        ) do
     path =
-      if is_binary(friendly_path) do
-        friendly_path
+      if is_binary(path_route) do
+        path_route
       else
         ~p"/workspaces/#{id}"
       end
 
     path =
-      if is_nil(friendly_path) and Map.has_key?(params, "host") and
+      if is_nil(path_route) and Map.has_key?(params, "host") and
            host_id not in [nil, "", "local"],
          do: ~p"/workspaces/#{id}?host=#{host_id}",
          else: path
@@ -555,6 +592,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def handle_params(params, _uri, socket) do
+    socket = apply_tab_param(socket, params)
+    # `?drawer=notifications` deep link (docs/deep_links.md) — one-shot like
+    # `?tab=`; patches without the param leave the drawer state alone.
+    socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
+
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
         {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
@@ -585,22 +627,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
-    socket = assign(socket, :tab, tab)
-    socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
-
-    socket =
-      if tab == "run" do
-        socket
-        |> RunEvents.attach_existing_run()
-        |> RunEvents.refresh_run_ledger()
-        |> RunEvents.load_review_commands()
-      else
-        socket
-      end
-
-    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
-
-    {:noreply, socket}
+    {:noreply, select_tab(socket, tab)}
   end
 
   def handle_event("refresh", _params, socket) do
@@ -833,6 +860,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("artifact:inspect", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    with {:ok, project} <- artifact_project_for_workspace(socket, artifact_id),
+         {:ok, project} <- ArtifactProjects.serve(project.id) do
+      {:noreply,
+       socket
+       |> assign(:artifact_selected_id, project.id)
+       |> refresh_artifact_projects()}
+    else
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> refresh_artifact_projects()
+         |> put_flash(:error, artifact_error_message(reason))}
+    end
+  end
+
   def handle_event("artifact:open", %{"artifact-id" => artifact_id}, socket)
       when is_binary(artifact_id) do
     with {:ok, project} <- artifact_project_for_workspace(socket, artifact_id),
@@ -881,6 +925,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("ctx:" <> _ = event, params, socket),
     do: ContextMenuEvents.handle_event(event, params, socket)
 
+  # File-pane overlay events (generic feature-pane input + the context-menu
+  # "Open in pane" entry point) are handled by FilePaneEvents. These clauses
+  # must precede the "tree:*" catch-all below.
+  def handle_event("pane:input" = event, params, socket),
+    do: FilePaneEvents.handle_event(event, params, socket)
+
+  def handle_event("tree:open_in_pane" = event, params, socket),
+    do: FilePaneEvents.handle_event(event, params, socket)
+
   # File-tree / editor events are handled by FileEvents (extracted from this
   # module — pure code motion). All "tree:*" and "file:*" events delegate there.
   def handle_event("tree:" <> _ = event, params, socket),
@@ -888,6 +941,57 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("file:" <> _ = event, params, socket),
     do: FileEvents.handle_event(event, params, socket)
+
+  # History (previous sessions) panel events are handled by HistoryEvents
+  # (absorbed from the removed WorkspaceLive.PreviousSessions page).
+  def handle_event("history:" <> _ = event, params, socket),
+    do: HistoryEvents.handle_event(event, params, socket)
+
+  # Notifications drawer events are handled by NotificationsDrawerEvents
+  # (absorbed from the removed NotificationLive.Index page; shared with the
+  # dashboard). Distinct from the singular "notification:open_conversation"
+  # OS-notification deeplink above.
+  def handle_event("notifications:" <> _ = event, params, socket),
+    do: NotificationsDrawerEvents.handle_event(event, params, socket)
+
+  # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
+  # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
+  defp select_tab(socket, tab, params \\ %{})
+
+  defp select_tab(socket, tab, params) when tab in @tabs do
+    socket = assign(socket, :tab, tab)
+    socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
+
+    socket =
+      if tab == "run" do
+        socket
+        |> RunEvents.attach_existing_run()
+        |> RunEvents.refresh_run_ledger()
+        |> RunEvents.load_review_commands()
+      else
+        socket
+      end
+
+    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
+
+    if tab == "history", do: HistoryEvents.open(socket, params), else: socket
+  end
+
+  defp select_tab(socket, _tab, _params), do: socket
+
+  # `?tab=` deep link (docs/deep_links.md): open a cockpit tab from the URL —
+  # e.g. `?tab=history` restores the old /previous-sessions bookmarks via the
+  # legacy redirect. The static render only assigns the tab so the first paint
+  # shows the right panel; per-tab hydration runs on the connected mount.
+  defp apply_tab_param(socket, %{"tab" => tab} = params) when is_binary(tab) do
+    cond do
+      tab not in @tabs or socket.assigns[:tab] == tab -> socket
+      connected?(socket) -> select_tab(socket, tab, params)
+      true -> assign(socket, :tab, tab)
+    end
+  end
+
+  defp apply_tab_param(socket, _params), do: socket
 
   @impl true
   # Panel LiveComponents cannot write the root flash or refresh Show-owned
@@ -899,6 +1003,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info(:proposal_workspace_changed, socket) do
     {:noreply, socket |> refresh_tree() |> refresh_git_status()}
   end
+
+  # Audit / MCP-activity broadcasts — subscribed by HistoryEvents when the
+  # History panel first opens; refreshed only while that panel is visible.
+  def handle_info({:audit_event, _event}, socket),
+    do: {:noreply, HistoryEvents.refresh_if_open(socket)}
+
+  def handle_info({:agent_mcp_activity, _entry}, socket),
+    do: {:noreply, HistoryEvents.refresh_if_open(socket)}
+
+  # Durable notification broadcasts on the viewer's user topic — subscribed by
+  # NotificationsDrawerEvents at mount. Badge always updates; the drawer list
+  # refreshes only while open.
+  def handle_info({:notification_created, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
+
+  def handle_info({:notification_updated, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
 
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     {:noreply, LogsEvents.insert_log_line(socket, line)}
@@ -1223,6 +1344,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:noreply, socket}
     end
   end
+
+  # Generic feature-pane lifecycle (DevIDE.Panes.Events). Consumed for :file
+  # panes only in this increment; FilePaneEvents maintains :feature_panes and
+  # handles the :heartbeat reason without focus churn.
+  def handle_info({:pane_event, _} = msg, socket),
+    do: FilePaneEvents.handle_info(msg, socket)
 
   def handle_info({:preview_pane_registered, _} = msg, socket),
     do: PreviewPaneEvents.handle_info(msg, socket)
@@ -1549,7 +1676,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       active_terminal_loc_result(socket),
       sid,
       socket.assigns.workspace_mode,
-      lan_friendly_access?: PanelGate.lan_friendly_access?(socket.assigns)
+      pre_authorized?: PanelGate.path_access_pre_authorized?()
     )
   end
 
@@ -1563,9 +1690,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode, opts) do
-    lan_friendly_access? = Keyword.get(opts, :lan_friendly_access?, false)
-    terminal_owner? = lan_friendly_access? or Workspaces.viewer_terminal_owner?(ws, user)
-    workspace_user = if lan_friendly_access?, do: user.id, else: ws.user
+    pre_authorized? = Keyword.get(opts, :pre_authorized?, false)
+    terminal_owner? = pre_authorized? or Workspaces.viewer_terminal_owner?(ws, user)
+    workspace_user = if pre_authorized?, do: user.id, else: ws.user
     workspace_path = path_from_loc_result(loc_result) || ws.path
 
     ChannelAuth.sign_terminal_capability(
@@ -2149,13 +2276,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <.workspace_shell {assigns}>
       <:header_back_nav>
-        <.link
-          navigate={~p"/workspaces"}
-          class="shrink-0 text-primary hover:underline"
-          title="Back to workspaces"
-        >
-          ←
-        </.link>
+        <.workspace_breadcrumbs workspace_route={@workspace_route} />
       </:header_back_nav>
     </.workspace_shell>
     """
@@ -2215,16 +2336,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
           <div class="mt-7 flex flex-wrap items-center gap-2">
             <.link
-              navigate="/"
+              navigate={~p"/"}
               class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
             >
-              Open home
-            </.link>
-            <.link
-              navigate={~p"/workspaces"}
-              class="inline-flex h-9 items-center justify-center rounded border border-base-300 bg-base-100 px-3 text-sm font-medium text-base-content/80 transition hover:bg-base-200"
-            >
-              Workspaces
+              Open dashboard
             </.link>
           </div>
         </div>
@@ -2255,6 +2370,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           "preview:" <> workspace_id
         )
       end
+    end
+
+    socket
+  end
+
+  # Generic feature-pane lifecycle topic (alias-aware fan-out mirrors the
+  # preview subscription set — Panes.Events expands workspace aliases itself).
+  defp subscribe_pane_events(socket) do
+    if connected?(socket) do
+      _ = Panes.Events.subscribe(socket.assigns.workspace.id)
     end
 
     socket
@@ -3015,16 +3140,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp refresh_artifact_projects(socket) do
     workspace_id = socket.assigns.workspace.id
+    projects = ArtifactProjects.list(workspace_id)
+    selected_id = socket.assigns[:artifact_selected_id]
 
     socket
-    |> assign(:artifact_projects, ArtifactProjects.list(workspace_id))
+    |> assign(:artifact_projects, projects)
     |> assign(:artifact_projects_error, nil)
+    |> assign(:artifact_selected_id, valid_artifact_selected_id(projects, selected_id))
   rescue
     error ->
       socket
       |> assign(:artifact_projects, [])
       |> assign(:artifact_projects_error, Exception.message(error))
+      |> assign(:artifact_selected_id, nil)
   end
+
+  defp valid_artifact_selected_id(projects, selected_id) when is_binary(selected_id) do
+    if Enum.any?(projects, &(&1.id == selected_id)), do: selected_id
+  end
+
+  defp valid_artifact_selected_id(_projects, _selected_id), do: nil
 
   defp artifact_project_for_workspace(socket, artifact_id) do
     workspace_id = socket.assigns.workspace.id
@@ -3263,6 +3398,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             end)
 
           {:error, reason} ->
+            stop_failed_pane_worker(worker)
             update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
         end
 
@@ -3283,6 +3419,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:ok, PaneWorker.get_handles(worker)}
   catch
     :exit, _reason -> {:error, :worker_exited}
+  end
+
+  defp stop_failed_pane_worker(worker) when is_pid(worker) do
+    Process.unlink(worker)
+    if Process.alive?(worker), do: Process.exit(worker, :kill)
+    :ok
   end
 
   defp pane_worker_alive?(%{worker: worker, ghostty_term: term})

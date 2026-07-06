@@ -459,42 +459,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   @doc """
-  Picks which tmux pane tile should host the Ghostty surface.
+  Merged occupancy map of "feature panes" — tmux panes whose content is a
+  web-rendered overlay (preview iframes, file-editor overlays) rather than a
+  terminal. Keys are tmux pane ids. Everywhere the cockpit used to special-case
+  previews for focus / UI-only selection must consult this merged map so
+  Ghostty never attaches to a file holder pane either.
 
-  Pane selection changes tmux focus for normal operator panes, so the web
-  terminal follows the tmux-active operator pane. Preview panes may become
-  tmux-active without pulling Ghostty over.
+  `preview_panes` is the legacy `:preview_panes` assign; `feature_panes` is the
+  generic `:feature_panes` assign (`%{pane_id => %{type, payload}}`), of which
+  only `:file` entries are consumed here (previews stay on their legacy assign
+  until the runtime cutover).
   """
-  def terminal_surface_pane_id(panes, preview_panes, active_pane_id, previous_id \\ nil) do
-    preview_panes = preview_panes || %{}
+  def feature_pane_map(preview_panes, feature_panes) do
+    Map.merge(file_pane_entries(feature_panes), preview_panes || %{})
+  end
 
-    cond do
-      is_binary(active_pane_id) and active_pane_id != "" and
-          operator_pane?(panes, preview_panes, active_pane_id) ->
-        active_pane_id
-
-      operator_pane?(panes, preview_panes, previous_id) ->
-        previous_id
-
-      true ->
-        fallback_operator_pane_id(panes, preview_panes)
+  @doc "The `:file` entries of a `:feature_panes` assign, keyed by tmux pane id."
+  def file_pane_entries(feature_panes) do
+    for {pane_id, %{type: :file} = entry} <- feature_panes || %{}, into: %{} do
+      {pane_id, entry}
     end
   end
 
-  defp preview_pane?(preview_panes, pane_id) when is_binary(pane_id),
-    do: Map.has_key?(preview_panes, pane_id)
-
-  defp preview_pane?(_preview_panes, _pane_id), do: false
-
-  defp operator_pane?(panes, preview_panes, pane_id) do
-    is_binary(pane_id) and pane_id != "" and
-      Enum.any?(panes, &(&1.id == pane_id)) and
-      not preview_pane?(preview_panes, pane_id)
+  @doc "True when `pane_id` hosts a feature pane (preview OR file)."
+  def feature_pane?(preview_panes, feature_panes, pane_id) when is_binary(pane_id) do
+    Map.has_key?(preview_panes || %{}, pane_id) or
+      match?(%{type: :file}, Map.get(feature_panes || %{}, pane_id))
   end
 
-  defp fallback_operator_pane_id(panes, preview_panes) do
+  def feature_pane?(_preview_panes, _feature_panes, _pane_id), do: false
+
+  @doc """
+  Picks which tmux pane tile should host the Ghostty surface.
+
+  Pane selection changes tmux focus for normal operator panes, so the web
+  terminal follows the tmux-active operator pane. Feature panes (previews and
+  file editors) may become tmux-active without pulling Ghostty over —
+  `occupied_panes` is the merged `feature_pane_map/2`.
+  """
+  def terminal_surface_pane_id(panes, occupied_panes, active_pane_id, previous_id \\ nil) do
+    occupied_panes = occupied_panes || %{}
+
+    cond do
+      is_binary(active_pane_id) and active_pane_id != "" and
+          operator_pane?(panes, occupied_panes, active_pane_id) ->
+        active_pane_id
+
+      operator_pane?(panes, occupied_panes, previous_id) ->
+        previous_id
+
+      true ->
+        fallback_operator_pane_id(panes, occupied_panes)
+    end
+  end
+
+  defp occupied_pane?(occupied_panes, pane_id) when is_binary(pane_id),
+    do: Map.has_key?(occupied_panes, pane_id)
+
+  defp occupied_pane?(_occupied_panes, _pane_id), do: false
+
+  defp operator_pane?(panes, occupied_panes, pane_id) do
+    is_binary(pane_id) and pane_id != "" and
+      Enum.any?(panes, &(&1.id == pane_id)) and
+      not occupied_pane?(occupied_panes, pane_id)
+  end
+
+  defp fallback_operator_pane_id(panes, occupied_panes) do
     panes
-    |> Enum.reject(&preview_pane?(preview_panes, &1.id))
+    |> Enum.reject(&occupied_pane?(occupied_panes, &1.id))
     |> Enum.find(& &1.active)
     |> case do
       %{id: id} ->
@@ -502,7 +534,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
       _ ->
         panes
-        |> Enum.reject(&preview_pane?(preview_panes, &1.id))
+        |> Enum.reject(&occupied_pane?(occupied_panes, &1.id))
         |> List.first()
         |> then(fn
           %{id: id} -> id
@@ -556,7 +588,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <.link
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="terminal-workspace-start-unavailable"
-            navigate={~p"/workspaces"}
+            navigate={~p"/"}
             class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
           >
             Open workspace card
@@ -636,6 +668,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     doc: "the active window's panes (active_tmux_window_panes/1), pre-enrichment"
 
   attr :preview_panes, :map, default: %{}
+
+  attr :feature_panes, :map,
+    default: %{},
+    doc: "generic pane registry snapshot (%{pane_id => %{type, payload}}); only :file consumed"
+
   attr :tmux_session, :any, default: nil
   attr :ui_highlight_pane_id, :any, default: nil
   attr :tmux_active_pane_id, :any, default: nil
@@ -660,6 +697,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     # rails and make a zoomed multi-pane window look like a single-pane one.
     full_panes = Enum.sort_by(assigns.active_tmux_window_panes, & &1.index)
 
+    file_panes = file_pane_entries(assigns.feature_panes)
+
     # Status is derived once per pane per render (the template reads it in four
     # attrs), against a single clock read. Collapsed to the zoomed pane so only
     # that surface section renders when zoomed.
@@ -670,6 +709,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         pane
         |> Map.put(:status, pane_status(pane, now))
         |> Map.put(:preview_pane?, Map.has_key?(assigns.preview_panes, pane.id))
+        |> Map.put(:file_pane?, Map.has_key?(file_panes, pane.id))
+        |> then(&Map.put(&1, :feature_pane?, &1.preview_pane? or &1.file_pane?))
       end)
 
     surface_pane =
@@ -689,6 +730,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     assigns =
       assigns
       |> assign(:tmux_pane_bounds, bounds)
+      |> assign(:file_panes, file_panes)
       |> assign(:active_tmux_window_panes, panes)
       |> assign(:mobile_multi_pane?, length(full_panes) > 1)
       |> assign(:terminal_surface_pane, surface_pane)
@@ -765,7 +807,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
                 "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-sky-500/45",
               else: "pointer-events-auto z-10 cursor-pointer hover:bg-white/[0.03]"
             ),
-            if(pane.preview_pane?, do: "bg-zinc-950", else: "bg-transparent")
+            if(pane.feature_pane?, do: "bg-zinc-950", else: "bg-transparent")
           ]}
           style={tmux_pane_style(pane, @tmux_pane_bounds)}
         >
@@ -773,7 +815,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
                     not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
             <.pane_resize_handles pane_id={pane.id} />
           <% end %>
-          <%= if pane.preview_pane? do %>
+          <%= if pane.feature_pane? do %>
             <div class="absolute inset-0 z-0 bg-zinc-950" aria-hidden="true"></div>
           <% else %>
             <%= unless @terminal_surface_pane do %>
@@ -797,7 +839,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           phx-update="ignore"
           phx-hook="PreviewPaneOverlay"
           data-pane-id={pane.id}
-          data-pane-rect={preview_pane_rect_json(pane, @tmux_pane_bounds)}
+          data-pane-rect={pane_rect_json(pane, @tmux_pane_bounds)}
           data-display-url={preview.display_url}
           data-playback-mode={preview_playback_mode?(preview)}
           data-preview-tmux-session={preview_tmux_session(preview)}
@@ -876,6 +918,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             >
               {preview_session_label(preview, @active_tmux_session)}
             </div>
+          </div>
+        </div>
+      <% end %>
+      <%= for pane <- @active_tmux_window_panes,
+               file_pane = Map.get(@file_panes, pane.id),
+               not is_nil(file_pane) do %>
+        <%!-- File-pane overlay. The ROOT is diffed by LiveView (the tab strip is
+             server-rendered from the registry payload); only the inner editor
+             div is phx-update="ignore" so CodeMirror survives re-renders. The
+             FilePaneOverlay hook positions the root from data-pane-rect. --%>
+        <div
+          id={"file-pane-" <> dom_fragment(pane.id)}
+          phx-hook="FilePaneOverlay"
+          data-pane-id={pane.id}
+          data-pane-rect={pane_rect_json(pane, @tmux_pane_bounds)}
+          data-active-path={file_pane_active_path(file_pane)}
+          data-pane-active={
+            to_string(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id))
+          }
+          data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
+          class="file-pane-overlay isolate overflow-hidden border border-zinc-800/60 bg-zinc-950"
+        >
+          <%= if @tmux_mutations_enabled? and
+                    not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
+            <.pane_resize_handles pane_id={pane.id} prefix="file-pane" z_class="z-30" />
+          <% end %>
+          <div
+            data-file-pane-tabs
+            class="absolute inset-x-0 top-0 z-20 flex h-7 items-stretch overflow-x-auto border-b border-zinc-800 bg-zinc-900/95 text-[11px] text-zinc-300"
+            role="tablist"
+            aria-label="Open files"
+          >
+            <%= for tab <- file_pane_tabs(file_pane) do %>
+              <div
+                data-file-pane-tab
+                data-path={tab.path}
+                class={[
+                  "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
+                  if(tab.path == file_pane_active_path(file_pane),
+                    do: "bg-zinc-950 text-zinc-100",
+                    else: "hover:bg-zinc-800/70"
+                  )
+                ]}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={to_string(tab.path == file_pane_active_path(file_pane))}
+                  title={tab.path}
+                  phx-click={
+                    JS.push("pane:input",
+                      value: %{"pane-id" => pane.id, "type" => "activate_tab", "path" => tab.path}
+                    )
+                  }
+                  class="flex min-w-0 items-center gap-1 px-2 font-mono"
+                >
+                  <span class="truncate">{tab.title}</span>
+                  <span
+                    data-dirty-dot
+                    class="hidden shrink-0 text-[9px] leading-none text-amber-400"
+                    aria-label="Unsaved changes"
+                  >
+                    ●
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  phx-click={
+                    JS.dispatch("devide:file-pane:close-tab",
+                      to: "[id='file-pane-" <> dom_fragment(pane.id) <> "']",
+                      detail: %{path: tab.path}
+                    )
+                  }
+                  title={"Close " <> tab.title}
+                  aria-label={"Close " <> tab.title}
+                  class="shrink-0 px-1 text-zinc-500 transition hover:text-zinc-100"
+                >
+                  ×
+                </button>
+              </div>
+            <% end %>
+          </div>
+          <div
+            id={"file-pane-editor-" <> dom_fragment(pane.id)}
+            data-file-pane-editor
+            phx-update="ignore"
+            class="file-pane-editor absolute inset-x-0 bottom-0 top-7 z-10 overflow-hidden bg-zinc-950"
+          >
           </div>
         </div>
       <% end %>
@@ -981,7 +1111,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     """
   end
 
-  def preview_pane_rect_json(pane, bounds) do
+  @doc """
+  A tmux pane's rectangle as percentages of the window bounds, JSON-encoded for
+  the overlay hooks' `data-pane-rect` (shared by preview and file overlays).
+  """
+  def pane_rect_json(pane, bounds) do
     %{
       left: percentage(tmux_dimension(pane.left), bounds.width),
       top: percentage(tmux_dimension(pane.top), bounds.height),
@@ -990,6 +1124,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     }
     |> Jason.encode!()
   end
+
+  # Back-compat name (tests + external callers predate the file-pane overlay).
+  def preview_pane_rect_json(pane, bounds), do: pane_rect_json(pane, bounds)
+
+  @doc "Tabs of a `:file` feature-pane entry, normalized to `%{path, title, line}`."
+  def file_pane_tabs(%{payload: payload}) when is_map(payload) do
+    (feature_value(payload, :tabs) || [])
+    |> Enum.flat_map(fn tab ->
+      case feature_value(tab, :path) do
+        path when is_binary(path) and path != "" ->
+          [
+            %{
+              path: path,
+              title: feature_value(tab, :title) || Path.basename(path),
+              line: feature_value(tab, :line)
+            }
+          ]
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  def file_pane_tabs(_entry), do: []
+
+  @doc "Active tab path of a `:file` feature-pane entry, or nil."
+  def file_pane_active_path(%{payload: payload}) when is_map(payload),
+    do: feature_value(payload, :active_path)
+
+  def file_pane_active_path(_entry), do: nil
+
+  defp feature_value(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp feature_value(_map, _key), do: nil
 
   defp mobile_pane_rail_icon(:left), do: "hero-chevron-left"
   defp mobile_pane_rail_icon(:right), do: "hero-chevron-right"

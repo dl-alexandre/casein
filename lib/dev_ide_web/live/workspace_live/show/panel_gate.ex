@@ -19,7 +19,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
   flash (components cannot render root flash themselves).
 
   Works for both LV and LiveComponent sockets: it only reads assigns
-  (`:workspace`, `:current_user`, `:lan_friendly_path`).
+  (`:workspace`, `:current_user`).
   """
   def gate_event(socket, event, fun) do
     if viewer_authorized?(socket.assigns) do
@@ -35,14 +35,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
     user = assigns[:current_user] || %{}
     ws = assigns[:workspace]
 
-    lan_friendly_access?(assigns) or
+    path_access_pre_authorized?() or
       (is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user))
   end
 
-  def lan_friendly_access?(assigns) do
-    is_binary(assigns[:lan_friendly_path]) and
-      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
-      truthy?(Application.get_env(:dev_ide, :lan_mode))
+  @doc """
+  Whether this deployment pre-authorizes workspace access without a viewer
+  check. Keyed on deployment mode, never on URL shape — the same trust rule
+  that gates path-route emission (`WorkspaceRoutes.path_routes_trusted?/0`):
+  trusted only in LAN mode, and LAN trust never overrides forward auth.
+  """
+  def path_access_pre_authorized? do
+    DevIdeWeb.WorkspaceRoutes.path_routes_trusted?()
   end
 
   @doc "Builds + audits the :forbidden denial for a UI event; returns the decision."
@@ -66,8 +70,4 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
 
     decision
   end
-
-  defp truthy?(true), do: true
-  defp truthy?(value) when is_binary(value), do: value in ~w(1 true TRUE yes YES on ON)
-  defp truthy?(_value), do: false
 end

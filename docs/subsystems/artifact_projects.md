@@ -104,6 +104,11 @@ The LiveView event handlers re-fetch the artifact project and verify
 `project.workspace_id == socket.assigns.workspace.id` before serving or opening
 it, so a cross-workspace artifact id cannot be used from another cockpit.
 
+The gallery also has an inspect action that serves the artifact, selects it, and
+opens a detail pane. The detail pane embeds the preview directly only when the
+preview URL is already same-origin (`/...`); off-origin/local runtime URLs stay
+on the safer preview-pane path.
+
 ## MCP Surface
 
 `DevIdeWeb.API.ArtifactMCP` exposes the context through workspace-scoped MCP
@@ -141,8 +146,8 @@ Successful project payloads also include:
 ## Next Steps
 
 - Add file watch plus preview refresh events for tighter edit loops.
-- Add a richer embedded preview mode for artifact detail views when direct
-  same-origin rendering is appropriate.
+- Add same-origin preview proxy URLs for static runtime artifacts so more
+  detail views can render inline without relying on direct localhost URLs.
 - Add export targets once artifacts need promotion to deployment pipelines.
 - Design a separate, sandboxed LiveView artifact runtime instead of mounting
   generated modules directly in the main application.

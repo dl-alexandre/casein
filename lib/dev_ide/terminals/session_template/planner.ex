@@ -87,15 +87,23 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
           }
           |> put_role_metadata(pane.role)
 
-        command_steps =
-          if pane.command do
-            [send_command_step(ref, pane.command, pane.cwd || window.cwd)]
-          else
-            []
+        # Terminal panes type their command into a shell; feature panes (preview,
+        # file) hand their payload to the Pane behaviour via `attach_pane` so a URL
+        # or file path is never sent to a shell.
+        payload_steps =
+          cond do
+            pane.type != :terminal ->
+              [attach_pane_step(ref, pane, pane.cwd || window.cwd)]
+
+            pane.command ->
+              [send_command_step(ref, pane.command, pane.cwd || window.cwd)]
+
+            true ->
+              []
           end
 
         new_focus_ref = if pane.focus, do: ref, else: focus_ref
-        {[[split_step | command_steps] | step_groups], new_focus_ref}
+        {[[split_step | payload_steps] | step_groups], new_focus_ref}
       end)
 
     pane_steps = pane_step_groups |> Enum.reverse() |> List.flatten()
@@ -115,6 +123,14 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
       action: "send_command",
       target_ref: target_ref,
       params: compact(%{command: command, cwd: cwd})
+    }
+  end
+
+  defp attach_pane_step(target_ref, pane, cwd) do
+    %{
+      action: "attach_pane",
+      target_ref: target_ref,
+      params: compact(%{type: Atom.to_string(pane.type), command: pane.command, cwd: cwd})
     }
   end
 

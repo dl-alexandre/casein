@@ -7,9 +7,13 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/real-agent-bin.sh
+source "${ROOT}/scripts/lib/real-agent-bin.sh"
+
 BIN_DIR="${HOME}/.local/bin"
 REAL_DIR="${HOME}/.devide/real-bins"
-NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+NPM_PREFIX="${DEV_IDE_NPM_PREFIX}"
 DEVIDE_CLI="${ROOT}/scripts/devide"
 # clauded is a bash alias → claude --dangerously-skip-permissions; do not shim it.
 RUNTIMES=(grok claude codex opencode agent)
@@ -38,57 +42,6 @@ ensure_npm_prefix() {
 
 ensure_npm_prefix
 
-path_without_shims() {
-  local IFS=':'
-  local part out=()
-  for part in ${PATH:-/usr/bin:/bin}; do
-    [[ "$part" == "$BIN_DIR" ]] && continue
-    out+=("$part")
-  done
-  (IFS=:; printf '%s' "${out[*]}")
-}
-
-is_devide_shim() {
-  local path="$1"
-  [[ -f "$path" ]] && grep -q 'devide" agent launch' "$path" 2>/dev/null
-}
-
-npm_package_bin() {
-  local name="$1"
-  local candidate
-
-  case "$name" in
-    claude)
-      for candidate in \
-        "${NPM_PREFIX}/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe" \
-        "${NPM_PREFIX}/lib/node_modules/@anthropic-ai/claude-code/bin/claude.js" \
-        "${NPM_PREFIX}/lib/node_modules/@anthropic-ai/claude-code/bin/claude" \
-        "${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe" \
-        "${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.js" \
-        "${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude"; do
-        if [[ -f "$candidate" ]]; then
-          printf '%s\n' "$candidate"
-          return 0
-        fi
-      done
-      ;;
-    codex)
-      for candidate in \
-        "${NPM_PREFIX}/lib/node_modules/@openai/codex/bin/codex.js" \
-        "${NPM_PREFIX}/lib/node_modules/@openai/codex/bin/codex" \
-        "${HOME}/.local/lib/node_modules/@openai/codex/bin/codex.js" \
-        "${HOME}/.local/lib/node_modules/@openai/codex/bin/codex"; do
-        if [[ -f "$candidate" ]]; then
-          printf '%s\n' "$candidate"
-          return 0
-        fi
-      done
-      ;;
-  esac
-
-  return 1
-}
-
 record_real_bin() {
   local name="$1"
   local real=""
@@ -97,14 +50,14 @@ record_real_bin() {
 
   case "$name" in
     claude|codex)
-      if real="$(npm_package_bin "$name")"; then
+      if real="$(real_agent_npm_candidate "$name")"; then
         ln -sf "$real" "${REAL_DIR}/${name}"
         return 0
       fi
       ;;
   esac
 
-  real="$(PATH="$(path_without_shims)" command -v "$name" 2>/dev/null || true)"
+  real="$(PATH="$(real_agent_bin_path_without_shims)" command -v "$name" 2>/dev/null || true)"
 
   if [[ -n "$real" ]] && ! is_devide_shim "$real"; then
     resolved="$(readlink -f "$real" 2>/dev/null || printf '%s' "$real")"
@@ -119,12 +72,56 @@ record_real_bin() {
     esac
   fi
 
-  if real="$(npm_package_bin "$name")"; then
+  if real="$(real_agent_npm_candidate "$name")"; then
     ln -sf "$real" "${REAL_DIR}/${name}"
     return 0
   fi
 
   return 1
+}
+
+path_contains_bin_dir() {
+  local IFS=':'
+  local part resolved bin_dir_resolved
+  bin_dir_resolved="$(readlink -f "$BIN_DIR" 2>/dev/null || printf '%s' "$BIN_DIR")"
+  for part in ${PATH:-}; do
+    [[ -z "$part" ]] && continue
+    resolved="$(readlink -f "$part" 2>/dev/null || printf '%s' "$part")"
+    [[ "$resolved" == "$bin_dir_resolved" ]] && return 0
+  done
+  return 1
+}
+
+# The whole design depends on BIN_DIR preceding any directory that carries a
+# real agent binary. If PATH order defeats the shims, agents launch without
+# MCP injection and nothing else ever reports it — so make it loud here.
+# Non-interactive callers (systemd units, deploy poller) run with a minimal
+# PATH that legitimately omits BIN_DIR; that case warns instead of failing.
+verify_shim_precedence() {
+  local name resolved resolved_target shim_target shadowed=0
+
+  if ! path_contains_bin_dir; then
+    echo "warn: ${BIN_DIR} is not on PATH in this context — cannot verify shim precedence." >&2
+    echo "warn: interactive shells must list ${BIN_DIR} before any directory containing: ${RUNTIMES[*]}" >&2
+    return 0
+  fi
+
+  hash -r
+  for name in "${RUNTIMES[@]}"; do
+    resolved="$(command -v "$name" 2>/dev/null || true)"
+    resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
+    shim_target="$(readlink -f "${BIN_DIR}/${name}" 2>/dev/null || printf '%s' "${BIN_DIR}/${name}")"
+    if [[ -z "$resolved" || "$resolved_target" != "$shim_target" ]]; then
+      echo "error: '${name}' resolves to '${resolved:-nothing}' instead of the DevIDE shim ${BIN_DIR}/${name}" >&2
+      shadowed=1
+    fi
+  done
+
+  if [[ "$shadowed" == "1" ]]; then
+    echo "error: PATH order defeats the DevIDE shims — agents launched by name will skip MCP injection." >&2
+    echo "error: move ${BIN_DIR} ahead of the shadowing directory on PATH, then re-run this installer." >&2
+    return 1
+  fi
 }
 
 install_shim() {
@@ -151,6 +148,8 @@ done
 
 # clauded must remain a shell alias — remove a stale shim if a prior run added one.
 rm -f "${BIN_DIR}/clauded"
+
+verify_shim_precedence
 
 echo "Installed DevIDE agent shims in ${BIN_DIR}: ${RUNTIMES[*]}"
 echo "npm global prefix: ${NPM_PREFIX}"
