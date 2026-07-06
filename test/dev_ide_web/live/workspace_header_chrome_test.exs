@@ -194,10 +194,16 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ "data-picker-item"
     assert html =~ ~s(data-picker-section="sessions")
 
-    # Toggling the chip defaults focus back to the sessions section.
+    # Toggling the chip focuses the rendered section: usually the window list
+    # once the attached session's windows arrive, otherwise the sessions fallback.
     view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
     html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
-    assert html =~ ~s(data-mobile-nav-focus="sessions")
+    assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
+
+    assert [_, focus] = Regex.run(~r/data-mobile-nav-focus="([^"]+)"/, html)
+    assert [_, nav_view] = Regex.run(~r/data-mobile-nav-view="([^"]+)"/, html)
+    assert focus == nav_view
+    assert focus in ~w(sessions windows)
   end
 
   test "mobile nav sheet is window-dominant with a back arrow to sessions", %{
