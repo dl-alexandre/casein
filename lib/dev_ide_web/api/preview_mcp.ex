@@ -47,7 +47,10 @@ defmodule DevIdeWeb.API.PreviewMCP do
       "Preview control tools for the current workspace. Call preview_surfaces " <>
         "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
         "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
-        "preview_open_localhost to start a session. Opens preflight the " <>
+        "preview_open_localhost to start a session. Loopback surfaces are liveness-probed " <>
+        "at listing time: skip surfaces with server_active=false " <>
+        "(server_status.liveness=\"dead\") — their registration outlived the server. " <>
+        "Opens preflight the " <>
         "target URL before creating or reusing a tmux preview pane; dead " <>
         "localhost ports and HTTP 404/5xx responses return an error and " <>
         "open no pane. Reuse an existing pane by default. Use " <>

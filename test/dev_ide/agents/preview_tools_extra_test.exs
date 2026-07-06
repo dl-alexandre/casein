@@ -435,7 +435,7 @@ defmodule DevIDE.Agents.PreviewToolsExtraTest do
     assert Enum.any?(surfaces, &(&1.name == "localhost:8765"))
   end
 
-  test "surfaces marks every discovered surface as server_active and not snapshot" do
+  test "surfaces marks every surface server_active and unprobed when probing is disabled" do
     assert {:ok, %{surfaces: surfaces}} =
              PreviewTools.invoke("preview_surfaces", @v3_workspace, %{
                "workspace_id" => @v3_workspace.id
@@ -443,8 +443,76 @@ defmodule DevIDE.Agents.PreviewToolsExtraTest do
 
     assert surfaces != []
     assert Enum.all?(surfaces, & &1.server_active)
+    assert Enum.all?(surfaces, &(&1.server_status.liveness == "unprobed"))
     refute Enum.any?(surfaces, & &1.snapshot_mode)
     assert Enum.all?(surfaces, &(&1.interaction_mode == "iframe"))
+  end
+
+  test "surfaces probes loopback ports and reports dead servers honestly" do
+    enable_surface_probe({__MODULE__, :fake_surface_probe})
+
+    ws = %{
+      id: @v3_workspace.id,
+      metadata: %{
+        terminal_output: "Serving at http://localhost:5173/\nAlso http://localhost:4321/\n"
+      }
+    }
+
+    assert {:ok, %{surfaces: surfaces} = payload} =
+             PreviewTools.invoke("preview_surfaces", ws, %{"workspace_id" => ws.id})
+
+    alive = Enum.find(surfaces, &(&1.port == 5173))
+    dead = Enum.find(surfaces, &(&1.port == 4321))
+
+    assert alive.server_active
+    assert alive.server_status.liveness == "alive"
+    refute dead.server_active
+    assert dead.server_status.liveness == "dead"
+
+    assert Enum.find_index(surfaces, &(&1.port == 5173)) <
+             Enum.find_index(surfaces, &(&1.port == 4321))
+
+    assert payload.next_tool == "preview_open"
+    assert payload.next_arguments == %{workspace_id: ws.id, mode: "localhost", port: 5173}
+  end
+
+  test "surfaces never recommends a dead loopback port carried by a public surface" do
+    enable_surface_probe({__MODULE__, :fake_surface_probe_all_dead})
+
+    assert {:ok, %{surfaces: surfaces} = payload} =
+             PreviewTools.invoke("preview_surfaces", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id
+             })
+
+    public = Enum.find(surfaces, &(&1.name == "app"))
+    loopback = Enum.find(surfaces, &(&1.name == "app-local"))
+
+    assert public.server_active
+    assert public.server_status.liveness == "unprobed"
+    refute loopback.server_active
+    assert loopback.server_status.liveness == "dead"
+
+    assert payload.next_arguments == %{
+             workspace_id: @v3_workspace.id,
+             mode: "app",
+             surface: "app"
+           }
+  end
+
+  def fake_surface_probe(ports), do: Map.new(ports, &{&1, &1 == 5173})
+
+  def fake_surface_probe_all_dead(ports), do: Map.new(ports, &{&1, false})
+
+  defp enable_surface_probe(prober) do
+    prev_probe = Application.get_env(:dev_ide, :preview_surface_probe)
+    prev_prober = Application.get_env(:dev_ide, :preview_surface_prober)
+    Application.put_env(:dev_ide, :preview_surface_probe, true)
+    Application.put_env(:dev_ide, :preview_surface_prober, prober)
+
+    on_exit(fn ->
+      restore_env(:preview_surface_probe, prev_probe)
+      restore_env(:preview_surface_prober, prev_prober)
+    end)
   end
 
   # ---------------------------------------------------------------------------

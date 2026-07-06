@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# devide-agent-state.sh — Claude Code hook that reports the agent's semantic
+# devide-agent-state.sh — agent-runtime hook that reports the agent's semantic
 # state to DevIDE's terminal MCP endpoint.
 #
-# Installed by the DevIDE launcher via a materialized --settings file; wired to
-# the UserPromptSubmit, PreToolUse, Notification, Stop, and SessionStart/End
-# hook events. Reads the hook JSON payload on stdin, maps the event to a
-# semantic state, and fires a best-effort MCP report.
+# Two runtimes wire it in:
+#   - Claude Code: via a materialized --settings file (UserPromptSubmit,
+#     PreToolUse, Notification, Stop, SessionStart/End). Event name arrives as
+#     hook_event_name in the stdin JSON payload.
+#   - Grok CLI: via the global hook file installed by the launcher
+#     (~/.grok/hooks/devide-agent-state.json). Grok exports the event as
+#     GROK_HOOK_EVENT in snake_case, which takes precedence over stdin parsing.
 #
 # It is fire-and-forget: any missing environment, unmapped event, or network
 # failure exits 0 so the agent is never blocked or slowed. It never writes to
-# stdout (Claude Code may interpret hook stdout); diagnostics go to stderr.
+# stdout (hook stdout may be interpreted by the runtime); diagnostics go to
+# stderr.
 
 set -u
 
@@ -27,7 +31,8 @@ PANE="${TMUX_PANE:-}"
 payload="$(cat 2>/dev/null || true)"
 
 # Parse event name (line 1), single-line message (line 2), and transcript_path
-# (line 3) from the hook JSON. Claude includes transcript_path on every event.
+# (line 3) from the hook JSON. Claude includes transcript_path on every event;
+# Grok payloads carry neither key, but its runner exports GROK_HOOK_EVENT.
 parsed="$(
   HOOK_PAYLOAD="$payload" python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -37,7 +42,7 @@ try:
 except Exception:
     data = {}
 
-print(str(data.get("hook_event_name") or ""))
+print(str(data.get("hook_event_name") or data.get("hookEventName") or ""))
 print(" ".join(str(data.get("message") or "").split())[:200])
 print(str(data.get("transcript_path") or ""))
 PY
@@ -47,11 +52,17 @@ EVENT="$(printf '%s\n' "$parsed" | sed -n 1p)"
 MESSAGE="$(printf '%s\n' "$parsed" | sed -n 2p)"
 TRANSCRIPT_PATH="$(printf '%s\n' "$parsed" | sed -n 3p)"
 
+# Grok's runner env is authoritative when present (values are snake_case).
+EVENT="${GROK_HOOK_EVENT:-$EVENT}"
+
 case "$EVENT" in
-  UserPromptSubmit | PreToolUse) STATE="working" ;;
-  Notification) STATE="blocked" ;;
-  Stop) STATE="done" ;;
-  SessionStart | SessionEnd) STATE="idle" ;;
+  UserPromptSubmit | PreToolUse | user_prompt_submit | pre_tool_use) STATE="working" ;;
+  Notification | notification) STATE="blocked" ;;
+  # Grok fires stop_failure when a turn dies on an API error — the agent is
+  # stuck and needs attention, which is what blocked signals downstream.
+  stop_failure) STATE="blocked" ;;
+  Stop | stop) STATE="done" ;;
+  SessionStart | SessionEnd | session_start | session_end) STATE="idle" ;;
   *) exit 0 ;;
 esac
 
