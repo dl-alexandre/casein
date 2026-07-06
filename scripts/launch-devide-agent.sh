@@ -247,6 +247,51 @@ codex_arg_sets_execution_policy() {
   return 1
 }
 
+# --- Semantic agent-state reporting (Grok hooks + Codex notify) -------------
+# Claude gets its state hooks via a materialized --settings file below. Grok
+# loads global hook files from ~/.grok/hooks (always trusted; the hook command
+# is env-guarded so unpaired grok sessions no-op silently). Codex has no hook
+# files but supports a `notify` program config; DevIDE injects it per-launch.
+# Both honor the same opt-out as Claude: DEVIDE_AGENT_STATE_HOOKS=0.
+
+grok_install_state_hook() {
+  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+  local src="${ROOT}/scripts/agent-hooks/grok-devide-agent-state.json"
+  local hooks_dir="${GROK_HOME:-${HOME}/.grok}/hooks"
+  local dst="${hooks_dir}/devide-agent-state.json"
+  [[ -f "$src" ]] || return 0
+  mkdir -p "$hooks_dir" 2>/dev/null || return 0
+  if ! cmp -s "$src" "$dst" 2>/dev/null; then
+    cp "$src" "$dst" 2>/dev/null || true
+  fi
+}
+
+codex_arg_sets_notify() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      notify=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+codex_state_notify_args() {
+  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+
+  if codex_arg_sets_notify "$@"; then
+    return 0
+  fi
+
+  local script="${DEVIDE_SCRIPTS:-${ROOT}/scripts}/devide-codex-notify.sh"
+  [[ -x "$script" ]] || return 0
+
+  printf '%s\0' -c "notify=[\"${script}\"]"
+}
+
 codex_default_args() {
   case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
     0 | false | FALSE | no | NO | off | OFF)
@@ -300,6 +345,7 @@ case "$RUNTIME" in
       export GROK_CURSOR_MCPS_ENABLED=false
       export GROK_CLAUDE_MCPS_ENABLED=false
     fi
+    grok_install_state_hook
     exec "$(runtime_bin grok)" "$@"
     ;;
   codex)
@@ -307,6 +353,9 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_mcp_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_state_notify_args "$@")
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_default_args "$@")

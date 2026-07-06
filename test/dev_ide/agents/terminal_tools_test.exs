@@ -560,6 +560,49 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       assert DevIDE.Terminals.AgentState.get(session, "%2").state == :blocked
     end
 
+    test "send_agent_command reports a dispatch working state for the agent pane" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:ok, %{target: "%2", status: "sent"}} =
+               TerminalTools.invoke("terminal_send_agent_command", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "command" => "mix test"
+               })
+
+      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      assert entry.state == :working
+      assert entry.source == :dispatch
+      assert entry.message == "mix test"
+    end
+
+    test "paste_agent_text reports working only when submitting" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:ok, %{target: "%2"}} =
+               TerminalTools.invoke("terminal_paste_agent_text", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "text" => "draft, not submitted"
+               })
+
+      assert DevIDE.Terminals.AgentState.get(session, "%2") == nil
+
+      assert {:ok, %{target: "%2"}} =
+               TerminalTools.invoke("terminal_paste_agent_text", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "text" => "run the suite",
+                 "submit" => true
+               })
+
+      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      assert entry.state == :working
+      assert entry.source == :dispatch
+    end
+
     test "rejects an unknown state" do
       session = agent_pair_session!()
 

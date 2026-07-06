@@ -611,9 +611,22 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, command} <- string_arg(params, "command"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
       case tmux().send_command(session, command, target: pane.id) do
-        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+        :ok ->
+          report_dispatch_working(
+            params,
+            session,
+            pane.id,
+            command,
+            "terminal_send_agent_command"
+          )
+
+          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+
+        {:error, reason} ->
+          {:error, reason}
+
+        {out, _code} ->
+          {:error, String.trim(out)}
       end
     end
   end
@@ -624,17 +637,36 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, text} <- string_arg(params, "text"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
-      opts = [
-        target: pane.id,
-        submit: truthy?(Map.get(params, "submit") || Map.get(params, :submit))
-      ]
+      submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
+      opts = [target: pane.id, submit: submit?]
 
       case tmux().paste_text(session, text, opts) do
-        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
-        {:error, reason} -> {:error, reason}
-        {out, _code} -> {:error, String.trim(out)}
+        :ok ->
+          if submit? do
+            report_dispatch_working(params, session, pane.id, text, "terminal_paste_agent_text")
+          end
+
+          {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+
+        {:error, reason} ->
+          {:error, reason}
+
+        {out, _code} ->
+          {:error, String.trim(out)}
       end
     end
+  end
+
+  # Runtime-agnostic `working` edge: dispatching work into the agent pane means
+  # the agent is working, regardless of whether its runtime reports state
+  # hooks. Codex has no turn-start notify event, so without this its panes sit
+  # at their last state until the turn-complete report; Claude/Grok hook
+  # reports simply land moments later and supersede this one.
+  defp report_dispatch_working(params, session, pane_id, message, tool) do
+    AgentState.report(workspace_id(params), session, pane_id, :working, message,
+      source: :dispatch,
+      tool: tool
+    )
   end
 
   @doc "Send raw keys to a pane (defaults to the active pane)."
