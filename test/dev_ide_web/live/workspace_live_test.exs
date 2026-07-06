@@ -2941,8 +2941,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "Cockpit Artifact"
     assert html =~ "Show it in the workspace panel"
     assert html =~ project.preview_url
+    assert html =~ "artifact:inspect"
     assert html =~ "artifact:serve"
     assert html =~ "artifact:open"
+
+    html = render_click(view, "artifact:inspect", %{"artifact-id" => project.id})
+
+    assert html =~ "artifact-detail-#{project.id}"
+    assert html =~ "artifact-embedded-preview-unavailable"
   end
 
   test "allowed preview URLs open in an iframe pane", %{conn: conn} do

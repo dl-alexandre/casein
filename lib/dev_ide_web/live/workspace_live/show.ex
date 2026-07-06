@@ -115,7 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
-    search:run annotation:open artifact:refresh artifact:serve artifact:open
+    search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
     preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
@@ -279,6 +279,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_can_retry, false)
         |> assign(:artifact_projects, [])
         |> assign(:artifact_projects_error, nil)
+        |> assign(:artifact_selected_id, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -883,6 +884,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, artifact_error_message(reason))}
+    end
+  end
+
+  def handle_event("artifact:inspect", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    with {:ok, project} <- artifact_project_for_workspace(socket, artifact_id),
+         {:ok, project} <- ArtifactProjects.serve(project.id) do
+      {:noreply,
+       socket
+       |> assign(:artifact_selected_id, project.id)
+       |> refresh_artifact_projects()}
+    else
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> refresh_artifact_projects()
+         |> put_flash(:error, artifact_error_message(reason))}
     end
   end
 
@@ -3068,16 +3086,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp refresh_artifact_projects(socket) do
     workspace_id = socket.assigns.workspace.id
+    projects = ArtifactProjects.list(workspace_id)
+    selected_id = socket.assigns[:artifact_selected_id]
 
     socket
-    |> assign(:artifact_projects, ArtifactProjects.list(workspace_id))
+    |> assign(:artifact_projects, projects)
     |> assign(:artifact_projects_error, nil)
+    |> assign(:artifact_selected_id, valid_artifact_selected_id(projects, selected_id))
   rescue
     error ->
       socket
       |> assign(:artifact_projects, [])
       |> assign(:artifact_projects_error, Exception.message(error))
+      |> assign(:artifact_selected_id, nil)
   end
+
+  defp valid_artifact_selected_id(projects, selected_id) when is_binary(selected_id) do
+    if Enum.any?(projects, &(&1.id == selected_id)), do: selected_id
+  end
+
+  defp valid_artifact_selected_id(_projects, _selected_id), do: nil
 
   defp artifact_project_for_workspace(socket, artifact_id) do
     workspace_id = socket.assigns.workspace.id

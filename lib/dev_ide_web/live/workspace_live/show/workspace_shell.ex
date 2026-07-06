@@ -543,6 +543,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           :if={@tab == "artifacts"}
           artifact_projects={@artifact_projects}
           artifact_projects_error={@artifact_projects_error}
+          artifact_selected_id={@artifact_selected_id}
         />
         <.run_panel
           :if={@tab == "run"}
