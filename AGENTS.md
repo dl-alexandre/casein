@@ -250,7 +250,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `mix: command not found` in agent shell | Use `mise exec -- mix ...` from inside the checkout — `.tool-versions` pins the toolchain; mise shims may not be on `PATH` |
 | `mix test` binds :4000 / wrong DB | Shell inherited `PHX_SERVER`/`PORT` from the live release env. `config/runtime.exs` now ignores both under `MIX_ENV=test`; if you still see it, the checkout predates that guard — unset them |
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
-| `codex update` EACCES on `/usr/lib/node_modules` | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets `~/.local` |
+| `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the DevIDE `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from `~/.local/bin` shims |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 
 ### Key files
@@ -262,7 +262,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/deploy-local.sh` — fast local build+deploy wrapper / manual override
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
-- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local`) for `codex update`
+- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from DevIDE shims in `~/.local/bin`
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected

@@ -222,7 +222,10 @@ repair_session() {
   tmux set-environment -t "$session" DEVIDE_AGENT_MCP_HOME "$staging"
   tmux set-environment -t "$session" DEVIDE_SCRIPTS "$scripts"
   tmux set-environment -t "$session" DEVIDE_AGENT_ENV_FILE "$env_sh"
-  tmux set-environment -t "$session" PATH "${HOME}/.local/bin:${PATH}"
+  local npm_prefix
+  npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  tmux set-environment -t "$session" DEV_IDE_NPM_PREFIX "$npm_prefix"
+  tmux set-environment -t "$session" PATH "${HOME}/.local/bin:${npm_prefix}/bin:${PATH}"
 
   log "repaired ${session} (${workspace_name})"
 }

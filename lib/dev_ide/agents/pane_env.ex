@@ -22,11 +22,13 @@ defmodule DevIDE.Agents.PaneEnv do
       scripts_root = scripts_root(checkout)
       env_sh = Path.join(staging, "env.sh")
       local_bin = Path.join(home_dir(), ".local/bin")
+      npm_prefix = npm_prefix()
+      npm_bin = Path.join(npm_prefix, "bin")
 
       path =
         case System.get_env("PATH") do
-          p when is_binary(p) and p != "" -> "#{local_bin}:#{Shims.path_with_shims(p)}"
-          _ -> "#{local_bin}:/usr/bin:/bin"
+          p when is_binary(p) and p != "" -> "#{local_bin}:#{npm_bin}:#{Shims.path_with_shims(p)}"
+          _ -> "#{local_bin}:#{npm_bin}:/usr/bin:/bin"
         end
 
       vars =
@@ -42,6 +44,7 @@ defmodule DevIDE.Agents.PaneEnv do
           "DEVIDE_AGENT_MCP_HOME" => staging,
           "DEVIDE_SCRIPTS" => scripts_root,
           "DEVIDE_AGENT_ENV_FILE" => env_sh,
+          "DEV_IDE_NPM_PREFIX" => npm_prefix,
           "PATH" => path
         }
         |> maybe_put_tmux_session(opts)
@@ -92,6 +95,11 @@ defmodule DevIDE.Agents.PaneEnv do
         non_empty_env("DEVIDE_SCRIPTS") ||
         candidate
     end
+  end
+
+  defp npm_prefix do
+    non_empty_env("DEV_IDE_NPM_PREFIX") ||
+      Path.join(home_dir(), ".local/share/npm-global")
   end
 
   defp workspace_id(workspace) do

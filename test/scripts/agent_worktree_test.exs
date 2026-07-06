@@ -101,6 +101,153 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "fake agent reached"
   end
 
+  test "real agent resolver prefers user npm Codex over stale recorded system install" do
+    tmp = tmp_dir!("real-agent-bin-test")
+    home = Path.join(tmp, "home")
+    npm_prefix = Path.join(home, ".local/share/npm-global")
+    user_codex = Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex.js")
+    stale_codex = Path.join(tmp, "usr/lib/node_modules/@openai/codex/bin/codex.js")
+    real_bins = Path.join(home, ".devide/real-bins")
+
+    File.mkdir_p!(Path.dirname(user_codex))
+    File.mkdir_p!(Path.dirname(stale_codex))
+    File.mkdir_p!(real_bins)
+    File.write!(user_codex, "#!/usr/bin/env bash\n")
+    File.write!(stale_codex, "#!/usr/bin/env bash\n")
+    File.ln_s!(stale_codex, Path.join(real_bins, "codex"))
+
+    {resolved, 0} =
+      System.cmd(
+        "bash",
+        [
+          "-c",
+          """
+          set -euo pipefail
+          source "#{@root}/scripts/lib/real-agent-bin.sh"
+          real_agent_bin codex
+          """
+        ],
+        env: [
+          {"HOME", home},
+          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"PATH", "#{Path.dirname(stale_codex)}:#{system_path()}"}
+        ]
+      )
+
+    assert String.trim(resolved) == user_codex
+  end
+
+  test "install-agent-shims keeps npm prefix separate and records npm Codex" do
+    tmp = tmp_dir!("install-agent-shims-test")
+    home = Path.join(tmp, "home")
+    npm_prefix = Path.join(home, ".local/share/npm-global")
+    fake_bin = Path.join(tmp, "bin")
+    fake_npm = Path.join(fake_bin, "npm")
+    npm_set = Path.join(tmp, "npm-prefix-set")
+    user_codex = Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex.js")
+    system_codex_dir = Path.join(tmp, "system-bin")
+    system_codex = Path.join(system_codex_dir, "codex")
+
+    File.mkdir_p!(Path.dirname(user_codex))
+    File.mkdir_p!(fake_bin)
+    File.mkdir_p!(system_codex_dir)
+    File.write!(user_codex, "#!/usr/bin/env bash\n")
+    File.write!(system_codex, "#!/usr/bin/env bash\n")
+    File.chmod!(system_codex, 0o755)
+
+    File.write!(fake_npm, """
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "${1:-} ${2:-} ${3:-}" in
+      "config get prefix")
+        printf '%s\\n' "${HOME}/.local"
+        ;;
+      "config set prefix")
+        printf '%s\\n' "${4:?}" >"${FAKE_NPM_SET:?}"
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
+    """)
+
+    File.chmod!(fake_npm, 0o755)
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [Path.join(@root, "scripts/install-agent-shims.sh")],
+        env: [
+          {"HOME", home},
+          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"FAKE_NPM_SET", npm_set},
+          {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "Installed DevIDE agent shims"
+    assert File.read!(npm_set) == npm_prefix <> "\n"
+    assert File.read_link!(Path.join(home, ".devide/real-bins/codex")) == user_codex
+    assert File.read!(Path.join(home, ".local/bin/codex")) =~ "devide\" agent launch codex"
+  end
+
+  test "devide shim passes codex update directly to the real CLI" do
+    tmp = tmp_dir!("devide-codex-update-test")
+    home = Path.join(tmp, "home")
+    real_bins = Path.join(home, ".devide/real-bins")
+    fake_codex = Path.join(real_bins, "codex")
+    fake_bin = Path.join(tmp, "bin")
+    fake_npm = Path.join(fake_bin, "npm")
+    npm_set = Path.join(tmp, "npm-prefix-set")
+
+    File.mkdir_p!(real_bins)
+    File.mkdir_p!(fake_bin)
+
+    File.write!(fake_codex, """
+    #!/usr/bin/env bash
+    printf 'fake codex'
+    for arg in "$@"; do
+      printf ' <%s>' "$arg"
+    done
+    printf '\\n'
+    """)
+
+    File.chmod!(fake_codex, 0o755)
+
+    File.write!(fake_npm, """
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "${1:-} ${2:-} ${3:-}" in
+      "config get prefix")
+        printf '%s\\n' "${HOME}/.local"
+        ;;
+      "config set prefix")
+        printf '%s\\n' "${4:?}" >"${FAKE_NPM_SET:?}"
+        exit 0
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
+    """)
+
+    File.chmod!(fake_npm, 0o755)
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [Path.join(@root, "scripts/devide"), "agent", "launch", "codex", "update"],
+        env: [{"HOME", home}, {"FAKE_NPM_SET", npm_set}, {"PATH", "#{fake_bin}:/usr/bin:/bin"}],
+        stderr_to_stdout: true
+      )
+
+    assert output =~ "fake codex <update>\n"
+    assert output =~ "Installed DevIDE agent shims"
+    assert File.read!(npm_set) == Path.join(home, ".local/share/npm-global") <> "\n"
+    assert File.read!(Path.join(home, ".local/bin/codex")) =~ "devide\" agent launch codex"
+  end
+
   defp git_fixture! do
     tmp =
       Path.join(System.tmp_dir!(), "agent-worktree-test-#{System.unique_integer([:positive])}")
@@ -212,6 +359,13 @@ defmodule Scripts.AgentWorktreeTest do
     on_exit(fn -> File.rm_rf(tmp) end)
 
     %{launcher: Path.join(scripts, "launch-devide-agent.sh"), home: home}
+  end
+
+  defp tmp_dir!(prefix) do
+    tmp = Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(tmp)
+    on_exit(fn -> File.rm_rf(tmp) end)
+    tmp
   end
 
   defp bash_agent_worktree(script, opts) do

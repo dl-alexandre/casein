@@ -245,6 +245,7 @@ write_scoped_tokens_if_needed
 source "${AGENT_ENV}"
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
+bash scripts/ensure-devbox-npm-prefix.sh
 bash scripts/install-agent-shims.sh
 bash scripts/refresh-tmux-pane-env.sh --workspace-prefix dalexandre
 
