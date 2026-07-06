@@ -120,6 +120,30 @@ print(json.dumps({
   echo "reported worktree ${worktree_path} to DevIDE" >&2
 }
 
+# Watch the launcher PID (which becomes the agent PID after exec) from a
+# detached process and remove the worktree once the agent exits, but only when
+# the tree is clean — `git worktree remove` without --force is the second
+# safety net. Commits survive on their agent/<runtime>/<task>-<stamp> branch.
+agent_worktree_spawn_reaper() {
+  local worktree_path="$1"
+  local primary="$2"
+  local agent_pid="$3"
+
+  setsid bash -c '
+    worktree_path="$1"
+    primary="$2"
+    agent_pid="$3"
+    while kill -0 "$agent_pid" 2>/dev/null; do
+      sleep 15
+    done
+    [[ -d "$worktree_path" ]] || exit 0
+    if [[ -z "$(git -C "$worktree_path" status --porcelain 2>/dev/null)" ]]; then
+      git -C "$primary" worktree remove "$worktree_path" >/dev/null 2>&1 || true
+    fi
+  ' _ "$worktree_path" "$primary" "$agent_pid" </dev/null >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+}
+
 agent_worktree_ensure() {
   local runtime="$1"
   local task="${2:-adhoc}"
@@ -147,7 +171,8 @@ agent_worktree_ensure() {
     return 0
   fi
 
-  local path
+  local primary path
+  primary="$(agent_worktree_primary_repo)" || return 1
   path="$(agent_worktree_create "$runtime" "$task")" || return 1
 
   export DEVIDE_CHECKOUT="$path"
@@ -156,4 +181,5 @@ agent_worktree_ensure() {
   export DEVIDE_GIT_DIR="${path}/.git"
 
   agent_worktree_report_mcp "$path" "$runtime"
+  agent_worktree_spawn_reaper "$path" "$primary" "$$"
 }
