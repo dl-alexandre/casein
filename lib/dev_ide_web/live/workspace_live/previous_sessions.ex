@@ -148,7 +148,12 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
       <div id="previous-sessions-page" class="space-y-5">
         <header class="space-y-3">
           <.link
-            navigate={~p"/workspaces/#{@workspace_id}"}
+            navigate={
+              if(@workspace,
+                do: DevIdeWeb.WorkspaceRoutes.workspace_path(@workspace),
+                else: ~p"/workspaces/#{@workspace_id}"
+              )
+            }
             class="inline-flex items-center gap-1 text-xs font-medium text-zinc-600 transition hover:text-zinc-950"
           >
             <.icon name="hero-arrow-left" class="size-3.5" /> Workspace

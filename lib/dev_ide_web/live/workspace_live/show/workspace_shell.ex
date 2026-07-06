@@ -129,7 +129,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <%= if @window_picker_view == :tabs do %>
                 <SessionBar.window_tabs
                   workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
+                  path_base={@workspace_route}
                   windows={@tmux_window_tabs}
                   topology_version={@tmux_topology_structure_version}
                   mutations_allowed?={@tmux_mutations_enabled?}
@@ -139,7 +139,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <% else %>
                 <SessionBar.window_dropdown
                   workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
+                  path_base={@workspace_route}
                   windows={@tmux_window_tabs}
                   session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
                   share_session_id={@terminal_sid}
@@ -257,7 +257,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
+                path_base={@workspace_route}
                 tabs={@session_tabs}
                 workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
@@ -564,7 +564,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           id="proposal-panel"
           workspace={@workspace}
           current_user={@current_user}
-          lan_friendly_path={@lan_friendly_path}
           workspace_mode_source={@workspace_mode_source}
           db_isolation={@db_isolation}
           host_path={@host_path}
@@ -583,7 +582,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       open={@audit_drawer_open}
       workspace={@workspace}
       current_user={@current_user}
-      lan_friendly_path={@lan_friendly_path}
     />
     <.leader_help_overlay />
     """
@@ -632,7 +630,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :default_terminal_sid,
       :shell_button_label,
       :shell_button_detail,
-      :lan_friendly_path,
+      :workspace_route,
       :active_window_pane_count,
       :tmux_window_tabs
     ])

@@ -18,7 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Files
   alias DevIDE.Labels
-  alias DevIDE.LanPathResolver
+  alias DevIDE.Workspaces.PathResolver
   alias DevIDE.Links.Markdown
   alias DevIDE.Links.Open
   alias DevIDE.Links.Resolver.Ctx
@@ -185,7 +185,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # reconnect storms.
       workspace_capability =
         terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode,
-          lan_friendly_access?: is_binary(mount_workspace.lan_friendly_path)
+          pre_authorized?: PanelGate.path_access_pre_authorized?()
         )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
@@ -194,11 +194,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
-        # LAN-friendly mounts skip the user hook; panel components take
-        # current_user as an attr, so it must always exist (nil = anonymous
-        # LAN viewer, authorized via PanelGate.lan_friendly_access?).
+        # Panel components take current_user as an attr, so it must always
+        # exist (nil = anonymous LAN viewer, authorized via
+        # PanelGate.path_access_pre_authorized?).
         |> assign_new(:current_user, fn -> nil end)
-        |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
+        |> assign(:path_route, mount_workspace.path_route)
+        |> assign(:workspace_route, mount_workspace.workspace_route)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
@@ -380,12 +381,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp resolve_mount_workspace(%{"id" => id}, user) do
+  defp resolve_mount_workspace(%{"id" => id} = params, user) do
     if legacy_lan_home_workspace?(id) do
       {:redirect, ~p"/"}
     else
       with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-        {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+        # In trusted LAN mode, canonicalize onto the path route when the
+        # workspace has one. Untrusted deployments keep opaque id URLs (path
+        # routes expose host path shape — see WorkspaceRoutes). The bare "/"
+        # route is excluded until the Stage 3 dashboard lands ("/" still
+        # redirects to the picker, which would loop); workspaces outside the
+        # path root keep serving at the id URL.
+        with true <- PanelGate.path_access_pre_authorized?(),
+             {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
+          {:redirect, route <> id_route_query(params)}
+        else
+          _ -> {:ok, %{workspace: workspace, path_route: nil, workspace_route: nil}}
+        end
       end
     end
   end
@@ -393,17 +405,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp resolve_mount_workspace(params, _user) do
     segments = Map.get(params, "lan_path", [])
 
-    case LanPathResolver.resolve(segments) do
-      {:ok, resolution} ->
-        with {:ok, workspace} <- Workspaces.workspace_for_host_path(resolution.path) do
-          {:ok, %{workspace: workspace, lan_friendly_path: resolution.route_path}}
-        end
+    cond do
+      not root_lan_path?(segments) ->
+        resolve_path_mount(segments)
 
-      {:error, :disabled} ->
-        if root_lan_path?(segments) do
-          {:redirect, root_redirect_path()}
-        else
-          {:error, {:lan_path, :disabled}}
+      not PanelGate.path_access_pre_authorized?() ->
+        # Until the Stage 3 dashboard, "/" outside a trusted deployment stays
+        # the picker (or the lan_direct default workspace, auth-enforced at
+        # its own mount).
+        {:redirect, root_redirect_path()}
+
+      true ->
+        # Trusted LAN: "/" opens the path root itself. Deployments without a
+        # resolvable root (lan_direct without friendly paths) keep their
+        # default-workspace redirect.
+        case resolve_path_mount(segments) do
+          {:error, {:lan_path, reason}} when reason in [:missing_root, :invalid_root] ->
+            {:redirect, root_redirect_path()}
+
+          other ->
+            other
+        end
+    end
+  end
+
+  # Deep-link params that must survive the id→path canonicalization hop.
+  # `host` is dropped deliberately: path routes are local-only and
+  # ensure_local_host has already refused anything else.
+  @id_redirect_params ~w(session window pane zoom)
+  defp id_route_query(params) do
+    query =
+      params
+      |> Map.take(@id_redirect_params)
+      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+      |> URI.encode_query()
+
+    if query == "", do: "", else: "?" <> query
+  end
+
+  defp resolve_path_mount(segments) do
+    case PathResolver.resolve(segments) do
+      {:ok, resolution} ->
+        with {:ok, workspace} <-
+               Workspaces.workspace_for_host_path(resolution.workspace_path) do
+          {:ok,
+           %{
+             workspace: workspace,
+             path_route: resolution.route_path,
+             workspace_route: resolution.workspace_route
+           }}
         end
 
       {:error, reason} ->
@@ -411,24 +461,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp ensure_mount_workspace_access(%{workspace: ws, lan_friendly_path: nil}, user) do
-    ensure_workspace_access(ws, user)
+  # Access is decided by deployment mode, not URL shape: LAN deployments
+  # (without forward auth) pre-authorize every mount; everything else runs
+  # the owner/admin check for path URLs exactly as for /workspaces/:id.
+  defp ensure_mount_workspace_access(%{workspace: ws}, user) do
+    if PanelGate.path_access_pre_authorized?() do
+      :ok
+    else
+      ensure_workspace_access(ws, user)
+    end
   end
-
-  defp ensure_mount_workspace_access(%{lan_friendly_path: path}, _user) when is_binary(path),
-    do: :ok
 
   defp root_lan_path?(segments), do: segments in [nil, []]
 
+  # Redirect /workspaces/home to "/" only when "/" will actually mount the
+  # home workspace: trusted deployment AND a resolvable path root. The
+  # root-resolvability check is what prevents a redirect loop with the
+  # lan_direct fallback ("/" → /workspaces/home → "/") when no root is
+  # configured.
   defp legacy_lan_home_workspace?(id) do
-    id == "home" and
-      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
-      truthy?(Application.get_env(:dev_ide, :lan_mode))
+    id == "home" and PanelGate.path_access_pre_authorized?() and
+      match?({:ok, _}, PathResolver.resolve([]))
   end
-
-  defp truthy?(true), do: true
-  defp truthy?(value) when is_binary(value), do: value in ~w(1 true TRUE yes YES on ON)
-  defp truthy?(_value), do: false
 
   defp root_redirect_path do
     case direct_workspace_id() do
@@ -449,20 +503,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
 
-  defp format_lan_path_error(:disabled), do: "friendly paths are disabled"
-  defp format_lan_path_error(:invalid_root), do: "LAN path root is not an absolute directory"
-  defp format_lan_path_error(:missing_root), do: "LAN path root is not configured"
+  defp format_lan_path_error(:invalid_root), do: "path root is not an absolute directory"
+  defp format_lan_path_error(:missing_root), do: "path root is not configured"
   defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
   defp format_lan_path_error(:invalid_path), do: "path is invalid"
-  defp format_lan_path_error(:outside_root), do: "path escapes the LAN root"
-  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the LAN root"
+  defp format_lan_path_error(:outside_root), do: "path escapes the path root"
+  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the path root"
   defp format_lan_path_error(:too_deep), do: "path is too deep"
   defp format_lan_path_error(:not_found), do: "directory was not found"
   defp format_lan_path_error(reason), do: inspect(reason)
 
   defp assign_lan_path_error(socket, params, reason) do
     segments = normalized_lan_path_segments(Map.get(params, "lan_path", []))
-    root = LanPathResolver.root()
+    root = PathResolver.root()
     relative_path = lan_error_relative_path(segments)
     route_path = lan_error_route_path(segments)
 
@@ -510,9 +563,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp lan_path_error_title(:not_found), do: "Directory not found"
   defp lan_path_error_title(:reserved_prefix), do: "Reserved path"
   defp lan_path_error_title(:invalid_path), do: "Invalid path"
-  defp lan_path_error_title(:outside_root), do: "Path outside LAN root"
-  defp lan_path_error_title(:symlink_escape), do: "Path outside LAN root"
-  defp lan_path_error_title(_reason), do: "LAN path unavailable"
+  defp lan_path_error_title(:outside_root), do: "Path outside the path root"
+  defp lan_path_error_title(:symlink_escape), do: "Path outside the path root"
+  defp lan_path_error_title(_reason), do: "Path unavailable"
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -533,19 +586,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_external_url(
-         %{workspace: %{id: id}, lan_friendly_path: friendly_path},
+         %{workspace: %{id: id}, path_route: path_route},
          host_id,
          params
        ) do
     path =
-      if is_binary(friendly_path) do
-        friendly_path
+      if is_binary(path_route) do
+        path_route
       else
         ~p"/workspaces/#{id}"
       end
 
     path =
-      if is_nil(friendly_path) and Map.has_key?(params, "host") and
+      if is_nil(path_route) and Map.has_key?(params, "host") and
            host_id not in [nil, "", "local"],
          do: ~p"/workspaces/#{id}?host=#{host_id}",
          else: path
@@ -1549,7 +1602,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       active_terminal_loc_result(socket),
       sid,
       socket.assigns.workspace_mode,
-      lan_friendly_access?: PanelGate.lan_friendly_access?(socket.assigns)
+      pre_authorized?: PanelGate.path_access_pre_authorized?()
     )
   end
 
@@ -1563,9 +1616,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode, opts) do
-    lan_friendly_access? = Keyword.get(opts, :lan_friendly_access?, false)
-    terminal_owner? = lan_friendly_access? or Workspaces.viewer_terminal_owner?(ws, user)
-    workspace_user = if lan_friendly_access?, do: user.id, else: ws.user
+    pre_authorized? = Keyword.get(opts, :pre_authorized?, false)
+    terminal_owner? = pre_authorized? or Workspaces.viewer_terminal_owner?(ws, user)
+    workspace_user = if pre_authorized?, do: user.id, else: ws.user
     workspace_path = path_from_loc_result(loc_result) || ws.path
 
     ChannelAuth.sign_terminal_capability(

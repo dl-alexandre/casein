@@ -76,7 +76,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
 
     assert workspace.id == "home"
     assert workspace.path == root
-    assert socket_assign(view, :lan_friendly_path) == "/"
+    assert socket_assign(view, :path_route) == "/"
   end
 
   test "LAN-friendly home workspace remains authorized for UI events", %{
@@ -102,7 +102,139 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
 
     assert workspace.id == Aliases.folder_id_for_path(aws)
     assert workspace.path == aws
-    assert socket_assign(view, :lan_friendly_path) == "/aws"
+    assert socket_assign(view, :path_route) == "/aws"
+  end
+
+  describe "always-on path routing" do
+    test "subdirectory URLs walk up to the repo root", %{conn: conn, aws: aws} do
+      File.mkdir_p!(Path.join(aws, ".git"))
+      File.mkdir_p!(Path.join(aws, "lib"))
+
+      {:ok, view, _html} = live(conn, "/aws/lib")
+
+      assert socket_assign(view, :workspace).path == aws
+      assert socket_assign(view, :path_route) == "/aws/lib"
+      assert socket_assign(view, :workspace_route) == "/aws"
+    end
+
+    test "id URLs canonicalize onto the path route, preserving deep-link params", %{
+      conn: conn,
+      root: root
+    } do
+      alpha = Path.join(root, ".devide-workspaces/alpha")
+      File.mkdir_p!(alpha)
+
+      assert {:error, {:redirect, %{to: to}}} =
+               live(conn, "/workspaces/alpha?session=s-1&zoom=1&host=local")
+
+      assert to == "/.devide-workspaces/alpha?session=s-1&zoom=1"
+    end
+
+    test "workspaces outside the path root keep serving at the id URL", %{conn: conn} do
+      outside =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-outside-root-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(outside)
+      on_exit(fn -> File.rm_rf(outside) end)
+      Application.put_env(:dev_ide, :workspaces_roots, [outside])
+
+      alpha = Path.join(outside, "alpha")
+      File.mkdir_p!(alpha)
+      {:ok, ws} = DevIDE.Workspaces.attach_folder(alpha)
+
+      {:ok, view, _html} = live(conn, "/workspaces/#{ws.id}")
+
+      assert socket_assign(view, :workspace).path == alpha
+      assert socket_assign(view, :path_route) == nil
+    end
+  end
+
+  describe "deployment-mode access control" do
+    defp enable_forward_auth do
+      Application.put_env(:dev_ide, :forward_auth, true)
+
+      on_exit(fn ->
+        Application.delete_env(:dev_ide, :forward_auth)
+        Application.delete_env(:dev_ide, :admins)
+      end)
+    end
+
+    defp as_forward_auth_user(conn, email) do
+      Plug.Conn.put_req_header(conn, "x-auth-request-email", email)
+    end
+
+    test "forward auth overrides LAN trust: non-owner path mounts are refused", %{conn: conn} do
+      enable_forward_auth()
+
+      # "dev" does not own the "aws" folder (owner derives from the
+      # /<root>/<user>/... layout).
+      conn = as_forward_auth_user(conn, "dev@local")
+
+      assert {:error, {:live_redirect, %{to: "/workspaces"}}} = live(conn, "/aws")
+    end
+
+    test "forward auth: the folder owner may mount its path URL", %{conn: conn, aws: aws} do
+      enable_forward_auth()
+      conn = as_forward_auth_user(conn, "aws@local")
+
+      {:ok, view, _html} = live(conn, "/aws")
+      assert socket_assign(view, :workspace).path == aws
+
+      # And the event gate agrees with the mount decision.
+      html = render_hook(view, "terminal:toggle_chrome", %{})
+      refute html =~ "You do not have access to this workspace."
+    end
+
+    test "forward auth: admins may mount any path URL", %{conn: conn, aws: aws} do
+      enable_forward_auth()
+      Application.put_env(:dev_ide, :admins, ["boss@local"])
+      conn = as_forward_auth_user(conn, "boss@local")
+
+      {:ok, view, _html} = live(conn, "/aws")
+      assert socket_assign(view, :workspace).path == aws
+    end
+
+    test "forward auth: id URLs stay opaque, no path canonicalization", %{
+      conn: conn,
+      root: root
+    } do
+      enable_forward_auth()
+      Application.put_env(:dev_ide, :admins, ["boss@local"])
+      conn = as_forward_auth_user(conn, "boss@local")
+
+      alpha = Path.join(root, ".devide-workspaces/alpha")
+      File.mkdir_p!(alpha)
+
+      {:ok, view, _html} = live(conn, "/workspaces/alpha")
+
+      assert socket_assign(view, :workspace).path == alpha
+      assert socket_assign(view, :path_route) == nil
+    end
+
+    test "forward auth: the root URL falls back to the lan_direct default workspace", %{
+      conn: conn
+    } do
+      enable_forward_auth()
+      conn = as_forward_auth_user(conn, "dev@local")
+
+      # This setup runs lan_direct_mode with default_workspace "home"; the
+      # redirect target enforces viewer access at its own mount. Without
+      # lan_direct the fallback is the /workspaces picker.
+      assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, "/")
+
+      Application.put_env(:dev_ide, :lan_direct_mode, false)
+      assert {:error, {:redirect, %{to: "/workspaces"}}} = live(conn, "/")
+    end
+
+    test "outside LAN mode path mounts also enforce viewer access", %{conn: conn} do
+      Application.put_env(:dev_ide, :lan_mode, false)
+
+      # The static dev fallback user does not own the "aws" folder.
+      assert {:error, {:live_redirect, %{to: "/workspaces"}}} = live(conn, "/aws")
+    end
   end
 
   test "missing URL path renders an in-place LAN path error", %{conn: conn, root: root} do
