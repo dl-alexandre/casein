@@ -51,7 +51,7 @@ CODE_SHA=$(git log -1 --format=%H -- docs/crucial_improvements.md)^
 # → 4e7b683
 ```
 
-Logs: `{SCRATCH}` = `/tmp/grok-goal-a319e09b3eb5/implementer/`.
+Logs captured at analysis time in a local scratch path (no longer present).
 
 | Check | Command | Result | Evidence |
 |-------|---------|--------|----------|

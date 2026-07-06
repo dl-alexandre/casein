@@ -1,7 +1,6 @@
 defmodule DevIDE.Audit.Event do
   @moduledoc """
-  Single audit record. Stable shape so the M11 Ecto migration is a 1:1
-  mapping (`audit_events` table).
+  Single audit record structure that maps 1:1 to the `audit_events` database table.
   """
 
   @type t :: %__MODULE__{
