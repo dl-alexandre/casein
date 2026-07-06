@@ -166,6 +166,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           >
             <a
               href={window_href(@workspace_id, window.id, path_base: @path_base)}
+              data-window-tab-select
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
               class="flex min-w-0 flex-1 items-center gap-1"
