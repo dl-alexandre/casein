@@ -41,12 +41,8 @@ defmodule DevIDE.Terminals.Attachment do
     loc = Keyword.fetch!(opts, :loc)
     subscriber = Keyword.get(opts, :subscriber, self())
 
-    # Raw shell attachment routed through GhosttyRawAdapter (migration bridge):
-    # allows channel raw joins (owner/attachment path) to attach cleanly to
-    # tmux sessions that may already be live under a PaneWorker/Ghostty.PTY
-    # (via tmux -A reuse). Ghostty primary path remains untouched.
-    with {:ok, pid} <- GhosttyRawAdapter.ensure_raw_shell(workspace_key, sid, loc),
-         {:ok, ref, cols, rows} <- subscribe_shell(pid, subscriber) do
+    with {:ok, pid, cols, rows} <- resolve_shell_backend(workspace_key, sid, loc, subscriber),
+         {:ok, ref, cols, rows} <- {:ok, make_ref(), cols, rows} do
       {:ok,
        %__MODULE__{
          kind: :shell,
@@ -61,6 +57,23 @@ defmodule DevIDE.Terminals.Attachment do
 
   # Agent groundwork — backend not yet implemented.
   def open(%Info{kind: :agent}, _opts), do: {:error, :agent_backend_unavailable}
+
+  defp resolve_shell_backend(workspace_key, sid, loc, subscriber) do
+    case Application.get_env(:dev_ide, :test_shell_attachment_pid) do
+      pid when is_pid(pid) ->
+        {:ok, pid, 120, 40}
+
+      _ ->
+        # Raw shell attachment routed through GhosttyRawAdapter (migration bridge):
+        # allows channel raw joins (owner/attachment path) to attach cleanly to
+        # tmux sessions that may already be live under a PaneWorker/Ghostty.PTY
+        # (via tmux -A reuse). Ghostty primary path remains untouched.
+        with {:ok, pid} <- GhosttyRawAdapter.ensure_raw_shell(workspace_key, sid, loc),
+             {:ok, _ref, cols, rows} <- subscribe_shell(pid, subscriber) do
+          {:ok, pid, cols, rows}
+        end
+    end
+  end
 
   @doc """
   Sends user input.

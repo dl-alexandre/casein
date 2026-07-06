@@ -41,6 +41,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @osc_color_response ~r/\A\e\](?:10|11|12);/
   @osc_palette_response ~r/\A\e\]4;/
   @xtversion_response ~r/\A\eP>\|/
+  @theme_report_response ~r/\A\e\[\?997;[12]n/
 
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
@@ -858,6 +859,14 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp maybe_forward_query_response(state, class, data) do
+    if class == :theme_report and not tmux_reports_pane_theme?() do
+      {false, state}
+    else
+      do_maybe_forward_query_response(state, class, data)
+    end
+  end
+
+  defp do_maybe_forward_query_response(state, class, data) do
     now = System.monotonic_time(:millisecond)
 
     case state.last_response do
@@ -870,10 +879,21 @@ defmodule DevIDE.Terminals.SessionOwner do
 
       _ ->
         {theme, state} = owner_theme(state)
-        send_input_to_attachment(state, Theme.rewrite_pty_write(data, theme))
+
+        data =
+          data
+          |> Theme.rewrite_pty_write(theme)
+          |> maybe_rewrite_theme_reports(class, state.theme_scheme)
+
+        send_input_to_attachment(state, data)
         {true, %{state | last_response: {class, now}}}
     end
   end
+
+  defp maybe_rewrite_theme_reports(data, :theme_report, scheme),
+    do: Theme.rewrite_theme_reports(data, scheme)
+
+  defp maybe_rewrite_theme_reports(data, _class, _scheme), do: data
 
   defp classify_query_response(data) do
     cond do
@@ -884,6 +904,7 @@ defmodule DevIDE.Terminals.SessionOwner do
       Regex.match?(@osc_color_response, data) -> :osc_color
       Regex.match?(@osc_palette_response, data) -> :osc_palette
       Regex.match?(@xtversion_response, data) -> :xtversion
+      Regex.match?(@theme_report_response, data) -> :theme_report
       true -> :other
     end
   end
@@ -949,9 +970,27 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
+  # tmux >= 3.6 parses explicit `?997;1n` / `?997;2n` client theme reports and
+  # forwards them into panes that opted into DECSET 2031. On <= 3.5 those bytes
+  # would surface as pane input — hard version-gated.
+  defp tmux_reports_pane_theme? do
+    case DevIDE.Terminals.tmux_version() do
+      {_major, _minor} = version -> version >= {3, 6}
+      _ -> false
+    end
+  end
+
   defp report_client_colors(state) do
     {theme, state} = owner_theme(state)
-    send_input_to_attachment(state, Theme.client_color_reports(theme))
+
+    payload =
+      if tmux_reports_pane_theme?() do
+        Theme.client_color_reports(theme) <> Theme.client_theme_report(state.theme_scheme)
+      else
+        Theme.client_color_reports(theme)
+      end
+
+    send_input_to_attachment(state, payload)
     state
   end
 
@@ -991,6 +1030,13 @@ defmodule DevIDE.Terminals.SessionOwner do
         Telemetry.owner_attachment_opened()
 
         s2 = %{state | attachment: attachment}
+
+        s2 =
+          if tmux_tracks_client_colors?() do
+            report_client_colors(s2)
+          else
+            s2
+          end
 
         {
           :ok,

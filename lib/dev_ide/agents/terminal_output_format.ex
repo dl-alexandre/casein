@@ -4,6 +4,9 @@ defmodule DevIDE.Agents.TerminalOutputFormat do
 
   Strips ANSI escape sequences by default so MCP clients receive plain text
   with fewer tokens. Callers may opt in to raw output with `ansi: true`.
+
+  On tmux >= 3.6, `capture-pane` output may contain literal tab characters and
+  U+FFFD replacement bytes for invalid UTF-8; both pass through unchanged here.
   """
 
   @ansi_regex ~r/\e\[[0-?]*[ -\/]*[@-~]/

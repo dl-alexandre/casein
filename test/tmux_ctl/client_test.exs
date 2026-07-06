@@ -254,6 +254,20 @@ defmodule TmuxCtl.ClientTest do
     refute Enum.member?(argv, "aggressive-resize")
   end
 
+  test "apply_defaults sets pane-border-lines to single" do
+    assert :ok = Client.apply_defaults(@session)
+    assert_receive {:tmux_runner, argv}
+
+    assert contains_sequence?(argv, [
+             "set-option",
+             "-t",
+             @session,
+             "-g",
+             "pane-border-lines",
+             "single"
+           ])
+  end
+
   test "apply_defaults pushes configured terminal env into the tmux session" do
     Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_CLIPBOARD" => "osc52"})
 

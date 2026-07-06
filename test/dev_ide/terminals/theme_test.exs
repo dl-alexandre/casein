@@ -70,6 +70,25 @@ defmodule DevIDE.Terminals.ThemeTest do
     end
   end
 
+  describe "client_theme_report/1" do
+    test "returns explicit tmux 3.6 dark and light CSI reports" do
+      assert Theme.client_theme_report(:dark) == "\e[?997;1n"
+      assert Theme.client_theme_report(:light) == "\e[?997;2n"
+    end
+  end
+
+  describe "rewrite_theme_reports/2" do
+    test "rewrites both dark and light 997 reports to the active scheme" do
+      assert Theme.rewrite_theme_reports("\e[?997;1n", :light) == "\e[?997;2n"
+      assert Theme.rewrite_theme_reports("\e[?997;2n", :dark) == "\e[?997;1n"
+    end
+
+    test "leaves unrelated bytes untouched" do
+      assert Theme.rewrite_theme_reports("hello\n", :dark) == "hello\n"
+      assert Theme.rewrite_theme_reports("\e[10;20R", :light) == "\e[10;20R"
+    end
+  end
+
   describe "client_bundle/1" do
     test "returns serializable dark and light presets" do
       bundle = Theme.client_bundle("catppuccin")

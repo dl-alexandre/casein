@@ -1271,7 +1271,7 @@ defmodule TmuxCtl.Client do
         {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
         {["set-option", "-t", session, "-g", "status", "off"], "status"},
         {["set-option", "-t", session, "-g", "pane-border-status", "off"], "pane-border-status"},
-        {["set-option", "-t", session, "-g", "pane-border-lines", "0"], "pane-border-lines"},
+        {["set-option", "-t", session, "-g", "pane-border-lines", "single"], "pane-border-lines"},
         {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
         {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
         default_command_options(session),
@@ -1602,6 +1602,9 @@ defmodule TmuxCtl.Client do
 
   Used to recover pane history when a Session GenServer is re-created
   against an existing tmux session (server restart, replay path).
+
+  On tmux >= 3.6, output may contain literal tab characters and U+FFFD bytes
+  for invalid UTF-8 sequences.
 
   Options (all optional; defaults preserve the replay-path behavior):
     * `:target` — pane/window to capture (default: session's active pane).
