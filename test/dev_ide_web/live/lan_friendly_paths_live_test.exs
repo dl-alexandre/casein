@@ -69,30 +69,40 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     %{root: root, aws: aws}
   end
 
-  test "root URL mounts the configured home workspace", %{conn: conn, root: root} do
+  test "root URL redirects to the lan_direct default workspace", %{conn: conn} do
+    # This setup runs lan_direct_mode with default_workspace "home".
+    assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, "/")
+  end
+
+  test "root URL renders the dashboard when lan_direct is off", %{conn: conn, aws: _aws} do
+    Application.put_env(:dev_ide, :lan_direct_mode, false)
+
     {:ok, view, _html} = live(conn, "/")
+
+    assert has_element?(view, "#dashboard-browser")
+    assert has_element?(view, "#dashboard-dirs li[data-dir='aws']")
+  end
+
+  test "the home workspace serves at its id URL", %{conn: conn, root: root} do
+    {:ok, view, _html} = live(conn, "/workspaces/home")
 
     workspace = socket_assign(view, :workspace)
 
     assert workspace.id == "home"
     assert workspace.path == root
-    assert socket_assign(view, :path_route) == "/"
+    assert socket_assign(view, :path_route) == nil
   end
 
   test "LAN-friendly home workspace remains authorized for UI events", %{
     conn: conn,
     root: root
   } do
-    {:ok, view, _html} = live(conn, "/")
+    {:ok, view, _html} = live(conn, "/workspaces/home")
 
     html = render_hook(view, "terminal:toggle_chrome", %{})
 
     assert socket_assign(view, :workspace).path == root
     refute html =~ "You do not have access to this workspace."
-  end
-
-  test "legacy home workspace URL redirects to the LAN-friendly root", %{conn: conn} do
-    assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/workspaces/home")
   end
 
   test "top-level URL path mounts the matching folder workspace", %{conn: conn, aws: aws} do
@@ -115,6 +125,19 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert socket_assign(view, :workspace).path == aws
       assert socket_assign(view, :path_route) == "/aws/lib"
       assert socket_assign(view, :workspace_route) == "/aws"
+    end
+
+    test "the workspace header renders breadcrumbs back to the dashboard", %{
+      conn: conn,
+      root: root
+    } do
+      repo = Path.join([root, "team", "repo"])
+      File.mkdir_p!(Path.join(repo, ".git"))
+
+      {:ok, view, _html} = live(conn, "/team/repo")
+
+      assert has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/']")
+      assert has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/?dir=team']", "team")
     end
 
     test "id URLs canonicalize onto the path route, preserving deep-link params", %{
@@ -173,7 +196,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       # /<root>/<user>/... layout).
       conn = as_forward_auth_user(conn, "dev@local")
 
-      assert {:error, {:live_redirect, %{to: "/workspaces"}}} = live(conn, "/aws")
+      assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/aws")
     end
 
     test "forward auth: the folder owner may mount its path URL", %{conn: conn, aws: aws} do
@@ -222,18 +245,19 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
 
       # This setup runs lan_direct_mode with default_workspace "home"; the
       # redirect target enforces viewer access at its own mount. Without
-      # lan_direct the fallback is the /workspaces picker.
+      # lan_direct the root renders the dashboard.
       assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, "/")
 
       Application.put_env(:dev_ide, :lan_direct_mode, false)
-      assert {:error, {:redirect, %{to: "/workspaces"}}} = live(conn, "/")
+      {:ok, view, _html} = live(conn, "/")
+      assert has_element?(view, "#dashboard-browser")
     end
 
     test "outside LAN mode path mounts also enforce viewer access", %{conn: conn} do
       Application.put_env(:dev_ide, :lan_mode, false)
 
       # The static dev fallback user does not own the "aws" folder.
-      assert {:error, {:live_redirect, %{to: "/workspaces"}}} = live(conn, "/aws")
+      assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/aws")
     end
   end
 
