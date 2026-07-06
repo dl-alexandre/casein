@@ -26,6 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Phoenix.LiveView.JS
 
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
@@ -221,6 +222,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                     class="size-3.5"
                   />
                 </.leader_key_button>
+                <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300 pointer-coarse:hidden"></span>
+                <button
+                  type="button"
+                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{delta: -0.1})}
+                  class="inline-flex size-6 shrink-0 items-center justify-center rounded border border-base-300 text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
+                  title="Decrease display zoom · Ctrl + scroll"
+                  aria-label="Decrease display zoom"
+                >
+                  <.icon name="hero-magnifying-glass-minus" class="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{reset: true})}
+                  class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-base-300 px-1.5 font-mono text-[10px] leading-none text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
+                  title="Reset display zoom"
+                  aria-label="Reset display zoom"
+                >
+                  100%
+                </button>
+                <button
+                  type="button"
+                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{delta: 0.1})}
+                  class="inline-flex size-6 shrink-0 items-center justify-center rounded border border-base-300 text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
+                  title="Increase display zoom · Ctrl + scroll"
+                  aria-label="Increase display zoom"
+                >
+                  <.icon name="hero-magnifying-glass-plus" class="size-3.5" />
+                </button>
               <% end %>
             </div>
           <% end %>

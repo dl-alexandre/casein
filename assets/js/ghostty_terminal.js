@@ -20,6 +20,14 @@ import {
   paintCanvasCellsCoalesced,
   resetCanvasRenderer
 } from "./terminal_canvas"
+import {
+  DISPLAY_ZOOM_STEP,
+  adjustDisplayZoom,
+  displayZoomStorageKey,
+  formatDisplayZoomPercent,
+  loadStoredDisplayZoom,
+  saveStoredDisplayZoom
+} from "./terminal_display_zoom.mjs"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -1089,8 +1097,15 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
     termLatOnApply(payload)
   }
   const delay = termLatHalfDelay()
-  if (delay > 0) window.setTimeout(paint, delay)
-  else paint()
+  if (delay > 0) {
+    window.setTimeout(() => {
+      paint()
+      hook.__scheduleTerminalLayout?.()
+    }, delay)
+  } else {
+    paint()
+    hook.__scheduleTerminalLayout?.()
+  }
 }
 
 function renderPatched(hook, payload, upstreamRender) {
@@ -1177,6 +1192,280 @@ function reportViewportActive(hook, force = false) {
     hook.pushEventTo(hook.target, "viewport_active", { active })
   } else if (typeof hook.pushEvent === "function") {
     hook.pushEvent("viewport_active", { active })
+  }
+}
+
+function isSizeAuthoritative(hook) {
+  return hook.__lastViewportActive === true
+}
+
+function pushResizeEvent(hook, cols, rows) {
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "resize", { cols, rows })
+  } else if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("resize", { cols, rows })
+  }
+}
+
+function terminalViewportMetrics(hook) {
+  if (!hook?.el) return null
+
+  const rect = hook.el.getBoundingClientRect()
+  const styles = window.getComputedStyle(hook.el)
+  const padL = parseFloat(styles.paddingLeft) || 0
+  const padR = parseFloat(styles.paddingRight) || 0
+  const padT = parseFloat(styles.paddingTop) || 0
+  const padB = parseFloat(styles.paddingBottom) || 0
+
+  return {
+    padL,
+    padT,
+    availableW: Math.max(0, rect.width - padL - padR),
+    availableH: Math.max(0, rect.height - padT - padB)
+  }
+}
+
+function userDisplayZoom(hook) {
+  return hook.__userDisplayZoom ?? 1
+}
+
+function clearDisplayScale(hook) {
+  if (!hook.pre) return
+
+  hook.pre.style.transform = ""
+  hook.pre.style.transformOrigin = ""
+  hook.el?.style.removeProperty("--devide-term-display-scale")
+  hook.el?.style.removeProperty("--devide-term-display-mode")
+  hook.el?.style.removeProperty("--devide-term-display-zoom")
+  Object.assign(hook.pre.style, { left: "", top: "", width: "", height: "" })
+  patchPreLayout(hook)
+}
+
+function applyScaledLayout(hook, baseScale, cols, rows, displayMode) {
+  if (!hook.pre || !hook.fitEnabled) return
+
+  const m = terminalCellMetrics(hook)
+  const viewport = terminalViewportMetrics(hook)
+  if (!m || !viewport) return
+
+  const userZoom = userDisplayZoom(hook)
+  const scale = baseScale * userZoom
+  const contentW = cols * m.width
+  const contentH = rows * m.height
+
+  if (
+    viewport.availableW < m.width * 2 ||
+    viewport.availableH < m.height * 2 ||
+    contentW <= 0 ||
+    contentH <= 0
+  ) {
+    return
+  }
+
+  if (Math.abs(scale - 1) < 0.001 && displayMode === "fit") {
+    clearDisplayScale(hook)
+    hook.el.dataset.displayMode = "fit"
+    syncDisplayZoomBadge(hook)
+    return
+  }
+
+  const scaledW = contentW * scale
+  const scaledH = contentH * scale
+  const offsetX = viewport.padL + (viewport.availableW - scaledW) / 2
+  const offsetY = viewport.padT + (viewport.availableH - scaledH) / 2
+
+  hook.el.style.setProperty("--devide-term-display-scale", String(scale))
+  hook.el.style.setProperty("--devide-term-display-zoom", String(userZoom))
+  hook.el.dataset.displayMode = displayMode
+  hook.pre.style.transform = `scale(${scale})`
+  hook.pre.style.transformOrigin = "top left"
+  hook.pre.style.left = `${offsetX}px`
+  hook.pre.style.top = `${offsetY}px`
+  hook.pre.style.width = `${contentW}px`
+  hook.pre.style.height = `${contentH}px`
+  syncDisplayZoomBadge(hook)
+}
+
+function scaleToContainer(hook) {
+  if (!hook.pre || !hook.fitEnabled) return
+
+  const m = terminalCellMetrics(hook)
+  if (!m) return
+
+  const cols = Math.max(1, hook.cols || parseInt(hook.el.dataset.cols, 10) || 80)
+  const rows = Math.max(1, hook.rows || parseInt(hook.el.dataset.rows, 10) || 24)
+  const contentW = cols * m.width
+  const contentH = rows * m.height
+  const viewport = terminalViewportMetrics(hook)
+  if (!viewport) return
+
+  if (
+    viewport.availableW < m.width * 2 ||
+    viewport.availableH < m.height * 2 ||
+    contentW <= 0 ||
+    contentH <= 0
+  ) {
+    return
+  }
+
+  const baseScale = Math.min(viewport.availableW / contentW, viewport.availableH / contentH)
+  applyScaledLayout(hook, baseScale, cols, rows, "scale")
+}
+
+function authoritativeFitToContainer(hook) {
+  if (!hook.fitEnabled) return
+
+  const m = terminalCellMetrics(hook)
+  const viewport = terminalViewportMetrics(hook)
+  if (!m || !viewport) return
+
+  if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return
+
+  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
+  const rows = Math.max(2, Math.floor(viewport.availableH / m.height))
+  const userZoom = userDisplayZoom(hook)
+  const fitUnchanged = cols === hook.__lastFitCols && rows === hook.__lastFitRows
+  const zoomUnchanged = userZoom === hook.__lastAppliedUserZoom
+
+  if (fitUnchanged && zoomUnchanged) return
+
+  if (fitUnchanged) {
+    if (userZoom === 1) clearDisplayScale(hook)
+    else applyScaledLayout(hook, 1, cols, rows, "zoom")
+    hook.el.dataset.displayMode = userZoom === 1 ? "fit" : "zoom"
+    hook.__lastAppliedUserZoom = userZoom
+    syncDisplayZoomBadge(hook)
+    return
+  }
+
+  if (userZoom === 1) clearDisplayScale(hook)
+
+  hook.__lastFitCols = cols
+  hook.__lastFitRows = rows
+  hook.__lastAppliedUserZoom = userZoom
+  hook.el.dataset.displayMode = userZoom === 1 ? "fit" : "zoom"
+  pushResizeEvent(hook, cols, rows)
+
+  if (userZoom !== 1) applyScaledLayout(hook, 1, cols, rows, "zoom")
+  else syncDisplayZoomBadge(hook)
+}
+
+function applyTerminalLayout(hook) {
+  if (!hook.fitEnabled) return
+
+  if (isSizeAuthoritative(hook)) {
+    authoritativeFitToContainer(hook)
+  } else {
+    scaleToContainer(hook)
+  }
+}
+
+function syncDisplayZoomBadge(hook) {
+  const badge = hook.__displayZoomBadge
+  if (!badge) return
+
+  const zoom = userDisplayZoom(hook)
+  if (Math.abs(zoom - 1) < 0.001) {
+    badge.hidden = true
+    badge.textContent = ""
+    return
+  }
+
+  badge.hidden = false
+  badge.textContent = formatDisplayZoomPercent(zoom)
+}
+
+function ensureDisplayZoomBadge(hook) {
+  if (hook.__displayZoomBadge) return hook.__displayZoomBadge
+
+  const badge = document.createElement("div")
+  badge.className = "devide-term-zoom-badge"
+  badge.hidden = true
+  badge.setAttribute("aria-hidden", "true")
+  hook.el.appendChild(badge)
+  hook.__displayZoomBadge = badge
+  return badge
+}
+
+function loadUserDisplayZoom(hook) {
+  const surfaceId = terminalSurfaceId(hook)
+  hook.__displayZoomSurfaceId = surfaceId
+  const storageKey = displayZoomStorageKey(surfaceId, hook.el?.id)
+  hook.__displayZoomStorageKey = storageKey
+  hook.__userDisplayZoom = loadStoredDisplayZoom(storageKey)
+  hook.__lastAppliedUserZoom = hook.__userDisplayZoom
+}
+
+function persistUserDisplayZoom(hook) {
+  saveStoredDisplayZoom(hook.__displayZoomStorageKey, userDisplayZoom(hook))
+}
+
+function adjustUserDisplayZoom(hook, detail = {}) {
+  hook.__userDisplayZoom = adjustDisplayZoom(userDisplayZoom(hook), detail)
+  persistUserDisplayZoom(hook)
+}
+
+function installTerminalDisplayZoom(hook) {
+  loadUserDisplayZoom(hook)
+  ensureDisplayZoomBadge(hook)
+  syncDisplayZoomBadge(hook)
+
+  hook.__onDisplayZoom = (event) => {
+    const detail = event?.detail || {}
+    if (detail.hookId && hook.el?.id !== detail.hookId) return
+    if (detail.surfaceId && hook.__displayZoomSurfaceId !== detail.surfaceId) return
+    if (!detail.hookId && !detail.surfaceId && !activeTerminal(hook)) return
+
+    adjustUserDisplayZoom(hook, detail)
+    applyTerminalLayout(hook)
+  }
+
+  window.addEventListener("devide:terminal-display-zoom", hook.__onDisplayZoom)
+}
+
+function installScaleFitLayout(hook) {
+  hook.fitEnabled = hook.fit
+  // Disable the vendor hook's fit→resize path; we route layout here instead.
+  hook.fit = false
+
+  if (hook.resizeObserver) {
+    hook.resizeObserver.disconnect()
+    hook.resizeObserver = null
+  }
+
+  if (hook.pendingFitTimer !== null) {
+    clearTimeout(hook.pendingFitTimer)
+    hook.pendingFitTimer = null
+  }
+
+  const scheduleLayout = () => {
+    if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
+    hook.__layoutTimer = setTimeout(() => {
+      hook.__layoutTimer = null
+      applyTerminalLayout(hook)
+    }, 75)
+  }
+
+  hook.__scheduleTerminalLayout = scheduleLayout
+  hook.__layoutTimer = null
+  hook.onWindowResize = scheduleLayout
+
+  if (typeof ResizeObserver !== "undefined") {
+    hook.resizeObserver = new ResizeObserver(scheduleLayout)
+    hook.resizeObserver.observe(hook.el)
+  }
+}
+
+function onViewportAuthorityChanged(hook, wasActive) {
+  const nowActive = hook.__lastViewportActive === true
+  if (wasActive === nowActive) return
+
+  applyTerminalLayout(hook)
+
+  if (nowActive) {
+    requestTerminalResync(hook, "became_size_authority")
+  } else {
+    requestTerminalResync(hook, "became_size_observer")
   }
 }
 
@@ -1365,6 +1654,8 @@ const GhosttyTerminal = {
     }
 
     GhosttyTerminalVendor.mounted.call(this)
+    installScaleFitLayout(this)
+    installTerminalDisplayZoom(this)
     markTerminalPerf(this, "mount_end")
 
     if (originalHandleEvent) {
@@ -1409,11 +1700,16 @@ const GhosttyTerminal = {
     // focused tab, not the smallest. Fires on tab show/hide and window
     // focus/blur; the initial forced report seeds the state for an already-
     // visible single viewer that never changes focus.
-    this.__onViewportActive = () => reportViewportActive(this)
+    this.__onViewportActive = () => {
+      const wasActive = this.__lastViewportActive === true
+      reportViewportActive(this)
+      onViewportAuthorityChanged(this, wasActive)
+    }
     document.addEventListener("visibilitychange", this.__onViewportActive)
     window.addEventListener("focus", this.__onViewportActive)
     window.addEventListener("blur", this.__onViewportActive)
     reportViewportActive(this, true)
+    applyTerminalLayout(this)
 
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
@@ -1569,6 +1865,14 @@ const GhosttyTerminal = {
     this.__wheelAccum = 0
     this.__wheelRaf = null
     this.__onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const delta = e.deltaY < 0 ? DISPLAY_ZOOM_STEP : -DISPLAY_ZOOM_STEP
+        adjustUserDisplayZoom(this, {delta})
+        applyTerminalLayout(this)
+        return
+      }
+
       e.preventDefault()
 
       if (!hasEmulatorScrollback(this)) {
@@ -1880,6 +2184,14 @@ const GhosttyTerminal = {
       window.removeEventListener("devide:terminal-theme", this.__onTerminalTheme)
       this.__onTerminalTheme = null
     }
+
+    if (this.__onDisplayZoom) {
+      window.removeEventListener("devide:terminal-display-zoom", this.__onDisplayZoom)
+      this.__onDisplayZoom = null
+    }
+
+    this.__displayZoomBadge?.remove()
+    this.__displayZoomBadge = null
 
     if (this.__onCtxBeforeOpen) {
       this.el.removeEventListener("devide:ctx-before-open", this.__onCtxBeforeOpen)

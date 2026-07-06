@@ -159,6 +159,9 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ ~s(id="mobile-key-bar-#{workspace_id}")
     assert html =~ ~s(id="mobile-key-bar-mode-#{workspace_id}")
     assert html =~ ~s(data-keybar-key="Palette")
+    assert html =~ ~s(data-keybar-key="ZoomDown")
+    assert html =~ ~s(data-keybar-key="ZoomUp")
+    assert html =~ ~s(data-keybar-key="ZoomReset")
     assert html =~ "phx-click=\"mobile_nav:toggle\""
     refute html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
 

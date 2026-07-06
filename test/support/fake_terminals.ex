@@ -25,6 +25,9 @@ defmodule DevIDE.Test.FakeTerminals do
 
   def owner_resize(owner_pid, cols, rows), do: GenServer.cast(owner_pid, {:resize, cols, rows})
 
+  def owner_set_active(owner_pid, active?) when is_boolean(active?),
+    do: GenServer.cast(owner_pid, {:set_active, active?})
+
   def owner_detach(owner_pid, subscriber), do: GenServer.call(owner_pid, {:detach, subscriber})
 
   @impl true
@@ -86,6 +89,11 @@ defmodule DevIDE.Test.FakeTerminals do
 
   def handle_cast({:resize, cols, rows}, state) do
     send(state.owner, {:fake_owner_resize, self(), cols, rows})
+    {:noreply, state}
+  end
+
+  def handle_cast({:set_active, active?}, state) do
+    send(state.owner, {:fake_owner_set_active, self(), active?})
     {:noreply, state}
   end
 end

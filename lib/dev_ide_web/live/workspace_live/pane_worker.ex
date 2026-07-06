@@ -179,7 +179,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          # DEC 2026 synchronized-output gating: `sync_active?` is true while a
          # BSU is open; `sync_timer?` debounces the safety-flush timer.
          sync_active?: false,
-         sync_timer?: false
+         sync_timer?: false,
+         # Whether this viewer's tab is visible+focused. Only an active viewer
+         # may resize the shared session_owner PTY; passive viewers scale display
+         # locally to the authoritative grid (see ghostty_terminal.js).
+         viewer_active?: false
        }}
     else
       {:error, reason} -> {:stop, {:start_failed, reason}}
@@ -192,12 +196,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_call({:resize, cols, rows}, _from, state) do
-    if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
-    resize_backend(state, cols, rows)
-    # A resize changes the grid shape, so the next frame must be a full one.
-    # Drop the diff baseline and repaint immediately so a fit/resize does not
-    # leave the browser waiting for the next byte of PTY output.
-    {:reply, :ok, state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)}
+    state = resize_local_grid(state, cols, rows)
+
+    if resize_authority?(state) do
+      resize_backend(state, cols, rows)
+    end
+
+    {:reply, :ok, state}
   end
 
   def handle_call(:resync, _from, state) do
@@ -206,6 +211,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   @impl true
   def handle_cast({:set_active, active?}, state) when is_boolean(active?) do
+    state = %{state | viewer_active?: active?}
     active_backend(state, active?)
     {:noreply, state}
   end
@@ -243,6 +249,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   def handle_info({:terminal_payload, :exit, reason}, state) do
     send(state.parent, {:pty_exit, state.pane_id, reason})
     {:stop, :normal, state}
+  end
+
+  # Authoritative grid size from SessionOwner — resize this viewer's emulator
+  # locally without touching the shared PTY (passive viewers scale to fit).
+  def handle_info({:terminal_owner_size, cols, rows}, state)
+      when is_integer(cols) and is_integer(rows) do
+    {:noreply, resize_local_grid(state, cols, rows)}
   end
 
   # Term query responses (e.g. cursor-position reports). Stay inside the
@@ -518,8 +531,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # names and stay independent instead of converging on one session.
     #
     # `-A` attaches if it exists, else creates. No `-D` — refreshing one tab
-    # must not detach the user's other live clients; tmux `window-size latest`
-    # + `aggressive-resize` (apply_defaults) handle multi-client sizing.
+    # must not detach the user's other live clients. Window sizing is owned by
+    # SessionOwner under tmux `window-size manual` (apply_defaults).
     #
     # `-c <cwd>` is the HOST workspace path. It's correct in host mode, but when
     # we wrap into the workspace container (docker compose exec) that path does
@@ -643,6 +656,17 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
        ) do
     Ghostty.PTY.start_link(cmd: cmd, args: pty_args, cols: cols, rows: rows)
   end
+
+  defp resize_local_grid(state, cols, rows) do
+    if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
+
+    # A resize changes the grid shape, so the next frame must be a full one.
+    state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)
+  end
+
+  defp resize_authority?(%{backend: :session_owner, viewer_active?: true}), do: true
+  defp resize_authority?(%{backend: :session_owner}), do: false
+  defp resize_authority?(_state), do: true
 
   defp resize_backend(
          %{backend: :session_owner, pty: pid, terminal_module: terminal_module},

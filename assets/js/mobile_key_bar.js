@@ -89,6 +89,18 @@ export const MobileKeyBar = {
         return
       }
 
+      if (spec === "ZoomDown" || spec === "ZoomUp" || spec === "ZoomReset") {
+        window.dispatchEvent(
+          new CustomEvent("devide:terminal-display-zoom", {
+            detail: {
+              delta: spec === "ZoomUp" ? 0.1 : spec === "ZoomDown" ? -0.1 : 0,
+              reset: spec === "ZoomReset"
+            }
+          })
+        )
+        return
+      }
+
       const def = KEY_DEFS[spec]
       if (!def) return
       if (spec.startsWith("Arrow") && this._sendLeaderSecondKey(def.key)) return

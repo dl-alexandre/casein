@@ -1275,18 +1275,17 @@ defmodule TmuxCtl.Client do
         {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
         {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
         default_command_options(session),
-        # window-size + aggressive-resize make tmux follow the *current* client's
-        # TTY size as it changes. Without these, tmux keeps the pane size from
-        # session creation — subsequent browser resizes fire SIGWINCH through to
-        # tmux but tmux ignores them, so the rendered cell grid stays the wrong
-        # shape and the operator sees content cut off / overflowing.
+        # `window-size manual` makes DevIDE's SessionOwner the sole writer via
+        # explicit `resize-window` calls. `latest` invites any attached tmux
+        # client (SSH attach, agent pairing, etc.) to re-pin the window and
+        # race DevIDE's focused-viewer policy — the narrow-column-with-dots
+        # failure mode. External clients may see letterboxing; DevIDE viewers
+        # never will.
         #
         # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
         # the GLOBAL default for *new* sessions only, leaving this already-
-        # created session at its prior value (usually `manual` after an explicit
-        # `resize-window` call). Same logic for aggressive-resize (window opt).
-        {["set-option", "-t", session, "window-size", "latest"], "window-size"},
-        {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"},
+        # created session at its prior value.
+        {["set-option", "-t", session, "window-size", "manual"], "window-size"},
         terminal_environment_options(session),
         # Host UI pickers replace tmux's choose-tree entirely (the status line
         # is already off). Stray prefixes still reach the PTY — agents sending
@@ -1510,9 +1509,8 @@ defmodule TmuxCtl.Client do
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
   attached tmux client) should be enough, but with `tmux new-session -A`
   re-attaching to a session that survives BEAM/page-reload cycles, tmux's
-  `window-size` policy sometimes pins the pane to the *old* client's size and
-  doesn't grow to match the new client. Calling `tmux resize-window`
-  explicitly overrides that policy.
+  Under `window-size manual`, DevIDE's SessionOwner is the sole writer; an
+  explicit `resize-window` is how the authoritative viewer size reaches tmux.
 
   Returns `:ok` on success; logs and returns the System.cmd result tuple on
   failure (this is a best-effort sync — the operator gets a usable pane
@@ -1569,10 +1567,9 @@ defmodule TmuxCtl.Client do
   Current size of the named session's active window, as `{cols, rows}`.
 
   Used to bring a *reattached* PTY up at the session's existing width rather
-  than the caller's hardcoded default. A new client's `:exec.winsz` to the
-  default, combined with tmux `window-size latest`, otherwise shrinks a resumed
-  (previously wider) window down to that default — collapsing the operator's
-  terminal into a narrow column until a browser refit grows it back.
+  than the caller's hardcoded default. Under `window-size manual` the window
+  keeps its last explicit size, so a resumed session opens at the real width
+  instead of collapsing to the attach PTY's default.
 
   Returns `{:ok, {cols, rows}}`, or `:error` when the session is absent or the
   query/parse fails (caller falls back to its default size).

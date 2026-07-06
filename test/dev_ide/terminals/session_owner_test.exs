@@ -907,6 +907,43 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Process.exit(big_viewer, :kill)
   end
 
+  test "authoritative size changes broadcast terminal_owner_size to subscribers" do
+    unique = "owner-size-broadcast-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-size-broadcast", "sid-#{unique}")
+    owner_pid = start_shell_owner("ws-size-broadcast", info)
+    subscriber = register_subscriber(owner_pid, self(), :raw)
+
+    GenServer.cast(owner_pid, {:resize, subscriber, 140, 42})
+    assert_receive {:terminal_owner_size, 140, 42}, 1_000
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
+  test "tmux drift guard re-asserts the authoritative size when the window moved" do
+    swap_in_fake_tmux_adapter()
+
+    unique = "drift-guard-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-drift-guard", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-drift-guard", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-drift-guard", applied_size: {120, 40}}
+    end)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{
+      "devide_ws-drift-guard_sid-#{unique}" => {80, 24}
+    })
+
+    send(owner_pid, :tmux_drift_check)
+
+    assert_receive {:fake_tmux_resize_window, session, 120, 40}
+    assert_receive {:fake_tmux_refresh_client, ^session}
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "tmux resizes are single-flight, coalesce to latest, and end with a refresh heal" do
     swap_in_fake_tmux_adapter()
 

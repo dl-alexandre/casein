@@ -142,7 +142,19 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def resize_window(session, cols, rows) do
     send_to_test({:fake_tmux_resize_window, session, cols, rows})
+
+    FakeState.update(:fake_tmux_window_sizes, %{}, fn sizes ->
+      Map.put(sizes, session, {cols, rows})
+    end)
+
     :ok
+  end
+
+  def window_size(session) do
+    case FakeState.get(:fake_tmux_window_sizes, %{}) |> Map.get(session) do
+      {cols, rows} when is_integer(cols) and is_integer(rows) -> {:ok, {cols, rows}}
+      _ -> :error
+    end
   end
 
   def refresh_client(session) do
@@ -912,6 +924,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate set_environment(session, key, value), to: TmuxCtl.Test.FakeAdapter
   defdelegate set_environments(session, env), to: TmuxCtl.Test.FakeAdapter
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Test.FakeAdapter
+  defdelegate window_size(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate refresh_client(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate tail_lines(output, n), to: TmuxCtl.Test.FakeAdapter
   defdelegate server_version(), to: TmuxCtl.Test.FakeAdapter

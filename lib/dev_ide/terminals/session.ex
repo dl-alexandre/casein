@@ -149,11 +149,9 @@ defmodule DevIDE.Terminals.Session do
     # Bring the PTY up at the right width. A *new* tmux session is created at the
     # default size, but a *resumed* one already has a window size set by whatever
     # client last drove it. erlexec allocates the attach PTY small; left to the
-    # `:exec.winsz` below at the hardcoded default — combined with tmux
-    # `window-size latest` — it would shrink the resumed window down to the
-    # default, collapsing the operator's terminal into a narrow column (with the
-    # captured scrollback re-wrapped narrow) until a browser refit round-trips
-    # back up. Seed the winsz from the existing window so a resume opens at its
+    # `:exec.winsz` below at the hardcoded default would mismatch a resumed
+    # window's real width under `window-size manual`. Seed the winsz from the
+    # existing window so a resume opens at its
     # real width; the browser's fit still adjusts to the actual viewport after.
     {cols, rows} =
       with true <- resumed?,

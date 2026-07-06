@@ -25,6 +25,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   # frame rate.
   @event_emit_interval_ms 25
 
+  # Slow tick: re-assert tmux window size when an external client moved it
+  # under `window-size manual`. Cheap — one display-message per interval.
+  @tmux_drift_check_interval_ms 30_000
+
   # Query-response classification (see `classify_query_response/1`). One tmux
   # query fans out to N viewer emulators; answers of the same class arriving
   # within this window are duplicates of one underlying query, not new answers.
@@ -84,6 +88,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     # latest size requested meanwhile. See `maybe_resize_tmux_window/3`.
     tmux_resize: nil,
     tmux_resize_pending: nil,
+    tmux_drift_timer: nil,
     cursor: nil,
     # Session-level terminal theme used to rewrite OSC color query responses
     # (last-writer-wins across viewers via `set_theme/3`). `theme` caches the
@@ -283,6 +288,16 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     case ensure_attachment(state, subscriber, mode, opts) do
       {:ok, next_state, payload} ->
+        next_state =
+          next_state
+          |> assert_tmux_window_size()
+          |> schedule_tmux_drift_check()
+
+        if next_state.applied_size do
+          {cols, rows} = next_state.applied_size
+          broadcast_owner_size(next_state.subscribers, cols, rows)
+        end
+
         maybe_set_owner_subscriber_gauge(previous_state, next_state)
         {:reply, {:ok, payload}, next_state}
 
@@ -456,12 +471,24 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   @impl true
+  def handle_info(:tmux_drift_check, state) do
+    state =
+      state
+      |> Map.put(:tmux_drift_timer, nil)
+      |> assert_tmux_window_size()
+      |> schedule_tmux_drift_check()
+
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info(_, state) do
     {:noreply, state}
   end
 
   @impl true
   def terminate(_reason, state) do
+    _ = cancel_tmux_drift_timer(state)
     Telemetry.owner_stopped(self())
 
     if state.attachment != nil do
@@ -613,7 +640,9 @@ defmodule DevIDE.Terminals.SessionOwner do
         state = resize_attachment(state, cols, rows)
         state = maybe_resize_tmux_window(state, cols, rows)
         emit_size_change(state, size, reason)
+
         %{state | applied_size: size}
+        |> schedule_tmux_drift_check()
     end
   end
 
@@ -671,26 +700,32 @@ defmodule DevIDE.Terminals.SessionOwner do
       %{cols: cols, rows: rows, viewers: viewers, active_viewers: active_count},
       %{kind: state.info.kind, reason: reason}
     )
+
+    broadcast_owner_size(state.subscribers, cols, rows)
   end
 
-  # Best-effort: keep tmux's window size in lockstep with the clamped PTY size.
-  # The PTY winsize change already SIGWINCHes tmux (which follows via the
-  # `window-size latest` policy), but an explicit resize-window overrides the
-  # reattach pin where tmux keeps a stale client's size; apply_defaults restores
-  # the `latest` policy afterward. Runs off-process so a slow tmux subprocess
-  # never blocks the owner mailbox (live term_data fan-out). Derives the same
-  # session name the PaneWorker attached with. Skipped when the owner has no
-  # workspace key bound (non-shell owners never reach here).
+  defp broadcast_owner_size(subscribers, cols, rows) do
+    for {pid, _mode} <- subscribers do
+      send(pid, {:terminal_owner_size, cols, rows})
+    end
+
+    :ok
+  end
+
+  # Best-effort: keep tmux's window size in lockstep with the authoritative PTY
+  # size. Under `window-size manual` (see TmuxCtl.Client.apply_defaults/1)
+  # SessionOwner is the sole writer — explicit resize-window is how viewer
+  # resizes reach tmux. Runs off-process so a slow tmux subprocess never
+  # blocks the owner mailbox (live term_data fan-out). Derives the same session
+  # name the PaneWorker attached with. Skipped when the owner has no workspace
+  # key bound (non-shell owners never reach here).
   #
-  # SINGLE-FLIGHT, latest-wins: these used to be independent fire-and-forget
-  # tasks, so two rapid size changes could land their resize-window (and the
-  # window-size manual→latest flip inside it) out of order, leaving tmux at a
-  # stale size while every emulator grid was already at the new one. tmux then
-  # keeps laying the TUI out for the wrong width forever — the tiled/duplicated
-  # repaint corruption. Now at most one task runs; sizes arriving meanwhile
-  # coalesce into `tmux_resize_pending` and run when it completes. Each task
-  # ends with a refresh-client heal so tmux repaints the full screen at the
-  # settled size, converging any grid that diverged during the transition.
+  # SINGLE-FLIGHT, latest-wins: at most one resize task runs; sizes arriving
+  # meanwhile coalesce into `tmux_resize_pending` and run when it completes.
+  # Each task ends with a refresh-client heal so tmux repaints the full screen
+  # at the settled size, converging any grid that diverged during the transition.
+  # `assert_tmux_window_size/1` re-asserts on attach and on a slow tick when
+  # something external moved the window anyway.
   defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}} = state, cols, rows)
        when is_binary(key) and is_binary(sid) do
     size = {cols, rows}
@@ -712,13 +747,57 @@ defmodule DevIDE.Terminals.SessionOwner do
     task =
       Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
         _ = tmux.resize_window(session, cols, rows)
-        _ = tmux.apply_defaults(session)
         _ = tmux.refresh_client(session)
         :ok
       end)
 
     %{state | tmux_resize: %{ref: task.ref, size: size}}
   end
+
+  # Compare tmux's live window against `applied_size` and re-assert when an
+  # external client (SSH attach, etc.) moved it. Cheap guard under manual mode.
+  defp assert_tmux_window_size(
+         %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
+       )
+       when is_binary(key) and is_binary(sid) and is_tuple(size) do
+    {cols, rows} = size
+    session = Tmux.session_name(key, sid)
+    tmux = DevIDE.Terminals.tmux_adapter()
+
+    case tmux.window_size(session) do
+      {:ok, {^cols, ^rows}} ->
+        state
+
+      {:ok, {actual_cols, actual_rows}} ->
+        Logger.info(
+          "tmux window drift #{actual_cols}x#{actual_rows} -> re-asserting #{cols}x#{rows}",
+          kind: state.info.kind
+        )
+
+        maybe_resize_tmux_window(state, cols, rows)
+
+      :error ->
+        state
+    end
+  end
+
+  defp assert_tmux_window_size(state), do: state
+
+  defp schedule_tmux_drift_check(%{workspace_key: key, info: %{sid: sid}} = state)
+       when is_binary(key) and is_binary(sid) do
+    state = cancel_tmux_drift_timer(state)
+    ref = Process.send_after(self(), :tmux_drift_check, @tmux_drift_check_interval_ms)
+    %{state | tmux_drift_timer: ref}
+  end
+
+  defp schedule_tmux_drift_check(state), do: state
+
+  defp cancel_tmux_drift_timer(%{tmux_drift_timer: ref} = state) when is_reference(ref) do
+    Process.cancel_timer(ref)
+    %{state | tmux_drift_timer: nil}
+  end
+
+  defp cancel_tmux_drift_timer(state), do: state
 
   defp run_pending_tmux_resize(%{tmux_resize_pending: nil} = state), do: state
 

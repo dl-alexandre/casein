@@ -305,6 +305,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         >
           A+
         </button>
+        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <button
+          type="button"
+          data-keybar-key="ZoomDown"
+          class={mobile_key_class()}
+          aria-label="Decrease display zoom"
+          title="Decrease display zoom"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          data-keybar-key="ZoomReset"
+          class={mobile_key_class()}
+          aria-label="Reset display zoom"
+          title="Reset display zoom"
+        >
+          1×
+        </button>
+        <button
+          type="button"
+          data-keybar-key="ZoomUp"
+          class={mobile_key_class()}
+          aria-label="Increase display zoom"
+          title="Increase display zoom"
+        >
+          +
+        </button>
       </div>
     </div>
     """

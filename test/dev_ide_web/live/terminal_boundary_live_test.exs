@@ -85,6 +85,8 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
 
     assert html =~ ~s(phx-click="split_right")
     assert html =~ ~s(phx-click="split_down")
+    assert html =~ "devide:terminal-display-zoom"
+    assert html =~ "hero-magnifying-glass-plus"
 
     {:ok, _} = State.set_mode(workspace_id, :manual)
 

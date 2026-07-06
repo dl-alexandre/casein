@@ -936,6 +936,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
       assert_receive {:fake_session_resize, ^session_pid, 100, 32}, 1_000
+      drain_pane_frames(pane_id, 200)
 
       Process.unlink(worker)
       ref = Process.monitor(worker)
@@ -1030,8 +1031,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       send(worker, {:pty_write, "\e[?62;22c\e[>1;0;0c"})
       refute_receive {:fake_owner_query_response, ^owner_pid, "\e[?62;22c\e[>1;0;0c"}, 250
 
+      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.set_active(worker, true)
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
       assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
+      drain_pane_frames(pane_id, 200)
 
       Process.unlink(worker)
       ref = Process.monitor(worker)
@@ -1121,6 +1124,14 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   defp drain_pty_data(pane_id, timeout_ms) do
     receive do
       {:pty_data, ^pane_id, _} -> drain_pty_data(pane_id, timeout_ms)
+    after
+      timeout_ms -> :ok
+    end
+  end
+
+  defp drain_pane_frames(pane_id, timeout_ms) do
+    receive do
+      {:pane_frame, ^pane_id, _} -> drain_pane_frames(pane_id, timeout_ms)
     after
       timeout_ms -> :ok
     end

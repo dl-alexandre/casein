@@ -413,6 +413,22 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   opacity: 1;
 }
 
+/* Per-interface display zoom badge (see ghostty_terminal.js / terminal_display_zoom.mjs) */
+.devide-term-zoom-badge {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  z-index: 6;
+  border-radius: 4px;
+  border: 1px solid color-mix(in oklch, var(--color-zinc-200) 18%, transparent);
+  background: color-mix(in oklch, var(--color-zinc-950) 88%, transparent);
+  color: color-mix(in oklch, var(--color-zinc-200) 88%, white);
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.15rem 0.35rem;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
 /* Preview pane keyboard focus — thin top accent instead of a full border ring */
 .preview-pane-overlay.preview-pane-entered::before {
   content: "";

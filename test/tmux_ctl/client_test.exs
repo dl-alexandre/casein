@@ -239,6 +239,21 @@ defmodule TmuxCtl.ClientTest do
     assert :ok = Client.apply_defaults(@session)
   end
 
+  test "apply_defaults sets window-size manual so DevIDE owns resizing" do
+    assert :ok = Client.apply_defaults(@session)
+    assert_receive {:tmux_runner, argv}
+
+    assert contains_sequence?(argv, [
+             "set-option",
+             "-t",
+             @session,
+             "window-size",
+             "manual"
+           ])
+
+    refute Enum.member?(argv, "aggressive-resize")
+  end
+
   test "apply_defaults pushes configured terminal env into the tmux session" do
     Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_CLIPBOARD" => "osc52"})
 

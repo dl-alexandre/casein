@@ -67,7 +67,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     ~H"""
     <div
       id={@id}
-      class={@class}
+      class={["relative h-full w-full", @class]}
       phx-hook="GhosttyTerminal"
       phx-update="ignore"
       phx-target={@myself}
