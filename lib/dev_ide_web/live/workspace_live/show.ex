@@ -196,7 +196,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           else: {:review, :default}
 
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
-      # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
       # Re-attach token for raw channel joins after a fresh LiveView
       # auth pass. This is safe to send as a socket dataset attribute and lets
       # TerminalChannel skip workspace manager access checks on

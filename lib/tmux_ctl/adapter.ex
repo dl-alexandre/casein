@@ -27,7 +27,7 @@ defmodule TmuxCtl.Adapter do
 
   @callback session_topology(session()) :: {[map()], [map()]}
 
-  @callback directory_inventory() :: {:ok, %{windows: map(), panes: map()}} | {:error, term()}
+  @callback directory_inventory() :: {:ok, %{windows: map(), panes: map()}} | :error
 
   @callback capture_scrollback(session(), keyword()) :: binary()
 

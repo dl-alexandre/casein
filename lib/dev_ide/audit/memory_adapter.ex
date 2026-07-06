@@ -1,6 +1,6 @@
 defmodule DevIDE.Audit.MemoryAdapter do
   @moduledoc """
-  Capped in-memory audit ring. Swap with an Ecto-backed adapter in M11.
+  Capped in-memory audit ring. Mainly used in test environments.
   """
 
   use GenServer

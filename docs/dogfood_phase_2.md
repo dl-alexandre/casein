@@ -1,5 +1,10 @@
 # Dogfood Phase 2
 
+> **Historical ledger.** The fleet-runner / delegated-execution stack referenced
+> here (`scripts/dogfood_remote_fleet.sh`, `scripts/dogfood_remote_runner_smoke.sh`,
+> `DevIDE.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
+> in the repo. The MCP side-by-side section (lower half) remains current.
+
 Purpose: validate whether DevIDE can be trusted for daily delegated engineering
 work. This phase is intentionally operational. Do not add speculative autonomy
 or broad architecture here; delegate real work, record friction, and fix only

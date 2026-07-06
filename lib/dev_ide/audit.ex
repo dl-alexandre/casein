@@ -2,9 +2,8 @@ defmodule DevIDE.Audit do
   @moduledoc """
   Audit log for sensitive UI actions and policy decisions.
 
-  M10 ships with `DevIDE.Audit.MemoryAdapter` (capped in-memory ring). The
-  shape of `Event` mirrors the planned `audit_events` table so swapping to
-  an Ecto-backed adapter in M11 doesn't move callers.
+  This is backed by `DevIDE.Audit.EctoAdapter` by default, and uses
+  `DevIDE.Audit.MemoryAdapter` for testing.
   """
 
   alias DevIDE.Audit.Event
