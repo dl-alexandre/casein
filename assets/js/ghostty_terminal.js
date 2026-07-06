@@ -109,16 +109,32 @@ function syncAdvanceContext(pre) {
   el.style.fontWeight = styles.fontWeight
   el.style.fontStyle = styles.fontStyle
   el.textContent = "M".repeat(20)
-  const rect = el.getBoundingClientRect()
-  advanceCellWidth = rect.width / 20
-  // rect.height is the inline content-box height (ascent + descent) —
-  // exactly what cell backgrounds cover without padding.
-  bgLeadingPad = backgroundLeadingPad(parseFloat(styles.lineHeight), rect.height)
+  advanceCellWidth = el.getBoundingClientRect().width / 20
+  bgLeadingPad = backgroundLeadingPad(
+    parseFloat(styles.lineHeight),
+    measureInlineContentHeight(el)
+  )
   advanceFontSig = sig
   ADVANCE_DELTAS.clear()
   // Cached cell styles embed the previous font config's background pad.
   CELL_STYLE_CACHE.clear()
   return advanceCellWidth > 0
+}
+
+// Content-box height (font ascent + descent) of an inline run — exactly what
+// an inline span's background paints. Measured from an inline CHILD of the
+// measure host: the host is absolutely positioned, so its own rect is a line
+// box sized by the page's inherited line-height (e.g. Tailwind's 1.5), which
+// is unrelated to what inline backgrounds cover. An inline box's rect height
+// is the font's content box regardless of line-height.
+function measureInlineContentHeight(host) {
+  const inner = document.createElement("span")
+  inner.textContent = "Mg"
+  host.textContent = ""
+  host.appendChild(inner)
+  const height = inner.getBoundingClientRect().height
+  host.textContent = ""
+  return height
 }
 
 // Per-cell letter-spacing correction in px as a style-ready string, "" when the
