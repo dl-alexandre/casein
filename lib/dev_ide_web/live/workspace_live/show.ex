@@ -30,6 +30,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
+  alias DevIdeWeb.NotificationsDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIDE.Panes
@@ -114,6 +115,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     pane:zoom_focused pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
+    notifications:toggle notifications:close notifications:refresh
+    notifications:mark_read notifications:resolve notifications:mute
+    notifications:mark_all_read notifications:save_preferences
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
     palette:open palette:ide palette:category palette:nav palette:close palette:query
@@ -300,6 +304,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:artifact_projects_error, nil)
         |> assign(:artifact_selected_id, nil)
         |> HistoryEvents.assign_defaults()
+        # Global notifications drawer (user-scoped, not workspace-scoped):
+        # subscribes to the viewer's notification topic and loads the unread
+        # badge count on the connected mount; the inbox list is lazy (opens).
+        |> NotificationsDrawerEvents.mount()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -585,6 +593,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @impl true
   def handle_params(params, _uri, socket) do
     socket = apply_tab_param(socket, params)
+    # `?drawer=notifications` deep link (docs/deep_links.md) — one-shot like
+    # `?tab=`; patches without the param leave the drawer state alone.
+    socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
 
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
@@ -936,6 +947,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("history:" <> _ = event, params, socket),
     do: HistoryEvents.handle_event(event, params, socket)
 
+  # Notifications drawer events are handled by NotificationsDrawerEvents
+  # (absorbed from the removed NotificationLive.Index page; shared with the
+  # dashboard). Distinct from the singular "notification:open_conversation"
+  # OS-notification deeplink above.
+  def handle_event("notifications:" <> _ = event, params, socket),
+    do: NotificationsDrawerEvents.handle_event(event, params, socket)
+
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
   defp select_tab(socket, tab, params \\ %{})
@@ -993,6 +1011,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:agent_mcp_activity, _entry}, socket),
     do: {:noreply, HistoryEvents.refresh_if_open(socket)}
+
+  # Durable notification broadcasts on the viewer's user topic — subscribed by
+  # NotificationsDrawerEvents at mount. Badge always updates; the drawer list
+  # refreshes only while open.
+  def handle_info({:notification_created, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
+
+  def handle_info({:notification_updated, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
 
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     {:noreply, LogsEvents.insert_log_line(socket, line)}

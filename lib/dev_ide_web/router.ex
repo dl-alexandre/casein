@@ -129,12 +129,15 @@ defmodule DevIdeWeb.Router do
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
       live "/", WorkspaceLive.Dashboard, :index
-      live "/notifications", NotificationLive.Index, :index
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
 
     # The picker is absorbed by the dashboard at "/" (Stage 3).
     get "/workspaces", LegacyWorkspaceController, :index
+
+    # The notifications page is absorbed by the in-viewer notifications drawer
+    # (?drawer=notifications); this keeps old links and bookmarks working.
+    get "/notifications", LegacyWorkspaceController, :notifications
 
     # The previous-sessions page is absorbed by the cockpit's History panel
     # (?tab=history); this keeps old links and bookmarks working.

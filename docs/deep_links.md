@@ -20,6 +20,7 @@ Query parameters (stable order when DevIDE writes them):
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
 | `tmux_session` | `devide_…` | Attach hint when switching sessions (internal) |
 | `tab` | `history` | Cockpit tab to open (`terminal`, `files`, `search`, `diff`, `artifacts`, `run`, `proposals`, `logs`, `history`); unknown values are ignored |
+| `drawer` | `notifications` | Overlay drawer to open (`notifications` is the only value today); unknown values are ignored |
 
 `tab` is a one-shot open hint: it selects the tab (with that tab's lazy
 hydration) on the mount/patch that carries it, and DevIDE does not re-emit it
@@ -28,6 +29,15 @@ History panel's search filters from the previous-sessions query params
 (`query`, `source`, `session`, `pane`, `since`, `until`, `limit`, and their
 aliases) — this is how old `/workspaces/:id/previous-sessions` bookmarks keep
 working through the legacy redirect.
+
+`drawer` is the same kind of one-shot open hint for overlay drawers, and —
+unlike `tab` — it also works on the dashboard at `/`, because the
+notifications drawer is a global (user-scoped) surface rendered by both the
+dashboard and the workspace cockpit. `drawer=notifications` opens the
+notifications drawer (inbox, mark read / resolve / mute, delivery
+preferences); `/?drawer=notifications` is the target of the legacy
+`/notifications` redirect. The drawer's list loads lazily when it opens; only
+the unread badge count loads at mount.
 
 ### Canonicalization
 
