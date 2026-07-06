@@ -52,6 +52,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.Context
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [workspace_breadcrumbs: 1]
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceShell, only: [workspace_shell: 1]
 
   @ghostty_term_id "raw-term-ghostty"
@@ -363,13 +364,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            "Cross-host attach is not yet configured. " <>
              "The cockpit is host-aware but the runtime resolver only honors \"local\" today."
          )
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
 
       {:error, :forbidden} ->
         {:ok,
          socket
          |> put_flash(:error, "You do not have access to this workspace.")
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
 
       {:error, {:lan_path, reason}} ->
         {:ok, assign_lan_path_error(socket, params, reason)}
@@ -378,27 +379,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:ok,
          socket
          |> put_flash(:error, mount_error_message(reason))
-         |> push_navigate(to: ~p"/workspaces")}
+         |> push_navigate(to: ~p"/")}
     end
   end
 
   defp resolve_mount_workspace(%{"id" => id} = params, user) do
-    if legacy_lan_home_workspace?(id) do
-      {:redirect, ~p"/"}
-    else
-      with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-        # In trusted LAN mode, canonicalize onto the path route when the
-        # workspace has one. Untrusted deployments keep opaque id URLs (path
-        # routes expose host path shape — see WorkspaceRoutes). The bare "/"
-        # route is excluded until the Stage 3 dashboard lands ("/" still
-        # redirects to the picker, which would loop); workspaces outside the
-        # path root keep serving at the id URL.
-        with true <- PanelGate.path_access_pre_authorized?(),
-             {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
-          {:redirect, route <> id_route_query(params)}
-        else
-          _ -> {:ok, %{workspace: workspace, path_route: nil, workspace_route: nil}}
-        end
+    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+      # In trusted LAN mode, canonicalize onto the path route when the
+      # workspace has one. Untrusted deployments keep opaque id URLs (path
+      # routes expose host path shape — see WorkspaceRoutes). The bare "/"
+      # route is excluded because it is the dashboard, not a workspace mount —
+      # the path-root workspace (e.g. /workspaces/home) keeps serving at its
+      # id URL, as do workspaces outside the path root.
+      with true <- PanelGate.path_access_pre_authorized?(),
+           {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
+        {:redirect, route <> id_route_query(params)}
+      else
+        _ -> {:ok, %{workspace: workspace, path_route: nil, workspace_route: nil}}
       end
     end
   end
@@ -406,27 +403,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp resolve_mount_workspace(params, _user) do
     segments = Map.get(params, "lan_path", [])
 
-    cond do
-      not root_lan_path?(segments) ->
-        resolve_path_mount(segments)
-
-      not PanelGate.path_access_pre_authorized?() ->
-        # Until the Stage 3 dashboard, "/" outside a trusted deployment stays
-        # the picker (or the lan_direct default workspace, auth-enforced at
-        # its own mount).
-        {:redirect, root_redirect_path()}
-
-      true ->
-        # Trusted LAN: "/" opens the path root itself. Deployments without a
-        # resolvable root (lan_direct without friendly paths) keep their
-        # default-workspace redirect.
-        case resolve_path_mount(segments) do
-          {:error, {:lan_path, reason}} when reason in [:missing_root, :invalid_root] ->
-            {:redirect, root_redirect_path()}
-
-          other ->
-            other
-        end
+    # "/" itself routes to the dashboard, so a root mount can only arrive via
+    # an oddball URL the router normalized to empty segments — send it home.
+    if root_lan_path?(segments) do
+      {:redirect, ~p"/"}
+    else
+      resolve_path_mount(segments)
     end
   end
 
@@ -474,33 +456,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp root_lan_path?(segments), do: segments in [nil, []]
-
-  # Redirect /workspaces/home to "/" only when "/" will actually mount the
-  # home workspace: trusted deployment AND a resolvable path root. The
-  # root-resolvability check is what prevents a redirect loop with the
-  # lan_direct fallback ("/" → /workspaces/home → "/") when no root is
-  # configured.
-  defp legacy_lan_home_workspace?(id) do
-    id == "home" and PanelGate.path_access_pre_authorized?() and
-      match?({:ok, _}, PathResolver.resolve([]))
-  end
-
-  defp root_redirect_path do
-    case direct_workspace_id() do
-      nil -> ~p"/workspaces"
-      workspace_id -> ~p"/workspaces/#{workspace_id}"
-    end
-  end
-
-  defp direct_workspace_id do
-    lan? = Application.get_env(:dev_ide, :lan_mode, false)
-    direct? = Application.get_env(:dev_ide, :lan_direct_mode, false)
-    workspace_id = Application.get_env(:dev_ide, :default_workspace)
-
-    if lan? and direct? and is_binary(workspace_id) and String.trim(workspace_id) != "" do
-      workspace_id
-    end
-  end
 
   defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
 
@@ -2220,13 +2175,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <.workspace_shell {assigns}>
       <:header_back_nav>
-        <.link
-          navigate={~p"/workspaces"}
-          class="shrink-0 text-primary hover:underline"
-          title="Back to workspaces"
-        >
-          ←
-        </.link>
+        <.workspace_breadcrumbs workspace_route={@workspace_route} />
       </:header_back_nav>
     </.workspace_shell>
     """
@@ -2286,16 +2235,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
           <div class="mt-7 flex flex-wrap items-center gap-2">
             <.link
-              navigate="/"
+              navigate={~p"/"}
               class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
             >
-              Open home
-            </.link>
-            <.link
-              navigate={~p"/workspaces"}
-              class="inline-flex h-9 items-center justify-center rounded border border-base-300 bg-base-100 px-3 text-sm font-medium text-base-content/80 transition hover:bg-base-200"
-            >
-              Workspaces
+              Open dashboard
             </.link>
           </div>
         </div>

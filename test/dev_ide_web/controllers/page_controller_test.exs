@@ -1,9 +1,9 @@
 defmodule DevIdeWeb.PageControllerTest do
   use DevIdeWeb.ConnCase
 
-  test "GET /", %{conn: conn} do
+  test "GET / renders the dashboard", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert redirected_to(conn, 302) == ~p"/workspaces"
+    assert html_response(conn, 200) =~ "dashboard-browser"
   end
 
   test "GET / redirects to default workspace in LAN direct mode", %{conn: conn} do
@@ -60,7 +60,7 @@ defmodule DevIdeWeb.PageControllerTest do
     Application.delete_env(:dev_ide, :default_workspace)
 
     conn = get(conn, ~p"/")
-    assert redirected_to(conn, 302) == ~p"/workspaces"
+    assert html_response(conn, 200) =~ "dashboard-browser"
   end
 
   test "GET / ignores direct mode when LAN mode is disabled", %{conn: conn} do
@@ -79,7 +79,7 @@ defmodule DevIdeWeb.PageControllerTest do
     Application.put_env(:dev_ide, :default_workspace, "alpha")
 
     conn = get(conn, ~p"/")
-    assert redirected_to(conn, 302) == ~p"/workspaces"
+    assert html_response(conn, 200) =~ "dashboard-browser"
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)

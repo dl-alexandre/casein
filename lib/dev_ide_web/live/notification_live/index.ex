@@ -185,7 +185,7 @@ defmodule DevIdeWeb.NotificationLive.Index do
             </p>
           </div>
           <.link
-            navigate={~p"/workspaces"}
+            navigate={~p"/"}
             class="inline-flex items-center gap-2 self-start rounded border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:bg-zinc-50"
           >
             <.icon name="hero-arrow-left" class="size-4" /> Workspaces

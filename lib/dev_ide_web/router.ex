@@ -128,12 +128,14 @@ defmodule DevIdeWeb.Router do
         {DevIdeWeb.AssignCurrentUserHook, :default},
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
-      live "/", WorkspaceLive.Show, :lan_path
+      live "/", WorkspaceLive.Dashboard, :index
       live "/notifications", NotificationLive.Index, :index
-      live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
+
+    # The picker is absorbed by the dashboard at "/" (Stage 3).
+    get "/workspaces", LegacyWorkspaceController, :index
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
 
