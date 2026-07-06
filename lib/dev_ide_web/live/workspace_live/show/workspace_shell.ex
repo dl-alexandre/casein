@@ -24,6 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
+  alias DevIdeWeb.NotificationsDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -283,6 +284,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             >
               C-b
             </button>
+            <NotificationsDrawer.notifications_bell
+              id={"notifications-bell-" <> @workspace.id}
+              unread_count={@notif_unread_count}
+            />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
             <button
               phx-click="terminal:toggle_chrome"
@@ -593,6 +598,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       open={@audit_drawer_open}
       workspace={@workspace}
       current_user={@current_user}
+    />
+    <NotificationsDrawer.notifications_drawer
+      open={@notif_drawer_open}
+      loaded?={@notif_loaded?}
+      notifications={@notifications}
+      unread_count={@notif_unread_count}
+      user_id={@notif_user_id}
+      error={@notif_error}
+      info={@notif_info}
+      preferences={@notif_preferences}
+      preferences_form={@notif_preferences_form}
+      admin?={@notif_admin?}
+      device_stats={@notif_device_stats}
+      devices={@notif_devices}
     />
     <.leader_help_overlay />
     """

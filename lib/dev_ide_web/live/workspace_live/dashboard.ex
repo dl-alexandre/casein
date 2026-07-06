@@ -22,6 +22,8 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.PathResolver
   alias DevIDE.Workspaces.SessionSummary
+  alias DevIdeWeb.NotificationsDrawer
+  alias DevIdeWeb.NotificationsDrawerEvents
   alias DevIdeWeb.Plugs.ForwardAuth
   alias DevIdeWeb.WorkspaceRoutes
 
@@ -50,6 +52,10 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
         |> assign(:form, initial_create_form(user))
         |> assign(:folder_form, folder_form())
         |> assign(:create_open, false)
+        # Global notifications drawer (shared with the workspace cockpit):
+        # subscribes to the viewer's notification topic and loads the unread
+        # badge count on the connected mount; the inbox list is lazy (opens).
+        |> NotificationsDrawerEvents.mount()
 
       # Fetch only on the connected mount — the static render shows an empty
       # shell. Keeps mount at exactly one upstream list call.
@@ -69,11 +75,23 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
     if socket.redirected do
       {:noreply, socket}
     else
+      # `?drawer=notifications` deep link (docs/deep_links.md) — the target of
+      # the legacy `/notifications` redirect.
+      socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
       {:noreply, browse(socket, normalize_dir(Map.get(params, "dir")))}
     end
   end
 
   @impl true
+  # Durable notification broadcasts on the viewer's user topic — subscribed by
+  # NotificationsDrawerEvents at mount. Badge always updates; the drawer list
+  # refreshes only while open.
+  def handle_info({:notification_created, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
+
+  def handle_info({:notification_updated, _notification}, socket),
+    do: {:noreply, NotificationsDrawerEvents.handle_notification_change(socket)}
+
   def handle_info(:refresh, %{assigns: %{show_all: true}} = socket), do: {:noreply, socket}
 
   def handle_info(:refresh, socket) do
@@ -153,6 +171,12 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
   def handle_event("folder:open", %{"path" => path}, socket) do
     {:noreply, open_folder(socket, path)}
   end
+
+  # Notifications drawer events are handled by NotificationsDrawerEvents
+  # (absorbed from the removed NotificationLive.Index page; shared with the
+  # workspace cockpit).
+  def handle_event("notifications:" <> _ = event, params, socket),
+    do: NotificationsDrawerEvents.handle_event(event, params, socket)
 
   # -- Directory browsing ----------------------------------------------------
 
@@ -466,15 +490,18 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
               into the cockpit — the URL is the filesystem path.
             </p>
           </div>
-          <%= if @is_admin do %>
-            <button
-              phx-click="toggle_all"
-              class="shrink-0 text-xs font-mono px-2 py-1 rounded border border-zinc-300 hover:bg-zinc-100"
-              title="Admin: switch between all users' workspaces and your own"
-            >
-              {if @show_all, do: "showing: all users", else: "showing: mine"}
-            </button>
-          <% end %>
+          <div class="flex shrink-0 items-center gap-2">
+            <%= if @is_admin do %>
+              <button
+                phx-click="toggle_all"
+                class="shrink-0 text-xs font-mono px-2 py-1 rounded border border-zinc-300 hover:bg-zinc-100"
+                title="Admin: switch between all users' workspaces and your own"
+              >
+                {if @show_all, do: "showing: all users", else: "showing: mine"}
+              </button>
+            <% end %>
+            <NotificationsDrawer.notifications_bell unread_count={@notif_unread_count} />
+          </div>
         </div>
       </header>
 
@@ -805,6 +832,21 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
           </.form>
         </section>
       <% end %>
+
+      <NotificationsDrawer.notifications_drawer
+        open={@notif_drawer_open}
+        loaded?={@notif_loaded?}
+        notifications={@notifications}
+        unread_count={@notif_unread_count}
+        user_id={@notif_user_id}
+        error={@notif_error}
+        info={@notif_info}
+        preferences={@notif_preferences}
+        preferences_form={@notif_preferences_form}
+        admin?={@notif_admin?}
+        device_stats={@notif_device_stats}
+        devices={@notif_devices}
+      />
     </div>
     """
   end
