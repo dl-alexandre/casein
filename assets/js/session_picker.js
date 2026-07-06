@@ -494,7 +494,7 @@ function pickerRow(item) {
   return item?.closest?.(".group") || item
 }
 
-function wantsBrowserNavigation(event) {
+export function wantsBrowserNavigation(event) {
   return (
     event.metaKey ||
     event.ctrlKey ||

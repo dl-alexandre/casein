@@ -213,7 +213,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.acknowledge_active_quiet_window()
-         |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
+         |> TerminalState.patch_current_session()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_window"})}
 
       {:error, reason} ->

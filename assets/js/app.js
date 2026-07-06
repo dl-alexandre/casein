@@ -31,7 +31,7 @@ import {MobileKeyBar} from "./mobile_key_bar"
 import {ChromeWidth} from "./chrome_width"
 import {WorkspaceLeader} from "./workspace_leader"
 import {TerminalActivity} from "./terminal_activity"
-import {SessionPicker} from "./session_picker"
+import {SessionPicker, wantsBrowserNavigation} from "./session_picker"
 import {RenameInput} from "./rename_input"
 import {MobileNavSheet} from "./mobile_nav_sheet"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
@@ -246,6 +246,27 @@ const liveSocket = new LiveSocket("/live", Socket, {
 })
 
 installPickerLinkCopy()
+
+// Header window tabs are real links so middle/modified clicks and "open in
+// new tab" keep working, but a plain click must switch windows through the
+// phx-click event — never a full-page navigation — so it stays as smooth as
+// the C-b n/p keybindings. (The dropdown pickers get the same guard inside
+// the SessionPicker hook.)
+window.addEventListener(
+  "click",
+  (e) => {
+    const item = e.target?.closest?.("a[data-window-tab-select][href][phx-click]")
+    if (!item) return
+
+    if (wantsBrowserNavigation(e)) {
+      e.stopPropagation()
+      return
+    }
+
+    e.preventDefault()
+  },
+  true
+)
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
