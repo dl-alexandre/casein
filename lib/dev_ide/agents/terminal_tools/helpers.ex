@@ -190,8 +190,7 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
              "terminal_capture",
              "terminal_agent_pane",
              "terminal_capture_agent",
-             "terminal_agent_transcript",
-             "annotation_list"
+             "terminal_agent_transcript"
            ] do
     %{
       mutation?: false,
@@ -240,18 +239,6 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
           },
           structured_content: %{"status" => "sent"}
         }
-      ]
-    }
-  end
-
-  def metadata("annotation_propose") do
-    %{
-      mutation?: true,
-      danger_level: :low,
-      capabilities: [:annotation_write],
-      policy_tags: [:human_review],
-      recovery_hints: [
-        "Include at least one anchor such as file_path, terminal_range, or preview_id."
       ]
     }
   end

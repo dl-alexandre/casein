@@ -48,7 +48,6 @@ defmodule DevIDE.Agents.TerminalTools do
   }
 
   alias DevIDE.Agents.ToolAction
-  alias McpCtl.Tool
 
   @type tool :: McpCtl.Tool.t()
 
@@ -78,11 +77,7 @@ defmodule DevIDE.Agents.TerminalTools do
   def definitions do
     terminal_defs = Enum.map(@actions, &ToolAction.definition/1)
 
-    annotation_defs =
-      AnnotationTools.definitions()
-      |> Enum.map(&Tool.put_metadata(&1, Helpers.metadata(&1.name)))
-
-    terminal_defs ++ annotation_defs
+    terminal_defs ++ AnnotationTools.definitions()
   end
 
   @doc "Dispatch a named agent terminal tool."
