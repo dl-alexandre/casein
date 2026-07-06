@@ -119,10 +119,10 @@ export const FilePaneOverlay = {
       // version so a save against a changed file conflicts instead of
       // clobbering).
       this.view.setState(cached.state || this.makeState(cached.savedDoc, path))
-      this.reconcile(cached, content, version)
+      this.reconcile(cached, content, version, path)
     } else {
       // Same tab refreshed (save round trip, reload, concurrent change).
-      this.reconcile(cached, content, version)
+      this.reconcile(cached, content, version, path)
     }
 
     this.activePath = path
@@ -131,7 +131,7 @@ export const FilePaneOverlay = {
   },
 
   // Reconcile a tab entry with freshly read disk content.
-  reconcile(entry, content, version) {
+  reconcile(entry, content, version, path) {
     const doc = this.view.state.doc.toString()
 
     if (doc === content) {
@@ -143,7 +143,7 @@ export const FilePaneOverlay = {
       // Clean buffer, disk changed underneath: follow the disk.
       entry.savedDoc = content
       entry.version = version
-      this.view.setState(this.makeState(content, this.activePath || undefined))
+      this.view.setState(this.makeState(content, path))
       entry.state = this.view.state
     }
     // Dirty buffer + disk changed: keep the user's edits AND the old version,
