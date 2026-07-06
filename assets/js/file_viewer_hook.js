@@ -1,26 +1,11 @@
-import { EditorState } from "@codemirror/state"
-import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view"
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import { javascript } from "@codemirror/lang-javascript"
-import { markdown } from "@codemirror/lang-markdown"
-import { json } from "@codemirror/lang-json"
-import { copyTextWithFallback, showClipboardToast } from "./terminal_copy"
-
-const SEND_AGENT_MAX_BYTES = 32 * 1024
-
-function copyEditorText(text) {
-  const ok = copyTextWithFallback(text)
-  showClipboardToast(ok ? "Copied" : "Copy failed", { kind: ok ? "info" : "error" })
-  return ok
-}
-
-function pickLang(path) {
-  if (!path) return []
-  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(path)) return [javascript()]
-  if (/\.md$/.test(path)) return [markdown()]
-  if (/\.json$/.test(path)) return [json()]
-  return []
-}
+import { EditorView } from "@codemirror/view"
+import { showClipboardToast } from "./terminal_copy"
+import {
+  SEND_AGENT_MAX_BYTES,
+  makeEditorState,
+  revealLine,
+  runEditorCtxAction
+} from "./editor_core"
 
 function setDirty(dirty) {
   const el = document.getElementById("dirty-indicator")
@@ -44,27 +29,27 @@ export const FileViewerHook = {
     this.renderedEl.className = "devide-markdown hidden"
     this.el.append(this.sourceEl, this.renderedEl)
 
+    this._onSave = () => {
+      if (!this.path || !this.version) return
+      this.pushEvent("file:save", {
+        path: this.path,
+        content: this.view.state.doc.toString(),
+        version: this.version
+      })
+    }
+
     const onUpdate = EditorView.updateListener.of(u => {
       if (u.docChanged) {
         const cur = this.view.state.doc.toString()
         setDirty(cur !== this.savedDoc)
       }
     })
+    this._onUpdate = onUpdate
 
     this.view = new EditorView({
-      state: EditorState.create({
-        doc: "",
-        extensions: [
-          lineNumbers(),
-          highlightActiveLine(),
-          history(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          onUpdate
-        ]
-      }),
+      state: makeEditorState("", null, { onUpdate, onSave: () => this._onSave() }),
       parent: this.sourceEl
     })
-    this._onUpdate = onUpdate
 
     this.handleEvent("file:loaded", ({ path, content, version, line, markdown, render_mode, rendered_html }) => {
       this.path = path
@@ -77,17 +62,7 @@ export const FileViewerHook = {
       this.renderedEl.innerHTML = this.renderedHtml
       this.applyMode()
       setDirty(false)
-
-      if (typeof line === "number" && line > 0) {
-        const doc = this.view.state.doc
-        const target = Math.min(line, doc.lines)
-        const pos = doc.line(target).from
-        this.view.dispatch({
-          selection: { anchor: pos },
-          effects: EditorView.scrollIntoView(pos, { y: "center" })
-        })
-        this.view.focus()
-      }
+      revealLine(this.view, line)
     })
 
     this.handleEvent("file:cleared", () => {
@@ -121,15 +96,6 @@ export const FileViewerHook = {
       }
       this.applyMode()
     })
-
-    this._onSave = () => {
-      if (!this.path || !this.version) return
-      this.pushEvent("file:save", {
-        path: this.path,
-        content: this.view.state.doc.toString(),
-        version: this.version
-      })
-    }
 
     this._onRefresh = () => {
       const dirty = this.view.state.doc.toString() !== this.savedDoc
@@ -192,46 +158,16 @@ export const FileViewerHook = {
     }
 
     this._onCtxAction = (e) => {
-      const sel = this.view.state.selection.main
+      const action = e?.detail?.action
 
-      switch (e?.detail?.action) {
-        case "copy":
-          if (this._ctxSelection) copyEditorText(this._ctxSelection)
-          break
-        case "cut":
-          if (this._ctxSelection && copyEditorText(this._ctxSelection)) {
-            this.view.dispatch({ changes: { from: sel.from, to: sel.to, insert: "" } })
-            this.view.focus()
-          }
-          break
-        case "paste":
-          if (!navigator.clipboard?.readText) {
-            showClipboardToast("Clipboard read is not available in this browser", {
-              kind: "error"
-            })
-            break
-          }
-          navigator.clipboard
-            .readText()
-            .then((text) => {
-              if (!text) return
-              this.view.dispatch({
-                changes: { from: sel.from, to: sel.to, insert: text },
-                selection: { anchor: sel.from + text.length }
-              })
-              this.view.focus()
-            })
-            .catch(() =>
-              showClipboardToast("Clipboard read blocked by the browser", { kind: "error" })
-            )
-          break
-        case "select_all":
-          this.view.dispatch({ selection: { anchor: 0, head: this.view.state.doc.length } })
-          this.view.focus()
-          break
-        case "save":
-          this._onSave()
-          break
+      if (runEditorCtxAction(this.view, action, {
+        ctxSelection: this._ctxSelection,
+        onSave: this._onSave
+      })) {
+        return
+      }
+
+      switch (action) {
         case "send_to_agent":
           this.sendSelectionToAgent("send")
           break
@@ -260,17 +196,7 @@ export const FileViewerHook = {
   },
 
   makeState(doc, path) {
-    return EditorState.create({
-      doc,
-      extensions: [
-        lineNumbers(),
-        highlightActiveLine(),
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        this._onUpdate,
-        ...pickLang(path)
-      ]
-    })
+    return makeEditorState(doc, path, { onUpdate: this._onUpdate, onSave: () => this._onSave() })
   },
 
   applyMode() {

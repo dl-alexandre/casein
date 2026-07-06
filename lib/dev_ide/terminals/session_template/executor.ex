@@ -7,7 +7,9 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
   applied.
   """
 
+  alias DevIDE.Panes.Pane, as: PaneBehaviour
   alias DevIDE.Terminals.SessionTemplate
+  alias DevIDE.Terminals.SessionTemplate.Pane
   alias DevIDE.Terminals.SessionTemplate.Planner
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -31,6 +33,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
       session: session,
       tmux: Keyword.get(opts, :tmux, Tmux),
       workspace_root: Keyword.get(opts, :workspace_root),
+      workspace_id: Keyword.get(opts, :workspace_id),
       refs: %{},
       executed_steps: []
     }
@@ -105,7 +108,35 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
     end
   end
 
+  defp execute_step(%{action: "attach_pane"} = step, state) do
+    with {:ok, target_pane_id} <- resolve_ref(state, step.target_ref) do
+      state
+      |> record_step(step, attach_pane(step, target_pane_id, state))
+      |> ok()
+    end
+  end
+
   defp execute_step(step, _state), do: {:error, {:unsupported_step, step.action}}
+
+  # Bring a non-terminal pane to life via the Pane behaviour. The tmux pane
+  # (geometry) already exists; this starts its backend. Attach failure degrades to
+  # a recorded error rather than crashing the run (the pane stays blank but the
+  # layout applies).
+  defp attach_pane(step, target_pane_id, state) do
+    type = Pane.cast_type(get_in(step, [:params, :type]))
+    node = %{command: get_in(step, [:params, :command]), cwd: get_in(step, [:params, :cwd])}
+
+    ctx = %{
+      pane_id: target_pane_id,
+      workspace_id: state.workspace_id,
+      tmux_session: state.session
+    }
+
+    case PaneBehaviour.impl(type).attach(node, ctx) do
+      {:ok, ref} -> %{target_pane_id: target_pane_id, attached: ref}
+      {:error, reason} -> %{target_pane_id: target_pane_id, attach_error: inspect(reason)}
+    end
+  end
 
   defp maybe_set_pane_role(_state, _pane_id, nil), do: :ok
 

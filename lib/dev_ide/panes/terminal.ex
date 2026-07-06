@@ -54,6 +54,12 @@ defmodule DevIDE.Panes.Terminal do
   @impl true
   def set_active(_ref, active?) when is_boolean(active?), do: :ok
 
+  # Terminal panes are served by `PaneWorker`, not a registry, so there is no
+  # list to fold into `DevIDE.Panes.snapshot/1`. Present for the facade's
+  # `function_exported?` probe; it never carries renderable terminal state.
+  @impl true
+  def list(_workspace_id), do: []
+
   # --- internals ---------------------------------------------------------------
 
   defp tmux_adapter do

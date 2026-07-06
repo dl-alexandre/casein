@@ -28,7 +28,7 @@ defmodule DevIDE.Panes.Pane do
   """
 
   @typedoc "Pane kind. `:terminal` is the default for back-compat with existing templates."
-  @type pane_type :: :terminal | :preview
+  @type pane_type :: :terminal | :preview | :file
 
   @typedoc "Resolved template leaf describing a pane to bring to life."
   @type node_spec :: map()
@@ -96,11 +96,22 @@ defmodule DevIDE.Panes.Pane do
   @doc "Apply the focus signal (drives focused-viewer sizing for terminals; visibility for previews)."
   @callback set_active(pane_ref(), active? :: boolean()) :: :ok
 
-  @optional_callbacks render_payload: 1, handle_input: 2, set_active: 2
+  @doc """
+  List the live pane refs of this type for a workspace (resolving aliases).
+
+  Feature panes (preview, file) that are addressable purely from a registry
+  implement this so the `DevIDE.Panes` facade can fold every renderable pane
+  into a single snapshot. Terminal panes are served by `PaneWorker`, not by a
+  registry, so they do not implement it — the facade skips types that don't.
+  """
+  @callback list(workspace_id :: String.t()) :: [pane_ref()]
+
+  @optional_callbacks render_payload: 1, handle_input: 2, set_active: 2, list: 1
 
   @terminal_impl :"Elixir.DevIDE.Panes.Terminal"
   @preview_impl :"Elixir.DevIDE.Panes.Preview"
-  @impls %{terminal: @terminal_impl, preview: @preview_impl}
+  @file_impl :"Elixir.DevIDE.Panes.FilePane"
+  @impls %{terminal: @terminal_impl, preview: @preview_impl, file: @file_impl}
 
   @doc """
   Resolve the implementation module for a pane type. Single dispatch point so call

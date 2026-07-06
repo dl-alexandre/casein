@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# DevIDE file-pane holder.
+#
+# A file pane rides a real tmux pane (tmux stays the geometry allocator), but the
+# content is a native CodeMirror overlay rendered by the web layer — so nothing
+# interactive should run under it. This script just occupies the pane: it prints a
+# banner and sleeps, forwarding signals so tmux can reap it cleanly. If it exits or
+# is killed, tmux closes the pane and `DevIDE.FilePanes` topology-expiry
+# deregisters the binding (the same self-healing loop preview panes use).
+
+set -euo pipefail
+
+printf '\033[2m DevIDE file pane — managed editor overlay \033[0m\n'
+
+term() {
+  exit 0
+}
+trap term INT TERM
+
+# Sleep forever without spawning a child that would outlive a trap.
+while true; do
+  sleep 2147483647 &
+  wait "$!" || true
+done

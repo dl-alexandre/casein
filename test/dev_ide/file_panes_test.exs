@@ -1,0 +1,179 @@
+defmodule DevIDE.FilePanesTest do
+  use DevIde.DataCase, async: false
+
+  alias DevIDE.FilePanes
+  alias DevIDE.Files.FilePaneRegistration
+  alias DevIDE.Panes
+  alias DevIDE.Panes.Events, as: PaneEvents
+  alias DevIde.Repo
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
+
+  setup do
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    FilePanes.clear()
+    FakeState.delete(:fake_tmux_windows)
+    FakeState.delete(:fake_tmux_panes)
+
+    on_exit(fn ->
+      FilePanes.clear()
+      FakeState.delete(:fake_tmux_windows)
+      FakeState.delete(:fake_tmux_panes)
+      restore(:tmux_adapter, prev_tmux)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    :ok
+  end
+
+  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp seed_workspace! do
+    root = Path.join(System.tmp_dir!(), "file-panes-#{System.unique_integer([:positive])}")
+    path = Path.join(root, "ws")
+    File.mkdir_p!(path)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {path, workspace}
+  end
+
+  defp seed_session!(session, pane_id) do
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: pane_id,
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/tmp"
+        }
+      ]
+    })
+  end
+
+  defp write_file!(root, rel, content) do
+    abs = Path.join(root, rel)
+    File.mkdir_p!(Path.dirname(abs))
+    File.write!(abs, content)
+  end
+
+  test "open_file_in_pane splits a pane, registers, and broadcasts" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files"
+    seed_session!(session, "%1")
+    write_file!(root, "lib/foo.ex", "defmodule Foo do\nend\n")
+    PaneEvents.subscribe(workspace.id)
+
+    assert {:ok, %{pane_id: pane_id, reused: false, registration: reg}} =
+             FilePanes.open_file_in_pane(workspace, "lib/foo.ex",
+               line: 2,
+               tmux_session: session,
+               anchor_pane_id: "%1"
+             )
+
+    assert is_binary(pane_id) and pane_id != "%1"
+    assert reg.active_path == "lib/foo.ex"
+    assert [%{path: "lib/foo.ex", line: 2}] = reg.open_files
+    assert_receive {:pane_event, %{reason: :registered, type: :file, pane_id: ^pane_id}}
+
+    # Persisted for reconnect.
+    assert Repo.get_by(FilePaneRegistration, pane_id: pane_id, status: :open)
+  end
+
+  test "second open reuses the window's file pane and adds a tab" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files2"
+    seed_session!(session, "%1")
+    write_file!(root, "a.ex", "a")
+    write_file!(root, "b.ex", "b")
+
+    assert {:ok, %{pane_id: pane_id, reused: false}} =
+             FilePanes.open_file_in_pane(workspace, "a.ex",
+               tmux_session: session,
+               anchor_pane_id: "%1"
+             )
+
+    assert {:ok, %{pane_id: ^pane_id, reused: true, registration: reg}} =
+             FilePanes.open_file_in_pane(workspace, "b.ex",
+               tmux_session: session,
+               anchor_pane_id: "%1"
+             )
+
+    assert Enum.map(reg.open_files, & &1.path) == ["a.ex", "b.ex"]
+    assert reg.active_path == "b.ex"
+  end
+
+  test "render payload reads the active file fresh; facade snapshot includes it" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files3"
+    seed_session!(session, "%1")
+    write_file!(root, "readme.md", "hello")
+
+    {:ok, %{pane_id: pane_id}} =
+      FilePanes.open_file_in_pane(workspace, "readme.md",
+        tmux_session: session,
+        anchor_pane_id: "%1"
+      )
+
+    payload = FilePanes.render_state(pane_id)
+    assert payload.active.content == "hello"
+    assert is_binary(payload.active.version)
+    assert [%{path: "readme.md", title: "readme.md"}] = payload.tabs
+
+    snapshot = Panes.snapshot(workspace.id)
+    assert %{^pane_id => %{type: :file}} = snapshot
+    assert {:file, %{active: %{content: "hello"}}} = Panes.get_by_pane(pane_id)
+  end
+
+  test "save_tab writes with optimistic concurrency" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files4"
+    seed_session!(session, "%1")
+    write_file!(root, "note.txt", "one")
+
+    {:ok, %{pane_id: pane_id}} =
+      FilePanes.open_file_in_pane(workspace, "note.txt",
+        tmux_session: session,
+        anchor_pane_id: "%1"
+      )
+
+    version = FilePanes.render_state(pane_id).active.version
+
+    assert {:ok, %{version: new_version}} =
+             FilePanes.save_tab(pane_id, "note.txt", "two", version)
+
+    assert File.read!(Path.join(root, "note.txt")) == "two"
+    assert new_version != version
+
+    # Stale version conflicts instead of clobbering.
+    assert {:error, :conflict} = FilePanes.save_tab(pane_id, "note.txt", "three", version)
+  end
+
+  test "closing the last tab deregisters the pane" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files5"
+    seed_session!(session, "%1")
+    write_file!(root, "only.ex", "x")
+
+    {:ok, %{pane_id: pane_id}} =
+      FilePanes.open_file_in_pane(workspace, "only.ex",
+        tmux_session: session,
+        anchor_pane_id: "%1"
+      )
+
+    assert {:ok, :closed} = FilePanes.close_tab(pane_id, "only.ex")
+    assert FilePanes.get_by_pane(pane_id) == nil
+  end
+end
