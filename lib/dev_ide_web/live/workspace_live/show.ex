@@ -337,6 +337,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:mobile_nav_view, "windows")
         |> assign(:pending_url_pane, nil)
         |> assign(:pending_url_zoom, nil)
+        |> assign(:pending_url_recovery, nil)
         |> assign(:patched_view_path, nil)
         |> assign(:terminal_last_interaction_ms, nil)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
@@ -604,13 +605,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
-        {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
-        {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
+        {socket, session_changed?} = maybe_select_requested_terminal_session(socket, params)
         socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.stash_url_view(socket, params)
-        topology_refreshed? = window_selected? or tmux_topology_uninitialized?(socket)
+
+        # Hydrate tmux topology before applying ?window= so a stale post-deploy
+        # window id is rejected against real windows instead of mutating tmux state.
+        socket =
+          if session_changed? or tmux_topology_uninitialized?(socket) do
+            TerminalState.refresh_tmux_topology(socket)
+          else
+            socket
+          end
+
+        {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
 
         socket =
-          if topology_refreshed? do
+          if window_selected? do
             TerminalState.refresh_tmux_topology(socket)
           else
             socket
@@ -620,9 +630,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # topology, so a deeplink to a pane in another window selects that pane
         # (not just its window). No-op when topology isn't ready or nothing is
         # stashed.
-        socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view(socket)
-
-        DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path(socket)
+        socket
+        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view()
+        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_recovery()
+        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path()
       else
         socket
       end
@@ -1231,6 +1242,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Deferred post-mount work (see mount/3). Start the raw terminal first and
   # keep slower session/preview/template/topology hydration out of the LiveView
   # process so keystrokes are not queued behind tmux/git/DB scans.
+  def handle_info({:patch_recovered_view_url, path}, socket) when is_binary(path) do
+    if socket.assigns[:patched_view_path] == path do
+      {:noreply, DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.push_recovered_view_path(socket, path)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info(:after_mount, socket) do
     if connected?(socket) do
       if is_binary(socket.assigns.tmux_session) do
@@ -2443,15 +2462,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp drop_into_live_session(socket) do
-    sid = socket.assigns[:default_terminal_sid]
+    socket = TerminalState.refresh_session_tabs(socket)
 
-    if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
-      {switched_socket, _switched?} = switch_terminal_session_from_params(socket, sid)
-      switched_socket
-    else
-      socket
-    end
+    Enum.reduce_while(live_session_candidates(socket), socket, fn sid, sock ->
+      cond do
+        sock.assigns[:terminal_sid] == sid ->
+          {:halt, sock}
+
+        true ->
+          {switched, _} = switch_terminal_session_from_params(sock, sid)
+
+          if switched.assigns[:terminal_sid] == sid do
+            {:halt, clear_flash(switched, :error)}
+          else
+            {:cont, clear_flash(switched, :error)}
+          end
+      end
+    end)
   end
+
+  defp live_session_candidates(socket) do
+    ws = socket.assigns.workspace
+    ws_id = ws.id
+    ws_name = ws.name || ws.id
+
+    tab_sids =
+      (socket.assigns[:session_tab_infos] || [])
+      |> Enum.filter(&live_session_tab?/1)
+      |> Enum.map(fn tab -> tab.sid || tab.id end)
+      |> Enum.reject(&(&1 in [nil, ""]))
+
+    [
+      socket.assigns[:default_terminal_sid],
+      SessionSummary.newest_shell_sid(ws_id, ws_name)
+      | tab_sids
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.uniq()
+  end
+
+  defp live_session_tab?(%{status: :active, sid: sid}) when is_binary(sid) and sid != "",
+    do: true
+
+  defp live_session_tab?(%{status: :active, id: id}) when is_binary(id) and id != "", do: true
+  defp live_session_tab?(_), do: false
 
   defp parse_line(nil), do: nil
   defp parse_line(""), do: nil
@@ -2495,18 +2549,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp maybe_select_requested_tmux_window(socket, ""), do: {socket, false}
 
   defp maybe_select_requested_tmux_window(socket, window_id) when is_binary(window_id) do
-    if window_id == socket.assigns[:tmux_active_window_id] do
-      {socket, false}
-    else
-      case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
-        :ok ->
-          {socket, true}
+    cond do
+      window_id == socket.assigns[:tmux_active_window_id] ->
+        {socket, false}
 
-        # Requested window is gone — silently stay on the current (closest live) window.
-        {:error, _reason} ->
-          {socket, false}
-      end
+      window_known?(socket, window_id) ->
+        case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+          :ok -> {socket, true}
+          {:error, _reason} -> {socket, false}
+        end
+
+      # Requested window is gone — silently stay on the current (closest live) window.
+      true ->
+        {socket, false}
     end
+  end
+
+  defp window_known?(socket, window_id) do
+    Enum.any?(socket.assigns[:tmux_windows] || [], &(Map.get(&1, :id) == window_id))
   end
 
   defp switch_terminal_session_from_params(socket, sid, tmux_session_hint \\ nil) do

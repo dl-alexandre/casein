@@ -1065,13 +1065,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
         |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?session=u-dev-missing")
+    {:ok, view, _html} =
+      live(conn, ~p"/workspaces/ws-1?session=u-dev-missing&window=@166")
+
     await_mount_hydration(view)
 
     # No recovery banner and no error flash — just drop into the live (Home) session.
     refute has_element?(view, "#view-link-notice")
     refute has_element?(view, "#flash-error")
     assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
+
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%400")
   end
 
   test "pane and zoom deep link restores view state", %{conn: conn} do

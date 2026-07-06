@@ -125,6 +125,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign_tmux_window_tabs()
     |> refresh_session_tab_attention()
     |> ViewDeepLink.apply_pending_url_view()
+    |> ViewDeepLink.apply_pending_url_recovery()
     |> maybe_patch_idle_view_url(opts)
   end
 

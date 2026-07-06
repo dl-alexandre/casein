@@ -94,6 +94,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
     assert result.assigns.patched_view_path == old_path
   end
 
+  test "maybe_patch_recovered_view_url patches when requested session is gone" do
+    socket = topology_socket(patched_view_path: nil)
+
+    result =
+      ViewDeepLink.maybe_patch_recovered_view_url_connected(socket, %{"session" => "u-dev-stale"})
+
+    assert result.assigns.patched_view_path == ViewDeepLink.workspace_view_path(result)
+  end
+
+  test "maybe_patch_recovered_view_url patches when requested window is gone" do
+    socket = topology_socket(patched_view_path: nil)
+
+    result =
+      ViewDeepLink.maybe_patch_recovered_view_url_connected(socket, %{
+        "session" => "u-dev-abc",
+        "window" => "@9"
+      })
+
+    assert result.assigns.patched_view_path == ViewDeepLink.workspace_view_path(result)
+  end
+
+  test "maybe_patch_recovered_view_url is a no-op when the link still matches" do
+    socket = topology_socket(patched_view_path: nil)
+    path = ViewDeepLink.workspace_view_path(socket)
+    socket = topology_socket(patched_view_path: path)
+
+    result =
+      ViewDeepLink.maybe_patch_recovered_view_url_connected(socket, %{
+        "session" => "u-dev-abc",
+        "window" => "@0"
+      })
+
+    assert result.assigns.patched_view_path == path
+  end
+
   test "seed_patched_view_path records current view after URL navigation" do
     socket = topology_socket(patched_view_path: "/workspaces/ws-1?session=u-dev-abc&window=%400")
 

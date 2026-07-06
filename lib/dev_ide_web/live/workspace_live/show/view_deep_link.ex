@@ -17,6 +17,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     socket
     |> assign(:pending_url_pane, normalize_param(params["pane"]))
     |> assign(:pending_url_zoom, zoom_param?(params["zoom"]))
+    |> assign(:pending_url_recovery, recovery_params(params))
+  end
+
+  def apply_pending_url_recovery(socket) do
+    pending = socket.assigns[:pending_url_recovery]
+
+    if topology_ready?(socket) and is_map(pending) and map_size(pending) > 0 do
+      maybe_patch_recovered_view_url_connected(
+        assign(socket, :pending_url_recovery, nil),
+        pending
+      )
+    else
+      socket
+    end
   end
 
   def apply_pending_url_view(socket) do
@@ -49,11 +63,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     if query == "", do: base, else: base <> "?" <> query
   end
 
-  def patch_current_view(socket) do
+  def patch_current_view(socket, opts \\ []) do
     path = workspace_view_path(socket)
     socket = assign(socket, :patched_view_path, path)
+    force? = Keyword.get(opts, :force, false)
 
-    if is_nil(socket.redirected) do
+    if force? or is_nil(socket.redirected) do
       push_patch(socket, to: path)
     else
       socket
@@ -95,6 +110,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
   def seed_patched_view_path(socket) do
     if topology_ready?(socket) do
       assign(socket, :patched_view_path, workspace_view_path(socket))
+    else
+      socket
+    end
+  end
+
+  @doc """
+  Patch the address bar when a shared deep link pointed at a session/window that
+  no longer exists and we silently landed on the closest live view instead.
+
+  Unlike idle-gated topology patches, this runs immediately on navigation so a
+  post-deploy bookmark does not keep a dead `?session=` / `?window=` in the bar.
+  """
+  def maybe_patch_recovered_view_url(socket, params) when is_map(params) do
+    if connected?(socket),
+      do: maybe_patch_recovered_view_url_connected(socket, params),
+      else: socket
+  end
+
+  @doc false
+  def maybe_patch_recovered_view_url_connected(socket, params) when is_map(params) do
+    if topology_ready?(socket) and view_url_stale?(socket, params) do
+      path = workspace_view_path(socket)
+
+      socket
+      |> assign(:patched_view_path, path)
+      |> schedule_recovered_view_patch()
+    else
+      socket
+    end
+  end
+
+  @doc false
+  def schedule_recovered_view_patch(socket) do
+    case socket.assigns[:patched_view_path] do
+      path when is_binary(path) and path != "" ->
+        send(self(), {:patch_recovered_view_url, path})
+        socket
+
+      _ ->
+        socket
+    end
+  end
+
+  @doc false
+  def push_recovered_view_path(socket, path) when is_binary(path) do
+    socket = assign(socket, :patched_view_path, path)
+
+    if is_nil(socket.redirected) do
+      push_patch(socket, to: path)
     else
       socket
     end
@@ -295,6 +359,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Enum.sort_by(fn {key, _} -> Enum.find_index(@query_param_order, &(&1 == key)) || 99 end)
     |> URI.encode_query()
+  end
+
+  defp recovery_params(params) when is_map(params) do
+    %{
+      "session" => normalize_param(params["session"]),
+      "window" => normalize_param(params["window"]),
+      "pane" => normalize_param(params["pane"]),
+      "zoom" => if(zoom_param?(params["zoom"]), do: "1", else: nil)
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp view_url_stale?(socket, params) do
+    current_params =
+      workspace_view_path(socket) |> URI.parse() |> Map.get(:query, "") |> decode_query()
+
+    Enum.any?(["session", "window", "pane", "zoom"], fn key ->
+      requested = normalize_param(params[key])
+      is_binary(requested) and requested != Map.get(current_params, key)
+    end)
+  end
+
+  defp decode_query(""), do: %{}
+
+  defp decode_query(query) when is_binary(query) do
+    URI.decode_query(query)
   end
 
   defp topology_ready?(socket) do
