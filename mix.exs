@@ -115,6 +115,8 @@ defmodule DevIde.MixProject do
       {:boxart, "~> 0.3", only: [:dev, :test], runtime: false},
       {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
+      # Agent MCP tool actions (validated params) — standalone, no agent runtime.
+      {:jido_action, "~> 2.3"},
       {:ex_machina, "~> 2.8", only: :test},
       # elixir-vibe tooling (github.com/elixir-vibe) — code intelligence &
       # deploy primitives. Dev/test analysis tools are runtime: false so they
