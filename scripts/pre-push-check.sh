@@ -27,6 +27,9 @@ log "checking deploy script syntax and copied deploy artifacts"
 bash -n scripts/deploy-devbox-release.sh
 ./scripts/check-deploy-sync.sh
 
+log "running hermetic shell unit tests (scoped-token validation/durability)"
+bash scripts/test-scoped-token-durability.sh
+
 log "fetching Elixir dependencies"
 mise exec -- mix deps.get
 
