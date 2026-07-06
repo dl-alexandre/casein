@@ -14,6 +14,7 @@ defmodule DevIde.Supervision.Previews do
       DevIDE.Previews.ArtifactProtection,
       DevIDE.PreviewPanes,
       DevIDE.FilePanes,
+      DevIDE.FilePanes.LinkResolver,
       PreviewCtl.Registry,
       {Registry, keys: :duplicate, name: DevIdeWeb.PreviewProxy.WebSocketRegistry}
     ]
