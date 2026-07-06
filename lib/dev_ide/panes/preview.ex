@@ -57,23 +57,33 @@ defmodule DevIDE.Panes.Preview do
   @impl true
   def render_payload(pane_id) when is_binary(pane_id) do
     case PreviewPanes.get_by_pane(pane_id) do
-      nil ->
-        %{}
-
-      reg ->
-        %{
-          url: reg.url,
-          display_url: reg.display_url,
-          viewport: reg.viewport,
-          mode: preview_mode(reg),
-          tmux_session: Map.get(reg, :tmux_session),
-          shared: Map.get(reg, :shared, false),
-          source_pane_id: Map.get(reg, :source_pane_id),
-          preview_id: Map.get(reg, :preview_id),
-          control_session_id: Map.get(reg, :control_session_id),
-          pane_window_id: Map.get(reg, :pane_window_id)
-        }
+      nil -> %{}
+      reg -> render_payload_from(reg)
     end
+  end
+
+  @doc """
+  The `render_payload/1` shape built from an in-hand registration.
+
+  Used by `DevIDE.PreviewPanes` at its broadcast sites so the generic
+  `DevIDE.Panes.Events` payload matches what `render_payload/1`/`snapshot/1`
+  would return for the same pane — one shape for events and hydration.
+  """
+  def render_payload_from(reg) when is_map(reg) do
+    %{
+      url: reg.url,
+      display_url: reg.display_url,
+      viewport: reg.viewport,
+      mode: preview_mode(reg),
+      workspace_id: Map.get(reg, :workspace_id),
+      source_url: Map.get(reg, :source_url),
+      tmux_session: Map.get(reg, :tmux_session),
+      shared: Map.get(reg, :shared, false),
+      source_pane_id: Map.get(reg, :source_pane_id),
+      preview_id: Map.get(reg, :preview_id),
+      control_session_id: Map.get(reg, :control_session_id),
+      pane_window_id: Map.get(reg, :pane_window_id)
+    }
   end
 
   @impl true
