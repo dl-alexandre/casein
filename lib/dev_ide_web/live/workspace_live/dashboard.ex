@@ -29,43 +29,38 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
 
   @impl true
   def mount(_params, _session, socket) do
-    cond do
-      workspace_id = direct_workspace_id() ->
-        {:ok, redirect(socket, to: ~p"/workspaces/#{workspace_id}")}
+    if connected?(socket) and Phoenix.LiveView.static_changed?(socket) do
+      {:ok, redirect(socket, external: DevIdeWeb.Endpoint.url() <> ~p"/")}
+    else
+      if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
 
-      connected?(socket) and Phoenix.LiveView.static_changed?(socket) ->
-        {:ok, redirect(socket, external: DevIdeWeb.Endpoint.url() <> ~p"/")}
+      user = socket.assigns.current_user
+      is_admin = ForwardAuth.admin?(user)
 
-      true ->
-        if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
+      socket =
+        socket
+        |> assign(:page_title, "Workspaces")
+        |> assign(:is_admin, is_admin)
+        # Admins default to the cross-user view; the manager re-checks the
+        # `?all=true` flag against its own admins list, so a non-admin
+        # flipping this assign gains nothing.
+        |> assign(:show_all, is_admin)
+        |> assign(:error, nil)
+        |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
+        |> assign(:form, initial_create_form(user))
+        |> assign(:folder_form, folder_form())
+        |> assign(:create_open, false)
 
-        user = socket.assigns.current_user
-        is_admin = ForwardAuth.admin?(user)
+      # Fetch only on the connected mount — the static render shows an empty
+      # shell. Keeps mount at exactly one upstream list call.
+      socket =
+        if connected?(socket) do
+          load_workspaces(socket)
+        else
+          socket |> assign(:workspaces, []) |> assign(:workspace_index, %{})
+        end
 
-        socket =
-          socket
-          |> assign(:page_title, "Workspaces")
-          |> assign(:is_admin, is_admin)
-          # Admins default to the cross-user view; the manager re-checks the
-          # `?all=true` flag against its own admins list, so a non-admin
-          # flipping this assign gains nothing.
-          |> assign(:show_all, is_admin)
-          |> assign(:error, nil)
-          |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
-          |> assign(:form, initial_create_form(user))
-          |> assign(:folder_form, folder_form())
-          |> assign(:create_open, false)
-
-        # Fetch only on the connected mount — the static render shows an empty
-        # shell. Keeps mount at exactly one upstream list call.
-        socket =
-          if connected?(socket) do
-            load_workspaces(socket)
-          else
-            socket |> assign(:workspaces, []) |> assign(:workspace_index, %{})
-          end
-
-        {:ok, socket}
+      {:ok, socket}
     end
   end
 
@@ -447,16 +442,6 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
   defp format_dir_error(:symlink_escape), do: "Directory link leaves the path root."
   defp format_dir_error(:too_deep), do: "Directory is nested too deeply."
   defp format_dir_error(other), do: "Directory error: #{inspect(other)}"
-
-  defp direct_workspace_id do
-    lan? = Application.get_env(:dev_ide, :lan_mode, false)
-    direct? = Application.get_env(:dev_ide, :lan_direct_mode, false)
-    workspace_id = Application.get_env(:dev_ide, :default_workspace)
-
-    if lan? and direct? and is_binary(workspace_id) and String.trim(workspace_id) != "" do
-      workspace_id
-    end
-  end
 
   defp workspace_path(workspace, host_id \\ "local"),
     do: WorkspaceRoutes.workspace_path(workspace, host_id)

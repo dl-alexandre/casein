@@ -3,7 +3,7 @@ defmodule DevIDE.Workspaces.PathResolver do
   Resolves URL path segments to workspace roots, and workspaces back to
   canonical path routes.
 
-  Successor to `DevIDE.LanPathResolver`: a URL like `/aws/myproject/lib`
+  A URL like `/aws/myproject/lib`
   resolves under `root/0` and then **walks up** to the nearest ancestor that
   is a workspace root — a directory containing `.git`, one matching a
   persisted `workspace_records.host_path`, or the configured

@@ -24,7 +24,8 @@ per-domain `handle_event` / render logic is delegated to ~20
 
 | Module | File | Role |
 |---|---|---|
-| `DevIdeWeb.WorkspaceLive.Index` | `live/workspace_live/index.ex` | Connection/host picker (first screen); lists workspaces per host, derives mode badges. |
+| `DevIdeWeb.WorkspaceLive.Dashboard` | `live/workspace_live/dashboard.ex` | Landing page at `/` (first screen): directory browser over the path root with enriched workspace rows; absorbed the deleted `/workspaces` picker. |
+| `DevIdeWeb.WorkspaceLive.PickerBadges` | `live/workspace_live/picker_badges.ex` | Shared presentation helpers for workspace rows: status colors, per-session agent badges, agent-layout badge. |
 | `DevIdeWeb.WorkspaceLive.Show` | `live/workspace_live/show.ex` | The cockpit LiveView. Mount + socket state, `authz_gate/3` fail-closed hook, render, orchestration of `PaneWorker`s and submodules. |
 | `DevIdeWeb.WorkspaceLive.PaneWorker` | `live/workspace_live/pane_worker.ex` | Per-pane GenServer owning a `Ghostty.Terminal` + backend; drains PTY output off the LV process and sends `{:pane_frame, pane_id, payload}`. |
 | `DevIdeWeb.DeploymentUpdateHook` | `live/deployment_update_hook.ex` | `on_mount` hook: subscribes to `deploy:updates`, tracks the connection for graceful drain. |
