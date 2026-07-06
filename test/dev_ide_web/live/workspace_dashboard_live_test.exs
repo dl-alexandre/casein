@@ -34,7 +34,9 @@ defmodule DevIdeWeb.WorkspaceDashboardLiveTest do
       {:ok, view, html} = live(conn, ~p"/")
       assert html =~ "alpha"
       assert html =~ "running"
-      assert html =~ ~p"/workspaces/abc/previous-sessions"
+      # History opens the cockpit's History side panel via the ?tab deep link.
+      assert html =~ "/workspaces/abc?tab=history"
+      refute html =~ "/workspaces/abc/previous-sessions"
       assert has_element?(view, "a[href='/workspaces/abc']", "alpha")
     end
 

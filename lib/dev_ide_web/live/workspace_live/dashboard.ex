@@ -446,7 +446,12 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
   defp workspace_path(workspace, host_id \\ "local"),
     do: WorkspaceRoutes.workspace_path(workspace, host_id)
 
-  defp previous_sessions_path(id), do: ~p"/workspaces/#{id}/previous-sessions"
+  # History side panel deep link inside the workspace cockpit (?tab=history).
+  defp history_path(ws) do
+    base = workspace_path(ws)
+    join = if String.contains?(base, "?"), do: "&", else: "?"
+    base <> join <> "tab=history"
+  end
 
   @impl true
   def render(assigns) do
@@ -558,7 +563,7 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
                       Open
                     </.link>
                     <.link
-                      navigate={previous_sessions_path(ws.id)}
+                      navigate={history_path(ws)}
                       class="inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-100"
                       title="Search previous session context"
                     >
@@ -687,7 +692,7 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
                 <td class="text-right pr-4">
                   <div class="inline-flex items-center justify-end gap-2">
                     <.link
-                      navigate={previous_sessions_path(ws.id)}
+                      navigate={history_path(ws)}
                       class="inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-100"
                       title="Search previous session context"
                     >
