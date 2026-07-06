@@ -64,6 +64,9 @@ write_deploy_status() {
     unset DEPLOY_IN_FLIGHT
   fi
 
+  local tmp
+  tmp="$(mktemp /tmp/last-deploy-XXXXXX.json)"
+
   OUTCOME="$outcome" \
   TARGET_SHA="$target_sha" \
   TARGET_SHORT="$target_short" \
@@ -73,9 +76,9 @@ write_deploy_status() {
   REASON="$reason" \
   STARTED_AT="${DEPLOY_STARTED_AT:-}" \
   FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  LAST_DEPLOY_FILE="$LAST_DEPLOY_FILE" \
+  LAST_DEPLOY_TMP="$tmp" \
   python3 -c '
-import json, os
+import json, os, sys
 
 outcome = os.environ["OUTCOME"]
 record = {
@@ -89,14 +92,25 @@ record = {
     "started_at": os.environ.get("STARTED_AT") or None,
     "finished_at": None if outcome == "in_progress" else os.environ.get("FINISHED_AT"),
 }
-path = os.environ["LAST_DEPLOY_FILE"]
-tmp = path + ".tmp"
-os.makedirs(os.path.dirname(path), exist_ok=True)
-with open(tmp, "w", encoding="utf-8") as handle:
+path = os.environ["LAST_DEPLOY_TMP"]
+with open(path, "w", encoding="utf-8") as handle:
     json.dump(record, handle, separators=(",", ":"))
     handle.write("\n")
-os.replace(tmp, path)
-' || log "warning: failed to write ${LAST_DEPLOY_FILE}"
+' || {
+    rm -f "$tmp"
+    log "warning: failed to encode ${LAST_DEPLOY_FILE}"
+    return 0
+  }
+
+  # /run/devide is root-owned on the devbox; stage in /tmp then install atomically.
+  if sudo install -o devbox -g devbox -m 664 "$tmp" "$LAST_DEPLOY_FILE" 2>/dev/null; then
+    :
+  elif install -o "$(id -un)" -g "$(id -gn)" -m 664 "$tmp" "$LAST_DEPLOY_FILE" 2>/dev/null; then
+    :
+  else
+    log "warning: failed to write ${LAST_DEPLOY_FILE}"
+  fi
+  rm -f "$tmp"
 }
 
 record_deploy_failure() {
