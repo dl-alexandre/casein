@@ -102,15 +102,32 @@ defmodule DevIDE.Previews.ArtifactsTest do
   test "protected displayed artifacts are not pruned", %{root: root} do
     Application.put_env(:dev_ide, :preview_max_artifacts, 1)
 
+    # Protect before the next store: with max_artifacts=1 each store prunes
+    # everything older, so an unprotected 1.png would be legitimately gone by
+    # the time 2.png lands (mirrors the real flow — an artifact is protected
+    # while displayed, not retroactively).
     Artifacts.store_png!("ws-protect", 1, "old")
-    Artifacts.store_png!("ws-protect", 2, "new")
     :ok = DevIDE.Previews.ArtifactProtection.protect("ws-protect", "1.png")
+    Artifacts.store_png!("ws-protect", 2, "new")
     Artifacts.store_png!("ws-protect", 3, "newer")
 
     remaining = File.ls!(Path.join(root, "ws-protect")) |> Enum.sort()
     assert "1.png" in remaining
     assert "3.png" in remaining
     refute "2.png" in remaining
+  end
+
+  test "a burst of same-second writes never prunes the just-written artifact", %{root: root} do
+    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+
+    # All three writes land within one mtime tick (posix-second granularity),
+    # so pruning cannot order them by timestamp alone. The just-written file
+    # must win the tie — put/4 returns its URL, which must not 404.
+    Artifacts.store_png!("ws-burst", 1, "a")
+    Artifacts.store_png!("ws-burst", 2, "b")
+    Artifacts.store_png!("ws-burst", 3, "c")
+
+    assert File.ls!(Path.join(root, "ws-burst")) == ["3.png"]
   end
 
   test "pruning is scoped per workspace", %{root: root} do

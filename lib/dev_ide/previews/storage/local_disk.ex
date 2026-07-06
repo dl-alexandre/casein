@@ -36,7 +36,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
         case write_source(path, source) do
           :ok ->
-            prune_dir(dir, workspace_id)
+            prune_dir(dir, workspace_id, filename)
             {:ok, "/preview-artifacts/#{workspace_id}/#{filename}"}
 
           {:error, reason} ->
@@ -91,7 +91,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
-  defp prune_dir(dir, workspace_id) do
+  defp prune_dir(dir, workspace_id, just_written) do
     case File.ls(dir) do
       {:ok, entries} ->
         protected = protected_basenames(workspace_id)
@@ -101,8 +101,8 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
         |> Enum.filter(&File.regular?/1)
         |> Enum.split_with(&diff_artifact?/1)
         |> then(fn {diffs, captures} ->
-          prune_bucket(diffs, max_diff_artifacts(), protected)
-          prune_bucket(captures, max_screenshot_artifacts(), protected)
+          prune_bucket(diffs, max_diff_artifacts(), protected, just_written)
+          prune_bucket(captures, max_screenshot_artifacts(), protected, just_written)
         end)
 
       _ ->
@@ -112,18 +112,21 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
   # paths come from File.ls/1 inside the validated artifact directory.
   # sobelow_skip ["Traversal.FileModule"]
-  defp prune_bucket(paths, max, protected) when is_integer(max) and max > 0 do
+  defp prune_bucket(paths, max, protected, just_written) when is_integer(max) and max > 0 do
     paths
     |> Enum.reject(&(Path.basename(&1) in protected))
-    |> Enum.map(&{&1, file_mtime(&1)})
-    |> Enum.sort_by(fn {_path, mtime} -> mtime end, :desc)
+    # mtime has one-second granularity, so a burst of writes ties; rank the
+    # just-written artifact above its tie so put/4 never deletes the file whose
+    # URL it is about to return.
+    |> Enum.map(&{&1, {file_mtime(&1), Path.basename(&1) == just_written}})
+    |> Enum.sort_by(fn {_path, rank} -> rank end, :desc)
     |> Enum.drop(max)
-    |> Enum.each(fn {path, _mtime} -> _ = File.rm(path) end)
+    |> Enum.each(fn {path, _rank} -> _ = File.rm(path) end)
 
     :ok
   end
 
-  defp prune_bucket(_paths, _max, _protected), do: :ok
+  defp prune_bucket(_paths, _max, _protected, _just_written), do: :ok
 
   defp diff_artifact?(path) do
     basename = Path.basename(path)
