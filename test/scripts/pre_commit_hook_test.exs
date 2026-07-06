@@ -15,6 +15,7 @@ defmodule Scripts.PreCommitHookTest do
 
   test "pre-commit allows commits on master inside a linked worktree" do
     %{repo: repo} = git_fixture!()
+
     worktree =
       Path.join(
         Path.dirname(repo),
