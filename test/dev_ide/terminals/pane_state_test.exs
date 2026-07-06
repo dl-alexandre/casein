@@ -20,6 +20,24 @@ defmodule DevIDE.Terminals.PaneStateTest do
     assert PaneState.task_summary(title) == "Review patch"
   end
 
+  test "detects working Grok titles from Braille spinner glyphs" do
+    title = @spinner <> " - Thinking - … - grok"
+
+    assert PaneState.from_title(title) == :working
+  end
+
+  test "classifies plain idle Grok titles as unknown" do
+    title = "Add Grok pane title tests - grok"
+
+    assert PaneState.from_title(title) == :unknown
+  end
+
+  test "Grok task_summary strips Braille spinner prefixes" do
+    title = @spinner <> " Add Grok pane title tests - grok"
+
+    assert PaneState.task_summary(title) == "Add Grok pane title tests - grok"
+  end
+
   test "classifies by leading marker only" do
     title = @ready <> " Fix " <> @spinner <> " spinner glyph rendering"
 

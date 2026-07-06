@@ -59,8 +59,10 @@ npm-debug.log
 # Release distribution artifacts produced by scripts/package-release.sh.
 /dist/
 
-# Local Claude Code agent config.
-/.claude/
+# Local Claude Code agent config (keep checked-in project skills).
+/.claude/*
+!/.claude/skills/
+!/.claude/skills/**
 
 
 # Local UI design studies — kept on disk, not tracked.
