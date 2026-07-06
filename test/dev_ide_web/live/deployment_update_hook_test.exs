@@ -57,6 +57,131 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     assert :sys.get_state(view.pid).socket.assigns.update_available == true
   end
 
+  test "renders the deploy failure banner when the poller status file reports a gate failure",
+       %{conn: conn} do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "last-deploy-hook-#{System.unique_integer([:positive])}.json"
+      )
+
+    on_exit(fn -> File.rm(path) end)
+
+    record = %{
+      "outcome" => "failed",
+      "target_sha" => String.duplicate("c", 40),
+      "target_short" => String.duplicate("c", 12),
+      "phase" => "gate",
+      "reason" => "pre-push gate failed",
+      "started_at" => "2026-07-06T00:00:00Z",
+      "finished_at" => "2026-07-06T00:05:00Z"
+    }
+
+    File.write!(path, Jason.encode!(record) <> "\n")
+
+    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+
+    Application.put_env(
+      :dev_ide,
+      :deployment,
+      (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
+    )
+
+    System.put_env("DEVIDE_GIT_REVISION", String.duplicate("a", 40))
+
+    on_exit(fn ->
+      if prev_deploy,
+        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
+        else: Application.delete_env(:dev_ide, :deployment)
+
+      if prev_rev,
+        do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),
+        else: System.delete_env("DEVIDE_GIT_REVISION")
+    end)
+
+    branch = "hook-failure-#{System.unique_integer([:positive])}"
+    key = {DevIDE.Deployment.Drift, :remote_head, branch}
+    remote = String.duplicate("c", 40)
+
+    :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
+
+    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+
+    on_exit(fn ->
+      restore_branch_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      :persistent_term.erase(key)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+
+    assert has_element?(view, "#deploy-failure-banner")
+    assert render(view) =~ "pre-push gate"
+    assert render(view) =~ String.duplicate("c", 12)
+  end
+
+  test "renders the in-progress banner when the poller status file reports an active deploy",
+       %{conn: conn} do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "last-deploy-progress-#{System.unique_integer([:positive])}.json"
+      )
+
+    on_exit(fn -> File.rm(path) end)
+
+    record = %{
+      "outcome" => "in_progress",
+      "target_sha" => String.duplicate("d", 40),
+      "target_short" => String.duplicate("d", 12),
+      "started_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    File.write!(path, Jason.encode!(record) <> "\n")
+
+    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+
+    Application.put_env(
+      :dev_ide,
+      :deployment,
+      (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
+    )
+
+    System.put_env("DEVIDE_GIT_REVISION", String.duplicate("a", 40))
+
+    on_exit(fn ->
+      if prev_deploy,
+        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
+        else: Application.delete_env(:dev_ide, :deployment)
+
+      if prev_rev,
+        do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),
+        else: System.delete_env("DEVIDE_GIT_REVISION")
+    end)
+
+    branch = "hook-progress-#{System.unique_integer([:positive])}"
+    key = {DevIDE.Deployment.Drift, :remote_head, branch}
+    remote = String.duplicate("d", 40)
+
+    :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
+
+    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+
+    on_exit(fn ->
+      restore_branch_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      :persistent_term.erase(key)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+
+    assert has_element?(view, "#deploy-in-progress-banner")
+    assert render(view) =~ "Deploying"
+    assert render(view) =~ String.duplicate("d", 12)
+  end
+
   test "a stale client_version connect param does NOT flag the banner (string check retired)",
        %{conn: conn} do
     {:ok, view, _html} =
@@ -69,4 +194,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     assert :sys.get_state(view.pid).socket.assigns.update_available == false
     refute has_element?(view, "#deploy-update-banner")
   end
+
+  defp restore_branch_env(key, nil), do: System.delete_env(key)
+  defp restore_branch_env(key, value), do: System.put_env(key, value)
 end

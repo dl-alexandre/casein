@@ -11,7 +11,8 @@ defmodule DevIde.Supervision.Deployment do
   def init(_opts) do
     children = [
       DevIDE.Deployment.Registry,
-      DevIDE.Deployment.Drain
+      DevIDE.Deployment.Drain,
+      DevIDE.Deployment.PollerWatcher
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

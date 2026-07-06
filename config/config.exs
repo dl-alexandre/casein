@@ -44,8 +44,13 @@ config :dev_ide,
     default_host: "devide.devbox.milcgroup.com",
     git_remote: "https://github.com/dl-alexandre/dev_ide.git",
     git_branch: "master",
+    github_repo: "dl-alexandre/dev_ide",
+    deploy_service: "devide-deploy.service",
     remote_head_cache_ttl_ms: 60_000,
-    ls_remote_timeout_ms: 5_000
+    ls_remote_timeout_ms: 5_000,
+    last_deploy_path: "/run/devide/last-deploy.json",
+    poller_watch_interval_ms: 30_000,
+    stale_in_progress_ms: 2_700_000
   ],
   # ETS tables used across processes (terminal fast-path, workspace access cache).
   # Must be :public — TerminalChannel and other connection processes write entries;

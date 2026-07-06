@@ -174,6 +174,7 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 |---|---|---|---|
 | GET | `/api/deploy_status` | `DeployStatusController` · `:show` | `DevIDE.Deployment.Health.status/1`; 200 when `ok`, else **503** |
 | POST | `/api/drain` | `DrainController` · `:drain` | `DevIDE.Deployment.Drain.start_drain/1` (`commits_behind` arg); 409 `already_draining` if already draining |
+| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `devide-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
 
 ### Agent MCP — pipeline `:mcp_api`
 

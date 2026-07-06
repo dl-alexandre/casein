@@ -33,13 +33,23 @@ done
 
 log() { printf '>>> %s\n' "$*"; }
 
+SUDOERS_FILE="/etc/sudoers.d/devide-deploy-trigger"
+
+install_poller_trigger_sudoers() {
+  log "installing sudoers drop-in for webhook poller trigger (${SUDOERS_FILE})"
+  printf '%s\n' 'devbox ALL=(root) NOPASSWD: /bin/systemctl start devide-deploy.service' |
+    sudo tee "${SUDOERS_FILE}" >/dev/null
+  sudo chmod 440 "${SUDOERS_FILE}"
+  sudo visudo -cf "${SUDOERS_FILE}" >/dev/null
+}
+
 if [[ "$DISABLE" -eq 1 ]]; then
   log "stopping and disabling ${TIMER}"
   sudo systemctl disable --now "$TIMER" >/dev/null 2>&1 || true
   sudo systemctl stop "$SERVICE" >/dev/null 2>&1 || true
-  sudo rm -f "${UNIT_DIR}/${SERVICE}" "${UNIT_DIR}/${TIMER}"
+  sudo rm -f "${UNIT_DIR}/${SERVICE}" "${UNIT_DIR}/${TIMER}" "${SUDOERS_FILE}"
   sudo systemctl daemon-reload
-  log "removed deploy poller units"
+  log "removed deploy poller units and webhook sudoers drop-in"
   exit 0
 fi
 
@@ -52,6 +62,7 @@ for f in "$SERVICE" "$TIMER"; do
 done
 
 sudo systemctl daemon-reload
+install_poller_trigger_sudoers
 log "enabling ${TIMER}"
 sudo systemctl enable "$TIMER" >/dev/null
 

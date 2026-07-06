@@ -164,6 +164,56 @@ defmodule DevIDE.Deployment.HealthTest do
     assert %{ok: false, actual: "127.0.0.1:9000"} = checks.caddy_devide_upstream
   end
 
+  test "status reports not ok when the deploy poller failed on master" do
+    socket =
+      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket) end)
+    File.write!(socket, "")
+
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "last-deploy-health-#{System.unique_integer([:positive])}.json"
+      )
+
+    on_exit(fn -> File.rm(path) end)
+
+    record = %{
+      "outcome" => "failed",
+      "target_sha" => String.duplicate("b", 40),
+      "target_short" => String.duplicate("b", 12),
+      "phase" => "gate",
+      "reason" => "pre-push gate failed",
+      "started_at" => "2026-07-06T00:00:00Z",
+      "finished_at" => "2026-07-06T00:05:00Z"
+    }
+
+    File.write!(path, Jason.encode!(record) <> "\n")
+
+    prev_deploy = Application.get_env(:dev_ide, :deployment)
+
+    Application.put_env(
+      :dev_ide,
+      :deployment,
+      (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
+    )
+
+    on_exit(fn ->
+      if prev_deploy,
+        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
+        else: Application.delete_env(:dev_ide, :deployment)
+    end)
+
+    assert %{ok: false, checks: checks, last_deploy: %{pipeline: :failed}} =
+             Health.status(
+               healthy_opts(socket)
+               |> Keyword.put(:remote_head, {:ok, String.duplicate("b", 40)})
+             )
+
+    refute checks.deploy_pipeline_ok
+  end
+
   test "status reports not ok when deploy drift is detected" do
     socket =
       Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")

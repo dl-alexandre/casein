@@ -118,7 +118,9 @@ body {
     padding-top: 0.25rem;
   }
 
-  #deploy-update-banner {
+  #deploy-update-banner,
+  #deploy-in-progress-banner,
+  #deploy-failure-banner {
     top: 1rem;
   }
 
