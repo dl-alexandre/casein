@@ -130,8 +130,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     pane:input
     run:cancel set_log_service
+    ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
-    tree:open_in_pane
+    tree:open_in_pane tree:new_form_at tree:duplicate
+    tree:rename_form_node tree:rename_node tree:rename_node_cancel
+    tree:delete_node_request tree:delete_node_confirm tree:delete_node_cancel
     file:rename_form file:rename_cancel file:rename_submit
     file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
