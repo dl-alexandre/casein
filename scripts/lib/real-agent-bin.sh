@@ -21,7 +21,7 @@ real_agent_bin() {
   local recorded="${HOME}/.devide/real-bins/${name}"
   local candidate=""
 
-  if [[ -e "$recorded" ]]; then
+  if [[ -e "$recorded" ]] && ! is_devide_shim "$recorded"; then
     printf '%s\n' "$recorded"
     return 0
   fi

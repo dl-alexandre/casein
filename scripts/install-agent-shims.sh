@@ -41,16 +41,21 @@ record_real_bin() {
   local name="$1"
   local real=""
   local resolved=""
+  local bin_dir_resolved=""
 
   real="$(PATH="$(path_without_shims)" command -v "$name" 2>/dev/null || true)"
 
   if [[ -n "$real" ]] && ! is_devide_shim "$real"; then
     resolved="$(readlink -f "$real" 2>/dev/null || printf '%s' "$real")"
+    bin_dir_resolved="$(readlink -f "$BIN_DIR" 2>/dev/null || printf '%s' "$BIN_DIR")"
     # Never point real-bins at BIN_DIR — shims overwrite those paths next.
-    if [[ "$resolved" != "${BIN_DIR}/"/* ]]; then
-      ln -sf "$resolved" "${REAL_DIR}/${name}"
-      return 0
-    fi
+    case "$resolved" in
+      "${bin_dir_resolved}" | "${bin_dir_resolved}/"*) ;;
+      *)
+        ln -sf "$resolved" "${REAL_DIR}/${name}"
+        return 0
+        ;;
+    esac
   fi
 
   # npm global installs land in BIN_DIR; record the package binary directly.
