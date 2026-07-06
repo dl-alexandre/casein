@@ -16,7 +16,6 @@ defmodule DevIDE.Agents.PreviewTools.Close do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Helpers.close_props()
@@ -25,7 +24,7 @@ defmodule DevIDE.Agents.PreviewTools.Close do
   def mcp_metadata, do: Helpers.metadata("preview_close")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.close(Helpers.to_impl_args(params))
   end
 end

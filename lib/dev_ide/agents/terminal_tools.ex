@@ -32,7 +32,6 @@ defmodule DevIDE.Agents.TerminalTools do
     Capture,
     CaptureAgent,
     Context,
-    Helpers,
     Impl,
     ListSessions,
     PasteAgentText,

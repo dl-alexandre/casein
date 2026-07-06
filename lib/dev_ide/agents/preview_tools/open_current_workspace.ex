@@ -8,7 +8,6 @@ defmodule DevIDE.Agents.PreviewTools.OpenCurrentWorkspace do
     tags: ["preview"],
     vsn: "1.0.0",
     schema: [
-      
       workspace_id: [type: :string],
       workspace_path: [type: :string],
       tmux_session: [type: :string],
@@ -39,10 +38,11 @@ defmodule DevIDE.Agents.PreviewTools.OpenCurrentWorkspace do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
+  alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(Map.drop(Helpers.open_props(), [:workspace_id, :workspace_path]))
+  def parameters,
+    do: Tool.object(Map.drop(Helpers.open_props(), [:workspace_id, :workspace_path]))
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open_current_workspace")

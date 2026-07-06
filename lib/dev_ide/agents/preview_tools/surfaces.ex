@@ -19,7 +19,7 @@ defmodule DevIDE.Agents.PreviewTools.Surfaces do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
+  alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.surface_props(), [:workspace_id])

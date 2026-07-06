@@ -188,36 +188,6 @@ defmodule DevIDE.Agents.AnnotationTools.Impl do
   defp visibility_atom("per_agent"), do: {:ok, :per_agent}
   defp visibility_atom(_), do: :error
 
-  defp limit_param do
-    %{
-      type: "integer",
-      description: "Maximum annotations to return (default #{@default_limit}, max #{@max_limit})."
-    }
-  end
-
-  defp approval_state_param do
-    %{
-      type: "string",
-      enum: ["pending", "approved", "rejected"],
-      description: "Filter by approval state."
-    }
-  end
-
-  defp author_type_param do
-    %{
-      type: "string",
-      enum: ["human", "agent_grok", "agent_codex", "agent_claude"]
-    }
-  end
-
-  defp visibility_param do
-    %{
-      type: "string",
-      enum: ["private", "shared", "per_agent"],
-      description: "Defaults to shared for agent proposals."
-    }
-  end
-
   defp format_changeset_errors(%Ecto.Changeset{} = changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
       Enum.reduce(opts, msg, fn {key, value}, acc ->

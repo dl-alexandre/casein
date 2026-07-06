@@ -3,12 +3,12 @@ defmodule DevIDE.Agents.PreviewTools.EnsureServerHere do
 
   use Jido.Action,
     name: "preview_ensure_server_here",
-    description: "Ensure the runtime-owned preview server for this scoped agent session is starting or running.",
+    description:
+      "Ensure the runtime-owned preview server for this scoped agent session is starting or running.",
     category: "preview",
     tags: ["preview"],
     vsn: "1.0.0",
     schema: [
-      
       workspace_id: [type: :string],
       workspace_path: [type: :string],
       tmux_session: [type: :string],
@@ -41,7 +41,7 @@ defmodule DevIDE.Agents.PreviewTools.EnsureServerHere do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
+  alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id, :tmux_session])

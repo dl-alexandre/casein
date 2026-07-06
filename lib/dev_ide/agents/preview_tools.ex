@@ -43,6 +43,7 @@ defmodule DevIDE.Agents.PreviewTools do
     Surfaces,
     Type
   }
+
   alias DevIDE.Agents.ToolAction
   alias McpCtl.Tool
 
@@ -114,8 +115,8 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp present_param?(params, key) do
-    case Map.get(params, key) || Map.get(params, String.to_atom(key)) do
+  defp present_param?(params, key) when is_binary(key) do
+    case Map.get(params, key) do
       value when is_binary(value) -> String.trim(value) != ""
       value when not is_nil(value) -> true
       _ -> false

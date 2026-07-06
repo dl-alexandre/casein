@@ -19,7 +19,15 @@ defmodule DevIDE.Agents.PreviewTools.ReloadIframe do
   alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(Map.merge(Helpers.workspace_props(), %{actor_id: Params.actor_id(), reason: Helpers.reload_reason_param()}), [:workspace_id])
+  def parameters,
+    do:
+      Tool.object(
+        Map.merge(Helpers.workspace_props(), %{
+          actor_id: Params.actor_id(),
+          reason: Helpers.reload_reason_param()
+        }),
+        [:workspace_id]
+      )
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_reload_iframe")

@@ -15,16 +15,21 @@ defmodule DevIDE.Agents.PreviewTools.NavigatePane do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
+  alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(%{pane_id: Helpers.pane_id_param(), path: Helpers.navigate_path_param()}, [:pane_id, :path])
+  def parameters,
+    do:
+      Tool.object(%{pane_id: Helpers.pane_id_param(), path: Helpers.navigate_path_param()}, [
+        :pane_id,
+        :path
+      ])
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_navigate_pane")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.navigate_pane(Helpers.to_impl_args(params))
   end
 end

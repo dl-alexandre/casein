@@ -16,7 +16,6 @@ defmodule DevIDE.Agents.PreviewTools.CompareSnapshots do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Helpers.compare_props()

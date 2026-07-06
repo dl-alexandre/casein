@@ -8,7 +8,6 @@ defmodule DevIDE.Agents.PreviewTools.OpenLocalhost do
     tags: ["preview"],
     vsn: "1.0.0",
     schema: [
-      
       workspace_id: [type: :string],
       workspace_path: [type: :string],
       tmux_session: [type: :string],
@@ -44,7 +43,12 @@ defmodule DevIDE.Agents.PreviewTools.OpenLocalhost do
   alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(Map.merge(Helpers.open_props(), %{port: Params.port(), path: Params.path()}), [:workspace_id, :port])
+  def parameters,
+    do:
+      Tool.object(Map.merge(Helpers.open_props(), %{port: Params.port(), path: Params.path()}), [
+        :workspace_id,
+        :port
+      ])
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open_localhost")

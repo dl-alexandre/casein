@@ -191,19 +191,18 @@ defmodule DevIDE.Agents.PreviewTools.Helpers do
       ]
   end
 
-
   def metadata(name)
-       when name in [
-              "preview_resolve_workspace",
-              "preview_surfaces",
-              "preview_observe_pane",
-              "preview_observe",
-              "preview_observe_live",
-              "preview_elements",
-              "preview_screenshot",
-              "preview_get_storage",
-              "preview_report_errors"
-            ] do
+      when name in [
+             "preview_resolve_workspace",
+             "preview_surfaces",
+             "preview_observe_pane",
+             "preview_observe",
+             "preview_observe_live",
+             "preview_elements",
+             "preview_screenshot",
+             "preview_get_storage",
+             "preview_report_errors"
+           ] do
     %{
       mutation?: false,
       danger_level: :low,
@@ -213,14 +212,14 @@ defmodule DevIDE.Agents.PreviewTools.Helpers do
   end
 
   def metadata(name)
-       when name in [
-              "preview_open",
-              "preview_open_current_workspace",
-              "preview_open_here",
-              "preview_ensure_server_here",
-              "preview_open_app",
-              "preview_open_localhost"
-            ] do
+      when name in [
+             "preview_open",
+             "preview_open_current_workspace",
+             "preview_open_here",
+             "preview_ensure_server_here",
+             "preview_open_app",
+             "preview_open_localhost"
+           ] do
     %{
       mutation?: true,
       danger_level: :medium,
@@ -240,15 +239,15 @@ defmodule DevIDE.Agents.PreviewTools.Helpers do
   end
 
   def metadata(name)
-       when name in [
-              "preview_navigate",
-              "preview_navigate_pane",
-              "preview_click",
-              "preview_type",
-              "preview_press",
-              "preview_reload_iframe",
-              "devide_reload_page"
-            ] do
+      when name in [
+             "preview_navigate",
+             "preview_navigate_pane",
+             "preview_click",
+             "preview_type",
+             "preview_press",
+             "preview_reload_iframe",
+             "devide_reload_page"
+           ] do
     %{
       mutation?: true,
       danger_level: :medium,

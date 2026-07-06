@@ -18,13 +18,17 @@ defmodule DevIDE.Agents.PreviewTools.Elements do
   alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(%{session_id: Params.session_id(), query: Helpers.elements_query_param()}, [:session_id])
+  def parameters,
+    do:
+      Tool.object(%{session_id: Params.session_id(), query: Helpers.elements_query_param()}, [
+        :session_id
+      ])
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_elements")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.elements(Helpers.to_impl_args(params))
   end
 end

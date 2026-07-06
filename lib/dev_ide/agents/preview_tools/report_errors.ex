@@ -14,7 +14,6 @@ defmodule DevIDE.Agents.PreviewTools.ReportErrors do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Helpers.session_only()
@@ -23,7 +22,7 @@ defmodule DevIDE.Agents.PreviewTools.ReportErrors do
   def mcp_metadata, do: Helpers.metadata("preview_report_errors")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.report_errors(Helpers.to_impl_args(params))
   end
 end

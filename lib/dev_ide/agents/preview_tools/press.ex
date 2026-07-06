@@ -8,7 +8,6 @@ defmodule DevIDE.Agents.PreviewTools.Press do
     tags: ["preview"],
     vsn: "1.0.0",
     schema: [
-      
       session_id: [type: {:or, [:integer, :string]}, required: true],
       element_id: [type: :string],
       selector: [type: :string],
@@ -28,13 +27,18 @@ defmodule DevIDE.Agents.PreviewTools.Press do
   alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
-  def parameters, do: Tool.object(Map.merge(Helpers.visible_mutation_props(), %{key: Params.key()}), [:session_id, :key])
+  def parameters,
+    do:
+      Tool.object(Map.merge(Helpers.visible_mutation_props(), %{key: Params.key()}), [
+        :session_id,
+        :key
+      ])
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_press")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.press(Helpers.to_impl_args(params))
   end
 end

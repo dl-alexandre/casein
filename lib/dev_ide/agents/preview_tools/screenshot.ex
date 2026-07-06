@@ -14,7 +14,6 @@ defmodule DevIDE.Agents.PreviewTools.Screenshot do
   @behaviour DevIDE.Agents.ToolAction
 
   alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
-  alias McpCtl.{Params, Tool}
 
   @impl DevIDE.Agents.ToolAction
   def parameters, do: Helpers.session_only()
@@ -23,7 +22,7 @@ defmodule DevIDE.Agents.PreviewTools.Screenshot do
   def mcp_metadata, do: Helpers.metadata("preview_screenshot")
 
   @impl Jido.Action
-  def run(params, context) do
+  def run(params, _context) do
     Impl.screenshot(Helpers.to_impl_args(params))
   end
 end
