@@ -42,7 +42,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
   end
 
   test "renders the update banner when a deploy push arrives at runtime", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    {:ok, view, _html} = live(conn, ~p"/")
 
     # No banner on a normal connect…
     refute has_element?(view, "#deploy-update-banner")
@@ -114,7 +114,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
       :persistent_term.erase(key)
     end)
 
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    {:ok, view, _html} = live(conn, ~p"/")
 
     assert has_element?(view, "#deploy-failure-banner")
     assert render(view) =~ "pre-push gate"
@@ -175,7 +175,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
       :persistent_term.erase(key)
     end)
 
-    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    {:ok, view, _html} = live(conn, ~p"/")
 
     assert has_element?(view, "#deploy-in-progress-banner")
     assert render(view) =~ "Deploying"
@@ -187,7 +187,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     {:ok, view, _html} =
       conn
       |> put_connect_params(%{"client_version" => "some-stale-revision"})
-      |> live(~p"/workspaces")
+      |> live(~p"/")
 
     # The retired git-revision handshake would have flagged here; static_changed?
     # now owns the "needs a hard reload" decision instead.
