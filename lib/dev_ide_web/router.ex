@@ -130,12 +130,15 @@ defmodule DevIdeWeb.Router do
       ] do
       live "/", WorkspaceLive.Dashboard, :index
       live "/notifications", NotificationLive.Index, :index
-      live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
 
     # The picker is absorbed by the dashboard at "/" (Stage 3).
     get "/workspaces", LegacyWorkspaceController, :index
+
+    # The previous-sessions page is absorbed by the cockpit's History panel
+    # (?tab=history); this keeps old links and bookmarks working.
+    get "/workspaces/:id/previous-sessions", LegacyWorkspaceController, :previous_sessions
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
 

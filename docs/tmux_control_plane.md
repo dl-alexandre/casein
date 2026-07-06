@@ -193,10 +193,11 @@ references, so history can answer which agent action opened or inspected which
 browser surface. When recording metadata has already been captured, the same
 summary can carry recording ids/URLs/paths/status without loading the underlying
 artifact.
-The browser surface is
-`/workspaces/:id/previous-sessions`; it uses debounced filters and refreshes
-from live audit/MCP activity broadcasts without embedding history in the main
-workspace cockpit.
+The browser surface is the History side panel inside the workspace cockpit
+(`?tab=history` on the workspace URL); it uses debounced filters, refreshes
+from live audit/MCP activity broadcasts while open, and loads history lazily —
+never during cockpit mount. The old `/workspaces/:id/previous-sessions` route
+redirects there with its search params preserved.
 
 ```bash
 curl -sS \

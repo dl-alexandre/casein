@@ -36,6 +36,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
+  alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -119,6 +120,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
     search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
+    history:search history:clear history:refresh
     preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
@@ -129,6 +131,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     file:rename_form file:rename_cancel file:rename_submit
     file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
+
+  # Cockpit tabs addressable via "switch_tab" and the `?tab=` deep-link query
+  # param (docs/deep_links.md). Unknown values are ignored.
+  @tabs ~w(terminal files search diff artifacts run proposals logs history)
 
   @impl true
   def mount(params, session, socket) do
@@ -293,6 +299,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:artifact_projects, [])
         |> assign(:artifact_projects_error, nil)
         |> assign(:artifact_selected_id, nil)
+        |> HistoryEvents.assign_defaults()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -577,6 +584,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def handle_params(params, _uri, socket) do
+    socket = apply_tab_param(socket, params)
+
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
         {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
@@ -607,22 +616,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
-    socket = assign(socket, :tab, tab)
-    socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
-
-    socket =
-      if tab == "run" do
-        socket
-        |> RunEvents.attach_existing_run()
-        |> RunEvents.refresh_run_ledger()
-        |> RunEvents.load_review_commands()
-      else
-        socket
-      end
-
-    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
-
-    {:noreply, socket}
+    {:noreply, select_tab(socket, tab)}
   end
 
   def handle_event("refresh", _params, socket) do
@@ -937,6 +931,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("file:" <> _ = event, params, socket),
     do: FileEvents.handle_event(event, params, socket)
 
+  # History (previous sessions) panel events are handled by HistoryEvents
+  # (absorbed from the removed WorkspaceLive.PreviousSessions page).
+  def handle_event("history:" <> _ = event, params, socket),
+    do: HistoryEvents.handle_event(event, params, socket)
+
+  # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
+  # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
+  defp select_tab(socket, tab, params \\ %{})
+
+  defp select_tab(socket, tab, params) when tab in @tabs do
+    socket = assign(socket, :tab, tab)
+    socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
+
+    socket =
+      if tab == "run" do
+        socket
+        |> RunEvents.attach_existing_run()
+        |> RunEvents.refresh_run_ledger()
+        |> RunEvents.load_review_commands()
+      else
+        socket
+      end
+
+    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
+
+    if tab == "history", do: HistoryEvents.open(socket, params), else: socket
+  end
+
+  defp select_tab(socket, _tab, _params), do: socket
+
+  # `?tab=` deep link (docs/deep_links.md): open a cockpit tab from the URL —
+  # e.g. `?tab=history` restores the old /previous-sessions bookmarks via the
+  # legacy redirect. The static render only assigns the tab so the first paint
+  # shows the right panel; per-tab hydration runs on the connected mount.
+  defp apply_tab_param(socket, %{"tab" => tab} = params) when is_binary(tab) do
+    cond do
+      tab not in @tabs or socket.assigns[:tab] == tab -> socket
+      connected?(socket) -> select_tab(socket, tab, params)
+      true -> assign(socket, :tab, tab)
+    end
+  end
+
+  defp apply_tab_param(socket, _params), do: socket
+
   @impl true
   # Panel LiveComponents cannot write the root flash or refresh Show-owned
   # hub state; they ask via these messages (see PanelGate / the components).
@@ -947,6 +985,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info(:proposal_workspace_changed, socket) do
     {:noreply, socket |> refresh_tree() |> refresh_git_status()}
   end
+
+  # Audit / MCP-activity broadcasts — subscribed by HistoryEvents when the
+  # History panel first opens; refreshed only while that panel is visible.
+  def handle_info({:audit_event, _event}, socket),
+    do: {:noreply, HistoryEvents.refresh_if_open(socket)}
+
+  def handle_info({:agent_mcp_activity, _entry}, socket),
+    do: {:noreply, HistoryEvents.refresh_if_open(socket)}
 
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     {:noreply, LogsEvents.insert_log_line(socket, line)}

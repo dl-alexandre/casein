@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
+  import DevIdeWeb.WorkspaceLive.Show.HistoryPanel
 
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader,
     only: [
@@ -574,6 +575,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           log_service={@log_service}
           log_ref={@log_ref}
           streams={@streams}
+        />
+        <.history_panel
+          :if={@tab == "history"}
+          workspace_id={@workspace.id}
+          history_form={@history_form}
+          history_results={@history_results}
+          history_payload={@history_payload}
+          history_error={@history_error}
+          history_loaded?={@history_loaded?}
         />
       </div>
     </div>
