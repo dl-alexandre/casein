@@ -32,8 +32,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIDE.Panes
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
@@ -120,8 +122,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
+    pane:input
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
+    tree:open_in_pane
     file:rename_form file:rename_cancel file:rename_submit
     file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
@@ -246,6 +250,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             else: []
           )
         )
+        # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}}),
+        # kept live via DevIDE.Panes.Events. Consumed ONLY for :file panes in
+        # this increment — previews keep their legacy :preview_panes assign
+        # until the runtime cutover. Skipped on the static render like previews.
+        |> assign(
+          :feature_panes,
+          if(connected?(socket), do: Panes.snapshot(id), else: %{})
+        )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -339,6 +351,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_workspace_mode()
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
+        |> subscribe_pane_events()
         |> subscribe_browser_control()
         |> subscribe_open_links()
         |> subscribe_pane_labels()
@@ -907,6 +920,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("ctx:" <> _ = event, params, socket),
     do: ContextMenuEvents.handle_event(event, params, socket)
 
+  # File-pane overlay events (generic feature-pane input + the context-menu
+  # "Open in pane" entry point) are handled by FilePaneEvents. These clauses
+  # must precede the "tree:*" catch-all below.
+  def handle_event("pane:input" = event, params, socket),
+    do: FilePaneEvents.handle_event(event, params, socket)
+
+  def handle_event("tree:open_in_pane" = event, params, socket),
+    do: FilePaneEvents.handle_event(event, params, socket)
+
   # File-tree / editor events are handled by FileEvents (extracted from this
   # module — pure code motion). All "tree:*" and "file:*" events delegate there.
   def handle_event("tree:" <> _ = event, params, socket),
@@ -1249,6 +1271,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:noreply, socket}
     end
   end
+
+  # Generic feature-pane lifecycle (DevIDE.Panes.Events). Consumed for :file
+  # panes only in this increment; FilePaneEvents maintains :feature_panes and
+  # handles the :heartbeat reason without focus churn.
+  def handle_info({:pane_event, _} = msg, socket),
+    do: FilePaneEvents.handle_info(msg, socket)
 
   def handle_info({:preview_pane_registered, _} = msg, socket),
     do: PreviewPaneEvents.handle_info(msg, socket)
@@ -2269,6 +2297,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           "preview:" <> workspace_id
         )
       end
+    end
+
+    socket
+  end
+
+  # Generic feature-pane lifecycle topic (alias-aware fan-out mirrors the
+  # preview subscription set — Panes.Events expands workspace aliases itself).
+  defp subscribe_pane_events(socket) do
+    if connected?(socket) do
+      _ = Panes.Events.subscribe(socket.assigns.workspace.id)
     end
 
     socket
