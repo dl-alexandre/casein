@@ -54,7 +54,11 @@ Or from any checkout with env resolved:
 bash scripts/spawn-agent-worker.sh grok <task-slug> <session>
 ```
 
-Stdout is the new `pane_id` (e.g. `%255`). Wait until the worker is at prompt:
+Stdout is the new `pane_id` (e.g. `%255`). The helper unsets
+`DEVIDE_AGENT_WORKTREE_PATH` from tmux session env so each spawn creates a fresh
+worktree — without that, workers reuse the orchestrator's checkout.
+
+Wait until the worker is at prompt:
 
 1. `terminal_topology(pane: <id>)` until `pane_state` is `"unknown"`.
 2. `terminal_capture(pane: <id>, lines: 40)` shows the Grok input prompt (`❯`).

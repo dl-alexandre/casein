@@ -113,7 +113,9 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
 fi
 
 WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
-LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
+# Clear stale worktree pointers from tmux session env so each spawn gets a
+# fresh agent/grok/<slug>-<stamp> worktree off the primary checkout.
+LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
 
 PANE_ID="$(
   tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
