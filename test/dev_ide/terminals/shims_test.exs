@@ -309,12 +309,14 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert %{
              "DEV_IDE_TERMINAL_SCHEME" => "light",
              "COLORFGBG" => "0;15",
+             "COLORTERM" => "truecolor",
              "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
            } = Shims.theme_env(:light, "catppuccin")
 
     assert %{
              "DEV_IDE_TERMINAL_SCHEME" => "dark",
-             "COLORFGBG" => "15;0"
+             "COLORFGBG" => "15;0",
+             "COLORTERM" => "truecolor"
            } = Shims.theme_env(:dark)
   end
 
@@ -326,6 +328,7 @@ defmodule DevIDE.Terminals.ShimsTest do
              "DEV_IDE_SHELL_INTEGRATION_BASH" => _,
              "DEV_IDE_TERMINAL_SCHEME" => "light",
              "COLORFGBG" => "0;15",
+             "COLORTERM" => "truecolor",
              "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
            } = Shims.env(scheme: :light, preset: "catppuccin", include_path?: false)
   end
@@ -335,6 +338,7 @@ defmodule DevIDE.Terminals.ShimsTest do
              "DEV_IDE_TERMINAL" => "1",
              "DEV_IDE_CLIPBOARD" => "osc52",
              "DEV_IDE_SHELL_INTEGRATION" => "1",
+             "COLORTERM" => "truecolor",
              "DEV_IDE_SHELL_INTEGRATION_BASH" => _
            } = Shims.env(include_path?: false)
 

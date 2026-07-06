@@ -247,7 +247,7 @@ defmodule DevIdeWeb.SessionChannelTest do
   end
 
   defp clear_mobile_observers do
-    Enum.each(["dev", "intruder"], &UserObserver.clear/1)
+    Enum.each(["dev", "intruder"], &UserObserver.stop/1)
   end
 
   defp workspace_status_payload(conn, workspace_id, workspace_path) do

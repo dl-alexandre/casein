@@ -373,6 +373,23 @@ defmodule DevIDE.Runtimes.PreviewServerTest do
   end
 
   describe "put_status/3" do
+    test "put_unavailable records profile failure metadata without a preview server" do
+      metadata = %{
+        "preview_server" => %{"port" => 41_050},
+        "runtime_profile" => %{"name" => "phoenix", "metadata" => %{"keep" => "k"}}
+      }
+
+      result = PreviewServer.put_unavailable(metadata, "no_runtime_preview_port_available")
+
+      refute Map.has_key?(result, "preview_server")
+      assert result["runtime_profile"]["name"] == "phoenix"
+      assert result["runtime_profile"]["metadata"]["keep"] == "k"
+      assert result["runtime_profile"]["metadata"]["preview_status"] == "failed"
+
+      assert result["runtime_profile"]["metadata"]["preview_failure_reason"] ==
+               "no_runtime_preview_port_available"
+    end
+
     test "non-binary status returns metadata unchanged" do
       assert PreviewServer.put_status(%{"a" => 1}, :running) == %{"a" => 1}
     end

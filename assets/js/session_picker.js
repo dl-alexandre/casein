@@ -30,6 +30,7 @@ export const SessionPicker = {
     this._filter = ""
     this._previewCache = new Map()
     this._onKeydown = (e) => this.handleKeydown(e)
+    this._onClick = (e) => this.handleClick(e)
     this._onFocusin = () => this.schedulePreview()
     this._onToggle = () => {
       if (this.el.open) {
@@ -46,6 +47,7 @@ export const SessionPicker = {
       }
     }
     this.el.addEventListener("keydown", this._onKeydown)
+    this.el.addEventListener("click", this._onClick, true)
     this.el.addEventListener("toggle", this._onToggle)
     this.el.addEventListener("focusin", this._onFocusin)
   },
@@ -53,8 +55,24 @@ export const SessionPicker = {
   destroyed() {
     clearTimeout(this._previewTimer)
     this.el.removeEventListener("keydown", this._onKeydown)
+    this.el.removeEventListener("click", this._onClick, true)
     this.el.removeEventListener("toggle", this._onToggle)
     this.el.removeEventListener("focusin", this._onFocusin)
+  },
+
+  handleClick(e) {
+    const item = e.target?.closest?.('a[data-picker-item][href][phx-click]')
+    if (!item || !this.el.contains(item)) return
+
+    if (wantsBrowserNavigation(e)) {
+      e.stopPropagation()
+      return
+    }
+
+    // Picker rows are real links for copy/open/fallback, but an ordinary
+    // same-tab click should behave like the tmux keybinding: send the LiveView
+    // switch event and keep the current LiveView mounted.
+    e.preventDefault()
   },
 
   isSessionPicker() {
@@ -476,10 +494,22 @@ function pickerRow(item) {
   return item?.closest?.(".group") || item
 }
 
+function wantsBrowserNavigation(event) {
+  return (
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey ||
+    event.button === 1
+  )
+}
+
 function openUrlForItem(item) {
   const row = pickerRow(item)
   const external = row?.querySelector?.('a[target="_blank"][href]')
   if (external?.href) return external.href
+  const share = row?.querySelector?.("[data-copy-session-link]")
+  if (share?.dataset.copySessionLink) return share.dataset.copySessionLink
   if (item.matches?.("a[href]") && item.href) return item.href
   return null
 }

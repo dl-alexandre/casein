@@ -50,7 +50,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
     do: {:noreply, socket}
 
   # The PaneHistoryWorker finished seeding its read-only emulator: hand the
-  # term to the history modal so the GhosttyTerminalComponent can mount on it.
+  # term to the history drawer so the GhosttyTerminalComponent can mount on it.
   # Guarded by pane id — a slow capture must not attach to a modal that was
   # meanwhile closed or reopened on another pane (the stale worker was already
   # stopped by close_pane_history).

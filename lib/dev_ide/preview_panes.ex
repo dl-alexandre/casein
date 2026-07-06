@@ -335,8 +335,9 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp pop_pending_for_pid(pending, pid) do
-    Enum.find_value(pending, fn {ref, {from, ^pid}} ->
-      {from, Map.delete(pending, ref)}
+    Enum.find_value(pending, fn
+      {ref, {from, ^pid}} -> {from, Map.delete(pending, ref)}
+      _ -> nil
     end)
   end
 

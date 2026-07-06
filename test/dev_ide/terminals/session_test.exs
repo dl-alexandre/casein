@@ -172,6 +172,9 @@ defmodule DevIDE.Terminals.SessionTest do
 
       assert {:ok, "COLORFGBG=15;0"} = tmux_show_environment(tmux_session, "COLORFGBG")
 
+      assert {:ok, "COLORTERM=truecolor"} =
+               tmux_show_environment(tmux_session, "COLORTERM")
+
       safe_stop(pid)
     end)
   end

@@ -160,6 +160,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
       "files" -> :files
       "search" -> :files
       "diff" -> :files
+      "artifacts" -> :preview
       "run" -> :commands
       _ -> :all
     end

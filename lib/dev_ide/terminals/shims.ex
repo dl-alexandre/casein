@@ -15,7 +15,8 @@ defmodule DevIDE.Terminals.Shims do
   @capability_env %{
     "DEV_IDE_TERMINAL" => "1",
     "DEV_IDE_CLIPBOARD" => "osc52",
-    "DEV_IDE_SHELL_INTEGRATION" => "1"
+    "DEV_IDE_SHELL_INTEGRATION" => "1",
+    "COLORTERM" => "truecolor"
   }
   @registry %{
     "devide-open" => %{
@@ -166,7 +167,8 @@ defmodule DevIDE.Terminals.Shims do
   def theme_env(scheme, preset \\ nil) when scheme in [:dark, :light] do
     %{
       "DEV_IDE_TERMINAL_SCHEME" => Atom.to_string(scheme),
-      "COLORFGBG" => colorfgbg_for_scheme(scheme)
+      "COLORFGBG" => colorfgbg_for_scheme(scheme),
+      "COLORTERM" => "truecolor"
     }
     |> maybe_put_preset(preset)
   end

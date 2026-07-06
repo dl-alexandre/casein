@@ -95,7 +95,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   # Per-pane scrollback viewer: capture this pane's tmux history into a
-  # dedicated read-only emulator (PaneHistoryWorker) and browse it in a modal,
+  # dedicated read-only emulator (PaneHistoryWorker) and browse it in a drawer,
   # without touching the live shared PTY/tmux (no focus change, no resize —
   # unlike wheel-scrolling into copy-mode, which is modal and visible to every
   # viewer of the shared session). The session is validated against the
@@ -129,11 +129,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       {:noreply,
        assign(socket, :pane_history, %{
          pane_id: pane_id,
+         window_id: pane.window_id,
+         session: session,
+         key: pane_history_key(session, pane.window_id, pane_id),
          worker: worker,
          term: nil,
          cols: cols,
          rows: rows,
-         title: TerminalChrome.pane_full_title(pane)
+         title: TerminalChrome.pane_full_title(pane),
+         refreshed_at: System.system_time(:second)
        })}
     else
       _ -> {:noreply, socket}
@@ -328,7 +332,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:ok, new_pane_id} ->
           socket =
             socket
-            |> Phoenix.LiveView.push_event("devide:pane:split", %{})
             |> TerminalState.refresh_tmux_topology()
             |> assign(:ui_highlight_pane_id, new_pane_id)
 
@@ -693,6 +696,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
     assign(socket, :pane_history, nil)
   end
+
+  defp pane_history_key(session, window_id, pane_id),
+    do: Enum.join([session, window_id || "window", pane_id], ":")
 
   # Choose-tree style attach: the session dropdown's expanded window rows pass
   # the target window so attaching lands on it directly. Best-effort — the

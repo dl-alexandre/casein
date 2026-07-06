@@ -27,6 +27,9 @@ defmodule DevIDE.Push do
   defdelegate unregister(token), to: Registry
   defdelegate tokens_for(workspace_id), to: Registry
   defdelegate tokens_for_user(user_id), to: Registry
+  defdelegate record_failure(token, reason), to: Registry
+  defdelegate list_devices(opts \\ []), to: Registry
+  defdelegate stats(), to: Registry
 
   @spec provider() :: module()
   def provider, do: Application.get_env(:dev_ide, :push_provider, DevIDE.Push.LogProvider)

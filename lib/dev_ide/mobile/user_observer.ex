@@ -12,6 +12,7 @@ defmodule DevIDE.Mobile.UserObserver do
   alias DevIDE.Audit
   alias DevIDE.Audit.Event
   alias DevIDE.Mobile.Card
+  alias DevIDE.Notifications
   alias DevIDE.Workspaces.State
 
   @registry DevIDE.Mobile.UserObserverRegistry
@@ -25,6 +26,16 @@ defmodule DevIDE.Mobile.UserObserver do
           version: non_neg_integer(),
           cards: [Card.t()]
         }
+
+  def child_spec(opts) do
+    user_id = Keyword.fetch!(opts, :user_id)
+
+    %{
+      id: {__MODULE__, user_id},
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :transient
+    }
+  end
 
   def start_link(opts) do
     user_id = Keyword.fetch!(opts, :user_id)
@@ -122,6 +133,14 @@ defmodule DevIDE.Mobile.UserObserver do
     GenServer.call(via(user_id), :clear)
   end
 
+  @spec stop(String.t()) :: :ok
+  def stop(user_id) when is_binary(user_id) do
+    case Registry.lookup(@registry, user_id) do
+      [{pid, _value}] -> GenServer.call(pid, :stop)
+      [] -> :ok
+    end
+  end
+
   @impl true
   def init(user_id) do
     state = %{user_id: user_id, version: 0, cards: %{}, watched_workspaces: MapSet.new()}
@@ -144,13 +163,17 @@ defmodule DevIDE.Mobile.UserObserver do
   end
 
   def handle_call(:clear, _from, state) do
-    Enum.each(state.watched_workspaces, fn workspace_id ->
-      Phoenix.PubSub.unsubscribe(DevIde.PubSub, Audit.topic(workspace_id))
-    end)
+    state =
+      state
+      |> unsubscribe_all()
+      |> Map.merge(%{version: state.version + 1, cards: %{}, watched_workspaces: MapSet.new()})
 
-    state = %{state | version: state.version + 1, cards: %{}, watched_workspaces: MapSet.new()}
     broadcast(state)
     {:reply, :ok, state}
+  end
+
+  def handle_call(:stop, _from, state) do
+    {:stop, :normal, :ok, unsubscribe_all(state)}
   end
 
   def handle_call({:watch_workspace, workspace_id}, _from, state) do
@@ -207,6 +230,7 @@ defmodule DevIDE.Mobile.UserObserver do
 
   @impl true
   def handle_info({:audit_event, %Event{} = event}, state) do
+    _ = Notifications.deliver_alert_event(event, state.user_id)
     {:noreply, handle_audit_event(state, event)}
   end
 
@@ -252,6 +276,7 @@ defmodule DevIDE.Mobile.UserObserver do
     operation = if(existing, do: :update, else: :create)
     now = now()
     card = Card.merge_update(existing, card, now)
+    card = maybe_persist_card_created(card, operation)
     state = %{state | version: state.version + 1, cards: Map.put(state.cards, key, card)}
     emit_card(:upsert, card, source, operation: operation)
     maybe_broadcast_card_created(card, operation)
@@ -274,6 +299,14 @@ defmodule DevIDE.Mobile.UserObserver do
       :error ->
         state
     end
+  end
+
+  defp unsubscribe_all(state) do
+    Enum.each(state.watched_workspaces, fn workspace_id ->
+      Phoenix.PubSub.unsubscribe(DevIde.PubSub, Audit.topic(workspace_id))
+    end)
+
+    %{state | watched_workspaces: MapSet.new()}
   end
 
   defp cast_card_event(user_id, event) do
@@ -316,6 +349,23 @@ defmodule DevIDE.Mobile.UserObserver do
   end
 
   defp maybe_broadcast_card_created(_card, _operation), do: :ok
+
+  defp maybe_persist_card_created(card, :create) do
+    case Notifications.deliver_mobile_card(card) do
+      {:ok, notification, _status} ->
+        meta =
+          card.meta
+          |> Map.put(:notification_id, notification.id)
+          |> Map.put(:push_allowed, Notifications.channel_enabled?(notification, "push"))
+
+        %{card | meta: meta}
+
+      _ ->
+        card
+    end
+  end
+
+  defp maybe_persist_card_created(card, _operation), do: card
 
   defp event_card_attrs(user_id, %Event{} = event) do
     workspace_id = event.workspace_id

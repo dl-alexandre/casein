@@ -64,6 +64,45 @@ for tok, val in tokens.items():
 "
 }
 
+# Return 0 iff `token` is registered for `workspace_id` in the merged registry
+# (env file + runtime store), using the same precedence as the lookup above.
+# Prints nothing. An empty token is never registered.
+# Args: env_file workspace_id token
+workspace_scoped_token_is_registered_for() {
+  local env_file="$1"
+  local workspace_id="$2"
+  local token="$3"
+
+  [[ -n "$token" ]] || return 1
+
+  workspace_scoped_token_read_json "$env_file" |
+    WORKSPACE_ID="$workspace_id" TOKEN="$token" \
+      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.devide/workspace-api-tokens.json}" \
+      python3 -c "
+import json, os, sys
+
+tokens = {}
+try:
+    with open(os.environ['TOKEN_STORE']) as f:
+        data = json.load(f)
+    if isinstance(data, dict):
+        tokens.update(data)
+except Exception:
+    pass
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, dict):
+        tokens.update(data)
+except Exception:
+    pass
+
+val = tokens.get(os.environ['TOKEN'])
+workspace_id = os.environ['WORKSPACE_ID']
+ok = val == workspace_id or (isinstance(val, list) and workspace_id in val)
+sys.exit(0 if ok else 1)
+"
+}
+
 # Ensure env file maps a scoped token → workspace_id.
 # Prints two lines: scoped_token, then merged JSON (caller uses mapfile).
 # Args: env_file workspace_id

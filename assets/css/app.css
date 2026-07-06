@@ -426,6 +426,28 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: none;
 }
 
+.mobile-pane-rail {
+  display: none;
+}
+
+.mobile-pane-rail__track {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-sky-400) 44%, transparent);
+  color: oklch(97% 0.01 250);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-sky-200) 22%, transparent),
+    0 8px 20px rgb(0 0 0 / 0.28);
+  opacity: 0.82;
+  transition:
+    background-color 140ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
 #devide-clipboard-toast {
   position: fixed;
   left: 50%;
@@ -644,6 +666,77 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .workspace-main-header [id^="session-dropdown-"],
   .workspace-main-header [id^="window-dropdown-"] {
     display: none !important;
+  }
+
+  [data-mobile-focus-layout="true"] {
+    --devide-mobile-pane-rail-hit: 2.75rem;
+  }
+
+  /* When the pane is tmux-zoomed the surface already fills the window natively, so
+     skip the crop-transform (it would double-scale). The rails still render — the
+     focus layout stays on for a zoomed multi-pane window so you can switch panes. */
+  [data-mobile-focus-layout="true"]:not([data-window-zoomed="true"]) [data-terminal-surface-mount] {
+    transform:
+      scale(var(--devide-mobile-pane-scale, 1))
+      translate(
+        calc(-1 * var(--devide-mobile-pane-left, 0%)),
+        calc(-1 * var(--devide-mobile-pane-top, 0%))
+      );
+    transform-origin: top left;
+    will-change: transform;
+  }
+
+  [data-mobile-focus-layout="true"] > section[data-pane-id] {
+    transition:
+      border-color 140ms ease,
+      opacity 140ms ease;
+  }
+
+  [data-mobile-focus-layout="true"] > section[data-pane-id][data-mobile-pane-active="true"] {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 20;
+    border-color: color-mix(in oklch, var(--color-sky-400) 42%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-sky-400) 18%, transparent);
+  }
+
+  [data-mobile-focus-layout="true"] > section[data-pane-id][data-mobile-pane-active="false"] {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  [data-mobile-focus-layout="true"] > .preview-pane-overlay[data-mobile-pane-active="true"] {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 35 !important;
+    contain: layout;
+  }
+
+  [data-mobile-focus-layout="true"] > .preview-pane-overlay[data-mobile-pane-active="false"] {
+    display: none !important;
+  }
+
+  [data-mobile-focus-layout="true"] .mobile-pane-rail {
+    position: absolute;
+    z-index: 50;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    touch-action: manipulation;
+  }
+
+  [data-mobile-focus-layout="true"] .mobile-pane-rail:active .mobile-pane-rail__track,
+  [data-mobile-focus-layout="true"] .mobile-pane-rail:focus-visible .mobile-pane-rail__track {
+    background: color-mix(in oklch, var(--color-sky-300) 72%, transparent);
+    opacity: 1;
+    transform: scale(1.04);
   }
 }
 

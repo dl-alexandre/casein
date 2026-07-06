@@ -66,9 +66,30 @@ materialize_mcp() {
   bash "$script"
 }
 
+# Run materialize_mcp, fail open, but surface the failure. The materializer's
+# stdout can contain tokens, so it is captured and redacted rather than echoed.
+materialize_mcp_optional() {
+  local out err detail
+  out="$(mktemp)"
+  err="$(mktemp)"
+
+  if ! materialize_mcp >"$out" 2>"$err"; then
+    detail="$(<"$err")"
+    if [[ -s "$out" ]]; then
+      detail="${detail}"$'\n'"materialize-agent-mcp.sh wrote $(wc -c <"$out") bytes to stdout; redacted because it may contain tokens"
+    fi
+    echo "warn: materialize-agent-mcp.sh failed — continuing in degraded mode" >&2
+    if [[ -n "$detail" ]]; then
+      printf '%s\n' "${detail:0:1200}" >&2
+    fi
+  fi
+
+  rm -f "$out" "$err"
+}
+
 export_agent_env() {
   agent_env_resolve
-  materialize_mcp >/dev/null 2>&1 || true
+  materialize_mcp_optional
   agent_env_export_runtime_paths
 
   local key
@@ -230,7 +251,6 @@ launch_agent() {
   fi
 
   agent_env_resolve
-  materialize_mcp >/dev/null
   agent_env_export_runtime_paths
 
   local launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
@@ -240,9 +260,13 @@ launch_agent() {
 
   case "$runtime" in
     grok|codex|claude|opencode|agent)
+      # The launcher owns materialization (visible-failure path) for these.
       exec bash "$launcher" "$runtime" "$@"
       ;;
     *)
+      # Arbitrary runtimes skip the launcher, so materialize here — fail open
+      # but loudly.
+      materialize_mcp_optional
       local bin
       bin="$(real_agent_bin "$runtime")"
       if [[ -z "$bin" ]]; then

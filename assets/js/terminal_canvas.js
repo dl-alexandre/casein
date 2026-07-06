@@ -25,6 +25,16 @@
  * "canvas"`. Falls back to the DOM renderer if a 2D context isn't available.
  */
 import {remapColor, termVar} from "./terminal_themes"
+import {
+  BOLD,
+  FAINT,
+  INVERSE,
+  ITALIC,
+  OVERLINE,
+  STRIKE,
+  UNDERLINE,
+  effectiveCellFlags
+} from "./terminal_cell_flags.mjs"
 
 export function canvasRendererEnabled(hook) {
   try {
@@ -80,15 +90,6 @@ export function paintCanvasCellsCoalesced(hook, pre, rows, metricsFn, domFallbac
     }
   })
 }
-
-// Cell flag bits (mirror DevIDE.Previews / Ghostty.Terminal.Cell).
-const BOLD = 1
-const ITALIC = 2
-const FAINT = 4
-const UNDERLINE = 8
-const STRIKE = 16
-const INVERSE = 32
-const OVERLINE = 128
 
 // Runs of ASCII printables advance exactly one cell each in a monospace font
 // and can be drawn as a single string; anything else is drawn per cell.
@@ -229,13 +230,13 @@ function paintRow(ctx, row, r, opts) {
 
   let col = 0
   while (col < row.length) {
-    const [, , , flags0] = row[col]
+    const [char0, , , flags0] = row[col]
     // Group a run of cells with identical style (RLE) into one bg fill + text.
     let end = col
     const key = styleKey(row[col])
     while (end < row.length && styleKey(row[end]) === key) end += 1
 
-    const flags = flags0 || 0
+    const flags = effectiveCellFlags(char0, flags0 || 0)
     const inverse = flags & INVERSE
     let cellFg = colorString(row[col][1], fg)
     let cellBg = row[col][2] ? colorString(row[col][2], bg) : null
@@ -275,41 +276,22 @@ function paintRow(ctx, row, r, opts) {
         }
       }
       ctx.globalAlpha = 1
-      paintDecorations(ctx, flags, x, y, runW, ch, cellFg, {row, start: col, end, cw})
+      paintDecorations(ctx, flags, x, y, runW, ch, cellFg)
     }
 
     col = end
   }
 }
 
-function paintDecorations(ctx, flags, x, y, w, h, color, cells) {
+function paintDecorations(ctx, flags, x, y, w, h, color) {
   if (!(flags & (UNDERLINE | STRIKE | OVERLINE))) return
   ctx.strokeStyle = color
   ctx.lineWidth = Math.max(1, Math.round(h / 16))
   ctx.beginPath()
   if (flags & UNDERLINE) line(ctx, x, y + h - ctx.lineWidth, w)
   if (flags & STRIKE) line(ctx, x, y + h / 2, w)
-  if (flags & OVERLINE) overlineVisibleCells(ctx, x, y + ctx.lineWidth, cells)
+  if (flags & OVERLINE) line(ctx, x, y + ctx.lineWidth, w)
   ctx.stroke()
-}
-
-function overlineVisibleCells(ctx, x, y, cells) {
-  if (!cells) return
-
-  let start = null
-  for (let index = cells.start; index < cells.end; index += 1) {
-    const visible = visibleCellChar(cells.row[index]?.[0])
-    if (visible && start === null) start = index
-    if ((!visible || index === cells.end - 1) && start !== null) {
-      const last = visible && index === cells.end - 1 ? index + 1 : index
-      line(ctx, x + (start - cells.start) * cells.cw, y, (last - start) * cells.cw)
-      start = null
-    }
-  }
-}
-
-function visibleCellChar(char) {
-  return Boolean(char && char.trim() !== "")
 }
 
 function line(ctx, x, y, w) {
@@ -318,8 +300,8 @@ function line(ctx, x, y, w) {
 }
 
 function styleKey(cell) {
-  const [, fg, bg, flags] = cell
-  return `${fg ? fg.join(",") : ""}|${bg ? bg.join(",") : ""}|${flags || 0}`
+  const [char, fg, bg, flags] = cell
+  return `${fg ? fg.join(",") : ""}|${bg ? bg.join(",") : ""}|${effectiveCellFlags(char, flags || 0)}`
 }
 
 function rowText(row) {

@@ -17,7 +17,7 @@ defmodule DevIDE.Push.Dispatcher do
   require Logger
 
   alias DevIDE.Mobile.UserObserver
-  alias DevIDE.{Alerts, Audit, Push}
+  alias DevIDE.{Alerts, Audit, Notifications, Push}
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{watched: MapSet.new()}, name: __MODULE__)
@@ -59,7 +59,7 @@ defmodule DevIDE.Push.Dispatcher do
   def handle_info({:audit_event, event}, state) do
     case Alerts.notification_for(event) do
       nil -> :ok
-      notification -> dispatch(event.workspace_id, notification)
+      notification -> dispatch(event, notification)
     end
 
     {:noreply, state}
@@ -76,12 +76,12 @@ defmodule DevIDE.Push.Dispatcher do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp dispatch(workspace_id, notification) do
+  defp dispatch(event, notification) do
     provider = Push.provider()
 
-    for entry <- Push.tokens_for(workspace_id) do
+    for entry <- Push.tokens_for(event.workspace_id) do
       case Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-             deliver(provider, entry, notification)
+             deliver_alert(provider, event, entry, notification)
            end) do
         {:ok, _pid} ->
           :ok
@@ -104,7 +104,7 @@ defmodule DevIDE.Push.Dispatcher do
 
     for entry <- entries do
       case Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-             deliver(provider, entry, notification)
+             deliver_mobile_card(provider, entry, notification, card)
            end) do
         {:ok, _pid} ->
           :ok
@@ -139,24 +139,83 @@ defmodule DevIDE.Push.Dispatcher do
 
   defp mobile_card_recipient?(_entry, _card), do: false
 
+  defp deliver_alert(provider, event, %{user_id: user_id} = entry, notification)
+       when is_binary(user_id) do
+    case Notifications.deliver_alert_event(event, user_id) do
+      {:ok, durable, _status} ->
+        if Notifications.channel_enabled?(durable, "push") do
+          deliver(provider, entry, Map.put(notification, :notification_id, durable.id))
+        else
+          :ok
+        end
+
+      :ignored ->
+        :ok
+
+      {:error, changeset} ->
+        Logger.warning("failed to persist alert notification: #{inspect(changeset.errors)}")
+        deliver(provider, entry, notification)
+    end
+  end
+
+  defp deliver_alert(provider, _event, entry, notification) do
+    deliver(provider, entry, notification)
+  end
+
+  defp deliver_mobile_card(provider, entry, notification, card) do
+    if card_push_allowed?(card) do
+      deliver(provider, entry, maybe_put_notification_id(notification, card))
+    else
+      :ok
+    end
+  end
+
+  defp card_push_allowed?(%{meta: %{push_allowed: false}}), do: false
+  defp card_push_allowed?(%{meta: %{"push_allowed" => false}}), do: false
+  defp card_push_allowed?(_card), do: true
+
+  defp maybe_put_notification_id(notification, %{meta: meta}) when is_map(meta) do
+    case Map.get(meta, :notification_id) || Map.get(meta, "notification_id") do
+      id when is_binary(id) -> Map.put(notification, :notification_id, id)
+      _ -> notification
+    end
+  end
+
+  defp maybe_put_notification_id(notification, _card), do: notification
+
   defp deliver(provider, %{token: token, platform: platform}, notification) do
+    emit_push(:attempt, platform, notification)
+
     case provider.push(token, platform, notification) do
       :ok ->
+        emit_push(:success, platform, notification)
         :ok
 
       {:error, reason} = error ->
-        if invalid_token_error?(reason), do: Push.unregister(token)
+        Push.record_failure(token, reason)
         Logger.warning("push provider #{inspect(provider)} returned #{inspect(error)}")
+        emit_push(:failure, platform, notification, reason)
         error
     end
   rescue
     e ->
+      Push.record_failure(token, {:exception, e.__struct__})
+      emit_push(:failure, platform, notification, e.__struct__)
       Logger.warning("push provider #{inspect(provider)} crashed: #{inspect(e)}")
   end
 
-  defp invalid_token_error?(:invalid_token), do: true
-  defp invalid_token_error?({:invalid_token, _reason}), do: true
-  defp invalid_token_error?({:fcm_status, status}) when status in [404, 410], do: true
-  defp invalid_token_error?({:apns_status, status, _reason}) when status in [400, 410], do: true
-  defp invalid_token_error?(_reason), do: false
+  defp emit_push(operation, platform, notification, reason \\ nil) do
+    :telemetry.execute(
+      [:dev_ide, :push, :delivery],
+      %{count: 1},
+      %{
+        operation: operation,
+        platform: platform,
+        action: notification[:action],
+        workspace_id: notification[:workspace_id],
+        notification_id: notification[:notification_id],
+        reason: inspect(reason)
+      }
+    )
+  end
 end

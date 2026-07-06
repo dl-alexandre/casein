@@ -196,17 +196,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               ></span>
               <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.command}</span>
             </a>
-            <a
-              href={window_href(@workspace_id, window.id, path_base: @path_base)}
-              target="_blank"
-              rel="noreferrer"
-              tabindex="-1"
-              class="shrink-0 rounded p-0.5 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
-              title="Open in new tab"
-              aria-label={"Open window " <> window.name <> " in new tab"}
-            >
-              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-            </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
                 <.form
@@ -942,17 +931,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 label={window.name}
                 kind="window"
               />
-              <a
-                href={window_share_href(@workspace_id, @share_session_id, window.id, @path_base)}
-                target="_blank"
-                rel="noreferrer"
-                tabindex="-1"
-                class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
-                title="Open in new tab"
-                aria-label={"Open window " <> window.name <> " in new tab"}
-              >
-                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-              </a>
               <button
                 :if={window.pane_count > 0}
                 id={"window-panes-toggle-" <> window.dom_frag}
@@ -1509,20 +1487,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     DevIdeWeb.Endpoint.url() <> href
   end
 
-  defp window_share_href(workspace_id, session_id, window_id, path_base),
-    do: share_path(workspace_id, session_id, window_id, path_base)
-
   defp window_share_url(workspace_id, session_id, window_id, path_base),
     do: share_url(workspace_id, session_id, window_id, path_base: path_base)
-
-  defp share_path(workspace_id, session_id, window_id, path_base)
-       when is_binary(session_id) and session_id != "" and is_binary(window_id) and
-              window_id != "" do
-    session_window_href(workspace_id, session_id, window_id, path_base: path_base)
-  end
-
-  defp share_path(workspace_id, _session_id, window_id, path_base),
-    do: window_href(workspace_id, window_id, path_base: path_base)
 
   defp window_href(workspace_id, window_id, opts) when is_list(opts),
     do: query_href(path_base(workspace_id, opts[:path_base]), window: window_id)

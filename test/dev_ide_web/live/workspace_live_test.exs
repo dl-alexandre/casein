@@ -7,6 +7,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   require Phoenix.ChannelTest
   import Phoenix.LiveViewTest
 
+  alias DevIDE.ArtifactProjects
   alias DevIDE.Audit
   alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Runs.Ledger
@@ -312,6 +313,31 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render_async(view, 5_000)
 
     assert :counters.get(counter, 1) == 2
+  end
+
+  test "forward-auth picker filters an over-broad workspace list to the current owner", %{
+    conn: conn
+  } do
+    Application.put_env(:dev_ide, :forward_auth, true)
+
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
+        200,
+        Jason.encode!([
+          Map.merge(workspace_index_payload("alpha"), %{"user" => "alice"}),
+          Map.merge(workspace_index_payload("beta"), %{"user" => "bob"})
+        ])
+      )
+    end)
+
+    conn = put_req_header(conn, "x-auth-request-email", "alice@example.com")
+    {:ok, view, html} = live(conn, ~p"/workspaces")
+
+    assert html =~ "alpha"
+    refute html =~ "beta"
+    refute has_element?(view, "button[phx-click='toggle_all']")
   end
 
   test "shows actionable error when the workspace source is unreachable", %{
@@ -2872,6 +2898,53 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tree-new-name-input[autofocus]")
   end
 
+  test "artifacts tab lists workspace artifact projects", %{conn: conn} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-artifacts")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    artifact_root = Path.join(workspace_root, "artifacts")
+    File.mkdir_p!(workspace_path)
+    init_git_repo!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_artifact_root = Application.get_env(:dev_ide, :artifact_projects_root)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:artifact_projects_root, prev_artifact_root)
+    end)
+
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-1", %{
+               name: "Cockpit Artifact",
+               prompt: "Show it in the workspace panel"
+             })
+
+    html = render_click(view, "switch_tab", %{"tab" => "artifacts"})
+
+    assert html =~ "artifact-gallery-panel"
+    assert html =~ "Cockpit Artifact"
+    assert html =~ "Show it in the workspace panel"
+    assert html =~ project.preview_url
+    assert html =~ "artifact:serve"
+    assert html =~ "artifact:open"
+  end
+
   test "allowed preview URLs open in an iframe pane", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -3117,6 +3190,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
         "path" => workspace_path
       })
     )
+  end
+
+  defp init_git_repo!(path) do
+    File.write!(Path.join(path, "README.md"), "# Workspace\n")
+    git!(path, ["init", "--initial-branch=main"])
+    git!(path, ["config", "user.email", "test@example.com"])
+    git!(path, ["config", "user.name", "DevIDE Test"])
+    git!(path, ["add", "README.md"])
+    git!(path, ["commit", "-m", "init"])
+  end
+
+  defp git!(cwd, args) do
+    case System.cmd("git", args, cd: cwd, stderr_to_stdout: true) do
+      {output, 0} -> output
+      {output, status} -> raise "git #{Enum.join(args, " ")} failed (#{status}): #{output}"
+    end
   end
 
   @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_next_window fake_tmux_scrollback fake_tmux_test_pid)a

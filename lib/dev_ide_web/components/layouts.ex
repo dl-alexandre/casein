@@ -50,6 +50,11 @@ defmodule DevIdeWeb.Layouts do
             <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
           </li>
           <li>
+            <.link navigate={~p"/notifications"} class="btn btn-ghost">
+              <.icon name="hero-bell" class="size-4" /> Notifications
+            </.link>
+          </li>
+          <li>
             <.theme_toggle />
           </li>
           <li>

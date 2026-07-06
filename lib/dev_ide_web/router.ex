@@ -123,6 +123,7 @@ defmodule DevIdeWeb.Router do
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
       live "/", WorkspaceLive.Show, :lan_path
+      live "/notifications", NotificationLive.Index, :index
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show

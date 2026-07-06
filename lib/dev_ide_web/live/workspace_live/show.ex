@@ -11,9 +11,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   """
   use DevIdeWeb, :live_view
 
-  alias DevIDE.Agents
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
+  alias DevIDE.ArtifactProjects
   alias DevIDE.Audit
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Files
@@ -23,11 +23,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Links.Open
   alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewPanes
   alias DevIDE.Terminals
   alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
@@ -35,15 +32,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
+  alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
   alias DevIdeWeb.WorkspaceLive.Show.PanelGate
+  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
+  alias DevIdeWeb.WorkspaceLive.Show.PalettePanel
+  alias DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEvents
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
@@ -51,17 +50,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   import DevIdeWeb.WorkspaceLive.Show.Context
-  import DevIdeWeb.WorkspaceLive.Show.UI
-  import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
-  import DevIdeWeb.WorkspaceLive.Show.SidePanels
-  import DevIdeWeb.WorkspaceLive.Show.RunPanel
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  import DevIdeWeb.WorkspaceLive.Show.WorkspaceShell, only: [workspace_shell: 1]
 
   @ghostty_term_id "raw-term-ghostty"
   @preview_demo_port 5173
   @preview_demo_open_attempts 8
   @preview_demo_open_delay_ms 400
+
+  @pane_layout_events ~w(
+    split_right split_down pane:close_focused pane:close_others pane:focus_next
+    pane:focus_previous pane:zoom_focused pane:ensure_focus_zoom retry_pane
+    equalize_layout pane:cycle_layout ghostty:snapshot snapshot_all nav:dir
+  )
 
   @type pane :: %{
           ghostty_term: pid() | nil,
@@ -105,7 +107,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
-    pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
+    pane:zoom_focused pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
@@ -113,7 +115,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
-    search:run annotation:open preview:open preview-pane:enter preview-pane:exit
+    search:run annotation:open artifact:refresh artifact:serve artifact:open
+    preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     run:cancel set_log_service
@@ -236,7 +239,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # connected mount (LiveView mounts twice) hydrates it a frame later.
         |> assign(
           :preview_panes,
-          if(connected?(socket), do: load_preview_panes(ws, path_result), else: [])
+          if(connected?(socket),
+            do: PreviewPaneEvents.load_preview_panes(ws, path_result),
+            else: []
+          )
         )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
@@ -270,6 +276,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_artifacts, [])
         |> assign(:selected_run_failure_reason, nil)
         |> assign(:selected_run_can_retry, false)
+        |> assign(:artifact_projects, [])
+        |> assign(:artifact_projects_error, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -590,6 +598,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
       end
 
+    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
+
     {:noreply, socket}
   end
 
@@ -706,254 +716,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("pane:history_close" = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
-  # Phase 2: Real tmux splits (independent panes)
-  def handle_event("split_right", _params, socket) do
-    do_split(socket, :horizontal)
-  end
+  # Tmux pane layout events are handled by PaneLayoutEvents (extracted from
+  # this module — pure code motion).
+  def handle_event(event, params, socket) when event in @pane_layout_events,
+    do: PaneLayoutEvents.handle_event(event, params, socket)
 
-  def handle_event("split_down", _params, socket) do
-    do_split(socket, :vertical)
-  end
-
-  def handle_event("workspace:start", _params, socket) do
-    case Workspaces.start(socket.assigns.workspace.id, current_user_email(socket)) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> assign(:workspace_start_error, nil)
-         |> refresh_workspace_assign()
-         |> put_flash(:info, "Workspace start requested. Retry the terminal once it is running.")}
-
-      {:error, reason} ->
-        message = format_workspace_action_error(reason)
-
-        {:noreply,
-         socket
-         |> assign(:workspace_start_error, message)
-         |> put_flash(:error, "Could not start workspace: #{message}")}
-    end
-  end
-
-  def handle_event("workspace:stop", _params, socket) do
-    case Workspaces.stop(socket.assigns.workspace.id, current_user_email(socket)) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> refresh_workspace_assign()
-         |> put_flash(:info, "Workspace stop requested.")}
-
-      {:error, reason} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not stop workspace: #{format_workspace_action_error(reason)}"
-         )}
-    end
-  end
-
-  # ---- tmux-native pane controls -------------------------------------------
-  # Every pane operation targets the attached session's active pane via tmux,
-  # mirroring the C-b bindings (x, o, z, space). No-ops without a tmux session
-  # (e.g. non-terminal tabs).
-
-  def handle_event("pane:close_focused", _params, socket) do
-    # Re-read live tmux topology before the last-pane guard and pane target.
-    # The cached count/active pane can lag reality (e.g. a degraded socket on
-    # a draining release, or a split that hasn't broadcast yet), which made
-    # close wrongly refuse with "Cannot close the last pane" on windows that
-    # actually had multiple panes. Refreshing first decides against real state.
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         socket = TerminalState.refresh_tmux_topology(socket),
-         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
-      cond do
-        tmux_active_window_pane_count(socket) > 1 ->
-          close_focused_pane(socket, session, pane_id)
-
-        # Last pane in the window: killing it removes the window (real tmux
-        # closes the window when its final pane dies). Mirror that — close the
-        # whole window — as long as another window survives. C-b x on a
-        # single-pane tab is the common way operators close a tab.
-        length(socket.assigns[:tmux_windows] || []) > 1 ->
-          close_focused_window(socket, session)
-
-        # Last pane of the last window: closing it ends this tmux session.
-        # Instead of refusing, close it and drop the operator into another
-        # existing session (only refuse when this is the only session left).
-        true ->
-          close_focused_last_window(socket, session)
-      end
-    else
-      _ -> {:noreply, socket}
-    end
-  end
-
-  def handle_event("pane:close_others", _params, socket) do
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
-         :ok <- TerminalState.tmux_adapter().kill_other_panes(session, pane_id) do
-      {:noreply,
-       socket
-       |> TerminalState.refresh_tmux_topology()
-       |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_others"})}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux panes: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("pane:focus_next", _params, socket) do
-    TerminalEvents.handle_event("pane:navigate", %{"dir" => "next"}, socket)
-  end
-
-  def handle_event("pane:focus_previous", _params, socket) do
-    TerminalEvents.handle_event("pane:navigate", %{"dir" => "prev"}, socket)
-  end
-
-  def handle_event("pane:zoom_focused", _params, socket), do: tmux_zoom_active_pane(socket)
-
-  # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
-  # Clears the recorded error and re-invokes the start helper so the
-  # user can recover without a full page reload.
-  def handle_event("retry_pane", %{"pane-id" => pane_id}, socket) do
-    if get_pane_data(socket, pane_id) do
-      {:noreply,
-       socket
-       # A manual retry is a fresh start: clear the error and reset the
-       # auto-reattach budget so the pane gets the full retry allowance again.
-       |> update_pane(pane_id, fn p ->
-         p |> Map.put(:error, nil) |> Map.put(:auto_retry_count, 0)
-       end)
-       |> start_ghostty_for_pane(pane_id)}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # Keyboard-driven pane navigation (Ctrl + Arrow keys) — tmux select-pane.
-  def handle_event("nav:dir", %{"dir" => dir_str}, socket)
-      when dir_str in ["left", "right", "up", "down"] do
-    if is_binary(socket.assigns[:tmux_session]) do
-      TerminalEvents.handle_event("pane:navigate", %{"dir" => dir_str}, socket)
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # Equalize: tmux layout preset for the active window, like C-b M-5.
-  def handle_event("equalize_layout", _params, socket) do
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         :ok <- TerminalState.tmux_adapter().select_layout(session, "tiled") do
-      {:noreply, TerminalState.refresh_tmux_topology(socket)}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not apply tmux layout: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  # Cycle the window through tmux layout presets, like C-b space.
-  def handle_event("pane:cycle_layout", _params, socket) do
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         :ok <- TerminalState.tmux_adapter().next_layout(session) do
-      {:noreply, TerminalState.refresh_tmux_topology(socket)}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not cycle tmux layout: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  # Phase 1 spike: capture the Ghostty.Terminal cell grid via
-  # Ghostty.Terminal.snapshot/2 (HTML + plain text + raw VT), write to /tmp,
-  # emit a `ghostty.raw_terminal_snapshot` audit event, and push the file paths
-  # back to the browser so the A/B harness can pick them up without filesystem
-  # access. Server-authoritative snapshots are the killer artifact the existing
-  # raw path cannot produce cleanly.
-  def handle_event("ghostty:snapshot", _params, socket) do
-    focused_id = socket.assigns.focused_pane_id
-    focused = get_pane_data(socket, focused_id)
-
-    case focused && focused.ghostty_term do
-      term when is_pid(term) ->
-        ws_id = socket.assigns.workspace.id
-
-        %{base: base, files: files, preview: preview} =
-          Terminals.capture_ghostty_snapshot(term, ws_id)
-
-        DevIDE.Audit.emit!(%{
-          action: "ghostty.raw_terminal_snapshot",
-          workspace_id: ws_id,
-          actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
-          target_type: "terminal",
-          target_ref: focused_id,
-          metadata: %{"base" => base, "files" => files, "preview_bytes" => byte_size(preview)}
-        })
-
-        {:noreply,
-         socket
-         |> push_event("ghostty:snapshot:captured", %{
-           "base" => base,
-           "files" => files,
-           "preview" => preview
-         })
-         |> put_flash(:info, "Ghostty snapshot written: #{base}.html (+ .txt, .vt)")}
-
-      _ ->
-        {:noreply, push_event(socket, "ghostty:snapshot:captured", %{"error" => "no_terminal"})}
-    end
-  end
-
-  # "Snapshot all" low-pri feature: walks the current layout tree, snapshots every
-  # pane that has a live Ghostty term, emits per-pane audit, and reports total.
-  def handle_event("snapshot_all", _params, socket) do
-    ws_id = socket.assigns.workspace.id
-    actor = (socket.assigns[:current_user] || %{}) |> Map.get(:id)
-
-    panes_with_terms =
-      (socket.assigns.pane_data || %{})
-      |> Enum.map(fn {id, pane} ->
-        term = pane && pane.ghostty_term
-        if is_pid(term) and Process.alive?(term), do: {id, term}, else: nil
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    results =
-      for {pane_id, term} <- panes_with_terms do
-        %{base: base, files: files, preview: preview} =
-          Terminals.capture_ghostty_snapshot(term, ws_id)
-
-        DevIDE.Audit.emit!(%{
-          action: "ghostty.raw_terminal_snapshot",
-          workspace_id: ws_id,
-          actor_id: actor,
-          target_type: "terminal",
-          target_ref: pane_id,
-          metadata: %{"base" => base, "files" => files, "preview_bytes" => byte_size(preview)}
-        })
-
-        {pane_id, base}
-      end
-
-    msg =
-      case results do
-        [] ->
-          "No live Ghostty panes to snapshot"
-
-        list ->
-          "Snapped #{length(list)} pane(s): " <>
-            Enum.map_join(list, ", ", fn {id, b} -> "#{id}→#{b}" end)
-      end
-
-    {:noreply, put_flash(socket, :info, msg)}
-  end
+  # Workspace lifecycle and policy events are handled by WorkspacePolicyEvents
+  # (extracted from this module — pure code motion).
+  def handle_event("workspace:" <> _ = event, params, socket),
+    do: WorkspacePolicyEvents.handle_event(event, params, socket)
 
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
@@ -974,112 +745,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("notification:open_conversation", _params, socket), do: {:noreply, socket}
-
-  def handle_event("workspace:set_mode", %{"mode" => mode_str}, socket) do
-    mode = string_to_mode(mode_str)
-
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_set_workspace_mode?(policy_ctx(socket)) end, %{
-        action: "workspace.set_mode",
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id,
-        metadata: %{"requested_mode" => mode_str}
-      })
-
-    cond do
-      not Policy.Decision.allow?(decision) ->
-        {:noreply, put_flash(socket, :error, mode_change_denied_message(decision))}
-
-      mode == nil ->
-        {:noreply, socket}
-
-      true ->
-        ws_id = socket.assigns.workspace.id
-        {_, _} = Workspaces.set_mode(ws_id, mode)
-
-        _ =
-          Audit.emit!(%{
-            action: "workspace.mode_changed",
-            workspace_id: ws_id,
-            actor_id: current_actor_id(socket),
-            target_type: "workspace",
-            target_ref: ws_id,
-            metadata: %{"mode" => Atom.to_string(mode)}
-          })
-
-        {:noreply,
-         socket
-         |> assign_workspace_mode(ws_id, connected?(socket))
-         |> refresh_terminal_workspace_capability()
-         |> maybe_schedule_raw_prewarm()}
-    end
-  end
-
-  @agent_write_unlock_min_minutes 5
-  @agent_write_unlock_max_minutes 240
-
-  def handle_event("workspace:grant_agent_write_unlock", %{"minutes" => minutes_str}, socket) do
-    minutes = clamp_unlock_minutes(minutes_str)
-
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_grant_agent_write_unlock?(policy_ctx(socket)) end, %{
-        action: "workspace.agent_write_unlock_grant_attempt",
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id,
-        metadata: %{"requested_minutes" => minutes}
-      })
-
-    if Policy.Decision.allow?(decision) do
-      ws_id = socket.assigns.workspace.id
-      granter = current_actor_id(socket)
-      until = DateTime.add(DateTime.utc_now(), minutes * 60, :second)
-      {:ok, _} = Workspaces.grant_agent_write_unlock(ws_id, until, granter)
-
-      _ =
-        Audit.emit!(%{
-          action: "workspace.agent_write_unlock_granted",
-          workspace_id: ws_id,
-          actor_id: granter,
-          target_type: "workspace",
-          target_ref: ws_id,
-          metadata: %{"until" => DateTime.to_iso8601(until), "minutes" => minutes}
-        })
-
-      {:noreply,
-       socket
-       |> assign_agent_write_unlock(ws_id)
-       |> put_flash(:info, "Agent write unlocked for #{minutes} min.")}
-    else
-      {:noreply, put_flash(socket, :error, agent_write_unlock_denied_message(decision))}
-    end
-  end
-
-  def handle_event("workspace:revoke_agent_write_unlock", _params, socket) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_revoke_agent_write_unlock?(policy_ctx(socket)) end, %{
-        action: "workspace.agent_write_unlock_revoke_attempt",
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id
-      })
-
-    if Policy.Decision.allow?(decision) do
-      ws_id = socket.assigns.workspace.id
-      {:ok, _} = Workspaces.revoke_agent_write_unlock(ws_id)
-
-      _ =
-        Audit.emit!(%{
-          action: "workspace.agent_write_unlock_revoked",
-          workspace_id: ws_id,
-          actor_id: current_actor_id(socket),
-          target_type: "workspace",
-          target_ref: ws_id
-        })
-
-      {:noreply, socket |> assign_agent_write_unlock(ws_id) |> put_flash(:info, "Revoked.")}
-    else
-      {:noreply, put_flash(socket, :error, "Not allowed to revoke.")}
-    end
-  end
 
   # Run / workflow / run-ledger events are handled by RunEvents (extracted from
   # this module — pure code motion).
@@ -1144,124 +809,70 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("preview:open", %{"surface" => surface} = params, socket) do
-    open_surface_preview(socket, surface, params)
+  def handle_event("artifact:refresh", _params, socket) do
+    {:noreply, refresh_artifact_projects(socket)}
   end
 
-  def handle_event("preview:open", %{"url" => _url} = params, socket) do
-    open_preview(socket, params)
+  def handle_event("artifact:serve", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    case artifact_project_for_workspace(socket, artifact_id) do
+      {:ok, project} ->
+        case ArtifactProjects.serve(project.id) do
+          {:ok, _served} ->
+            {:noreply, refresh_artifact_projects(socket)}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> refresh_artifact_projects()
+             |> put_flash(:error, "Could not serve artifact: #{inspect(reason)}")}
+        end
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, artifact_error_message(reason))}
+    end
   end
 
-  def handle_event("preview-pane:enter", %{"pane-id" => pane_id}, socket)
-      when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "selected", %{"source" => "overlay"})
-    {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
-  end
+  def handle_event("artifact:open", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    with {:ok, project} <- artifact_project_for_workspace(socket, artifact_id),
+         {:ok, project} <- ArtifactProjects.serve(project.id),
+         url when is_binary(url) and url != "" <- project.preview_url do
+      case PreviewPaneEvents.split_workspace_preview(socket, url, %{"mode" => "tab"}) do
+        {:ok, socket} ->
+          {:noreply, refresh_artifact_projects(socket)}
 
-  def handle_event("preview-pane:enter", %{"pane_id" => pane_id}, socket)
-      when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "selected", %{"source" => "overlay"})
-    {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
-  end
+        {:error, :no_tmux_session, socket} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Start a tmux terminal session before opening a preview pane"
+           )}
 
-  def handle_event("preview-pane:exit", %{"pane-id" => pane_id}, socket)
-      when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "exited", %{"source" => "overlay"})
-    {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
-  end
-
-  def handle_event("preview-pane:exit", %{"pane_id" => pane_id}, socket)
-      when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "exited", %{"source" => "overlay"})
-    {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
-  end
-
-  def handle_event("preview-pane:back", %{"pane-id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :go_back)
-
-  def handle_event("preview-pane:back", %{"pane_id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :go_back)
-
-  def handle_event("preview-pane:forward", %{"pane-id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :go_forward)
-
-  def handle_event("preview-pane:forward", %{"pane_id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :go_forward)
-
-  def handle_event("preview-pane:refresh", %{"pane-id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :reload)
-
-  def handle_event("preview-pane:refresh", %{"pane_id" => pane_id}, socket),
-    do: handle_preview_pane_history(socket, pane_id, :reload)
-
-  def handle_event("preview-pane:recover", %{"pane-id" => pane_id}, socket),
-    do: handle_preview_pane_recover(socket, pane_id)
-
-  def handle_event("preview-pane:recover", %{"pane_id" => pane_id}, socket),
-    do: handle_preview_pane_recover(socket, pane_id)
-
-  def handle_event("preview-pane:close", %{"pane-id" => pane_id}, socket),
-    do: handle_preview_pane_close(socket, pane_id)
-
-  def handle_event("preview-pane:close", %{"pane_id" => pane_id}, socket),
-    do: handle_preview_pane_close(socket, pane_id)
-
-  def handle_event("preview-pane:telemetry", %{"pane-id" => pane_id} = params, socket)
-      when is_binary(pane_id) do
-    metadata =
-      params
-      |> Map.get("metadata", %{})
-      |> sanitize_preview_telemetry_metadata()
-      |> Map.merge(%{
-        "mode" => Map.get(params, "mode"),
-        "url" => Map.get(params, "url")
-      })
-      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-      |> Map.new()
-
-    params
-    |> Map.get("event", "interaction")
-    |> then(&record_preview_activity(socket, pane_id, &1, metadata))
-
-    {:noreply, socket}
-  end
-
-  def handle_event("preview-pane:telemetry", %{"pane_id" => pane_id} = params, socket)
-      when is_binary(pane_id) do
-    handle_event("preview-pane:telemetry", Map.put(params, "pane-id", pane_id), socket)
-  end
-
-  def handle_event("preview-pane:snapshot-click", %{"pane-id" => pane_id} = params, socket)
-      when is_binary(pane_id) do
-    coords = %{
-      "x" => Map.get(params, "x"),
-      "y" => Map.get(params, "y")
-    }
-
-    record_preview_activity(socket, pane_id, "snapshot_click", coords)
-
-    socket =
-      with :ok <- authorize_preview_pane(socket, pane_id),
-           {:ok, registration} <- PreviewPanes.click_snapshot(pane_id, coords) do
-        pane = preview_pane_payload(registration)
-
-        socket
-        |> assign(
-          :preview_panes,
-          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
-        )
-        |> push_event("devide:reload_preview_iframes", %{
-          "action" => "reload_preview_iframe",
-          "force" => true,
-          "pane_id" => pane_id,
-          "workspace_id" => socket.assigns.workspace.id
-        })
-      else
-        _ -> socket
+        {:error, reason, socket} ->
+          {:noreply,
+           put_flash(socket, :error, "Failed to open artifact preview: #{inspect(reason)}")}
       end
+    else
+      nil ->
+        {:noreply,
+         socket
+         |> refresh_artifact_projects()
+         |> put_flash(:error, "Artifact preview URL is not available yet")}
 
-    {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, artifact_error_message(reason))}
+    end
   end
+
+  # Preview open + preview-pane overlay events are handled by PreviewPaneEvents
+  # (extracted from this module — pure code motion).
+  def handle_event("preview:open" = event, params, socket),
+    do: PreviewPaneEvents.handle_event(event, params, socket)
+
+  def handle_event("preview-pane:" <> _ = event, params, socket),
+    do: PreviewPaneEvents.handle_event(event, params, socket)
 
   def handle_event("set_log_service" = event, params, socket),
     do: LogsEvents.handle_event(event, params, socket)
@@ -1277,75 +888,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("file:" <> _ = event, params, socket),
     do: FileEvents.handle_event(event, params, socket)
-
-  # Splits are real tmux panes: `split-window` targets the attached
-  # session's active pane, so tmux owns the layout — identical to typing
-  # C-b % / C-b " inside the terminal, and visible to every attached
-  # client. The browser keeps a single attachment. (The previous design —
-  # one derived tmux session per browser pane with a LiveView-side layout
-  # tree — is no longer reachable from the split buttons.)
-  defp do_split(socket, direction) do
-    socket = refresh_workspace_mode(socket)
-
-    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      session = socket.assigns.tmux_session
-      flag = if direction == :horizontal, do: "h", else: "v"
-
-      target_pane =
-        socket.assigns[:tmux_active_pane_id] ||
-          Terminals.tmux_topology_snapshot(session).active_pane_id
-
-      with pane_id when is_binary(pane_id) <- target_pane,
-           {:ok, _new_pane_id} <-
-             TerminalState.tmux_adapter().split_pane(session, pane_id, flag,
-               cwd: terminal_window_cwd(socket)
-             ) do
-        {:noreply,
-         socket
-         |> push_event("devide:pane:split", %{})
-         |> TerminalState.refresh_tmux_topology()
-         |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})}
-      else
-        nil ->
-          {:noreply, put_flash(socket, :error, "No active tmux pane to split.")}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
-      end
-    else
-      {:noreply, socket}
-    end
-  end
-
-  # Toggle tmux zoom on the active pane (resize-pane -Z), like C-b z.
-  defp tmux_zoom_active_pane(socket) do
-    with session when is_binary(session) <- socket.assigns[:tmux_session],
-         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
-         :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id) do
-      {:noreply,
-       socket
-       |> TerminalState.refresh_tmux_topology()
-       |> TerminalState.patch_current_session()
-       |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not zoom tmux pane: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  defp tmux_active_window_pane_count(socket) do
-    tmux_window_pane_count(
-      socket.assigns[:tmux_panes] || [],
-      socket.assigns[:tmux_active_window_id]
-    )
-  end
-
-  defp tmux_window_pane_count(panes, window_id) do
-    Enum.count(panes, &(&1.window_id == window_id))
-  end
 
   @impl true
   # Panel LiveComponents cannot write the root flash or refresh Show-owned
@@ -1638,7 +1180,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       when is_integer(attempt) and attempt > 0 do
     url = "http://localhost:#{@preview_demo_port}/"
 
-    case split_workspace_preview(socket, url, %{}) do
+    case PreviewPaneEvents.split_workspace_preview(socket, url, %{}) do
       {:ok, socket} ->
         {:noreply,
          put_flash(socket, :info, "Preview demo opened at http://localhost:#{@preview_demo_port}")}
@@ -1682,115 +1224,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_info({:preview_pane_registered, payload}, socket) do
-    pane = preview_pane_payload(payload)
+  def handle_info({:preview_pane_registered, _} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-    if preview_pane_workspace_match?(socket, pane.workspace_id) do
-      existing = Map.get(socket.assigns[:preview_panes] || %{}, pane.pane_id)
+  def handle_info({:preview_pane_removed, _} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-      socket =
-        assign(
-          socket,
-          :preview_panes,
-          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
-        )
+  def handle_info({:preview_observation, _} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-      socket =
-        if preview_pane_heartbeat?(existing, pane) do
-          # A pure heartbeat re-broadcast (same display URL): keep the latest
-          # fields but don't re-highlight or restore tmux focus, which re-enters
-          # the focus path and churns the live preview on every heartbeat.
-          socket
-        else
-          socket
-          |> assign(:ui_highlight_pane_id, pane.pane_id)
-          |> refresh_terminal_surface_pane_id()
-          |> TerminalState.restore_operator_tmux_focus()
-        end
+  def handle_info({:browser_control, %{"action" => "reload_preview_iframe"}} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
+  def handle_info({:browser_control, %{"action" => "reload_page"}} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-  def handle_info({:preview_pane_removed, payload}, socket) do
-    pane_id = payload_value(payload, :pane_id)
-    workspace_id = payload_value(payload, :workspace_id)
+  def handle_info({:browser_control, %{"action" => "focus_preview_pane"}} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
-    if preview_pane_workspace_match?(socket, workspace_id) do
-      socket =
-        socket
-        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-        |> maybe_clear_entered_preview_pane(pane_id)
-        |> refresh_terminal_surface_pane_id()
-
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
-
-  def handle_info(
-        {:preview_observation,
-         %{preview_id: preview_id, session_id: _session_id, observation: observation}},
-        socket
-      )
-      when is_binary(preview_id) do
-    case find_preview_panes_by_preview_id(socket, preview_id) do
-      [] ->
-        # Workspace isn't currently showing this preview — nothing to update.
-        {:noreply, socket}
-
-      matches ->
-        {preview_panes, reload_pane_ids} =
-          Enum.reduce(matches, {socket.assigns[:preview_panes] || %{}, []}, fn {pane_id, pane},
-                                                                               {panes, reloads} ->
-            updated =
-              apply_observation_to_preview_pane(socket.assigns.workspace, pane, observation)
-
-            reloads =
-              if preview_pane_url_changed?(pane, updated), do: [pane_id | reloads], else: reloads
-
-            {Map.put(panes, pane_id, updated), reloads}
-          end)
-
-        socket = assign(socket, :preview_panes, preview_panes)
-
-        socket =
-          Enum.reduce(reload_pane_ids, socket, fn pane_id, acc ->
-            push_event(acc, "devide:reload_preview_iframes", %{"pane_id" => pane_id})
-          end)
-
-        {:noreply, socket}
-    end
-  end
-
-  def handle_info({:preview_observation, _payload}, socket), do: {:noreply, socket}
-
-  def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
-    # An explicit agent reload tool: force the frame to reload even when the URL
-    # is unchanged (the soft path only re-points src on a real URL change).
-    {:noreply,
-     push_event(socket, "devide:reload_preview_iframes", Map.put(payload, "force", true))}
-  end
-
-  def handle_info({:browser_control, %{"action" => "reload_page"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:reload_page", payload)}
-  end
-
-  def handle_info({:browser_control, %{"action" => "focus_preview_pane"} = payload}, socket) do
-    {:noreply,
-     TerminalState.focus_activity_target(
-       socket,
-       Map.get(payload, "tmux_session"),
-       Map.get(payload, "pane_id")
-     )}
-  end
-
-  def handle_info({:browser_control, %{"action" => "preview_pane_action"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
-  end
+  def handle_info({:browser_control, %{"action" => "preview_pane_action"}} = msg, socket),
+    do: PreviewPaneEvents.handle_info(msg, socket)
 
   def handle_info({:open_target, target}, socket) do
     open_resolved_target(socket, target)
@@ -2144,9 +1597,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp path_from_loc_result({:ok, {:remote, _host, path}}) when is_binary(path), do: path
   defp path_from_loc_result(_), do: nil
 
-  defp assign_workspace_mode(socket, ws_id, connected? \\ true)
+  @doc false
+  def assign_workspace_mode(socket, ws_id, connected? \\ true)
 
-  defp assign_workspace_mode(socket, ws_id, true) do
+  def assign_workspace_mode(socket, ws_id, true) do
     {mode, source} = Workspaces.mode_for(ws_id)
 
     socket
@@ -2155,7 +1609,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign_policy_permissions()
   end
 
-  defp assign_workspace_mode(socket, _ws_id, false) do
+  def assign_workspace_mode(socket, _ws_id, false) do
     socket
     |> assign_policy_permissions()
   end
@@ -2202,7 +1656,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp assign_agent_write_unlock(socket, ws_id) do
+  @doc false
+  def assign_agent_write_unlock(socket, ws_id) do
     status =
       case Workspaces.agent_write_unlock_for(ws_id) do
         {:active, until, by} -> %{status: :active, until: until, by: by}
@@ -2372,12 +1827,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:db_isolation, iso)
   end
 
-  defp string_to_mode("manual"), do: :manual
-  defp string_to_mode("review"), do: :review
-  defp string_to_mode("agent_write_locked"), do: :agent_write_locked
-  defp string_to_mode("shared_stage_guarded"), do: :shared_stage_guarded
-  defp string_to_mode(_), do: nil
-
   # Structural authorization gate, attached via attach_hook/4 so it runs before
   # every handle_event clause. Coverage is centralized here instead of being a
   # per-handler opt-in: any event not in @known_events (and not covered by the
@@ -2444,134 +1893,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:last_decision, decision)
     |> put_flash(:error, "That action isn't available here.")
-  end
-
-  defp mode_change_denied_message(%Policy.Decision{reason: :config_override}),
-    do: "Workspace mode is pinned by configuration."
-
-  defp mode_change_denied_message(%Policy.Decision{reason: :forbidden}),
-    do: "Only the workspace owner can change mode."
-
-  defp mode_change_denied_message(%Policy.Decision{reason: reason}) when not is_nil(reason),
-    do: "Cannot change mode: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
-
-  defp mode_change_denied_message(_), do: "Cannot change workspace mode."
-
-  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :config_override}),
-    do: "Workspace mode is pinned by configuration."
-
-  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :forbidden}),
-    do: "Only the workspace owner can grant agent write."
-
-  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :requires_manual_mode}),
-    do: "Agent write unlock requires manual mode."
-
-  defp agent_write_unlock_denied_message(%Policy.Decision{reason: reason})
-       when not is_nil(reason),
-       do: "Cannot unlock agent write: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
-
-  defp agent_write_unlock_denied_message(_), do: "Cannot unlock agent write."
-
-  defp clamp_unlock_minutes(minutes_str) do
-    case Integer.parse(to_string(minutes_str)) do
-      {n, _} -> n |> max(@agent_write_unlock_min_minutes) |> min(@agent_write_unlock_max_minutes)
-      :error -> @agent_write_unlock_min_minutes
-    end
-  end
-
-  defp close_focused_pane(socket, session, pane_id) do
-    case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
-      :ok ->
-        socket = socket |> TerminalState.refresh_tmux_topology()
-
-        socket =
-          if tmux_active_window_pane_count(socket) <= 1,
-            do: assign(socket, :window_zoomed?, false),
-            else: socket
-
-        {:noreply,
-         socket
-         |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
-    end
-  end
-
-  # Close the active window (its final pane is being closed). Mirrors tmux,
-  # where killing the last pane removes the window.
-  defp close_focused_window(socket, session) do
-    window_id = socket.assigns[:tmux_active_window_id]
-
-    case TerminalState.tmux_adapter().kill_window(session, window_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> assign(:window_zoomed?, false)
-         |> assign(:tmux_rename_window_id, nil)
-         |> TerminalState.refresh_tmux_topology()
-         |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
-    end
-  end
-
-  # Closing the only pane of the only window ends this tmux session. Never
-  # leave the operator stranded: switch into another existing session if one
-  # is available, otherwise open a fresh window in this session before killing
-  # the old one (so the session survives with a clean window).
-  defp close_focused_last_window(socket, session) do
-    fallback_sid =
-      (socket.assigns[:session_tabs] || [])
-      |> Enum.map(& &1.id)
-      |> Enum.find(&(is_binary(&1) and &1 != socket.assigns[:terminal_sid]))
-
-    window_id = socket.assigns[:tmux_active_window_id]
-
-    if is_binary(fallback_sid) do
-      case TerminalState.tmux_adapter().kill_window(session, window_id) do
-        :ok ->
-          socket =
-            socket
-            |> assign(:window_zoomed?, false)
-            |> assign(:tmux_rename_window_id, nil)
-            |> TerminalState.switch_active_session(fallback_sid)
-            |> TerminalState.refresh_session_tabs()
-            |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
-
-          {:noreply, socket}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
-      end
-    else
-      replace_only_window(socket, session, window_id)
-    end
-  end
-
-  # Only session, only window: open a fresh window, then kill the old one, so
-  # C-b x still "closes the tab" and lands the operator in a clean window
-  # instead of refusing (a bare kill would end the session with nowhere to go).
-  defp replace_only_window(socket, session, window_id) do
-    case TerminalState.tmux_adapter().new_window(session, cwd: terminal_window_cwd(socket)) do
-      {:ok, new_window_id} ->
-        _ = TerminalState.tmux_adapter().kill_window(session, window_id)
-
-        socket =
-          socket
-          |> assign(:window_zoomed?, false)
-          |> assign(:tmux_rename_window_id, nil)
-          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
-          |> push_patch(to: TerminalState.workspace_window_path(socket, new_window_id))
-          |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
-
-        {:noreply, socket}
-
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not open a new tmux window: #{inspect(reason)}")}
-    end
   end
 
   defp open_annotation_file(socket, loc, path, line) do
@@ -2664,7 +1985,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp open_resolved_target(socket, {:localhost, %{url: url}}) when is_binary(url) do
-    open_preview(socket, %{"url" => url})
+    PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
   end
 
   defp open_resolved_target(socket, {:external, %{url: url}}) when is_binary(url) do
@@ -2825,7 +2146,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def render(%{lan_path_error: %{}} = assigns), do: render_lan_path_error(assigns)
 
   def render(assigns) do
-    render_workspace(assigns)
+    ~H"""
+    <.workspace_shell {assigns}>
+      <:header_back_nav>
+        <.link
+          navigate={~p"/workspaces"}
+          class="shrink-0 text-primary hover:underline"
+          title="Back to workspaces"
+        >
+          ←
+        </.link>
+      </:header_back_nav>
+    </.workspace_shell>
+    """
   end
 
   defp render_lan_path_error(assigns) do
@@ -2900,1761 +2233,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp render_workspace(assigns) do
-    ~H"""
-    <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
-    {render_palette(assigns)}
-    {ContextMenu.render_context_menu(assigns)}
-    <.template_preview_modal template_preview={@template_preview} />
-    <.template_library_drawer
-      template_library_open={@template_library_open}
-      workspace={@workspace}
-      saved_session_templates={@saved_session_templates}
-      saved_session_template_tags={@saved_session_template_tags}
-      template_tag_filter={@template_tag_filter}
-      template_save_form={@template_save_form}
-      template_edit_id={@template_edit_id}
-      template_edit_form={@template_edit_form}
-      template_duplicate_id={@template_duplicate_id}
-      template_duplicate_form={@template_duplicate_form}
-    />
-    <Layouts.flash_group flash={@flash} />
-    <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
-    <div
-      id="workspace-leader-root"
-      phx-hook="WorkspaceLeader"
-      data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
-    >
-      <% workspace_path = render_path(@host_loc, @host_path) %>
-      <%= if @chrome_visible do %>
-        <header
-          id={"workspace-header-" <> @workspace.id}
-          phx-hook="ChromeWidth"
-          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:mb-0.5 pointer-coarse:pb-0 pointer-coarse:gap-0.5"
-        >
-          <div class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip">
-            <.link
-              navigate={~p"/workspaces"}
-              class="shrink-0 text-primary hover:underline"
-              title="Back to workspaces"
-            >
-              ←
-            </.link>
-            <h1
-              class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
-              title={workspace_path}
-            >
-              {workspace_short_name(@workspace.name)}
-            </h1>
-            <button
-              type="button"
-              phx-click={header_status_action(@workspace, @workspace_start_error)}
-              disabled={is_nil(header_status_action(@workspace, @workspace_start_error))}
-              class="header-p-touch-show header-p-as-flex shrink-0 items-center justify-center rounded disabled:cursor-default pointer-coarse:size-8"
-              title={header_status_action_label(@workspace, @workspace_start_error)}
-              aria-label={header_status_action_label(@workspace, @workspace_start_error)}
-            >
-              <span
-                class={[
-                  "size-2 rounded-full",
-                  workspace_status_dot_class(@workspace.status)
-                ]}
-                aria-hidden="true"
-              ></span>
-            </button>
-            <span
-              :if={workspace_start_blocked?(@workspace_start_error)}
-              id="workspace-start-unavailable"
-              class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
-            >
-              Start unavailable
-            </span>
-            <button
-              :if={
-                @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
-                  match?({:ok, _}, @host_loc)
-              }
-              type="button"
-              id="header-session-copy"
-              phx-hook="CopyText"
-              data-copy-text={terminal_session_label(@tmux_session, @terminal_sid)}
-              class="header-p-low header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
-              title="Copy tmux session name"
-              aria-label={"Copy tmux session " <> terminal_session_label(@tmux_session, @terminal_sid)}
-            >
-              {terminal_session_label(@tmux_session, @terminal_sid)}
-            </button>
-          </div>
-          <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <div
-              id={"header-terminal-pickers-" <> @workspace.id}
-              phx-hook="WindowPickerView"
-              data-view={Atom.to_string(@window_picker_view)}
-              class={[
-                "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden",
-                if(@window_picker_view == :tabs, do: "flex-1", else: "shrink")
-              ]}
-            >
-              <%= if @window_picker_view == :tabs do %>
-                <SessionBar.window_tabs
-                  workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
-                  windows={@tmux_window_tabs}
-                  topology_version={@tmux_topology_structure_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                  class="min-w-0 flex-1"
-                />
-              <% else %>
-                <SessionBar.window_dropdown
-                  workspace_id={@workspace.id}
-                  path_base={@lan_friendly_path}
-                  windows={@tmux_window_tabs}
-                  session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-                  share_session_id={@terminal_sid}
-                  topology_version={@tmux_topology_structure_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                  selected_preview={
-                    TerminalState.selected_preview_pane(
-                      @preview_panes,
-                      @entered_preview_pane_id,
-                      @ui_highlight_pane_id,
-                      @tmux_windows,
-                      @tmux_active_window_id,
-                      @tmux_session
-                    )
-                  }
-                />
-              <% end %>
-            </div>
-            <%!-- Window/pane actions — inline only for what has no
-                 direct-manipulation equivalent (splits, zoom). Window cycling
-                 stays only in dropdown view, where tabs aren't clickable.
-                 Everything else lives in the ⋯ overflow menu + C-b keys. --%>
-            <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%= if @window_picker_view == :dropdown and length(@tmux_window_tabs) > 1 do %>
-                <.leader_key_button
-                  key="p"
-                  phx_click="tmux:cycle_window"
-                  phx_value_dir="prev"
-                  title="Previous window · Ctrl + B p"
-                  aria_label="Previous tmux window"
-                >
-                  <.icon name="hero-chevron-left" class="size-3.5" />
-                </.leader_key_button>
-                <.leader_key_button
-                  key="n"
-                  phx_click="tmux:cycle_window"
-                  phx_value_dir="next"
-                  title="Next window · Ctrl + B n"
-                  aria_label="Next tmux window"
-                >
-                  <.icon name="hero-chevron-right" class="size-3.5" />
-                </.leader_key_button>
-              <% end %>
-              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                <%!-- Splits and zoom --%>
-                <.leader_key_button
-                  key="%"
-                  phx_click="split_right"
-                  title="Split right · Ctrl + B %"
-                  aria_label="Split pane right"
-                >
-                  <.split_icon direction={:right} class="size-3.5" />
-                </.leader_key_button>
-                <.leader_key_button
-                  key={"\""}
-                  phx_click="split_down"
-                  title="Split down · Ctrl + B &quot;"
-                  aria_label="Split pane down"
-                >
-                  <.split_icon direction={:down} class="size-3.5" />
-                </.leader_key_button>
-                <.leader_key_button
-                  key="z"
-                  phx_click="pane:zoom_focused"
-                  title={
-                    if @window_zoomed?,
-                      do: "Unzoom pane · Ctrl + B z",
-                      else: "Zoom pane · Ctrl + B z"
-                  }
-                  aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-                >
-                  <.icon
-                    name={
-                      if @window_zoomed?,
-                        do: "hero-arrows-pointing-in",
-                        else: "hero-arrows-pointing-out"
-                    }
-                    class="size-3.5"
-                  />
-                </.leader_key_button>
-              <% end %>
-            </div>
-          <% end %>
-          <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
-            <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-              <SessionBar.session_dropdown
-                workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
-                tabs={@session_tabs}
-                workspace_tabs={@workspace_session_tabs}
-                active_id={@terminal_sid}
-                preview_panes={@preview_panes}
-                active_fallback_label={session_kind_label(@active_session_kind)}
-                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_session_id={@tmux_rename_session_id}
-                default_sid={@default_terminal_sid}
-              />
-              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-            <% end %>
-            <button
-              :if={@tab == "terminal"}
-              id={"leader-prefix-button-" <> @workspace.id}
-              type="button"
-              data-leader-prefix-button="true"
-              class="leader-prefix-button header-p-mid header-p-as-block shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
-              title="tmux prefix key"
-              aria-label="tmux prefix key"
-              aria-pressed="false"
-            >
-              C-b
-            </button>
-            {render_header_overflow_menu(assigns)}
-            <button
-              phx-click="terminal:toggle_chrome"
-              data-shortcut="Ctrl/Cmd + Shift + F"
-              class="inline-flex items-center justify-center rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:p-0"
-              title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
-              aria-label="Hide header for a terminal-only view"
-            >
-              <span class="leading-none pointer-coarse:text-xs" aria-hidden="true">▴</span>
-            </button>
-          </div>
-        </header>
-      <% else %>
-        <%!-- Thin reveal strip when chrome is hidden (focus mode).
-             Click or keyboard shortcut brings the header + utility bar back.
-             Only shown in the outer container so it works across all tabs. --%>
-        <div
-          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
-          phx-click="terminal:toggle_chrome"
-          title="Show header. Shortcut: Ctrl/Cmd + Shift + F"
-          aria-label="Show header and utility bar"
-        >
-          <span class="sr-only">Show chrome</span>
-          <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <% win = active_tmux_window_name(assigns) %>
-            <span class="hidden pointer-coarse:flex min-w-0 items-center gap-1.5 text-[11px] leading-none text-base-content/70">
-              <span
-                class={["size-2 shrink-0 rounded-full", workspace_status_dot_class(@workspace.status)]}
-                aria-hidden="true"
-              ></span>
-              <span class="truncate font-medium text-base-content/80">
-                {mobile_active_session_label(assigns)}
-              </span>
-              <%= if is_binary(win) and win != "" do %>
-                <span class="shrink-0 text-base-content/40">·</span>
-                <span class="truncate text-base-content/55">{win}</span>
-              <% end %>
-            </span>
-          <% end %>
-          <span
-            class="hidden pointer-coarse:block shrink-0 leading-none text-base-content/40"
-            aria-hidden="true"
-          >
-            ▾
-          </span>
-        </div>
-      <% end %>
-
-      <%!-- Central leader-key dispatch targets. WorkspaceLeader routes every
-            C-b second key to a click on [data-leader-action=...], so each
-            action lives on exactly one element here (docs/leader_keys.md) —
-            outside the chrome block, so bindings keep working in focus mode.
-            Visible chrome buttons share the same phx-click handlers but carry
-            no data-leader-action. Exceptions: the pickers (C-b s / w) stay on
-            the dropdown <summary> elements because they need the dropdown UI,
-            and window-by-index targets live on the window tabs. --%>
-      <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-        <div class="hidden" aria-hidden="true">
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="copy-link"
-            data-copy-session-link={current_share_url(assigns)}
-            data-copy-link-kind="view"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="detach"
-            phx-click="terminal:switch_to_shell"
-          ></button>
-          <button type="button" tabindex="-1" data-leader-action="palette" phx-click="palette:open"></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="help"
-            phx-click={JS.toggle(to: "#leader-cheatsheet")}
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="last-window"
-            phx-click="tmux:last_window"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="last-pane"
-            phx-click="pane:navigate"
-            phx-value-dir="last"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="prev-session"
-            phx-click="terminal:cycle_session"
-            phx-value-dir="prev"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="next-session"
-            phx-click="terminal:cycle_session"
-            phx-value-dir="next"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="next-window"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="next"
-          ></button>
-          <button
-            type="button"
-            tabindex="-1"
-            data-leader-action="prev-window"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="prev"
-          ></button>
-          <button
-            :if={@tmux_active_window_id}
-            type="button"
-            tabindex="-1"
-            data-leader-action="kill-window"
-            data-confirm="Kill this tmux window and everything running in it?"
-            phx-click="tmux:kill_window"
-            phx-value-window-id={@tmux_active_window_id}
-          ></button>
-          <button
-            :if={@tmux_active_window_id}
-            type="button"
-            tabindex="-1"
-            data-leader-action="rename-window"
-            phx-click={
-              JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
-              |> JS.push("tmux:rename_start")
-            }
-            phx-value-window-id={@tmux_active_window_id}
-          ></button>
-          <button
-            :if={is_binary(@tmux_session)}
-            type="button"
-            tabindex="-1"
-            data-leader-action="rename-session"
-            phx-click={
-              JS.set_attribute({"open", "open"}, to: "#session-dropdown-#{@workspace.id}")
-              |> JS.push("terminal:rename_session_start")
-            }
-            phx-value-session-id={@terminal_sid}
-          ></button>
-          <%= if @tmux_mutations_enabled? do %>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="new-window"
-              phx-click="tmux:new_window"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="new-window-tab"
-              phx-click="tmux:new_window_tab"
-            ></button>
-          <% end %>
-          <%!-- Pane focus arrows work across all tmux pane tiles. --%>
-          <%= if is_binary(@tmux_session) do %>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="pane-left"
-              phx-click="pane:navigate"
-              phx-value-dir="left"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="pane-down"
-              phx-click="pane:navigate"
-              phx-value-dir="down"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="pane-up"
-              phx-click="pane:navigate"
-              phx-value-dir="up"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="pane-right"
-              phx-click="pane:navigate"
-              phx-value-dir="right"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="pane-next"
-              phx-click="pane:navigate"
-              phx-value-dir="next"
-            ></button>
-          <% end %>
-          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="close-pane"
-              phx-click="pane:close_focused"
-            ></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="split-right"
-              phx-click="split_right"
-            ></button>
-            <button type="button" tabindex="-1" data-leader-action="split-down" phx-click="split_down"></button>
-            <button
-              type="button"
-              tabindex="-1"
-              data-leader-action="zoom"
-              phx-click="pane:zoom_focused"
-            ></button>
-          <% end %>
-        </div>
-      <% end %>
-
-      <div class="min-h-0 flex-1">
-        {if @tab == "terminal", do: render_terminal(assigns)}
-        <.files_panel
-          :if={@tab == "files"}
-          host_loc={@host_loc}
-          selected_dir={@selected_dir}
-          new_input={@new_input}
-          tree_error={@tree_error}
-          tree={@tree}
-          project_meta={@project_meta}
-          tooling={@tooling}
-          open_file={@open_file}
-          rename_input={@rename_input}
-          delete_confirm={@delete_confirm}
-          save_error={@save_error}
-          file_error={@file_error}
-          node_rename={@node_rename}
-          node_delete={@node_delete}
-        />
-        <.search_panel
-          :if={@tab == "search"}
-          search_query={@search_query}
-          search_results={@search_results}
-          search_state={@search_state}
-        />
-        <.diff_panel
-          :if={@tab == "diff"}
-          git_status={@git_status}
-          open_file={@open_file}
-          file_diff={@file_diff}
-        />
-        <.run_panel
-          :if={@tab == "run"}
-          host_loc={@host_loc}
-          active_run={@active_run}
-          review_commands={@review_commands}
-          agent_write_unlock={@agent_write_unlock}
-          run_ledger={@run_ledger}
-          selected_run_id={@selected_run_id}
-          selected_run_timeline={@selected_run_timeline}
-          selected_run_summary={@selected_run_summary}
-          selected_run_failure_reason={@selected_run_failure_reason}
-          selected_run_can_retry={@selected_run_can_retry}
-          selected_run_artifacts={@selected_run_artifacts}
-        />
-        <.live_component
-          :if={@tab == "proposals"}
-          module={DevIdeWeb.WorkspaceLive.ProposalPanelComponent}
-          id="proposal-panel"
-          workspace={@workspace}
-          current_user={@current_user}
-          lan_friendly_path={@lan_friendly_path}
-          workspace_mode_source={@workspace_mode_source}
-          db_isolation={@db_isolation}
-          host_path={@host_path}
-        />
-        {if @tab == "logs", do: render_logs(assigns)}
-      </div>
-    </div>
-    {render_audit_drawer(assigns)}
-    {render_leader_cheatsheet(assigns)}
-    """
-  end
-
-  # `C-b ?` — in-app help overlay. Toggled client-side; the backdrop closes it.
-  # Tabs switch via pure JS commands (no socket). `C-b ?` while open cycles the
-  # tabs — see cycleLeaderHelpTab in workspace_leader.js.
-  defp render_leader_cheatsheet(assigns) do
-    assigns =
-      assign(assigns, :cheat_tabs, [
-        %{id: "shortcuts", label: "Shortcuts"},
-        %{id: "preview", label: "Preview"},
-        %{id: "agents", label: "Agents"}
-      ])
-
-    ~H"""
-    <div id="leader-cheatsheet" class="fixed inset-0 z-50 hidden">
-      <div class="absolute inset-0 bg-black/30" phx-click={JS.hide(to: "#leader-cheatsheet")}></div>
-      <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
-        <h2 class="mb-2 text-sm font-semibold">Help</h2>
-        <div role="tablist" class="mb-3 flex gap-1 border-b border-base-300">
-          <button
-            :for={{tab, i} <- Enum.with_index(@cheat_tabs)}
-            type="button"
-            role="tab"
-            id={"cheat-tab-#{tab.id}"}
-            data-cheat-tab
-            aria-selected={to_string(i == 0)}
-            aria-controls={"cheat-panel-#{tab.id}"}
-            phx-click={switch_cheat_tab(tab.id)}
-            class="-mb-px border-b-2 border-transparent px-2 py-1 text-xs font-medium text-base-content/50 hover:text-base-content/80 aria-selected:border-primary aria-selected:text-base-content"
-          >
-            {tab.label}
-          </button>
-        </div>
-        <div
-          id="cheat-panel-shortcuts"
-          data-cheat-panel
-          role="tabpanel"
-          aria-labelledby="cheat-tab-shortcuts"
-        >
-          <p class="mb-1 text-[11px] text-base-content/60">
-            Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
-          </p>
-          <p class="mb-3 text-[11px] text-base-content/60">
-            No need to memorize these — a paired agent can do all of it for you in plain
-            English: "merge windows 5 and 6 side by side", "rename this pane",
-            "move this pane to its own window". See the <em>Agents</em> tab.
-          </p>
-          <div class="grid grid-cols-2 gap-x-6 gap-y-1">
-            <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-            <.cheat_row keys="s" desc="pick a session" />
-            <.cheat_row keys="w" desc="pick a window" />
-            <.cheat_row keys="( / )" desc="previous or next session" />
-            <.cheat_row keys="c" desc="open a new window" />
-            <.cheat_row keys="C" desc="new window in a new browser tab" />
-            <.cheat_row keys="n / p" desc="next or previous window" />
-            <.cheat_row keys="l" desc="jump back to your last window" />
-            <.cheat_row keys="1–9" desc="jump to window 1–9" />
-            <.cheat_row keys="," desc="rename this window" />
-            <.cheat_row keys="$" desc="rename this session" />
-            <.cheat_row keys="&" desc="close this window" />
-            <.cheat_row keys="y" desc="copy a link to this session and window" />
-            <.cheat_row keys="d" desc="return to the workspace shell" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
-            <.cheat_row keys="% or |" desc="split side by side" />
-            <.cheat_row keys={"\" or -"} desc="split top and bottom" />
-            <.cheat_row keys="← ↓ ↑ →" desc="move focus between panes" />
-            <.cheat_row keys="o" desc="focus the next pane" />
-            <.cheat_row keys=";" desc="focus your last pane" />
-            <.cheat_row keys="z" desc="zoom this pane full screen" />
-            <.cheat_row keys="x" desc="close this pane" />
-            <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">More leader keys</div>
-            <.cheat_row keys=":" desc="open the command palette" />
-            <.cheat_row keys="?" desc="show this help" />
-            <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-              Inside a session or window picker
-            </div>
-            <.cheat_row keys="↑ ↓" desc="browse entries" />
-            <.cheat_row keys="→ / ←" desc="expand or collapse a session's windows" />
-            <.cheat_row keys="type" desc="filter the list — Backspace edits" />
-            <.cheat_row keys="o" desc="open the focused entry in a new tab" />
-            <.cheat_row keys="l" desc="copy a link to the focused entry" />
-            <.cheat_row keys="r" desc="rename the focused window or session" />
-            <.cheat_row keys="&" desc="kill the focused window (window picker)" />
-            <.cheat_row keys="Enter" desc="attach to the focused entry" />
-            <.cheat_row keys="Esc" desc="clear the filter, then close" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-              From anywhere (no Ctrl + B)
-            </div>
-            <.cheat_row keys="Ctrl+P" desc="open the command palette" />
-            <.cheat_row keys="Ctrl+Space" desc="open the command palette" />
-            <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
-            <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
-            <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
-            <.cheat_row keys="Space" desc="focus the terminal" />
-            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-              Inside the command palette
-            </div>
-            <.cheat_row keys="Tab" desc="switch category (Files, Commands, Terminal, …)" />
-            <.cheat_row keys="Shift+Tab" desc="previous category" />
-            <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
-            <.cheat_row keys="Esc" desc="close the palette" />
-          </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
-            More detail in <code>docs/leader_keys.md</code>
-          </p>
-        </div>
-        <div
-          id="cheat-panel-preview"
-          data-cheat-panel
-          role="tabpanel"
-          aria-labelledby="cheat-tab-preview"
-          class="hidden"
-        >
-          <p class="mb-3 text-[11px] text-base-content/60">
-            A browser pane for your workspace apps — run a dev server, then preview it
-            right inside DevIDE: click, type, navigate, screenshot.
-          </p>
-          <div class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
-            <.tip_row term="Open one">
-              Palette → <em>Preview: Open Current Dev Server</em>
-              (auto-detects your port),
-              or run <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000</code>
-              in a terminal.
-            </.tip_row>
-            <.tip_row term="Localhost only">
-              Previews load only your workspace's loopback ports. The port must be a common
-              dev port, set in workspace metadata, or seen in your terminal output.
-            </.tip_row>
-            <.tip_row term="Framed apps">
-              Apps that block embedding fall back to a built-in proxy automatically.
-              Live-reload over WebSocket (HMR) won't tunnel through the proxy yet.
-            </.tip_row>
-            <.tip_row term="Stay logged in">
-              Previews start fresh each session, so logins reset. Add
-              <code class="rounded bg-base-200 px-1 py-0.5">--storage workspace</code>
-              to keep auth across restarts.
-            </.tip_row>
-            <.tip_row term="Responsive">
-              <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000 --viewport 375x812</code>
-              locks a device size.
-            </.tip_row>
-            <.tip_row term="Share">
-              Add <code class="rounded bg-base-200 px-1 py-0.5">--share</code>
-              so an agent or teammate can watch the same page.
-            </.tip_row>
-            <.tip_row term="Troubleshoot">
-              <code class="rounded bg-base-200 px-1 py-0.5">preview errors &lt;session&gt;</code>
-              shows console and connection problems. Previews track LiveView health and
-              auto-reload on repeated socket failures.
-            </.tip_row>
-            <.tip_row term="After a restart">
-              Re-open the preview — sessions live on the current instance.
-            </.tip_row>
-          </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
-            More detail in <code>docs/subsystems/previews.md</code>
-          </p>
-        </div>
-        <div
-          id="cheat-panel-agents"
-          data-cheat-panel
-          role="tabpanel"
-          aria-labelledby="cheat-tab-agents"
-          class="hidden"
-        >
-          <p class="mb-3 text-[11px] text-base-content/60">
-            DevIDE wires external coding agents into your workspace over MCP, giving them
-            narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive its pane.
-          </p>
-          <div class="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-2">
-            <.tip_row term="Claude">
-              A bare <code class="rounded bg-base-200 px-1 py-0.5">claude</code>
-              in a paired
-              pane auto-loads DevIDE's terminal + preview MCP servers. It reads
-              <code class="rounded bg-base-200 px-1 py-0.5">AGENTS.md</code>
-              and <code class="rounded bg-base-200 px-1 py-0.5">CLAUDE.md</code>
-              first — keep your
-              workspace notes and the push/deploy rules there. Strongest on long, multi-step
-              changes and large context.
-            </.tip_row>
-            <.tip_row term="Grok">
-              A bare <code class="rounded bg-base-200 px-1 py-0.5">grok</code>
-              reads the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
-              DevIDE materializes,
-              so it picks up the same MCP tools automatically. If the tools don't show up,
-              refresh pairing to rewrite <code class="rounded bg-base-200 px-1 py-0.5">grok/config.toml</code>.
-            </.tip_row>
-            <.tip_row term="Codex">
-              Codex gets DevIDE MCP through launch-time flags, not a project file — start
-              <code class="rounded bg-base-200 px-1 py-0.5">codex</code>
-              from the paired pane so
-              the args apply, then confirm it lists the
-              <code class="rounded bg-base-200 px-1 py-0.5">terminal</code>
-              and <code class="rounded bg-base-200 px-1 py-0.5">preview</code>
-              servers before
-              sending commands.
-            </.tip_row>
-            <.tip_row term="Sign in">
-              By default, agents use the host's global Claude/Codex login. For an
-              owner-isolated login instead, sign in once with
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
-              and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
-              DevIDE detects the owner from the current workspace; once signed in,
-              matching workspaces share that owner login automatically. Use
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
-              to check sign-in state.
-            </.tip_row>
-            <.tip_row term="All three">
-              Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>
-              first,
-              and use <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent-prompt.txt</code>
-              as a starter prompt. Drive an agent's pane with MCP
-              <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_command</code>
-              / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>.
-            </.tip_row>
-            <.tip_row term="Tmux chores">
-              Agents can manage your windows and panes for you — ask in plain English to
-              merge two windows into side-by-side panes, break a pane out into its own
-              window, rename or renumber windows, or rebalance a layout. Every leader-key
-              action on the <em>Shortcuts</em> tab is something an agent can run.
-            </.tip_row>
-          </div>
-          <p class="mt-3 text-[10px] text-base-content/50">
-            More detail in <code>docs/subsystems/agents.md</code>
-          </p>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  # Build-to-scale: drives the help overlay's tab bar and its show/hide. Pure
-  # client-side JS — no socket round-trip — so the overlay stays instant.
-  defp switch_cheat_tab(id) do
-    JS.set_attribute({"aria-selected", "false"}, to: "#leader-cheatsheet [data-cheat-tab]")
-    |> JS.set_attribute({"aria-selected", "true"}, to: "#cheat-tab-#{id}")
-    |> JS.add_class("hidden", to: "#leader-cheatsheet [data-cheat-panel]")
-    |> JS.remove_class("hidden", to: "#cheat-panel-#{id}")
-  end
-
-  attr :keys, :string, required: true
-  attr :desc, :string, required: true
-
-  defp cheat_row(assigns) do
-    ~H"""
-    <kbd class="justify-self-start rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px]">
-      {@keys}
-    </kbd>
-    <span class="text-base-content/80">{@desc}</span>
-    """
-  end
-
-  attr :term, :string, required: true
-  slot :inner_block, required: true
-
-  defp tip_row(assigns) do
-    ~H"""
-    <div class="font-medium text-base-content/70">{@term}</div>
-    <div class="text-base-content/80">{render_slot(@inner_block)}</div>
-    """
-  end
-
-  defp render_audit_drawer(assigns) do
-    ~H"""
-    <.live_component
-      module={DevIdeWeb.WorkspaceLive.AuditDrawerComponent}
-      id="audit-drawer"
-      open={@audit_drawer_open}
-      workspace={@workspace}
-      current_user={@current_user}
-      lan_friendly_path={@lan_friendly_path}
-    />
-    """
-  end
-
-  defp render_terminal(assigns) do
-    ~H"""
-    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
-      <div class="flex h-full min-h-0 flex-col overflow-hidden">
-        <%= case @host_loc do %>
-          <% {:ok, _loc} -> %>
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
-                        (@terminal_mode not in [:raw, :raw_ghostty] and
-                           tmux_multi_pane_geometry?(assigns)) do %>
-                <.tmux_pane_geometry
-                  workspace={@workspace}
-                  active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
-                  preview_panes={@preview_panes}
-                  tmux_session={@tmux_session}
-                  ui_highlight_pane_id={@ui_highlight_pane_id}
-                  tmux_active_pane_id={@tmux_active_pane_id}
-                  tmux_mutations_enabled?={@tmux_mutations_enabled?}
-                  entered_preview_pane_id={@entered_preview_pane_id}
-                  terminal_surface_pane_id={@terminal_surface_pane_id}
-                  pane_history={@pane_history}
-                  terminal_themes={@terminal_themes}
-                  focused_pane_id={@focused_pane_id}
-                  pane_data={@pane_data}
-                  workspace_start_error={@workspace_start_error}
-                />
-              <% else %>
-                <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-                  <.raw_terminal_surface
-                    workspace={@workspace}
-                    workspace_start_error={@workspace_start_error}
-                    focused_pane_id={@focused_pane_id}
-                    pane_data={@pane_data}
-                    terminal_themes={@terminal_themes}
-                  />
-                </div>
-              <% end %>
-            </div>
-            {render_mobile_key_bar(assigns)}
-            {render_mobile_nav_sheet(assigns)}
-          <% {:error, :missing_path} -> %>
-            <p class="text-sm text-red-700">
-              Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
-            </p>
-          <% {:error, :outside_root} -> %>
-            <p class="text-sm text-red-700">
-              Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
-                Workspaces.allowed_roots()
-              )}).
-            </p>
-        <% end %>
-      </div>
-    </section>
-    """
-  end
-
-  defp render_header_overflow_menu(assigns) do
-    ~H"""
-    <details class="header-overflow relative shrink-0">
-      <summary
-        class="flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
-        title="More workspace and terminal controls"
-        aria-label="More header controls"
-      >
-        ⋯
-      </summary>
-      <div class="header-overflow-menu">
-        <div class="px-3 py-1 text-[11px] text-base-content/70">
-          <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
-          <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
-            {@workspace.branch}
-          </span>
-        </div>
-        <button
-          :if={workspace_startable?(@workspace, @workspace_start_error)}
-          id="workspace-start-menu-button"
-          type="button"
-          phx-click="workspace:start"
-          class="block w-full px-3 py-1.5 text-left text-xs text-primary hover:bg-base-200"
-        >
-          Start workspace
-        </button>
-        <div
-          :if={workspace_start_blocked?(@workspace_start_error)}
-          class="px-3 py-1 text-[11px] text-amber-600 dark:text-amber-300"
-        >
-          Start unavailable
-        </div>
-        <button
-          :if={workspace_stoppable?(@workspace)}
-          type="button"
-          phx-click="workspace:stop"
-          class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-        >
-          Stop workspace
-        </button>
-        <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-          <div class="my-0.5 border-t border-base-300/70"></div>
-          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
-            Windows
-          </div>
-          <button
-            :if={@tmux_mutations_enabled?}
-            type="button"
-            phx-click="tmux:new_window"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-            title="New window · Ctrl + B c"
-            aria-label="New tmux window"
-          >
-            New window
-          </button>
-          <button
-            :if={length(@tmux_window_tabs) > 1}
-            type="button"
-            phx-click="tmux:last_window"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-            title="Last window · Ctrl + B l"
-          >
-            Last window
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:refresh_windows"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Refresh windows
-          </button>
-          <button
-            :if={@tmux_mutations_enabled?}
-            id={"tmux-template-palette-" <> @workspace.id}
-            type="button"
-            phx-click="palette:templates"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Apply session template
-          </button>
-          <button
-            :if={@tmux_mutations_enabled?}
-            id={"tmux-template-library-" <> @workspace.id}
-            type="button"
-            phx-click="tmux:open_template_library"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Template library
-          </button>
-          <button
-            type="button"
-            phx-click="view:set_window_picker"
-            phx-value-view={if @window_picker_view == :tabs, do: "dropdown", else: "tabs"}
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            {if @window_picker_view == :tabs,
-              do: "Window picker as dropdown",
-              else: "Window picker as tabs"}
-          </button>
-        <% end %>
-        <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
-          <div class="my-0.5 border-t border-base-300/70"></div>
-          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
-            Panes
-            <span class="ml-1 font-mono normal-case text-base-content/50">
-              tmux {terminal_session_label(@tmux_session, @terminal_sid)}
-            </span>
-          </div>
-          <%= if @active_window_pane_count > 1 do %>
-            <button
-              type="button"
-              phx-click="pane:navigate"
-              phx-value-dir="next"
-              class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-              title="Cycle to next pane · Ctrl + B o"
-            >
-              Cycle to next pane
-            </button>
-            <button
-              type="button"
-              phx-click="pane:close_focused"
-              class="block w-full px-3 py-1.5 text-left text-xs text-error/80 hover:bg-error/10 hover:text-error"
-              title="Close pane · Ctrl + B x"
-            >
-              Close focused pane
-            </button>
-            <button
-              type="button"
-              phx-click="equalize_layout"
-              class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-            >
-              Reset pane layout ({@active_window_pane_count} panes)
-            </button>
-          <% end %>
-        <% end %>
-      </div>
-    </details>
-    """
-  end
-
-  # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
-  # arrows; this bar synthesizes those keydowns onto the active terminal input
-  # (see assets/js/mobile_key_bar.js). Hidden at lg+ where physical keys exist.
-  # Session/window pickers live in the mode-chip sheet and palette — not here.
-  #
-  # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
-  # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
-  # Pane/window action buttons sit outside that boundary so LiveView can update
-  # them when @terminal_mode, @active_window_pane_count, etc. change.
-  defp render_mobile_key_bar(assigns) do
-    ~H"""
-    <div
-      id={"mobile-key-bar-" <> @workspace.id}
-      phx-hook="MobileKeyBar"
-      class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), var(--devide-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
-      role="toolbar"
-      aria-label="Terminal keys"
-    >
-      <div
-        id={"mobile-key-bar-scroll-" <> @workspace.id}
-        class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-      >
-        <button
-          id={"mobile-key-bar-mode-" <> @workspace.id}
-          type="button"
-          phx-click="mobile_nav:toggle"
-          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded border border-zinc-600 bg-zinc-800 px-1.5 text-zinc-100 transition active:opacity-80"
-          title={"Switch session or window — " <> mobile_mode_chip_title(assigns)}
-          aria-label={
-            "Switch session or window. Active session: " <>
-              mobile_active_session_label(assigns) <> ". " <> mobile_mode_chip_title(assigns)
-          }
-          aria-expanded={@mobile_nav_open}
-        >
-          <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-zinc-400" />
-          <span class="max-w-[6.5rem] truncate text-[11px] font-medium leading-none">
-            {mobile_active_session_label(assigns)}
-          </span>
-        </button>
-        <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
-        <div
-          id={"mobile-key-bar-keys-" <> @workspace.id}
-          phx-update="ignore"
-          class="contents"
-        >
-          <button
-            type="button"
-            data-leader-prefix-button="true"
-            aria-pressed="false"
-            aria-label="tmux prefix key (Ctrl + B)"
-            title="tmux prefix — tap, then a key"
-            class={[
-              mobile_key_class(),
-              "aria-pressed:border-amber-400 aria-pressed:bg-amber-500/20 aria-pressed:text-amber-300"
-            ]}
-          >
-            C-b
-          </button>
-          <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
-          <button
-            type="button"
-            data-keybar-key="Paste"
-            class={mobile_key_class()}
-            aria-label="Paste from clipboard"
-          >
-            paste
-          </button>
-          <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
-          <button
-            type="button"
-            data-keybar-key="Control"
-            data-mod-state="off"
-            aria-pressed="false"
-            class={mobile_mod_class()}
-          >
-            ctrl
-          </button>
-          <button
-            type="button"
-            data-keybar-key="Alt"
-            data-mod-state="off"
-            aria-pressed="false"
-            class={mobile_mod_class()}
-          >
-            alt
-          </button>
-          <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
-          <button
-            type="button"
-            data-keybar-key="Select"
-            class={mobile_key_class()}
-            aria-label="Select and copy terminal text"
-          >
-            select
-          </button>
-          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-          <button
-            type="button"
-            data-keybar-key="ArrowLeft"
-            class={mobile_key_class()}
-            aria-label="Left"
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowDown"
-            class={mobile_key_class()}
-            aria-label="Down"
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowUp"
-            class={mobile_key_class()}
-            aria-label="Up"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowRight"
-            class={mobile_key_class()}
-            aria-label="Right"
-          >
-            →
-          </button>
-        </div>
-        <%!-- LiveView-updated pane/window action buttons. Current-window actions
-             lead; window prev/next trail since swiping already cycles focus. --%>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-          <button
-            type="button"
-            phx-click="split_right"
-            class={mobile_key_class()}
-            aria-label="Split right"
-            title="Split right"
-          >
-            <.split_icon direction={:right} class="size-4" />
-          </button>
-          <button
-            type="button"
-            phx-click="split_down"
-            class={mobile_key_class()}
-            aria-label="Split down"
-            title="Split down"
-          >
-            <.split_icon direction={:down} class="size-4" />
-          </button>
-          <button
-            type="button"
-            phx-click="pane:zoom_focused"
-            class={mobile_key_class()}
-            aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-            title={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-          >
-            {if @window_zoomed?, do: "⤡", else: "⤢"}
-          </button>
-          <%= if @active_window_pane_count > 1 do %>
-            <% pane_count = @active_window_pane_count %>
-            <button
-              type="button"
-              phx-click="pane:focus_next"
-              class={mobile_key_class() <> " relative"}
-              aria-label={"Next pane (#{pane_count} total)"}
-              title="Next pane"
-            >
-              <.icon name="hero-arrow-path" class="size-4" />
-              <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold leading-none text-primary-content">
-                {pane_count}
-              </span>
-            </button>
-            <button
-              type="button"
-              phx-click="pane:close_focused"
-              class={mobile_key_class()}
-              aria-label="Close pane"
-              title="Close pane"
-            >
-              ×
-            </button>
-          <% end %>
-        <% end %>
-        <%= if @tmux_mutations_enabled? do %>
-          <button
-            type="button"
-            phx-click="tmux:new_window"
-            class={mobile_key_class()}
-            aria-label="New window"
-            title="New window"
-          >
-            +
-          </button>
-        <% end %>
-        <button
-          type="button"
-          data-keybar-key="Palette"
-          class={mobile_key_class()}
-          aria-label="Open command palette"
-          title="Command palette"
-        >
-          ⌘
-        </button>
-        <%= if length(@tmux_window_tabs) > 1 do %>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="prev"
-            class={mobile_key_class()}
-            aria-label="Previous window"
-            title="Previous window"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:last_window"
-            class={mobile_key_class()}
-            aria-label="Last window"
-            title="Last window"
-          >
-            <.icon name="hero-clock" class="size-4" />
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="next"
-            class={mobile_key_class()}
-            aria-label="Next window"
-            title="Next window"
-          >
-            ›
-          </button>
-        <% end %>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <button
-          type="button"
-          data-keybar-key="FontDown"
-          class={mobile_key_class()}
-          aria-label="Decrease font size"
-          title="Decrease font size"
-        >
-          A-
-        </button>
-        <button
-          type="button"
-          data-keybar-key="FontUp"
-          class={mobile_key_class()}
-          aria-label="Increase font size"
-          title="Increase font size"
-        >
-          A+
-        </button>
-      </div>
-    </div>
-    """
-  end
-
-  defp render_mobile_nav_sheet(assigns) do
-    # Window-picker-dominant: the sheet opens on the attached session's window
-    # list; a back arrow (or ← on a window row) hops out to the sessions tree.
-    # Resolve the view at render time so a session losing its windows while the
-    # sheet is open degrades to the sessions list instead of an empty pane.
-    active_tab = mobile_nav_active_tab(assigns)
-
-    view =
-      if assigns.mobile_nav_view == "windows" and match?(%{windows: [_ | _]}, active_tab),
-        do: "windows",
-        else: "sessions"
-
-    assigns =
-      assigns
-      |> Phoenix.Component.assign(:mnav_active_tab, active_tab)
-      |> Phoenix.Component.assign(:mnav_view, view)
-
-    ~H"""
-    <div
-      :if={@mobile_nav_open}
-      id={"mobile-nav-sheet-" <> @workspace.id}
-      phx-hook="MobileNavSheet"
-      data-mobile-nav-focus={@mobile_nav_focus}
-      data-mobile-nav-view={@mnav_view}
-      class="mobile-nav-sheet fixed inset-0 z-40 hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Session and window picker"
-    >
-      <button
-        type="button"
-        phx-click="mobile_nav:close"
-        class="absolute inset-0 bg-black/45"
-        aria-label="Close session and window picker"
-      ></button>
-      <div
-        class="absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border border-zinc-700 bg-zinc-950 px-3 pb-3 pt-3 text-zinc-100 shadow-2xl"
-        style="margin-bottom: var(--devide-mobile-terminal-inset, 0px);"
-      >
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <div class="flex min-w-0 items-center gap-1.5">
-            <button
-              :if={@mnav_view == "windows"}
-              type="button"
-              phx-click="mobile_nav:set_view"
-              phx-value-view="sessions"
-              class="flex shrink-0 items-center justify-center rounded border border-zinc-700 p-1 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
-              aria-label="Back to all sessions"
-              title="All sessions"
-            >
-              <.icon name="hero-chevron-left" class="size-4" />
-            </button>
-            <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                {if @mnav_view == "windows", do: "Windows", else: "Navigate"}
-              </div>
-              <div class="truncate text-sm font-medium">{mobile_nav_sheet_title(assigns)}</div>
-            </div>
-          </div>
-          <button
-            type="button"
-            phx-click="mobile_nav:close"
-            class="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300"
-          >
-            Done
-          </button>
-        </div>
-        <%!-- Dominant view: flat window list of the attached session. --%>
-        <div :if={@mnav_view == "windows"} class="space-y-0.5">
-          <%= for window <- @mnav_active_tab.windows do %>
-            <div class="flex items-center gap-1">
-              <button
-                type="button"
-                data-picker-item
-                data-picker-section="windows"
-                data-picker-active={window.active? || nil}
-                phx-click={
-                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                  |> JS.push("mobile_nav:close")
-                }
-                class={[
-                  mobile_nav_row_class(window.active?),
-                  "min-w-0 flex-1 flex-row items-center gap-1.5"
-                ]}
-              >
-                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-                <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
-              </button>
-              <SessionBar.copy_link_button
-                url={
-                  SessionBar.share_url(@workspace.id, @mnav_active_tab.id, window.id,
-                    path_base: @lan_friendly_path
-                  )
-                }
-                label={@mnav_active_tab.label <> " · " <> window.name}
-                kind="window"
-                visible?={true}
-              />
-            </div>
-          <% end %>
-        </div>
-        <%!--
-          Tree picker: sessions are top-level rows, their tmux windows nest
-          beneath (mirrors the desktop SessionBar.session_dropdown tree). Rows
-          carry [data-picker-item]/[data-picker-active] and the windows-group
-          wiring (data-picker-windows-id / data-picker-parent) that the
-          MobileNavSheet hook drives with ↑/↓/→/←/Enter/Esc. Ids are prefixed
-          "mnav-" so they never collide with the (also-rendered, CSS-hidden)
-          desktop dropdown's ids.
-        --%>
-        <div
-          :if={@mnav_view == "sessions"}
-          class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
-        >
-          Sessions &amp; windows
-        </div>
-        <div :if={@mnav_view == "sessions"} class="space-y-0.5">
-          <div :if={@session_tabs == []} class="flex items-center gap-1">
-            <button
-              type="button"
-              data-picker-item
-              data-picker-section="sessions"
-              data-picker-active={true}
-              phx-click={
-                JS.push("terminal:switch_to_shell")
-                |> JS.push("mobile_nav:close")
-              }
-              class={[mobile_nav_row_class(true), "min-w-0 flex-1"]}
-            >
-              <span class="flex min-w-0 items-center gap-1">
-                <.icon name="hero-home" class="size-3 shrink-0 text-zinc-500" />
-                <span data-picker-label class="truncate font-medium">
-                  {@shell_button_label}
-                </span>
-              </span>
-              <span
-                :if={@shell_button_detail != ""}
-                class="truncate font-mono text-[10px] text-zinc-500"
-              >
-                {@shell_button_detail}
-              </span>
-            </button>
-            <SessionBar.copy_link_button
-              url={
-                SessionBar.share_url(@workspace.id, @default_terminal_sid, nil,
-                  path_base: @lan_friendly_path
-                )
-              }
-              label={@shell_button_label}
-              visible?={true}
-            />
-          </div>
-          <%= for tab <- @session_tabs do %>
-            <% session_active? = @terminal_sid == tab.id %>
-            <div class="flex items-center gap-1">
-              <button
-                type="button"
-                data-picker-item
-                data-picker-section="sessions"
-                data-picker-active={session_active? || nil}
-                data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
-                phx-click={
-                  JS.push("attach_terminal_session",
-                    value: %{
-                      "session-id" => tab.id,
-                      "kind" => Atom.to_string(tab.kind),
-                      "tmux-session" => tab.tmux_session
-                    }
-                  )
-                  |> JS.push("mobile_nav:close")
-                }
-                class={[mobile_nav_row_class(session_active?), "min-w-0 flex-1"]}
-              >
-                <span class="flex min-w-0 items-center gap-1">
-                  <.icon
-                    :if={tab.id == @default_terminal_sid}
-                    name="hero-home"
-                    class="size-3 shrink-0 text-zinc-500"
-                  />
-                  <span data-picker-label class="truncate font-medium">{tab.label}</span>
-                </span>
-                <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
-                  {tab.detail}
-                </span>
-              </button>
-              <button
-                :if={tab.window_count > 0}
-                id={"mnav-windows-toggle-" <> tab.dom_id}
-                type="button"
-                tabindex="-1"
-                phx-click={
-                  JS.toggle(to: "#mnav-windows-" <> tab.dom_id, display: "block")
-                  |> JS.toggle_class("rotate-90", to: "#mnav-windows-chevron-" <> tab.dom_id)
-                }
-                class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                aria-label={"Toggle windows of " <> tab.label}
-              >
-                {tab.window_count}
-                <span
-                  id={"mnav-windows-chevron-" <> tab.dom_id}
-                  class={[
-                    "flex transition-transform",
-                    session_active? && "rotate-90"
-                  ]}
-                >
-                  <.icon name="hero-chevron-right" class="size-3" />
-                </span>
-              </button>
-              <SessionBar.copy_link_button
-                url={SessionBar.share_url(@workspace.id, tab.id, nil, path_base: @lan_friendly_path)}
-                label={tab.label}
-                visible?={true}
-              />
-            </div>
-            <div
-              :if={tab.windows != []}
-              id={"mnav-windows-" <> tab.dom_id}
-              class={["space-y-0.5 pl-3", !session_active? && "hidden"]}
-            >
-              <%= for window <- tab.windows do %>
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    data-picker-item
-                    data-picker-section="windows"
-                    data-picker-parent={tab.dom_id}
-                    data-picker-active={(session_active? and window.active?) || nil}
-                    phx-click={
-                      # Active session: a cheap in-session window switch. Other
-                      # sessions: attach to that session on the chosen window.
-                      if session_active? do
-                        JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                        |> JS.push("mobile_nav:close")
-                      else
-                        JS.push("attach_terminal_session",
-                          value: %{
-                            "session-id" => tab.id,
-                            "kind" => Atom.to_string(tab.kind),
-                            "tmux-session" => tab.tmux_session,
-                            "window-id" => window.id
-                          }
-                        )
-                        |> JS.push("mobile_nav:close")
-                      end
-                    }
-                    class={[
-                      mobile_nav_row_class(session_active? and window.active?),
-                      "min-w-0 flex-1 flex-row items-center gap-1.5"
-                    ]}
-                  >
-                    <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-                    <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
-                  </button>
-                  <SessionBar.copy_link_button
-                    url={
-                      SessionBar.share_url(@workspace.id, tab.id, window.id,
-                        path_base: @lan_friendly_path
-                      )
-                    }
-                    label={tab.label <> " · " <> window.name}
-                    kind="window"
-                    visible?={true}
-                  />
-                </div>
-              <% end %>
-            </div>
-          <% end %>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  defp mobile_nav_row_class(true),
-    do:
-      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs text-primary"
-
-  defp mobile_nav_row_class(false),
-    do:
-      "flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800"
-
-  defp mobile_key_class do
-    "inline-flex flex-none items-center justify-center rounded border border-zinc-700 bg-zinc-800 " <>
-      "px-2.5 font-mono text-xs leading-none active:bg-zinc-700 hover:bg-zinc-700 transition-colors " <>
-      "min-w-[2.25rem] min-h-[1.9rem]"
-  end
-
-  # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
-  # (off | armed | locked). Arbitrary variants key off the data attribute so the
-  # JS only has to flip one attribute, no class juggling.
-  defp mobile_mod_class do
-    "inline-flex flex-none items-center justify-center rounded border px-2.5 font-mono text-xs leading-none " <>
-      "transition-colors min-w-[2.5rem] min-h-[1.9rem] " <>
-      "border-zinc-700 bg-zinc-800 " <>
-      "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
-      "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
-  end
-
-  defp parse_line(nil), do: nil
-  defp parse_line(""), do: nil
-
-  defp parse_line(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {n, ""} when n > 0 -> n
-      _ -> nil
-    end
-  end
-
-  defp parse_line(_), do: nil
-
-  defp palette_query(socket, q), do: PaletteItems.query(socket, q)
-
-  defp refresh_open_palette(socket) do
-    assign_palette_items_preserving_selection(
-      socket,
-      palette_query(socket, socket.assigns[:palette_query] || "")
-    )
-  end
-
-  defp assign_palette_items_preserving_selection(socket, items) do
-    old_count = length(socket.assigns[:palette_items] || [])
-    selected_idx = socket.assigns[:palette_selected_idx] || 0
-    new_count = length(items)
-
-    next_idx =
-      cond do
-        new_count == 0 -> 0
-        old_count > 0 and selected_idx >= old_count - 1 -> new_count - 1
-        true -> min(selected_idx, new_count - 1)
-      end
-
-    socket
-    |> assign(:palette_items, items)
-    |> assign(:palette_selected_idx, next_idx)
-  end
-
-  # Ordered category tabs shown in the palette. `:all` is always first so the
-  # user can broaden out of any screen-derived default.
-  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :view, :actions]
-
   @doc false
-  def palette_categories, do: @palette_categories
-
-  @doc false
-  def palette_category_label(:all), do: "all"
-  def palette_category_label(:files), do: "files"
-  def palette_category_label(:commands), do: "commands"
-  def palette_category_label(:tmux), do: "tmux"
-  def palette_category_label(:agents), do: "agents"
-  def palette_category_label(:preview), do: "preview"
-  def palette_category_label(:view), do: "view"
-  def palette_category_label(:actions), do: "actions"
-
-  defp render_palette(assigns) do
-    assigns =
-      Phoenix.Component.assign(
-        assigns,
-        :palette_selected_id,
-        palette_selected_id(assigns[:palette_items], assigns[:palette_selected_idx])
-      )
-
-    ~H"""
-    <%= if @palette_open do %>
-      <div
-        class="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-24"
-        phx-click="palette:close"
-      >
-        <div
-          class="bg-base-100 text-base-content rounded shadow-2xl w-[640px] max-w-[90vw] border border-base-300"
-          phx-click-away="palette:close"
-        >
-          <.form
-            for={%{}}
-            id="palette-form"
-            phx-change="palette:query"
-            phx-submit="palette:execute"
-            class="p-2 border-b border-base-300"
-          >
-            <%!--
-              `phx-mounted` runs the focus command every time this input
-              is inserted into the DOM (each time the palette opens),
-              which `autofocus` alone does not — the user usually opens
-              the palette while focus is in the terminal/PTY, so we
-              have to take it explicitly.
-            --%>
-            <input
-              id="palette-query"
-              name="query"
-              value={@palette_query}
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="Search sessions, windows, files, commands…"
-              phx-mounted={Phoenix.LiveView.JS.focus()}
-              class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
-            />
-            <%!--
-              The hidden _selected_id field carries the currently
-              highlighted item to the server when the form submits
-              (Enter). Falls back to the top item if nothing is
-              explicitly selected.
-            --%>
-            <input type="hidden" name="_selected_id" value={@palette_selected_id} />
-          </.form>
-          <%!--
-            Category tabs. The active screen sets the default (see
-            default_palette_category/1); Tab / Shift+Tab cycle them from the
-            PaletteHook, and clicking selects directly. ":all" is always first.
-          --%>
-          <div
-            id="palette-categories"
-            class="flex items-center gap-1 px-2 py-1 border-b border-base-300 text-xs"
-          >
-            <%= for cat <- palette_categories() do %>
-              <button
-                type="button"
-                phx-click="palette:category"
-                phx-value-category={Atom.to_string(cat)}
-                class={[
-                  "px-2 py-0.5 rounded font-mono lowercase",
-                  if(cat == (@palette_category || :all),
-                    do: "bg-primary/20 text-base-content",
-                    else: "text-base-content/55 hover:bg-base-200"
-                  )
-                ]}
-              >
-                {palette_category_label(cat)}
-              </button>
-            <% end %>
-          </div>
-          <ul id="palette-results" class="max-h-[60vh] overflow-auto text-sm">
-            <%= if @palette_items == [] do %>
-              <li class="px-3 py-2 text-base-content/60 text-xs">No matches.</li>
-            <% else %>
-              <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
-                <li
-                  id={"palette-item-" <> Integer.to_string(idx)}
-                  data-palette-idx={idx}
-                  class={[
-                    "flex items-center gap-2 px-3 py-1.5 border-b border-base-200 last:border-b-0 cursor-pointer hover:bg-base-200",
-                    if(idx == (@palette_selected_idx || 0),
-                      do: "bg-primary/15 text-base-content",
-                      else: ""
-                    )
-                  ]}
-                  phx-click="palette:execute"
-                  phx-value-id={item.id}
-                >
-                  <span class="text-[10px] uppercase text-base-content/50 w-14 shrink-0">
-                    {item.kind}
-                  </span>
-                  <span class="font-mono truncate flex-1">{item.label}</span>
-                  <%= if item.detail do %>
-                    <span class="text-xs text-base-content/60 truncate">{item.detail}</span>
-                  <% end %>
-                  <%= if item.hint do %>
-                    <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-[10px] text-base-content/70">
-                      {item.hint}
-                    </kbd>
-                  <% end %>
-                </li>
-              <% end %>
-            <% end %>
-          </ul>
-          <div class="px-3 py-1.5 text-[10px] text-base-content/60 border-t border-base-300 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2">
-              <span class="inline-flex items-center gap-1">
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↑</kbd>
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↓</kbd>
-                <span class="text-base-content/70">navigate</span>
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↵</kbd>
-                <span class="text-base-content/70">run</span>
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">Esc</kbd>
-                <span class="text-base-content/70">close</span>
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⇥</kbd>
-                <span class="text-base-content/70">category</span>
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⌃Space</kbd>
-                <span class="text-base-content/70">toggle</span>
-              </span>
-            </div>
-            <span>{length(@palette_items)} item(s)</span>
-          </div>
-        </div>
-      </div>
-    <% else %>
-      <div id="palette-modal-empty" class="hidden"></div>
-    <% end %>
-    """
-  end
-
-  defp palette_selected_id(items, idx) when is_list(items) and items != [] do
-    safe_idx = (idx || 0) |> max(0) |> min(length(items) - 1)
-    items |> Enum.at(safe_idx) |> Map.get(:id)
-  end
-
-  defp palette_selected_id(_, _), do: ""
-
-  defp render_logs(assigns) do
-    ~H"""
-    <.logs_panel log_service={@log_service} log_ref={@log_ref} streams={@streams} />
-    """
-  end
+  def palette_categories, do: PalettePanel.palette_categories()
 
   # render_path/2 and tab_class/2 now live in DevIdeWeb.WorkspaceLive.Show.UI
   # (imported above).
@@ -4669,7 +2249,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_previews(socket) do
     if connected?(socket) do
-      for workspace_id <- preview_subscription_workspace_ids(socket) do
+      for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
           DevIde.PubSub,
           "preview:" <> workspace_id
@@ -4682,7 +2262,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_browser_control(socket) do
     if connected?(socket) do
-      for workspace_id <- preview_subscription_workspace_ids(socket) do
+      for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = BrowserControl.subscribe(workspace_id)
       end
     end
@@ -4692,7 +2272,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_open_links(socket) do
     if connected?(socket) do
-      for workspace_id <- preview_subscription_workspace_ids(socket) do
+      for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         _ = Open.subscribe(workspace_id)
       end
     end
@@ -4734,13 +2314,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp current_share_url(assigns) do
-    SessionBar.share_url(
-      assigns.workspace.id,
-      assigns.terminal_sid,
-      assigns[:tmux_active_window_id],
-      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(assigns)
+  defp parse_line(nil), do: nil
+  defp parse_line(""), do: nil
+
+  defp parse_line(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} when n > 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp parse_line(_), do: nil
+
+  defp palette_query(socket, q), do: PaletteItems.query(socket, q)
+
+  defp refresh_open_palette(socket) do
+    assign_palette_items_preserving_selection(
+      socket,
+      palette_query(socket, socket.assigns[:palette_query] || "")
     )
+  end
+
+  defp assign_palette_items_preserving_selection(socket, items) do
+    old_count = length(socket.assigns[:palette_items] || [])
+    selected_idx = socket.assigns[:palette_selected_idx] || 0
+    new_count = length(items)
+
+    next_idx =
+      cond do
+        new_count == 0 -> 0
+        old_count > 0 and selected_idx >= old_count - 1 -> new_count - 1
+        true -> min(selected_idx, new_count - 1)
+      end
+
+    socket
+    |> assign(:palette_items, items)
+    |> assign(:palette_selected_idx, next_idx)
   end
 
   defp maybe_select_requested_tmux_window(socket, nil), do: {socket, false}
@@ -5404,471 +3013,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Map.get(socket.assigns.pane_data, pane_id)
   end
 
-  defp open_preview(socket, %{"url" => url} = params) do
-    case split_workspace_preview(socket, url, params) do
-      {:ok, socket} ->
-        {:noreply, socket}
+  defp refresh_artifact_projects(socket) do
+    workspace_id = socket.assigns.workspace.id
 
-      {:error, :no_tmux_session, socket} ->
-        {:noreply,
-         put_flash(socket, :error, "Start a tmux terminal session before opening a preview pane")}
-
-      {:error, reason, socket} ->
-        {:noreply, put_flash(socket, :error, "Failed to open preview: #{inspect(reason)}")}
-    end
+    socket
+    |> assign(:artifact_projects, ArtifactProjects.list(workspace_id))
+    |> assign(:artifact_projects_error, nil)
+  rescue
+    error ->
+      socket
+      |> assign(:artifact_projects, [])
+      |> assign(:artifact_projects_error, Exception.message(error))
   end
 
-  defp open_surface_preview(socket, surface, params) do
-    workspace = socket.assigns.workspace
+  defp artifact_project_for_workspace(socket, artifact_id) do
+    workspace_id = socket.assigns.workspace.id
 
-    case DevIDE.Previews.get_surface(workspace, surface) do
-      %{url: url} when is_binary(url) ->
-        case split_workspace_preview(socket, url, params) do
-          {:ok, socket} ->
-            {:noreply, socket}
-
-          {:error, :no_tmux_session, socket} ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Start a tmux terminal session before opening a preview pane"
-             )}
-
-          {:error, reason, socket} ->
-            {:noreply, put_flash(socket, :error, "Failed to open preview: #{inspect(reason)}")}
+    case ArtifactProjects.get(artifact_id) do
+      {:ok, project} ->
+        if project.workspace_id == workspace_id do
+          {:ok, project}
+        else
+          {:error, :artifact_not_found}
         end
 
-      nil ->
-        {:noreply, put_flash(socket, :error, "Preview surface not found: #{surface}")}
+      :error ->
+        {:error, :artifact_not_found}
     end
   end
+
+  defp artifact_error_message(:artifact_not_found), do: "Artifact not found in this workspace"
+  defp artifact_error_message(reason), do: "Artifact action failed: #{inspect(reason)}"
 
   defp schedule_preview_demo_open(socket) do
     Process.send_after(self(), {:open_preview_demo, 1}, @preview_demo_open_delay_ms)
     socket
   end
-
-  defp split_workspace_preview(socket, url, params) do
-    workspace = socket.assigns.workspace
-    tmux_session = socket.assigns[:tmux_session]
-
-    if is_binary(tmux_session) and tmux_session != "" do
-      opts = [
-        actor_id: current_actor_id(socket),
-        viewport: Map.get(params, "viewport") || Map.get(params, :viewport),
-        tmux_session: tmux_session,
-        cwd: terminal_window_cwd(socket)
-      ]
-
-      case Agents.split_preview_pane(workspace, url, opts) do
-        {:ok, _result} ->
-          {:ok,
-           socket
-           |> TerminalState.refresh_tmux_topology()}
-
-        {:error, reason} ->
-          {:error, reason, socket}
-      end
-    else
-      {:error, :no_tmux_session, socket}
-    end
-  end
-
-  defp refresh_terminal_surface_pane_id(socket) do
-    active_window_panes =
-      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.active_tmux_window_panes(
-        socket.assigns[:tmux_windows] || []
-      )
-
-    assign(
-      socket,
-      :terminal_surface_pane_id,
-      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.terminal_surface_pane_id(
-        active_window_panes,
-        socket.assigns[:preview_panes] || %{},
-        socket.assigns[:tmux_active_pane_id],
-        socket.assigns[:terminal_surface_pane_id]
-      )
-    )
-  end
-
-  defp load_preview_panes(%{id: workspace_id} = workspace, path_result) do
-    workspace
-    |> preview_pane_workspace_ids(workspace_id, path_result)
-    |> Enum.flat_map(&PreviewPanes.list_for_workspace/1)
-    |> Enum.map(fn registration ->
-      {registration.pane_id, preview_pane_payload(registration)}
-    end)
-    |> Map.new()
-  end
-
-  defp authorize_preview_pane(socket, pane_id) do
-    case PreviewPanes.get_by_pane(pane_id) do
-      %{workspace_id: workspace_id} ->
-        if preview_pane_workspace_match?(socket, workspace_id),
-          do: :ok,
-          else: {:error, :not_found}
-
-      _ ->
-        {:error, :not_found}
-    end
-  end
-
-  defp preview_pane_workspace_match?(socket, workspace_id) when is_binary(workspace_id) do
-    workspace_id in preview_pane_workspace_ids(
-      socket.assigns.workspace,
-      socket.assigns.workspace.id,
-      socket.assigns[:host_path]
-    )
-  end
-
-  defp preview_pane_workspace_match?(_socket, _workspace_id), do: false
-
-  defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do
-    ([workspace_id] ++
-       WorkspaceAliases.viewer_ids(workspace_id) ++
-       workspace_folder_aliases(workspace, path_result))
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.uniq()
-  end
-
-  defp preview_subscription_workspace_ids(socket) do
-    socket.assigns.workspace
-    |> preview_pane_workspace_ids(socket.assigns.workspace.id, socket.assigns[:host_path])
-    |> Enum.map(&to_string/1)
-  end
-
-  defp workspace_folder_aliases(_workspace, {:ok, path}) when is_binary(path) and path != "" do
-    [WorkspaceAliases.folder_id_for_path(path)]
-  end
-
-  defp workspace_folder_aliases(workspace, _path_result) do
-    path =
-      Map.get(workspace, :path) || Map.get(workspace, "path") || Map.get(workspace, :host_path) ||
-        Map.get(workspace, "host_path")
-
-    case path do
-      path when is_binary(path) and path != "" -> [WorkspaceAliases.folder_id_for_path(path)]
-      _ -> []
-    end
-  end
-
-  defp preview_pane_payload(payload) do
-    display_url = payload_value(payload, :display_url) || payload_value(payload, :url)
-
-    %{
-      pane_id: payload_value(payload, :pane_id),
-      workspace_id: payload_value(payload, :workspace_id),
-      url: payload_value(payload, :url),
-      display_url: display_url,
-      title: preview_pane_tab_title(payload, display_url),
-      favicon_url: DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url),
-      viewport: payload_value(payload, :viewport),
-      preview_id: payload_value(payload, :preview_id),
-      control_session_id: payload_value(payload, :control_session_id),
-      tmux_session: payload_value(payload, :tmux_session),
-      shared: payload_value(payload, :shared) || false,
-      source_pane_id: payload_value(payload, :source_pane_id)
-    }
-  end
-
-  # Locates open preview panes (keyed by tmux pane_id) whose registrations carry
-  # the given preview_id, so agent-driven observations can update every attached
-  # panel sharing the same preview session.
-  defp find_preview_panes_by_preview_id(socket, preview_id) do
-    socket.assigns[:preview_panes]
-    |> Kernel.||(%{})
-    |> Enum.filter(fn {_pane_id, pane} -> preview_value(pane, :preview_id) == preview_id end)
-  end
-
-  # Reflects the latest agent observation (url/title) into a preview pane so the
-  # open panel follows agent-driven browsing. Only fields present on the
-  # observation override the existing pane; missing fields keep prior values.
-  defp apply_observation_to_preview_pane(workspace, pane, observation) do
-    url = observation_field(observation, :url)
-    title = observation_field(observation, :title)
-
-    display_url =
-      url
-      |> then(&PreviewPanes.browser_display_url(workspace, &1))
-      |> case do
-        nil -> preview_value(pane, :display_url) || preview_value(pane, :url)
-        "" -> preview_value(pane, :display_url) || preview_value(pane, :url)
-        browser_url -> browser_url
-      end
-
-    pane
-    |> maybe_put_preview_field(:url, url)
-    |> maybe_put_preview_field(:display_url, display_url)
-    |> maybe_put_preview_field(:title, title)
-    |> Map.put(
-      :favicon_url,
-      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url)
-    )
-  end
-
-  defp maybe_put_preview_field(pane, _key, nil), do: pane
-  defp maybe_put_preview_field(pane, _key, ""), do: pane
-  defp maybe_put_preview_field(pane, key, value), do: Map.put(pane, key, value)
-
-  defp observation_field(observation, key) when is_map(observation) and is_atom(key) do
-    Map.get(observation, key) || Map.get(observation, Atom.to_string(key))
-  end
-
-  defp observation_field(_observation, _key), do: nil
-
-  # True when a registration broadcast carries the same display URL we already
-  # show for this pane — i.e. a heartbeat/topology re-broadcast rather than a new
-  # or navigated preview. Used to skip focus churn that would flash the frame.
-  defp preview_pane_heartbeat?(existing, pane) when is_map(existing) do
-    url = preview_value(existing, :display_url)
-    is_binary(url) and url != "" and url == preview_value(pane, :display_url)
-  end
-
-  defp preview_pane_heartbeat?(_existing, _pane), do: false
-
-  defp preview_pane_url_changed?(previous, updated) do
-    # The iframe loads `display_url`, so a reload is only warranted when that
-    # value actually changes. Comparing `:url` (e.g. a direct loopback URL) would
-    # miss proxied/snapshot display URLs and also fire spurious reloads when the
-    # display URL is unchanged.
-    new_url = preview_value(updated, :display_url)
-    is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :display_url)
-  end
-
-  defp preview_pane_tab_title(payload, display_url) do
-    case payload_value(payload, :title) do
-      title when is_binary(title) and title != "" ->
-        if String.starts_with?(title, "preview "), do: nil, else: title
-
-      _ ->
-        if is_binary(display_url) and display_url != "" do
-          DevIDE.Previews.extract_title_from_url(display_url)
-        end
-    end
-  end
-
-  defp record_preview_activity(socket, pane_id, event, metadata) when is_binary(pane_id) do
-    preview = Map.get(socket.assigns[:preview_panes] || %{}, pane_id)
-    registration = PreviewPanes.get_by_pane(pane_id)
-    workspace_id = socket.assigns.workspace.id
-
-    _ =
-      PreviewActivity.record(%{
-        workspace_id: workspace_id,
-        pane_id: pane_id,
-        preview_id:
-          preview_value(preview, :preview_id) || preview_value(registration, :preview_id),
-        session_id:
-          preview_value(preview, :control_session_id) ||
-            preview_value(registration, :control_session_id),
-        source: :browser,
-        event: to_string(event || "interaction"),
-        summary: preview_activity_summary(event, metadata),
-        metadata:
-          metadata
-          |> Map.put_new("title", preview_value(preview, :title))
-          |> Map.put_new("display_url", preview_value(preview, :display_url))
-          |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-          |> Map.new()
-      })
-
-    :ok
-  end
-
-  defp sanitize_preview_telemetry_metadata(metadata) when is_map(metadata) do
-    metadata
-    |> Map.take([
-      "x",
-      "y",
-      "button",
-      "modifiers",
-      "mode",
-      "url",
-      "key",
-      "delta_x",
-      "delta_y",
-      "request_id",
-      "status",
-      "reason",
-      "selector",
-      "nth",
-      "text_length",
-      "iframe_src",
-      "loaded_url",
-      "loaded",
-      "diagnostic",
-      "load_ms",
-      "recovery_attempts",
-      "width",
-      "height"
-    ])
-    |> sanitize_modifiers()
-  end
-
-  defp sanitize_preview_telemetry_metadata(_), do: %{}
-
-  defp sanitize_modifiers(%{"modifiers" => modifiers} = metadata) when is_map(modifiers) do
-    Map.put(metadata, "modifiers", Map.take(modifiers, ["alt", "ctrl", "meta", "shift"]))
-  end
-
-  defp sanitize_modifiers(metadata), do: metadata
-
-  defp preview_activity_summary(event, metadata) do
-    case to_string(event || "interaction") do
-      "pointer_down" -> pointer_summary("pointer down", metadata)
-      "pointer_up" -> pointer_summary("pointer up", metadata)
-      "snapshot_click" -> pointer_summary("snapshot click", metadata)
-      "key_intent" -> "key intent: " <> to_string(Map.get(metadata, "key", "unknown"))
-      "iframe_loaded" -> "iframe loaded"
-      "iframe_error" -> "iframe error"
-      "iframe_load_timeout" -> "iframe load timeout"
-      "iframe_focus" -> "iframe focused"
-      "iframe_blur" -> "iframe blurred"
-      "preview_reopen_requested" -> "preview reopen requested"
-      "visibility_heartbeat" -> "visibility heartbeat"
-      "overlay_destroyed" -> "preview overlay destroyed"
-      "recover" -> "recover preview pane"
-      "scroll" -> "scroll"
-      "selected" -> "selected preview pane"
-      "exited" -> "exited preview pane"
-      other -> other
-    end
-  end
-
-  defp pointer_summary(label, metadata) when is_map(metadata) do
-    case {Map.get(metadata, "x"), Map.get(metadata, "y")} do
-      {x, y} when is_integer(x) and is_integer(y) -> "#{label} @ #{x},#{y}"
-      _ -> label
-    end
-  end
-
-  defp preview_value(nil, _key), do: nil
-
-  defp preview_value(map, key) when is_map(map),
-    do: Map.get(map, key) || Map.get(map, to_string(key))
-
-  defp preview_value(_value, _key), do: nil
-
-  defp handle_preview_pane_history(socket, pane_id, action)
-       when is_binary(pane_id) and action in [:go_back, :go_forward, :reload] do
-    record_preview_activity(socket, pane_id, to_string(action), %{"source" => "header"})
-
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         {:ok, registration} <- apply(PreviewPanes, action, [pane_id]) do
-      preview = preview_pane_payload(registration)
-
-      socket =
-        socket
-        |> assign(
-          :preview_panes,
-          Map.put(socket.assigns[:preview_panes] || %{}, pane_id, preview)
-        )
-        |> assign(:entered_preview_pane_id, pane_id)
-        |> push_event("devide:reload_preview_iframes", %{
-          "pane_id" => pane_id,
-          "force" => true
-        })
-
-      {:noreply, socket}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Preview control failed: #{inspect(reason)}")}
-    end
-  end
-
-  defp handle_preview_pane_history(socket, _pane_id, _action),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
-
-  defp handle_preview_pane_close(socket, pane_id) when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "close", %{"source" => "header"})
-
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         :ok <- PreviewPanes.deregister(pane_id) do
-      socket =
-        socket
-        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-        |> maybe_clear_entered_preview_pane(pane_id)
-
-      {:noreply, socket}
-    else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Preview close failed: #{inspect(reason)}")}
-    end
-  end
-
-  defp handle_preview_pane_close(socket, _pane_id),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
-
-  defp handle_preview_pane_recover(socket, pane_id) when is_binary(pane_id) do
-    record_preview_activity(socket, pane_id, "recover", %{"source" => "preview_status"})
-
-    with :ok <- authorize_preview_pane(socket, pane_id),
-         %{url: url} = registration <- PreviewPanes.get_by_pane(pane_id),
-         tmux_session when is_binary(tmux_session) and tmux_session != "" <-
-           registration.tmux_session || socket.assigns[:tmux_session],
-         _kill_result <- TerminalState.tmux_adapter().kill_pane(tmux_session, pane_id),
-         :ok <- PreviewPanes.deregister(pane_id),
-         {:ok, socket} <- split_workspace_preview(socket, url, %{}) do
-      {:noreply,
-       socket
-       |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-       |> maybe_clear_entered_preview_pane(pane_id)}
-    else
-      nil ->
-        {:noreply, put_flash(socket, :error, "Preview pane not found")}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Preview recover failed: #{inspect(reason)}")}
-
-      reason ->
-        {:noreply, put_flash(socket, :error, "Preview recover failed: #{inspect(reason)}")}
-    end
-  end
-
-  defp handle_preview_pane_recover(socket, _pane_id),
-    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
-
-  defp maybe_clear_entered_preview_pane(socket, pane_id) do
-    if socket.assigns[:entered_preview_pane_id] == pane_id do
-      assign(socket, :entered_preview_pane_id, nil)
-    else
-      socket
-    end
-  end
-
-  defp active_tmux_window_name(assigns) do
-    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
-  end
-
-  # Name of the currently attached session, used to label the mobile session
-  # chip so it reads as a session switcher rather than a bare mode badge.
-  defp mobile_active_session_label(assigns) do
-    if assigns.terminal_sid == assigns.default_terminal_sid do
-      case assigns.shell_button_label do
-        label when is_binary(label) and label != "" -> label
-        _ -> "Shell"
-      end
-    else
-      case Enum.find(assigns.session_tabs, &(&1.id == assigns.terminal_sid)) do
-        %{label: label} when is_binary(label) and label != "" -> label
-        _ -> "Session"
-      end
-    end
-  end
-
-  defp mobile_mode_chip_title(assigns) do
-    case active_tmux_window_name(assigns) do
-      name when is_binary(name) and name != "" -> "Window \"#{name}\""
-      _ -> "Terminal session"
-    end
-  end
-
-  defp mobile_nav_sheet_title(%{mnav_view: "windows"} = assigns),
-    do: mobile_active_session_label(assigns)
-
-  defp mobile_nav_sheet_title(_assigns), do: "All sessions"
 
   # The session tab the terminal is currently attached to, if any — nil while
   # on the default shell (no tmux) or before session tabs load.
@@ -5885,10 +3065,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       %{windows: [_ | _]} -> "windows"
       _ -> "sessions"
     end
-  end
-
-  defp payload_value(payload, key) when is_map(payload) and is_atom(key) do
-    Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
   end
 
   # Called from mount (for the default-raw case) and from the explicit
@@ -6003,7 +3179,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp start_ghostty_for_pane(socket, pane_id) do
+  @doc false
+  def start_ghostty_for_pane(socket, pane_id) do
     ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
 
     :telemetry.span(
@@ -6234,62 +3411,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp path_under_root?(_path, _root), do: false
-
-  defp current_user_email(socket), do: socket.assigns.current_user[:email]
-
-  defp refresh_workspace_assign(socket) do
-    case Workspaces.get(socket.assigns.workspace.id, current_user_email(socket)) do
-      {:ok, workspace} -> assign(socket, :workspace, workspace)
-      {:error, _reason} -> socket
-    end
-  end
-
-  defp workspace_startable?(%{status: status}, nil),
-    do: status in [:stopped, :error, "stopped", "error"]
-
-  defp workspace_startable?(_workspace, _start_error), do: false
-
-  defp workspace_start_blocked?(error), do: is_binary(error) and error != ""
-
-  defp format_workspace_action_error({:http, _status, body}),
-    do: format_workspace_action_error(body)
-
-  defp format_workspace_action_error(%{"error" => message}) when is_binary(message), do: message
-
-  defp format_workspace_action_error(%{error: message}) when is_binary(message), do: message
-
-  defp format_workspace_action_error(reason), do: inspect(reason)
-
-  defp workspace_stoppable?(%{status: status}), do: status in [:running, "running"]
-
-  defp workspace_stoppable?(_), do: false
-
-  defp workspace_status_dot_class(status) when status in [:running, "running"],
-    do: "bg-emerald-500"
-
-  defp workspace_status_dot_class(status) when status in [:stopped, :error, "stopped", "error"],
-    do: "bg-base-content/35"
-
-  defp workspace_status_dot_class(_status), do: "bg-amber-400"
-
-  # On touch/narrow viewports the status dot doubles as the start/stop control
-  # (see the header identity cluster). Returns the phx-click event for a tap, or
-  # nil while the workspace is transitioning / start is blocked.
-  defp header_status_action(workspace, start_error) do
-    cond do
-      workspace_startable?(workspace, start_error) -> "workspace:start"
-      workspace_stoppable?(workspace) -> "workspace:stop"
-      true -> nil
-    end
-  end
-
-  defp header_status_action_label(workspace, start_error) do
-    case header_status_action(workspace, start_error) do
-      "workspace:start" -> "Start workspace"
-      "workspace:stop" -> "Stop workspace"
-      _ -> "Workspace status: " <> to_string(workspace.status)
-    end
-  end
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]

@@ -14,7 +14,7 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
   envelope for an audit alert; an Android user token gets the FCM envelope for a
   needs_review card.
   """
-  use DevIDE.TestCase, async: false
+  use DevIde.DataCase, async: false
 
   alias DevIDE.{Audit, Push}
   alias DevIDE.Mobile.UserObserver
@@ -103,7 +103,7 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
   end
 
   test "a needs_review card reaches FCM as a fully-formed request for an Android token" do
-    user_id = "push-user-#{System.unique_integer([:positive])}"
+    user_id = unique_user("push-user")
     workspace_id = "ws-fcm-#{System.unique_integer([:positive])}"
     :ok = UserObserver.clear(user_id)
 
@@ -170,4 +170,10 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
 
   defp restore_module(module, nil), do: Application.delete_env(:dev_ide, module)
   defp restore_module(module, value), do: Application.put_env(:dev_ide, module, value)
+
+  defp unique_user(prefix) do
+    user_id = "#{prefix}-#{System.unique_integer([:positive])}"
+    on_exit(fn -> UserObserver.stop(user_id) end)
+    user_id
+  end
 end

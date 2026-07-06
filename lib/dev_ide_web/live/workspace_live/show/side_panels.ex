@@ -507,6 +507,202 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
     "inline-block w-6 text-center #{color}"
   end
 
+  attr :artifact_projects, :list, default: []
+  attr :artifact_projects_error, :string, default: nil
+
+  def artifact_gallery_panel(assigns) do
+    ~H"""
+    <section
+      id="artifact-gallery-panel"
+      class="flex h-full min-h-0 flex-col border border-base-300 bg-base-100"
+    >
+      <div class="flex shrink-0 items-center justify-between gap-3 border-b border-base-300 bg-base-200/45 px-3 py-2">
+        <div class="min-w-0">
+          <h2 class="truncate text-sm font-semibold text-base-content">Artifacts</h2>
+          <p class="text-xs text-base-content/55">{artifact_count_label(@artifact_projects)}</p>
+        </div>
+        <button
+          id="artifact-refresh-button"
+          type="button"
+          phx-click="artifact:refresh"
+          class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
+          title="Refresh artifacts"
+          aria-label="Refresh artifacts"
+        >
+          <.icon name="hero-arrow-path" class="size-4" />
+        </button>
+      </div>
+
+      <div
+        :if={@artifact_projects_error}
+        id="artifact-gallery-error"
+        class="border-b border-error/20 bg-error/10 px-3 py-2 text-xs text-error"
+      >
+        {@artifact_projects_error}
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-auto p-3">
+        <div
+          :if={@artifact_projects == []}
+          id="artifact-gallery-empty"
+          class="flex h-full min-h-44 items-center justify-center border border-dashed border-base-300 bg-base-200/30 p-6 text-center text-sm text-base-content/55"
+        >
+          No artifacts yet.
+        </div>
+
+        <div :if={@artifact_projects != []} class="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+          <article
+            :for={project <- @artifact_projects}
+            id={"artifact-card-" <> artifact_id(project)}
+            class="flex min-h-52 min-w-0 flex-col border border-base-300 bg-base-100 p-3 shadow-sm transition hover:border-primary/30 hover:shadow"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3
+                  class="truncate text-sm font-semibold text-base-content"
+                  title={artifact_name(project)}
+                >
+                  {artifact_name(project)}
+                </h3>
+                <div class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span class={[
+                    "inline-flex items-center rounded border px-1.5 py-0.5 font-medium",
+                    artifact_status_class(artifact_status(project))
+                  ]}>
+                    {artifact_status(project)}
+                  </span>
+                  <span class="rounded border border-base-300 bg-base-200 px-1.5 py-0.5 font-mono text-base-content/60">
+                    {artifact_kind(project)}
+                  </span>
+                  <span
+                    :if={artifact_branch(project)}
+                    class="max-w-36 truncate rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-base-content/55"
+                    title={artifact_branch(project)}
+                  >
+                    {artifact_branch(project)}
+                  </span>
+                </div>
+              </div>
+              <div class="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  phx-click="artifact:serve"
+                  phx-value-artifact-id={artifact_id(project)}
+                  class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-base-100 text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content"
+                  title="Start artifact preview server"
+                  aria-label={"Start preview server for " <> artifact_name(project)}
+                >
+                  <.icon name="hero-play" class="size-4" />
+                </button>
+                <button
+                  type="button"
+                  phx-click="artifact:open"
+                  phx-value-artifact-id={artifact_id(project)}
+                  disabled={!artifact_preview_available?(project)}
+                  class="inline-flex size-8 items-center justify-center rounded border border-base-300 bg-primary text-primary-content transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:border-base-300 disabled:bg-base-200 disabled:text-base-content/35"
+                  title="Open artifact preview"
+                  aria-label={"Open preview for " <> artifact_name(project)}
+                >
+                  <.icon name="hero-arrow-top-right-on-square" class="size-4" />
+                </button>
+              </div>
+            </div>
+
+            <dl class="mt-3 grid gap-2 text-xs">
+              <div class="min-w-0">
+                <dt class="text-[10px] font-semibold uppercase text-base-content/40">Preview</dt>
+                <dd
+                  class="mt-0.5 truncate font-mono text-base-content/70"
+                  title={artifact_preview_url(project) || "Not started"}
+                >
+                  {artifact_preview_url(project) || "Not started"}
+                </dd>
+              </div>
+              <div class="min-w-0">
+                <dt class="text-[10px] font-semibold uppercase text-base-content/40">Worktree</dt>
+                <dd
+                  class="mt-0.5 truncate font-mono text-base-content/70"
+                  title={artifact_worktree_path(project)}
+                >
+                  {artifact_worktree_path(project)}
+                </dd>
+              </div>
+              <div :if={artifact_prompt_preview(project)} class="min-w-0">
+                <dt class="text-[10px] font-semibold uppercase text-base-content/40">
+                  Latest Prompt
+                </dt>
+                <dd class="mt-0.5 line-clamp-2 text-base-content/70">
+                  {artifact_prompt_preview(project)}
+                </dd>
+              </div>
+            </dl>
+
+            <div class="mt-auto pt-3 text-[11px] text-base-content/45">
+              Updated {artifact_updated_label(project)}
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+    """
+  end
+
+  defp artifact_count_label(projects) do
+    count = length(projects || [])
+    "#{count} artifact" <> if(count == 1, do: "", else: "s")
+  end
+
+  defp artifact_id(project), do: artifact_value(project, :id) || ""
+  defp artifact_name(project), do: artifact_value(project, :name) || artifact_id(project)
+  defp artifact_kind(project), do: artifact_value(project, :kind) || "static"
+  defp artifact_status(project), do: artifact_value(project, :status) || "draft"
+  defp artifact_branch(project), do: blank_to_nil(artifact_value(project, :branch))
+  defp artifact_preview_url(project), do: blank_to_nil(artifact_value(project, :preview_url))
+  defp artifact_worktree_path(project), do: artifact_value(project, :worktree_path) || ""
+
+  defp artifact_preview_available?(project), do: is_binary(artifact_preview_url(project))
+
+  defp artifact_prompt_preview(project) do
+    project
+    |> artifact_value(:prompt_history)
+    |> case do
+      prompts when is_list(prompts) -> prompts |> List.last() |> blank_to_nil()
+      _ -> nil
+    end
+  end
+
+  defp artifact_updated_label(project) do
+    case artifact_value(project, :updated_at) do
+      %DateTime{} = updated_at -> Calendar.strftime(updated_at, "%Y-%m-%d %H:%M UTC")
+      value when is_binary(value) and value != "" -> value
+      _ -> "unknown"
+    end
+  end
+
+  defp artifact_status_class(status) do
+    case status do
+      "live" -> "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+      "running" -> "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+      "provisioned" -> "border-sky-500/30 bg-sky-500/10 text-sky-700"
+      "draft" -> "border-amber-500/30 bg-amber-500/10 text-amber-700"
+      "error" -> "border-error/30 bg-error/10 text-error"
+      _ -> "border-base-300 bg-base-200 text-base-content/65"
+    end
+  end
+
+  defp artifact_value(project, key) when is_map(project) and is_atom(key) do
+    Map.get(project, key) || Map.get(project, Atom.to_string(key))
+  end
+
+  defp artifact_value(_project, _key), do: nil
+
+  defp blank_to_nil(value) when is_binary(value) do
+    value = String.trim(value)
+    if value == "", do: nil, else: value
+  end
+
+  defp blank_to_nil(_), do: nil
+
   defp render_project_card(assigns) do
     ~H"""
     <%= if @project_meta do %>

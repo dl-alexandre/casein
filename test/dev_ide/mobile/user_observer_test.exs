@@ -1,5 +1,5 @@
 defmodule DevIDE.Mobile.UserObserverTest do
-  use DevIDE.TestCase, async: false
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Audit
   alias DevIDE.Mobile.UserObserver
@@ -330,7 +330,11 @@ defmodule DevIDE.Mobile.UserObserverTest do
     flush()
   end
 
-  defp unique_user, do: "observer-#{System.unique_integer([:positive])}"
+  defp unique_user do
+    user_id = "observer-#{System.unique_integer([:positive])}"
+    on_exit(fn -> UserObserver.stop(user_id) end)
+    user_id
+  end
 
   defp flush do
     receive do

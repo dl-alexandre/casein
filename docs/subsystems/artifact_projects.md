@@ -93,6 +93,17 @@ Agents can pass `preview_open_arguments` to the existing Preview MCP
 `preview_open` tool; a separate artifact-open preview tool is not required for
 static artifacts.
 
+## Cockpit Gallery
+
+The workspace cockpit includes an `artifacts` tab. It lists artifact projects
+for the current workspace, shows their runtime/worktree metadata, refreshes the
+runtime-backed list, starts the runtime preview server, and opens the artifact
+through the same tmux preview-pane split used by the normal Preview tools.
+
+The LiveView event handlers re-fetch the artifact project and verify
+`project.workspace_id == socket.assigns.workspace.id` before serving or opening
+it, so a cross-workspace artifact id cannot be used from another cockpit.
+
 ## MCP Surface
 
 `DevIdeWeb.API.ArtifactMCP` exposes the context through workspace-scoped MCP
@@ -124,12 +135,14 @@ Successful project payloads also include:
   the running DevIDE VM.
 - Cross-workspace artifact access is rejected before mutating operations; an
   artifact id from another workspace returns `workspace_scope_mismatch`.
-- LiveView gallery controls should wrap this context later.
+- The cockpit gallery is a runtime/worktree browser. It does not yet provide
+  file-level editing or generated LiveView artifact sandboxes.
 
 ## Next Steps
 
-- Add an artifact gallery and embedded preview pane in the DevIDE cockpit.
 - Add file watch plus preview refresh events for tighter edit loops.
+- Add a richer embedded preview mode for artifact detail views when direct
+  same-origin rendering is appropriate.
 - Add export targets once artifacts need promotion to deployment pipelines.
 - Design a separate, sandboxed LiveView artifact runtime instead of mounting
   generated modules directly in the main application.

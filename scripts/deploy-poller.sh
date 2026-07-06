@@ -212,7 +212,7 @@ log "deploy due: ${from_label} -> ${target_short}"
 
 # --- prepare a clean detached worktree at the target SHA ---------------------
 mkdir -p "$(dirname "$WORKTREE")"
-if git worktree list --porcelain | grep -qx "worktree ${WORKTREE}"; then
+if git worktree list --porcelain | grep -Fx "worktree ${WORKTREE}" >/dev/null; then
   log "reusing worktree ${WORKTREE}"
   git -C "$WORKTREE" -c advice.detachedHead=false checkout --detach --quiet "$target"
   git -C "$WORKTREE" reset --hard --quiet "$target"

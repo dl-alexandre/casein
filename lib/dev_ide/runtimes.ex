@@ -439,17 +439,15 @@ defmodule DevIDE.Runtimes do
         agent_worktree_metadata(attrs, existing_metadata, worktree_path, git_info, now)
       )
 
-    with {:ok, preview_server} <-
-           PreviewServer.build_for_worktree(
+    with {:ok, metadata} <-
+           put_worktree_preview_metadata(
              record,
              runtime_id,
              tmux_session_id,
              worktree_path,
-             Map.put(attrs, "metadata", metadata),
-             used_preview_ports(runtime_id)
+             attrs,
+             metadata
            ) do
-      metadata = PreviewServer.put_profile(metadata, preview_server)
-
       runtime = %Runtime{
         id: runtime_id,
         workspace_id: record.external_id,
@@ -525,6 +523,33 @@ defmodule DevIDE.Runtimes do
         _ = PreviewLauncher.ensure_started(runtime)
         {:ok, runtime}
       end
+    end
+  end
+
+  defp put_worktree_preview_metadata(
+         %WorkspaceRecord{} = record,
+         runtime_id,
+         tmux_session_id,
+         worktree_path,
+         attrs,
+         metadata
+       ) do
+    case PreviewServer.build_for_worktree(
+           record,
+           runtime_id,
+           tmux_session_id,
+           worktree_path,
+           Map.put(attrs, "metadata", metadata),
+           used_preview_ports(runtime_id)
+         ) do
+      {:ok, preview_server} ->
+        {:ok, PreviewServer.put_profile(metadata, preview_server)}
+
+      {:error, :no_runtime_preview_port_available} ->
+        {:ok, PreviewServer.put_unavailable(metadata, "no_runtime_preview_port_available")}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

@@ -432,6 +432,29 @@ defmodule DevIDE.PreviewPanesTest do
     assert refreshed.display_url == "http://localhost:5173/two"
   end
 
+  test "browser task DOWN for completed task does not crash with another task pending" do
+    pending_pid =
+      spawn(fn ->
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    on_exit(fn -> send(pending_pid, :stop) end)
+
+    pending_ref = make_ref()
+    caller = {self(), make_ref()}
+
+    :sys.replace_state(PreviewPanes, fn state ->
+      %{state | pending_browser: %{pending_ref => {caller, pending_pid}}}
+    end)
+
+    send(Process.whereis(PreviewPanes), {:DOWN, make_ref(), :process, self(), :normal})
+
+    state = :sys.get_state(PreviewPanes)
+    assert %{^pending_ref => {^caller, ^pending_pid}} = state.pending_browser
+  end
+
   test "navigate falls back to a snapshot when the target refuses framing" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_noframe"
