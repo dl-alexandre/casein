@@ -201,6 +201,7 @@ defmodule DevIDE.Agents.AuthProfileTest do
 
     env = [
       {"DEVIDE_AGENT_AUTH_ROOT", root},
+      {"DEVIDE_SCRIPTS", Path.dirname(devide)},
       {"HOME", home},
       {"DEV_IDE_API_TOKEN", "token"},
       {"DEVIDE_WORKSPACE_ID", "ws-1"},

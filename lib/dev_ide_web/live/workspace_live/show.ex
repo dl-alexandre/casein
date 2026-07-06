@@ -3245,21 +3245,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            terminal_preset: socket.assigns.terminal_preset_id
          ) do
       {:ok, worker} ->
-        {term, pty} = PaneWorker.get_handles(worker)
-        Terminals.subscribe_tmux_session_cleanup(pane.tmux_session)
+        case pane_worker_handles(worker) do
+          {:ok, {term, pty}} ->
+            Terminals.subscribe_tmux_session_cleanup(pane.tmux_session)
 
-        update_pane(socket, pane_id, fn p ->
-          %{
-            p
-            | worker: worker,
-              ghostty_term: term,
-              ghostty_pty: pty,
-              backend: backend,
-              session_sid: session_sid,
-              error: nil
-          }
-          |> Map.put(:auto_retry_count, 0)
-        end)
+            update_pane(socket, pane_id, fn p ->
+              %{
+                p
+                | worker: worker,
+                  ghostty_term: term,
+                  ghostty_pty: pty,
+                  backend: backend,
+                  session_sid: session_sid,
+                  error: nil
+              }
+              |> Map.put(:auto_retry_count, 0)
+            end)
+
+          {:error, reason} ->
+            stop_failed_pane_worker(worker)
+            update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
+        end
 
       {:error, reason} ->
         # The per-pane error state (set here and rendered in TerminalChrome)
@@ -3268,6 +3274,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # inline inspect(error) and produced banner + box on every retry).
         update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
     end
+  end
+
+  defp pane_worker_handles(worker) do
+    {:ok, PaneWorker.get_handles(worker)}
+  catch
+    :exit, reason -> {:error, {:pane_worker_startup_failed, reason}}
+  end
+
+  defp stop_failed_pane_worker(worker) when is_pid(worker) do
+    Process.unlink(worker)
+    if Process.alive?(worker), do: Process.exit(worker, :kill)
+    :ok
   end
 
   defp pane_worker_alive?(%{worker: worker, ghostty_term: term})
