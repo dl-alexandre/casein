@@ -234,6 +234,120 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
     refute has_element?(view, "#file-pane--2")
   end
 
+  describe "terminal:open_file_link" do
+    setup do
+      DevIDE.FilePanes.LinkResolver.clear_cache()
+      on_exit(fn -> DevIDE.FilePanes.LinkResolver.clear_cache() end)
+      :ok
+    end
+
+    test "opens a file pane anchored to the pane under the click's grid cell",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      # Two operator panes side by side: %1 at cols 0-59, %3 at cols 60-119.
+      seed_topology(tmux_session, workspace_path, ["%1", "%3"])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      flush_fake_tmux()
+
+      # The client sends the frame key's pane id ("pane-1" — the LiveView pane,
+      # since the shared Ghostty surface spans the whole tmux window) plus the
+      # click's grid cell. The cell falls inside %3, so the split anchors there,
+      # NOT on the active pane %1.
+      render_click(view, "terminal:open_file_link", %{
+        "path" => "lib/foo.ex",
+        "line" => 12,
+        "pane_id" => "pane-1",
+        "row" => 5,
+        "col" => 70
+      })
+
+      assert_receive {:fake_tmux_split_pane, ^tmux_session, "%3", "h", new_pane_id}
+      assert_receive {:fake_tmux_select_pane, ^tmux_session, "%3"}
+
+      render(view)
+      assert socket_assigns(view, :tab) == "terminal"
+
+      assert %{active_path: "lib/foo.ex", open_files: [%{path: "lib/foo.ex", line: 12}]} =
+               FilePanes.get_by_pane(new_pane_id)
+    end
+
+    test "a forged client path outside the workspace root is refused",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1"])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      flush_fake_tmux()
+
+      html =
+        render_click(view, "terminal:open_file_link", %{
+          "path" => "/etc/passwd",
+          "pane_id" => "pane-1",
+          "row" => 0,
+          "col" => 0
+        })
+
+      # Refused outright: no split, no files-tab fallback, an error flash.
+      refute_receive {:fake_tmux_split_pane, _session, _anchor, _dir, _pane}, 200
+      assert html =~ "That link points outside the workspace."
+      assert socket_assigns(view, :tab) != "files"
+      assert socket_assigns(view, :open_file) == nil
+      assert FilePanes.list_for_workspace(@workspace_id) == []
+
+      # Relative escapes are refused the same way.
+      render_click(view, "terminal:open_file_link", %{
+        "path" => "../../etc/passwd",
+        "pane_id" => "pane-1",
+        "row" => 0,
+        "col" => 0
+      })
+
+      refute_receive {:fake_tmux_split_pane, _session, _anchor, _dir, _pane}, 200
+      assert FilePanes.list_for_workspace(@workspace_id) == []
+    end
+
+    test "falls back to the files tab when no tmux pane can anchor the split",
+         %{conn: conn} do
+      # No topology: the path resolves, but there is nothing to split against.
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+
+      render_click(view, "terminal:open_file_link", %{
+        "path" => "lib/foo.ex",
+        "line" => 2,
+        "pane_id" => "pane-1",
+        "row" => 0,
+        "col" => 0
+      })
+
+      assert socket_assigns(view, :tab) == "files"
+      assert %{path: "lib/foo.ex"} = socket_assigns(view, :open_file)
+      assert socket_assigns(view, :feature_panes) == %{}
+    end
+
+    test "a vanished (unresolvable) file falls back to the files tab",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1"])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      flush_fake_tmux()
+
+      render_click(view, "terminal:open_file_link", %{
+        "path" => "lib/ghost.ex",
+        "pane_id" => "pane-1",
+        "row" => 0,
+        "col" => 0
+      })
+
+      refute_receive {:fake_tmux_split_pane, _session, _anchor, _dir, _pane}, 200
+      assert socket_assigns(view, :tab) == "files"
+      assert socket_assigns(view, :open_file) == nil
+      assert socket_assigns(view, :file_error) != nil
+    end
+  end
+
   # --- helpers -----------------------------------------------------------------
 
   defp register_file_pane(view, tmux_session) do
