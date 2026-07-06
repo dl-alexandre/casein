@@ -1,0 +1,11 @@
+[Unit]
+Description=Update the user-owned @openai/codex npm install to latest
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+ExecStart=__NPM__ install -g --prefix __HOME__/.local @openai/codex@latest
+ExecStartPost=/usr/bin/bash __CHECKOUT__/scripts/install-agent-shims.sh
+Nice=10

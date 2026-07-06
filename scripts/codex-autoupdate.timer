@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily codex CLI update
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+Unit=codex-autoupdate.service
+
+[Install]
+WantedBy=timers.target
