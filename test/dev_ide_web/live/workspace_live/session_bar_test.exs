@@ -593,6 +593,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(title="Agent pane ready or awaiting input")
     end
 
+    test "session picker keeps a deliberately named window's name" do
+      info =
+        "ex-9"
+        |> agent_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{
+              id: "@1",
+              index: 1,
+              name: "updates",
+              manual_name: true,
+              active: false,
+              quiet: true,
+              pane_state: :ready,
+              task_summary: "Review agent state"
+            }
+          ]
+        })
+
+      assert [tab] = SessionBarVM.session_tabs([info])
+      assert [%{display_name: "updates", task_summary: "Review agent state"}] = tab.windows
+    end
+
     test "badges sessions and windows hosting a live preview pane" do
       info =
         "ex-9"
@@ -983,6 +1006,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(title="Agent pane ready or awaiting input")
       assert html =~ ~s(id="tmux-window-activity--2")
       assert html =~ ~s(title="Agent pane working")
+    end
+
+    test "a deliberately named window keeps its name over the task summary" do
+      now = DateTime.utc_now() |> DateTime.to_unix()
+      ready = <<0x2733::utf8>> <> " Review agent state"
+
+      [tab] =
+        SessionBarVM.window_tabs([
+          window(%{
+            name: "updates",
+            manual_name: true,
+            current_command: "node",
+            pane_list: [
+              pane(%{
+                id: "%1",
+                role: "agent",
+                current_command: "node",
+                activity: now,
+                pane_title: ready
+              })
+            ]
+          })
+        ])
+
+      assert tab.display_name == "updates"
+      # The summary still reaches the hover title.
+      assert tab.task_summary == "Review agent state"
+      assert tab.full_title =~ "Review agent state"
     end
 
     test "marks unseen quiet tmux windows distinctly in the window picker" do

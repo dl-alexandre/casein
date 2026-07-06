@@ -479,6 +479,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
           |> put_known_pane_state(pane_state)
           |> put_known_agent_state(agent_state)
           |> put_present(:task_summary, task_summary)
+          |> put_manual_name(window)
 
         {window_map, put_present_message(messages, id, agent_message)}
       end)
@@ -687,6 +688,17 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp put_present(map, _key, value) when value in [nil, ""], do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
+
+  # Deliberately named windows (tmux automatic-rename off) keep their name as
+  # the picker label, so the flag travels with the stable window map. Only the
+  # `true` case is stored to avoid re-hashing every auto-named window.
+  defp put_manual_name(map, window) do
+    if truthy?(Map.get(window, :manual_name) || Map.get(window, "manual_name")) do
+      Map.put(map, :manual_name, true)
+    else
+      map
+    end
+  end
 
   defp truthy?(value), do: value in [true, 1, "1", "true", "yes", "on"]
 

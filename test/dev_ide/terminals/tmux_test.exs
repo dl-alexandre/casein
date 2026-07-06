@@ -53,7 +53,7 @@ defmodule DevIDE.Terminals.TmuxTest do
 
     File.write!(tmux_bin, """
     #!/bin/sh
-    printf '@1|0|shell|1|1|123|bash\\n'
+    printf '@1|0|1|shell|1|1|123|bash\\n'
     """)
 
     File.chmod!(tmux_bin, 0o755)
@@ -125,9 +125,9 @@ defmodule DevIDE.Terminals.TmuxTest do
     # field so embedded pipes survive.
     File.write!(tmux_bin, """
     #!/bin/sh
-    printf 'W|devide_a_u-1|@1|0|1|111|bash|shell\\n'
-    printf 'W|devide_a_u-1|@2|1|0|222|mix|tests | ci\\n'
-    printf 'W|devide_b_u-2|@1|0|1|333|claude|agent\\n'
+    printf 'W|devide_a_u-1|@1|0|1|111|bash|1|shell\\n'
+    printf 'W|devide_a_u-1|@2|1|0|222|mix|0|tests | ci\\n'
+    printf 'W|devide_b_u-2|@1|0|1|333|claude|1|agent\\n'
     printf 'P|devide_a_u-1|@2|%%3|1|/workspace/apps/web\\n'
     printf 'P|devide_b_u-2|@1|%%0|0|/workspace\\n'
     """)

@@ -143,7 +143,12 @@ defmodule TmuxCtl.Client do
   defp maybe_send_enter(target, true, opts),
     do: run_ok(["send-keys", "-t", target, "Enter"], opts)
 
-  @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
+  # `automatic-rename` (hyphenated, the window-option lookup) is 0 once a
+  # window has been deliberately named — by the user, `new-window -n`, or a
+  # DevIDE rename — and 1 while tmux still auto-names it after the running
+  # command. The underscored spelling is NOT a tmux format variable and
+  # silently expands to "".
+  @topology_window_fmt ~S(#{window_id}|#{window_index}|#{automatic-rename}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
   @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role}|#{pane_title})
 
   @doc """
@@ -163,13 +168,14 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_topology_window_line(line) do
-    case String.split(line, "|", parts: 7) do
-      [id, index, name, active, panes, activity, current_command] ->
+    case String.split(line, "|", parts: 8) do
+      [id, index, auto_rename, name, active, panes, activity, current_command] ->
         [
           %{
             id: id,
             index: parse_int(index, 0),
             name: name,
+            manual_name: auto_rename == "0",
             active: active == "1",
             panes: parse_int(panes, 1),
             activity: parse_int(activity, 0),
@@ -244,7 +250,7 @@ defmodule TmuxCtl.Client do
   # Window name comes last so a `|` in a user-chosen name can't shift fields
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
-  @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{window_name})
+  @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{automatic-rename}|#{window_name})
   @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@devide_pane_role}|#{pane_title})
 
   @doc """
@@ -290,14 +296,15 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_directory_window_line(line) do
-    case String.split(line, "|", parts: 7) do
-      [session, id, index, active, activity, current_command, name] ->
+    case String.split(line, "|", parts: 8) do
+      [session, id, index, active, activity, current_command, auto_rename, name] ->
         [
           %{
             session: session,
             id: id,
             index: parse_int(index, 0),
             name: name,
+            manual_name: auto_rename == "0",
             active: active == "1",
             activity: parse_int(activity, 0),
             current_command: current_command
@@ -1073,10 +1080,12 @@ defmodule TmuxCtl.Client do
 
   # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
   # collides) window listing across every session on the server. Each field maps
-  # to TmuxWindowJanitor's kill policy. `automatic_rename` is the load-bearing
+  # to TmuxWindowJanitor's kill policy. `automatic-rename` is the load-bearing
   # one: tmux flips it off the instant a user renames a window, so it cleanly
   # separates "auto-named, never touched" windows from ones the operator named.
-  @list_windows_fmt ~S(#{session_name}|#{window_id}|#{window_active}|#{window_panes}|#{automatic_rename}|#{window_activity}|#{pane_current_command})
+  # It must be spelled with the hyphen (the window-option lookup); the
+  # underscored form is not a tmux format variable and expands to "".
+  @list_windows_fmt ~S(#{session_name}|#{window_id}|#{window_active}|#{window_panes}|#{automatic-rename}|#{window_activity}|#{pane_current_command})
 
   @doc """
   List every window on the tmux server as maps with the fields the window
