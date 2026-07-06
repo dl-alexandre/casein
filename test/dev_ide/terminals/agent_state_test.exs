@@ -16,6 +16,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
       source: :mcp,
       tool: "terminal_report_agent_state",
       workspace_id: "ws-1",
+      transcript_path: nil,
       reported_at: DateTime.add(DateTime.utc_now(), -seconds_ago, :second)
     }
   end
@@ -45,6 +46,18 @@ defmodule DevIDE.Terminals.AgentStateTest do
     test "ignores unrecognized states" do
       :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", "bogus", nil)
       assert AgentState.get("devide_alpha_u-dev", "%3") == nil
+    end
+
+    test "stores transcript_path from hook reports" do
+      path = "/home/devbox/.claude/projects/test/session.jsonl"
+
+      :ok =
+        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, nil,
+          source: :hook,
+          transcript_path: path
+        )
+
+      assert AgentState.get("devide_alpha_u-dev", "%3").transcript_path == path
     end
 
     test "identical re-report refreshes freshness without broadcasting" do

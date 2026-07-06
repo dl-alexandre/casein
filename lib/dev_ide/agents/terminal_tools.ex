@@ -23,7 +23,8 @@ defmodule DevIDE.Agents.TerminalTools do
     AnnotationTools,
     PaneEnv,
     TerminalCommandPolicy,
-    TerminalOutputFormat
+    TerminalOutputFormat,
+    Transcripts
   }
 
   alias DevIDE.Labels
@@ -105,6 +106,33 @@ defmodule DevIDE.Agents.TerminalTools do
             session: Params.session(),
             lines: Params.lines(),
             ansi: Params.ansi()
+          })
+        )
+      ),
+      Tool.define(
+        "terminal_agent_transcript",
+        "Read the agent pane's live CLI transcript (lossless JSONL, not tmux scrollback). " <>
+          "Uses the transcript_path reported by Claude hooks on the target pane. " <>
+          "Returns normalized entries (role, text, tool calls, timestamps) plus a cursor " <>
+          "for incremental pulls via since. Defaults to the last 30 entries.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            pane: Params.pane(),
+            since: %{
+              type: "string",
+              description: "Cursor uuid from a prior pull; return only newer entries."
+            },
+            tail: %{
+              type: "integer",
+              minimum: 1,
+              maximum: 200,
+              description: "Max entries to return (default 30)."
+            },
+            full_text: %{
+              type: "boolean",
+              description: "When true, return full text bodies instead of truncated previews."
+            }
           })
         )
       ),
@@ -224,6 +252,10 @@ defmodule DevIDE.Agents.TerminalTools do
               type: "string",
               description: "Short free-text detail (truncated to 200 characters)."
             },
+            transcript_path: %{
+              type: "string",
+              description: "Absolute path to the agent CLI session JSONL transcript."
+            },
             source: %{
               type: "string",
               enum: ["agent", "hook"],
@@ -254,6 +286,12 @@ defmodule DevIDE.Agents.TerminalTools do
               minimum: 0,
               maximum: 55_000,
               description: "Max time to block, in milliseconds (default 30000, capped at 55000)."
+            },
+            include_answer: %{
+              type: "boolean",
+              description:
+                "When true and the matched state is done, include the observed agent's " <>
+                  "final assistant message from its transcript in answer."
             }
           }),
           ["workspace_id", "states"]
@@ -272,6 +310,7 @@ defmodule DevIDE.Agents.TerminalTools do
               "terminal_capture",
               "terminal_agent_pane",
               "terminal_capture_agent",
+              "terminal_agent_transcript",
               "annotation_list"
             ] do
     %{
@@ -381,6 +420,7 @@ defmodule DevIDE.Agents.TerminalTools do
       "terminal_capture" -> capture(params)
       "terminal_agent_pane" -> agent_pane(params)
       "terminal_capture_agent" -> capture_agent(params)
+      "terminal_agent_transcript" -> agent_transcript(params)
       "terminal_send_agent_keys" -> send_agent_keys(params)
       "terminal_send_agent_command" -> send_agent_command(params)
       "terminal_paste_agent_text" -> paste_agent_text(params)
@@ -499,6 +539,31 @@ defmodule DevIDE.Agents.TerminalTools do
          safe_to_mutate: pane.agent_match == "agent_pair_marker"
        }
        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
+    end
+  end
+
+  @doc "Read the dedicated agent pane's live CLI transcript."
+  @spec agent_transcript(map()) :: {:ok, map()} | {:error, term()}
+  def agent_transcript(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- label_target_pane(session, params),
+         {:ok, path} <- transcript_path_for(session, pane.id),
+         {:ok, transcript} <-
+           Transcripts.read(path,
+             since: string_param(params, "since"),
+             tail: tail_param(params),
+             full_text: truthy?(Map.get(params, "full_text") || Map.get(params, :full_text))
+           ) do
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         transcript_path: path,
+         entries: transcript.entries,
+         cursor: transcript.cursor,
+         total_on_branch: transcript.total_on_branch
+       }
+       |> put_next("terminal_agent_transcript", transcript_next_args(session, pane.id, params))}
     end
   end
 
@@ -630,10 +695,13 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, pane} <- label_target_pane(session, params) do
       message = truncated_message(params)
 
+      transcript_path = string_param(params, "transcript_path")
+
       :ok =
         AgentState.report(workspace_id, session, pane.id, state, message,
           source: agent_state_source(params),
-          tool: "terminal_report_agent_state"
+          tool: "terminal_report_agent_state",
+          transcript_path: transcript_path
         )
 
       {:ok,
@@ -642,6 +710,7 @@ defmodule DevIDE.Agents.TerminalTools do
          target: pane.id,
          state: Atom.to_string(state),
          message: message,
+         transcript_path: transcript_path,
          status: "reported"
        }}
     end
@@ -670,7 +739,31 @@ defmodule DevIDE.Agents.TerminalTools do
          matched: matched,
          timed_out: not matched,
          waited_ms: System.monotonic_time(:millisecond) - started
-       }}
+       }
+       |> put_wait_answer(session, pane.id, state, matched, params)}
+    end
+  end
+
+  defp put_wait_answer(payload, session, pane_id, :done, true, params) do
+    if truthy?(Map.get(params, "include_answer") || Map.get(params, :include_answer)) do
+      case transcript_answer(session, pane_id) do
+        answer when is_binary(answer) -> Map.put(payload, :answer, answer)
+        _ -> payload
+      end
+    else
+      payload
+    end
+  end
+
+  defp put_wait_answer(payload, _session, _pane_id, _state, _matched, _params), do: payload
+
+  defp transcript_answer(session, pane_id) do
+    case AgentState.get(session, pane_id) do
+      %{transcript_path: path} when is_binary(path) and path != "" ->
+        Transcripts.final_assistant_message(path)
+
+      _ ->
+        nil
     end
   end
 
@@ -883,6 +976,34 @@ defmodule DevIDE.Agents.TerminalTools do
       nil -> nil
       message -> String.slice(message, 0, 200)
     end
+  end
+
+  defp transcript_path_for(session, pane_id) do
+    case AgentState.get(session, pane_id) do
+      %{transcript_path: path} when is_binary(path) and path != "" ->
+        if Transcripts.allowed_path?(path),
+          do: {:ok, path},
+          else: {:error, :invalid_transcript_path}
+
+      _ ->
+        {:error, :no_transcript}
+    end
+  end
+
+  defp tail_param(params) do
+    case Map.get(params, "tail") || Map.get(params, :tail) do
+      tail when is_integer(tail) and tail > 0 -> min(tail, 200)
+      _ -> 30
+    end
+  end
+
+  defp transcript_next_args(session, pane_id, params) do
+    compact(%{
+      workspace_id: workspace_id(params),
+      session: session,
+      pane: pane_id,
+      since: string_param(params, "since")
+    })
   end
 
   defp clamped_timeout(params) do

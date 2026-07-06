@@ -89,6 +89,10 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"]) =~
              "devide-agent-state.sh"
 
+    sidechat = Jason.decode!(File.read!(Path.join(staging, "claude-sidechat-settings.json")))
+    assert sidechat["permissions"]["deny"] == ["Edit", "Write", "Bash"]
+    assert Map.has_key?(sidechat, "hooks")
+
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
 

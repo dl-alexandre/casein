@@ -94,6 +94,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert "terminal_capture" in names
     assert "terminal_agent_pane" in names
     assert "terminal_capture_agent" in names
+    assert "terminal_agent_transcript" in names
     assert "terminal_send_agent_keys" in names
     assert "terminal_send_agent_command" in names
     assert "terminal_paste_agent_text" in names

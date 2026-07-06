@@ -23,6 +23,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   require Logger
 
+  alias DevIDE.Agents.Transcripts
   alias DevIDE.Terminals.Activity
   alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.PaneState
@@ -502,8 +503,21 @@ defmodule DevIDE.Terminals.SessionDirectory do
         pane -> Map.get(reports, PaneState.map_get(pane, :id))
       end
 
-    AgentState.resolve_for_display(entry, pane_state, now)
+    {state, message} = AgentState.resolve_for_display(entry, pane_state, now)
+    {state, message || transcript_activity_message(entry, state)}
   end
+
+  defp transcript_activity_message(%{transcript_path: path, state: :working}, :working)
+       when is_binary(path) and path != "" do
+    Transcripts.activity_hint(path)
+  end
+
+  defp transcript_activity_message(%{transcript_path: path}, :working)
+       when is_binary(path) and path != "" do
+    Transcripts.activity_hint(path)
+  end
+
+  defp transcript_activity_message(_entry, _state), do: nil
 
   # Pane→window membership and pane summaries live OUTSIDE `metadata.windows`
   # (the `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts

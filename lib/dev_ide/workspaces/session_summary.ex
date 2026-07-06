@@ -9,6 +9,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
   """
 
   alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.Transcripts
   alias DevIDE.Git
   alias DevIDE.PreviewPanes
   alias DevIDE.Runtimes
@@ -222,7 +223,11 @@ defmodule DevIDE.Workspaces.SessionSummary do
     session_preview_pane_ids = session_preview_pane_ids(session, preview_pane_ids)
     session_alias = session_alias(session)
     agent_activity = session_agent_activity(session, agent_activity_by_session)
-    agent_title = agent_activity_title(agent_activity) || session_alias
+
+    agent_title =
+      agent_activity_title(agent_activity) ||
+        transcript_session_activity(session) ||
+        session_alias
 
     %{
       id: id,
@@ -527,6 +532,26 @@ defmodule DevIDE.Workspaces.SessionSummary do
       Map.get(entry, :summary)
     ])
   end
+
+  defp transcript_session_activity(%{tmux_session: tmux_session}) when is_binary(tmux_session) do
+    tmux_session
+    |> AgentState.for_session()
+    |> Map.values()
+    |> Enum.find_value(&transcript_activity_for_report/1)
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  defp transcript_session_activity(_session), do: nil
+
+  defp transcript_activity_for_report(%{state: state, transcript_path: path})
+       when state in [:working, :blocked] and is_binary(path) and path != "" do
+    Transcripts.activity_hint(path)
+  end
+
+  defp transcript_activity_for_report(_entry), do: nil
 
   defp agent_activity_pane(nil), do: nil
 

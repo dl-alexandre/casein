@@ -43,6 +43,7 @@ defmodule DevIDE.Terminals.AgentState do
           source: :mcp | :hook,
           tool: String.t() | nil,
           workspace_id: String.t() | nil,
+          transcript_path: String.t() | nil,
           reported_at: DateTime.t()
         }
 
@@ -86,7 +87,8 @@ defmodule DevIDE.Terminals.AgentState do
           normalized,
           truncate_message(message),
           Keyword.get(opts, :source, :mcp),
-          Keyword.get(opts, :tool)
+          Keyword.get(opts, :tool),
+          normalize_transcript_path(Keyword.get(opts, :transcript_path))
         )
     end
   end
@@ -269,4 +271,13 @@ defmodule DevIDE.Terminals.AgentState do
   end
 
   defp truncate_message(_message), do: nil
+
+  defp normalize_transcript_path(path) when is_binary(path) do
+    case String.trim(path) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_transcript_path(_path), do: nil
 end

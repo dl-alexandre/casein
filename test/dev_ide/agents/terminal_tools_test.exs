@@ -454,6 +454,43 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     String.trim(output)
   end
 
+  describe "terminal_agent_transcript" do
+    test "reads normalized entries from the pane's reported transcript_path" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+      path = write_claude_fixture!()
+
+      :ok =
+        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+          transcript_path: path
+        )
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "tail" => 5
+               })
+
+      assert result.target == "%2"
+      assert result.transcript_path == path
+      assert is_list(result.entries)
+      assert result.cursor
+      assert result.total_on_branch >= 1
+    end
+
+    test "returns no_transcript when the pane has no pointer" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:error, :no_transcript} =
+               TerminalTools.invoke("terminal_agent_transcript", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+    end
+  end
+
   describe "terminal_report_agent_state" do
     test "records a report against the dedicated agent pane" do
       session = agent_pair_session!()
@@ -486,6 +523,29 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   end
 
   describe "terminal_wait_agent_state" do
+    test "include_answer returns the final assistant message when done" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+      path = write_claude_fixture!("Done.")
+
+      :ok =
+        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :done, nil,
+          transcript_path: path
+        )
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["done"],
+                 "include_answer" => true,
+                 "timeout_ms" => 2_000
+               })
+
+      assert result.matched == true
+      assert result.answer == "Done."
+    end
+
     test "returns immediately when the pane is already in a target state" do
       session = agent_pair_session!()
       DevIDE.Terminals.AgentState.clear()
@@ -556,6 +616,45 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
   # A single-window session whose non-active pane %2 carries the agent_pair
   # marker, so label_target_pane/find_agent_pane resolves to %2 by default.
+  defp write_claude_fixture!(assistant_suffix \\ "hello") do
+    root = tmp_dir!("transcript-fixture")
+    auth_root = Path.join([root, "agent-auth"])
+    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+
+    path =
+      Path.join([
+        auth_root,
+        "profiles",
+        "alice",
+        "claude",
+        "projects",
+        "fixture",
+        "session.jsonl"
+      ])
+
+    File.mkdir_p!(Path.dirname(path))
+
+    lines = [
+      Jason.encode!(%{
+        "uuid" => "u1",
+        "parentUuid" => nil,
+        "type" => "user",
+        "timestamp" => "2026-07-06T10:00:00.000Z",
+        "message" => %{"role" => "user", "content" => "hello"}
+      }),
+      Jason.encode!(%{
+        "uuid" => "a1",
+        "parentUuid" => "u1",
+        "type" => "assistant",
+        "timestamp" => "2026-07-06T10:00:01.000Z",
+        "message" => %{"role" => "assistant", "content" => assistant_suffix}
+      })
+    ]
+
+    File.write!(path, Enum.join(lines, "\n") <> "\n")
+    path
+  end
+
   defp agent_pair_session! do
     session = Tmux.session_name("alpha", "wait")
 

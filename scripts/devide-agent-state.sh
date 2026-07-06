@@ -26,7 +26,8 @@ PANE="${TMUX_PANE:-}"
 
 payload="$(cat 2>/dev/null || true)"
 
-# Parse event name (line 1) and single-line message (line 2) from the hook JSON.
+# Parse event name (line 1), single-line message (line 2), and transcript_path
+# (line 3) from the hook JSON. Claude includes transcript_path on every event.
 parsed="$(
   HOOK_PAYLOAD="$payload" python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -38,11 +39,13 @@ except Exception:
 
 print(str(data.get("hook_event_name") or ""))
 print(" ".join(str(data.get("message") or "").split())[:200])
+print(str(data.get("transcript_path") or ""))
 PY
 )"
 
 EVENT="$(printf '%s\n' "$parsed" | sed -n 1p)"
 MESSAGE="$(printf '%s\n' "$parsed" | sed -n 2p)"
+TRANSCRIPT_PATH="$(printf '%s\n' "$parsed" | sed -n 3p)"
 
 case "$EVENT" in
   UserPromptSubmit | PreToolUse) STATE="working" ;;
@@ -75,6 +78,7 @@ arguments="$(
     AGENT_STATE="$STATE" \
     AGENT_PANE="$PANE" \
     AGENT_MESSAGE="$MESSAGE" \
+    AGENT_TRANSCRIPT_PATH="$TRANSCRIPT_PATH" \
     python3 - <<'PY' 2>/dev/null || true
 import json, os
 args = {
@@ -86,6 +90,9 @@ args = {
 message = os.environ.get("AGENT_MESSAGE") or ""
 if message:
     args["message"] = message
+transcript_path = os.environ.get("AGENT_TRANSCRIPT_PATH") or ""
+if transcript_path:
+    args["transcript_path"] = transcript_path
 print(json.dumps(args))
 PY
 )"

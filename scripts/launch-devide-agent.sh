@@ -13,6 +13,8 @@ source "${ROOT}/scripts/lib/agent-worktree.sh"
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
 # shellcheck source=lib/agent-auth-profile.sh
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
+# shellcheck source=lib/sidechat.sh
+source "${ROOT}/scripts/lib/sidechat.sh"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +27,8 @@ Runtimes:
   grok      injects per-workspace MCP via project .mcp.json
   codex     injects per-workspace MCP via launch-time config overrides
   claude    injects per-workspace MCP via --mcp-config (keeps ~/.claude credentials)
+            pass --sidechat <target> for a read-only advisor (target: %pane,
+            session:pane, or agent)
   opencode  injects per-workspace MCP via project .opencode/opencode.json
   agent     MCP env + real agent binary
 EOF
@@ -149,7 +153,7 @@ sync_project_mcp_config() {
 
   if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
     case "$runtime" in
-      grok|opencode)
+      grok|agent|opencode)
         echo "warn: skipping project MCP injection for ${runtime} outside an agent worktree" >&2
         return 0
         ;;
@@ -157,7 +161,7 @@ sync_project_mcp_config() {
   fi
 
   case "$runtime" in
-    grok)
+    grok|agent)
       if [[ -f "${staging}/.mcp.json" ]]; then
         cp "${staging}/.mcp.json" "${checkout}/.mcp.json"
         chmod 600 "${checkout}/.mcp.json"
@@ -312,6 +316,22 @@ case "$RUNTIME" in
     exec "$(runtime_bin opencode)" "$@"
     ;;
   claude)
+    sidechat_target=""
+    claude_user_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --sidechat)
+          sidechat_target="${2:-}"
+          shift 2
+          ;;
+        *)
+          claude_user_args+=("$1")
+          shift
+          ;;
+      esac
+    done
+    set -- "${claude_user_args[@]}"
+
     # Source MCP from this workspace's isolated staging tree (one per workspace),
     # like GROK_HOME/CODEX_HOME do — never from a shared-checkout project file,
     # which collides/accumulates across workspaces. Prefer staging; fall back to
@@ -334,19 +354,38 @@ case "$RUNTIME" in
     # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
     # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
     claude_args=(--mcp-config "$mcp_json")
-    # Semantic agent-state hooks (opt out with DEVIDE_AGENT_STATE_HOOKS=0). The
-    # settings file is materialized next to .mcp.json and, like --mcp-config, is
-    # additive with the operator's global settings.
-    hooks_settings="${DEVIDE_AGENT_MCP_HOME}/claude-hooks-settings.json"
-    if [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" && -f "$hooks_settings" ]]; then
-      claude_args+=(--settings "$hooks_settings")
+
+    if [[ -n "$sidechat_target" ]]; then
+      sidechat_resolve_target "$sidechat_target"
+      sidechat_prompt="${DEVIDE_AGENT_MCP_HOME}/claude-sidechat-prompt.txt"
+      sidechat_write_prompt "$sidechat_prompt"
+      sidechat_settings="${DEVIDE_AGENT_MCP_HOME}/claude-sidechat-settings.json"
+      if [[ ! -f "$sidechat_settings" ]]; then
+        echo "error: missing ${sidechat_settings} — run scripts/materialize-agent-mcp.sh" >&2
+        exit 1
+      fi
+      claude_args+=(--settings "$sidechat_settings")
+      claude_args+=(--append-system-prompt "$(<"$sidechat_prompt")")
+    else
+      # Semantic agent-state hooks (opt out with DEVIDE_AGENT_STATE_HOOKS=0). The
+      # settings file is materialized next to .mcp.json and, like --mcp-config, is
+      # additive with the operator's global settings.
+      hooks_settings="${DEVIDE_AGENT_MCP_HOME}/claude-hooks-settings.json"
+      if [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" && -f "$hooks_settings" ]]; then
+        claude_args+=(--settings "$hooks_settings")
+      fi
+      while IFS= read -r -d '' arg; do
+        claude_args+=("$arg")
+      done < <(claude_default_args "$@")
     fi
-    while IFS= read -r -d '' arg; do
-      claude_args+=("$arg")
-    done < <(claude_default_args "$@")
+
     exec "$(runtime_bin claude)" "${claude_args[@]}" "$@"
     ;;
   agent)
+    if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
+      export GROK_CURSOR_MCPS_ENABLED=false
+      export GROK_CLAUDE_MCPS_ENABLED=false
+    fi
     exec "$(runtime_bin agent)" "$@"
     ;;
   -h|--help|help)
