@@ -8,6 +8,10 @@ defmodule DevIdeWeb.LegacyWorkspaceController do
   side panel: it redirects to the workspace's canonical URL with the
   `tab=history` deep-link param, preserving any search query params the old
   page accepted. Viewer access is enforced by the cockpit mount, not here.
+
+  `/notifications` is absorbed by the in-viewer notifications drawer: it
+  redirects to the dashboard with the `drawer=notifications` deep-link param.
+  Notifications stay scoped to the mounted viewer inside the drawer.
   """
 
   use DevIdeWeb, :controller
@@ -16,6 +20,10 @@ defmodule DevIdeWeb.LegacyWorkspaceController do
 
   def index(conn, _params) do
     redirect(conn, to: ~p"/")
+  end
+
+  def notifications(conn, _params) do
+    redirect(conn, to: ~p"/?drawer=notifications")
   end
 
   def previous_sessions(conn, %{"id" => id} = params) do
