@@ -19,15 +19,73 @@ warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
 check_shims() {
-  local runtime bin
+  local runtime bin resolved bin_target resolved_target
   for runtime in grok claude codex opencode agent devide; do
     bin="${HOME}/.local/bin/${runtime}"
-    if [[ -x "$bin" ]]; then
-      pass "shim installed: ${runtime}"
-    else
+    if [[ ! -x "$bin" ]]; then
       warn "shim missing: ${runtime} (run scripts/install-agent-shims.sh)"
+      continue
+    fi
+    pass "shim installed: ${runtime}"
+
+    # An installed shim that loses PATH resolution is worse than a missing
+    # one: agents launch fine but silently skip MCP injection.
+    resolved="$(command -v "$runtime" 2>/dev/null || true)"
+    if [[ -z "$resolved" ]]; then
+      fail "shim unreachable: ${runtime} not on PATH (add ${HOME}/.local/bin to PATH)"
+      continue
+    fi
+    bin_target="$(readlink -f "$bin" 2>/dev/null || printf '%s' "$bin")"
+    resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
+    if [[ "$resolved_target" == "$bin_target" ]]; then
+      pass "shim wins PATH resolution: ${runtime}"
+    else
+      fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${HOME}/.local/bin first on PATH)"
     fi
   done
+}
+
+# Each shim embeds the absolute path of scripts/devide at install time; if the
+# checkout moves or a deploy worktree is cleaned up, every agent command dies
+# at once. The sed pattern must match the install-agent-shims.sh template
+# (pinned by scripts/test-agent-shims.sh).
+check_shim_targets() {
+  local runtime shim cli missing=0 checked=0
+  for runtime in grok claude codex opencode agent; do
+    shim="${HOME}/.local/bin/${runtime}"
+    [[ -f "$shim" ]] || continue
+    cli="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "$shim" | head -n 1)"
+    [[ -n "$cli" ]] || continue
+    checked=$((checked + 1))
+    if [[ ! -x "$cli" ]]; then
+      fail "shim target missing: ${runtime} → ${cli} (checkout moved? re-run scripts/install-agent-shims.sh)"
+      missing=1
+    fi
+  done
+
+  if [[ "$checked" -gt 0 && "$missing" -eq 0 ]]; then
+    pass "shim targets executable (embedded devide CLI paths resolve)"
+  fi
+}
+
+# Self-updating agents (grok records a versioned binary path) can strand the
+# recorded symlink; launch falls back to a PATH search, so this is a warning.
+check_real_bins() {
+  local real_dir="${HOME}/.devide/real-bins"
+  [[ -d "$real_dir" ]] || return 0
+
+  local link dangling=0
+  for link in "$real_dir"/*; do
+    [[ -L "$link" || -e "$link" ]] || continue
+    if [[ ! -e "$link" ]]; then
+      warn "dangling real-bin symlink: $(basename "$link") → $(readlink "$link" 2>/dev/null || echo '?') (re-run scripts/install-agent-shims.sh)"
+      dangling=1
+    fi
+  done
+
+  if [[ "$dangling" -eq 0 ]]; then
+    pass "real-bins symlinks resolve"
+  fi
 }
 
 check_token() {
@@ -233,6 +291,8 @@ main() {
   fi
 
   check_shims
+  check_shim_targets
+  check_real_bins
   check_token
   check_bad_redirects
   check_mcp_endpoints

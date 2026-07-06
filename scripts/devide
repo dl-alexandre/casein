@@ -245,8 +245,16 @@ agent_runtime_passthrough() {
   local runtime="$1"
   local first="${2:-}"
 
+  # Version/help probes go straight to the real binary for every runtime:
+  # they must not resolve env, create a worktree, or inject MCP.
+  case "$first" in
+    --version|--help|-h)
+      return 0
+      ;;
+  esac
+
   case "$runtime:$first" in
-    codex:update|codex:doctor|codex:help|codex:--help|codex:-h|codex:version|codex:--version|codex:-V)
+    codex:update|codex:doctor|codex:help|codex:version|codex:-V|claude:update|claude:-v)
       return 0
       ;;
   esac

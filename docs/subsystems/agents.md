@@ -92,7 +92,14 @@ agent runs with compile-time-fixed argv.
    sandbox/approval or permission option, or sets `DEVIDE_CODEX_DEFAULT_YOLO=0` /
    `DEVIDE_CLAUDE_DEFAULT_YOLO=0`. Plain agent starts do not depend on
    `DEV_IDE_API_TOKEN` because DevIDE MCP is not persisted in global agent
-   configs. (See `PaneEnv.launch_command/3`.)
+   configs. (See `PaneEnv.launch_command/3`.) Version/help probes
+   (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
+   `claude update`) bypass the launcher entirely and exec the real binary —
+   they never resolve env, create a worktree, or inject MCP
+   (`agent_runtime_passthrough` in `scripts/devide`). `install-agent-shims.sh`
+   and `devide agent doctor` both verify that the shims actually win PATH
+   resolution; a shadowed shim is a hard failure because agents would launch
+   without MCP and nothing else reports it.
 
 **An agent calling a tool (request lifecycle):**
 

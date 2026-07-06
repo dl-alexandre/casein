@@ -30,6 +30,22 @@ bash -n scripts/deploy-devbox-release.sh
 log "running hermetic shell unit tests (scoped-token validation/durability)"
 bash scripts/test-scoped-token-durability.sh
 
+log "running hermetic shell unit tests (agent shim install/resolution/passthrough)"
+bash scripts/test-agent-shims.sh
+
+log "shellcheck (warning+) on agent shim/launch scripts"
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck --severity=warning -x \
+    scripts/devide \
+    scripts/install-agent-shims.sh \
+    scripts/launch-devide-agent.sh \
+    scripts/lib/real-agent-bin.sh \
+    scripts/lib/agent-doctor.sh \
+    scripts/test-agent-shims.sh
+else
+  log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
+fi
+
 log "fetching Elixir dependencies"
 mise exec -- mix deps.get
 
