@@ -20,6 +20,11 @@
 
 import { EditorView } from "@codemirror/view"
 import { makeEditorState, revealLine } from "./editor_core"
+import {
+  applyOverlayRect,
+  bindPaneSectionGeometryObserver,
+  resolveOverlayRect,
+} from "./pane_overlay_rect.mjs"
 import { showClipboardToast } from "./terminal_copy"
 
 const FOCUS_PUSH_GUARD_MS = 500
@@ -33,6 +38,7 @@ export const FilePaneOverlay = {
     this.focusPushAt = 0
 
     this.applyRect()
+    this._sectionGeometryObserver = bindPaneSectionGeometryObserver(this.el, () => this.applyRect())
 
     this._onUpdate = EditorView.updateListener.of((update) => {
       if (update.docChanged) this.syncDirty()
@@ -81,6 +87,8 @@ export const FilePaneOverlay = {
   },
 
   destroyed() {
+    this._sectionGeometryObserver?.disconnect()
+    this._sectionGeometryObserver = null
     this.el.removeEventListener("focusin", this._onFocusIn)
     this.el.removeEventListener("devide:file-pane:close-tab", this._onCloseTab)
     this.view?.destroy()
@@ -223,37 +231,8 @@ export const FilePaneOverlay = {
   // --- geometry (borrowed from preview_pane_overlay.js) --------------------------
 
   applyRect() {
-    const rect = this.parseRect(this.el.dataset.paneRect)
-    if (!rect) return
-
-    Object.assign(this.el.style, {
-      position: "absolute",
-      left: `${rect.left}%`,
-      top: `${rect.top}%`,
-      width: `${rect.width}%`,
-      height: `${rect.height}%`,
-      zIndex: "25",
-      pointerEvents: "auto",
-      contain: "layout"
-    })
-  },
-
-  parseRect(raw) {
-    if (!raw) return null
-    try {
-      const rect = JSON.parse(raw)
-      if (
-        typeof rect.left === "number" &&
-        typeof rect.top === "number" &&
-        typeof rect.width === "number" &&
-        typeof rect.height === "number"
-      ) {
-        return rect
-      }
-    } catch (_) {
-      return null
-    }
-    return null
+    const rect = resolveOverlayRect(this.el)
+    applyOverlayRect(this.el, rect)
   },
 
   makeState(doc, path) {
