@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.Plugs.ForwardAuth
+  alias DevIdeWeb.WorkspaceRoutes
 
   @refresh_ms 5_000
 
@@ -176,7 +177,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp open_folder(socket, path) do
     case Workspaces.attach_folder(path) do
       {:ok, ws} ->
-        push_navigate(socket, to: workspace_path(ws.id, "local"))
+        push_navigate(socket, to: workspace_path(ws, "local"))
 
       {:error, reason} ->
         socket
@@ -193,12 +194,15 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp refresh_async(socket, action \\ fn _auth -> :ok end) do
     opts = list_opts(socket)
     auth = auth(socket)
+    show_all = socket.assigns.show_all
+    current_user = socket.assigns.current_user
 
     start_async(socket, :refresh_picker, fn ->
       _ = action.(auth)
 
       with {:ok, list} <- Workspaces.list(opts, auth) do
-        {:ok, SessionSummary.build_many(list)}
+        {:ok,
+         list |> filter_visible_workspaces(show_all, current_user) |> SessionSummary.build_many()}
       end
     end)
   end
@@ -206,7 +210,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp load_picker(socket) do
     case Workspaces.list(list_opts(socket), auth(socket)) do
       {:ok, list} ->
-        workspaces = SessionSummary.build_many(list)
+        workspaces =
+          list
+          |> filter_visible_workspaces(socket.assigns.show_all, socket.assigns.current_user)
+          |> SessionSummary.build_many()
 
         socket
         |> assign(:workspaces, workspaces)
@@ -237,6 +244,14 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
         workspaces: workspaces
       }
     ]
+  end
+
+  defp filter_visible_workspaces(workspaces, show_all, current_user) do
+    if ForwardAuth.enabled?() and not show_all do
+      Enum.filter(workspaces, &Workspaces.viewer_owns_workspace?(&1, current_user))
+    else
+      workspaces
+    end
   end
 
   defp format_error({:transport, %{reason: :econnrefused}}),
@@ -701,10 +716,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     DevIdeWeb.Endpoint.url() <> href
   end
 
-  defp workspace_path(id, host_id) when host_id in [nil, "", "local"],
-    do: ~p"/workspaces/#{id}"
-
-  defp workspace_path(id, host_id), do: ~p"/workspaces/#{id}?#{[host: host_id]}"
+  defp workspace_path(workspace, host_id), do: WorkspaceRoutes.workspace_path(workspace, host_id)
 
   defp previous_sessions_path(id), do: ~p"/workspaces/#{id}/previous-sessions"
 end
