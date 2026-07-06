@@ -279,10 +279,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     session = socket.assigns.tmux_session
 
     # Normal shell panes should become the tmux focus so keyboard input follows
-    # the clicked pane. Preview tiles remain a UI-only selection so Ghostty
-    # stays attached to the operator pane.
+    # the clicked pane. Feature-pane tiles (preview iframes AND file-editor
+    # overlays) remain a UI-only selection so Ghostty stays attached to the
+    # operator pane — selecting a file holder pane in tmux would make Ghostty
+    # follow the holder script's output and steal the surface.
     tmux_result =
-      if pane_id == surface_id or not Map.has_key?(socket.assigns[:preview_panes] || %{}, pane_id) do
+      if pane_id == surface_id or
+           not TerminalChrome.feature_pane?(
+             socket.assigns[:preview_panes] || %{},
+             socket.assigns[:feature_panes] || %{},
+             pane_id
+           ) do
         TerminalState.tmux_adapter().select_pane(session, pane_id)
       else
         :ok

@@ -45,7 +45,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
   def items("tree_node", %{"path" => path, "kind" => kind} = _ctx, assigns)
       when is_binary(path) and byte_size(path) <= @max_ctx_value_bytes and
              kind in ["file", "dir"] do
-    node_items(kind, path, can_edit?(assigns))
+    node_items(kind, path, can_edit?(assigns), tmux_session_live?(assigns))
   end
 
   def items("tree_root", _ctx, assigns) do
@@ -321,7 +321,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
 
   def items(_menu, _ctx, _assigns), do: []
 
-  defp node_items("dir", path, can_edit?) do
+  defp node_items("dir", path, can_edit?, _tmux_live?) do
     open = [
       %{id: "toggle", label: "Expand / collapse", event: "tree:toggle", params: %{"path" => path}}
     ]
@@ -371,8 +371,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
     open ++ [copy_path_item(path)] ++ mutations
   end
 
-  defp node_items("file", path, can_edit?) do
-    open = [%{id: "open", label: "Open", event: "tree:open", params: %{"path" => path}}]
+  defp node_items("file", path, can_edit?, tmux_live?) do
+    open =
+      [%{id: "open", label: "Open", event: "tree:open", params: %{"path" => path}}] ++
+        if tmux_live? do
+          # Splits/reuses a CodeMirror file pane beside the active terminal
+          # pane (tree:open_in_pane falls back to tree:open server-side when
+          # the tmux session turns out to be gone).
+          [
+            %{
+              id: "open-in-pane",
+              label: "Open in pane",
+              event: "tree:open_in_pane",
+              params: %{"path" => path}
+            }
+          ]
+        else
+          []
+        end
 
     mutations =
       if can_edit? do
@@ -429,6 +445,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
     do: is_binary(id) and Regex.match?(~r/^[A-Za-z][A-Za-z0-9_%:.-]*$/, id)
 
   defp tmux_mutations?(assigns), do: assigns[:tmux_mutations_enabled?] == true
+
+  # "Open in pane" needs a live tmux session to split against — a session name
+  # always exists on the socket, so require actual topology (windows) too.
+  defp tmux_session_live?(assigns) do
+    is_binary(assigns[:tmux_session]) and assigns[:tmux_session] != "" and
+      (assigns[:tmux_windows] || []) != []
+  end
 
   # Menu visibility mirrors the write gate the mutating handlers enforce via
   # gate/3; no audit event is emitted here — that happens when an item fires.

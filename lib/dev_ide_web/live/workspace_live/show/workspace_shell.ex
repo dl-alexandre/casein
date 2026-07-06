@@ -611,6 +611,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :terminal_mode,
       :tmux_windows,
       :preview_panes,
+      :feature_panes,
       :tmux_session,
       :ui_highlight_pane_id,
       :tmux_active_pane_id,

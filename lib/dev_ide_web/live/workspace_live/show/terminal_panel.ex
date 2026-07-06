@@ -21,6 +21,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   workspace={@workspace}
                   active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
                   preview_panes={@preview_panes}
+                  feature_panes={@feature_panes}
                   tmux_session={@tmux_session}
                   ui_highlight_pane_id={@ui_highlight_pane_id}
                   tmux_active_pane_id={@tmux_active_pane_id}
