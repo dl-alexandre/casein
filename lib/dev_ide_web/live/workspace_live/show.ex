@@ -3245,21 +3245,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            terminal_preset: socket.assigns.terminal_preset_id
          ) do
       {:ok, worker} ->
-        {term, pty} = PaneWorker.get_handles(worker)
-        Terminals.subscribe_tmux_session_cleanup(pane.tmux_session)
+        case fetch_pane_worker_handles(worker) do
+          {:ok, {term, pty}} ->
+            Terminals.subscribe_tmux_session_cleanup(pane.tmux_session)
 
-        update_pane(socket, pane_id, fn p ->
-          %{
-            p
-            | worker: worker,
-              ghostty_term: term,
-              ghostty_pty: pty,
-              backend: backend,
-              session_sid: session_sid,
-              error: nil
-          }
-          |> Map.put(:auto_retry_count, 0)
-        end)
+            update_pane(socket, pane_id, fn p ->
+              %{
+                p
+                | worker: worker,
+                  ghostty_term: term,
+                  ghostty_pty: pty,
+                  backend: backend,
+                  session_sid: session_sid,
+                  error: nil
+              }
+              |> Map.put(:auto_retry_count, 0)
+            end)
+
+          {:error, reason} ->
+            update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
+        end
 
       {:error, reason} ->
         # The per-pane error state (set here and rendered in TerminalChrome)
@@ -3268,6 +3273,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # inline inspect(error) and produced banner + box on every retry).
         update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
     end
+  end
+
+  # The worker links its term/backend in init and stops :normal the moment
+  # either dies, so a pane whose tmux session vanished between start_link and
+  # this call turns get_handles into a :noproc exit. That's a pane startup
+  # failure (surfaced inline like any other start error), not a LiveView crash.
+  defp fetch_pane_worker_handles(worker) do
+    {:ok, PaneWorker.get_handles(worker)}
+  catch
+    :exit, _reason -> {:error, :worker_exited}
   end
 
   defp pane_worker_alive?(%{worker: worker, ghostty_term: term})
