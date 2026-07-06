@@ -15,10 +15,14 @@ defmodule DevIDE.Terminals.AgentState.Server do
   end
 
   def report(workspace_id, tmux_session, pane_id, state, message, source, tool, transcript_path) do
+    # Causality handoff: the reporter is usually an MCP tool call, so an
+    # agent.blocked audit emitted inside the server correlates back to it.
+    signals_ctx = DevIDE.Signals.Context.snapshot()
+
     GenServer.cast(
       @registered_name,
       {:report, workspace_id, tmux_session, pane_id, state, message, source, tool,
-       transcript_path}
+       transcript_path, signals_ctx}
     )
   end
 
@@ -85,7 +89,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
   @impl true
   def handle_cast(
         {:report, workspace_id, tmux_session, pane_id, rstate, message, source, tool,
-         transcript_path},
+         transcript_path, signals_ctx},
         state
       ) do
     key = {tmux_session, pane_id}
@@ -115,7 +119,11 @@ defmodule DevIDE.Terminals.AgentState.Server do
       previous ->
         state = state |> Map.put(key, entry) |> trim_size()
         broadcast(workspace_id, tmux_session, pane_id, entry)
-        maybe_emit_blocked(previous, entry, tmux_session, pane_id)
+
+        DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
+          maybe_emit_blocked(previous, entry, tmux_session, pane_id)
+        end)
+
         {:noreply, state}
     end
   end

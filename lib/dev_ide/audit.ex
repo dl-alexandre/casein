@@ -12,10 +12,11 @@ defmodule DevIDE.Audit do
 
   @spec emit(map()) :: {:ok, Event.t()} | {:error, term()}
   def emit(attrs) when is_map(attrs) do
-    event = Event.new(attrs)
+    event = attrs |> DevIDE.Signals.Context.stamp() |> Event.new()
 
     case impl().record(event) do
       :ok ->
+        DevIDE.Signals.Context.advance(event.id)
         broadcast(event)
         {:ok, event}
 
@@ -71,6 +72,17 @@ defmodule DevIDE.Audit do
       when is_binary(action_prefix) do
     impl().recent_with_action_prefix(workspace_id, action_prefix, n)
   end
+
+  @doc """
+  Events sharing a correlation id, ascending by `inserted_at` (chain order).
+
+  Correlation ids are stamped into event metadata by
+  `DevIDE.Signals.Context` when an entry point (MCP tool call, deploy
+  webhook, run start) established a causality context.
+  """
+  @spec list_by_correlation(String.t()) :: [Event.t()]
+  def list_by_correlation(correlation_id) when is_binary(correlation_id),
+    do: impl().list_by_correlation(correlation_id)
 
   def clear, do: impl().clear()
 

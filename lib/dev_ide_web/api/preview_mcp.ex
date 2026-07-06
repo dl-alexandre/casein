@@ -116,25 +116,27 @@ defmodule DevIdeWeb.API.PreviewMCP do
     args = Map.get(params, "arguments", %{}) || %{}
 
     result =
-      case Scope.resolve_tool_call(name, args,
-             surface: :preview,
-             default_workspace_id: default_workspace_id,
-             default_tmux_session: default_tmux_session
-           ) do
-        {:ok, scope} ->
-          with {:ok, payload} <- PreviewTools.invoke(name, scope.workspace, scope.args) do
-            _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, {:ok, payload})
-            {:ok, payload}
-          else
-            {:error, _reason} = err ->
-              _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, err)
-              err
-          end
+      DevIDE.Signals.Context.with_new(fn ->
+        case Scope.resolve_tool_call(name, args,
+               surface: :preview,
+               default_workspace_id: default_workspace_id,
+               default_tmux_session: default_tmux_session
+             ) do
+          {:ok, scope} ->
+            with {:ok, payload} <- PreviewTools.invoke(name, scope.workspace, scope.args) do
+              _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, {:ok, payload})
+              {:ok, payload}
+            else
+              {:error, _reason} = err ->
+                _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, err)
+                err
+            end
 
-        {:error, reason} = err ->
-          _ = MCPAudit.record_preview(nil, name, args, err)
-          {:error, reason}
-      end
+          {:error, reason} = err ->
+            _ = MCPAudit.record_preview(nil, name, args, err)
+            {:error, reason}
+        end
+      end)
 
     case result do
       {:ok, payload} ->

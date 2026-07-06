@@ -9,7 +9,7 @@ defmodule DevIdeWeb.API.DeployWebhookController do
     event = github_event(conn)
     payload = conn.assigns[:deploy_webhook_payload]
 
-    case WebhookTrigger.handle(event, payload) do
+    case DevIDE.Signals.Context.with_new(fn -> WebhookTrigger.handle(event, payload) end) do
       :ok ->
         json(conn, %{ok: true, triggered: true})
 

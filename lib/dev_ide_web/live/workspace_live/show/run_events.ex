@@ -136,27 +136,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
       {:ok, pid} ->
         run_id = Ledger.new_run_id()
 
-        case ReviewCommand.fetch(id) do
-          {:ok, cmd} ->
-            Ledger.run_started(%{
-              workspace_id: ws.id,
-              actor_id: current_actor_id(socket),
-              command_id: id,
-              run_id: run_id,
-              metadata: %{argv: cmd.argv}
-            })
+        # Scoped context (never a bare put): the LiveView process is
+        # long-lived, and AutoApply.watch snapshots it before this returns.
+        DevIDE.Signals.Context.with_new(fn ->
+          case ReviewCommand.fetch(id) do
+            {:ok, cmd} ->
+              Ledger.run_started(%{
+                workspace_id: ws.id,
+                actor_id: current_actor_id(socket),
+                command_id: id,
+                run_id: run_id,
+                metadata: %{argv: cmd.argv}
+              })
 
-            # No-op today for output_kind: :diagnostic (the only allowlisted
-            # command) — AutoApply.maybe_auto_apply/3 only fires for
-            # output_kind: :proposal. Wired here so it activates the moment a
-            # real proposal-producing ReviewCommand exists, with no further
-            # LiveView changes needed.
-            _ =
-              AutoApply.watch(ws.id, root, pid, %{run_id: run_id, command_id: id})
+              # No-op today for output_kind: :diagnostic (the only allowlisted
+              # command) — AutoApply.maybe_auto_apply/3 only fires for
+              # output_kind: :proposal. Wired here so it activates the moment a
+              # real proposal-producing ReviewCommand exists, with no further
+              # LiveView changes needed.
+              _ =
+                AutoApply.watch(ws.id, root, pid, %{run_id: run_id, command_id: id})
 
-          :error ->
-            :ok
-        end
+            :error ->
+              :ok
+          end
+        end)
 
         {:noreply,
          socket

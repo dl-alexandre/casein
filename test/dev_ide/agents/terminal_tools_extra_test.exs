@@ -126,12 +126,14 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
     })
 
-    assert {:error, :invalid_pane} =
+    assert {:error, %{error: :invalid_argument, message: message}} =
              TerminalTools.invoke("terminal_capture", %{
                "workspace_id" => "alpha",
                "session" => session,
                "pane" => 7
              })
+
+    assert message =~ "pane"
   end
 
   test "capture targets an explicit pane and tails lines with ansi preserved" do
@@ -319,8 +321,8 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
 
   # ---- report_worktree missing workspace_id ----
 
-  test "report_worktree without a workspace_id returns workspace_id_required" do
-    assert {:error, :workspace_id_required} =
+  test "report_worktree without a workspace_id returns missing_argument" do
+    assert {:error, {:missing_argument, "workspace_id"}} =
              TerminalTools.invoke("terminal_report_worktree", %{
                "worktree_path" => "/tmp/some-worktree"
              })
@@ -328,8 +330,8 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
 
   # ---- set_agent_label argument branches ----
 
-  test "set_agent_label without a workspace_id returns missing_workspace_id" do
-    assert {:error, :missing_workspace_id} =
+  test "set_agent_label without a workspace_id returns missing_argument" do
+    assert {:error, {:missing_argument, "workspace_id"}} =
              TerminalTools.invoke("terminal_set_agent_label", %{"label" => "Working"})
   end
 

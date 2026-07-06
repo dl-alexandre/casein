@@ -198,7 +198,7 @@ defmodule Scripts.AgentWorktreeTest do
     npm_prefix = Path.join(home, ".local/share/npm-global")
 
     fake_codex =
-      Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex")
+      Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex.js")
 
     fake_bin = Path.join(tmp, "bin")
     fake_npm = Path.join(fake_bin, "npm")

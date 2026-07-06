@@ -169,8 +169,8 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
                }
              })
 
-    assert structured["error"] == "invalid_tool_arguments"
-    assert text =~ "invalid_tool_arguments"
+    assert structured["error"] == "missing_argument"
+    assert text =~ "worktree_path"
   end
 
   test "tools/call reports ambiguous workspace sessions through structuredContent" do
