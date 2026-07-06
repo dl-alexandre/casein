@@ -12,6 +12,7 @@ import {
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
 import {BOLD, ITALIC, OVERLINE, effectiveCellFlags} from "./terminal_cell_flags.mjs"
+import {backgroundLeadingPad} from "./terminal_bg_fill.mjs"
 import {
   canvasCoalesceEnabled,
   canvasRendererEnabled,
@@ -37,8 +38,8 @@ const CELL_STYLE_CACHE = new Map()
 
 // --- Glyph advance correction ------------------------------------------------
 //
-// A row is one inline text flow (runs must stay inline — see the
-// .devide-term-row comment in app.css), so a cell's pixel position is the sum
+// A row is one inline text flow (runs must stay inline — see the terminal
+// grid rendering comment in app.css), so a cell's pixel position is the sum
 // of every glyph advance before it. That only equals `col * cellWidth` when
 // every glyph advances exactly one cell. Glyphs the primary monospace font
 // lacks (⏸ ⎿ ☰ ⣷ …) render from fallback fonts at other advances (⎿ is ~1.67
@@ -59,6 +60,9 @@ const ADVANCE_DELTAS = new Map()
 let advanceMeasure = null
 let advanceFontSig = ""
 let advanceCellWidth = 0
+// Half-leading background pad ({top, bottom} px) for the current font config;
+// null when the content box already fills the line box. See terminal_bg_fill.mjs.
+let bgLeadingPad = null
 
 function advanceMeasureEl() {
   if (advanceMeasure && advanceMeasure.isConnected) return advanceMeasure
@@ -88,7 +92,7 @@ function advanceMeasureEl() {
 // garbage deltas.
 function syncAdvanceContext(pre) {
   const styles = window.getComputedStyle(pre)
-  const sig = `${styles.fontFamily}|${styles.fontSize}|${styles.fontWeight}|${styles.fontStyle}`
+  const sig = `${styles.fontFamily}|${styles.fontSize}|${styles.fontWeight}|${styles.fontStyle}|${styles.lineHeight}`
   if (sig === advanceFontSig) return advanceCellWidth > 0
 
   const el = advanceMeasureEl()
@@ -97,9 +101,15 @@ function syncAdvanceContext(pre) {
   el.style.fontWeight = styles.fontWeight
   el.style.fontStyle = styles.fontStyle
   el.textContent = "M".repeat(20)
-  advanceCellWidth = el.getBoundingClientRect().width / 20
+  const rect = el.getBoundingClientRect()
+  advanceCellWidth = rect.width / 20
+  // rect.height is the inline content-box height (ascent + descent) —
+  // exactly what cell backgrounds cover without padding.
+  bgLeadingPad = backgroundLeadingPad(parseFloat(styles.lineHeight), rect.height)
   advanceFontSig = sig
   ADVANCE_DELTAS.clear()
+  // Cached cell styles embed the previous font config's background pad.
+  CELL_STYLE_CACHE.clear()
   return advanceCellWidth > 0
 }
 
@@ -160,7 +170,16 @@ function cellStyle(fg, bg, flags) {
   const mappedBg = remapColor(bg)
 
   if (mappedFg) styles.push(`color:rgb(${mappedFg[0]}, ${mappedFg[1]}, ${mappedFg[2]})`)
-  if (mappedBg) styles.push(`background:rgb(${mappedBg[0]}, ${mappedBg[1]}, ${mappedBg[2]})`)
+
+  if (mappedBg) {
+    styles.push(`background:rgb(${mappedBg[0]}, ${mappedBg[1]}, ${mappedBg[2]})`)
+
+    // Fill the line-height leading so adjacent bg rows meet with no seam of
+    // the <pre> background between them (see terminal_bg_fill.mjs).
+    if (bgLeadingPad) {
+      styles.push(`padding-block:${bgLeadingPad.top}px ${bgLeadingPad.bottom}px`)
+    }
+  }
 
   if (flags & 1) styles.push("font-weight:bold")
   if (flags & 2) styles.push("font-style:italic")

@@ -367,20 +367,18 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 }
 
 /* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
-   Each row is a block of exactly one cell-height; runs stay *inline*. Runs must
-   NOT be inline-block: an inline-block box rounds its width up to a device pixel
-   and those roundings accumulate across the ~80 columns, so the rendered line
-   ends up wider than the `fit`-measured width (measured from a plain inline
-   span) and spills off the right edge. Inline runs share continuous text
-   shaping, so a row is exactly cols × cell-width — provided every glyph
+   Rows are newline-separated lines inside one <pre>; runs stay *inline*. Runs
+   must NOT be inline-block: an inline-block box rounds its width up to a device
+   pixel and those roundings accumulate across the ~80 columns, so the rendered
+   line ends up wider than the `fit`-measured width (measured from a plain
+   inline span) and spills off the right edge. Inline runs share continuous
+   text shaping, so a row is exactly cols × cell-width — provided every glyph
    advances one cell: fallback-font glyphs (⏸ ⎿ ☰ …) don't, and are pinned back
    to their grid column with per-glyph fractional letter-spacing (see the
    advance-correction block in ghostty_terminal.js). The vertical seam under
-   full-screen TUIs is handled instead by the per-cell `padding-block` in
-   cellStyles, which fills the line-height leading without affecting width. */
-.devide-term-row {
-  height: var(--devide-terminal-line-height, 17px);
-}
+   full-screen TUIs is handled by per-cell `padding-block` on background runs
+   in cellStyle, which fills the line-height leading without affecting layout
+   (see terminal_bg_fill.mjs). */
 
 /* Ghostty viewport scrollback indicator (see ghostty_terminal.js) */
 .devide-term-scrollbar {
