@@ -218,9 +218,11 @@ defmodule DevIDE.Agents.TerminalTools do
       Tool.define(
         "terminal_report_worktree",
         "Report an agent-created Git worktree so DevIDE can show it under the " <>
-          "owning workspace. Call after creating or switching to a worktree. " <>
-          "Requires workspace_id and worktree_path; optional fields include " <>
-          "branch, agent, runner_id, session_id, and tmux_session_id.",
+          "owning workspace. Call after creating or switching to a worktree, and " <>
+          "again at session end with exit_status/handoff when work is not landing " <>
+          "immediately. Requires workspace_id and worktree_path; optional fields " <>
+          "include branch, agent, runner_id, session_id, tmux_session_id, " <>
+          "exit_status (landed|wip|handoff), and handoff (short status message).",
         Tool.object(
           Map.merge(workspace_props, %{
             worktree_path: %{type: "string"},
@@ -228,7 +230,19 @@ defmodule DevIDE.Agents.TerminalTools do
             agent: %{type: "string"},
             runner_id: %{type: "string"},
             session_id: %{type: "string"},
-            tmux_session_id: %{type: "string"}
+            tmux_session_id: %{type: "string"},
+            exit_status: %{
+              type: "string",
+              enum: ["landed", "wip", "handoff"],
+              description:
+                "Session exit outcome. Call again at end-of-session so stale-worktree " <>
+                  "alarms skip intentional handoffs."
+            },
+            handoff: %{
+              type: "string",
+              description:
+                "Short free-text status for the next agent or operator (branch, PR, blockers)."
+            }
           }),
           ["workspace_id", "worktree_path"]
         )

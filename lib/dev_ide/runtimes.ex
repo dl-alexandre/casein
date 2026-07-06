@@ -689,6 +689,9 @@ defmodule DevIDE.Runtimes do
     requested_source = string_value(attrs, "source")
     existing_source = Map.get(existing_metadata || %{}, "source")
 
+    exit_status = string_value(attrs, "exit_status") || Map.get(existing_metadata, "exit_status")
+    handoff = string_value(attrs, "handoff") || Map.get(existing_metadata, "handoff")
+
     %{
       "kind" => "agent_worktree",
       "provisioning_model" => "agent_worktree",
@@ -703,7 +706,10 @@ defmodule DevIDE.Runtimes do
       "git_detached" => git_info.detached?,
       "dirty_count" => dirty_count,
       "worktree_status" => if(dirty_count == 0, do: "clean", else: "dirty"),
-      "observed_at" => DateTime.to_iso8601(observed_at)
+      "observed_at" => DateTime.to_iso8601(observed_at),
+      "exit_status" => exit_status,
+      "handoff" => handoff,
+      "exit_reported_at" => exit_reported_at(exit_status, handoff, existing_metadata, observed_at)
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()
@@ -721,6 +727,19 @@ defmodule DevIDE.Runtimes do
   defp agent_worktree_source(nil, source) when is_binary(source) and source != "", do: source
 
   defp agent_worktree_source(_source, _existing_source), do: "agent_report"
+
+  defp exit_reported_at(nil, nil, _existing_metadata, _observed_at), do: nil
+
+  defp exit_reported_at(exit_status, handoff, existing_metadata, observed_at) do
+    prior_exit = Map.get(existing_metadata || %{}, "exit_status")
+    prior_handoff = Map.get(existing_metadata || %{}, "handoff")
+
+    if exit_status != prior_exit or handoff != prior_handoff do
+      DateTime.to_iso8601(observed_at)
+    else
+      Map.get(existing_metadata || %{}, "exit_reported_at")
+    end
+  end
 
   defp agent_worktree_runtime?(%Runtime{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, "kind") == "agent_worktree" or

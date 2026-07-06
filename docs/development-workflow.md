@@ -86,6 +86,14 @@ bash scripts/prune-old-worktrees.sh --days 3
 
 Also run `git worktree prune` on the primary repo (the script does this automatically).
 
+### Read-only `master` in the primary checkout
+
+Local `master` in `/data/workspaces/.../dev_ide` is a **read-only mirror** of
+`origin/master`. Land work on agent-worktree branches, then integrate via PR or
+fast-forward push. `.githooks/pre-commit` refuses `git commit` on `master` in
+the primary checkout (linked agent worktrees are exempt). Enable with
+`git config core.hooksPath .githooks`.
+
 ### Pathspec-only commits
 
 Never `git commit -a` from the primary checkout. Stage and commit explicit paths:
@@ -177,11 +185,20 @@ flowchart TD
     J --> K[prune-old-worktrees.sh]
 ```
 
+**Exit protocol (required)**
+
+Before ending a session, every agent must leave an explicit handoff — see
+`AGENTS.md` § "Agent session exit protocol". The daily worktree-alarm sweep
+(`scripts/devide-worktree-alarm-sweep.sh`, timer via
+`scripts/ensure-devide-worktree-alarm-sweep.sh`) turns "dirty worktree, no
+report, no process, >24h" into `workspace.agent_worktree_stale` audit events
+instead of silent archaeology.
+
 **Gaps still open**
 
 1. UI banner when an agent cwd is the primary checkout (Runtimes already rejects it).
 2. Land worktree-session MCP scoping before stacking preview recordings.
-3. Observable prune events in the Agents panel / audit feed.
+3. Surface worktree-alarm + prune events prominently in the Agents panel.
 
 ---
 
@@ -211,6 +228,7 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 | 2 | SEC-1 workspace-scoped MCP tokens | Critical | Medium | **Done** |
 | 3 | Auto-worktree in `launch-devide-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
 | 4 | Worktree janitor script | Medium | Low | **Done** (cron wiring TBD) |
+| 4b | Stale worktree alarm sweep + exit protocol | High | Low | **Done** (timer via `ensure-devide-worktree-alarm-sweep.sh`) |
 | 5 | Canary vs stable deploy tiers | Medium | Medium | Partial (poller gate exists) |
 | 6 | Converge Elixir versions | Low | Low | Not started |
 | 7 | `in-progress.md` subsystem freeze | Medium | Very low | **Done** |
