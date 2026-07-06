@@ -40,7 +40,7 @@ defmodule DevIDE.Terminals.AgentState do
   @type entry :: %{
           state: state(),
           message: String.t() | nil,
-          source: :mcp | :hook,
+          source: :mcp | :hook | :dispatch,
           tool: String.t() | nil,
           workspace_id: String.t() | nil,
           transcript_path: String.t() | nil,
