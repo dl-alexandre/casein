@@ -112,8 +112,7 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   def handoff_param do
     %{
       type: "string",
-      description:
-        "Short free-text status for the next agent or operator (branch, PR, blockers)."
+      description: "Short free-text status for the next agent or operator (branch, PR, blockers)."
     }
   end
 
