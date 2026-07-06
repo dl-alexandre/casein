@@ -19,6 +19,15 @@ Query parameters (stable order when DevIDE writes them):
 | `pane` | `%2` | tmux pane id — included when the window has multiple panes, or when zoomed |
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
 | `tmux_session` | `devide_…` | Attach hint when switching sessions (internal) |
+| `tab` | `history` | Cockpit tab to open (`terminal`, `files`, `search`, `diff`, `artifacts`, `run`, `proposals`, `logs`, `history`); unknown values are ignored |
+
+`tab` is a one-shot open hint: it selects the tab (with that tab's lazy
+hydration) on the mount/patch that carries it, and DevIDE does not re-emit it
+when patching the address bar afterwards. `tab=history` additionally seeds the
+History panel's search filters from the previous-sessions query params
+(`query`, `source`, `session`, `pane`, `since`, `until`, `limit`, and their
+aliases) — this is how old `/workspaces/:id/previous-sessions` bookmarks keep
+working through the legacy redirect.
 
 ### Canonicalization
 
