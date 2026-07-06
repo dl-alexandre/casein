@@ -119,7 +119,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     [
       pane: pane_query_param(socket, window_id),
       zoom: window_zoomed?(socket, window_id),
-      path_base: socket.assigns[:lan_friendly_path]
+      # Share links use the canonical workspace route (no inner segments) so
+      # a copied link always lands on the workspace root.
+      path_base: socket.assigns[:workspace_route]
     ]
   end
 
@@ -140,7 +142,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
       |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
       |> encode_query()
 
-    ~p"/workspaces/#{workspace_id}" <> if(query == "", do: "", else: "?" <> query)
+    base =
+      case Keyword.get(opts, :path_base) do
+        path_base when is_binary(path_base) and path_base != "" -> path_base
+        _ -> ~p"/workspaces/#{workspace_id}"
+      end
+
+    base <> if(query == "", do: "", else: "?" <> query)
   end
 
   defp apply_pending_pane(socket, pane_id) when is_binary(pane_id) and pane_id != "" do
@@ -218,8 +226,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     }
   end
 
+  # Address-bar patching keeps the full requested route (inner segments
+  # included) so the URL stays what the operator typed.
   defp path_base(socket, workspace_id) do
-    case socket.assigns[:lan_friendly_path] do
+    case socket.assigns[:path_route] do
       path when is_binary(path) and path != "" -> path
       _ -> ~p"/workspaces/#{workspace_id}"
     end

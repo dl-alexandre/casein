@@ -26,7 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponent do
   # Config assigns the parent passes; everything else is component-private
   # UI state. policy_ctx/home_host_path read these from socket.assigns, so
   # the list must cover what Context needs.
-  @config_keys ~w(id workspace current_user lan_friendly_path workspace_mode_source db_isolation host_path)a
+  @config_keys ~w(id workspace current_user workspace_mode_source db_isolation host_path)a
 
   @impl true
   def update(assigns, socket) do

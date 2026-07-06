@@ -429,7 +429,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
               <SessionBar.copy_link_button
                 url={
                   SessionBar.share_url(@workspace.id, @mnav_active_tab.id, window.id,
-                    path_base: @lan_friendly_path
+                    path_base: @workspace_route
                   )
                 }
                 label={@mnav_active_tab.label <> " · " <> window.name}
@@ -483,7 +483,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             <SessionBar.copy_link_button
               url={
                 SessionBar.share_url(@workspace.id, @default_terminal_sid, nil,
-                  path_base: @lan_friendly_path
+                  path_base: @workspace_route
                 )
               }
               label={@shell_button_label}
@@ -547,7 +547,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                 </span>
               </button>
               <SessionBar.copy_link_button
-                url={SessionBar.share_url(@workspace.id, tab.id, nil, path_base: @lan_friendly_path)}
+                url={SessionBar.share_url(@workspace.id, tab.id, nil, path_base: @workspace_route)}
                 label={tab.label}
                 visible?={true}
               />
@@ -594,7 +594,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   <SessionBar.copy_link_button
                     url={
                       SessionBar.share_url(@workspace.id, tab.id, window.id,
-                        path_base: @lan_friendly_path
+                        path_base: @workspace_route
                       )
                     }
                     label={tab.label <> " · " <> window.name}

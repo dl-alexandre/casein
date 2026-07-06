@@ -257,7 +257,11 @@ defmodule DevIdeWeb.Router do
   scope "/", DevIdeWeb do
     pipe_through :browser
 
-    live_session :lan_friendly_paths, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+    live_session :path_workspaces,
+      on_mount: [
+        {DevIdeWeb.AssignCurrentUserHook, :default},
+        {DevIdeWeb.DeploymentUpdateHook, :default}
+      ] do
       live "/*lan_path", WorkspaceLive.Show, :lan_path
     end
   end

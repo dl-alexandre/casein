@@ -15,8 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
         id: "audit-drawer",
         open: false,
         workspace: %{id: ws_id, name: ws_id, user: "u1"},
-        current_user: %{id: "u1", username: "u1", role: :admin},
-        lan_friendly_path: nil
+        current_user: %{id: "u1", username: "u1", role: :admin}
       },
       Map.new(overrides)
     )

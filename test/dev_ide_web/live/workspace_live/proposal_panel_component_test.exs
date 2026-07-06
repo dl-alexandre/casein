@@ -20,7 +20,6 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
         id: "proposal-panel",
         workspace: %{id: "ws-proposals", user: "u1"},
         current_user: admin_user(),
-        lan_friendly_path: nil,
         workspace_mode_source: nil,
         db_isolation: %{},
         host_path: {:ok, root}
