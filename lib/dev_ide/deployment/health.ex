@@ -7,8 +7,7 @@ defmodule DevIDE.Deployment.Health do
   the Caddy app upstream for `PHX_HOST`, and deploy drift status.
   """
 
-  alias DevIDE.Deployment.Drift
-  alias DevIDE.Deployment.Registry
+  alias DevIDE.Deployment.{Drift, LastDeploy, Registry}
 
   @current_symlink "/run/devide/current.sock"
   @expected_caddy_dials [
@@ -24,13 +23,16 @@ defmodule DevIDE.Deployment.Health do
     caddy_config = Keyword.get_lazy(opts, :caddy_config, &fetch_caddy_config/0)
     host = Keyword.get(opts, :host) || System.get_env("PHX_HOST") || default_host()
     branch = Keyword.get(opts, :branch) || Drift.branch()
-    drift = Drift.assess(version, remote_head(opts, branch), branch)
+    remote = remote_head(opts, branch)
+    drift = Drift.assess(version, remote, branch)
+    last_deploy = LastDeploy.summary(Keyword.merge(opts, deployed: version, remote_head: remote))
 
     checks = %{
       socket_exists: socket_path && File.exists?(socket_path),
       current_socket_points_to_instance: current_target == socket_path,
       caddy_devide_upstream: caddy_upstream_check(caddy_config, host),
-      deploy_revision_current: drift == :current
+      deploy_revision_current: drift == :current,
+      deploy_pipeline_ok: last_deploy.pipeline != :failed
     }
 
     %{
@@ -38,6 +40,7 @@ defmodule DevIDE.Deployment.Health do
       version: version,
       socket_path: socket_path,
       current_socket: current_target,
+      last_deploy: last_deploy,
       checks: checks
     }
   end

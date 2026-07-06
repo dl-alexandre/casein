@@ -80,6 +80,7 @@ defmodule DevIDE.Deployment.Registry do
 
     if socket_path, do: maybe_init_current_symlink(socket_path)
     DevIDE.Deployment.Drift.check_async()
+    DevIDE.Deployment.LastDeploy.check_async()
 
     {:ok, %{id: id, file_path: file_path, data: data}}
   end

@@ -491,6 +491,27 @@ if config_env() == :prod and not release_cli? do
          :tmux_session_idle_seconds,
          positive_integer_env.("DEV_IDE_TMUX_SESSION_IDLE_SECONDS")
 
+  deployment_config =
+    :dev_ide
+    |> Application.get_env(:deployment, [])
+    |> then(fn config ->
+      case System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET") do
+        secret when is_binary(secret) and secret != "" ->
+          Keyword.put(config, :github_webhook_secret, secret)
+
+        _ ->
+          config
+      end
+    end)
+    |> then(fn config ->
+      case System.get_env("DEVIDE_GITHUB_REPO") do
+        repo when is_binary(repo) and repo != "" -> Keyword.put(config, :github_repo, repo)
+        _ -> config
+      end
+    end)
+
+  config :dev_ide, :deployment, deployment_config
+
   preview_script_env =
     case System.get_env("DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT") do
       "" -> nil

@@ -110,6 +110,11 @@ defmodule DevIdeWeb.Endpoint do
     Plug.Conn.put_private(conn, :devide_preview_proxy_raw_body, body)
   end
 
+  defp maybe_cache_preview_proxy_body(%{request_path: "/api/deploy_webhook"} = conn, body)
+       when is_binary(body) do
+    Plug.Conn.put_private(conn, :devide_deploy_webhook_raw_body, body)
+  end
+
   defp maybe_cache_preview_proxy_body(conn, _body), do: conn
 
   @doc false

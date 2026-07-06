@@ -4,17 +4,25 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias DevIDE.Deployment.LastDeploy
+
   def on_mount(:default, _params, _session, socket) do
     socket =
       socket
       |> assign(:update_available, false)
       |> assign(:update_commits_behind, 0)
       |> assign(:deploy_drift, nil)
+      |> assign(:deploy_failure, nil)
+      |> assign(:deploy_in_progress, nil)
 
-    if connected?(socket) do
-      Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
-      DevIDE.Deployment.Drain.track(self())
-    end
+    socket =
+      if connected?(socket) do
+        Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+        DevIDE.Deployment.Drain.track(self())
+        apply_poller_status(socket)
+      else
+        socket
+      end
 
     # No connect-time version comparison here on purpose. Whether a reconnected
     # client genuinely needs a hard reload is exactly what `static_changed?/1`
@@ -36,10 +44,41 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
         {:deploy_drift, info}, socket ->
           {:halt, assign(socket, :deploy_drift, info)}
 
+        {:deploy_failure, info}, socket ->
+          {:halt,
+           socket
+           |> assign(:deploy_failure, info)
+           |> assign(:deploy_in_progress, nil)}
+
+        {:deploy_in_progress, info}, socket ->
+          {:halt,
+           socket
+           |> assign(:deploy_in_progress, info)
+           |> assign(:deploy_failure, nil)}
+
+        :deploy_poller_clear, socket ->
+          {:halt,
+           socket
+           |> assign(:deploy_failure, nil)
+           |> assign(:deploy_in_progress, nil)}
+
         _msg, socket ->
           {:cont, socket}
       end)
 
     {:cont, socket}
+  end
+
+  defp apply_poller_status(socket) do
+    case LastDeploy.banner_status() do
+      {:failed, info} ->
+        assign(socket, deploy_failure: info, deploy_in_progress: nil)
+
+      {:in_progress, info} ->
+        assign(socket, deploy_in_progress: info, deploy_failure: nil)
+
+      :idle ->
+        assign(socket, deploy_failure: nil, deploy_in_progress: nil)
+    end
   end
 end

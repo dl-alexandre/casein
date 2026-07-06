@@ -107,6 +107,12 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.McpRateLimit
   end
 
+  # GitHub push webhook — authenticated via X-Hub-Signature-256, not ApiAuth.
+  pipeline :deploy_webhook do
+    plug :accepts, ["json"]
+    plug DevIdeWeb.Plugs.DeployWebhookAuth
+  end
+
   # Streamable HTTP transport (GET SSE channel + DELETE session teardown). No
   # strict :accepts — SSE clients send `Accept: text/event-stream` only.
   pipeline :mcp_stream do
@@ -203,6 +209,12 @@ defmodule DevIdeWeb.Router do
 
     get "/deploy_status", DeployStatusController, :show
     post "/drain", DrainController, :drain
+  end
+
+  scope "/api", DevIdeWeb.API do
+    pipe_through :deploy_webhook
+
+    post "/deploy_webhook", DeployWebhookController, :github
   end
 
   scope "/api", DevIdeWeb.API do

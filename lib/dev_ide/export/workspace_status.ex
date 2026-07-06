@@ -239,7 +239,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
       ok: health.ok,
       checks: health.checks,
       socket_path: health.socket_path,
-      current_socket: health.current_socket
+      current_socket: health.current_socket,
+      last_deploy: health.last_deploy
     }
   end
 

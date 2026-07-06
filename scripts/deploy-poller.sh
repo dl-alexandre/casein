@@ -35,8 +35,75 @@ LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/devide-deploy-poller.lock}"
 ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
 CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
 CACHE_ROOT="${DEVIDE_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
+LAST_DEPLOY_FILE="${DEVIDE_LAST_DEPLOY_FILE:-/run/devide/last-deploy.json}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
+
+# Atomically records deploy-poller outcomes for the running release to read via
+# DevIDE.Deployment.LastDeploy (/run/devide/last-deploy.json by default).
+write_deploy_status() {
+  local outcome="$1"
+  local target_sha="${2:-}"
+  local phase="${3:-}"
+  local reason="${4:-}"
+  local from_sha="${5:-}"
+
+  local target_short="" from_short=""
+  if [ -n "$target_sha" ]; then
+    target_short="$(printf '%s' "$target_sha" | cut -c1-12)"
+  fi
+  if [ -n "$from_sha" ]; then
+    from_short="$(printf '%s' "$from_sha" | cut -c1-12)"
+  fi
+
+  if [ "$outcome" = "in_progress" ]; then
+    DEPLOY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    export DEPLOY_STARTED_AT
+    export DEPLOY_IN_FLIGHT=1
+  else
+    unset DEPLOY_IN_FLIGHT
+  fi
+
+  OUTCOME="$outcome" \
+  TARGET_SHA="$target_sha" \
+  TARGET_SHORT="$target_short" \
+  FROM_SHA="$from_sha" \
+  FROM_SHORT="$from_short" \
+  PHASE="$phase" \
+  REASON="$reason" \
+  STARTED_AT="${DEPLOY_STARTED_AT:-}" \
+  FINISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  LAST_DEPLOY_FILE="$LAST_DEPLOY_FILE" \
+  python3 -c '
+import json, os
+
+outcome = os.environ["OUTCOME"]
+record = {
+    "outcome": outcome,
+    "target_sha": os.environ.get("TARGET_SHA") or None,
+    "target_short": os.environ.get("TARGET_SHORT") or None,
+    "from_sha": os.environ.get("FROM_SHA") or None,
+    "from_short": os.environ.get("FROM_SHORT") or None,
+    "phase": os.environ.get("PHASE") or None,
+    "reason": os.environ.get("REASON") or None,
+    "started_at": os.environ.get("STARTED_AT") or None,
+    "finished_at": None if outcome == "in_progress" else os.environ.get("FINISHED_AT"),
+}
+path = os.environ["LAST_DEPLOY_FILE"]
+tmp = path + ".tmp"
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(record, handle, separators=(",", ":"))
+    handle.write("\n")
+os.replace(tmp, path)
+' || log "warning: failed to write ${LAST_DEPLOY_FILE}"
+}
+
+record_deploy_failure() {
+  local phase="$1"
+  local reason="$2"
+  write_deploy_status failed "${target:-}" "$phase" "$reason" "${deployed_full:-}"
+}
 
 setup_build_cache() {
   mkdir -p "${CACHE_ROOT}/mix-home" "${CACHE_ROOT}/hex-home" "${CACHE_ROOT}/mix-deps"
@@ -202,6 +269,9 @@ if [ -n "$deployed_full" ] && git merge-base --is-ancestor "$target" "$deployed_
   if [ "${DEVIDE_DEPLOY_ALLOW_ROLLBACK:-0}" != "1" ]; then
     log "origin/${BRANCH} (${target_short}) is BEHIND deployed ${deployed:0:12} — refusing to roll back"
     log "set DEVIDE_DEPLOY_ALLOW_ROLLBACK=1 to deploy it anyway"
+    write_deploy_status failed "$target" rollback_refused \
+      "origin/${BRANCH} (${target_short}) is behind deployed ${deployed:0:12}" \
+      "$deployed_full"
     exit 0
   fi
   log "rolling BACK to ${target_short} (DEVIDE_DEPLOY_ALLOW_ROLLBACK=1)"
@@ -209,6 +279,9 @@ fi
 
 if [ -n "$deployed" ]; then from_label="${deployed:0:12}"; else from_label="none"; fi
 log "deploy due: ${from_label} -> ${target_short}"
+
+write_deploy_status in_progress "$target" "" "" "$deployed_full"
+trap 'if [ -n "${DEPLOY_IN_FLIGHT:-}" ]; then record_deploy_failure unexpected "deploy-poller exited during deploy"; fi' EXIT
 
 # --- prepare a clean detached worktree at the target SHA ---------------------
 mkdir -p "$(dirname "$WORKTREE")"
@@ -228,17 +301,26 @@ log "using deploy cache ${CACHE_ROOT}"
 log "running pre-push gate in worktree ${target_short}"
 if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
   log "error: pre-push gate failed in deploy worktree — aborting deploy"
+  record_deploy_failure gate "pre-push gate failed"
+  trap - EXIT
   exit 1
 fi
 
 # --- build + activate --------------------------------------------------------
 log "building release from ${target_short}"
-( cd "$WORKTREE" && ./scripts/build-release.sh )
+if ! ( cd "$WORKTREE" && ./scripts/build-release.sh ); then
+  log "error: build-release.sh failed — aborting deploy"
+  record_deploy_failure build "build-release.sh failed"
+  trap - EXIT
+  exit 1
+fi
 
 # Fail fast if the build did not actually populate release-out, rather than
 # packaging an empty/partial tarball and failing later in activation.
 if [ ! -d "$WORKTREE/release-out" ] || [ -z "$(ls -A "$WORKTREE/release-out" 2>/dev/null)" ]; then
   log "error: build produced no release-out artifacts — aborting deploy"
+  record_deploy_failure build "build produced no release-out artifacts"
+  trap - EXIT
   exit 1
 fi
 
@@ -247,8 +329,16 @@ trap 'rm -f "$tarball"' EXIT
 tar -C "$WORKTREE/release-out" -czf "$tarball" .
 
 log "activating ${target_short} via deploy-devbox-release.sh"
-"$WORKTREE/scripts/deploy-devbox-release.sh" "$tarball" "$target"
+if ! "$WORKTREE/scripts/deploy-devbox-release.sh" "$tarball" "$target"; then
+  log "error: deploy-devbox-release.sh failed — aborting deploy"
+  record_deploy_failure activate "deploy-devbox-release.sh failed"
+  trap - EXIT
+  exit 1
+fi
 
 ensure_agent_shims "$target"
+
+write_deploy_status success "$target" "" "" "$deployed_full"
+trap - EXIT
 
 log "deployed ${target_short} to ${DEPLOY_ROOT}/release"
