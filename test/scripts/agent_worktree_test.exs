@@ -196,8 +196,10 @@ defmodule Scripts.AgentWorktreeTest do
     tmp = tmp_dir!("devide-codex-update-test")
     home = Path.join(tmp, "home")
     npm_prefix = Path.join(home, ".local/share/npm-global")
+
     fake_codex =
       Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex")
+
     fake_bin = Path.join(tmp, "bin")
     fake_npm = Path.join(fake_bin, "npm")
     npm_set = Path.join(tmp, "npm-prefix-set")
