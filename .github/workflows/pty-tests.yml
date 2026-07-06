@@ -78,5 +78,7 @@ jobs:
       - name: Fetch dependencies
         run: mix deps.get
 
-      - name: Run PTY suite
-        run: mix test --only pty
+      - name: Run PTY and tmux integration suites
+        run: |
+          mix test test/dev_ide/terminals/session_test.exs --include pty
+          mix test test/tmux_ctl/send_keys_bytes_test.exs --include tmux

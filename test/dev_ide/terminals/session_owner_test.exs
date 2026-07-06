@@ -1304,7 +1304,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.stop(owner_pid, :normal)
     end
 
-    test "set_theme reports client fg/bg to a tmux >= 3.5 on a real change" do
+    test "set_theme reports client fg/bg and 997 theme to tmux >= 3.6 on a real change" do
       swap_in_fake_tmux_adapter()
       set_fake_tmux_version({3, 6})
       {owner_pid, fake_session} = start_owner_with_fake_session("theme-report")
@@ -1315,7 +1315,89 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       expected =
         DevIDE.Terminals.Theme.client_color_reports(
           DevIDE.Terminals.Theme.builtin_preset(:light, "catppuccin")
+        ) <>
+          DevIDE.Terminals.Theme.client_theme_report(:light)
+
+      assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "set_theme reports OSC only on tmux 3.5" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 5})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-report-35")
+
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+
+      expected =
+        DevIDE.Terminals.Theme.client_color_reports(
+          DevIDE.Terminals.Theme.builtin_preset(:light, "catppuccin")
         )
+
+      assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
+      refute String.ends_with?(expected, "\e[?997;2n")
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "forwarded 997 theme reports are rewritten to the session scheme on tmux >= 3.6" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 6})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-report-rewrite")
+
+      register_subscriber(owner_pid, self(), :raw)
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[?997;1n"}, 1_000
+
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Process.sleep(150)
+
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[?997;2n"}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "incoming 997 theme reports are dropped on tmux < 3.6" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 5})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-report-drop")
+
+      register_subscriber(owner_pid, self(), :raw)
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
+
+      refute_receive {:fake_session_input, ^fake_session, _}, 200
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "fresh attach seeds client colors on tmux >= 3.6" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 6})
+      {owner_pid, fake_session} = start_owner_with_fake_session("fresh-seed")
+
+      expected =
+        DevIDE.Terminals.Theme.client_color_reports(
+          DevIDE.Terminals.Theme.builtin_preset(:dark, "catppuccin")
+        ) <>
+          DevIDE.Terminals.Theme.client_theme_report(:dark)
+
+      Application.put_env(:dev_ide, :test_shell_attachment_pid, fake_session)
+
+      on_exit(fn -> Application.delete_env(:dev_ide, :test_shell_attachment_pid) end)
+
+      :sys.replace_state(owner_pid, fn state -> %{state | attachment: nil} end)
+
+      assert {:ok, _} =
+               GenServer.call(
+                 owner_pid,
+                 {:attach, self(), :raw,
+                  workspace_key: "ws-fresh-seed", loc: {:local, System.tmp_dir!()}}
+               )
 
       assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
 

@@ -19,4 +19,17 @@ defmodule DevIDE.Agents.TerminalOutputFormatTest do
   test "leaves plain text unchanged" do
     assert TerminalOutputFormat.format("plain output\n") == "plain output\n"
   end
+
+  test "passes literal tab characters through unchanged" do
+    assert TerminalOutputFormat.format("col1\tcol2\n") == "col1\tcol2\n"
+  end
+
+  test "passes literal tabs through even when surrounded by ANSI codes" do
+    raw = "\e[31mleft\e[0m\t\e[32mright\e[0m\n"
+    assert TerminalOutputFormat.format(raw) == "left\tright\n"
+  end
+
+  test "passes U+FFFD replacement bytes through unchanged" do
+    assert TerminalOutputFormat.format("bad\xFF\xFEbyte\n") == "bad\xFF\xFEbyte\n"
+  end
 end

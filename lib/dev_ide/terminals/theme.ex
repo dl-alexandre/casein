@@ -150,6 +150,31 @@ defmodule DevIDE.Terminals.Theme do
     }
   end
 
+  @theme_report ~r/\e\[\?997;[12]n/
+
+  @doc """
+  Explicit tmux >= 3.6 client dark/light theme report (CSI `?997;1n` / `?997;2n`).
+
+  Parseable only by tmux 3.6+; on older servers these bytes would leak into panes
+  as keystrokes and must be version-gated by the caller.
+  """
+  @spec client_theme_report(scheme()) :: binary()
+  def client_theme_report(:dark), do: "\e[?997;1n"
+  def client_theme_report(:light), do: "\e[?997;2n"
+
+  @doc """
+  Rewrites tmux 3.6 client theme reports (`\\e[?997;1n` / `\\e[?997;2n`) to match
+  the active DevIDE scheme. Passthrough when no `997` sequence is present.
+  """
+  @spec rewrite_theme_reports(binary(), scheme()) :: binary()
+  def rewrite_theme_reports(data, scheme) when is_binary(data) and scheme in [:dark, :light] do
+    if :binary.match(data, "\e[?997;") == :nomatch do
+      data
+    else
+      Regex.replace(@theme_report, data, fn _whole -> client_theme_report(scheme) end)
+    end
+  end
+
   @doc """
   Unsolicited OSC 10 (foreground) and OSC 11 (background) color reports in the
   XTerm `rgb:rrrr/gggg/bbbb` form, terminated with ST.
