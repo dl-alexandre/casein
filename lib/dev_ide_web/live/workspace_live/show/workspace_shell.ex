@@ -125,7 +125,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               data-view={Atom.to_string(@window_picker_view)}
               class={[
                 "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden",
-                if(@window_picker_view == :tabs, do: "flex-1", else: "shrink")
+                @window_picker_view == :sidebar && "hidden",
+                @window_picker_view == :tabs && "flex-1",
+                @window_picker_view == :dropdown && "shrink"
               ]}
             >
               <%= if @window_picker_view == :tabs do %>
@@ -139,26 +141,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                   class="min-w-0 flex-1"
                 />
               <% else %>
-                <SessionBar.window_dropdown
-                  workspace_id={@workspace.id}
-                  path_base={@workspace_route}
-                  windows={@tmux_window_tabs}
-                  session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-                  share_session_id={@terminal_sid}
-                  topology_version={@tmux_topology_structure_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                  selected_preview={
-                    TerminalState.selected_preview_pane(
-                      @preview_panes,
-                      @entered_preview_pane_id,
-                      @ui_highlight_pane_id,
-                      @tmux_windows,
-                      @tmux_active_window_id,
-                      @tmux_session
-                    )
-                  }
-                />
+                <%= if @window_picker_view == :dropdown do %>
+                  <SessionBar.window_dropdown
+                    workspace_id={@workspace.id}
+                    path_base={@workspace_route}
+                    windows={@tmux_window_tabs}
+                    session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
+                    share_session_id={@terminal_sid}
+                    topology_version={@tmux_topology_structure_version}
+                    mutations_allowed?={@tmux_mutations_enabled?}
+                    rename_window_id={@tmux_rename_window_id}
+                    selected_preview={
+                      TerminalState.selected_preview_pane(
+                        @preview_panes,
+                        @entered_preview_pane_id,
+                        @ui_highlight_pane_id,
+                        @tmux_windows,
+                        @tmux_active_window_id,
+                        @tmux_session
+                      )
+                    }
+                  />
+                <% end %>
               <% end %>
             </div>
             <%!-- Window/pane actions — inline only for what has no
@@ -422,8 +426,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             tabindex="-1"
             data-leader-action="rename-window"
             phx-click={
-              JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
-              |> JS.push("tmux:rename_start")
+              if @window_picker_view == :sidebar do
+                JS.push("tmux:rename_start")
+              else
+                JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
+                |> JS.push("tmux:rename_start")
+              end
             }
             phx-value-window-id={@tmux_active_window_id}
           ></button>
@@ -663,7 +671,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :shell_button_detail,
       :workspace_route,
       :active_window_pane_count,
-      :tmux_window_tabs
+      :tmux_window_tabs,
+      :tmux_topology_structure_version,
+      :tmux_rename_window_id,
+      :window_picker_view
     ])
   end
 

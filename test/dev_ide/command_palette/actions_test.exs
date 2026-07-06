@@ -101,14 +101,19 @@ defmodule DevIDE.CommandPalette.ActionsTest do
 
       assert "view:window_picker_tabs" in ids
       assert "view:window_picker_dropdown" in ids
+      assert "view:window_picker_sidebar" in ids
       assert "action:terminal:toggle_chrome" in ids
       # Tab switchers are view commands too.
       assert "tab:terminal" in ids
 
-      for id <- ["view:window_picker_tabs", "view:window_picker_dropdown"] do
+      for id <- [
+            "view:window_picker_tabs",
+            "view:window_picker_dropdown",
+            "view:window_picker_sidebar"
+          ] do
         item = Enum.find(view, &(&1.id == id))
         assert item.payload.event == "view:set_window_picker"
-        assert item.payload.params["view"] in ["tabs", "dropdown"]
+        assert item.payload.params["view"] in ["tabs", "dropdown", "sidebar"]
       end
     end
   end

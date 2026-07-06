@@ -1,4 +1,4 @@
-// Persists the header window-picker presentation ("dropdown" | "tabs") per
+// Persists the window-picker presentation ("dropdown" | "tabs" | "sidebar") per
 // browser and replays it on mount, mirroring the terminal theme hybrid: the
 // server owns the assign, this hook owns the localStorage copy.
 //
@@ -8,7 +8,7 @@
 // change is announced with a `window-picker-view` event so the store follows.
 
 const STORAGE_KEY = "devide:window-picker-view"
-const VIEWS = ["dropdown", "tabs"]
+const VIEWS = ["dropdown", "tabs", "sidebar"]
 
 export const WindowPickerView = {
   mounted() {

@@ -140,6 +140,17 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
     assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
 
+    # Sidebar: left rail beside the terminal, header picker hidden.
+    html = render_hook(view, "view:set_window_picker", %{"view" => "sidebar"})
+
+    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
+    assert html =~ ~s(id="header-terminal-pickers-#{workspace_id}")
+
+    assert html =~
+             "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden hidden"
+
+    assert html =~ ~s(data-view="sidebar")
+
     # And back.
     html = render_hook(view, "view:set_window_picker", %{"view" => "dropdown"})
     assert html =~ ~s(id="window-dropdown-#{workspace_id}")

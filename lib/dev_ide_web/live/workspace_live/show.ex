@@ -677,7 +677,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # palette's View section; the WindowPickerView hook mirrors the choice into
   # localStorage and replays it on the next mount.
   def handle_event("view:set_window_picker", %{"view" => view}, socket)
-      when view in ["dropdown", "tabs"] do
+      when view in ["dropdown", "tabs", "sidebar"] do
     {:noreply,
      socket
      |> assign(:window_picker_view, String.to_existing_atom(view))

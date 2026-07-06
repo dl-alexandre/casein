@@ -279,6 +279,119 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
+  attr :workspace_id, :string, required: true
+  attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
+  attr :topology_version, :integer, default: 0
+  attr :mutations_allowed?, :boolean, required: true
+  attr :rename_window_id, :string, default: nil
+  attr :path_base, :string, default: nil
+
+  attr :class, :any,
+    default: nil,
+    doc: "layout classes — desktop-only rail beside the terminal body"
+
+  def window_sidebar(assigns) do
+    ~H"""
+    <nav
+      :if={@windows != []}
+      id={"window-sidebar-" <> @workspace_id}
+      data-window-picker-sidebar="true"
+      data-leader-action="window-picker"
+      data-version={@topology_version}
+      data-shortcut="Ctrl + B, then W"
+      phx-hook="WindowPickerSidebar"
+      aria-label="Tmux windows"
+      class={[
+        "window-picker-sidebar flex w-44 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        @class
+      ]}
+    >
+      <div
+        data-picker-filter
+        class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
+      >
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto py-1">
+        <%= for window <- @windows do %>
+          <div
+            id={"tmux-window-sidebar-" <> window.dom_frag}
+            data-ctx-menu="window_tab"
+            data-ctx-window-id={window.id}
+            class={[
+              "group flex flex-col gap-0.5 border-b border-base-300/40 px-2 py-1.5 last:border-b-0",
+              window.active? && "bg-base-100 shadow-inner"
+            ]}
+          >
+            <a
+              href={window_href(@workspace_id, window.id, path_base: @path_base)}
+              data-picker-item
+              data-picker-active={window.active? || nil}
+              phx-click="tmux:select_window"
+              phx-value-window-id={window.id}
+              data-tmux-window-index={window.index}
+              class="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-base-200/80"
+              title={"Select tmux window " <> window.full_title}
+            >
+              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.index}</span>
+              <span data-picker-label class="min-w-0 flex-1 truncate font-medium">{window.display_name}</span>
+              <span
+                :if={window.preview?}
+                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+                title={"Preview pane open (" <> to_string(window.preview_count) <> ")"}
+                aria-hidden="true"
+              >
+                <.icon name="hero-globe-alt" class="size-3" />
+              </span>
+              <span
+                class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                title={window.activity_label}
+                aria-label={window.activity_label}
+              ></span>
+            </a>
+            <%= if @mutations_allowed? and @rename_window_id == window.id do %>
+              <.form
+                for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
+                id={"tmux-rename-form-sidebar-" <> window.dom_frag}
+                phx-submit="tmux:rename_window"
+                class="flex items-center gap-1 px-1"
+              >
+                <input type="hidden" name="window[id]" value={window.id} />
+                <input
+                  type="text"
+                  id={"tmux-rename-input-sidebar-" <> window.dom_frag}
+                  name="window[name]"
+                  value={window.name}
+                  phx-hook="RenameInput"
+                  phx-keydown="tmux:rename_cancel"
+                  phx-key="Escape"
+                  autocomplete="off"
+                  class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
+                />
+                <button type="submit" class="rounded p-0.5 text-primary" aria-label="Save window name">
+                  <.icon name="hero-check" class="size-3.5" />
+                </button>
+              </.form>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+      <%= if @mutations_allowed? do %>
+        <button
+          type="button"
+          phx-click="tmux:new_window"
+          class="shrink-0 border-t border-base-300/70 px-2 py-2 text-xs text-base-content/70 hover:bg-base-200"
+          title="New window · Ctrl + B c"
+          aria-label="New tmux window"
+        >
+          <span class="inline-flex items-center gap-1">
+            <.icon name="hero-plus" class="size-3.5" /> New window
+          </span>
+        </button>
+      <% end %>
+    </nav>
+    """
+  end
+
   @doc """
   Sky "preview running" badge — the same symbol the window picker shows on a
   window hosting a live preview pane. Renders nothing when `count` is zero.

@@ -64,6 +64,14 @@ defmodule DevIDE.CommandPalette.Actions do
         label: "View: window picker as dropdown",
         detail: "Compact window menu in the header (default)",
         payload: %{event: "view:set_window_picker", params: %{"view" => "dropdown"}}
+      },
+      %Item{
+        id: "view:window_picker_sidebar",
+        kind: :action,
+        category: :view,
+        label: "View: window picker as sidebar",
+        detail: "Vertical window rail beside the terminal (desktop)",
+        payload: %{event: "view:set_window_picker", params: %{"view" => "sidebar"}}
       }
     ]
   end
