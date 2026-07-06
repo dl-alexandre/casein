@@ -6,8 +6,10 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
+    DevIDE.PreviewPanes.clear()
 
     on_exit(fn ->
+      DevIDE.PreviewPanes.clear()
       restore(:workspaces_root, prev_root)
       restore(:workspace_source, prev_source)
       restore(:forward_auth, prev_forward_auth)
@@ -39,9 +41,12 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     {root, "folder:" <> Base.url_encode64(path, padding: false)}
   end
 
+  defp listen_once!(fun), do: listen_once!(0, fun)
+
   defp listen_once!(port, fun) do
     parent = self()
     {:ok, listen} = :gen_tcp.listen(port, [:binary, packet: :raw, active: false, reuseaddr: true])
+    {:ok, {_address, bound_port}} = :inet.sockname(listen)
 
     task =
       Task.async(fn ->
@@ -52,7 +57,21 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
         :gen_tcp.close(socket)
       end)
 
-    {listen, task}
+    {listen, bound_port, task}
+  end
+
+  defp register_preview_port!(workspace_id, port) do
+    pane_id = "%preview-proxy-#{System.unique_integer([:positive])}"
+    url = "http://127.0.0.1:#{port}/"
+
+    assert {:ok, _registration} =
+             DevIDE.PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => url,
+               "workspace_id" => workspace_id
+             })
+
+    port
   end
 
   defp read_http_request(socket, acc \\ "") do
@@ -110,13 +129,12 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "accepts an authorized workspace dev port", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
-    port = 5173
-
-    {listen, task} =
-      listen_once!(port, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
@@ -134,13 +152,12 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "forwards non-GET requests and bodies for LiveView longpoll fallback", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
-    port = 5173
-
-    {listen, task} =
-      listen_once!(port, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\r\n{}")
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
     body = ~s({"topic":"lv:phx-test"})
 
@@ -164,10 +181,8 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "forwards request cookies and preserves repeated set-cookie responses", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
-    port = 5173
-
-    {listen, task} =
-      listen_once!(port, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :ok =
           :gen_tcp.send(socket, [
             "HTTP/1.1 200 OK\r\n",
@@ -179,6 +194,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
           ])
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
@@ -202,15 +218,16 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     {root, workspace_id} = seed_authorized_workspace!()
 
     # Accept the connection but close without an HTTP response → Req errors.
-    {listen, task} = listen_once!(5173, fn _socket, _request -> :ok end)
+    {listen, port, task} = listen_once!(fn _socket, _request -> :ok end)
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
       conn
       |> put_req_header("x-auth-request-email", "dev@local")
-      |> get("/preview-proxy/#{workspace_id}/5173/")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
 
-    assert response(conn, 502) =~ "Nothing is listening on port 5173"
+    assert response(conn, 502) =~ "Nothing is listening on port #{port}"
     assert_receive {:DOWN, ^ref, :process, _pid, _reason}
 
     :gen_tcp.close(listen)
@@ -221,11 +238,12 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     for method <- [:put, :patch, :delete, :head, :options] do
       {root, workspace_id} = seed_authorized_workspace!()
 
-      {listen, task} =
-        listen_once!(5173, fn socket, _request ->
+      {listen, port, task} =
+        listen_once!(fn socket, _request ->
           :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
         end)
 
+      register_preview_port!(workspace_id, port)
       ref = Process.monitor(task.pid)
 
       conn =
@@ -233,7 +251,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
         |> put_req_header("x-auth-request-email", "dev@local")
         |> put_req_header("content-type", "application/octet-stream")
 
-      path = "/preview-proxy/#{workspace_id}/5173/"
+      path = "/preview-proxy/#{workspace_id}/#{port}/"
 
       conn =
         case method do
@@ -261,17 +279,18 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     for {content_type, body, expected} <- cases do
       {root, workspace_id} = seed_authorized_workspace!()
 
-      {listen, task} =
-        listen_once!(5173, fn socket, _request ->
+      {listen, port, task} =
+        listen_once!(fn socket, _request ->
           :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: #{content_type}\r\n\r\n#{body}")
         end)
 
+      register_preview_port!(workspace_id, port)
       ref = Process.monitor(task.pid)
 
       conn =
         build_conn()
         |> put_req_header("x-auth-request-email", "dev@local")
-        |> get("/preview-proxy/#{workspace_id}/5173/asset")
+        |> get("/preview-proxy/#{workspace_id}/#{port}/asset")
 
       assert response(conn, 200) =~ expected
       assert_receive {:DOWN, ^ref, :process, _pid, _reason}
@@ -284,17 +303,18 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "passes through a response that carries no content-type", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
-    {listen, task} =
-      listen_once!(5173, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\n\r\nplain")
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
       conn
       |> put_req_header("x-auth-request-email", "dev@local")
-      |> get("/preview-proxy/#{workspace_id}/5173/")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
 
     assert response(conn, 200) == "plain"
     assert_receive {:DOWN, ^ref, :process, _pid, _reason}
@@ -310,17 +330,18 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
 
     {root, workspace_id} = seed_authorized_workspace!()
 
-    {listen, task} =
-      listen_once!(5173, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
       conn
       |> put_req_header("x-auth-request-email", "dev@local")
-      |> get("/preview-proxy/#{workspace_id}/5173/live")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/live")
 
     assert response(conn, 200) == "ok"
     assert_receive {:DOWN, ^ref, :process, _pid, _reason}
@@ -393,10 +414,9 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "injects HMR assets into proxied HTML when the tunnel is enabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
-    port = 5173
 
-    {listen, task} =
-      listen_once!(port, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :ok =
           :gen_tcp.send(
             socket,
@@ -404,6 +424,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
           )
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
@@ -423,10 +444,9 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "leaves proxied HTML free of HMR assets when the tunnel is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
-    port = 5173
 
-    {listen, task} =
-      listen_once!(port, fn socket, _request ->
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
         :ok =
           :gen_tcp.send(
             socket,
@@ -434,6 +454,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
           )
       end)
 
+    register_preview_port!(workspace_id, port)
     ref = Process.monitor(task.pid)
 
     conn =
