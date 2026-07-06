@@ -1,14 +1,15 @@
 name: PR gate
 
 # Runs the same blocking checks as the local pre-push gate
-# (scripts/pre-push-check.sh) on every PR into master. GitHub-hosted Actions
-# are billing-blocked, so this runs on a self-hosted runner on the devbox. It
-# closes the gap where a PR merged on GitHub bypasses the local
-# .githooks/pre-push gate and can land red on master.
+# (scripts/pre-push-check.sh) on every PR into master. The required `gate` job
+# runs on a self-hosted runner on the devbox (it was added while GitHub-hosted
+# Actions were billing-blocked). It closes the gap where a PR merged on GitHub
+# bypasses the local .githooks/pre-push gate and can land red on master.
 #
-# Set this job as a required status check on master (branch protection) so the
-# branch tip can no longer go red via the merge button. See AGENTS.md
-# "Required pre-push gate".
+# `gate` is the required status check on master (branch protection references the
+# workflow name "PR gate" and the job id `gate` — do NOT rename either). The
+# second job `gate-hosted` runs the same checks on GitHub-hosted infra and is
+# advisory only (not a required check) — see its comment.
 
 on:
   pull_request:
@@ -31,8 +32,40 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The self-hosted runner is persistent; the default clean:true runs
+          # `git clean -ffdx`, which deletes the gitignored _build/, deps/, and
+          # assets/node_modules every run and forces a cold compile + full
+          # `npm ci`. Keep them to reuse the incremental build cache. Deps drift
+          # is still caught: the gate runs `mix deps.get` +
+          # `deps.unlock --check-unused`, and `npm ci` re-syncs whenever
+          # package-lock.json changes. Escape hatch for a poisoned workdir:
+          # delete the runner's work directory to force a clean checkout.
+          clean: false
+
+      - name: Detect docs-only PR
+        id: detect
+        shell: bash
+        run: |
+          # Determine whether the PR touches only documentation. Fetch the base
+          # branch explicitly — the pull_request checkout is a merge commit and,
+          # with clean:false, the persistent checkout's origin/<base> may be
+          # stale. Diff base tree vs HEAD tree (two-dot): a plain tree diff needs
+          # no shared history, so it is robust under a shallow checkout.
+          git fetch --no-tags origin "$GITHUB_BASE_REF"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+          changed="$(git diff --name-only "$base_sha" HEAD)"
+          echo "Changed files:"; echo "$changed"
+          # Conservative: docs-only means EVERY changed path matches docs/** or
+          # *.md. An empty/failed diff or any other path => full gate.
+          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md)$'; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run pre-push gate
+        if: steps.detect.outputs.docs_only != 'true'
         shell: bash
         run: |
           # The runner service shell is non-login; put mise (which reads
@@ -40,3 +73,117 @@ jobs:
           export PATH="$HOME/.local/bin:$PATH"
           command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
           bash scripts/pre-push-check.sh
+
+      - name: Skip gate (docs-only PR)
+        if: steps.detect.outputs.docs_only == 'true'
+        run: |
+          # The job still SUCCEEDS so the required check reports green — we do
+          # NOT use a workflow `paths:` filter, which would leave the required
+          # check pending forever on docs-only PRs.
+          echo "Docs-only PR (only docs/** and *.md changed) — skipping the heavy gate and reporting success."
+
+  gate-hosted:
+    name: Gate (hosted, advisory)
+    # Runs the identical gate on GitHub-hosted infra to prove hosted viability
+    # before we flip the required `gate` check off the single self-hosted runner
+    # (whose host-wide test-cover flock serializes every PR). It is advisory
+    # PURELY by not being a required branch-protection check — deliberately NOT
+    # continue-on-error, because a masked-red advisory job hides real breakage.
+    # Same fork-PR guard as the self-hosted job: fork code must never run with
+    # this repo's context.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MIX_ENV: test
+      # Hosted runs are isolated per job, so the host-wide test-cover flock adds
+      # nothing here — fail fast instead of waiting on it.
+      TEST_COVER_LOCK_WAIT: "0"
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect docs-only PR
+        id: detect
+        shell: bash
+        run: |
+          git fetch --no-tags origin "$GITHUB_BASE_REF"
+          base_sha="$(git rev-parse FETCH_HEAD)"
+          changed="$(git diff --name-only "$base_sha" HEAD)"
+          echo "Changed files:"; echo "$changed"
+          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md)$'; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Elixir
+        if: steps.detect.outputs.docs_only != 'true'
+        uses: erlef/setup-beam@v1
+        with:
+          # Match .tool-versions (erlang 28.5 / elixir 1.20.0-otp-28).
+          elixir-version: "1.20.0"
+          otp-version: "28.5"
+
+      # The :pty suite must run against the same tmux the devbox runs. Pinned to
+      # 3.6b for in-pane OSC 11 client-color support (see scripts/install-tmux.sh
+      # and docs/subsystems/tmux_36b_cutover.md).
+      - name: Restore cached tmux 3.6b
+        if: steps.detect.outputs.docs_only != 'true'
+        id: tmux-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.local/tmux-3.6b
+          key: tmux-3.6b-${{ runner.os }}
+      - name: Install tmux 3.6b
+        if: steps.detect.outputs.docs_only != 'true'
+        run: |
+          export TMUX_PREFIX="$HOME/.local/tmux-3.6b"
+          export TMUX_INSTALL_SUDO=""
+          bash scripts/install-tmux.sh
+          echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"
+
+      - name: Cache deps and build
+        if: steps.detect.outputs.docs_only != 'true'
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-1.20.0-28.5-
+
+      - name: Set up Node for asset lint
+        if: steps.detect.outputs.docs_only != 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: assets/package-lock.json
+
+      - name: Run gate (hosted, mise-free plain mix)
+        if: steps.detect.outputs.docs_only != 'true'
+        # pre-push-check.sh drives everything (JS lint+test, shell unit tests,
+        # shellcheck, mix deps.get, precommit.ci, doc citations). It falls back
+        # from `mise exec -- mix` to plain `mix` when mise is absent, so hosted
+        # runners need no mise — one source of truth for both gate jobs.
+        run: bash scripts/pre-push-check.sh
+
+      - name: Skip gate (docs-only PR)
+        if: steps.detect.outputs.docs_only == 'true'
+        run: echo "Docs-only PR (only docs/** and *.md changed) — skipping the heavy gate and reporting success."

@@ -5,6 +5,8 @@ name: PTY terminal tests
 # PTY-stable host and flakes under load in CI sandboxes, so it is excluded
 # from the main pipeline. This workflow gives periodic signal anyway:
 # failures here mean "investigate on a stable host", not "block the deploy".
+# It is advisory by virtue of not being a required check — a failing run is
+# left visible (red) rather than masked, so the signal is never lost.
 
 on:
   workflow_dispatch:
@@ -20,7 +22,6 @@ jobs:
     name: Run :pty-tagged tests (advisory)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     env:
       MIX_ENV: test
 
@@ -45,9 +46,10 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          # Keep in sync with the toolchain pinned in the Dockerfile.
-          elixir-version: "1.18.4"
-          otp-version: "27.2"
+          # Keep in sync with the toolchain in .tool-versions (what the devbox,
+          # mise, and the self-hosted PR gate run).
+          elixir-version: "1.20.0"
+          otp-version: "28.5"
 
       # Pinned to 3.6b so the :pty suite exercises in-pane OSC 11 client-color
       # support (see scripts/install-tmux.sh and
@@ -71,9 +73,9 @@ jobs:
           path: |
             deps
             _build
-          key: mix-${{ runner.os }}-1.18.4-27.2-${{ hashFiles('mix.lock') }}
+          key: mix-${{ runner.os }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
           restore-keys: |
-            mix-${{ runner.os }}-1.18.4-27.2-
+            mix-${{ runner.os }}-1.20.0-28.5-
 
       - name: Fetch dependencies
         run: mix deps.get

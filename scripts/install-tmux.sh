@@ -13,8 +13,11 @@
 # Env:
 #   TMUX_VERSION       tmux release tag to build (default 3.6b)
 #   TMUX_PREFIX        install prefix (default /usr/local)
-#   TMUX_INSTALL_SUDO  sudo command for privileged steps (default "sudo";
-#                      set to "" when PREFIX is user-writable)
+#   TMUX_INSTALL_SUDO  sudo command for the privileged `make install` step
+#                      (default "sudo"; set to "" when PREFIX is user-writable).
+#                      Package installation with apt-get always needs root and
+#                      escalates on its own (sudo unless already root),
+#                      independent of this setting.
 set -euo pipefail
 
 TMUX_VERSION="${TMUX_VERSION:-3.6b}"
@@ -35,8 +38,15 @@ fi
 
 echo "Building tmux ${TMUX_VERSION} -> ${PREFIX} (found: ${existing:-none})"
 
-${SUDO} apt-get update -q
-${SUDO} apt-get install -y -q build-essential libevent-dev libncurses-dev bison pkg-config curl
+# apt-get needs root regardless of where tmux ends up, so it does not follow
+# TMUX_INSTALL_SUDO (which may be "" for a user-writable PREFIX, e.g. on CI
+# runners). Escalate with sudo unless we are already running as root.
+apt_sudo=""
+if [[ "$(id -u)" -ne 0 ]]; then
+  apt_sudo="sudo"
+fi
+${apt_sudo} apt-get update -q
+${apt_sudo} apt-get install -y -q build-essential libevent-dev libncurses-dev bison pkg-config curl
 
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
