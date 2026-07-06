@@ -8,9 +8,7 @@ defmodule TmuxCtl.SendKeysBytesTest do
   @expected_hex ~r/03 1b 78 1b 5b 41 1b 7a\s+0d 09/
 
   setup do
-    unless tmux_available?() do
-      {:ok, skip: :no_tmux}
-    else
+    if tmux_available?() do
       cwd = System.tmp_dir!()
       session = "devide_send_keys_bytes_#{System.unique_integer([:positive])}"
 
@@ -30,6 +28,8 @@ defmodule TmuxCtl.SendKeysBytesTest do
       Process.sleep(300)
 
       {:ok, session: session, pane_id: pane_id}
+    else
+      {:ok, skip: :no_tmux}
     end
   end
 
