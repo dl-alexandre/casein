@@ -34,6 +34,13 @@ LAN-path routing.
 > (always-on path routing with mode-keyed trust). Later stages (picker deletion,
 > `dashboard.ex`) remain, so the Paths freeze entry stays for those surfaces.
 
+> **Update (2026-07-06, later):** Stage 3 is up as PR #121 on
+> `agent/claude/path-first-nav-stage3-20260706` — dashboard at `/`
+> (`workspace_live/dashboard.ex` + shared `picker_badges.ex`), `/workspaces` →
+> `/` redirect (`legacy_workspace_controller.ex`), header breadcrumbs replacing
+> the back arrow. Stage 4 cleanup (delete `index.ex`, `LanPathResolver`,
+> `:lan_friendly_paths`/`:lan_direct_mode` config) is stacked on it.
+
 ---
 
 ## Window picker sidebar
