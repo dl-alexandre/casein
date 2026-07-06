@@ -399,24 +399,6 @@ defmodule DevIdeWeb.WorkspaceDashboardLiveTest do
     end
   end
 
-  describe "lan_direct mode" do
-    test "the root URL redirects to the configured default workspace", %{conn: conn} do
-      prev_env =
-        Map.new(
-          [:lan_mode, :lan_direct_mode, :default_workspace],
-          &{&1, Application.get_env(:dev_ide, &1)}
-        )
-
-      Application.put_env(:dev_ide, :lan_mode, true)
-      Application.put_env(:dev_ide, :lan_direct_mode, true)
-      Application.put_env(:dev_ide, :default_workspace, "home")
-
-      on_exit(fn -> Enum.each(prev_env, fn {key, value} -> restore(key, value) end) end)
-
-      assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, ~p"/")
-    end
-  end
-
   defp enable_forward_auth do
     Application.put_env(:dev_ide, :forward_auth, true)
 

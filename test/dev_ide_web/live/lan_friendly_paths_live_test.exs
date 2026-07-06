@@ -11,8 +11,6 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       :default_workspace,
       :default_workspace_mode,
       :home_workspace_path,
-      :lan_direct_mode,
-      :lan_friendly_paths,
       :lan_mode,
       :lan_path_root,
       :raw_terminal_everywhere,
@@ -50,8 +48,6 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     Application.put_env(:dev_ide, :home_workspace_path, root)
     Application.put_env(:dev_ide, :lan_path_root, root)
     Application.put_env(:dev_ide, :lan_mode, true)
-    Application.put_env(:dev_ide, :lan_direct_mode, true)
-    Application.put_env(:dev_ide, :lan_friendly_paths, true)
     Application.put_env(:dev_ide, :default_workspace, "home")
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.put_env(:dev_ide, :workspace_modes, %{})
@@ -69,14 +65,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     %{root: root, aws: aws}
   end
 
-  test "root URL redirects to the lan_direct default workspace", %{conn: conn} do
-    # This setup runs lan_direct_mode with default_workspace "home".
-    assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, "/")
-  end
-
-  test "root URL renders the dashboard when lan_direct is off", %{conn: conn, aws: _aws} do
-    Application.put_env(:dev_ide, :lan_direct_mode, false)
-
+  test "root URL renders the dashboard", %{conn: conn, aws: _aws} do
     {:ok, view, _html} = live(conn, "/")
 
     assert has_element?(view, "#dashboard-browser")
@@ -237,18 +226,10 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert socket_assign(view, :path_route) == nil
     end
 
-    test "forward auth: the root URL falls back to the lan_direct default workspace", %{
-      conn: conn
-    } do
+    test "forward auth: the root URL renders the dashboard", %{conn: conn} do
       enable_forward_auth()
       conn = as_forward_auth_user(conn, "dev@local")
 
-      # This setup runs lan_direct_mode with default_workspace "home"; the
-      # redirect target enforces viewer access at its own mount. Without
-      # lan_direct the root renders the dashboard.
-      assert {:error, {:redirect, %{to: "/workspaces/home"}}} = live(conn, "/")
-
-      Application.put_env(:dev_ide, :lan_direct_mode, false)
       {:ok, view, _html} = live(conn, "/")
       assert has_element?(view, "#dashboard-browser")
     end

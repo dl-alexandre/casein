@@ -167,20 +167,8 @@ if devide_lan? do
     config :dev_ide, :session_same_site, nil
   end
 
-  unless falsey?.(System.get_env("DEV_IDE_LAN_DIRECT_MODE")) do
-    config :dev_ide, :lan_direct_mode, true
-  end
-
   config :dev_ide, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
-
-  unless falsey?.(System.get_env("DEV_IDE_LAN_FRIENDLY_PATHS")) do
-    config :dev_ide, :lan_friendly_paths, true
-  end
 else
-  if truthy?.(System.get_env("DEV_IDE_LAN_DIRECT_MODE")) do
-    config :dev_ide, :lan_direct_mode, true
-  end
-
   if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
     config :dev_ide, :default_workspace, default_workspace
   end
