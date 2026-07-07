@@ -53,11 +53,51 @@ dev_ide_release_pid_alive() {
   esac
 }
 
+# Instance liveness with the systemd unit as the authority. The heartbeat pid
+# can be poisoned: a secondary boot under the same DEVIDE_INSTANCE_UUID
+# (release eval, seeds) overwrites the record with its own short-lived pid,
+# which then reads as dead. Treating such a record as stale deleted it before
+# the drain loop ran — every deploy logged "no old instances found to drain"
+# and the superseded instance ran forever (seen 2026-07-07: zombie canaries
+# fighting the live one over tmux window sizes).
+dev_ide_instance_alive() {
+  inst_uuid="$1"
+  inst_pid="$2"
+  if [ -n "${inst_uuid}" ] && systemctl is-active --quiet "devide-${inst_uuid}" 2>/dev/null; then
+    return 0
+  fi
+  dev_ide_release_pid_alive "${inst_pid}"
+}
+
+# UUIDs of running devide-<16hex> canary units, one per line. systemd is the
+# source of truth for what is actually running; instance records are advisory.
+running_canary_uuids() {
+  systemctl list-units --type=service --state=running --plain --no-legend 'devide-*' 2>/dev/null |
+    awk '{print $1}' |
+    sed -n 's/^devide-\([0-9a-f]\{16\}\)\.service$/\1/p'
+}
+
+# Stop a canary unit. sudo policy on the devbox intentionally forbids
+# `systemctl stop`, so fall back to signalling the devbox-owned beam directly
+# (units run with Restart=no, so it stays down).
+stop_canary_unit() {
+  stop_uuid="$1"
+  if sudo -n systemctl stop "devide-${stop_uuid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  stop_pid="$(systemctl show "devide-${stop_uuid}" -p MainPID --value 2>/dev/null || true)"
+  if [ -n "${stop_pid}" ] && [ "${stop_pid}" != "0" ]; then
+    kill "${stop_pid}" 2>/dev/null || true
+  fi
+  return 0
+}
+
 cleanup_stale_instance_records() {
   for inst_file in "${INST_DIR}"/*.json; do
     [ -f "${inst_file}" ] || continue
     inst_pid="$(grep -o '"pid":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
-    if [ -n "${inst_pid}" ] && dev_ide_release_pid_alive "${inst_pid}"; then
+    inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+    if dev_ide_instance_alive "${inst_uuid}" "${inst_pid}"; then
       continue
     fi
     inst_sock_stale="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
@@ -71,6 +111,9 @@ cleanup_stale_instance_records() {
 # under a cookie we can no longer see — regenerating a fresh one would diverge
 # from the live node and turn the next graceful drain into a hard SIGTERM.
 cookie_dependent_instance_running() {
+  if [ -n "$(running_canary_uuids)" ]; then
+    return 0
+  fi
   for inst_file in "${INST_DIR}"/*.json; do
     [ -f "${inst_file}" ] || continue
     inst_pid="$(grep -o '"pid":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
@@ -171,7 +214,7 @@ rollback() {
   # still running and Caddy still points at the (unchanged) current.sock symlink
   # so existing sessions are unaffected.
   if [ -n "${NEW_UUID:-}" ]; then
-    sudo systemctl stop "devide-${NEW_UUID}" >/dev/null 2>&1 || true
+    stop_canary_unit "${NEW_UUID}"
   fi
 
   if [ "${CURRENT_SYMLINK_SWAPPED}" = "1" ]; then
@@ -409,7 +452,7 @@ done
 
 if [ "${api_ready}" != "1" ]; then
   echo "error: new instance did not become ready within 60 seconds" >&2
-  sudo systemctl stop "devide-${NEW_UUID}" 2>/dev/null || true
+  stop_canary_unit "${NEW_UUID}"
   exit 1
 fi
 
@@ -576,8 +619,72 @@ log "cleaning stale instance records under ${INST_DIR}"
 cleanup_stale_instance_records
 
 # ── Signal all old instances to drain ───────────────────────────────────────
+# Candidates come from running devide-<uuid> units (authoritative) UNIONed with
+# instance records (covers non-unit instances, e.g. the legacy devide.service).
+# Records alone were not enough: a poisoned heartbeat pid made the live old
+# instance look stale, cleanup deleted its record, and this loop never saw it —
+# the zombie then ran for days, its SessionOwners fighting the new instance
+# over tmux window sizes.
 log "signalling old instances to drain (if any)"
 drain_count=0
+
+drain_instance() {
+  # $1 uuid (may be empty for record-only instances), $2 socket, $3 port, $4 revision
+  d_uuid="$1"
+  d_socket="$2"
+  d_port="$3"
+  d_revision="$4"
+
+  commits_behind=0
+  if [ -n "${d_revision}" ] && [ "${d_revision}" != "dev" ] && \
+     git cat-file -e "${d_revision}" 2>/dev/null; then
+    commits_behind="$(git rev-list "${d_revision}..HEAD" --count 2>/dev/null || echo 0)"
+  fi
+
+  drain_payload="{\"commits_behind\": ${commits_behind}}"
+  drain_status=""
+
+  if [ -n "${d_socket}" ] && [ -S "${d_socket}" ]; then
+    drain_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+      -H "authorization: Bearer ${token}" \
+      -H "content-type: application/json" \
+      -d "${drain_payload}" \
+      --unix-socket "${d_socket}" \
+      http://localhost/api/drain 2>/dev/null || true)"
+  elif [ -n "${d_port}" ]; then
+    drain_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+      -H "authorization: Bearer ${token}" \
+      -H "content-type: application/json" \
+      -d "${drain_payload}" \
+      "http://127.0.0.1:${d_port}/api/drain" 2>/dev/null || true)"
+  fi
+
+  case "${drain_status}" in
+    200)
+      drain_count=$((drain_count + 1))
+      log "drain signalled (${d_uuid:-record-only}${d_socket:+ socket ${d_socket}}, ${commits_behind} commits behind)"
+      return 0
+      ;;
+    409)
+      # Already draining from an earlier deploy; its 30-minute hard timeout is
+      # armed. Leave it be.
+      log "already draining (${d_uuid:-record-only}${d_socket:+ socket ${d_socket}})"
+      return 0
+      ;;
+  esac
+
+  # Unreachable over its socket/port. If its unit is still running it is a
+  # zombie that will never drain itself — stop it directly.
+  if [ -n "${d_uuid}" ] && systemctl is-active --quiet "devide-${d_uuid}" 2>/dev/null; then
+    log "drain unreachable for running unit devide-${d_uuid} — stopping it"
+    stop_canary_unit "${d_uuid}"
+  else
+    log "drain skipped (${d_uuid:-record-only}) — instance not reachable and not running"
+  fi
+  return 0
+}
+
+drained_uuids=" "
 for inst_file in "${INST_DIR}"/*.json; do
   [ -f "${inst_file}" ] || continue
   inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
@@ -589,39 +696,21 @@ for inst_file in "${INST_DIR}"/*.json; do
   old_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
   old_revision="$(grep -o '"version":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
 
-  commits_behind=0
-  if [ -n "${old_revision}" ] && [ "${old_revision}" != "dev" ] && \
-     git cat-file -e "${old_revision}" 2>/dev/null; then
-    commits_behind="$(git rev-list "${old_revision}..HEAD" --count 2>/dev/null || echo 0)"
-  fi
-
-  drain_payload="{\"commits_behind\": ${commits_behind}}"
-
-  if [ -n "${old_socket}" ] && [ -S "${old_socket}" ]; then
-    if curl -fsS -X POST \
-      -H "authorization: Bearer ${token}" \
-      -H "content-type: application/json" \
-      -d "${drain_payload}" \
-      --unix-socket "${old_socket}" \
-      http://localhost/api/drain >/dev/null 2>&1; then
-      drain_count=$((drain_count + 1))
-      log "drain signalled (socket ${old_socket}, ${commits_behind} commits behind)"
-    else
-      log "drain failed (socket ${old_socket}) — instance may already be stopped"
-    fi
-  elif [ -n "${old_port}" ]; then
-    if curl -fsS -X POST \
-      -H "authorization: Bearer ${token}" \
-      -H "content-type: application/json" \
-      -d "${drain_payload}" \
-      "http://127.0.0.1:${old_port}/api/drain" >/dev/null 2>&1; then
-      drain_count=$((drain_count + 1))
-      log "drain signalled (port ${old_port}, ${commits_behind} commits behind)"
-    else
-      log "drain failed (port ${old_port}) — instance may already be stopped"
-    fi
-  fi
+  drain_instance "${inst_uuid}" "${old_socket}" "${old_port}" "${old_revision}"
+  [ -n "${inst_uuid}" ] && drained_uuids="${drained_uuids}${inst_uuid} "
 done
+
+# Running canary units without a (surviving) instance record.
+for unit_uuid in $(running_canary_uuids); do
+  if [ "${unit_uuid}" = "${NEW_UUID}" ]; then
+    continue
+  fi
+  case "${drained_uuids}" in
+    *" ${unit_uuid} "*) continue ;;
+  esac
+  drain_instance "${unit_uuid}" "${INST_DIR}/${unit_uuid}.sock" "" ""
+done
+
 if [ "${drain_count}" = "0" ]; then
   log "no old instances found to drain"
 fi

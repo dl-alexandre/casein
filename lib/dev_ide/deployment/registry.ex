@@ -9,6 +9,8 @@ defmodule DevIDE.Deployment.Registry do
 
   use GenServer
 
+  require Logger
+
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -76,13 +78,33 @@ defmodule DevIDE.Deployment.Registry do
     }
 
     file_path = Path.join(dir, "#{id}.json")
-    write_atomic(file_path, data)
 
-    if socket_path, do: maybe_init_current_symlink(socket_path)
-    DevIDE.Deployment.Drift.check_async()
-    DevIDE.Deployment.LastDeploy.check_async()
+    # DEVIDE_INSTANCE_UUID comes from the shared env file, so a secondary boot
+    # of the app under the same identity (release eval, seeds, a dev/test app
+    # started with the deploy env) would overwrite the serving instance's
+    # heartbeat with its own short-lived pid. The deploy's stale-record cleanup
+    # then reads that dead pid, deletes the record, and the real instance never
+    # receives its drain signal — it outlives every later deploy and its
+    # SessionOwner fights the new instance over tmux window sizes. If another
+    # live process already owns this heartbeat, run without one instead.
+    case heartbeat_owner_conflict(file_path) do
+      {:conflict, other_pid} ->
+        Logger.warning(
+          "deployment registry: #{file_path} is owned by live pid #{other_pid} " <>
+            "(we are #{System.pid()}); skipping heartbeat for this secondary boot"
+        )
 
-    {:ok, %{id: id, file_path: file_path, data: data}}
+        {:ok, %{id: id, file_path: nil, data: data}}
+
+      :ok ->
+        write_atomic(file_path, data)
+
+        if socket_path, do: maybe_init_current_symlink(socket_path)
+        DevIDE.Deployment.Drift.check_async()
+        DevIDE.Deployment.LastDeploy.check_async()
+
+        {:ok, %{id: id, file_path: file_path, data: data}}
+    end
   end
 
   @impl true
@@ -92,11 +114,13 @@ defmodule DevIDE.Deployment.Registry do
 
   def handle_call(:mark_draining, _from, state) do
     new_data = Map.put(state.data, "draining", true)
-    write_atomic(state.file_path, new_data)
+    if state.file_path, do: write_atomic(state.file_path, new_data)
     {:reply, :ok, %{state | data: new_data}}
   end
 
   @impl true
+  def terminate(_reason, %{file_path: nil}), do: :ok
+
   def terminate(_reason, state) do
     # sobelow_skip ["Traversal.FileModule"]
     :file.delete(String.to_charlist(state.file_path))
@@ -111,6 +135,24 @@ defmodule DevIDE.Deployment.Registry do
 
   defp generate_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  # A heartbeat is owned by another process when its recorded pid is a live OS
+  # process that isn't us. Liveness comes from /proc (the deploy target is
+  # Linux); where /proc is unavailable this degrades to today's overwrite
+  # behavior rather than blocking the boot.
+  # The pid is digit-validated before any path use.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp heartbeat_owner_conflict(file_path) do
+    with {:ok, body} <- :file.read_file(String.to_charlist(file_path)),
+         {:ok, %{"pid" => pid}} when is_binary(pid) <- Jason.decode(body),
+         true <- pid =~ ~r/^\d+$/,
+         true <- pid != System.pid(),
+         true <- File.dir?("/proc/#{pid}") do
+      {:conflict, pid}
+    else
+      _ -> :ok
+    end
   end
 
   @current_symlink "/run/devide/current.sock"
