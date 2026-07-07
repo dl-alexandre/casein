@@ -53,7 +53,13 @@ defmodule DevIDE.Terminals.Shims do
           format: :toml,
           section: "ui",
           key: "theme",
-          values: %{dark: "groknight", light: "grokday"}
+          # ~/.grok/config.toml is one file shared by every workspace and
+          # viewer on the box, and grok hot-reloads it — the stamp restyles
+          # every running grok pane, not just the caller's. grokday is banned
+          # outright: it renders illegibly in the DevIDE viewer (operator
+          # call, 2026-07-07). Both values here must stay legible on either
+          # scheme so a mixed-scheme clobber is cosmetic, never unreadable.
+          values: %{dark: "groknight", light: "tokyonight"}
         }
       }
     }
