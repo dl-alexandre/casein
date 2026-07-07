@@ -7,9 +7,11 @@ defmodule DevIDE.Push do
     * `DevIDE.Push.Registry` — stores device push tokens per workspace
       (registered over `DevIdeWeb.SessionChannel` after the join authorized the
       identity for that workspace).
-    * `DevIDE.Push.Dispatcher` — subscribes to the audit spine and the mobile
-      card spine. It pushes alert-worthy audit events and newly-created
-      high-priority `:needs_review` cards via the configured provider.
+    * `DevIDE.Signals.AlertsRouter` — routes alert-worthy audit signals from
+      `DevIDE.SignalBus` to the dispatcher when a workspace has registered tokens.
+    * `DevIDE.Push.Dispatcher` — delivers OS pushes for routed audit alerts and
+      newly-created high-priority `:needs_review` mobile cards via the configured
+      provider.
 
   The provider is swappable (`config :dev_ide, :push_provider, ...`), defaulting
   to `DevIDE.Push.LogProvider`. `DevIDE.Push.NativeProvider` routes Android FCM

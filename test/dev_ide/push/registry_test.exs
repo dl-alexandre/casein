@@ -94,7 +94,7 @@ defmodule DevIDE.Push.RegistryTest do
     assert %DateTime{} = device.disabled_at
   end
 
-  test "a workspace registration subscribes the dispatcher to that workspace" do
+  test "a workspace registration watches that workspace on the alerts router" do
     workspace_id = "ws-watch-#{System.unique_integer([:positive])}"
 
     :ok = Registry.register(%{workspace_id: workspace_id, token: "tok-1", platform: "ios"})
@@ -102,6 +102,6 @@ defmodule DevIDE.Push.RegistryTest do
     # watch/1 is synchronous and idempotent; a second registration must not error
     # or block, proving the dispatcher already holds the subscription.
     assert :ok = Registry.register(%{workspace_id: workspace_id, token: "tok-2", platform: "ios"})
-    assert :ok = DevIDE.Push.Dispatcher.watch(workspace_id)
+    assert :ok = DevIDE.Signals.AlertsRouter.watch(workspace_id)
   end
 end

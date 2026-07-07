@@ -136,4 +136,5 @@ config :dev_ide,
   # Unrelated LiveView/pane tests must never write tool theme configs into the
   # real $HOME; dedicated ToolThemes tests re-enable this with a tmp
   # :tool_theme_home.
-  tool_themes_enabled: false
+  tool_themes_enabled: false,
+  signal_bus_journal_adapter: Jido.Signal.Journal.Adapters.InMemory
