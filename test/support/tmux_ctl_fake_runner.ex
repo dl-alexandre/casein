@@ -20,6 +20,9 @@ defmodule TmuxCtl.Test.FakeRunner do
           session_topology?(argv) ->
             {topology_output(Enum.at(argv, 2)), 0}
 
+          match?(["list-windows", "-t", _, "-F", "\#{window_id}"], argv) ->
+            {window_ids_output(Enum.at(argv, 2)), 0}
+
           match?(["list-windows", "-t", _, "-F", _], argv) ->
             {windows_output(Enum.at(argv, 2)), 0}
 
@@ -114,6 +117,12 @@ defmodule TmuxCtl.Test.FakeRunner do
     session
     |> windows_for()
     |> Enum.map_join("\n", &window_line/1)
+  end
+
+  defp window_ids_output(session) do
+    session
+    |> windows_for()
+    |> Enum.map_join("\n", & &1.id)
   end
 
   defp window_line(w) do

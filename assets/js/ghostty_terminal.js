@@ -1392,10 +1392,18 @@ function isSizeAuthoritative(hook) {
 }
 
 function pushResizeEvent(hook, cols, rows) {
+  // The first size report doubles as the vendor "ready" (disarmed for
+  // fit-managed hooks in installScaleFitLayout): the server treats both
+  // events identically, but it must only ever see fitted sizes from this
+  // path — the vendor's deferred sendReady reads hook.fit (false here) and
+  // would report the dataset 80x24, which the SessionOwner then records as
+  // the focused viewer's viewport and stamps onto the shared tmux window.
+  const event = hook.__sizeReported ? "resize" : "ready"
+  hook.__sizeReported = true
   if (hook.target && typeof hook.pushEventTo === "function") {
-    hook.pushEventTo(hook.target, "resize", { cols, rows })
+    hook.pushEventTo(hook.target, event, { cols, rows })
   } else if (typeof hook.pushEvent === "function") {
-    hook.pushEvent("resize", { cols, rows })
+    hook.pushEvent(event, { cols, rows })
   }
 }
 
@@ -1619,6 +1627,15 @@ function installScaleFitLayout(hook) {
   hook.fitEnabled = hook.fit
   // Disable the vendor hook's fit→resize path; we route layout here instead.
   hook.fit = false
+
+  // Disarm the vendor's deferred sendReady (rAF / 50ms timeout / first
+  // render). It fires after this function has set hook.fit = false, so its
+  // non-fit branch would push "ready" with the dataset default 80x24 —
+  // overwriting the fitted resize this layer already reported and condensing
+  // the shared tmux window into a corner of the viewport (the recurring
+  // "narrow column" bug). For fit-managed hooks the first pushResizeEvent
+  // plays the "ready" role instead (see pushResizeEvent).
+  if (hook.fitEnabled) hook.readySent = true
 
   if (hook.resizeObserver) {
     hook.resizeObserver.disconnect()

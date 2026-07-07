@@ -1504,13 +1504,22 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
-  Force tmux to resize the named session's window to `cols × rows`.
+  Force tmux to resize the named session's windows to `cols × rows`.
 
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
   attached tmux client) should be enough, but with `tmux new-session -A`
   re-attaching to a session that survives BEAM/page-reload cycles, tmux's
   Under `window-size manual`, DevIDE's SessionOwner is the sole writer; an
   explicit `resize-window` is how the authoritative viewer size reaches tmux.
+
+  Resizes EVERY window in the session, not just the current one: under
+  `window-size manual` each window keeps its own size, and the viewer shows
+  whichever window its tab strip selects — a window resized only while
+  current stays at its old size (or the 80x24 default it was created with)
+  when the operator switches to it, parking the terminal content in a corner
+  of the viewport until the next drift check. Also records the size as the
+  session's `default-size` so windows created later (agent worktree panes)
+  spawn at the viewer size instead of tmux's 80x24 default.
 
   Returns `:ok` on success; logs and returns the System.cmd result tuple on
   failure (this is a best-effort sync — the operator gets a usable pane
@@ -1527,9 +1536,28 @@ defmodule TmuxCtl.Client do
     # the PTY-driven SIGWINCH still resized it). Targeting container tmux when
     # tmux isn't there means exit 127. Host-direct is the safer default for
     # this best-effort resize.
-    case run(["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)]) do
-      {_, 0} -> :ok
-      other -> other
+    x = to_string(cols)
+    y = to_string(rows)
+
+    case run(["list-windows", "-t", session, "-F", "\#{window_id}"]) do
+      {out, 0} ->
+        _ = run(["set-option", "-t", session, "default-size", "#{x}x#{y}"])
+
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.each(fn window_id ->
+          run(["resize-window", "-t", "#{session}:#{window_id}", "-x", x, "-y", y])
+        end)
+
+        :ok
+
+      _ ->
+        # Window enumeration failed (session gone, tmux unreachable): fall
+        # back to the current-window best effort.
+        case run(["resize-window", "-t", session, "-x", x, "-y", y]) do
+          {_, 0} -> :ok
+          other -> other
+        end
     end
   rescue
     e in [ErlangError] -> {:error, Exception.message(e)}
