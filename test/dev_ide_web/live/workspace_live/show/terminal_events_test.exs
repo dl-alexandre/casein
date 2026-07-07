@@ -87,6 +87,84 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
     end
   end
 
+  describe "tmux:move_window" do
+    defp move_socket(assigns) do
+      %Phoenix.LiveView.Socket{
+        assigns:
+          Map.merge(
+            %{
+              __changed__: %{},
+              flash: %{},
+              tmux_session: "devide_alpha_u-dev",
+              tmux_mutations_enabled?: true,
+              tmux_windows: [
+                %{id: "@0", index: 0},
+                %{id: "@1", index: 1},
+                %{id: "@2", index: 2}
+              ]
+            },
+            assigns
+          )
+      }
+    end
+
+    setup do
+      previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+      flush_mailbox()
+
+      on_exit(fn ->
+        restore_env(:dev_ide, :tmux_adapter, previous_adapter)
+        TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous_pid)
+      end)
+
+      :ok
+    end
+
+    test "move right sends :after to the next neighbor" do
+      socket = move_socket(%{})
+
+      assert {:noreply, _socket} =
+               TerminalEvents.handle_event(
+                 "tmux:move_window",
+                 %{"window-id" => "@0", "dir" => "right"},
+                 socket
+               )
+
+      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@0", "@1", :after}
+    end
+
+    test "move at the right edge is a no-op" do
+      socket = move_socket(%{})
+
+      assert {:noreply, ^socket} =
+               TerminalEvents.handle_event(
+                 "tmux:move_window",
+                 %{"window-id" => "@2", "dir" => "right"},
+                 socket
+               )
+
+      refute_received {:fake_tmux_move_window, _, _, _, _}
+    end
+
+    test "move is denied when mutations are disabled" do
+      socket = move_socket(%{tmux_mutations_enabled?: false})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "tmux:move_window",
+                 %{"window-id" => "@0", "dir" => "right"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "not allowed"
+      refute_received {:fake_tmux_move_window, _, _, _, _}
+    end
+  end
+
   describe "pane:history_open" do
     test "starts a pane-scoped history drawer with a stable scroll key" do
       previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)

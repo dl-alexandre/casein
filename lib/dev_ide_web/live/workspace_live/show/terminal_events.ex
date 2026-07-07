@@ -460,6 +460,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
+  def handle_event("tmux:move_window", %{"window-id" => window_id, "dir" => dir}, socket)
+      when dir in ["left", "right"] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      windows = sorted_tmux_windows(socket.assigns[:tmux_windows] || [])
+
+      case neighbor_window_move(windows, window_id, dir) do
+        :edge ->
+          {:noreply, socket}
+
+        {:ok, dst_id, move_dir} ->
+          move_tmux_window(socket, window_id, dst_id, move_dir)
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
   def handle_event("terminal:cycle_session", %{"dir" => dir}, socket)
       when dir in ["next", "prev"] do
     socket = TerminalState.assign_session_tabs(socket)
@@ -894,4 +911,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   defp agent_error_message(%{message: message}) when is_binary(message), do: message
   defp agent_error_message(%{"message" => message}) when is_binary(message), do: message
   defp agent_error_message(other), do: inspect(other)
+
+  defp sorted_tmux_windows(windows) do
+    Enum.sort_by(windows, &Map.get(&1, :index, 0))
+  end
+
+  defp neighbor_window_move(windows, window_id, "left") do
+    idx = Enum.find_index(windows, &(&1.id == window_id))
+
+    case idx do
+      nil -> :edge
+      0 -> :edge
+      i -> {:ok, Enum.at(windows, i - 1).id, :before}
+    end
+  end
+
+  defp neighbor_window_move(windows, window_id, "right") do
+    idx = Enum.find_index(windows, &(&1.id == window_id))
+
+    case idx do
+      nil -> :edge
+      i when i >= length(windows) - 1 -> :edge
+      i -> {:ok, Enum.at(windows, i + 1).id, :after}
+    end
+  end
+
+  defp move_tmux_window(socket, src_id, dst_id, dir) do
+    case TerminalState.tmux_adapter().move_window(
+           socket.assigns.tmux_session,
+           src_id,
+           dst_id,
+           dir
+         ) do
+      :ok ->
+        {:noreply, TerminalState.refresh_tmux_topology(socket, skip_idle_patch: true)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not move tmux window: #{inspect(reason)}")}
+    end
+  end
 end
