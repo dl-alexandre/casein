@@ -16,11 +16,14 @@ defmodule Scripts.PreCommitHookTest do
   test "pre-commit allows commits on master inside a linked worktree" do
     %{repo: repo} = git_fixture!()
 
-    worktree =
-      Path.join(
-        Path.dirname(repo),
-        "linked-wt-#{System.unique_integer([:positive])}"
-      )
+    # Sibling of the fixture repo, deleted defensively before use: /tmp is
+    # shared and persistent on the self-hosted runner, and unique_integer
+    # values repeat across BEAM restarts — a leftover dir from a crashed run
+    # (cleanup never ran) made `git worktree add` fail every gate run that
+    # drew the same counter ("fatal: ... already exists").
+    worktree = repo <> "-linked-wt"
+    File.rm_rf!(worktree)
+    on_exit(fn -> File.rm_rf!(worktree) end)
 
     # Only one checkout may hold `master` — move primary to a branch first.
     git!(repo, ["checkout", "-b", "agent/test/primary"])
