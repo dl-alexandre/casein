@@ -151,6 +151,12 @@ defmodule TmuxCtl.Test.FakeAdapter do
   end
 
   def window_size(session) do
+    if FakeState.get(:fake_tmux_window_size_hang, false) do
+      receive do
+        :release_window_size_hang -> :ok
+      end
+    end
+
     case FakeState.get(:fake_tmux_window_sizes, %{}) |> Map.get(session) do
       {cols, rows} when is_integer(cols) and is_integer(rows) -> {:ok, {cols, rows}}
       _ -> :error

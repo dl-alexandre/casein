@@ -1078,6 +1078,42 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  @tag :tmux_timeout
+  test "owner stays responsive when tmux window_size hangs on drift check" do
+    swap_in_fake_tmux_adapter()
+
+    prev_timeout = Application.get_env(:dev_ide, :tmux_window_size_timeout_ms)
+    Application.put_env(:dev_ide, :tmux_window_size_timeout_ms, 50)
+
+    on_exit(fn ->
+      if prev_timeout do
+        Application.put_env(:dev_ide, :tmux_window_size_timeout_ms, prev_timeout)
+      else
+        Application.delete_env(:dev_ide, :tmux_window_size_timeout_ms)
+      end
+
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_window_size_hang)
+    end)
+
+    unique = "tmux-timeout-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-tmux-timeout", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-tmux-timeout", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-tmux-timeout", applied_size: {120, 40}}
+    end)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_size_hang, true)
+
+    send(owner_pid, :tmux_drift_check)
+
+    assert :sys.get_state(owner_pid, 500)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "a draining instance stops asserting sizes onto shared tmux state" do
     # An old release's owners outlive the deploy handoff while stale browser
     # tabs hold connections; if they keep re-asserting their (stale)
