@@ -1,8 +1,7 @@
-// Keyboard navigation for the desktop window-picker sidebar rail (path-first
-// window picker Stage 3). Mirrors SessionPicker's choose-tree semantics on a
-// always-visible vertical list: ↑/↓ move, type-to-filter, o/l/r/& shortcuts,
-// Enter activates. WorkspaceLeader's C-b w hold-to-navigate targets
-// [data-window-picker-sidebar] via _startSidebarHoldWatch.
+// Keyboard navigation for the transient window-picker sidebar rail. Mirrors
+// SessionPicker's choose-tree semantics on a vertical list opened by C-b w:
+// ↑/↓ move, type-to-filter, o/l/r/& shortcuts, Enter activates. Closes on
+// Escape (empty filter) or window selection so the tab bar stays canonical.
 
 import {copyPickerLink} from "./picker_link_copy"
 import {matchesPickerFilter} from "./window_picker_sidebar_utils.mjs"
@@ -32,6 +31,7 @@ export const WindowPickerSidebar = {
       return
     }
     e.preventDefault()
+    this._closeSidebar()
   },
 
   handleKeydown(e) {
@@ -41,6 +41,10 @@ export const WindowPickerSidebar = {
         e.preventDefault()
         this.moveFocus(e.key === "ArrowDown" ? 1 : -1)
         break
+      case "Enter":
+        e.preventDefault()
+        this.currentItem()?.click()
+        break
       case "Escape":
         e.preventDefault()
         if (this._filter) {
@@ -48,7 +52,7 @@ export const WindowPickerSidebar = {
           this.applyFilter()
           break
         }
-        window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+        this._closeSidebar()
         break
       case "Backspace":
         if (this._filter) {
@@ -164,6 +168,11 @@ export const WindowPickerSidebar = {
     if (!windowId) return
     if (!window.confirm("Kill this tmux window and everything running in it?")) return
     this.pushEvent("tmux:kill_window", {window_id: windowId})
+  },
+
+  _closeSidebar() {
+    this.pushEvent("sidebar:close", {})
+    window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
   },
 }
 

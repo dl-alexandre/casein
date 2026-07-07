@@ -50,28 +50,12 @@ defmodule DevIDE.CommandPalette.Actions do
   defp view_items do
     [
       %Item{
-        id: "view:window_picker_tabs",
+        id: "view:window_sidebar",
         kind: :action,
         category: :view,
-        label: "View: window picker as tabs",
-        detail: "Spread tmux windows across the header, next to the session picker",
-        payload: %{event: "view:set_window_picker", params: %{"view" => "tabs"}}
-      },
-      %Item{
-        id: "view:window_picker_dropdown",
-        kind: :action,
-        category: :view,
-        label: "View: window picker as dropdown",
-        detail: "Compact window menu in the header (default)",
-        payload: %{event: "view:set_window_picker", params: %{"view" => "dropdown"}}
-      },
-      %Item{
-        id: "view:window_picker_sidebar",
-        kind: :action,
-        category: :view,
-        label: "View: window picker as sidebar",
-        detail: "Vertical window rail beside the terminal (desktop)",
-        payload: %{event: "view:set_window_picker", params: %{"view" => "sidebar"}}
+        label: "Open window sidebar",
+        detail: "Transient vertical window rail beside the terminal (desktop)",
+        payload: %{event: "sidebar:open", params: %{}}
       }
     ]
   end
@@ -328,7 +312,8 @@ defmodule DevIDE.CommandPalette.Actions do
       "terminal:switch_to_shell",
       "terminal:toggle_chrome",
       "terminal:set_preset",
-      "view:set_window_picker",
+      "sidebar:open",
+      "sidebar:close",
       "tmux:new_window",
       "tmux:last_window",
       "tmux:consolidate_sessions",

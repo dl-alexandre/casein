@@ -27,7 +27,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   alias DevIdeWeb.NotificationsDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+
   alias Phoenix.LiveView.JS
 
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
@@ -121,75 +121,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div
               id={"header-terminal-pickers-" <> @workspace.id}
-              phx-hook="WindowPickerView"
-              data-view={Atom.to_string(@window_picker_view)}
-              class={[
-                "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden",
-                @window_picker_view == :sidebar && "hidden",
-                @window_picker_view == :tabs && "flex-1",
-                @window_picker_view == :dropdown && "shrink"
-              ]}
+              class="header-terminal-pickers flex min-w-0 flex-1 items-center pointer-coarse:hidden"
             >
-              <%= if @window_picker_view == :tabs do %>
-                <SessionBar.window_tabs
-                  workspace_id={@workspace.id}
-                  path_base={@workspace_route}
-                  windows={@tmux_window_tabs}
-                  topology_version={@tmux_topology_structure_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                  class="min-w-0 flex-1"
-                />
-              <% else %>
-                <%= if @window_picker_view == :dropdown do %>
-                  <SessionBar.window_dropdown
-                    workspace_id={@workspace.id}
-                    path_base={@workspace_route}
-                    windows={@tmux_window_tabs}
-                    session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-                    share_session_id={@terminal_sid}
-                    topology_version={@tmux_topology_structure_version}
-                    mutations_allowed?={@tmux_mutations_enabled?}
-                    rename_window_id={@tmux_rename_window_id}
-                    selected_preview={
-                      TerminalState.selected_preview_pane(
-                        @preview_panes,
-                        @entered_preview_pane_id,
-                        @ui_highlight_pane_id,
-                        @tmux_windows,
-                        @tmux_active_window_id,
-                        @tmux_session
-                      )
-                    }
-                  />
-                <% end %>
-              <% end %>
+              <SessionBar.window_tabs
+                workspace_id={@workspace.id}
+                path_base={@workspace_route}
+                windows={@tmux_window_tabs}
+                topology_version={@tmux_topology_structure_version}
+                mutations_allowed?={@tmux_mutations_enabled?}
+                rename_window_id={@tmux_rename_window_id}
+                class="min-w-0 flex-1"
+              />
             </div>
             <%!-- Window/pane actions — inline only for what has no
                  direct-manipulation equivalent (splits, zoom). Window cycling
-                 stays only in dropdown view, where tabs aren't clickable.
-                 Everything else lives in the ⋯ overflow menu + C-b keys. --%>
+                 uses the tab bar and C-b n/p. Everything else lives in the ⋯
+                 overflow menu + C-b keys. --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%= if @window_picker_view == :dropdown and length(@tmux_window_tabs) > 1 do %>
-                <.leader_key_button
-                  key="p"
-                  phx_click="tmux:cycle_window"
-                  phx_value_dir="prev"
-                  title="Previous window · Ctrl + B p"
-                  aria_label="Previous tmux window"
-                >
-                  <.icon name="hero-chevron-left" class="size-3.5" />
-                </.leader_key_button>
-                <.leader_key_button
-                  key="n"
-                  phx_click="tmux:cycle_window"
-                  phx_value_dir="next"
-                  title="Next window · Ctrl + B n"
-                  aria_label="Next tmux window"
-                >
-                  <.icon name="hero-chevron-right" class="size-3.5" />
-                </.leader_key_button>
-              <% end %>
               <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
                 <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                 <%!-- Splits and zoom --%>
@@ -345,9 +293,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             action lives on exactly one element here (docs/leader_keys.md) —
             outside the chrome block, so bindings keep working in focus mode.
             Visible chrome buttons share the same phx-click handlers but carry
-            no data-leader-action. Exceptions: the pickers (C-b s / w) stay on
-            the dropdown <summary> elements because they need the dropdown UI,
-            and window-by-index targets live on the window tabs. --%>
+            no data-leader-action. Exceptions: C-b s stays on the session
+            dropdown <summary>; C-b w opens the transient window sidebar; and
+            window-by-index targets live on the window tabs. --%>
       <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
         <div class="hidden" aria-hidden="true">
           <button
@@ -425,14 +373,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             type="button"
             tabindex="-1"
             data-leader-action="rename-window"
-            phx-click={
-              if @window_picker_view == :sidebar do
-                JS.push("tmux:rename_start")
-              else
-                JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
-                |> JS.push("tmux:rename_start")
-              end
-            }
+            phx-click="tmux:rename_start"
             phx-value-window-id={@tmux_active_window_id}
           ></button>
           <button
@@ -636,8 +577,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :terminal_mode,
       :tmux_session,
       :terminal_sid,
-      :active_window_pane_count,
-      :window_picker_view
+      :active_window_pane_count
     ])
   end
 
@@ -674,7 +614,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :tmux_window_tabs,
       :tmux_topology_structure_version,
       :tmux_rename_window_id,
-      :window_picker_view
+      :window_sidebar_open?
     ])
   end
 

@@ -567,8 +567,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     end
   end
 
-  describe "window picker pane deeplinks" do
-    test "clicking a pane in another window switches to that window and selects the pane", %{
+  describe "transient window sidebar" do
+    test "selecting another window from the sidebar switches tmux focus", %{
       conn: conn,
       workspace_name: workspace_name,
       workspace_path: workspace_path
@@ -637,24 +637,21 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
-      # The picker renders the background window's pane as a real <a> deeplink
-      # carrying both its parent window and the pane (not a bare button).
+      render_hook(view, "sidebar:open", %{})
+
       assert has_element?(
                view,
-               "a#window-pane--2[href*='window=%401'][href*='pane=%252']"
+               "#tmux-window-sidebar--1 a[href*='window=%401'][phx-click='tmux:select_window']"
              )
 
-      # Clicking it switches to window @1 first, then selects pane %2, so the
-      # operator lands inside that window on the chosen pane.
       view
-      |> element("#window-pane--2")
+      |> element("#tmux-window-sidebar--1 a[phx-click='tmux:select_window']")
       |> render_click()
 
       assert_receive {:fake_tmux_select_window, ^session, "@1"}
-      assert_receive {:fake_tmux_select_pane, ^session, "%2"}
 
-      assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%252")
-      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+      assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%251")
+      refute :sys.get_state(view.pid).socket.assigns.window_sidebar_open?
     end
   end
 

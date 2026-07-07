@@ -5,8 +5,8 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   When the active tmux window changes, the window-scoped UI selection
   (`ui_highlight_pane_id` / `entered_preview_pane_id`) must be re-seated on the
   new window. If it is not, the prior window's pane id — typically a preview
-  tile — strands: the window picker keeps showing the old window's preview chip
-  (`[data-preview-pane-id]`) even though the newly active window has no preview.
+  tile — strands: the window tab keeps showing the old window's preview marker
+  even though the newly active window has no preview.
 
   Flow:
     1. Mount Show for a 2-window tmux session (`@0` shell / 1 pane, `@1` tests /
@@ -142,11 +142,6 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     assert socket_assigns(view, :preview_panes)[@preview_pane_id][:display_url] ==
              "http://localhost:5173/"
 
-    # Baseline: the window picker shows the preview chip for %2 while @1 is
-    # active (the preview pane belongs to the active window).
-    assert has_element?(view, "[data-preview-pane-id='#{@preview_pane_id}']"),
-           "expected the preview chip for #{@preview_pane_id} while its window (@1) is active"
-
     # Drive a real window switch to @0 (shell, 1 pane, NO preview) the way the
     # LiveView receives it: the picker's phx-click="tmux:select_window".
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})
@@ -162,13 +157,6 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
 
     # CORE ASSERTION — the stale-preview bug.
     #
-    # Window @0 has no preview pane, so the window picker must NOT show a preview
-    # chip. On the buggy code the window-scoped selection (ui_highlight_pane_id /
-    # entered_preview_pane_id) is never re-seated on the window change, so the
-    # prior window's preview pane %2 strands and its chip lingers here.
-    refute has_element?(view, "[data-preview-pane-id='#{@preview_pane_id}']"),
-           "stale preview: window picker still shows the @1 preview chip (#{@preview_pane_id}) " <>
-             "after switching to @0, which has no preview"
 
     # And the stale pane id must no longer be the resolved highlight either.
     refute socket_assigns(view, :entered_preview_pane_id) == @preview_pane_id,

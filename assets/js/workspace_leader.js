@@ -343,18 +343,13 @@ export const WorkspaceLeader = {
         return
       }
 
-      // rename-window: open the window dropdown first so the form is visible,
-      // then click the active window's rename button.
+      // rename-window: the active tab strip hosts the inline rename form.
       if (action === "rename-window") {
         const token = this._beginLeaderCommand()
-        const picker = document.querySelector('[data-leader-action="window-picker"]')
         const rename = document.querySelector('[data-leader-action="rename-window"]')
 
-        this._withLeaderDispatch(() => {
-          picker?.click()
-          rename?.click()
-        })
-        this._watchLeaderClickLoading(rename || picker, token)
+        this._withLeaderDispatch(() => rename?.click())
+        this._watchLeaderClickLoading(rename, token)
         return
       }
 
@@ -384,15 +379,13 @@ export const WorkspaceLeader = {
       }
 
       const target = document.querySelector(`[data-leader-action="${action}"]`)
+      const sessionPicker = document.querySelector('[data-leader-action="session-picker"]')
+      const onMobileLayout = !sessionPicker || sessionPicker.offsetParent === null
 
-      // On touch/narrow layouts the desktop session/window dropdowns are
-      // CSS-hidden (the mobile nav sheet takes over). Clicking a display:none
-      // <summary> does nothing, so route the picker shortcut to the mobile
-      // sheet instead — focusing sessions for C-b s, windows for C-b w. The
-      // sheet renders async (a server round-trip), so there is nothing to
-      // hold-navigate yet; its own MobileNavSheet hook drives the keyboard.
+      // On touch/narrow layouts the desktop pickers are CSS-hidden (the mobile
+      // nav sheet takes over). Route C-b s / C-b w to the sheet instead.
       if (action === "session-picker" || action === "window-picker") {
-        if (!target || target.offsetParent === null) {
+        if (onMobileLayout) {
           const token = this._beginLeaderCommand()
           this.pushEvent(
             "mobile_nav:open",
@@ -403,16 +396,33 @@ export const WorkspaceLeader = {
           return
         }
 
-        const sidebarEl = target?.closest?.("[data-window-picker-sidebar]")
+        if (action === "window-picker") {
+          const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
 
-        if (action === "window-picker" && sidebarEl && sidebarEl.offsetParent !== null) {
-          this._dispatchLeaderAction(target)
-          this._startSidebarHoldWatch(key, sidebarEl)
+          if (sidebarEl && sidebarEl.offsetParent !== null) {
+            sidebarEl.dispatchEvent(
+              new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
+            )
+            this._startSidebarHoldWatch(key, sidebarEl)
+            return
+          }
+
+          const token = this._beginLeaderCommand()
+          this.pushEvent("sidebar:open", {}, () => {
+            this._finishLeaderCommand(token)
+            requestAnimationFrame(() => {
+              const el = document.querySelector("[data-window-picker-sidebar]")
+              if (!el) return
+              el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+              this._startSidebarHoldWatch(key, el)
+            })
+          })
+          this._setLeaderCommandFallback(token)
           return
         }
 
-        // Desktop: hold the key to navigate with arrows, release to activate
-        // the focused item. Quick tap leaves the dropdown open.
+        // Session picker: hold the key to navigate with arrows, release to
+        // activate the focused item. Quick tap leaves the dropdown open.
         this._dispatchLeaderAction(target)
         this._startHoldWatch(key, target)
         return
@@ -593,6 +603,7 @@ export const WorkspaceLeader = {
       if (navigated && sidebarEl.contains(focused) && focused.matches("[data-picker-item]")) {
         focused.click()
       } else {
+        this.pushEvent?.("sidebar:close", {})
         window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
       }
     }

@@ -85,15 +85,15 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert has_element?(view, "#leader-prefix-button-#{workspace_id}", "C-b")
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="session-dropdown-#{workspace_id}")
-    assert html =~ ~s(id="window-dropdown-#{workspace_id}")
+    assert html =~ ~s(id="header-terminal-pickers-#{workspace_id}")
+    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
     # The ⋯ menu renders unconditionally — it is the canonical home for
     # secondary window/pane actions, not a responsive spillover bucket.
     assert html =~ "header-overflow"
     assert has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
 
     # Template palette/library ids are canonical in the ⋯ menu and must render
-    # exactly once (the window_dropdown footer keeps id-less copies; duplicate
-    # DOM ids corrupt LiveView patching).
+    # exactly once (duplicate DOM ids corrupt LiveView patching).
     assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
     assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
 
@@ -116,49 +116,27 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     refute html =~ "mobile-window-picker"
   end
 
-  test "window picker toggles between dropdown and header tab strip", %{
+  test "window tab bar is default and transient sidebar opens on demand", %{
     conn: conn,
     workspace_id: workspace_id
   } do
     {:ok, view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    # Default: compact dropdown, pickers cluster shrinks to yield header space.
-    assert html =~ ~s(id="window-dropdown-#{workspace_id}")
-    assert html =~ ~s(phx-hook="WindowPickerView")
-    assert html =~ ~s(data-view="dropdown")
-
-    # Palette "View: window picker as tabs" dispatches this event.
-    html = render_hook(view, "view:set_window_picker", %{"view" => "tabs"})
-
-    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
-    assert html =~ ~s(data-view="tabs")
-    # The pickers cluster grows to use the free header width in tab view.
-    assert html =~
-             "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden flex-1"
-
-    # Template ids stay unique in tabs view too (canonical copies in ⋯ menu).
-    assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
-    assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
-
-    # Sidebar: left rail beside the terminal, header picker hidden.
-    html = render_hook(view, "view:set_window_picker", %{"view" => "sidebar"})
-
-    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
     assert html =~ ~s(id="header-terminal-pickers-#{workspace_id}")
+    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
+    refute html =~ ~s(phx-hook="WindowPickerView")
+    refute html =~ ~s(id="window-sidebar-#{workspace_id}")
 
     assert html =~
-             "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden hidden"
+             "header-terminal-pickers flex min-w-0 flex-1 items-center pointer-coarse:hidden"
 
-    assert html =~ ~s(data-view="sidebar")
+    render_hook(view, "sidebar:open", %{})
+    assert :sys.get_state(view.pid).socket.assigns.window_sidebar_open?
 
-    # And back.
-    html = render_hook(view, "view:set_window_picker", %{"view" => "dropdown"})
-    assert html =~ ~s(id="window-dropdown-#{workspace_id}")
-    assert html =~ ~s(data-view="dropdown")
-
-    # Unknown values are ignored, never crash the LiveView.
-    html = render_hook(view, "view:set_window_picker", %{"view" => "bogus"})
-    assert html =~ ~s(data-view="dropdown")
+    # Rail DOM is gated on tmux windows; a stopped workspace may have none yet.
+    html = render_hook(view, "sidebar:close", %{})
+    refute :sys.get_state(view.pid).socket.assigns.window_sidebar_open?
+    refute html =~ ~s(id="window-sidebar-#{workspace_id}")
   end
 
   test "mobile key bar includes palette and mode chip sheet trigger", %{

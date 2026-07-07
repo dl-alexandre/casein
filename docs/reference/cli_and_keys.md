@@ -143,9 +143,9 @@ first; full descriptions and tmux mapping live in
 - **No leader auto-timeout** (mirrors tmux): armed until second key, `Escape`,
   or double `C-b`. Double `C-b` cancels (deliberate deviation from tmux's
   prefix pass-through — see [`../leader_keys.md`](../leader_keys.md)).
-- **Mobile fallback.** On touch/narrow layouts the desktop dropdowns are
-  CSS-hidden; `C-b s`/`C-b w` push `mobile_nav:open` instead of clicking a
-  `display:none` `<summary>`.
+- **Mobile fallback.** On touch/narrow layouts the desktop pickers are
+  CSS-hidden; `C-b s`/`C-b w` push `mobile_nav:open` instead of opening the
+  session dropdown or transient window sidebar.
 - **`DevIDE.Commands.Allowlist` is a facade.** It only `defdelegate`s to
   `ExecCtl.Allowlist`; edit the core module to change commands, not the facade.
 

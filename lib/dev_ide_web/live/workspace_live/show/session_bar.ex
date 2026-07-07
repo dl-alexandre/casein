@@ -13,7 +13,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   """
 
   use DevIdeWeb, :html
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
@@ -127,11 +126,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :window, :map, required: true
   attr :picker_label?, :boolean, default: false
   attr :name_class, :string, default: "min-w-0 truncate font-medium"
-  attr :index_class, :string, default: "shrink-0 font-mono text-[10px] text-base-content/45"
 
   defp window_row_name(assigns) do
     ~H"""
-    <span class={@index_class}>{@window.index}</span>
+    <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@window.index}</span>
     <%= if @picker_label? do %>
       <span data-picker-label class={@name_class}>{@window.display_name}</span>
     <% else %>
@@ -143,12 +141,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :window, :map, required: true
   attr :preview_id, :string, default: nil
   attr :activity_id, :string, default: nil
-  attr :quiet_id, :string, default: nil
   attr :show_command?, :boolean, default: false
   attr :preview_aria_hidden?, :boolean, default: false
-  attr :hide_activity_when_quiet?, :boolean, default: false
-  attr :command_picker_label?, :boolean, default: false
-  attr :command_class, :string, default: "shrink-0 font-mono text-[10px] text-base-content/45"
 
   defp window_row_indicators(assigns) do
     ~H"""
@@ -167,46 +161,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <.icon name="hero-globe-alt" class="size-3" />
     </span>
     <span
-      :if={@window.quiet? and is_binary(@quiet_id)}
-      id={@quiet_id}
-      data-quiet="true"
-      data-attention={@window.attention}
-      class={quiet_badge_class(@window.attention)}
-      title={window_quiet_badge_label(@window)}
-      aria-label={window_quiet_badge_label(@window)}
-    ></span>
-    <span
-      :if={window_row_show_activity?(@hide_activity_when_quiet?, @window)}
       id={@activity_id}
       data-activity-state={@activity_id && @window.activity_state}
       class={["size-1.5 shrink-0 rounded-full", @window.activity_class]}
       title={@window.activity_label}
       aria-label={@window.activity_label}
     ></span>
-    <span
-      :if={@show_command? and @command_picker_label?}
-      data-picker-label
-      class={@command_class}
-    >
-      {@window.command}
-    </span>
-    <span :if={@show_command? and not @command_picker_label?} class={@command_class}>
+    <span :if={@show_command?} class="shrink-0 font-mono text-[10px] text-base-content/45">
       {@window.command}
     </span>
     """
   end
 
-  defp window_row_show_activity?(true, %{quiet?: true}), do: false
-  defp window_row_show_activity?(_hide_when_quiet?, _window), do: true
-
   attr :window, :map, required: true
   attr :id_suffix, :string, default: ""
-  attr :input_id_prefix, :string, default: "tmux-rename-input"
   attr :form_class, :string, default: "ml-1 flex items-center gap-1"
   attr :input_class, :string, required: true
   attr :show_cancel?, :boolean, default: true
-  attr :submit_phx_click, :any, default: nil
-  attr :cancel_phx_click, :any, default: nil
 
   defp window_inline_rename_form(assigns) do
     ~H"""
@@ -219,7 +190,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <input type="hidden" name="window[id]" value={@window.id} />
       <input
         type="text"
-        id={@input_id_prefix <> @id_suffix <> "-" <> @window.dom_frag}
+        id={"tmux-rename-input" <> @id_suffix <> "-" <> @window.dom_frag}
         name="window[name]"
         value={@window.name}
         phx-hook="RenameInput"
@@ -230,7 +201,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       />
       <button
         type="submit"
-        phx-click={@submit_phx_click}
         class={
           if(@show_cancel?,
             do: "rounded p-1 text-primary hover:bg-primary/10",
@@ -245,7 +215,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <button
         :if={@show_cancel?}
         type="button"
-        phx-click={@cancel_phx_click || "tmux:rename_cancel"}
+        phx-click="tmux:rename_cancel"
         class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
         title="Cancel rename"
         aria-label="Cancel rename"
@@ -387,7 +357,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       :if={@windows != []}
       id={"window-sidebar-" <> @workspace_id}
       data-window-picker-sidebar="true"
-      data-leader-action="window-picker"
       data-version={@topology_version}
       data-shortcut="Ctrl + B, then W"
       phx-hook="WindowPickerSidebar"
@@ -985,524 +954,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
-  attr :workspace_id, :string, required: true
-  attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
-
-  attr :session_id, :string,
-    default: nil,
-    doc: "active non-default session to preserve in window links"
-
-  attr :share_session_id, :string,
-    default: nil,
-    doc: "attached session sid for shareable window copy/open links"
-
-  attr :topology_version, :integer, default: 0
-  attr :mutations_allowed?, :boolean, required: true
-  attr :rename_window_id, :string, default: nil
-  attr :selected_preview, :map, default: nil, doc: "selected preview pane registration"
-  attr :path_base, :string, default: nil
-
-  def window_dropdown(assigns) do
-    ~H"""
-    <div
-      data-shortcut="Ctrl + B, then W"
-      class={[
-        "leader-key-control flex min-w-0 shrink-0 items-center overflow-visible rounded border border-base-300 bg-base-100 text-xs shadow-sm",
-        is_map(@selected_preview) && "border-sky-500/30 bg-sky-500/5"
-      ]}
-    >
-      <details
-        class="relative min-w-0 shrink"
-        id={"window-dropdown-" <> @workspace_id}
-        data-version={@topology_version}
-        data-shortcut="Ctrl + B, then W"
-        data-picker-hop-left={"#session-dropdown-" <> @workspace_id}
-        phx-hook="SessionPicker"
-      >
-        <summary
-          data-leader-action="window-picker"
-          phx-click="tmux:refresh_topology"
-          title="Pick a window or pane. Shortcut: Ctrl + B, then W"
-          class="flex min-w-0 cursor-pointer list-none select-none items-center gap-1 rounded-l px-1.5 py-0.5 hover:bg-base-200 [&::-webkit-details-marker]:hidden"
-        >
-          <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
-            {active_window_label(@windows)}
-          </span>
-          <%= if is_map(@selected_preview) do %>
-            <span class="h-4 w-px shrink-0 bg-sky-500/25"></span>
-            <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
-              <.icon name="hero-globe-alt" class="size-3" />
-            </span>
-            <span
-              data-preview-pane-id={@selected_preview.pane_id}
-              class="min-w-0 max-w-36 truncate font-medium text-sky-700 sm:max-w-44 dark:text-sky-200"
-            >
-              {preview_display_label(@selected_preview)}
-            </span>
-            <span
-              :if={preview_detail(@selected_preview) != ""}
-              class="header-p-low header-p-as-inline max-w-32 truncate font-mono text-[10px] text-sky-700/65 dark:text-sky-200/65"
-            >
-              {preview_detail(@selected_preview)}
-            </span>
-          <% end %>
-          <span class="text-[10px] text-base-content/40">▾</span>
-        </summary>
-        <div class="absolute top-full left-0 z-50 mt-0.5 min-w-64 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
-          <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
-          <div
-            data-picker-filter
-            class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
-          >
-          </div>
-          <%= for window <- @windows do %>
-            <div
-              id={"tmux-window-" <> window.dom_frag}
-              class={dropdown_row_class(window.active?)}
-            >
-              <a
-                href={window_href(@workspace_id, @session_id, window.id, path_base: @path_base)}
-                data-picker-item
-                data-picker-active={window.active? || nil}
-                data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
-                phx-click={
-                  JS.push("tmux:select_window")
-                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                }
-                phx-value-window-id={window.id}
-                data-tmux-window-index={window.index}
-                class="relative flex min-w-0 flex-1 items-center gap-1"
-                title={"Select tmux window " <> window.full_title}
-              >
-                <.window_row_name
-                  window={window}
-                  picker_label?
-                  index_class="font-mono text-[10px] text-base-content/40"
-                  name_class="max-w-32 truncate font-medium"
-                />
-                <.window_row_indicators
-                  window={window}
-                  preview_id={"tmux-window-preview-" <> window.dom_frag}
-                  quiet_id={"tmux-window-quiet-" <> window.dom_frag}
-                  activity_id={"tmux-window-activity-" <> window.dom_frag}
-                  hide_activity_when_quiet?
-                  show_command?
-                  command_picker_label?
-                  command_class="font-mono text-[10px] text-base-content/40"
-                />
-              </a>
-              <.copy_link_button
-                url={window_share_url(@workspace_id, @share_session_id, window.id, @path_base)}
-                label={window.name}
-                kind="window"
-              />
-              <button
-                :if={window.pane_count > 0}
-                id={"window-panes-toggle-" <> window.dom_frag}
-                type="button"
-                tabindex="-1"
-                phx-click={
-                  JS.toggle(to: "#window-panes-" <> window.dom_frag, display: "block")
-                  |> JS.toggle_class("rotate-90", to: "#window-panes-chevron-" <> window.dom_frag)
-                }
-                class="ml-1 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
-                title={"#{window.pane_count} pane#{if window.pane_count == 1, do: "", else: "s"}"}
-                aria-label={"Toggle panes of " <> window.name}
-              >
-                {window.pane_count}
-                <span
-                  id={"window-panes-chevron-" <> window.dom_frag}
-                  class="flex transition-transform"
-                >
-                  <.icon name="hero-chevron-right" class="size-3" />
-                </span>
-              </button>
-              <%= if @mutations_allowed? do %>
-                <%= if @rename_window_id == window.id do %>
-                  <.window_inline_rename_form
-                    window={window}
-                    input_id_prefix="tmux-rename-dropdown-input"
-                    input_class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    submit_phx_click={
-                      JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                    }
-                    cancel_phx_click={
-                      JS.push("tmux:rename_cancel")
-                      |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                    }
-                  />
-                <% else %>
-                  <button
-                    type="button"
-                    phx-click="tmux:rename_start"
-                    phx-value-window-id={window.id}
-                    class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                    title="Rename tmux window"
-                  >
-                    <.icon name="hero-pencil-square" class="size-3" />
-                  </button>
-                <% end %>
-                <button
-                  type="button"
-                  phx-click={
-                    JS.push("tmux:kill_window")
-                    |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                  }
-                  phx-value-window-id={window.id}
-                  data-confirm="Kill this tmux window and everything running in it?"
-                  data-picker-window-kill
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                  title="Close tmux window"
-                  disabled={length(@windows) <= 1}
-                >
-                  <.icon name="hero-x-mark" class="size-3" />
-                </button>
-              <% end %>
-            </div>
-            <div
-              :if={window.panes != []}
-              id={"window-panes-" <> window.dom_frag}
-              class="hidden border-l border-base-300/80 ml-3"
-            >
-              <%= for pane <- window.panes do %>
-                <a
-                  href={pane_href(@workspace_id, @session_id, window.id, pane.id, @path_base)}
-                  id={"window-pane-" <> pane.dom_frag}
-                  data-picker-item
-                  data-picker-parent={"window-panes-" <> window.dom_frag}
-                  data-picker-active={pane.active? || nil}
-                  phx-click={
-                    JS.push("tmux:select_pane",
-                      value: %{"pane-id" => pane.id, "window-id" => window.id}
-                    )
-                    |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                  }
-                  class={[
-                    "group flex w-full items-center gap-1.5 py-1 pr-3 pl-4 text-left text-xs",
-                    if(pane.active?,
-                      do: "bg-primary/5 text-primary",
-                      else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                    )
-                  ]}
-                  title={pane.title}
-                >
-                  <span class="-ml-4 w-3 shrink-0 border-t border-base-300/80"></span>
-                  <%= if pane.preview? do %>
-                    <%= if pane.favicon_url do %>
-                      <img
-                        src={pane.favicon_url}
-                        alt=""
-                        class="size-4 shrink-0 rounded-sm bg-base-200 object-contain ring-1 ring-base-300/60"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    <% else %>
-                      <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
-                        <.icon name="hero-globe-alt" class="size-3" />
-                      </span>
-                    <% end %>
-                  <% else %>
-                    <span class="font-mono text-[10px] text-base-content/40">{pane.index}</span>
-                  <% end %>
-                  <span class="flex min-w-0 flex-1 flex-col items-start">
-                    <span class="flex max-w-44 items-center gap-1 truncate font-medium">
-                      <span
-                        :if={pane.agent_label?}
-                        class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-600 ring-1 ring-violet-500/25 dark:text-violet-300"
-                        title={pane.agent_label_title}
-                        aria-label="Agent conversation label"
-                      >
-                        <.icon name="hero-cpu-chip" class="size-2.5" />
-                      </span>
-                      <span
-                        :if={pane.beside_agent_preview?}
-                        class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/25 dark:text-emerald-300"
-                        title={pane.beside_agent_preview_title}
-                        aria-label="Preview opened beside agent"
-                      >
-                        <.icon name="hero-window" class="size-2.5" />
-                      </span>
-                      <span data-picker-label class="truncate">{pane.label}</span>
-                    </span>
-                    <span
-                      :if={pane.detail != ""}
-                      data-picker-label
-                      class="max-w-44 truncate font-mono text-[10px] text-base-content/50"
-                    >
-                      {pane.detail}
-                    </span>
-                  </span>
-                  <span
-                    :if={pane.activity_state != :idle}
-                    data-activity-state={pane.activity_state}
-                    class={["size-1.5 shrink-0 rounded-full", pane.activity_class]}
-                    title={pane.activity_label}
-                    aria-label={pane.activity_label}
-                  ></span>
-                </a>
-              <% end %>
-            </div>
-          <% end %>
-          <.picker_keyboard_hint kill_hint={@mutations_allowed? and length(@windows) > 1} />
-          <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
-            <%= if @mutations_allowed? do %>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("palette:templates")
-                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                }
-                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-                title="Apply session template"
-              >
-                <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
-              </button>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("tmux:open_template_library")
-                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                }
-                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-                title="Template library"
-              >
-                <.icon name="hero-book-open" class="size-3.5" />
-              </button>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("tmux:new_window")
-                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                }
-                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-                title="New window · Ctrl + B c"
-              >
-                <.icon name="hero-plus" class="size-3.5" />
-              </button>
-            <% end %>
-            <button
-              type="button"
-              phx-click="tmux:refresh_windows"
-              class="ml-auto rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Refresh tmux windows"
-            >
-              <.icon name="hero-arrow-path" class="size-3.5" />
-            </button>
-          </div>
-          <%!-- choose-tree style preview of the focused entry — filled client-side --%>
-          <pre
-            data-picker-preview
-            class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
-          ></pre>
-        </div>
-      </details>
-      <div
-        :if={is_map(@selected_preview)}
-        id={"preview-titlebar-" <> preview_dom_frag(@selected_preview)}
-        data-preview-pane-id={@selected_preview.pane_id}
-        class="flex shrink-0 items-center gap-0.5 border-l border-sky-500/25 px-0.5"
-        title={preview_title(@selected_preview)}
-      >
-        <span class="hidden max-w-44 truncate px-1 font-mono text-[10px] text-sky-700/75 md:inline dark:text-sky-200/75">
-          {preview_compact_url(@selected_preview)}
-        </span>
-        <.preview_control_button
-          id={"preview-back-" <> preview_dom_frag(@selected_preview)}
-          event="preview-pane:back"
-          pane_id={@selected_preview.pane_id}
-          title={"Back in " <> preview_display_label(@selected_preview)}
-          aria_label={"Back in " <> preview_display_label(@selected_preview)}
-          icon="hero-arrow-left"
-        />
-        <.preview_control_button
-          id={"preview-forward-" <> preview_dom_frag(@selected_preview)}
-          event="preview-pane:forward"
-          pane_id={@selected_preview.pane_id}
-          title={"Forward in " <> preview_display_label(@selected_preview)}
-          aria_label={"Forward in " <> preview_display_label(@selected_preview)}
-          icon="hero-arrow-right"
-        />
-        <.preview_control_button
-          id={"preview-refresh-" <> preview_dom_frag(@selected_preview)}
-          event="preview-pane:refresh"
-          pane_id={@selected_preview.pane_id}
-          title={"Refresh " <> preview_display_label(@selected_preview)}
-          aria_label={"Refresh " <> preview_display_label(@selected_preview)}
-          icon="hero-arrow-path"
-        />
-        <a
-          id={"preview-open-external-" <> preview_dom_frag(@selected_preview)}
-          href={@selected_preview.display_url}
-          target="_blank"
-          rel="noreferrer"
-          class="rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100"
-          title={"Open " <> preview_display_label(@selected_preview) <> " externally"}
-          aria-label={"Open " <> preview_display_label(@selected_preview) <> " externally"}
-        >
-          <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
-        </a>
-        <.preview_control_button
-          id={"preview-close-" <> preview_dom_frag(@selected_preview)}
-          event="preview-pane:close"
-          pane_id={@selected_preview.pane_id}
-          title={"Close " <> preview_display_label(@selected_preview)}
-          aria_label={"Close " <> preview_display_label(@selected_preview)}
-          icon="hero-x-mark"
-          class="hover:bg-error/10 hover:text-error"
-        />
-      </div>
-    </div>
-    """
-  end
-
-  attr :id, :string, required: true
-  attr :event, :string, required: true
-  attr :pane_id, :string, required: true
-  attr :title, :string, required: true
-  attr :aria_label, :string, required: true
-  attr :icon, :string, required: true
-  attr :class, :string, default: ""
-
-  defp preview_control_button(assigns) do
-    ~H"""
-    <button
-      id={@id}
-      type="button"
-      phx-click={@event}
-      phx-value-pane-id={@pane_id}
-      class={[
-        "rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100",
-        @class
-      ]}
-      title={@title}
-      aria-label={@aria_label}
-    >
-      <.icon name={@icon} class="size-3.5" />
-    </button>
-    """
-  end
-
-  defp preview_dom_frag(%{pane_id: pane_id}), do: dom_fragment(pane_id)
-
-  defp preview_label(preview) do
-    case Map.get(preview, :title) || Map.get(preview, "title") do
-      title when is_binary(title) and title != "" -> title
-      _ -> preview_host(preview)
-    end
-  end
-
-  defp preview_display_label(preview) do
-    case preview_actual_url(preview) do
-      url when is_binary(url) and url != "" -> preview_host_for_url(url)
-      _ -> preview_label(preview)
-    end
-  end
-
-  defp preview_detail(preview) do
-    preview
-    |> preview_actual_url()
-    |> preview_path_detail()
-  end
-
-  defp preview_compact_url(preview) do
-    case {preview_display_label(preview), preview_detail(preview)} do
-      {label, ""} -> label
-      {label, detail} -> label <> detail
-    end
-  end
-
-  defp preview_title(preview) do
-    label = preview_label(preview)
-    detail = preview_actual_url(preview)
-
-    if is_binary(detail) and detail != "" and detail != label,
-      do: label <> " · " <> detail,
-      else: label
-  end
-
-  defp preview_host(preview) do
-    case preview_actual_url(preview) do
-      url when is_binary(url) and url != "" -> preview_host_for_url(url)
-      _ -> "Preview"
-    end
-  end
-
-  defp preview_host_for_url(url) when is_binary(url) do
-    uri = URI.parse(url)
-
-    cond do
-      is_binary(uri.host) and is_integer(uri.port) ->
-        uri.host <> ":" <> Integer.to_string(uri.port)
-
-      is_binary(uri.host) ->
-        uri.host
-
-      true ->
-        preview_proxy_target_url(url) || url
-    end
-  end
-
-  defp preview_display_url(preview) do
-    Map.get(preview, :display_url) || Map.get(preview, "display_url") ||
-      Map.get(preview, :url) || Map.get(preview, "url")
-  end
-
-  defp preview_actual_url(preview) do
-    source_url = Map.get(preview, :source_url) || Map.get(preview, "source_url")
-    url = Map.get(preview, :url) || Map.get(preview, "url")
-    display_url = preview_display_url(preview)
-
-    cond do
-      is_binary(source_url) and source_url != "" ->
-        source_url
-
-      is_binary(url) and url != "" and not preview_proxy_url?(url) ->
-        url
-
-      is_binary(display_url) and display_url != "" ->
-        preview_proxy_target_url(display_url) || display_url
-
-      true ->
-        nil
-    end
-  end
-
-  defp preview_proxy_url?(url) when is_binary(url),
-    do: String.starts_with?(url, "/preview-proxy/")
-
-  defp preview_proxy_target_url("/preview-proxy/" <> rest) do
-    case String.split(rest, "/", parts: 3) do
-      [_workspace_id, port, path] ->
-        case Integer.parse(port) do
-          {port, ""} when port > 0 -> "http://localhost:#{port}/#{path}"
-          _ -> nil
-        end
-
-      [_workspace_id, port] ->
-        case Integer.parse(port) do
-          {port, ""} when port > 0 -> "http://localhost:#{port}/"
-          _ -> nil
-        end
-
-      _ ->
-        nil
-    end
-  end
-
-  defp preview_proxy_target_url(_), do: nil
-
-  defp preview_path_detail(url) when is_binary(url) and url != "" do
-    uri = URI.parse(url)
-    path = if uri.path in [nil, ""], do: "/", else: uri.path
-
-    case uri.query do
-      query when is_binary(query) and query != "" -> path <> "?" <> query
-      _ -> path
-    end
-  end
-
-  defp preview_path_detail(_), do: ""
-
   defp session_picker_short_label(label) when is_binary(label) do
     label
     |> String.split(~r/\s+/, trim: true)
@@ -1551,13 +1002,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       end
 
     "Pick a session (" <> session <> "). Shortcut: Ctrl + B, then S"
-  end
-
-  defp active_window_label(windows) do
-    case Enum.find(windows, & &1.active?) do
-      %{name: name} -> name
-      nil -> "window"
-    end
   end
 
   attr :kill_hint, :boolean, default: false
@@ -1644,16 +1088,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp window_href(workspace_id, _session_id, window_id, opts),
     do: window_href(workspace_id, window_id, opts)
-
-  # Pane rows deeplink to their parent window with the pane pre-selected so a
-  # picker click (or a shared/new-tab open) lands inside that window on the
-  # chosen pane. `session_window_href` drops the session when it's the default.
-  defp pane_href(workspace_id, session_id, window_id, pane_id, path_base),
-    do:
-      session_window_href(workspace_id, session_id, window_id,
-        pane: pane_id,
-        path_base: path_base
-      )
 
   defp session_window_href(workspace_id, session_id, window_id, opts \\ []) do
     pane = Keyword.get(opts, :pane)
