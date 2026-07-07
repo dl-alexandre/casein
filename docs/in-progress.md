@@ -13,8 +13,6 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
   `sidebar:close` via `C-b w`, palette, Escape, or window selection).
 - **Window picker sidebar cleanup** — filter helper merged via PR #146; session_bar
   window-row dedup merged via PR #149 and #158. Frozen paths released.
-- **Jido adoption (phases 1–3)** — phases 1–2 via PR #141; signal bus + alerts
-  routing via PR #155.
 
 ## Cleared (2026-07-06)
 
