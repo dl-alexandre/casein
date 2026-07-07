@@ -863,18 +863,16 @@ defmodule DevIDE.Terminals.SessionOwner do
         result
 
       nil ->
-        Logger.warning("tmux window_size timed out",
-          session: session,
-          timeout_ms: timeout,
+        Logger.warning(
+          "tmux window_size timed out session=#{session} timeout_ms=#{timeout}",
           kind: :drift_guard
         )
 
         :error
 
       {:exit, reason} ->
-        Logger.warning("tmux window_size failed",
-          session: session,
-          reason: inspect(reason),
+        Logger.warning(
+          "tmux window_size failed session=#{session} reason=#{inspect(reason)}",
           kind: :drift_guard
         )
 

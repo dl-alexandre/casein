@@ -1078,8 +1078,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
-  @tag :tmux_timeout
-  test "owner stays responsive when tmux window_size hangs on drift check" do
+  defp with_tmux_window_size_hang_test(fun) do
     swap_in_fake_tmux_adapter()
 
     prev_timeout = Application.get_env(:dev_ide, :tmux_window_size_timeout_ms)
@@ -1095,23 +1094,61 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       TmuxCtl.Test.FakeState.delete(:fake_tmux_window_size_hang)
     end)
 
-    unique = "tmux-timeout-#{System.unique_integer([:positive])}"
-    info = Terminals.new_shell("ws-tmux-timeout", "sid-#{unique}")
+    fun.()
+  end
 
-    owner_pid = start_shell_owner("ws-tmux-timeout", info)
-    register_subscriber(owner_pid, self(), :raw)
+  @tag :tmux_timeout
+  test "owner stays responsive when tmux window_size hangs on drift check" do
+    with_tmux_window_size_hang_test(fn ->
+      unique = "tmux-timeout-#{System.unique_integer([:positive])}"
+      info = Terminals.new_shell("ws-tmux-timeout", "sid-#{unique}")
 
-    :sys.replace_state(owner_pid, fn state ->
-      %{state | workspace_key: "ws-tmux-timeout", applied_size: {120, 40}}
+      owner_pid = start_shell_owner("ws-tmux-timeout", info)
+      register_subscriber(owner_pid, self(), :raw)
+
+      :sys.replace_state(owner_pid, fn state ->
+        %{state | workspace_key: "ws-tmux-timeout", applied_size: {120, 40}}
+      end)
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_window_size_hang, true)
+
+      send(owner_pid, :tmux_drift_check)
+
+      assert :sys.get_state(owner_pid, 500)
+
+      GenServer.stop(owner_pid, :normal)
     end)
+  end
 
-    TmuxCtl.Test.FakeState.put(:fake_tmux_window_size_hang, true)
+  @tag :tmux_timeout
+  test "owner stays responsive when tmux window_size hangs on attach" do
+    with_tmux_window_size_hang_test(fn ->
+      unique = "tmux-attach-timeout-#{System.unique_integer([:positive])}"
+      info = Terminals.new_shell("ws-tmux-attach-timeout", "sid-#{unique}")
 
-    send(owner_pid, :tmux_drift_check)
+      owner_pid = start_shell_owner("ws-tmux-attach-timeout", info)
+      seed_stub_attachment(owner_pid)
+      register_subscriber(owner_pid, self(), :raw)
 
-    assert :sys.get_state(owner_pid, 500)
+      :sys.replace_state(owner_pid, fn state ->
+        %{state | workspace_key: "ws-tmux-attach-timeout", applied_size: {120, 40}}
+      end)
 
-    GenServer.stop(owner_pid, :normal)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_window_size_hang, true)
+
+      attach_subscriber = spawn(fn -> :timer.sleep(:infinity) end)
+
+      attach_task =
+        Task.async(fn ->
+          GenServer.call(owner_pid, {:attach, attach_subscriber, :raw, []}, 5_000)
+        end)
+
+      assert :sys.get_state(owner_pid, 500)
+      assert {:ok, _} = Task.await(attach_task, 1_000)
+
+      Process.exit(attach_subscriber, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end)
   end
 
   test "a draining instance stops asserting sizes onto shared tmux state" do

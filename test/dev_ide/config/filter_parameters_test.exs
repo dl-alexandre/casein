@@ -1,5 +1,13 @@
 defmodule DevIDE.Config.FilterParametersTest do
-  use ExUnit.Case, async: true
+  use DevIdeWeb.ConnCase, async: false
+
+  import ExUnit.CaptureLog
+  import Plug.Conn
+  import Plug.Test
+
+  alias DevIdeWeb.Plugs.ScrubLoggedHeaders
+
+  @token "filter-log-test-token"
 
   @auth_keys ~w(
     authorization
@@ -14,13 +22,75 @@ defmodule DevIDE.Config.FilterParametersTest do
     secret
   )
 
-  test "phoenix filter_parameters redacts auth-sensitive request params" do
-    contents = File.read!(Path.expand("config/config.exs", File.cwd!()))
+  setup do
+    prev = Application.get_env(:dev_ide, :api_token)
+    Application.put_env(:dev_ide, :api_token, @token)
 
-    assert contents =~ "config :phoenix, :filter_parameters"
+    on_exit(fn ->
+      case prev do
+        nil -> Application.delete_env(:dev_ide, :api_token)
+        val -> Application.put_env(:dev_ide, :api_token, val)
+      end
+    end)
+
+    :ok
+  end
+
+  test "Phoenix.Logger.filter_values redacts configured auth param names" do
+    params = %{
+      "id" => "42",
+      "token" => "super-secret",
+      "nested" => %{"api_token" => "nested-secret", "name" => "ok"}
+    }
+
+    filtered = Phoenix.Logger.filter_values(params)
+
+    assert filtered["id"] == "42"
+    assert filtered["token"] == "[FILTERED]"
+    assert filtered["nested"]["api_token"] == "[FILTERED]"
+    assert filtered["nested"]["name"] == "ok"
+  end
+
+  test "configured auth keys are filtered at runtime via Phoenix.Logger" do
+    assert match?({:compiled, _, _}, Application.get_env(:phoenix, :filter_parameters, []))
 
     for key <- @auth_keys do
-      assert contents =~ ~s("#{key}")
+      assert Phoenix.Logger.filter_values(%{key => "leak-value"})[key] == "[FILTERED]"
     end
+  end
+
+  test "ScrubLoggedHeaders preserves bearer for auth while scrubbing req_headers" do
+    conn =
+      :get
+      |> conn("/api/terminals/mcp")
+      |> put_req_header("authorization", "Bearer header-secret-token")
+      |> ScrubLoggedHeaders.call([])
+
+    assert DevIdeWeb.AuthHeader.bearer_token(conn) == "header-secret-token"
+    assert {"authorization", "[FILTERED]"} in conn.req_headers
+    refute conn.req_headers |> Enum.any?(fn {_, v} -> v == "header-secret-token" end)
+  end
+
+  test "router dispatch log does not emit raw bearer tokens or filtered params", %{conn: conn} do
+    log =
+      capture_log(fn ->
+        conn
+        |> put_req_header("authorization", "Bearer " <> @token)
+        |> put_req_header("content-type", "application/json")
+        |> put_req_header("accept", "application/json")
+        |> post(
+          "/api/terminals/mcp",
+          Jason.encode!(%{
+            "jsonrpc" => "2.0",
+            "id" => 1,
+            "method" => "initialize",
+            "token" => "body-secret-token"
+          })
+        )
+        |> response(200)
+      end)
+
+    refute log =~ @token
+    refute log =~ "body-secret-token"
   end
 end

@@ -111,12 +111,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
       conn.query_params["workspace_id"] in [workspace_id, nil, ""]
   end
 
-  defp bearer(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token] -> token
-      _ -> nil
-    end
-  end
+  defp bearer(conn), do: DevIdeWeb.AuthHeader.bearer_token(conn)
 
   defp secure_match?(token, expected) when is_binary(token) and is_binary(expected) do
     byte_size(token) == byte_size(expected) and Plug.Crypto.secure_compare(token, expected)

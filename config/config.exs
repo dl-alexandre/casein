@@ -139,7 +139,8 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-# Redact auth secrets from Phoenix request logs (query/body params only).
+# Redact auth secrets from Phoenix request param logs; Authorization headers
+# are scrubbed separately by DevIdeWeb.Plugs.ScrubLoggedHeaders.
 config :phoenix, :filter_parameters, [
   "authorization",
   "token",
