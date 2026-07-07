@@ -10,6 +10,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 log() { printf '>>> %s\n' "$*"; }
 
+# The deploy poller runs this gate under systemd with a 1024 soft fd limit;
+# the full test suite plus the cover HTML export opens more files than that
+# under load (observed as `:emfile` aborting an otherwise-green gate). Raise
+# the soft limit toward the hard limit — allowed without privileges; best
+# effort so an environment with a locked-down hard limit still runs.
+hard_nofile="$(ulimit -Hn 2>/dev/null || echo "")"
+if [[ "${hard_nofile}" =~ ^[0-9]+$ ]] && [ "${hard_nofile}" -gt 4096 ]; then
+  ulimit -n "$(( hard_nofile < 65536 ? hard_nofile : 65536 ))" 2>/dev/null || true
+fi
+
 cd "${ROOT}"
 
 # Elixir runs through mise (reads .tool-versions) locally and on the self-hosted
