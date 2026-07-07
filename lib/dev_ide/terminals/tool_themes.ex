@@ -87,17 +87,17 @@ defmodule DevIDE.Terminals.ToolThemes do
       case File.read(target) do
         {:error, :enoent} ->
           write!(target, desired)
-          memoize(name, hash, target, :ok)
+          memoize(name, hash, desired, :ok)
 
         {:ok, ^desired} ->
-          memoize(name, hash, target, :ok)
+          memoize(name, hash, desired, :ok)
 
         {:ok, existing} ->
           if first_line(existing) == @marker do
             write!(target, desired)
-            memoize(name, hash, target, :ok)
+            memoize(name, hash, desired, :ok)
           else
-            memoize(name, hash, target, {:skipped, :user_managed})
+            memoize(name, hash, existing, {:skipped, :user_managed})
           end
 
         {:error, reason} ->
@@ -118,16 +118,22 @@ defmodule DevIDE.Terminals.ToolThemes do
     with nil <- memoized_result(name, hash, target) do
       case File.read(target) do
         {:error, :enoent} ->
-          write!(target, stamp_toml(nil, section, key, value))
-          memoize(name, hash, target, :ok)
+          stamped = stamp_toml(nil, section, key, value)
+          write!(target, stamped)
+          memoize(name, hash, stamped, :ok)
 
         {:ok, existing} ->
-          case stamp_toml(existing, section, key, value) do
-            ^existing -> :ok
-            stamped -> write!(target, stamped)
-          end
+          content =
+            case stamp_toml(existing, section, key, value) do
+              ^existing ->
+                existing
 
-          memoize(name, hash, target, :ok)
+              stamped ->
+                write!(target, stamped)
+                stamped
+            end
+
+          memoize(name, hash, content, :ok)
 
         {:error, reason} ->
           {:error, reason}
@@ -232,38 +238,30 @@ defmodule DevIDE.Terminals.ToolThemes do
     error -> {:error, error}
   end
 
-  # The memo stores `{desired_hash, file_fingerprint, result}`: skipping the
-  # read is only safe while the on-disk file is provably the one last verified.
-  # An external edit (drifted marker file, hand-changed grok theme) changes the
-  # mtime/size fingerprint and forces a full re-read, so managed drift is
-  # restored within the same BEAM lifetime, not just after restarts.
+  # The memo stores `{desired_hash, content_hash, result}`: the result is only
+  # trusted while the on-disk bytes still hash to the content that was last
+  # verified. Hashing the bytes the verify path actually read or wrote — not a
+  # stat taken afterwards — means an external rewrite misses the memo even when
+  # it lands in the same second with the same size, or between verify and
+  # memoize, so managed drift is restored within the same BEAM lifetime, not
+  # just after restarts.
+  # sobelow_skip ["Traversal.FileModule"]
   defp memoized_result(name, hash, target) do
-    with {^hash, fingerprint, result} <- :persistent_term.get(memo_key(name), nil),
-         ^fingerprint <- fingerprint(target) do
+    with {^hash, content_hash, result} <- :persistent_term.get(memo_key(name), nil),
+         {:ok, content} <- File.read(target),
+         ^content_hash <- content_hash(content) do
       result
     else
       _ -> nil
     end
   end
 
-  defp memoize(name, hash, target, result) do
-    case fingerprint(target) do
-      # File vanished between write/verify and stat; leave no memo so the next
-      # call re-checks from scratch.
-      nil -> :ok
-      fingerprint -> :persistent_term.put(memo_key(name), {hash, fingerprint, result})
-    end
-
+  defp memoize(name, hash, content, result) do
+    :persistent_term.put(memo_key(name), {hash, content_hash(content), result})
     result
   end
 
-  # sobelow_skip ["Traversal.FileModule"]
-  defp fingerprint(target) do
-    case File.stat(target, time: :posix) do
-      {:ok, %File.Stat{mtime: mtime, size: size}} -> {mtime, size}
-      {:error, _} -> nil
-    end
-  end
+  defp content_hash(content), do: :crypto.hash(:sha256, content)
 
   # Logs once per unique failure per tool; repeated identical failures on
   # every pane spawn or scheme change would otherwise flood the log.

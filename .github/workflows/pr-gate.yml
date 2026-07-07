@@ -140,19 +140,18 @@ jobs:
           otp-version: "28.5"
 
       # The :pty suite must run against the same tmux the devbox runs. Pinned to
-      # 3.6b for in-pane OSC 11 client-color support (see scripts/install-tmux.sh
-      # and docs/subsystems/tmux_36b_cutover.md).
-      - name: Restore cached tmux 3.6b
+      # 3.7 (see scripts/install-tmux.sh and docs/subsystems/tmux_37_cutover.md).
+      - name: Restore cached tmux 3.7
         if: steps.detect.outputs.docs_only != 'true'
         id: tmux-cache
         uses: actions/cache@v6
         with:
-          path: ~/.local/tmux-3.6b
-          key: tmux-3.6b-${{ runner.os }}
-      - name: Install tmux 3.6b
+          path: ~/.local/tmux-3.7
+          key: tmux-3.7-${{ runner.os }}
+      - name: Install tmux 3.7
         if: steps.detect.outputs.docs_only != 'true'
         run: |
-          export TMUX_PREFIX="$HOME/.local/tmux-3.6b"
+          export TMUX_PREFIX="$HOME/.local/tmux-3.7"
           export TMUX_INSTALL_SUDO=""
           bash scripts/install-tmux.sh
           echo "$TMUX_PREFIX/bin" >> "$GITHUB_PATH"

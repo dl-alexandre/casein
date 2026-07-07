@@ -1671,13 +1671,15 @@ defmodule TmuxCtl.Client do
   Version of the *running* tmux server as `{major, minor}` (e.g. `{3, 4}`), or
   `nil` when no server is answering yet.
 
-  Queries the server via `display-message -p '\#{version}'` on the configured
-  label — NOT `tmux -V`. During the 3.6b cutover the new binary is installed
-  before the old server is killed, so the binary version would over-report the
-  server's real capabilities and we would emit unsolicited color reports a 3.4
-  server parses as key input. Only a successful probe is cached (a `nil` is
-  never cached, so a probe before the server is up is retried); the cutover
-  kill-server is paired with a DevIDE restart, which clears the cache anyway.
+  Prefers the server's own answer via `display-message -p '\#{version}'` over
+  `tmux -V`: during a version cutover the new binary is installed before the
+  old server is killed, so the binary version would over-report the running
+  server's capabilities and we would emit unsolicited color reports an old
+  server parses as key input. Only a server answer is cached. When no server
+  answers (cold start — the very attach being gated is what starts it) the
+  binary version is returned uncached: with no server running it is the
+  version any server spawned from this binary will have, and leaving it
+  uncached lets a later-reachable server's answer take over.
   """
   @spec server_version() :: {non_neg_integer(), non_neg_integer()} | nil
   def server_version do
@@ -1692,13 +1694,24 @@ defmodule TmuxCtl.Client do
             version
 
           nil ->
-            nil
+            detect_binary_version()
         end
     end
   end
 
   defp detect_server_version do
     case run(["display-message", "-p", "\#{version}"]) do
+      {out, 0} -> parse_server_version(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp detect_binary_version do
+    # `tmux -V` is answered during early argument parsing, before any server
+    # connection or config load, so it works with no server running.
+    case run(["-V"]) do
       {out, 0} -> parse_server_version(out)
       _ -> nil
     end
@@ -1717,6 +1730,14 @@ defmodule TmuxCtl.Client do
   @spec reset_version_cache() :: :ok
   def reset_version_cache do
     :persistent_term.erase(@server_version_key)
+    :ok
+  end
+
+  # Test seam: force the cached version without knowing the private cache key.
+  @doc false
+  @spec put_version_cache({non_neg_integer(), non_neg_integer()}) :: :ok
+  def put_version_cache({_major, _minor} = version) do
+    :persistent_term.put(@server_version_key, version)
     :ok
   end
 
