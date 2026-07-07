@@ -5,7 +5,7 @@
 // [data-window-picker-sidebar] via _startSidebarHoldWatch.
 
 import {copyPickerLink} from "./picker_link_copy"
-import {itemFilterText, matchesPickerFilter} from "./window_picker_sidebar_utils.mjs"
+import {matchesPickerFilter} from "./window_picker_sidebar_utils.mjs"
 
 export const WindowPickerSidebar = {
   mounted() {
