@@ -944,6 +944,94 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "a fitted size flapping back to the bootstrap default emits a breadcrumb" do
+    # The PR #148 incident signature: the same viewer reports a real fitted
+    # size, then 80x24 (the component/vendor dataset default) moments later —
+    # a stale deferred "ready" clobbering the fit. That must leave a
+    # warning + telemetry trail instead of being silently applied.
+    swap_in_fake_tmux_adapter()
+
+    unique = "size-flap-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-size-flap", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-size-flap", info)
+    register_subscriber(owner_pid, self(), :raw)
+    :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: "ws-size-flap"} end)
+
+    :telemetry_test.attach_event_handlers(self(), [
+      [:dev_ide, :terminals, :owner, :size_flap]
+    ])
+
+    # Bootstrap default as the FIRST report is normal (fresh mount) — no flap.
+    GenServer.cast(owner_pid, {:resize, self(), 80, 24})
+    # A fitted size, then a non-default change — normal drag/refit — no flap.
+    GenServer.cast(owner_pid, {:resize, self(), 228, 117})
+    GenServer.cast(owner_pid, {:resize, self(), 100, 30})
+    _ = :sys.get_state(owner_pid)
+    refute_received {[:dev_ide, :terminals, :owner, :size_flap], _, _, _}
+
+    # Fitted size immediately clobbered by the bootstrap default — the bug.
+    GenServer.cast(owner_pid, {:resize, self(), 228, 117})
+    GenServer.cast(owner_pid, {:resize, self(), 80, 24})
+
+    assert_receive {[:dev_ide, :terminals, :owner, :size_flap], _ref, %{elapsed_ms: _},
+                    %{from: {228, 117}, to: {80, 24}}}
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
+  test "a sustained drift-re-assert streak escalates to a fight warning" do
+    # A re-assert that never sticks means another writer (stale draining
+    # instance, duplicate owner, external client) is fighting this owner.
+    swap_in_fake_tmux_adapter()
+
+    unique = "drift-fight-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-drift-fight", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-drift-fight", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-drift-fight", applied_size: {120, 40}}
+    end)
+
+    session = "devide_ws-drift-fight_sid-#{unique}"
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
+
+    :telemetry_test.attach_event_handlers(self(), [
+      [:dev_ide, :terminals, :owner, :drift_fight]
+    ])
+
+    # Play the fighting writer: after every re-assert, knock the window back
+    # to 80x24 before the owner's next drift tick (the fake adapter's
+    # resize_window records the re-asserted size, so a one-shot mismatch
+    # would settle and reset the streak — exactly what a real fight doesn't
+    # do). The re-assert runs in an async task; wait for its two adapter
+    # calls and the owner clearing its single-flight slot before poisoning
+    # the size again, or the task's own write would race ours.
+    for n <- 1..4 do
+      if n == 4 do
+        refute_received {[:dev_ide, :terminals, :owner, :drift_fight], _, _, _}
+      end
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
+      send(owner_pid, :tmux_drift_check)
+      assert_receive {:fake_tmux_resize_window, ^session, 120, 40}
+      assert_receive {:fake_tmux_refresh_client, ^session}
+      await_resize_settled(owner_pid)
+    end
+
+    assert_receive {[:dev_ide, :terminals, :owner, :drift_fight], _ref, %{streak: 4},
+                    %{applied: {120, 40}, actual: {80, 24}}}
+
+    # The window settling at the applied size resets the streak.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {120, 40}})
+    send(owner_pid, :tmux_drift_check)
+    assert %{tmux_drift_streak: 0} = :sys.get_state(owner_pid)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "a draining instance stops asserting sizes onto shared tmux state" do
     # An old release's owners outlive the deploy handoff while stale browser
     # tabs hold connections; if they keep re-asserting their (stale)
@@ -1714,6 +1802,22 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     end)
 
     owner_pid
+  end
+
+  # The owner's tmux resize runs as a single-flight async task; wait for the
+  # owner to clear the slot so the next drift tick starts a fresh re-assert.
+  defp await_resize_settled(owner_pid, attempts \\ 100)
+  defp await_resize_settled(_owner_pid, 0), do: :ok
+
+  defp await_resize_settled(owner_pid, attempts) do
+    case :sys.get_state(owner_pid) do
+      %{tmux_resize: nil} ->
+        :ok
+
+      _in_flight ->
+        Process.sleep(10)
+        await_resize_settled(owner_pid, attempts - 1)
+    end
   end
 
   defp relay(owner, tag) do
