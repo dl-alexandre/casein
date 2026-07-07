@@ -45,6 +45,7 @@ defmodule DevIDE.Audit do
 
   defp broadcast(%Event{workspace_id: workspace_id} = event) when is_binary(workspace_id) do
     Phoenix.PubSub.broadcast(DevIde.PubSub, topic(workspace_id), {:audit_event, event})
+    DevIDE.Signals.Publish.audit_event(event)
   end
 
   defp broadcast(_event), do: :ok

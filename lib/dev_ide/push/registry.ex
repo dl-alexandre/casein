@@ -2,16 +2,16 @@ defmodule DevIDE.Push.Registry do
   @moduledoc """
   Persistent device-token registry for push, keyed by workspace and by user.
 
-  Workspace registrations also ask `DevIDE.Push.Dispatcher` to watch the
-  workspace's audit topic (idempotent), so a token is enough to start receiving
-  workspace-scoped alert pushes. User registrations feed mobile-card pushes.
+  Workspace registrations also ask `DevIDE.Signals.AlertsRouter` to watch the
+  workspace (idempotent), so a token is enough to start receiving workspace-scoped
+  alert pushes routed from the signal bus. User registrations feed mobile-card pushes.
   """
   use GenServer
 
   import Ecto.Query
 
   alias DevIDE.Push.Device
-  alias DevIDE.Push.Dispatcher
+  alias DevIDE.Signals.AlertsRouter
   alias DevIde.Repo
 
   @type entry :: %{token: String.t(), platform: String.t(), user_id: String.t() | nil}
@@ -282,7 +282,7 @@ defmodule DevIDE.Push.Registry do
     if MapSet.member?(watched, workspace_id) do
       state
     else
-      :ok = Dispatcher.watch(workspace_id)
+      :ok = AlertsRouter.watch(workspace_id)
       %{state | watched: MapSet.put(watched, workspace_id)}
     end
   end

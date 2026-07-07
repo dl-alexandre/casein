@@ -2,15 +2,14 @@ defmodule DevIDE.Signals do
   @moduledoc """
   CloudEvents envelopes for DevIDE domain events, built on `jido_signal`.
 
-  Current phase: struct + causality only — no `Jido.Signal.Bus` runs.
   `DevIDE.Signals.Context` propagates correlation/causation ids and
   `DevIDE.Audit` stamps them into event metadata; this module converts an
   audit event into its CloudEvents form.
 
-  Phase 3 hook (when a bus consumer materializes, candidate: Alerts
-  routing): start `{Jido.Signal.Bus, name: DevIDE.SignalBus}` under
-  `DevIde.Supervision.PlatformServices` and publish `from_audit_event/1`
-  envelopes from `DevIDE.Audit`'s broadcast path.
+  Phase 3: `DevIDE.SignalBus` runs under `DevIde.Supervision.PlatformServices`,
+  `DevIDE.Signals.Publish` publishes envelopes from `DevIDE.Audit`'s broadcast
+  path, and `DevIDE.Signals.AlertsRouter` routes alert-worthy signals to
+  `DevIDE.Push.Dispatcher`.
   """
 
   alias DevIDE.Audit.Event

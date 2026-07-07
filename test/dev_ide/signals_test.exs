@@ -52,4 +52,29 @@ defmodule DevIDE.SignalsTest do
     event = Event.new(%{action: "system.check"})
     assert Signals.from_audit_event(event).source == "/devide/audit/global"
   end
+
+  test "from_signal round-trips audit event fields" do
+    event =
+      Event.new(%{
+        workspace_id: "ws-1",
+        actor_id: "agent",
+        action: "agent.blocked",
+        target_type: "tmux_pane",
+        target_ref: "%3",
+        decision: :deny,
+        reason: :needs_permission,
+        metadata: %{"correlation_id" => "abc", "session_id" => "run-1"}
+      })
+
+    signal = Signals.from_audit_event(event)
+    roundtrip = Event.from_signal(signal)
+
+    assert roundtrip.id == event.id
+    assert roundtrip.workspace_id == event.workspace_id
+    assert roundtrip.action == event.action
+    assert roundtrip.target_ref == event.target_ref
+    assert roundtrip.decision == event.decision
+    assert roundtrip.reason == event.reason
+    assert roundtrip.metadata["correlation_id"] == "abc"
+  end
 end

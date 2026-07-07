@@ -19,7 +19,9 @@ defmodule DevIde.Supervision.PlatformServices do
       {Finch, name: DevIDE.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
       DevIDE.Git.InspectorCache,
       DevIDE.DeviceLinks.Reaper,
-      DevIDE.Runtimes.Reaper
+      DevIDE.Runtimes.Reaper,
+      DevIDE.SignalBus.child_spec(),
+      DevIDE.Signals.AlertsRouter
     ]
   end
 
