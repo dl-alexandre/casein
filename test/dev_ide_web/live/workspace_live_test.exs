@@ -221,7 +221,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#session-dropdown-ws-1")
-    assert has_element?(view, "#window-dropdown-ws-1")
+    assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
     assert has_element?(view, "#mobile-key-bar-scroll-ws-1")
     # The default/landing session is a normal row marked "home" (no separate shell entry).
@@ -229,8 +229,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#active_sessions-u-dev [aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='u-dev-extra']")
     refute has_element?(view, "[phx-value-session-id='u-dev-extra']", "Shell")
-    assert has_element?(view, "#window-dropdown-ws-1")
-
     # Choose-tree: the session dropdown shows a window count per session and
     # an expandable window list.
     assert has_element?(view, "button[title='1 window']", "1")
@@ -428,18 +426,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert help_html =~ "devide agent auth signin claude"
     assert help_html =~ "DevIDE detects the owner"
     assert help_html =~ "devide agent auth status"
-    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
-
-    assert has_element?(
-             view,
-             ".leader-key-control[data-shortcut='Ctrl + B, then N'] button[title='Next window. Shortcut: Ctrl + B, then N']"
-           )
+    # Inline next/prev window chips lived on the removed dropdown; cycling uses
+    # hidden leader targets and the always-visible tab bar.
+    refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
 
     # Last window moved from an inline clock button to the ⋯ overflow menu.
     assert has_element?(view, ".header-overflow button[phx-click='tmux:last_window']")
 
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
-    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+    refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+
+    render_hook(view, "sidebar:open", %{})
+
+    assert has_element?(
+             view,
+             "[data-window-picker-sidebar][data-shortcut='Ctrl + B, then W']"
+           )
+
+    render_hook(view, "sidebar:close", %{})
     assert has_element?(view, "button[data-shortcut='Ctrl/Cmd + Shift + F']")
 
     cheatsheet_html = render(view)
@@ -476,10 +480,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_submit()
 
     assert_receive {:fake_tmux_rename_window, ^tmux_session, "@1", "ci"}
-    assert has_element?(view, "#window-dropdown-ws-1", "ci")
+    assert has_element?(view, "#tmux-window--1", "ci")
 
     view
-    |> element("button[aria-label='New tmux window']")
+    |> element("#tmux-window-tabs-ws-1 button[aria-label='New tmux window']")
     |> render_click()
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
@@ -640,7 +644,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # outside the chrome block, so C-b bindings keep working when leader keys
     # are the only affordance left.
     render_click(view, "terminal:toggle_chrome", %{})
-    refute has_element?(view, "#window-dropdown-ws-1")
+    refute has_element?(view, "#tmux-window-tabs-ws-1")
 
     for action <-
           ~w(detach palette help last-window last-pane prev-session next-session next-window prev-window) do

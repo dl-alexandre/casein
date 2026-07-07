@@ -107,7 +107,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
-    view:set_window_picker
+    sidebar:open sidebar:close
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -331,7 +331,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:session_tabs, [])
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
-        |> assign(:window_picker_view, :dropdown)
+        |> assign(:window_sidebar_open?, false)
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
         |> assign(:mobile_nav_view, "windows")
@@ -685,19 +685,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :chrome_visible, false)}
   end
 
-  # Window picker presentation: compact dropdown (default) or a tab strip that
-  # spreads the tmux windows across the free header width. Set from the
-  # palette's View section; the WindowPickerView hook mirrors the choice into
-  # localStorage and replays it on the next mount.
-  def handle_event("view:set_window_picker", %{"view" => view}, socket)
-      when view in ["dropdown", "tabs", "sidebar"] do
-    {:noreply,
-     socket
-     |> assign(:window_picker_view, String.to_existing_atom(view))
-     |> push_event("window-picker-view", %{view: view})}
+  # Transient window sidebar beside the terminal. Tab bar is always the default
+  # header presentation; the rail opens via C-b w or the palette and closes on
+  # Escape or window selection.
+  def handle_event("sidebar:open", _params, socket) do
+    {:noreply, assign(socket, :window_sidebar_open?, true)}
   end
 
-  def handle_event("view:set_window_picker", _params, socket), do: {:noreply, socket}
+  def handle_event("sidebar:close", _params, socket) do
+    {:noreply, assign(socket, :window_sidebar_open?, false)}
+  end
 
   # The sheet is window-picker dominant: the keybar chip opens on the attached
   # session's window list (with a back arrow to the sessions list), falling

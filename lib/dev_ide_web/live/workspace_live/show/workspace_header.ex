@@ -94,14 +94,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             Template library
           </button>
-          <button
-            type="button"
-            phx-click="view:set_window_picker"
-            phx-value-view={next_window_picker_view(@window_picker_view)}
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            {window_picker_view_toggle_label(@window_picker_view)}
-          </button>
         <% end %>
         <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
@@ -186,14 +178,4 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
       _ -> "Workspace status: " <> to_string(workspace.status)
     end
   end
-
-  defp next_window_picker_view(:dropdown), do: "tabs"
-  defp next_window_picker_view(:tabs), do: "sidebar"
-  defp next_window_picker_view(:sidebar), do: "dropdown"
-  defp next_window_picker_view(_), do: "tabs"
-
-  defp window_picker_view_toggle_label(:dropdown), do: "Window picker as tabs"
-  defp window_picker_view_toggle_label(:tabs), do: "Window picker as sidebar"
-  defp window_picker_view_toggle_label(:sidebar), do: "Window picker as dropdown"
-  defp window_picker_view_toggle_label(_), do: "Window picker as tabs"
 end

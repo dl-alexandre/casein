@@ -211,6 +211,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       :ok ->
         {:noreply,
          socket
+         |> assign(:window_sidebar_open?, false)
          |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.acknowledge_active_quiet_window()

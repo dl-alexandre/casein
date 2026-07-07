@@ -14,7 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex min-h-0 flex-1 overflow-hidden">
-              <%= if @window_picker_view == :sidebar and length(@tmux_window_tabs) > 0 do %>
+              <%= if @window_sidebar_open? and length(@tmux_window_tabs) > 0 do %>
                 <SessionBar.window_sidebar
                   workspace_id={@workspace.id}
                   path_base={@workspace_route}

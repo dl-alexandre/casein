@@ -24,9 +24,9 @@ Mounted on the persistent workspace container so it survives tab switches.
   `<button>` in a dispatch div in the workspace LiveView, rendered outside
   the chrome block — so bindings keep working in focus mode (chrome hidden).
   Visible chrome buttons share the `phx-click` handlers but carry no
-  `data-leader-action`. Exceptions: the pickers (`C-b s` / `C-b w`) live on
-  the dropdown `<summary>` elements because they need the dropdown UI, and
-  `1`–`9` targets the window tabs — those require visible chrome.
+  `data-leader-action`. Exceptions: `C-b s` lives on the session dropdown
+  `<summary>`; `C-b w` opens the transient window sidebar beside the terminal;
+  and `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
 - The header `C-b` button toggles the same leader mode for pointer/touch users.
@@ -88,14 +88,14 @@ All of these require the `C-b` prefix first (except where noted).
 | Keys      | tmux meaning      | DevIDE action (`data-leader-action`) |
 | --------- | ----------------- | ------------------------------------ |
 | `s`       | choose session    | `session-picker` — opens the session dropdown |
-| `w`       | choose window     | `window-picker` — opens the window dropdown |
+| `w`       | choose window     | `window-picker` — opens the transient window sidebar |
 | `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
 | `c`       | new window        | `new-window`                         |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |
 | `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
 | `1`–`9`   | select window     | clicks `[data-tmux-window-index="N"]` |
-| `,`       | rename window     | `rename-window` — opens the window dropdown, starts inline rename of the active window |
+| `,`       | rename window     | `rename-window` — starts inline rename on the active window tab |
 | `$`       | rename session    | `rename-session` — opens the session dropdown, starts inline rename of the active session. Stored as the tmux user option `@devide_session_alias` (not a real `rename-session`, which would break the load-bearing `devide_<workspace>_<sid>` name). Works for any session, including the default/landing session (which renders as a normal row marked "home") |
 | `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |
 | `d`       | detach            | `detach` — returns to the workspace shell |
