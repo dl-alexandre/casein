@@ -124,6 +124,117 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
+  attr :window, :map, required: true
+  attr :picker_label?, :boolean, default: false
+  attr :name_class, :string, default: "min-w-0 truncate font-medium"
+
+  defp window_row_name(assigns) do
+    ~H"""
+    <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@window.index}</span>
+    <%= if @picker_label? do %>
+      <span data-picker-label class={@name_class}>{@window.display_name}</span>
+    <% else %>
+      <span class={@name_class}>{@window.display_name}</span>
+    <% end %>
+    """
+  end
+
+  attr :window, :map, required: true
+  attr :preview_id, :string, default: nil
+  attr :activity_id, :string, default: nil
+  attr :show_command?, :boolean, default: false
+  attr :preview_aria_hidden?, :boolean, default: false
+
+  defp window_row_indicators(assigns) do
+    ~H"""
+    <span
+      :if={@window.preview?}
+      id={@preview_id}
+      data-preview-window={@preview_id && "true"}
+      data-preview-count={@preview_id && @window.preview_count}
+      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+      title={window_preview_tooltip(@window.preview_count, @preview_aria_hidden?)}
+      aria-label={
+        if(@preview_aria_hidden?, do: nil, else: window_preview_tooltip(@window.preview_count, false))
+      }
+      aria-hidden={@preview_aria_hidden? || nil}
+    >
+      <.icon name="hero-globe-alt" class="size-3" />
+    </span>
+    <span
+      id={@activity_id}
+      data-activity-state={@activity_id && @window.activity_state}
+      class={["size-1.5 shrink-0 rounded-full", @window.activity_class]}
+      title={@window.activity_label}
+      aria-label={@window.activity_label}
+    ></span>
+    <span :if={@show_command?} class="shrink-0 font-mono text-[10px] text-base-content/45">
+      {@window.command}
+    </span>
+    """
+  end
+
+  attr :window, :map, required: true
+  attr :id_suffix, :string, default: ""
+  attr :form_class, :string, default: "ml-1 flex items-center gap-1"
+  attr :input_class, :string, required: true
+  attr :show_cancel?, :boolean, default: true
+
+  defp window_inline_rename_form(assigns) do
+    ~H"""
+    <.form
+      for={to_form(%{"id" => @window.id, "name" => @window.name}, as: :window)}
+      id={"tmux-rename-form" <> @id_suffix <> "-" <> @window.dom_frag}
+      phx-submit="tmux:rename_window"
+      class={@form_class}
+    >
+      <input type="hidden" name="window[id]" value={@window.id} />
+      <input
+        type="text"
+        id={"tmux-rename-input" <> @id_suffix <> "-" <> @window.dom_frag}
+        name="window[name]"
+        value={@window.name}
+        phx-hook="RenameInput"
+        phx-keydown="tmux:rename_cancel"
+        phx-key="Escape"
+        autocomplete="off"
+        class={@input_class}
+      />
+      <button
+        type="submit"
+        class={
+          if(@show_cancel?,
+            do: "rounded p-1 text-primary hover:bg-primary/10",
+            else: "rounded p-0.5 text-primary"
+          )
+        }
+        aria-label="Save window name"
+        title={if(@show_cancel?, do: "Save window name", else: nil)}
+      >
+        <.icon name="hero-check" class="size-3.5" />
+      </button>
+      <button
+        :if={@show_cancel?}
+        type="button"
+        phx-click="tmux:rename_cancel"
+        class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
+        title="Cancel rename"
+        aria-label="Cancel rename"
+      >
+        <.icon name="hero-x-mark" class="size-3.5" />
+      </button>
+    </.form>
+    """
+  end
+
+  defp window_preview_tooltip(count, sidebar?) do
+    if sidebar? do
+      "Preview pane open (#{count})"
+    else
+      "Preview pane open in this window (#{count})"
+    end
+  end
+
   attr :workspace_id, :string, required: true
   attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
   attr :topology_version, :integer, default: 0
@@ -173,69 +284,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class="flex min-w-0 flex-1 items-center gap-1"
               title={"Select tmux window " <> window.full_title}
             >
-              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span class="min-w-0 truncate font-medium">{window.display_name}</span>
-              <span
-                :if={window.preview?}
-                id={"tmux-window-preview-" <> window.dom_frag}
-                data-preview-window="true"
-                data-preview-count={window.preview_count}
-                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
-                title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-              >
-                <.icon name="hero-globe-alt" class="size-3" />
-              </span>
-              <span
-                id={"tmux-window-activity-" <> window.dom_frag}
-                data-activity-state={window.activity_state}
-                class={[
-                  "size-1.5 shrink-0 rounded-full",
-                  window.activity_class
-                ]}
-                title={window.activity_label}
-                aria-label={window.activity_label}
-              ></span>
-              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.command}</span>
+              <.window_row_name window={window} />
+              <.window_row_indicators
+                window={window}
+                preview_id={"tmux-window-preview-" <> window.dom_frag}
+                activity_id={"tmux-window-activity-" <> window.dom_frag}
+                show_command?
+              />
             </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
-                <.form
-                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                  id={"tmux-rename-form-" <> window.dom_frag}
-                  phx-submit="tmux:rename_window"
-                  class="ml-1 flex items-center gap-1"
-                >
-                  <input type="hidden" name="window[id]" value={window.id} />
-                  <input
-                    type="text"
-                    id={"tmux-rename-input-" <> window.dom_frag}
-                    name="window[name]"
-                    value={window.name}
-                    phx-hook="RenameInput"
-                    phx-keydown="tmux:rename_cancel"
-                    phx-key="Escape"
-                    autocomplete="off"
-                    class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                  <button
-                    type="submit"
-                    class="rounded p-1 text-primary hover:bg-primary/10"
-                    title="Save window name"
-                    aria-label="Save window name"
-                  >
-                    <.icon name="hero-check" class="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="tmux:rename_cancel"
-                    class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
-                    title="Cancel rename"
-                    aria-label="Cancel rename"
-                  >
-                    <.icon name="hero-x-mark" class="size-3.5" />
-                  </button>
-                </.form>
+                <.window_inline_rename_form
+                  window={window}
+                  input_class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
               <% else %>
                 <button
                   type="button"
@@ -332,45 +394,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-base-200/80"
               title={"Select tmux window " <> window.full_title}
             >
-              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span data-picker-label class="min-w-0 flex-1 truncate font-medium">{window.display_name}</span>
-              <span
-                :if={window.preview?}
-                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
-                title={"Preview pane open (" <> to_string(window.preview_count) <> ")"}
-                aria-hidden="true"
-              >
-                <.icon name="hero-globe-alt" class="size-3" />
-              </span>
-              <span
-                class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                title={window.activity_label}
-                aria-label={window.activity_label}
-              ></span>
+              <.window_row_name
+                window={window}
+                picker_label?
+                name_class="min-w-0 flex-1 truncate font-medium"
+              />
+              <.window_row_indicators window={window} preview_aria_hidden? />
             </a>
             <%= if @mutations_allowed? and @rename_window_id == window.id do %>
-              <.form
-                for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                id={"tmux-rename-form-sidebar-" <> window.dom_frag}
-                phx-submit="tmux:rename_window"
-                class="flex items-center gap-1 px-1"
-              >
-                <input type="hidden" name="window[id]" value={window.id} />
-                <input
-                  type="text"
-                  id={"tmux-rename-input-sidebar-" <> window.dom_frag}
-                  name="window[name]"
-                  value={window.name}
-                  phx-hook="RenameInput"
-                  phx-keydown="tmux:rename_cancel"
-                  phx-key="Escape"
-                  autocomplete="off"
-                  class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
-                />
-                <button type="submit" class="rounded p-0.5 text-primary" aria-label="Save window name">
-                  <.icon name="hero-check" class="size-3.5" />
-                </button>
-              </.form>
+              <.window_inline_rename_form
+                window={window}
+                id_suffix="-sidebar"
+                form_class="flex items-center gap-1 px-1"
+                input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
+                show_cancel?={false}
+              />
             <% end %>
           </div>
         <% end %>
