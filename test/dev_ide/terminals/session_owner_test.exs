@@ -509,6 +509,52 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert Telemetry.count_open_attachments() == baseline
   end
 
+  test "first raw attach opens cleanly with client color seeding enabled (tmux >= 3.5)" do
+    # Force the version gate open without swapping the whole adapter, so the real
+    # attach path still runs against the test tmux server. Byte-level emission is
+    # covered by the set_theme tests; here we prove the seed wired into the
+    # attachment-open branch does not break opening. Guarded on the real binary:
+    # forcing the gate open in front of an older tmux would feed the seed bytes
+    # into the pane as key input (CI pins 3.7; unpinned dev hosts may not).
+    if tmux_binary_at_least?({3, 5}) do
+      TmuxCtl.Client.put_version_cache({3, 6})
+      on_exit(&TmuxCtl.Client.reset_version_cache/0)
+      assert_first_raw_attach_opens_with_seeding()
+    end
+  end
+
+  defp tmux_binary_at_least?(minimum) do
+    with path when is_binary(path) <- System.find_executable("tmux"),
+         {out, 0} <- System.cmd(path, ["-V"], stderr_to_stdout: true),
+         [_, major, minor] <- Regex.run(~r/(\d+)\.(\d+)/, out) do
+      {String.to_integer(major), String.to_integer(minor)} >= minimum
+    else
+      _ -> false
+    end
+  end
+
+  defp assert_first_raw_attach_opens_with_seeding do
+    unique = System.unique_integer([:positive])
+    ws = "ws-seed-#{unique}"
+    sid = "seed-#{unique}"
+    info = Terminals.new_shell(ws, sid)
+    baseline = Telemetry.count_open_attachments()
+
+    {:ok, owner_pid, _} =
+      Terminals.owner_attach(ws, info,
+        mode: :raw,
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
+      )
+
+    assert Telemetry.count_open_attachments() == baseline + 1
+    assert Process.alive?(owner_pid)
+
+    assert :ok = Terminals.owner_detach(owner_pid, self())
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "duplicate attach by same subscriber is idempotent and does not duplicate attachment opens" do
     unique = System.unique_integer([:positive])
     ws = "ws-dupe-#{unique}"

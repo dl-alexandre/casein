@@ -1668,27 +1668,49 @@ defmodule TmuxCtl.Client do
   @server_version_key {__MODULE__, :server_version}
 
   @doc """
-  Best-effort tmux server version as `{major, minor}` (e.g. `{3, 4}`), or `nil`
-  when it cannot be parsed. Cached in `:persistent_term` — the binary does not
-  change under a running server, and the cutover to a new binary restarts the
-  BEAM anyway.
+  Version of the *running* tmux server as `{major, minor}` (e.g. `{3, 4}`), or
+  `nil` when no server is answering yet.
+
+  Prefers the server's own answer via `display-message -p '\#{version}'` over
+  `tmux -V`: during a version cutover the new binary is installed before the
+  old server is killed, so the binary version would over-report the running
+  server's capabilities and we would emit unsolicited color reports an old
+  server parses as key input. Only a server answer is cached. When no server
+  answers (cold start — the very attach being gated is what starts it) the
+  binary version is returned uncached: with no server running it is the
+  version any server spawned from this binary will have, and leaving it
+  uncached lets a later-reachable server's answer take over.
   """
   @spec server_version() :: {non_neg_integer(), non_neg_integer()} | nil
   def server_version do
     case :persistent_term.get(@server_version_key, :miss) do
-      :miss ->
-        version = detect_server_version()
-        :persistent_term.put(@server_version_key, version)
-        version
+      {_major, _minor} = cached ->
+        cached
 
-      version ->
-        version
+      _ ->
+        case detect_server_version() do
+          {_major, _minor} = version ->
+            :persistent_term.put(@server_version_key, version)
+            version
+
+          nil ->
+            detect_binary_version()
+        end
     end
   end
 
   defp detect_server_version do
+    case run(["display-message", "-p", "\#{version}"]) do
+      {out, 0} -> parse_server_version(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp detect_binary_version do
     # `tmux -V` is answered during early argument parsing, before any server
-    # connection or config load, so the server label / `-f` flags are harmless.
+    # connection or config load, so it works with no server running.
     case run(["-V"]) do
       {out, 0} -> parse_server_version(out)
       _ -> nil
@@ -1708,6 +1730,14 @@ defmodule TmuxCtl.Client do
   @spec reset_version_cache() :: :ok
   def reset_version_cache do
     :persistent_term.erase(@server_version_key)
+    :ok
+  end
+
+  # Test seam: force the cached version without knowing the private cache key.
+  @doc false
+  @spec put_version_cache({non_neg_integer(), non_neg_integer()}) :: :ok
+  def put_version_cache({_major, _minor} = version) do
+    :persistent_term.put(@server_version_key, version)
     :ok
   end
 

@@ -7,11 +7,11 @@
 #   * CI runners (deploy-devbox.yml / pty-tests.yml) so the :pty suite runs
 #     against the same tmux the devbox will run — set TMUX_PREFIX to a
 #     cacheable, user-writable dir and TMUX_INSTALL_SUDO="".
-#   * The devbox host during the 3.6b cutover window — default prefix
-#     /usr/local so the binary precedes the apt tmux in /usr/bin.
+#   * The devbox host — default prefix /usr/local so the binary precedes the
+#     apt tmux in /usr/bin.
 #
 # Env:
-#   TMUX_VERSION       tmux release tag to build (default 3.6b)
+#   TMUX_VERSION       tmux release tag to build (default 3.7)
 #   TMUX_PREFIX        install prefix (default /usr/local)
 #   TMUX_INSTALL_SUDO  sudo command for the privileged `make install` step
 #                      (default "sudo"; set to "" when PREFIX is user-writable).
@@ -20,12 +20,12 @@
 #                      independent of this setting.
 set -euo pipefail
 
-TMUX_VERSION="${TMUX_VERSION:-3.6b}"
+TMUX_VERSION="${TMUX_VERSION:-3.7}"
 PREFIX="${TMUX_PREFIX:-/usr/local}"
 SUDO="${TMUX_INSTALL_SUDO-sudo}"
 
-# tmux reports "3.6b" from `tmux -V`; the version-detection code parses the
-# leading MAJOR.MINOR, so "3.6b" and "3.6" are equivalent for capability gating.
+# `tmux -V` may include a maintenance suffix (e.g. "3.6b"); version detection
+# parses the leading MAJOR.MINOR only, so "3.7" and "3.6b" gate the same way.
 existing=""
 if [[ -x "${PREFIX}/bin/tmux" ]]; then
   existing="$("${PREFIX}/bin/tmux" -V 2>/dev/null || true)"

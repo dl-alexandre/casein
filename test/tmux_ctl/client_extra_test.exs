@@ -23,7 +23,11 @@ defmodule TmuxCtl.ClientExtraTest do
     @impl true
     def run(argv, _opts) when is_list(argv) do
       if pid = FakeState.get(:fake_tmux_runner_pid), do: send(pid, {:tmux_runner, argv})
-      FakeState.get(:script_response, {"", 0})
+
+      case FakeState.get(:script_responses) do
+        %{} = by_head when is_map_key(by_head, hd(argv)) -> Map.fetch!(by_head, hd(argv))
+        _ -> FakeState.get(:script_response, {"", 0})
+      end
     end
 
     def argv(argv, _opts), do: FakeState.get(:script_argv, ["tmux" | argv])
@@ -36,6 +40,7 @@ defmodule TmuxCtl.ClientExtraTest do
       default_command: Application.get_env(:tmux_ctl, :default_command),
       pid: FakeState.get(:fake_tmux_runner_pid),
       script: FakeState.get(:script_response),
+      script_responses: FakeState.get(:script_responses),
       script_argv: FakeState.get(:script_argv)
     }
 
@@ -47,6 +52,7 @@ defmodule TmuxCtl.ClientExtraTest do
     on_exit(fn ->
       FakeState.restore(:fake_tmux_runner_pid, previous.pid)
       FakeState.restore(:script_response, previous.script)
+      FakeState.restore(:script_responses, previous.script_responses)
       FakeState.restore(:script_argv, previous.script_argv)
 
       if previous.runner,
@@ -67,6 +73,10 @@ defmodule TmuxCtl.ClientExtraTest do
 
   defp script(out, code), do: FakeState.put(:script_response, {out, code})
 
+  # Scripts distinct responses per argv head (e.g. "display-message" vs "-V").
+  defp script_by_head(by_head) when is_map(by_head),
+    do: FakeState.put(:script_responses, by_head)
+
   # --- server_version/0 -------------------------------------------------------
 
   describe "server_version/0" do
@@ -76,25 +86,57 @@ defmodule TmuxCtl.ClientExtraTest do
       :ok
     end
 
-    test "parses a stable release" do
-      script("tmux 3.4\n", 0)
+    test "queries the running server, not the binary" do
+      script("3.4\n", 0)
       assert Client.server_version() == {3, 4}
-      assert_receive {:tmux_runner, ["-V"]}
+      # `display-message #{version}` reports the attached server's version; the
+      # binary (`tmux -V`) may differ mid-cutover and must not be used.
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
     end
 
-    test "parses a maintenance-suffixed release (3.6b)" do
-      script("tmux 3.6b\n", 0)
+    test "parses a maintenance-suffixed release" do
+      script("3.6a\n", 0)
       assert Client.server_version() == {3, 6}
     end
 
+    test "parses the pinned host release (3.7)" do
+      script("3.7\n", 0)
+      assert Client.server_version() == {3, 7}
+    end
+
     test "parses a next- prerelease" do
-      script("tmux next-3.7\n", 0)
+      script("next-3.7\n", 0)
       assert Client.server_version() == {3, 7}
     end
 
     test "is nil on a non-zero exit" do
-      script("tmux: unknown option\n", 1)
+      script("no server on\n", 1)
       assert Client.server_version() == nil
+    end
+
+    test "falls back to the binary version, uncached, when no server answers" do
+      script_by_head(%{
+        "display-message" => {"no server running\n", 1},
+        "-V" => {"tmux 3.7\n", 0}
+      })
+
+      assert Client.server_version() == {3, 7}
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
+      assert_receive {:tmux_runner, ["-V"]}
+
+      # The fallback is never cached: once a server answers, its version wins
+      # (mid-cutover the running server may be older than the binary).
+      script_by_head(%{
+        "display-message" => {"3.4\n", 0},
+        "-V" => {"tmux 3.7\n", 0}
+      })
+
+      assert Client.server_version() == {3, 4}
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
+
+      # ...and the server answer IS cached: a third call never hits the runner.
+      assert Client.server_version() == {3, 4}
+      refute_received {:tmux_runner, _}
     end
 
     test "is nil on unparseable output" do
@@ -102,16 +144,25 @@ defmodule TmuxCtl.ClientExtraTest do
       assert Client.server_version() == nil
     end
 
-    test "caches after the first probe" do
-      script("tmux 3.6b\n", 0)
+    test "does not cache a failed probe" do
+      script("no server on\n", 1)
+      assert Client.server_version() == nil
+
+      # A failure must not stick — once the server answers, the next call sees it.
+      script("3.6\n", 0)
       assert Client.server_version() == {3, 6}
-      assert_receive {:tmux_runner, ["-V"]}
+    end
+
+    test "caches a successful probe" do
+      script("3.6\n", 0)
+      assert Client.server_version() == {3, 6}
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
 
       # A later probe would report differently, but the cached value stands and
-      # no second `tmux -V` is spawned.
-      script("tmux 3.4\n", 0)
+      # no second query is spawned.
+      script("3.4\n", 0)
       assert Client.server_version() == {3, 6}
-      refute_receive {:tmux_runner, ["-V"]}
+      refute_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
     end
   end
 

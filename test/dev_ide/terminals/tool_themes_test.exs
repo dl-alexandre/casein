@@ -50,10 +50,38 @@ defmodule DevIDE.Terminals.ToolThemesTest do
       assert File.stat!(path, time: :universal).mtime == @stale
     end
 
+    test "restores same-size drift landing within the mtime granularity", %{home: home} do
+      assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
+      path = elio_path(home)
+      %File.Stat{mtime: mtime} = File.stat!(path, time: :universal)
+
+      # Same byte size, same mtime: invisible to a stat fingerprint, only the
+      # content hash can tell the file drifted.
+      desired = elio_desired_content()
+      drifted = binary_part(desired, 0, byte_size(desired) - 2) <> "X\n"
+      File.write!(path, drifted)
+      File.touch!(path, mtime)
+
+      assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
+      assert File.read!(path) == desired
+    end
+
     test "restores a drifted marker-carrying file", %{home: home} do
       path = elio_path(home)
       File.mkdir_p!(Path.dirname(path))
       File.write!(path, ToolThemes.marker() <> "\ntext = \"ansi-red\"\n")
+
+      assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
+      assert File.read!(path) == elio_desired_content()
+    end
+
+    test "restores a marker-carrying file that drifts after a memoized success", %{home: home} do
+      assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
+      assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
+
+      path = elio_path(home)
+      File.write!(path, ToolThemes.marker() <> "\ntext = \"ansi-red\"\n")
+      File.touch!(path, @stale)
 
       assert :ok = ToolThemes.ensure("elio", elio_spec(), :dark)
       assert File.read!(path) == elio_desired_content()
@@ -65,6 +93,7 @@ defmodule DevIDE.Terminals.ToolThemesTest do
       user_content = "[palette]\ntext = \"ansi-red\"\n"
       File.write!(path, user_content)
 
+      assert {:skipped, :user_managed} = ToolThemes.ensure("elio", elio_spec(), :dark)
       assert {:skipped, :user_managed} = ToolThemes.ensure("elio", elio_spec(), :dark)
       assert File.read!(path) == user_content
     end
@@ -117,6 +146,18 @@ defmodule DevIDE.Terminals.ToolThemesTest do
 
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
       assert File.stat!(path, time: :universal).mtime == @stale
+    end
+
+    test "re-stamps a hand-edited theme after a memoized success", %{home: home} do
+      assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
+      assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
+
+      path = grok_path(home)
+      File.write!(path, "[ui]\ntheme = \"hand-edited\"\nscroll = true\n")
+      File.touch!(path, @stale)
+
+      assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
+      assert File.read!(path) == "[ui]\ntheme = \"groknight\"\nscroll = true\n"
     end
 
     test "preserves unrelated content byte-for-byte", %{home: home} do

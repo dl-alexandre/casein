@@ -83,23 +83,21 @@ defmodule DevIDE.Terminals.ToolThemes do
     target = expand_path(path)
     hash = :erlang.phash2({target, scheme, desired})
 
-    if memo_hit?(name, hash) and File.exists?(target) do
-      :ok
-    else
+    with nil <- memoized_result(name, hash, target) do
       case File.read(target) do
         {:error, :enoent} ->
           write!(target, desired)
-          memoize(name, hash)
+          memoize(name, hash, desired, :ok)
 
         {:ok, ^desired} ->
-          memoize(name, hash)
+          memoize(name, hash, desired, :ok)
 
         {:ok, existing} ->
           if first_line(existing) == @marker do
             write!(target, desired)
-            memoize(name, hash)
+            memoize(name, hash, desired, :ok)
           else
-            {:skipped, :user_managed}
+            memoize(name, hash, existing, {:skipped, :user_managed})
           end
 
         {:error, reason} ->
@@ -117,21 +115,25 @@ defmodule DevIDE.Terminals.ToolThemes do
     target = expand_path(path)
     hash = :erlang.phash2({target, scheme, value})
 
-    if memo_hit?(name, hash) and File.exists?(target) do
-      :ok
-    else
+    with nil <- memoized_result(name, hash, target) do
       case File.read(target) do
         {:error, :enoent} ->
-          write!(target, stamp_toml(nil, section, key, value))
-          memoize(name, hash)
+          stamped = stamp_toml(nil, section, key, value)
+          write!(target, stamped)
+          memoize(name, hash, stamped, :ok)
 
         {:ok, existing} ->
-          case stamp_toml(existing, section, key, value) do
-            ^existing -> :ok
-            stamped -> write!(target, stamped)
-          end
+          content =
+            case stamp_toml(existing, section, key, value) do
+              ^existing ->
+                existing
 
-          memoize(name, hash)
+              stamped ->
+                write!(target, stamped)
+                stamped
+            end
+
+          memoize(name, hash, content, :ok)
 
         {:error, reason} ->
           {:error, reason}
@@ -236,14 +238,30 @@ defmodule DevIDE.Terminals.ToolThemes do
     error -> {:error, error}
   end
 
-  defp memo_hit?(name, hash) do
-    :persistent_term.get(memo_key(name), nil) == hash
+  # The memo stores `{desired_hash, content_hash, result}`: the result is only
+  # trusted while the on-disk bytes still hash to the content that was last
+  # verified. Hashing the bytes the verify path actually read or wrote — not a
+  # stat taken afterwards — means an external rewrite misses the memo even when
+  # it lands in the same second with the same size, or between verify and
+  # memoize, so managed drift is restored within the same BEAM lifetime, not
+  # just after restarts.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp memoized_result(name, hash, target) do
+    with {^hash, content_hash, result} <- :persistent_term.get(memo_key(name), nil),
+         {:ok, content} <- File.read(target),
+         ^content_hash <- content_hash(content) do
+      result
+    else
+      _ -> nil
+    end
   end
 
-  defp memoize(name, hash) do
-    :persistent_term.put(memo_key(name), hash)
-    :ok
+  defp memoize(name, hash, content, result) do
+    :persistent_term.put(memo_key(name), {hash, content_hash(content), result})
+    result
   end
+
+  defp content_hash(content), do: :crypto.hash(:sha256, content)
 
   # Logs once per unique failure per tool; repeated identical failures on
   # every pane spawn or scheme change would otherwise flood the log.
