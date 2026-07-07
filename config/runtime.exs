@@ -479,6 +479,33 @@ if config_env() == :prod and not release_cli? do
          :tmux_session_idle_seconds,
          positive_integer_env.("DEV_IDE_TMUX_SESSION_IDLE_SECONDS")
 
+  # Agent-worktree runtime reaper: expires stale `terminal_report_worktree`
+  # records and tears down clean, idle worktrees so the pane picker does not
+  # accumulate one tab per agent launch. Enabled by default in prod; set
+  # DEVIDE_RUNTIME_REAPER_ENABLED=0 to disable or DRY_RUN=1 for log-only.
+  runtime_reaper_enabled? =
+    case System.get_env("DEVIDE_RUNTIME_REAPER_ENABLED") do
+      value when value in ~w(0 false FALSE no NO off OFF) -> false
+      _ -> true
+    end
+
+  runtime_reaper_dry_run? =
+    case System.get_env("DEVIDE_RUNTIME_REAPER_DRY_RUN") do
+      value when value in ~w(1 true TRUE yes YES on ON) -> true
+      _ -> false
+    end
+
+  config :dev_ide, :runtime_reaper_enabled, runtime_reaper_enabled?
+  config :dev_ide, :runtime_reaper_dry_run, runtime_reaper_dry_run?
+
+  config :dev_ide,
+         :runtime_reaper_ttl_seconds,
+         positive_integer_env.("DEVIDE_RUNTIME_REAPER_TTL_SECONDS") || 6 * 60 * 60
+
+  config :dev_ide,
+         :runtime_reaper_sweep_interval_ms,
+         positive_integer_env.("DEVIDE_RUNTIME_REAPER_SWEEP_INTERVAL_MS") || 3_600_000
+
   deployment_config =
     :dev_ide
     |> Application.get_env(:deployment, [])

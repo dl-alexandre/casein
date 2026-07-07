@@ -130,6 +130,8 @@ config :dev_ide,
   manager_req_options: [plug: {Req.Test, DevIDE.Integrations.Manager.Client}],
   device_link_ttl_seconds: 3_600,
   device_link_reaper_enabled: false,
+  runtime_reaper_enabled: false,
+  runtime_reaper_dry_run: true,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.
