@@ -103,8 +103,8 @@ defmodule DevIdeWeb.Plugs.McpRateLimit do
   end
 
   defp token_fingerprint(conn) do
-    case DevIdeWeb.AuthHeader.bearer_token(conn) do
-      token when is_binary(token) and byte_size(token) > 0 ->
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] when is_binary(token) and byte_size(token) > 0 ->
         :crypto.hash(:sha256, token)
         |> Base.encode16(case: :lower)
         |> binary_part(0, 16)

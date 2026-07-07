@@ -50,7 +50,6 @@ defmodule DevIdeWeb.Endpoint do
     cookie_key: "request_logger"
 
   plug Plug.RequestId
-  plug DevIdeWeb.Plugs.ScrubLoggedHeaders
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
   plug :reject_oversized_mcp_body
 
@@ -171,7 +170,12 @@ defmodule DevIdeWeb.Endpoint do
     end
   end
 
-  defp bearer_token(conn), do: DevIdeWeb.AuthHeader.bearer_token(conn)
+  defp bearer_token(conn) do
+    case Plug.Conn.get_req_header(conn, "authorization") do
+      ["Bearer " <> token] -> token
+      _ -> nil
+    end
+  end
 
   defp global_token?(token) do
     [

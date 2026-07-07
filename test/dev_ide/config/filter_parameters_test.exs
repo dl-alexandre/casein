@@ -2,10 +2,6 @@ defmodule DevIDE.Config.FilterParametersTest do
   use DevIdeWeb.ConnCase, async: false
 
   import ExUnit.CaptureLog
-  import Plug.Conn
-  import Plug.Test
-
-  alias DevIdeWeb.Plugs.ScrubLoggedHeaders
 
   @token "filter-log-test-token"
 
@@ -59,19 +55,7 @@ defmodule DevIDE.Config.FilterParametersTest do
     end
   end
 
-  test "ScrubLoggedHeaders preserves bearer for auth while scrubbing req_headers" do
-    conn =
-      :get
-      |> conn("/api/terminals/mcp")
-      |> put_req_header("authorization", "Bearer header-secret-token")
-      |> ScrubLoggedHeaders.call([])
-
-    assert DevIdeWeb.AuthHeader.bearer_token(conn) == "header-secret-token"
-    assert {"authorization", "[FILTERED]"} in conn.req_headers
-    refute conn.req_headers |> Enum.any?(fn {_, v} -> v == "header-secret-token" end)
-  end
-
-  test "router dispatch log does not emit raw bearer tokens or filtered params", %{conn: conn} do
+  test "MCP router dispatch log does not emit raw bearer tokens or filtered params", %{conn: conn} do
     log =
       capture_log(fn ->
         conn
@@ -92,5 +76,36 @@ defmodule DevIDE.Config.FilterParametersTest do
 
     refute log =~ @token
     refute log =~ "body-secret-token"
+  end
+
+  test "Phoenix router dispatch logs omit Authorization headers (params-only logging)" do
+    conn =
+      :post
+      |> Plug.Test.conn("/api/terminals/mcp", %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "initialize"
+      })
+      |> Plug.Conn.put_req_header("authorization", "Bearer header-only-secret")
+
+    log =
+      capture_log(fn ->
+        :telemetry.execute(
+          [:phoenix, :router_dispatch, :start],
+          %{system_time: System.system_time()},
+          %{
+            conn: conn,
+            log: :info,
+            plug: DevIdeWeb.API.TerminalMCPController,
+            plug_opts: :mcp,
+            pipe_through: [:mcp_api],
+            path_params: %{},
+            route: "/api/terminals/mcp"
+          }
+        )
+      end)
+
+    refute log =~ "header-only-secret"
+    refute log =~ "Bearer"
   end
 end
