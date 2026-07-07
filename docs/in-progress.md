@@ -12,7 +12,7 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 |-------|-------|
 | **Owner** | dalexandre / Grok |
 | **Branch** | `agent/grok/sidebar-cleanup-20260707` |
-| **Status** | In progress — post-#131 hygiene (testable filter helper landed; dedup window row markup next). |
+| **Status** | Awaiting gate — filter helper + session_bar window-row dedup landed. |
 | **Paths (frozen)** | `assets/js/window_picker_sidebar.js`, `assets/js/window_picker_sidebar_utils.mjs`, `assets/test/window_picker_sidebar.test.mjs`, `lib/dev_ide_web/live/workspace_live/show/session_bar.ex` |
 
 Direction of record: finish sidebar cleanup after #131 — keep keyboard/filter
