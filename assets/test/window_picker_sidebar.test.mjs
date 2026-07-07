@@ -4,21 +4,13 @@ import assert from "node:assert/strict"
 import {itemFilterText, matchesPickerFilter} from "../js/window_picker_sidebar_utils.mjs"
 
 function mockPickerItem({index = "", label = ""} = {}) {
-  const item = document.createElement("a")
-
-  if (index !== "") {
-    const indexEl = document.createElement("span")
-    indexEl.className = "font-mono"
-    indexEl.textContent = index
-    item.appendChild(indexEl)
+  return {
+    querySelector(selector) {
+      if (selector === "[data-picker-label]") return {textContent: label}
+      if (selector === ".font-mono" && index !== "") return {textContent: index}
+      return null
+    },
   }
-
-  const labelEl = document.createElement("span")
-  labelEl.setAttribute("data-picker-label", "")
-  labelEl.textContent = label
-  item.appendChild(labelEl)
-
-  return item
 }
 
 test("itemFilterText lowercases index and label", () => {
