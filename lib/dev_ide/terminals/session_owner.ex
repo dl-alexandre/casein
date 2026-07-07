@@ -741,18 +741,37 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp maybe_resize_tmux_window(state, _cols, _rows), do: state
 
   defp start_tmux_resize(%{workspace_key: key, info: %{sid: sid}} = state, {cols, rows} = size) do
-    session = Tmux.session_name(key, sid)
-    # Resolve inside the owner (not the task) so test adapter swaps are stable.
-    tmux = DevIDE.Terminals.tmux_adapter()
+    # A draining instance must not write to shared tmux state: its owners can
+    # outlive the deploy handoff for as long as a stale browser tab holds a
+    # connection (up to the drain hard-timeout), and the replacement instance's
+    # owners are already asserting the live viewers' sizes. Both writing means
+    # the two releases ping-pong `resize-window` against each other every drift
+    # tick — the operator sees the window snap between sizes twice a minute.
+    if draining?() do
+      state
+    else
+      session = Tmux.session_name(key, sid)
+      # Resolve inside the owner (not the task) so test adapter swaps are stable.
+      tmux = DevIDE.Terminals.tmux_adapter()
 
-    task =
-      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
-        _ = tmux.resize_window(session, cols, rows)
-        _ = tmux.refresh_client(session)
-        :ok
-      end)
+      task =
+        Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+          _ = tmux.resize_window(session, cols, rows)
+          _ = tmux.refresh_client(session)
+          :ok
+        end)
 
-    %{state | tmux_resize: %{ref: task.ref, size: size}}
+      %{state | tmux_resize: %{ref: task.ref, size: size}}
+    end
+  end
+
+  # Deployment.Drain may not be running (tests boot slimmed supervision
+  # trees); a missing or busy drain server must never take an owner down or
+  # block a resize, so degrade to "not draining".
+  defp draining? do
+    DevIDE.Deployment.Drain.draining?()
+  catch
+    :exit, _ -> false
   end
 
   # Compare tmux's live window against `applied_size` and re-assert when an
@@ -761,6 +780,18 @@ defmodule DevIDE.Terminals.SessionOwner do
          %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
        )
        when is_binary(key) and is_binary(sid) and is_tuple(size) do
+    if draining?() do
+      # See start_tmux_resize/2: a draining instance's applied_size is stale by
+      # definition — the replacement instance owns the shared size now.
+      state
+    else
+      do_assert_tmux_window_size(state, size)
+    end
+  end
+
+  defp assert_tmux_window_size(state), do: state
+
+  defp do_assert_tmux_window_size(%{workspace_key: key, info: %{sid: sid}} = state, size) do
     {cols, rows} = size
     session = Tmux.session_name(key, sid)
     tmux = DevIDE.Terminals.tmux_adapter()
@@ -781,8 +812,6 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
     end
   end
-
-  defp assert_tmux_window_size(state), do: state
 
   defp schedule_tmux_drift_check(%{workspace_key: key, info: %{sid: sid}} = state)
        when is_binary(key) and is_binary(sid) do

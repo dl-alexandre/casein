@@ -944,6 +944,42 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "a draining instance stops asserting sizes onto shared tmux state" do
+    # An old release's owners outlive the deploy handoff while stale browser
+    # tabs hold connections; if they keep re-asserting their (stale)
+    # applied_size, the old and new instances ping-pong resize-window against
+    # each other every drift tick. Once draining, drift checks and viewer
+    # resizes must not write to tmux.
+    swap_in_fake_tmux_adapter()
+
+    unique = "drain-guard-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-drain-guard", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-drain-guard", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-drain-guard", applied_size: {120, 40}}
+    end)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{
+      "devide_ws-drain-guard_sid-#{unique}" => {80, 24}
+    })
+
+    :ok = DevIDE.Deployment.Drain.start_drain(1)
+    on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
+
+    send(owner_pid, :tmux_drift_check)
+    refute_receive {:fake_tmux_resize_window, _, _, _}, 200
+
+    # A viewer resize arriving mid-drain must also stay off shared tmux.
+    GenServer.cast(owner_pid, {:viewer_active, self(), true})
+    GenServer.cast(owner_pid, {:resize, self(), 130, 41})
+    refute_receive {:fake_tmux_resize_window, _, _, _}, 200
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "tmux resizes are single-flight, coalesce to latest, and end with a refresh heal" do
     swap_in_fake_tmux_adapter()
 
