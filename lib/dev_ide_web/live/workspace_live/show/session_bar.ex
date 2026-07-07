@@ -127,10 +127,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :window, :map, required: true
   attr :picker_label?, :boolean, default: false
   attr :name_class, :string, default: "min-w-0 truncate font-medium"
+  attr :index_class, :string, default: "shrink-0 font-mono text-[10px] text-base-content/45"
 
   defp window_row_name(assigns) do
     ~H"""
-    <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@window.index}</span>
+    <span class={@index_class}>{@window.index}</span>
     <%= if @picker_label? do %>
       <span data-picker-label class={@name_class}>{@window.display_name}</span>
     <% else %>
@@ -142,8 +143,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :window, :map, required: true
   attr :preview_id, :string, default: nil
   attr :activity_id, :string, default: nil
+  attr :quiet_id, :string, default: nil
   attr :show_command?, :boolean, default: false
   attr :preview_aria_hidden?, :boolean, default: false
+  attr :hide_activity_when_quiet?, :boolean, default: false
+  attr :command_picker_label?, :boolean, default: false
+  attr :command_class, :string, default: "shrink-0 font-mono text-[10px] text-base-content/45"
 
   defp window_row_indicators(assigns) do
     ~H"""
@@ -162,23 +167,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <.icon name="hero-globe-alt" class="size-3" />
     </span>
     <span
+      :if={@window.quiet? and is_binary(@quiet_id)}
+      id={@quiet_id}
+      data-quiet="true"
+      data-attention={@window.attention}
+      class={quiet_badge_class(@window.attention)}
+      title={window_quiet_badge_label(@window)}
+      aria-label={window_quiet_badge_label(@window)}
+    ></span>
+    <span
+      :if={window_row_show_activity?(@hide_activity_when_quiet?, @window)}
       id={@activity_id}
       data-activity-state={@activity_id && @window.activity_state}
       class={["size-1.5 shrink-0 rounded-full", @window.activity_class]}
       title={@window.activity_label}
       aria-label={@window.activity_label}
     ></span>
-    <span :if={@show_command?} class="shrink-0 font-mono text-[10px] text-base-content/45">
+    <span
+      :if={@show_command? and @command_picker_label?}
+      data-picker-label
+      class={@command_class}
+    >
+      {@window.command}
+    </span>
+    <span :if={@show_command? and not @command_picker_label?} class={@command_class}>
       {@window.command}
     </span>
     """
   end
 
+  defp window_row_show_activity?(true, %{quiet?: true}), do: false
+  defp window_row_show_activity?(_hide_when_quiet?, _window), do: true
+
   attr :window, :map, required: true
   attr :id_suffix, :string, default: ""
+  attr :input_id_prefix, :string, default: "tmux-rename-input"
   attr :form_class, :string, default: "ml-1 flex items-center gap-1"
   attr :input_class, :string, required: true
   attr :show_cancel?, :boolean, default: true
+  attr :submit_phx_click, :any, default: nil
+  attr :cancel_phx_click, :any, default: nil
 
   defp window_inline_rename_form(assigns) do
     ~H"""
@@ -191,7 +219,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <input type="hidden" name="window[id]" value={@window.id} />
       <input
         type="text"
-        id={"tmux-rename-input" <> @id_suffix <> "-" <> @window.dom_frag}
+        id={@input_id_prefix <> @id_suffix <> "-" <> @window.dom_frag}
         name="window[name]"
         value={@window.name}
         phx-hook="RenameInput"
@@ -202,6 +230,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       />
       <button
         type="submit"
+        phx-click={@submit_phx_click}
         class={
           if(@show_cancel?,
             do: "rounded p-1 text-primary hover:bg-primary/10",
@@ -216,7 +245,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <button
         :if={@show_cancel?}
         type="button"
-        phx-click="tmux:rename_cancel"
+        phx-click={@cancel_phx_click || "tmux:rename_cancel"}
         class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
         title="Cancel rename"
         aria-label="Cancel rename"
@@ -1045,39 +1074,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 class="relative flex min-w-0 flex-1 items-center gap-1"
                 title={"Select tmux window " <> window.full_title}
               >
-                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span data-picker-label class="max-w-32 truncate font-medium">{window.display_name}</span>
-                <span
-                  :if={window.preview?}
-                  id={"tmux-window-preview-" <> window.dom_frag}
-                  data-preview-window="true"
-                  data-preview-count={window.preview_count}
-                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
-                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                >
-                  <.icon name="hero-globe-alt" class="size-3" />
-                </span>
-                <span
-                  :if={window.quiet?}
-                  id={"tmux-window-quiet-" <> window.dom_frag}
-                  data-quiet="true"
-                  data-attention={window.attention}
-                  class={quiet_badge_class(window.attention)}
-                  title={window_quiet_badge_label(window)}
-                  aria-label={window_quiet_badge_label(window)}
-                ></span>
-                <span
-                  :if={not window.quiet?}
-                  id={"tmux-window-activity-" <> window.dom_frag}
-                  data-activity-state={window.activity_state}
-                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                  title={window.activity_label}
-                  aria-label={window.activity_label}
-                ></span>
-                <span data-picker-label class="font-mono text-[10px] text-base-content/40">
-                  {window.command}
-                </span>
+                <.window_row_name
+                  window={window}
+                  picker_label?
+                  index_class="font-mono text-[10px] text-base-content/40"
+                  name_class="max-w-32 truncate font-medium"
+                />
+                <.window_row_indicators
+                  window={window}
+                  preview_id={"tmux-window-preview-" <> window.dom_frag}
+                  quiet_id={"tmux-window-quiet-" <> window.dom_frag}
+                  activity_id={"tmux-window-activity-" <> window.dom_frag}
+                  hide_activity_when_quiet?
+                  show_command?
+                  command_picker_label?
+                  command_class="font-mono text-[10px] text-base-content/40"
+                />
               </a>
               <.copy_link_button
                 url={window_share_url(@workspace_id, @share_session_id, window.id, @path_base)}
@@ -1107,44 +1119,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </button>
               <%= if @mutations_allowed? do %>
                 <%= if @rename_window_id == window.id do %>
-                  <.form
-                    for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                    id={"tmux-rename-form-" <> window.dom_frag}
-                    phx-submit="tmux:rename_window"
-                    class="ml-1 flex items-center gap-1"
-                  >
-                    <input type="hidden" name="window[id]" value={window.id} />
-                    <input
-                      type="text"
-                      id={"tmux-rename-dropdown-input-" <> window.dom_frag}
-                      name="window[name]"
-                      value={window.name}
-                      phx-hook="RenameInput"
-                      phx-keydown="tmux:rename_cancel"
-                      phx-key="Escape"
-                      autocomplete="off"
-                      class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                    <button
-                      type="submit"
-                      phx-click={JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")}
-                      class="rounded p-1 text-primary hover:bg-primary/10"
-                      title="Save window name"
-                    >
-                      <.icon name="hero-check" class="size-3" />
-                    </button>
-                    <button
-                      type="button"
-                      phx-click={
-                        JS.push("tmux:rename_cancel")
-                        |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                      }
-                      class="rounded p-1 text-base-content/45 hover:bg-base-200"
-                      title="Cancel rename"
-                    >
-                      <.icon name="hero-x-mark" class="size-3" />
-                    </button>
-                  </.form>
+                  <.window_inline_rename_form
+                    window={window}
+                    input_id_prefix="tmux-rename-dropdown-input"
+                    input_class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    submit_phx_click={
+                      JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                    }
+                    cancel_phx_click={
+                      JS.push("tmux:rename_cancel")
+                      |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                    }
+                  />
                 <% else %>
                   <button
                     type="button"
