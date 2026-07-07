@@ -43,6 +43,20 @@ defmodule DevIDE.Terminals.Telemetry do
     end
   end
 
+  @doc "Pids of live `:shell` SessionOwner processes."
+  def shell_owner_pids do
+    ensure_table!()
+
+    :ets.tab2list(@table_name)
+    |> Enum.flat_map(fn
+      {{:owner_key, pid}, {:terminal_owner, :shell, _, _}} when is_pid(pid) ->
+        if Process.alive?(pid), do: [pid], else: []
+
+      _ ->
+        []
+    end)
+  end
+
   @doc "Returns a list of {owner_key, subscriber_count} for active owners."
   def subscribers_per_owner do
     ensure_table!()

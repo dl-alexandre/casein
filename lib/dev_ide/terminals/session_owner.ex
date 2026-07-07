@@ -216,6 +216,25 @@ defmodule DevIDE.Terminals.SessionOwner do
     GenServer.call(owner_pid, :subscriber_count)
   end
 
+  @doc """
+  True when a live `:shell` SessionOwner still backs `tmux_session`.
+
+  Used by `TmuxJanitor` so opt-in idle GC cannot destroy durable workspace
+  shells after the last LiveView subscriber detaches.
+  """
+  @spec durable_shell_session?(String.t()) :: boolean()
+  def durable_shell_session?(tmux_session) when is_binary(tmux_session) do
+    Enum.any?(Telemetry.shell_owner_pids(), fn pid ->
+      tmux_session == tmux_session_name(pid)
+    end)
+  end
+
+  defp tmux_session_name(pid) do
+    GenServer.call(pid, :tmux_session_name)
+  catch
+    :exit, _ -> nil
+  end
+
   @impl true
   def init({workspace_id, info}) do
     Logger.info("terminal owner started",
@@ -347,6 +366,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   # Terminals.owner_subscriber_count/1 delegate (used by presence/UX/telemetry).
   def handle_call(:subscriber_count, _from, state) do
     {:reply, map_size(state.subscribers), state}
+  end
+
+  def handle_call(:tmux_session_name, _from, %{workspace_key: key, info: %{sid: sid}} = state) do
+    {:reply, tmux_session_name_for(key, sid), state}
   end
 
   def handle_call({:resize, cols, rows}, _from, state)
@@ -1526,4 +1549,10 @@ defmodule DevIDE.Terminals.SessionOwner do
       _ -> false
     end
   end
+
+  defp tmux_session_name_for(key, sid)
+       when is_binary(key) and is_binary(sid) and sid != "",
+       do: Tmux.session_name(key, sid)
+
+  defp tmux_session_name_for(_key, _sid), do: nil
 end
