@@ -69,6 +69,18 @@ config :dev_ide, DevIdeWeb.Endpoint,
 # the servers stay isolated; resolved by DevIDE.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_test"
 
+# Keep test-boot deployment heartbeats out of the real /run/devide/instances.
+# Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
+# them, so an unsandboxed `mix test` boot would overwrite that live canary's
+# heartbeat with the test VM's pid — the deploy then reads a dead pid, drops
+# the record as stale, and never drains the still-running canary.
+# Keyed by OS pid, not MIX_TEST_PARTITION: concurrent agent test runs on the
+# devbox share partition "0" and inherit the same DEVIDE_INSTANCE_UUID, so a
+# shared dir would trip the registry's ownership guard across suites.
+config :dev_ide,
+       :deployment_instance_dir,
+       Path.join(System.tmp_dir!(), "devide-test-instances-#{System.pid()}")
+
 # Keep runtime-minted workspace tokens (DevIDE.Agents.WorkspaceTokens) out of
 # the real ~/.devide store when tests exercise the materializer/pane env.
 config :dev_ide,

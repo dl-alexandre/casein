@@ -50,6 +50,34 @@ defmodule DevIDE.Deployment.RegistryTest do
     assert Registry.socket_path() == nil or is_binary(Registry.socket_path())
   end
 
+  # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
+  # them, so a secondary boot (mix test, release eval) shares the serving
+  # instance's identity. Overwriting its heartbeat with our short-lived pid made
+  # the deploy's stale-record cleanup delete it, and the instance then never
+  # received its drain signal.
+  test "init leaves a heartbeat owned by another live process untouched" do
+    dir = isolated_instance_dir!()
+    put_instance_uuid!("conflict-test")
+
+    path = Path.join(dir, "conflict-test.json")
+    File.write!(path, Jason.encode!(%{"id" => "conflict-test", "pid" => "1"}))
+
+    assert {:ok, %{file_path: nil}} = Registry.init([])
+    assert %{"pid" => "1"} = path |> File.read!() |> Jason.decode!()
+  end
+
+  test "init overwrites a heartbeat whose owner pid is dead" do
+    dir = isolated_instance_dir!()
+    put_instance_uuid!("dead-owner-test")
+
+    path = Path.join(dir, "dead-owner-test.json")
+    File.write!(path, Jason.encode!(%{"id" => "dead-owner-test", "pid" => "999999999"}))
+
+    assert {:ok, %{file_path: ^path}} = Registry.init([])
+    assert %{"pid" => pid} = path |> File.read!() |> Jason.decode!()
+    assert pid == System.pid()
+  end
+
   defp isolated_instance_dir! do
     dir = Path.join(System.tmp_dir!(), "devide-instances-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
@@ -63,4 +91,10 @@ defmodule DevIDE.Deployment.RegistryTest do
 
   defp restore_env(key, nil), do: System.delete_env(key)
   defp restore_env(key, value), do: System.put_env(key, value)
+
+  defp put_instance_uuid!(id) do
+    prev = System.get_env("DEVIDE_INSTANCE_UUID")
+    System.put_env("DEVIDE_INSTANCE_UUID", id)
+    on_exit(fn -> restore_env("DEVIDE_INSTANCE_UUID", prev) end)
+  end
 end
