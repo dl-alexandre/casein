@@ -22,11 +22,50 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 
+  @ws_echo_ports [8080, 9000, 3000, 5173, 4173]
+
+  defp start_ws_echo_upstream! do
+    Enum.find_value(@ws_echo_ports, fn port ->
+      case Bandit.start_link(
+             plug: {DevIdeWeb.PreviewProxyControllerTest.EchoPlug, []},
+             scheme: :http,
+             ip: {127, 0, 0, 1},
+             port: port
+           ) do
+        {:ok, pid} ->
+          Process.put({:ws_echo_upstream, port}, pid)
+          port
+
+        {:error, _} ->
+          nil
+      end
+    end) || flunk("no allowed dev port free to bind the upstream echo server")
+  end
+
+  defp stop_ws_echo_upstream!(port) do
+    case Process.get({:ws_echo_upstream, port}) do
+      pid when is_pid(pid) ->
+        if Process.alive?(pid), do: GenServer.stop(pid, :normal, 5_000)
+
+      _ ->
+        :ok
+    end
+  end
+
   defp ws_upgrade_conn(conn, workspace_id, port) do
+    conn =
+      if Enum.any?(conn.req_headers, fn {k, _} -> String.downcase(k) == "host" end) do
+        conn
+      else
+        %{conn | req_headers: [{"host", conn.host} | conn.req_headers]}
+      end
+
     conn
     |> put_req_header("x-auth-request-email", "dev@local")
     |> put_req_header("upgrade", "websocket")
     |> put_req_header("connection", "Upgrade")
+    |> put_req_header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+    |> put_req_header("sec-websocket-version", "13")
     |> get("/preview-proxy/#{workspace_id}/#{port}/live/websocket?vsn=2.0.0")
   end
 
@@ -350,6 +389,25 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
+  test "accepts a websocket upgrade with 101 and writes no session cookie when HMR tunneling is enabled",
+       %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+
+    upstream_port = start_ws_echo_upstream!()
+    on_exit(fn -> stop_ws_echo_upstream!(upstream_port) end)
+    register_preview_port!(workspace_id, upstream_port)
+
+    conn = ws_upgrade_conn(conn, workspace_id, upstream_port)
+
+    assert conn.status == 101
+    assert conn.state == :upgraded
+    assert get_resp_header(conn, "set-cookie") == []
+    assert conn.private[:plug_session_info] == :ignore
+
+    File.rm_rf!(root)
+  end
+
   test "refuses a websocket upgrade when HMR tunneling is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
@@ -471,4 +529,34 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     :gen_tcp.close(listen)
     File.rm_rf!(root)
   end
+end
+
+defmodule DevIdeWeb.PreviewProxyControllerTest.EchoWS do
+  @moduledoc false
+  @behaviour WebSock
+
+  @impl true
+  def init(_), do: {:ok, nil}
+
+  @impl true
+  def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
+
+  @impl true
+  def handle_info(_msg, state), do: {:ok, state}
+
+  @impl true
+  def terminate(_reason, _state), do: :ok
+end
+
+defmodule DevIdeWeb.PreviewProxyControllerTest.EchoPlug do
+  @moduledoc false
+  import Plug.Conn
+
+  def init(opts), do: opts
+
+  def call(conn, _opts),
+    do:
+      conn
+      |> WebSockAdapter.upgrade(DevIdeWeb.PreviewProxyControllerTest.EchoWS, [], [])
+      |> halt()
 end

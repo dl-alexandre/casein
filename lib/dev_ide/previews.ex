@@ -234,20 +234,41 @@ defmodule DevIDE.Previews do
 
   defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
 
-  # Self-include the persisted URL's own origin. A navigated-to URL is only
-  # ever written here after it was already accepted (loopback proxy, DevIDE's
-  # own app origin for artifact/proxy paths, or a snapshot fallback) — the
-  # allowlist recorded at registration time doesn't always cover it, e.g. a
-  # `/preview-proxy/...` path rewritten onto the app's own origin.
-  defp add_allowed_origin(metadata, url) do
-    case DevIDE.Previews.Url.origin_of(url) do
-      origin when is_binary(origin) ->
-        existing = Map.get(metadata, "allowed_origins") || []
-        Map.put(metadata, "allowed_origins", Enum.uniq(existing ++ [origin]))
+  # Self-include only the control loopback and DevIDE app origins on update.
+  # Navigated target origins are already covered by registration-time
+  # allowlisting or must not expand the persisted list on every update_url.
+  @max_persisted_allowed_origins 64
 
-      _ ->
+  defp add_allowed_origin(metadata, _url) do
+    case self_include_origins() do
+      [] ->
         metadata
+
+      origins ->
+        existing = Map.get(metadata, "allowed_origins") || []
+        Map.put(metadata, "allowed_origins", merge_allowed_origins(existing, origins))
     end
+  end
+
+  defp self_include_origins do
+    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    control = "http://127.0.0.1:#{port}"
+
+    app_origin =
+      case Application.get_env(:dev_ide, :preview_app_url) do
+        url when is_binary(url) and url != "" -> Url.origin_of(url)
+        _ -> nil
+      end
+
+    [control, app_origin]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp merge_allowed_origins(existing, additions) do
+    (existing ++ additions)
+    |> Enum.uniq()
+    |> Enum.take(@max_persisted_allowed_origins)
   end
 
   defp persisted_url_for_display("/" <> _ = path) do

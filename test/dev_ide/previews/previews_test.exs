@@ -1,10 +1,25 @@
 defmodule DevIDE.PreviewsTest do
-  use DevIde.DataCase, async: true
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Previews
   alias DevIDE.Previews.Preview
 
   @workspace %{id: "ws-1"}
+
+  setup do
+    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
+    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+
+    on_exit(fn ->
+      restore_env(:preview_app_url, prev_app_url)
+      restore_env(:preview_loopback_port, prev_loopback)
+    end)
+
+    :ok
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, val), do: Application.put_env(:dev_ide, key, val)
 
   test "open/1 persists workspace string ids and http preview URLs" do
     assert {:ok, %Preview{} = preview} =
@@ -103,6 +118,49 @@ defmodule DevIDE.PreviewsTest do
 
     assert second.id == first.id
     assert [_] = Previews.list_for_workspace("ws-v3-reuse")
+  end
+
+  test "update_url self-includes only control and app origins, not every navigated target" do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:dev_ide, :preview_loopback_port, 4100)
+
+    workspace = %{id: "ws-1", metadata: %{detected_ports: [5999]}}
+    {:ok, preview} = Previews.open(workspace, %{url: "http://localhost:4000"})
+    origins_before = preview.metadata["allowed_origins"]
+
+    assert {:ok, %Preview{} = updated} =
+             Previews.update_url(preview.id, "ws-1", "http://localhost:5999/dash")
+
+    origins = updated.metadata["allowed_origins"]
+    new_origins = origins -- origins_before
+    assert Enum.count_until(new_origins, 3) == length(new_origins)
+    assert "http://127.0.0.1:4100" in origins
+    assert "https://devide.example.com:443" in origins
+  end
+
+  test "repeated update_url calls do not grow allowed_origins unboundedly" do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    {:ok, preview} = Previews.open(@workspace, %{url: "http://localhost:4000"})
+    initial_origins = preview.metadata["allowed_origins"]
+
+    preview =
+      Enum.reduce(1..50, preview, fn offset, acc ->
+        assert {:ok, next} =
+                 Previews.update_url(
+                   acc.id,
+                   "ws-1",
+                   "/preview-proxy/ws-1/#{6000 + offset}/page"
+                 )
+
+        next
+      end)
+
+    origins = preview.metadata["allowed_origins"]
+    assert Enum.count_until(origins, 65) == length(origins)
+
+    new_origins = origins -- initial_origins
+    assert Enum.count_until(new_origins, 3) == length(new_origins)
   end
 
   test "discover_surfaces returns manager surfaces for v3 workspaces" do
