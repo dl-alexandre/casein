@@ -154,7 +154,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-preview-count={@preview_id && @window.preview_count}
       class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
       title={window_preview_tooltip(@window.preview_count, @preview_aria_hidden?)}
-      aria-label={if(@preview_aria_hidden?, do: nil, else: window_preview_tooltip(@window.preview_count, false))}
+      aria-label={
+        if(@preview_aria_hidden?, do: nil, else: window_preview_tooltip(@window.preview_count, false))
+      }
       aria-hidden={@preview_aria_hidden? || nil}
     >
       <.icon name="hero-globe-alt" class="size-3" />
@@ -200,7 +202,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       />
       <button
         type="submit"
-        class={if(@show_cancel?, do: "rounded p-1 text-primary hover:bg-primary/10", else: "rounded p-0.5 text-primary")}
+        class={
+          if(@show_cancel?,
+            do: "rounded p-1 text-primary hover:bg-primary/10",
+            else: "rounded p-0.5 text-primary"
+          )
+        }
         aria-label="Save window name"
         title={if(@show_cancel?, do: "Save window name", else: nil)}
       >
