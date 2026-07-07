@@ -282,6 +282,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       id={"tmux-window-tabs-" <> @workspace_id}
       phx-hook="WindowTabStrip"
       data-version={@topology_version}
+      data-mutations-allowed={@mutations_allowed?}
       class={["flex min-w-0 items-center gap-1", @class]}
     >
       <div

@@ -163,6 +163,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
       assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "not allowed"
       refute_received {:fake_tmux_move_window, _, _, _, _}
     end
+
+    test "drag-drop before-window-id moves before the target window" do
+      socket = move_socket(%{})
+
+      assert {:noreply, _socket} =
+               TerminalEvents.handle_event(
+                 "tmux:move_window",
+                 %{"window-id" => "@2", "before-window-id" => "@0"},
+                 socket
+               )
+
+      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@2", "@0", :before}
+    end
+
+    test "drag-drop past the end moves after the last window" do
+      socket = move_socket(%{})
+
+      assert {:noreply, _socket} =
+               TerminalEvents.handle_event(
+                 "tmux:move_window",
+                 %{"window-id" => "@0", "before-window-id" => "@2", "dir" => "after"},
+                 socket
+               )
+
+      assert_receive {:fake_tmux_move_window, "devide_alpha_u-dev", "@0", "@2", :after}
+    end
   end
 
   describe "pane:history_open" do

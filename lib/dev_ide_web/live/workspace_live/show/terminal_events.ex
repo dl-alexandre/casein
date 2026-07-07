@@ -477,6 +477,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
+  def handle_event(
+        "tmux:move_window",
+        %{"window-id" => window_id, "before-window-id" => before_id} = params,
+        socket
+      ) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      windows = sorted_tmux_windows(socket.assigns[:tmux_windows] || [])
+      placement = Map.get(params, "dir", "before")
+
+      {dst_id, move_dir} =
+        if placement == "after" do
+          {before_id, :after}
+        else
+          {before_id, :before}
+        end
+
+      cond do
+        window_id == dst_id ->
+          {:noreply, socket}
+
+        not window_in_topology?(windows, window_id) ->
+          {:noreply, put_flash(socket, :error, "Window no longer exists.")}
+
+        not window_in_topology?(windows, dst_id) ->
+          {:noreply, put_flash(socket, :error, "Target window no longer exists.")}
+
+        already_at_target?(windows, window_id, dst_id, move_dir) ->
+          {:noreply, socket}
+
+        true ->
+          move_tmux_window(socket, window_id, dst_id, move_dir)
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
   def handle_event("terminal:cycle_session", %{"dir" => dir}, socket)
       when dir in ["next", "prev"] do
     socket = TerminalState.assign_session_tabs(socket)
@@ -916,6 +953,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     Enum.sort_by(windows, &Map.get(&1, :index, 0))
   end
 
+  defp window_in_topology?(windows, window_id) do
+    Enum.any?(windows, &(&1.id == window_id))
+  end
+
   defp neighbor_window_move(windows, window_id, "left") do
     idx = Enum.find_index(windows, &(&1.id == window_id))
 
@@ -933,6 +974,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       nil -> :edge
       i when i >= length(windows) - 1 -> :edge
       i -> {:ok, Enum.at(windows, i + 1).id, :after}
+    end
+  end
+
+  defp already_at_target?(windows, window_id, dst_id, move_dir) do
+    idx = Enum.find_index(windows, &(&1.id == window_id))
+    dst_idx = Enum.find_index(windows, &(&1.id == dst_id))
+
+    case {idx, dst_idx, move_dir} do
+      {i, j, :before} when i + 1 == j -> true
+      {i, j, :after} when i - 1 == j -> true
+      _ -> false
     end
   end
 
