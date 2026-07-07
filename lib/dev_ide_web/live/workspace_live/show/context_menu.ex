@@ -119,6 +119,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
 
     mutations =
       if tmux_mutations?(assigns) do
+        windows =
+          assigns[:tmux_windows]
+          |> List.wrap()
+          |> Enum.sort_by(&Map.get(&1, :index, 0))
+
+        idx = Enum.find_index(windows, &(&1.id == window_id))
+        at_left_edge = idx == 0
+        at_right_edge = idx == length(windows) - 1
+
         [
           %{divider: true},
           %{
@@ -126,6 +135,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
             label: "Rename…",
             event: "tmux:rename_start",
             params: %{"window-id" => window_id}
+          },
+          %{
+            id: "move-left",
+            label: "Move left",
+            event: "tmux:move_window",
+            params: %{"window-id" => window_id, "dir" => "left"},
+            disabled: at_left_edge
+          },
+          %{
+            id: "move-right",
+            label: "Move right",
+            event: "tmux:move_window",
+            params: %{"window-id" => window_id, "dir" => "right"},
+            disabled: at_right_edge
           },
           %{id: "new-window", label: "New window", event: "tmux:new_window", params: %{}},
           %{divider: true},

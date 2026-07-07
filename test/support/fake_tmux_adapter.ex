@@ -427,6 +427,36 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def consolidate_sessions(_target_session, _source_sessions), do: {:error, :invalid_sessions}
 
+  def move_window(session, src_window_id, dst_window_id, dir)
+      when dir in [:before, :after] do
+    send_to_test({:fake_tmux_move_window, session, src_window_id, dst_window_id, dir})
+
+    update_fake_windows(session, fn windows ->
+      case Enum.find(windows, &(&1.id == src_window_id)) do
+        nil ->
+          windows
+
+        src ->
+          rest = Enum.reject(windows, &(&1.id == src_window_id))
+          dst_idx = Enum.find_index(rest, &(&1.id == dst_window_id))
+
+          if is_nil(dst_idx) do
+            windows
+          else
+            insert_at = if dir == :before, do: dst_idx, else: dst_idx + 1
+            {left, right} = Enum.split(rest, insert_at)
+            reordered = left ++ [src] ++ right
+
+            Enum.with_index(reordered, fn window, index ->
+              %{window | index: index}
+            end)
+          end
+      end
+    end)
+
+    :ok
+  end
+
   def rename_window(session, window_id, name) do
     send_to_test({:fake_tmux_rename_window, session, window_id, name})
 
@@ -906,6 +936,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate select_layout(session, layout), to: TmuxCtl.Test.FakeAdapter
   defdelegate next_layout(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate cycle_window(session, dir), to: TmuxCtl.Test.FakeAdapter
+  defdelegate move_window(session, src, dst, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Test.FakeAdapter
   defdelegate set_session_alias(session, name), to: TmuxCtl.Test.FakeAdapter
   defdelegate set_pane_role(session, pane_id, role), to: TmuxCtl.Test.FakeAdapter

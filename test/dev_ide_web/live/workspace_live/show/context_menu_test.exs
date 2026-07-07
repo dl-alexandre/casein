@@ -112,8 +112,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
     test "window tab menu maps to existing tmux events" do
       ctx = %{"windowId" => "@3", "href" => "/w/1?window=@3"}
 
-      with_mutations = ContextMenu.items("window_tab", ctx, owner_assigns(mutations()))
-      assert item_ids(with_mutations) == ["select", "open-tab", "rename", "new-window", "kill"]
+      windows = [
+        %{id: "@1", index: 0},
+        %{id: "@2", index: 1},
+        %{id: "@3", index: 2}
+      ]
+
+      with_mutations =
+        ContextMenu.items(
+          "window_tab",
+          ctx,
+          owner_assigns(Map.merge(mutations(), %{tmux_windows: windows}))
+        )
+
+      assert item_ids(with_mutations) ==
+               ["select", "open-tab", "rename", "move-left", "move-right", "new-window", "kill"]
+
+      move_left = Enum.find(with_mutations, &(&1[:id] == "move-left"))
+      assert move_left.event == "tmux:move_window"
+      assert move_left.params == %{"window-id" => "@3", "dir" => "left"}
+      refute move_left.disabled
+
+      move_right = Enum.find(with_mutations, &(&1[:id] == "move-right"))
+      assert move_right.disabled
 
       kill = Enum.find(with_mutations, &(&1[:id] == "kill"))
       assert kill.event == "tmux:kill_window"
@@ -121,6 +142,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
 
       without_mutations = ContextMenu.items("window_tab", ctx, owner_assigns())
       assert item_ids(without_mutations) == ["select", "open-tab"]
+    end
+
+    test "window tab move items are disabled at the strip edges" do
+      ctx = %{"windowId" => "@1", "href" => "/w/1?window=@1"}
+      windows = [%{id: "@1", index: 0}, %{id: "@2", index: 1}]
+
+      items =
+        ContextMenu.items(
+          "window_tab",
+          ctx,
+          owner_assigns(Map.merge(mutations(), %{tmux_windows: windows}))
+        )
+
+      assert Enum.find(items, &(&1[:id] == "move-left")).disabled
+      refute Enum.find(items, &(&1[:id] == "move-right")).disabled
     end
 
     test "terminal menu builds client actions against a quoted attribute selector" do

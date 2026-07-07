@@ -1009,6 +1009,28 @@ defmodule TmuxCtl.Client do
   @doc false
   def resize_amount_max, do: @resize_amount_max
 
+  @doc "Move a tmux window before or after another window in the same session."
+  @spec move_window(String.t(), String.t(), String.t(), :before | :after) ::
+          :ok | {:error, term()}
+  def move_window(session, src_window_id, dst_window_id, dir)
+      when is_binary(session) and is_binary(src_window_id) and is_binary(dst_window_id) and
+             dir in [:before, :after] do
+    flag = if dir == :before, do: "-b", else: "-a"
+
+    case run([
+           "move-window",
+           flag,
+           "-d",
+           "-s",
+           "#{session}:#{src_window_id}",
+           "-t",
+           "#{session}:#{dst_window_id}"
+         ]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def rename_window(session, window_id, name)

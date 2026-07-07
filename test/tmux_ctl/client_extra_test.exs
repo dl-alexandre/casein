@@ -589,6 +589,26 @@ defmodule TmuxCtl.ClientExtraTest do
     assert {:error, {2, "err"}} = Client.cycle_window(@session, "next")
   end
 
+  # --- move_window/4 ----------------------------------------------------------
+
+  test "move_window uses -b or -a with discrete window ids" do
+    script("", 0)
+    assert :ok = Client.move_window(@session, "@1", "@2", :before)
+
+    source = "#{@session}:@1"
+    target = "#{@session}:@2"
+
+    assert_receive {:tmux_runner, ["move-window", "-b", "-d", "-s", ^source, "-t", ^target]}
+
+    assert :ok = Client.move_window(@session, "@1", "@3", :after)
+    assert_receive {:tmux_runner, ["move-window", "-a", "-d", "-s", _, "-t", _]}
+  end
+
+  test "move_window propagates failure" do
+    script("err", 2)
+    assert {:error, {2, "err"}} = Client.move_window(@session, "@1", "@2", :before)
+  end
+
   # --- select_pane/2 ----------------------------------------------------------
 
   test "select_pane targets the bare pane id" do

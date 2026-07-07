@@ -11,15 +11,61 @@
 // on every LiveView patch, so a user browsing the strip isn't yanked back.
 // `data-version` on the hook element is the tmux topology structure version,
 // which changes on window selection, so `updated()` fires on every switch.
+//
+// Desktop drag-and-drop reorders tabs via `tmux:move_window` (tmux move-window).
+
+const INSERTION_CLASS =
+  "outline outline-2 outline-primary -outline-offset-2"
 
 export const WindowTabStrip = {
   mounted() {
     this.scroller = this.el.querySelector("[data-tab-scroller]")
     if (!this.scroller) return
     this.lastActiveId = this.activeTab()?.id
+    this.dragging = false
+    this.draggedId = null
+    this.dropTarget = null
     this.center(false)
     this.updateFades()
+    this.bindScrollerEvents()
+    this.bindDragDrop()
+  },
 
+  updated() {
+    if (!this.scroller?.isConnected) {
+      this.destroyed()
+      this.mounted()
+      return
+    }
+
+    if (this.dragging) {
+      this.updateFades()
+      return
+    }
+
+    const activeId = this.activeTab()?.id
+    if (activeId && activeId !== this.lastActiveId) {
+      this.lastActiveId = activeId
+      this.center(true)
+    }
+    this.updateFades()
+    this.bindDragDrop()
+  },
+
+  destroyed() {
+    this.ro?.disconnect()
+    if (this.scroller) {
+      this.scroller.removeEventListener("scroll", this.onScroll)
+      this.scroller.removeEventListener("wheel", this.onWheel)
+      this.scroller.removeEventListener("dragover", this.onDragOver)
+      this.scroller.removeEventListener("drop", this.onDrop)
+      this.scroller.removeEventListener("dragend", this.onDragEnd)
+    }
+    this.clearInsertionIndicator()
+    this.unbindTabDrag()
+  },
+
+  bindScrollerEvents() {
     this.onScroll = () => this.updateFades()
     this.scroller.addEventListener("scroll", this.onScroll, {passive: true})
 
@@ -39,32 +85,126 @@ export const WindowTabStrip = {
     this.scroller.addEventListener("wheel", this.onWheel, {passive: false})
 
     this.ro = new ResizeObserver(() => {
+      if (this.dragging) return
       this.center(false)
       this.updateFades()
     })
     this.ro.observe(this.scroller)
   },
 
-  updated() {
-    if (!this.scroller?.isConnected) {
-      this.destroyed()
-      this.mounted()
-      return
+  bindDragDrop() {
+    this.unbindTabDrag()
+    if (!this.dragDropEnabled()) return
+
+    this.onDragStart = (e) => {
+      const tab = e.currentTarget
+      const windowId = tab.dataset.ctxWindowId
+      if (!windowId) return
+
+      this.dragging = true
+      this.draggedId = windowId
+      e.dataTransfer.effectAllowed = "move"
+      e.dataTransfer.setData("text/plain", windowId)
     }
-    const activeId = this.activeTab()?.id
-    if (activeId && activeId !== this.lastActiveId) {
-      this.lastActiveId = activeId
-      this.center(true)
+
+    this.onDragOver = (e) => {
+      if (!this.dragging) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "move"
+      this.showInsertionIndicator(this.insertionNeighbor(e.clientX))
     }
-    this.updateFades()
+
+    this.onDrop = (e) => {
+      if (!this.dragging) return
+      e.preventDefault()
+
+      const neighbor = this.insertionNeighbor(e.clientX)
+      if (neighbor && neighbor.id !== this.draggedId) {
+        const payload = {
+          "window-id": this.draggedId,
+          "before-window-id": neighbor.id,
+        }
+        if (neighbor.placement === "after") payload.dir = "after"
+        this.pushEvent("tmux:move_window", payload)
+      }
+
+      this.clearDragState()
+    }
+
+    this.onDragEnd = () => this.clearDragState()
+
+    this.scroller.addEventListener("dragover", this.onDragOver)
+    this.scroller.addEventListener("drop", this.onDrop)
+    this.scroller.addEventListener("dragend", this.onDragEnd)
+
+    this.tabNodes().forEach((tab) => {
+      tab.draggable = true
+      tab.addEventListener("dragstart", this.onDragStart)
+    })
   },
 
-  destroyed() {
-    this.ro?.disconnect()
-    if (this.scroller) {
-      this.scroller.removeEventListener("scroll", this.onScroll)
-      this.scroller.removeEventListener("wheel", this.onWheel)
+  unbindTabDrag() {
+    if (!this.scroller) return
+    this.tabNodes().forEach((tab) => {
+      tab.draggable = false
+      if (this.onDragStart) tab.removeEventListener("dragstart", this.onDragStart)
+    })
+  },
+
+  dragDropEnabled() {
+    return (
+      this.el.dataset.mutationsAllowed === "true" &&
+      window.matchMedia("(hover: hover) and (pointer: fine)").matches
+    )
+  },
+
+  tabNodes() {
+    return [...this.scroller.querySelectorAll('[id^="tmux-window-"]')]
+  },
+
+  insertionNeighbor(clientX) {
+    const tabs = this.tabNodes().filter(
+      (tab) => tab.dataset.ctxWindowId && tab.dataset.ctxWindowId !== this.draggedId,
+    )
+
+    for (const tab of tabs) {
+      const rect = tab.getBoundingClientRect()
+      const mid = rect.left + rect.width / 2
+      if (clientX < mid) {
+        return {id: tab.dataset.ctxWindowId, placement: "before", tab}
+      }
     }
+
+    const last = tabs[tabs.length - 1]
+    return last
+      ? {id: last.dataset.ctxWindowId, placement: "after", tab: last}
+      : null
+  },
+
+  showInsertionIndicator(neighbor) {
+    if (
+      this.dropTarget?.tab === neighbor?.tab &&
+      this.dropTarget?.placement === neighbor?.placement
+    ) {
+      return
+    }
+
+    this.clearInsertionIndicator()
+    this.dropTarget = neighbor
+    neighbor?.tab?.classList.add(...INSERTION_CLASS.split(" "))
+  },
+
+  clearInsertionIndicator() {
+    if (this.dropTarget?.tab) {
+      this.dropTarget.tab.classList.remove(...INSERTION_CLASS.split(" "))
+    }
+    this.dropTarget = null
+  },
+
+  clearDragState() {
+    this.dragging = false
+    this.draggedId = null
+    this.clearInsertionIndicator()
   },
 
   activeTab() {
@@ -72,6 +212,7 @@ export const WindowTabStrip = {
   },
 
   center(smooth) {
+    if (this.dragging) return
     const s = this.scroller
     const tab = this.activeTab()
     if (!s || !tab) return
