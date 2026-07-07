@@ -105,9 +105,13 @@ defmodule DevIDE.Terminals.ToolThemesTest do
       assert File.read!(grok_path(home)) == "[ui]\ntheme = \"groknight\"\n"
     end
 
-    test "light scheme stamps grokday", %{home: home} do
+    # ~/.grok/config.toml is shared by every workspace on the box and grok
+    # hot-reloads it, so whatever the light scheme stamps lands on every
+    # running grok pane. grokday is banned: it renders illegibly in the
+    # DevIDE viewer.
+    test "light scheme stamps tokyonight, never grokday", %{home: home} do
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :light)
-      assert File.read!(grok_path(home)) == "[ui]\ntheme = \"grokday\"\n"
+      assert File.read!(grok_path(home)) == "[ui]\ntheme = \"tokyonight\"\n"
     end
 
     test "replaces an existing theme key in [ui]", %{home: home} do
@@ -125,7 +129,7 @@ defmodule DevIDE.Terminals.ToolThemesTest do
       File.write!(path, "[ui]\nscroll = true\n")
 
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :light)
-      assert File.read!(path) == "[ui]\ntheme = \"grokday\"\nscroll = true\n"
+      assert File.read!(path) == "[ui]\ntheme = \"tokyonight\"\nscroll = true\n"
     end
 
     test "appends a [ui] section when the file has none", %{home: home} do
@@ -194,7 +198,7 @@ defmodule DevIDE.Terminals.ToolThemesTest do
       assert :ok = ToolThemes.ensure_all(:light)
 
       assert File.read!(elio_path(home)) == elio_desired_content()
-      assert File.read!(grok_path(home)) == "[ui]\ntheme = \"grokday\"\n"
+      assert File.read!(grok_path(home)) == "[ui]\ntheme = \"tokyonight\"\n"
     end
 
     test "never raises with an unwritable home" do
