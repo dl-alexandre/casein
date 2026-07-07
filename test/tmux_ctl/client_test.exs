@@ -99,7 +99,30 @@ defmodule TmuxCtl.ClientTest do
     assert {:error, :invalid_resize} = Client.resize_pane(@session, "%1", "diagonal")
   end
 
-  test "resize_window forwards explicit cols and rows" do
+  test "resize_window resizes every window and records the session default-size" do
+    FakeState.put(:fake_tmux_windows, %{
+      @session => [
+        %{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0},
+        %{id: "@4", index: 1, name: "claude", active: false, panes: 1, activity: 0}
+      ]
+    })
+
+    assert :ok = Client.resize_window(@session, 100, 30)
+
+    assert_receive {:tmux_runner, ["set-option", "-t", @session, "default-size", "100x30"]}
+
+    assert_receive {:tmux_runner,
+                    ["resize-window", "-t", @session <> ":@1", "-x", "100", "-y", "30"]}
+
+    assert_receive {:tmux_runner,
+                    ["resize-window", "-t", @session <> ":@4", "-x", "100", "-y", "30"]}
+  end
+
+  test "resize_window falls back to the current window when enumeration fails" do
+    FakeState.put(:fake_tmux_failures, %{
+      ["list-windows", "-t", @session, "-F", "\#{window_id}"] => {"no server", 1}
+    })
+
     assert :ok = Client.resize_window(@session, 100, 30)
     assert_receive {:tmux_runner, ["resize-window", "-t", @session, "-x", "100", "-y", "30"]}
   end
