@@ -6,28 +6,12 @@
 
 See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
-## Window picker sidebar cleanup
+## Cleared (2026-07-07)
 
-| Field | Value |
-|-------|-------|
-| **Owner** | dalexandre / Grok |
-| **Branch** | `agent/grok/sidebar-cleanup-20260707` |
-| **Status** | Awaiting gate — filter helper + session_bar window-row dedup landed. |
-| **Paths (frozen)** | `assets/js/window_picker_sidebar.js`, `assets/js/window_picker_sidebar_utils.mjs`, `assets/test/window_picker_sidebar.test.mjs`, `lib/dev_ide_web/live/workspace_live/show/session_bar.ex` |
-
-Direction of record: finish sidebar cleanup after #131 — keep keyboard/filter
-behavior tested, dedupe shared window-row markup between tabs and sidebar rail.
-
----
-
-## Jido adoption (phases 1–2)
-
-| Field | Value |
-|-------|-------|
-| **Owner** | agent (claude adhoc-20260706204502) |
-| **Branch** | `agent/claude/jido-adoption-20260706` (merged PR #141) |
-| **Status** | Landed on `master` — phase 3 (signal bus) not started |
-| **Paths (frozen)** | `lib/dev_ide/agents/*_action.ex`, `lib/dev_ide/agents/artifact_tools.ex`, `lib/dev_ide/agents/terminal_tools.ex`, `lib/dev_ide/agents/preview_tools.ex`, `lib/dev_ide/agents/annotation_tools.ex`, `lib/dev_ide/signals*` |
+- **Window picker sidebar cleanup** — filter helper merged via PR #146; session_bar
+  window-row dedup merged via PR #149. Frozen paths released.
+- **Jido adoption (phases 1–2)** — merged via PR #141. Phase 3 (signal bus +
+  alerts routing) not started; re-add an entry when it begins.
 
 ## Cleared (2026-07-06)
 
