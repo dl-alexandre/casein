@@ -5,6 +5,7 @@
 // [data-window-picker-sidebar] via _startSidebarHoldWatch.
 
 import {copyPickerLink} from "./picker_link_copy"
+import {matchesPickerFilter} from "./window_picker_sidebar_utils.mjs"
 
 export const WindowPickerSidebar = {
   mounted() {
@@ -95,7 +96,7 @@ export const WindowPickerSidebar = {
     }
 
     this.el.querySelectorAll("[data-picker-item]").forEach((el) => {
-      const match = query === "" || itemFilterText(el).includes(query)
+      const match = matchesPickerFilter(el, query)
       el.style.display = match ? "" : "none"
     })
 
@@ -164,12 +165,6 @@ export const WindowPickerSidebar = {
     if (!window.confirm("Kill this tmux window and everything running in it?")) return
     this.pushEvent("tmux:kill_window", {window_id: windowId})
   },
-}
-
-function itemFilterText(el) {
-  const label = el.querySelector("[data-picker-label]")?.textContent || ""
-  const index = el.querySelector(".font-mono")?.textContent || ""
-  return `${index} ${label}`.toLowerCase()
 }
 
 function wantsBrowserNavigation(e) {
