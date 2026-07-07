@@ -84,12 +84,19 @@ defmodule DevIDE.Terminals.SessionOwner do
     subscriber_sizes: %{},
     subscriber_active: %{},
     applied_size: nil,
+    # When each subscriber last reported a size (monotonic ms). Feeds the
+    # bootstrap-flap detector in `record_subscriber_size/4`.
+    subscriber_size_at: %{},
     # Single-flight tmux resize: `tmux_resize` is %{ref: task_ref, size: size}
     # while a resize-window task is in flight; `tmux_resize_pending` holds the
     # latest size requested meanwhile. See `maybe_resize_tmux_window/3`.
     tmux_resize: nil,
     tmux_resize_pending: nil,
     tmux_drift_timer: nil,
+    # Consecutive drift-check re-asserts without ever finding the window at
+    # applied_size. A sustained streak means another writer is fighting us
+    # (stale draining instance, duplicate owner, external client).
+    tmux_drift_streak: 0,
     cursor: nil,
     # Session-level terminal theme used to rewrite OSC color query responses
     # (last-writer-wins across viewers via `set_theme/3`). `theme` caches the
@@ -582,10 +589,47 @@ defmodule DevIDE.Terminals.SessionOwner do
   # before the first focus report, or every viewer backgrounded) we fall back to
   # the LARGEST requested size, so the terminal is usable and never stuck at a
   # stale small viewer's width. A single viewer therefore always wins its own size.
+  # The client bootstraps its grid from the component's dataset defaults
+  # before any fit measurement. Every "narrow column" incident so far was a
+  # viewer reporting this bootstrap size right after a real fitted size
+  # (a stale deferred "ready" clobbering the fit — see PR #148); a genuine
+  # 80x24 viewport arriving within the window is possible but rare enough
+  # that a warning breadcrumb is cheap insurance.
+  @bootstrap_default_size {80, 24}
+  @size_flap_window_ms 2_000
+
   defp record_subscriber_size(state, subscriber, cols, rows) do
+    detect_bootstrap_flap(state, subscriber, {cols, rows})
+
     sizes = Map.put(state.subscriber_sizes, subscriber, {cols, rows})
-    apply_authoritative_size(%{state | subscriber_sizes: sizes})
+    stamps = Map.put(state.subscriber_size_at, subscriber, now_ms())
+
+    apply_authoritative_size(%{state | subscriber_sizes: sizes, subscriber_size_at: stamps})
   end
+
+  defp detect_bootstrap_flap(state, subscriber, @bootstrap_default_size = size) do
+    with {cols, rows} = prev when prev != size <- state.subscriber_sizes[subscriber],
+         at when is_integer(at) <- state.subscriber_size_at[subscriber],
+         elapsed when elapsed < @size_flap_window_ms <- now_ms() - at do
+      Logger.warning(
+        "viewer size flapped #{cols}x#{rows} -> 80x24 within #{elapsed}ms — " <>
+          "looks like a stale bootstrap-default report clobbering the fitted size",
+        kind: state.info.kind
+      )
+
+      :telemetry.execute(
+        [:dev_ide, :terminals, :owner, :size_flap],
+        %{elapsed_ms: elapsed},
+        %{kind: state.info.kind, from: prev, to: size}
+      )
+    else
+      _ -> :ok
+    end
+  end
+
+  defp detect_bootstrap_flap(_state, _subscriber, _size), do: :ok
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp record_subscriber_active(state, subscriber, true) do
     # `unique_integer([:monotonic])` is strictly increasing, so the newest
@@ -605,6 +649,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     state = %{
       state
       | subscriber_sizes: Map.delete(state.subscriber_sizes, subscriber),
+        subscriber_size_at: Map.delete(state.subscriber_size_at, subscriber),
         subscriber_active: Map.delete(state.subscriber_active, subscriber)
     }
 
@@ -791,6 +836,12 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp assert_tmux_window_size(state), do: state
 
+  # After this many consecutive drift re-asserts that never stick, escalate:
+  # something else is writing the window size in a loop (a stale draining
+  # instance, a duplicate owner on the same tmux session, an external
+  # client). One warning per streak — the per-tick info lines continue.
+  @drift_fight_threshold 4
+
   defp do_assert_tmux_window_size(%{workspace_key: key, info: %{sid: sid}} = state, size) do
     {cols, rows} = size
     session = Tmux.session_name(key, sid)
@@ -798,7 +849,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     case tmux.window_size(session) do
       {:ok, {^cols, ^rows}} ->
-        state
+        %{state | tmux_drift_streak: 0}
 
       {:ok, {actual_cols, actual_rows}} ->
         Logger.info(
@@ -806,7 +857,26 @@ defmodule DevIDE.Terminals.SessionOwner do
           kind: state.info.kind
         )
 
-        maybe_resize_tmux_window(state, cols, rows)
+        streak = state.tmux_drift_streak + 1
+
+        if streak == @drift_fight_threshold do
+          Logger.warning(
+            "tmux window size fight: #{streak} consecutive drift re-asserts " <>
+              "(#{actual_cols}x#{actual_rows} keeps returning against applied " <>
+              "#{cols}x#{rows}) — another writer is resizing this session " <>
+              "(stale draining instance, duplicate owner, or external client); " <>
+              "viewers=#{map_size(state.subscriber_sizes)}",
+            kind: state.info.kind
+          )
+
+          :telemetry.execute(
+            [:dev_ide, :terminals, :owner, :drift_fight],
+            %{streak: streak},
+            %{kind: state.info.kind, applied: size, actual: {actual_cols, actual_rows}}
+          )
+        end
+
+        maybe_resize_tmux_window(%{state | tmux_drift_streak: streak}, cols, rows)
 
       :error ->
         state
