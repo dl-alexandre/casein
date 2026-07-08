@@ -397,7 +397,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <% node.flat_session? -> %>
               <.sessions_sidebar_session_row
                 session={node.session}
-                workspace_id={@workspace_id}
+                workspace_id={node.workspace_id}
                 current_workspace_id={@workspace_id}
                 active_id={@active_id}
                 default_sid={@default_sid}

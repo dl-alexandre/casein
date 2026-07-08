@@ -112,7 +112,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   @spec assign_windows_sidebar_tree(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
   def assign_windows_sidebar_tree(socket) do
     tree =
-      if socket.assigns.window_sidebar_open? do
+      if Map.get(socket.assigns, :window_sidebar_open?, false) do
         socket.assigns.tmux_window_tabs
         |> SessionBarVM.window_tree(expanded_windows: socket.assigns.sidebar_expanded_windows)
         |> SessionBarVM.sort_window_tree(socket.assigns.windows_sidebar_sort)
