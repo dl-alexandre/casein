@@ -737,6 +737,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.cycle_windows_sort(socket)}
   end
 
+  def handle_event("sidebar:toggle_browse", %{"rel" => rel}, socket) when is_binary(rel) do
+    {:noreply, Sidebar.toggle_browse_dir(socket, rel)}
+  end
+
+  def handle_event("sidebar:open_folder", %{"path" => path}, socket) when is_binary(path) do
+    {:noreply, Sidebar.open_folder(socket, path)}
+  end
+
   def handle_event("tmux:" <> _ = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 

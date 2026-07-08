@@ -2,12 +2,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [connected?: 1, push_event: 3, start_async: 3]
+
+  import Phoenix.LiveView,
+    only: [connected?: 1, push_event: 3, push_navigate: 2, put_flash: 3, start_async: 3]
 
   alias DevIDE.Terminals
   alias DevIDE.Terminals.SessionDirectory
+  alias DevIDE.Workspaces
   alias DevIDE.Workspaces.SessionSummary
+  alias DevIdeWeb.WorkspaceLive.Show.Browse
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceRoutes
 
   @type sidebar_mode :: :closed | :windows_only | :both
 
@@ -19,6 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       sessions_sidebar_open?: false,
       sidebar_expanded_workspaces: MapSet.new(),
       sidebar_expanded_windows: MapSet.new(),
+      sidebar_expanded_dirs: MapSet.new(),
       sidebar_ws_sessions: %{},
       sidebar_ws_subscriptions: MapSet.new(),
       sessions_sidebar_tree: [],
@@ -68,6 +74,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     |> assign_sidebar_mode(:closed)
     |> assign(:sidebar_expanded_workspaces, MapSet.new())
     |> assign(:sidebar_expanded_windows, MapSet.new())
+    |> assign(:sidebar_expanded_dirs, MapSet.new())
     |> assign(:sidebar_ws_sessions, %{})
     |> assign(:sidebar_ws_subscriptions, MapSet.new())
     |> assign(:sessions_sidebar_tree, [])
@@ -163,7 +170,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         socket.assigns.workspace.id
       )
 
-    tree =
+    session_tree =
       summaries
       |> SessionBarVM.workspace_session_tree(
         socket.assigns.workspace.id,
@@ -173,7 +180,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       )
       |> SessionBarVM.sort_sessions_in_tree(socket.assigns.sessions_sidebar_sort)
 
-    assign(socket, :sessions_sidebar_tree, tree)
+    browse_tree =
+      Browse.browse_tier(
+        root: Browse.root(),
+        expanded_dirs: socket.assigns.sidebar_expanded_dirs,
+        viewer: socket.assigns[:current_user],
+        workspaces: summaries
+      )
+
+    assign(socket, :sessions_sidebar_tree, session_tree ++ browse_tree)
+  end
+
+  @doc "Toggle expansion of a Browse-tier directory (empty string = browse root)."
+  @spec toggle_browse_dir(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
+  def toggle_browse_dir(socket, rel) when is_binary(rel) do
+    expanded = socket.assigns.sidebar_expanded_dirs
+
+    expanded =
+      if MapSet.member?(expanded, rel) do
+        MapSet.delete(expanded, rel)
+      else
+        MapSet.put(expanded, rel)
+      end
+
+    socket
+    |> assign(:sidebar_expanded_dirs, expanded)
+    |> assign_sessions_sidebar_tree()
+  end
+
+  @doc """
+  Open a terminal on an arbitrary local folder via folder-attach.
+
+  Same gesture as the dashboard `folder:open` path — attaches and navigates
+  to the synthetic `folder:` workspace.
+  """
+  @spec open_folder(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
+  def open_folder(socket, path) when is_binary(path) do
+    case Workspaces.attach_folder(path) do
+      {:ok, ws} ->
+        push_navigate(socket, to: WorkspaceRoutes.workspace_path(ws, "local"))
+
+      {:error, reason} ->
+        put_flash(socket, :error, "Could not open terminal: #{inspect(reason)}")
+    end
   end
 
   @spec assign_sidebar_ws_sessions(
