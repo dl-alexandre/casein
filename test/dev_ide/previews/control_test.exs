@@ -449,6 +449,20 @@ defmodule DevIDE.Previews.ControlTest do
     assert {:error, :not_found} = PreviewControl.navigate(session.id, "/nope")
   end
 
+  test "click on a live session with an unsupported target returns a clean error" do
+    # Regression: the click path case-matched only {:ok, _} and
+    # {:error, {:origin_not_allowed, _}}, so any other Session.click/2 error
+    # (here :invalid_target) raised CaseClauseError instead of propagating.
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert {:error, :invalid_target} =
+             PreviewControl.click(session.id, %{"unsupported" => true})
+  end
+
+  test "click returns not_found for an unknown session id" do
+    assert {:error, :not_found} = PreviewControl.click(999_999_999, %{selector: "button"})
+  end
+
   defp insert_observation!(session_id, kind, data) do
     %ControlObservation{}
     |> ControlObservation.changeset(%{session_id: session_id, kind: kind, data: data})

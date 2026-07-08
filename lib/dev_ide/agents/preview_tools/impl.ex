@@ -1296,10 +1296,17 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
           {:ok, observation} ->
             {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
 
-          {:error, {:origin_not_allowed, observation}} ->
+          {:error, {:origin_not_allowed, observation}} when is_map(observation) ->
             {:ok,
              maybe_show_snapshot(id, observation, :untrusted_preview_url)
              |> guide_observation(id)}
+
+          # A preview session can drop between calls (closed/expired), the local
+          # runtime can be gone, or the adapter can surface a transport error —
+          # PreviewControl.click/2 returns those as {:error, term}. Propagate
+          # them instead of raising CaseClauseError.
+          other ->
+            other
         end
       end)
     end
