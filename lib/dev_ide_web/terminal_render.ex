@@ -17,6 +17,8 @@ defmodule DevIdeWeb.TerminalRender do
   process built the frame.
   """
 
+  alias DevIdeWeb.TerminalTelemetry
+
   @type cells :: list()
   @type payload :: map()
 
@@ -74,6 +76,8 @@ defmodule DevIdeWeb.TerminalRender do
   """
   @spec build_payload(String.t(), cells(), map(), any(), any(), any(), keyword()) :: payload()
   def build_payload(id, cells, cursor, mouse, scrollbar, focus_reporting, opts) do
+    started = System.monotonic_time()
+
     base = %{
       id: id,
       cursor: Map.update!(cursor, :color, &color_to_list/1),
@@ -85,20 +89,20 @@ defmodule DevIdeWeb.TerminalRender do
     previous = Keyword.get(opts, :previous_cells)
     force_full? = Keyword.get(opts, :force_full?, false)
 
-    {payload, full_frame?} =
+    {payload, full_frame?, changed_row_count} =
       if force_full? do
-        {Map.put(base, :cells, cells_to_payload(cells)), true}
+        {Map.put(base, :cells, cells_to_payload(cells)), true, length(cells)}
       else
         case changed_rows(previous, cells) do
-          {:ok, rows} -> {Map.put(base, :rows, rows), false}
-          :shape_changed -> {Map.put(base, :cells, cells_to_payload(cells)), true}
+          {:ok, rows} -> {Map.put(base, :rows, rows), false, length(rows)}
+          :shape_changed -> {Map.put(base, :cells, cells_to_payload(cells)), true, length(cells)}
         end
       end
 
     payload
     |> Map.put(:full_frame, full_frame?)
     |> maybe_put_frame_sequence(opts)
-    |> emit_frame_telemetry(id, full_frame?)
+    |> emit_frame_telemetry(id, cells, full_frame?, changed_row_count, started)
   end
 
   defp maybe_put_frame_sequence(payload, opts) do
@@ -112,11 +116,23 @@ defmodule DevIdeWeb.TerminalRender do
     end
   end
 
-  defp emit_frame_telemetry(payload, id, full_frame?) do
+  defp emit_frame_telemetry(payload, id, cells, full_frame?, changed_row_count, started) do
     :telemetry.execute(
       [:dev_ide, :terminal, :render_frame],
-      %{count: 1},
-      %{id: id, full_frame?: full_frame?, sequenced?: Map.has_key?(payload, :frame_seq)}
+      %{
+        count: 1,
+        duration_us: TerminalTelemetry.duration_us(started),
+        rows: length(cells),
+        cells: TerminalTelemetry.cell_count(cells),
+        changed_rows: changed_row_count
+      }
+      |> Map.merge(TerminalTelemetry.sampled_payload_measurements(payload)),
+      %{
+        id: id,
+        full_frame?: full_frame?,
+        sequenced?: Map.has_key?(payload, :frame_seq),
+        empty_incremental?: not full_frame? and changed_row_count == 0
+      }
     )
 
     payload

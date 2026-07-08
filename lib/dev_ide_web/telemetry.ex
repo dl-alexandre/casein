@@ -97,6 +97,25 @@ defmodule DevIdeWeb.Telemetry do
       counter("dev_ide.terminals.owner.size_changed.count", tags: [:reason, :kind]),
       last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason]),
 
+      # Raw terminal render pipeline. These separate the server-side cost
+      # centers that contribute to perceived terminal latency.
+      counter("dev_ide.terminal.render_frame.count",
+        tags: [:full_frame?, :sequenced?, :empty_incremental?]
+      ),
+      summary("dev_ide.terminal.render_frame.duration_us", tags: [:full_frame?]),
+      summary("dev_ide.terminal.render_frame.payload_bytes", tags: [:full_frame?]),
+      summary("dev_ide.terminal.render_frame.changed_rows", tags: [:full_frame?]),
+      counter("dev_ide.terminal.pane_worker.frame.count", tags: [:status, :full_frame?]),
+      summary("dev_ide.terminal.pane_worker.frame.duration_us", tags: [:status]),
+      summary("dev_ide.terminal.pane_worker.frame.payload_bytes", tags: [:status]),
+      summary("dev_ide.terminal.pane_worker.frame.changed_rows", tags: [:status]),
+      counter("dev_ide.terminal.pane_worker.flush_schedule.count", tags: [:burst?]),
+      summary("dev_ide.terminal.pane_worker.flush_schedule.interval_ms", tags: [:burst?]),
+      summary("dev_ide.terminal.pane_worker.flush_schedule.pending_bytes", tags: [:burst?]),
+      counter("dev_ide.terminal.live_view.push_frame.count", tags: [:full_frame?]),
+      summary("dev_ide.terminal.live_view.push_frame.payload_bytes", tags: [:full_frame?]),
+      summary("dev_ide.terminal.live_view.push_frame.changed_rows", tags: [:full_frame?]),
+
       # Operator attention routing: why a quiet-agent transition stayed silent,
       # rendered inline, or requested an OS notification.
       counter("dev_ide.attention.quiet_agent.transition.count",

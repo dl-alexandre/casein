@@ -77,6 +77,49 @@ defmodule DevIdeWeb.TerminalRenderTest do
            ]
   end
 
+  test "render frame telemetry includes duration, size, and changed row counts" do
+    handler_id = "terminal-render-telemetry-#{System.unique_integer([:positive])}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler_id,
+      [:dev_ide, :terminal, :render_frame],
+      fn event, measurements, metadata, _cfg ->
+        send(test_pid, {:render_frame_telemetry, event, measurements, metadata})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    TerminalRender.build_payload(
+      "ghostty-pane-1",
+      cells("ac"),
+      cursor(),
+      %{mode: "none"},
+      %{offset: 0},
+      false,
+      previous_cells: cells("ab"),
+      frame_seq: 3,
+      frame_epoch: 2
+    )
+
+    assert_receive {:render_frame_telemetry, [:dev_ide, :terminal, :render_frame], measurements,
+                    metadata}
+
+    assert measurements.count == 1
+    assert measurements.rows == 1
+    assert measurements.cells == 2
+    assert measurements.changed_rows == 1
+    assert measurements.payload_bytes > 0
+    assert is_integer(measurements.duration_us)
+
+    assert metadata.id == "ghostty-pane-1"
+    assert metadata.full_frame? == false
+    assert metadata.sequenced? == true
+    assert metadata.empty_incremental? == false
+  end
+
   defp cursor, do: %{x: 0, y: 0, color: {9, 8, 7}}
 
   defp cells(text) do

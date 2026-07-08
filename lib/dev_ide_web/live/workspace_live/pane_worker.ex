@@ -47,13 +47,16 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.FileLinkScanner
   alias DevIdeWeb.TerminalRender
+  alias DevIdeWeb.TerminalTelemetry
 
-  # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
-  # streaming tokens) is buffered and drained into the term + rendered at most
-  # once per window, so we make O(1) term writes/renders per pane per frame
-  # instead of one per PTY chunk. 8ms (~120fps) halves keystroke-echo latency
-  # vs 16ms while still coalescing burst output effectively.
-  @flush_interval_ms 8
+  # Output coalescing windows. Isolated/small output stays at 8ms for low
+  # keystroke echo latency; sustained or large output moves to 24ms so bursty
+  # writers spend more time batching and less time forcing browser paints.
+  @interactive_flush_interval_ms 8
+  @burst_flush_interval_ms 24
+  @burst_reset_ms 120
+  @burst_byte_threshold 4 * 1024
+  @burst_frame_threshold 2
 
   # DEC mode 2026 (synchronized output): apps wrap an atomic screen update in
   # BSU … ESU. While one is open we hold the
@@ -171,8 +174,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          # `last_cells` is the diff baseline for the next frame. frame_epoch/seq
          # are per-worker render-stream coordinates for client-side resync.
          out_buffer: [],
+         out_buffer_bytes: 0,
          flush_scheduled?: false,
+         last_flush_at_ms: nil,
+         output_burst_frames: 0,
          last_cells: nil,
+         last_frame_state: nil,
          frame_epoch: 0,
          frame_seq: 0,
          # Canonical session content generation from SessionOwner payloads
@@ -344,7 +351,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   # Buffer the raw chunk for the coalesced flush. Both the term write/frame
   # AND the LV's `{:pty_data, ...}` byte-stream side channels (OSC52
-  # clipboard, preview-URL detection) drain on the same @flush_interval_ms
+  # clipboard, preview-URL detection) drain on the same adaptive flush
   # cadence — sending pty_data per raw chunk used to flood the LV mailbox
   # under heavy output (one message per PTY write), queueing keystrokes and
   # clicks behind hundreds of regex scans. Iolists are cheap to extend in
@@ -360,7 +367,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # true screen over anything the replay got wrong.
   defp ingest_replay(state, data) do
     if Process.alive?(state.term), do: Ghostty.Terminal.reset(state.term)
-    state = %{state | out_buffer: [], last_cells: nil}
+    state = %{state | out_buffer: [], out_buffer_bytes: 0, last_cells: nil}
     ingest_output(state, replay_tail(data))
   end
 
@@ -375,12 +382,18 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   defp ingest_output(state, data) do
-    state = %{state | out_buffer: [data | state.out_buffer]}
+    state = %{
+      state
+      | out_buffer: [data | state.out_buffer],
+        out_buffer_bytes: state.out_buffer_bytes + byte_size(data)
+    }
 
     if state.flush_scheduled? do
       state
     else
-      Process.send_after(self(), :flush_output, @flush_interval_ms)
+      interval_ms = flush_interval_ms(state)
+      Process.send_after(self(), :flush_output, interval_ms)
+      emit_flush_schedule_telemetry(state, interval_ms)
       %{state | flush_scheduled?: true}
     end
   end
@@ -395,7 +408,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       chunks_rev ->
         data = Enum.reverse(chunks_rev)
         binary = IO.iodata_to_binary(data)
-        state = %{state | out_buffer: []}
+
+        state =
+          state
+          |> Map.put(:out_buffer, [])
+          |> Map.put(:out_buffer_bytes, 0)
+          |> update_flush_cadence(byte_size(binary))
 
         # One coalesced binary per flush window for the LV side channels,
         # regardless of how many chunks the PTY produced. Coalescing also
@@ -415,6 +433,50 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           state
         end
     end
+  end
+
+  defp flush_interval_ms(state) do
+    cond do
+      state.out_buffer_bytes >= @burst_byte_threshold ->
+        @burst_flush_interval_ms
+
+      state.output_burst_frames >= @burst_frame_threshold ->
+        @burst_flush_interval_ms
+
+      true ->
+        @interactive_flush_interval_ms
+    end
+  end
+
+  defp update_flush_cadence(state, bytes) do
+    now = System.monotonic_time(:millisecond)
+    recent? = state.last_flush_at_ms && now - state.last_flush_at_ms <= @burst_reset_ms
+    burst? = bytes >= @burst_byte_threshold or recent?
+
+    burst_frames =
+      if burst? do
+        min(state.output_burst_frames + 1, @burst_frame_threshold)
+      else
+        0
+      end
+
+    %{state | last_flush_at_ms: now, output_burst_frames: burst_frames}
+  end
+
+  defp emit_flush_schedule_telemetry(state, interval_ms) do
+    :telemetry.execute(
+      [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+      %{
+        count: 1,
+        interval_ms: interval_ms,
+        pending_bytes: state.out_buffer_bytes
+      },
+      %{
+        pane_id: state.pane_id,
+        burst_frames: state.output_burst_frames,
+        burst?: interval_ms == @burst_flush_interval_ms
+      }
+    )
   end
 
   # Gate the frame on DEC 2026 synchronized-output state. The term already has
@@ -456,6 +518,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     force_full? = Keyword.get(opts, :force_full?, false) or is_nil(state.last_cells)
     {frame_seq, frame_epoch} = next_frame_position(state, force_full?)
     id = "ghostty-" <> state.pane_id
+    started = System.monotonic_time()
 
     case TerminalRender.frame_from_term(state.term, id,
            previous_cells: state.last_cells,
@@ -464,17 +527,68 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            frame_epoch: frame_epoch
          ) do
       {payload, cells} ->
-        payload =
-          payload
-          |> put_content_gen(state.content_gen)
-          |> put_file_links(state, cells, id)
+        frame_state = frame_state(payload)
 
-        send(state.parent, {:pane_frame, state.pane_id, payload})
-        %{state | last_cells: cells, frame_seq: frame_seq, frame_epoch: frame_epoch}
+        if noop_frame?(payload, state, frame_state) do
+          emit_worker_frame_telemetry(:skipped, state, payload, started)
+          state
+        else
+          payload =
+            payload
+            |> put_content_gen(state.content_gen)
+            |> put_file_links(state, cells, id)
+
+          send(state.parent, {:pane_frame, state.pane_id, payload})
+          emit_worker_frame_telemetry(:sent, state, payload, started)
+
+          %{
+            state
+            | last_cells: cells,
+              last_frame_state: frame_state,
+              frame_seq: frame_seq,
+              frame_epoch: frame_epoch
+          }
+        end
 
       nil ->
         state
     end
+  end
+
+  defp noop_frame?(%{full_frame: true}, _state, _frame_state), do: false
+
+  defp noop_frame?(%{rows: []}, %{last_frame_state: last_frame_state}, frame_state),
+    do: last_frame_state == frame_state
+
+  defp noop_frame?(_payload, _state, _frame_state), do: false
+
+  defp frame_state(payload) do
+    %{
+      cursor: Map.get(payload, :cursor),
+      mouse: Map.get(payload, :mouse),
+      scrollbar: Map.get(payload, :scrollbar),
+      focus_reporting: Map.get(payload, :focus_reporting)
+    }
+  end
+
+  defp emit_worker_frame_telemetry(status, state, payload, started) do
+    :telemetry.execute(
+      [:dev_ide, :terminal, :pane_worker, :frame],
+      %{
+        count: 1,
+        duration_us: TerminalTelemetry.duration_us(started),
+        changed_rows: TerminalTelemetry.changed_row_count(payload)
+      }
+      |> Map.merge(TerminalTelemetry.sampled_payload_measurements(payload)),
+      %{
+        pane_id: state.pane_id,
+        id: Map.get(payload, :id),
+        status: status,
+        full_frame?: Map.get(payload, :full_frame) == true,
+        frame_seq: Map.get(payload, :frame_seq),
+        frame_epoch: Map.get(payload, :frame_epoch)
+      }
+    )
   end
 
   # --- terminal file-link detection ---------------------------------------------
