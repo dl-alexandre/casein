@@ -155,6 +155,17 @@ defmodule DevIdeWeb.Router do
     match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
   end
 
+  # Durable, login-gated public URL for an artifact project's static files,
+  # served straight from its git worktree (not the ephemeral loopback preview
+  # server). Uses :workspace_file (session + ForwardAuth, no cockpit CSP — the
+  # controller sets its own tight CSP for workspace-authored content) and gates
+  # on workspace ownership. This is the PR-shareable artifact link.
+  scope "/artifact-projects", DevIdeWeb do
+    pipe_through :workspace_file
+
+    get "/:workspace_id/:artifact_project_id/*path", ArtifactProjectController, :show
+  end
+
   scope "/api", DevIdeWeb do
     pipe_through :workspace_file
 

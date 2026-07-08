@@ -179,12 +179,33 @@ defmodule DevIDE.ArtifactProjects do
       worktree_path: project.worktree_path,
       preview_url: project.preview_url,
       preview_server: project.preview_server,
+      public_url: public_url(project),
       prompt_history: project.prompt_history,
       metadata: project.metadata || %{},
       created_at: iso(project.created_at),
       updated_at: iso(project.updated_at),
       preview_open_arguments: preview_open_arguments(project)
     }
+  end
+
+  # Durable, login-gated URL served by DevIdeWeb.ArtifactProjectController straight
+  # from the worktree — safe to paste in a PR (references stable ids, not the
+  # ephemeral loopback preview port). nil when no public base URL is configured
+  # (e.g. local dev without DEVIDE_URL).
+  defp public_url(%Project{workspace_id: ws, id: id}) when is_binary(ws) and is_binary(id) do
+    case artifact_public_origin() do
+      nil -> nil
+      origin -> origin <> "/artifact-projects/" <> ws <> "/" <> id <> "/"
+    end
+  end
+
+  defp public_url(_), do: nil
+
+  defp artifact_public_origin do
+    case Application.get_env(:dev_ide, :preview_app_url) do
+      url when is_binary(url) and url != "" -> DevIDE.Previews.Url.origin_of(url)
+      _ -> nil
+    end
   end
 
   @doc "Arguments for opening the artifact through the existing Preview MCP app mode."
