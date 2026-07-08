@@ -86,8 +86,14 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     assert hooks["hooks"]["PreToolUse"] |> hd() |> Map.get("matcher") == "*"
 
-    assert hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"]) =~
-             "devide-agent-state.sh"
+    stop_command = hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"])
+    assert stop_command =~ "devide-agent-state.sh"
+
+    # The hook must resolve from the workspace staging home (checkout-independent),
+    # and the script must actually be staged there — not left in <checkout>/scripts.
+    assert stop_command =~ "DEVIDE_AGENT_MCP_HOME"
+    assert File.regular?(Path.join(staging, "devide-agent-state.sh"))
+    assert File.regular?(Path.join(staging, "devide-codex-notify.sh"))
 
     sidechat = Jason.decode!(File.read!(Path.join(staging, "claude-sidechat-settings.json")))
     assert sidechat["permissions"]["deny"] == ["Edit", "Write", "Bash"]

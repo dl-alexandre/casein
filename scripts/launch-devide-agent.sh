@@ -286,7 +286,7 @@ codex_state_notify_args() {
     return 0
   fi
 
-  local script="${DEVIDE_SCRIPTS:-${ROOT}/scripts}/devide-codex-notify.sh"
+  local script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
   [[ -x "$script" ]] || return 0
 
   printf '%s\0' -c "notify=[\"${script}\"]"

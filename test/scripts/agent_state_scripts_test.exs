@@ -31,7 +31,7 @@ defmodule Scripts.AgentStateScriptsTest do
                Map.fetch!(hooks, event)
 
       assert command =~ "devide-agent-state.sh"
-      assert command =~ ~s([ -n "${DEVIDE_SCRIPTS:-}" ] || exit 0)
+      assert command =~ ~s([ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0)
     end
   end
 

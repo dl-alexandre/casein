@@ -135,6 +135,21 @@ export DEVIDE_SCRIPTS
 
 mkdir -p "${STAGING}/grok" "${STAGING}/codex" "${STAGING}/cursor"
 
+# Stage checkout-independent agent hook scripts into the workspace home so they
+# resolve no matter which project is the checkout. Prefer the release-shipped
+# priv/scripts copy; fall back to the plain scripts tree in a dev checkout.
+for _hook in devide-agent-state.sh devide-codex-notify.sh; do
+  if [[ -f "${ROOT}/priv/scripts/${_hook}" ]]; then
+    _hook_src="${ROOT}/priv/scripts/${_hook}"
+  elif [[ -f "${DEVIDE_SCRIPTS}/${_hook}" ]]; then
+    _hook_src="${DEVIDE_SCRIPTS}/${_hook}"
+  else
+    continue
+  fi
+  cp "${_hook_src}" "${STAGING}/${_hook}"
+  chmod 755 "${STAGING}/${_hook}"
+done
+
 WORKSPACE_SLUG="$(
   DEVIDE_WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME}" python3 -c "
 import os, re
@@ -252,7 +267,7 @@ cp "${STAGING}/.mcp.json" "${STAGING}/cursor/mcp.json"
 # --- Claude Code hooks settings (semantic agent-state reporting) ---
 # Injected by the launcher via `claude --settings`. The hook command runs
 # through a shell, so $DEVIDE_SCRIPTS resolves from the agent's env at hook time.
-AGENT_STATE_HOOK="${DEVIDE_SCRIPTS}/devide-agent-state.sh"
+AGENT_STATE_HOOK="${STAGING}/devide-agent-state.sh"
 HOOKS_SETTINGS="${STAGING}/claude-hooks-settings.json"
 AGENT_STATE_HOOK="${AGENT_STATE_HOOK}" python3 - "${HOOKS_SETTINGS}" <<'PY'
 import json, os, sys
