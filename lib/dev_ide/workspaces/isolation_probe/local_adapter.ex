@@ -85,24 +85,33 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
     end)
   end
 
+  # Matches a recognized DB env key in either the env-file/list form
+  # (`DATABASE_URL=…`, `- DATABASE_URL=…`) or the YAML mapping form
+  # (`DATABASE_URL: …`) that Compose `environment:` blocks use. Keys are
+  # uppercase, so lowercase YAML keys (`image:`, `environment:`) never match.
+  @compose_env_line ~r/^-?\s*([A-Z][A-Z0-9_]*)\s*[:=]\s*(.*)$/
+
   defp add_compose_env(acc, content, file) do
-    # Cheap line-grep for env entries — full YAML parse is overkill for M13.
+    # Cheap line-grep for env entries — full YAML parse is overkill here.
     content
     |> String.split("\n")
     |> Enum.reduce(acc, fn line, a ->
-      trimmed = String.trim(line)
+      case Regex.run(@compose_env_line, String.trim(line)) do
+        [_, key, raw] ->
+          val = unquote_value(String.trim(raw))
 
-      cond do
-        String.starts_with?(trimmed, "DATABASE_URL=") or
-            String.starts_with?(trimmed, "- DATABASE_URL=") ->
-          val = trimmed |> String.split("=", parts: 2) |> List.last()
-          [%{source: :docker_compose, file: file, kind: :url, value: val} | a]
+          cond do
+            key in @env_keys ->
+              [%{source: :docker_compose, file: file, kind: :url, value: val} | a]
 
-        String.starts_with?(trimmed, "POSTGRES_HOST=") ->
-          val = trimmed |> String.split("=", parts: 2) |> List.last()
-          [%{source: :docker_compose, file: file, kind: :host, value: val} | a]
+            key in @host_keys ->
+              [%{source: :docker_compose, file: file, kind: :host, value: val} | a]
 
-        true ->
+            true ->
+              a
+          end
+
+        _ ->
           a
       end
     end)
