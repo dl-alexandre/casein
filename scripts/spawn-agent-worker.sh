@@ -142,8 +142,11 @@ WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
 # spawn gets a fresh agent/<runtime>/<slug>-<stamp> worktree off the primary
 # checkout. Both matter: launch-devide-agent.sh keys worktree creation off the
 # cwd *and* DEVIDE_CHECKOUT, and an inherited value would point back at the
-# orchestrator's linked worktree.
-LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && export DEVIDE_CHECKOUT=$(printf '%q' "$CHECKOUT") && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
+# orchestrator's linked worktree. DEVIDE_AGENT_FORCE_FRESH_WORKTREE makes
+# agent_worktree_ensure refuse to adopt whatever tree the launcher lands in
+# (the cwd heuristic has proven unreliable from nested worktrees) and always
+# branch a fresh one — so a worker can never operate in a shared checkout.
+LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && export DEVIDE_CHECKOUT=$(printf '%q' "$CHECKOUT") DEVIDE_AGENT_FORCE_FRESH_WORKTREE=1 && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
 
 if [[ "${DEVIDE_SPAWN_DRY_RUN:-0}" == "1" ]]; then
   printf 'session=%s\ncheckout=%s\nwindow=%s\nlaunch=%s\n' \

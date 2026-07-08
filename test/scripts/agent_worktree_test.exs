@@ -30,6 +30,63 @@ defmodule Scripts.AgentWorktreeTest do
     refute String.trim(branch) == "HEAD"
   end
 
+  test "agent_worktree_ensure with FORCE_FRESH branches a new worktree instead of adopting a linked one" do
+    %{repo: repo, root: worktree_root} = git_fixture!()
+    # Simulate the orchestrator's own linked worktree that a spawned worker
+    # would otherwise land in and adopt.
+    linked = Path.join(Path.dirname(repo), "orchestrator-linked")
+    git!(["-C", repo, "worktree", "add", "-b", "orchestrator", linked, "master"])
+
+    {out, 0} =
+      bash_agent_worktree(
+        """
+        agent_worktree_report_mcp() { :; }
+        agent_worktree_spawn_reaper() { :; }
+        cd "#{linked}"
+        agent_worktree_ensure grok freshtest
+        printf 'RESULT=%s\\n' "$DEVIDE_CHECKOUT"
+        """,
+        env: [
+          {"DEVIDE_CHECKOUT", repo},
+          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root},
+          {"DEVIDE_AGENT_WORKTREE_BASE", "HEAD"},
+          {"DEVIDE_AGENT_FORCE_FRESH_WORKTREE", "1"}
+        ]
+      )
+
+    [result] = Regex.run(~r/RESULT=(.+)/, out, capture: :all_but_first)
+    # A fresh worktree under the worktree root — NOT the adopted linked tree.
+    assert Path.dirname(result) == worktree_root
+    assert Path.basename(result) =~ ~r/^agent-grok-freshtest-\d{14}$/
+    refute result == linked
+  end
+
+  test "agent_worktree_ensure WITHOUT force-fresh still adopts a linked worktree" do
+    %{repo: repo, root: worktree_root} = git_fixture!()
+    linked = Path.join(Path.dirname(repo), "orchestrator-linked")
+    git!(["-C", repo, "worktree", "add", "-b", "orchestrator", linked, "master"])
+
+    {out, 0} =
+      bash_agent_worktree(
+        """
+        agent_worktree_report_mcp() { :; }
+        agent_worktree_spawn_reaper() { :; }
+        cd "#{linked}"
+        agent_worktree_ensure grok adopttest
+        printf 'RESULT=%s\\n' "$DEVIDE_CHECKOUT"
+        """,
+        env: [
+          {"DEVIDE_CHECKOUT", repo},
+          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root},
+          {"DEVIDE_AGENT_WORKTREE_BASE", "HEAD"}
+        ]
+      )
+
+    [result] = Regex.run(~r/RESULT=(.+)/, out, capture: :all_but_first)
+    # Legacy path: a human inside an existing worktree reuses it.
+    assert result == linked
+  end
+
   test "agent_worktree_report_mcp sends a tools/call envelope" do
     %{repo: repo} = git_fixture!()
     curl_bin = fake_curl_bin!()
