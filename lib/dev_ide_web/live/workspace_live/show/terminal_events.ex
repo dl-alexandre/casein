@@ -682,14 +682,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   # Cmd/Ctrl+Click on a detected http(s) URL in terminal output opens it in a
   # split preview pane (plain click opens a browser tab, handled client-side).
-  # Re-validate the scheme here — the URL crossed the wire from the client — then
-  # delegate to the same path the "preview:open" UI event uses.
+  # Re-validate the scheme here — the URL crossed the wire from the client. A
+  # site that hard-blocks framing (X-Frame-Options / CSP frame-ancestors) can
+  # only render as a blank/screenshot pane, so fall back to a browser tab
+  # instead; otherwise delegate to the same path the "preview:open" UI uses.
   def handle_event("terminal:open_web_link_preview", %{"url" => url}, socket)
       when is_binary(url) do
-    if PreviewUrl.http_url?(url) do
-      PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
-    else
-      {:noreply, socket}
+    cond do
+      not PreviewUrl.http_url?(url) ->
+        {:noreply, socket}
+
+      embeddability_checker().frame_blocked_url?(url) ->
+        {:noreply,
+         socket
+         |> put_flash(
+           :info,
+           "That site blocks embedding — opened it in a new browser tab instead."
+         )
+         |> push_event("devide:open_tab", %{url: url})}
+
+      true ->
+        PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
     end
   end
 
@@ -1019,5 +1032,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not move tmux window: #{inspect(reason)}")}
     end
+  end
+
+  # Config seam so tests can stub the (network-touching) embeddability probe.
+  defp embeddability_checker do
+    Application.get_env(:dev_ide, :embeddability_checker, DevIDE.Previews.Embeddability)
   end
 end
