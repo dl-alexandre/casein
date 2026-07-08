@@ -8,6 +8,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
     def capture_scrollback(_session, _opts), do: ""
   end
 
+  defmodule EmbeddableChecker do
+    def frame_blocked_url?(_url), do: false
+    def frame_blocked_url?(_url, _opts), do: false
+  end
+
+  defmodule BlockedChecker do
+    def frame_blocked_url?(_url), do: true
+    def frame_blocked_url?(_url, _opts), do: true
+  end
+
   test "terminal kill refuses tmux sessions outside the workspace prefix" do
     previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
@@ -260,7 +270,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
       }
     end
 
-    test "a valid http(s) URL with no tmux session flashes the start-a-session hint" do
+    setup do
+      # Stub the network-touching embeddability probe; default = embeddable so
+      # the URL flows to the normal preview-open path. Individual tests override.
+      previous = Application.get_env(:dev_ide, :embeddability_checker)
+      Application.put_env(:dev_ide, :embeddability_checker, EmbeddableChecker)
+      on_exit(fn -> restore_env(:dev_ide, :embeddability_checker, previous) end)
+      :ok
+    end
+
+    test "an embeddable http(s) URL with no tmux session flashes the start-a-session hint" do
       socket = preview_socket(%{tmux_session: ""})
 
       assert {:noreply, socket} =
@@ -271,6 +290,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
                )
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "tmux terminal session"
+    end
+
+    test "a frame-blocking site falls back to opening a browser tab" do
+      Application.put_env(:dev_ide, :embeddability_checker, BlockedChecker)
+      socket = preview_socket(%{tmux_session: "devide_alpha_u-dev"})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:open_web_link_preview",
+                 %{"url" => "https://blocks-framing.example/x"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :info) =~ "new browser tab"
+
+      assert Enum.any?(socket.private.live_temp[:push_events] || [], fn
+               ["devide:open_tab", %{url: url}] -> url == "https://blocks-framing.example/x"
+               _ -> false
+             end)
     end
 
     test "a non-http scheme is rejected before any preview open" do
