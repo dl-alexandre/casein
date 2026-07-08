@@ -45,6 +45,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
           |> assign(:audit_events_count, 0)
           |> assign(:audit_deny_count, 0)
           |> assign(:audit_ledger_count, 0)
+          |> assign(:audit_trace, nil)
           |> stream(:audit_events, [])
         else
           s
@@ -72,6 +73,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
         audit_events_count={@audit_events_count}
         audit_ledger_count={@audit_ledger_count}
         audit_window_filter={@audit_window_filter}
+        audit_trace={@audit_trace}
         workspace={@workspace}
         streams={@streams}
         target={@myself}
@@ -98,6 +100,23 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
     end)
   end
 
+  # Drill into one event's causal chain (correlation stamped by
+  # DevIDE.Signals.Context). list_by_correlation reads the durable audit table
+  # and returns the chain in causal order.
+  def handle_event("audit_drawer:trace" = event, %{"correlation" => cid}, socket)
+      when is_binary(cid) and cid != "" do
+    PanelGate.gate_event(socket, event, fn ->
+      {:noreply,
+       assign(socket, :audit_trace, %{correlation_id: cid, events: Audit.list_by_correlation(cid)})}
+    end)
+  end
+
+  def handle_event("audit_drawer:trace_close" = event, _params, socket) do
+    PanelGate.gate_event(socket, event, fn ->
+      {:noreply, assign(socket, :audit_trace, nil)}
+    end)
+  end
+
   def refresh_audit_stream(socket) do
     events =
       socket.assigns.workspace.id
@@ -109,6 +128,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
     |> assign(:audit_events_count, length(events))
     |> assign(:audit_deny_count, AuditDrawer.deny_count(events))
     |> assign(:audit_ledger_count, AuditDrawer.ledger_event_count(events))
+    |> assign(:audit_trace, nil)
   end
 
   def maybe_insert_audit_event(socket, nil), do: socket
