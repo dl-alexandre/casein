@@ -291,7 +291,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   def workspace_session_tabs(summaries, current_workspace_id) when is_list(summaries) do
     summaries
     |> Enum.reject(&(summary_id(&1) == current_workspace_id))
+    # Only surface other workspaces you can actually switch into. Dead
+    # `agent-*-adhoc-*` worktrees left on disk have no live tmux session, so
+    # they resolve to live? == false and drop out of the cross-workspace list
+    # instead of piling up one meaningless row per past agent launch.
+    |> Enum.filter(&workspace_summary_live?/1)
     |> Enum.flat_map(&workspace_summary_tabs/1)
+  end
+
+  defp workspace_summary_live?(summary) do
+    Map.get(summary, :live?, Map.get(summary, "live?", true)) != false
   end
 
   @spec tmux_inventory_tabs([map()]) :: [workspace_tab()]

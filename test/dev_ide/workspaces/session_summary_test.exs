@@ -385,6 +385,35 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     assert summary.path_label == "dalexandre-twenty-one"
   end
 
+  test "build_many marks a workspace live only when it has a live tmux session" do
+    alive = %Workspace{id: "alive-ws", name: "alive", path: "/data/workspaces/alice/alive"}
+    dead = %Workspace{id: "dead-ws", name: "dead", path: "/data/workspaces/alice/dead"}
+
+    # Only `alive` has a live tmux session; `dead` is a leftover worktree
+    # directory with nothing running in it.
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_alive_u-alice" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 5}
+      ]
+    })
+
+    summaries = SessionSummary.build_many([alive, dead])
+
+    assert %{live?: true} = Enum.find(summaries, &(&1.id == "alive-ws"))
+    assert %{live?: false} = Enum.find(summaries, &(&1.id == "dead-ws"))
+  end
+
+  test "build_many keeps a workspace live via an active runtime even with no tmux session" do
+    ws = %Workspace{id: "rt-live-ws", name: "rtlive", path: "/data/workspaces/alice/rtlive"}
+
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime(ws.id, runtime_id: "rt-live", status: "provisioned")
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
+
+    assert [%{live?: true}] = SessionSummary.build_many([ws])
+  end
+
   test "orphan_tmux_sessions mirrors devide tmux sessions outside known workspaces" do
     ws = %Workspace{
       id: "summary-ws",

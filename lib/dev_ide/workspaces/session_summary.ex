@@ -30,7 +30,8 @@ defmodule DevIDE.Workspaces.SessionSummary do
           session_count: non_neg_integer(),
           sessions: [map()],
           runtime_count: non_neg_integer(),
-          active_runtime_count: non_neg_integer()
+          active_runtime_count: non_neg_integer(),
+          live?: boolean()
         }
 
   @spec build(map()) :: summary()
@@ -51,6 +52,8 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
     runtimes = Runtimes.list_runtimes(%{"workspace_id" => id})
 
+    live? = worktree_live?(sessions, runtimes, Keyword.get(opts, :live_tmux_names, :all))
+
     %{
       id: id,
       name: name,
@@ -65,7 +68,8 @@ defmodule DevIDE.Workspaces.SessionSummary do
       sessions: session_links,
       agent_layout: AgentPane.layout_status(session_links),
       runtime_count: length(runtimes),
-      active_runtime_count: Enum.count(runtimes, &active_runtime?/1)
+      active_runtime_count: Enum.count(runtimes, &active_runtime?/1),
+      live?: live?
     }
   end
 
@@ -73,10 +77,15 @@ defmodule DevIDE.Workspaces.SessionSummary do
   def build_many(workspaces) when is_list(workspaces) do
     tmux_sessions = SessionDirectory.list_tmux_sessions()
     directory_inventory = SessionDirectory.directory_inventory()
+    live_tmux_names = live_tmux_name_set(tmux_sessions)
 
     workspaces
     |> Task.async_stream(
-      &build(&1, tmux_sessions: tmux_sessions, directory_inventory: directory_inventory),
+      &build(&1,
+        tmux_sessions: tmux_sessions,
+        directory_inventory: directory_inventory,
+        live_tmux_names: live_tmux_names
+      ),
       max_concurrency: System.schedulers_online(),
       ordered: true,
       timeout: :infinity
@@ -411,6 +420,31 @@ defmodule DevIDE.Workspaces.SessionSummary do
   end
 
   defp session_metadata(_session, _key), do: nil
+
+  # A worktree/workspace is "live" when it has something you could attach to right
+  # now: an active runtime, or ≥1 session backed by a tmux session that currently
+  # exists. Directory-derived agent-worktree tabs whose tmux session is long gone
+  # are NOT live — that is how the picker drops dead `agent-*-adhoc-*` ghosts left
+  # behind on disk. When the live tmux set is unknown (a bare `build/1`), default
+  # to live so nothing is hidden by accident.
+  defp worktree_live?(_sessions, _runtimes, :all), do: true
+
+  defp worktree_live?(sessions, runtimes, %MapSet{} = live_names) do
+    Enum.any?(runtimes, &active_runtime?/1) or
+      Enum.any?(sessions, fn session ->
+        name = Map.get(session, :tmux_session) || Map.get(session, "tmux_session")
+        is_binary(name) and MapSet.member?(live_names, name)
+      end)
+  end
+
+  defp live_tmux_name_set(raw_sessions) when is_list(raw_sessions) do
+    raw_sessions
+    |> Enum.map(&raw_tmux_session_name/1)
+    |> Enum.reject(&blank?/1)
+    |> MapSet.new()
+  end
+
+  defp live_tmux_name_set(_raw_sessions), do: MapSet.new()
 
   defp session_display_label(_session, _label, display_alias)
        when is_binary(display_alias) and display_alias != "",
