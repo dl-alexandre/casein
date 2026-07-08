@@ -45,6 +45,8 @@ config :dev_ide,
     git_remote: "https://github.com/dl-alexandre/dev_ide.git",
     git_branch: "master",
     github_repo: "dl-alexandre/dev_ide",
+    git_credential_helper:
+      "!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential",
     deploy_service: "devide-deploy.service",
     remote_head_cache_ttl_ms: 60_000,
     ls_remote_timeout_ms: 5_000,

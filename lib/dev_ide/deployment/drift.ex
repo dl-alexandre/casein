@@ -147,7 +147,11 @@ defmodule DevIDE.Deployment.Drift do
   end
 
   defp ls_remote(remote, branch) do
-    case System.cmd("git", ["ls-remote", remote, "refs/heads/#{branch}"], stderr_to_stdout: true) do
+    args =
+      credential_args() ++
+        ["ls-remote", remote, "refs/heads/#{branch}"]
+
+    case System.cmd("git", args, stderr_to_stdout: true) do
       {output, 0} ->
         case String.split(output) do
           [sha | _] -> {:ok, sha}
@@ -159,6 +163,21 @@ defmodule DevIDE.Deployment.Drift do
     end
   rescue
     error -> {:error, error}
+  end
+
+  defp credential_args do
+    case config(:git_credential_helper, nil) do
+      helper when is_binary(helper) and helper != "" ->
+        [
+          "-c",
+          "credential.helper=",
+          "-c",
+          "credential.https://github.com.helper=#{helper}"
+        ]
+
+      _ ->
+        []
+    end
   end
 
   defp broadcast(info) do
