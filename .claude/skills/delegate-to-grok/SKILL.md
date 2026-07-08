@@ -119,8 +119,16 @@ topology as progress text while `pane_state` is `"working"`.
 **Do not** wait on `states: ["done"]` or `["idle"]` for Grok — they will time out
 (Phase 0 spike: task finished in 9s but `done` never matched).
 
-Optional stall detection: if `pane_state` stays `"working"` unchanged for >10 min,
-`terminal_capture` and check for permission prompts or questions.
+**Stall / wedge detection:** `pane_state` stays `"working"` through both healthy
+work *and* a hang, so topology alone can't tell them apart — you must
+`terminal_capture(lines: 40)` and read the spinner/footer. If it stays `"working"`
+unchanged for >5 min, capture and classify:
+
+- Permission prompt or question in the footer → answer it (step 6, `blocked`).
+- Spinner stuck on **`⠹ Compacting…`** → **wedged**. A healthy compaction finishes
+  in seconds; a minute-plus means the worker is hung. Do **not** wait it out or try
+  to salvage its chat — jump to
+  [Recover a wedged worker](#recover-a-wedged-worker-compaction-hang).
 
 ### Phase C — extract result (capture fallback)
 
@@ -182,12 +190,60 @@ Leave the pane alive by default for inspection. Kill only on explicit request:
 tmux kill-window -t <session>:<window_index>
 ```
 
+## Recover a wedged worker (compaction hang)
+
+A Grok worker can wedge on `⠹ Compacting… 10m+` (see Stall / wedge detection in
+step 5). Because this flow keeps durable state on disk — **each slice is committed
+and the plan lives in a plan file** — you discard the wedged in-memory chat and
+respawn a fresh session in the **same** worktree. A ~3-line re-brief recovers the
+full task; no work is lost.
+
+**1. Confirm the restart point** from the orchestrator shell (read-only — does not
+touch the wedged pane):
+
+```bash
+git -C <worker-worktree-path> log --oneline -1     # last committed slice
+git -C <worker-worktree-path> status --short       # empty = hang was before any uncommitted work
+```
+
+**2. Respawn the SAME pane in place** — preserves the pane id, the committed slice,
+the materialized MCP, and the agent-state hook:
+
+```bash
+tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
+  "bash -lc 'cd \"<worker-worktree-path>\" && DEVIDE_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" DEVIDE_AGENT_TASK=<task-slug> exec bash scripts/launch-devide-agent.sh grok'"
+```
+
+Use **`launch-devide-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher
+*reuses* the worktree when `DEVIDE_AGENT_WORKTREE_PATH` points at it, whereas the
+spawn helper unsets that var to force a fresh worktree — which would strand the
+already-committed slices. Wait for the prompt as in §2 (`pane_state: "unknown"` +
+`❯` in capture; 30–90s).
+
+**3. Re-brief compactly** — self-contained, since the fresh session has no chat
+memory. Send the plan path plus where to resume, then continue the step 5 wait loop:
+
+```text
+Plan: <plan-file-path>. Slice N is committed at <sha>, git is clean. Continue with
+Slice N+1: <one-line slice spec>. Read the committed code + plan, then proceed.
+```
+
+**Recovery caveats:**
+
+- The respawned session's agent-state hook **may not re-pair**, so
+  `terminal_wait_agent_state` for `working` can time out. Monitor via
+  `terminal_capture` instead (footer `Esc:cancel` = working; `Enter:send` = still
+  composing).
+- Grok's Enter-to-submit sometimes needs a **second Enter** after a long multiline
+  paste (the first can land mid-render and only add a newline).
+
 ## Quick reference
 
 | Signal | Grok behavior |
 |--------|---------------|
 | `working` | Braille spinner in `pane_title` (e.g. `⠴ - Thinking - … - grok`) |
 | Idle / done | `pane_state: "unknown"`, plain title, prompt visible in capture |
+| `⠹ Compacting…` >1 min | **Wedged** — respawn same pane/worktree ([recover](#recover-a-wedged-worker-compaction-hang)) |
 | `done` / `idle` wait | **Unsupported** — use `working` → `unknown` poll |
 | `include_answer` | **Unsupported** — use `terminal_capture` + JSON parse |
 | `blocked` | No reliable signal — read capture for questions |
