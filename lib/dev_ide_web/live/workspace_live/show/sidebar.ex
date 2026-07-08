@@ -191,7 +191,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       |> Terminals.visible_tabs(default_sid)
       |> SessionBarVM.session_tabs()
 
-    assign(socket, :sidebar_ws_sessions, Map.put(socket.assigns.sidebar_ws_sessions, workspace_id, tabs))
+    assign(
+      socket,
+      :sidebar_ws_sessions,
+      Map.put(socket.assigns.sidebar_ws_sessions, workspace_id, tabs)
+    )
   end
 
   @spec handle_async_sessions(
@@ -278,7 +282,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         else
           sock
           |> unsubscribe_sidebar_workspace(workspace_id)
-          |> assign(:sidebar_ws_sessions, Map.delete(sock.assigns.sidebar_ws_sessions, workspace_id))
+          |> assign(
+            :sidebar_ws_sessions,
+            Map.delete(sock.assigns.sidebar_ws_sessions, workspace_id)
+          )
         end
       end)
       |> assign_sessions_sidebar_tree()
@@ -289,7 +296,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   defp subscribe_sidebar_workspace(socket, workspace_id) do
     current_id = socket.assigns.workspace.id
 
-    if workspace_id == current_id or MapSet.member?(socket.assigns.sidebar_ws_subscriptions, workspace_id) do
+    if workspace_id == current_id or
+         MapSet.member?(socket.assigns.sidebar_ws_subscriptions, workspace_id) do
       socket
     else
       summary = find_summary(socket, workspace_id)
@@ -375,5 +383,4 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         socket.assigns.sidebar_expanded_windows
     end
   end
-
 end

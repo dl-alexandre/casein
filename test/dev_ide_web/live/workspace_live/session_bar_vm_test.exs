@@ -92,11 +92,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
 
   describe "window_tree/2" do
     defp pane(id, attrs \\ []) do
-      Map.merge(%{id: id, dom_frag: String.trim_leading(id, "%"), index: 0, label: "pane", detail: "", title: id, active?: false, preview?: false, activity_state: :idle, activity_class: "", activity_label: ""}, Map.new(attrs))
+      Map.merge(
+        %{
+          id: id,
+          dom_frag: String.trim_leading(id, "%"),
+          index: 0,
+          label: "pane",
+          detail: "",
+          title: id,
+          active?: false,
+          preview?: false,
+          activity_state: :idle,
+          activity_class: "",
+          activity_label: ""
+        },
+        Map.new(attrs)
+      )
     end
 
     defp window_tab(attrs) when is_map(attrs) do
       panes = Map.get(attrs, :panes, [])
+
       base = %{
         id: "@1",
         dom_frag: "1",

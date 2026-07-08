@@ -470,9 +470,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           preview_panes: %{"%6" => %{}}
         )
 
-      assert html =~ ~s(id="sidebar-session-preview-workspace_sessions-ws-preview-u-alice-preview")
-      assert html =~ ~s(data-preview-running="true")
+      assert html =~
+               ~s(id="sidebar-session-preview-workspace_sessions-ws-preview-u-alice-preview")
 
+      assert html =~ ~s(data-preview-running="true")
     end
 
     test "renders orphan tmux inventory tabs without navigation" do

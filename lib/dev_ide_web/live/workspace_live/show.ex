@@ -330,7 +330,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:node_rename, nil)
         |> assign(:node_delete, nil)
         |> assign(:workspace_summaries, [])
-
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
         |> assign(:previews_count, 0)
@@ -1421,7 +1420,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_async(:refresh_git_status, _result, socket), do: {:noreply, socket}
 
   def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
-    {:noreply, socket |> assign_workspace_summaries(summaries) |> Sidebar.assign_sessions_sidebar_tree()}
+    {:noreply,
+     socket |> assign_workspace_summaries(summaries) |> Sidebar.assign_sessions_sidebar_tree()}
   end
 
   def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}

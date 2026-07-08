@@ -340,9 +340,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   @spec sort_session_tabs([tab()], atom()) :: [tab()]
   def sort_session_tabs(tabs, mode) when is_list(tabs) do
     case mode do
-      :name -> Enum.sort_by(tabs, &String.downcase(&1.label))
-      :liveness -> Enum.sort_by(tabs, &{activity_liveness_rank(&1.activity_state), String.downcase(&1.label)})
-      _ -> tabs
+      :name ->
+        Enum.sort_by(tabs, &String.downcase(&1.label))
+
+      :liveness ->
+        Enum.sort_by(
+          tabs,
+          &{activity_liveness_rank(&1.activity_state), String.downcase(&1.label)}
+        )
+
+      _ ->
+        tabs
     end
   end
 

@@ -519,9 +519,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # Session rename: pencil opens the inline form, submit sets the tmux alias
     # and the re-scan surfaces it as the session label.
     view
-    |> element(
-      "button[data-leader-action='rename-session'][phx-value-session-id='u-dev-extra']"
-    )
+    |> element("button[data-leader-action='rename-session'][phx-value-session-id='u-dev-extra']")
     |> render_click()
 
     assert has_element?(view, "#session-rename-form-active_sessions-u-dev-extra")
