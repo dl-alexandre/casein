@@ -935,6 +935,8 @@ defmodule DevIDE.Terminals.SessionOwner do
             %{streak: streak},
             %{kind: state.info.kind, applied: size, actual: {actual_cols, actual_rows}}
           )
+
+          emit_size_fight_alert(state, size, {actual_cols, actual_rows}, streak)
         end
 
         maybe_resize_tmux_window(%{state | tmux_drift_streak: streak}, cols, rows)
@@ -943,6 +945,39 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
     end
   end
+
+  # Surface a sustained size fight in the notifications drawer, once per fight
+  # episode (the caller gates on `streak == @drift_fight_threshold`, which is
+  # crossed exactly once per streak). Routed through the audit spine so it
+  # reaches both the in-app drawer and — where a device is registered — OS
+  # push, via the `terminal.size_fight` alert definition. Fire-and-forget:
+  # `Audit.emit!` swallows failures and no-ops without a workspace_id, so a
+  # missing audit backend or an unscoped owner never disturbs the resize path.
+  defp emit_size_fight_alert(%{workspace_id: workspace_id} = state, {cols, rows}, actual, streak)
+       when is_binary(workspace_id) do
+    {actual_cols, actual_rows} = actual
+
+    DevIDE.Audit.emit!(%{
+      workspace_id: workspace_id,
+      action: "terminal.size_fight",
+      target_type: "terminal_session",
+      target_ref: state.info.sid,
+      reason:
+        "another writer keeps resizing this terminal to #{actual_cols}x#{actual_rows} " <>
+          "against the applied #{cols}x#{rows} (likely a stale instance from a recent deploy)",
+      metadata: %{
+        "kind" => to_string(state.info.kind),
+        "applied" => "#{cols}x#{rows}",
+        "observed" => "#{actual_cols}x#{actual_rows}",
+        "streak" => streak,
+        "session_id" => state.info.sid
+      }
+    })
+
+    :ok
+  end
+
+  defp emit_size_fight_alert(_state, _size, _actual, _streak), do: :ok
 
   defp schedule_tmux_drift_check(%{workspace_key: key, info: %{sid: sid}} = state)
        when is_binary(key) and is_binary(sid) do
