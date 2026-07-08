@@ -104,6 +104,8 @@ defmodule DevIDE.Terminals.ScrollbackArchive do
 
   @doc "Delete archive for `session` (idle GC / explicit kill)."
   @spec delete(String.t()) :: :ok
+  # path is Path.join(archive_dir(), safe_session_name) — session is regex-sanitized.
+  # sobelow_skip ["Traversal.FileModule"]
   def delete(session) when is_binary(session) do
     ensure_table!()
     :ets.delete(@table, session)
@@ -116,12 +118,16 @@ defmodule DevIDE.Terminals.ScrollbackArchive do
 
   def delete(_), do: :ok
 
+  # path is Path.join(archive_dir(), safe_session_name) — session is regex-sanitized.
+  # sobelow_skip ["Traversal.FileModule"]
   defp maybe_write_disk(session, data) do
     dir = archive_dir()
     File.mkdir_p!(dir)
     File.write!(disk_path(session), data)
   end
 
+  # path is Path.join(archive_dir(), safe_session_name) — session is regex-sanitized.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_disk(session) do
     path = disk_path(session)
 

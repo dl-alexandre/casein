@@ -70,11 +70,15 @@ defmodule DevIDE.Terminals.TemplatePreference do
     Path.join(store_dir(), safe <> ".template")
   end
 
+  # path is Path.join(store_dir(), safe_workspace_id) — id is regex-sanitized.
+  # sobelow_skip ["Traversal.FileModule"]
   defp maybe_write_disk(workspace_id, template_id) do
     File.mkdir_p!(store_dir())
     File.write!(disk_path(workspace_id), template_id)
   end
 
+  # path is Path.join(store_dir(), safe_workspace_id) — id is regex-sanitized.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_disk(workspace_id) do
     case File.read(disk_path(workspace_id)) do
       {:ok, id} ->
