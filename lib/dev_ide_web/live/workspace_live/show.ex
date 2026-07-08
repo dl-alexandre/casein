@@ -35,6 +35,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.NotificationsDrawerEvents
+  alias DevIdeWeb.WorkspaceAdminDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.TerminalTelemetry
   alias DevIdeWeb.WorkspaceLive.PaneWorker
@@ -118,6 +119,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_workspace sidebar:toggle_window
     sidebar:cycle_sessions_sort sidebar:cycle_windows_sort
+    sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -128,6 +130,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     notifications:toggle notifications:close notifications:refresh
     notifications:mark_read notifications:resolve notifications:mute
     notifications:mark_all_read notifications:save_preferences
+    workspace_admin:toggle workspace_admin:close workspace_admin:create_toggle
+    workspace_admin:toggle_all workspace_admin:create workspace_admin:attach_folder
+    workspace_admin:start workspace_admin:stop
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
     palette:open palette:ide palette:category palette:nav palette:close palette:query
@@ -323,6 +328,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # subscribes to the viewer's notification topic and loads the unread
         # badge count on the connected mount; the inbox list is lazy (opens).
         |> NotificationsDrawerEvents.mount()
+        # Workspace admin drawer — create/attach/start/stop/show-all actions
+        # relocated from WorkspaceLive.Dashboard (Stage 4c).
+        |> WorkspaceAdminDrawerEvents.mount()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -435,9 +443,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # In trusted LAN mode, canonicalize onto the path route when the
       # workspace has one. Untrusted deployments keep opaque id URLs (path
       # routes expose host path shape — see WorkspaceRoutes). The bare "/"
-      # route is excluded because it is the dashboard, not a workspace mount —
-      # the path-root workspace (e.g. /workspaces/home) keeps serving at its
-      # id URL, as do workspaces outside the path root.
+      # route is the scratch cockpit (not a path-root workspace mount) — keep
+      # path-root workspaces (e.g. /workspaces/home) on their id URL when
+      # PathResolver would otherwise collapse them to "/".
       with true <- PanelGate.path_access_pre_authorized?(),
            {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
         {:redirect, route <> id_route_query(params)}
@@ -450,10 +458,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp resolve_mount_workspace(params, _user) do
     segments = Map.get(params, "lan_path", [])
 
-    # "/" itself routes to the dashboard, so a root mount can only arrive via
-    # an oddball URL the router normalized to empty segments — send it home.
+    # Root `/` (and empty lan_path) mounts the synthetic scratch workspace
+    # directly — do NOT redirect to ~p"/" (that would loop). Path segments
+    # continue through PathResolver → workspace_for_host_path.
     if root_lan_path?(segments) do
-      {:redirect, ~p"/"}
+      {:ok,
+       %{
+         workspace: DevIDE.Workspaces.Scratch.workspace(),
+         path_route: nil,
+         workspace_route: nil
+       }}
     else
       resolve_path_mount(segments)
     end
@@ -615,6 +629,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # `?drawer=notifications` deep link (docs/deep_links.md) — one-shot like
     # `?tab=`; patches without the param leave the drawer state alone.
     socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
+    socket = WorkspaceAdminDrawerEvents.apply_drawer_param(socket, params)
 
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
@@ -737,6 +752,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:cycle_windows_sort", _params, socket) do
     {:noreply, Sidebar.cycle_windows_sort(socket)}
+  end
+
+  def handle_event("sidebar:toggle_browse", %{"rel" => rel}, socket) when is_binary(rel) do
+    {:noreply, Sidebar.toggle_browse_dir(socket, rel)}
+  end
+
+  def handle_event("sidebar:open_folder", %{"path" => path}, socket) when is_binary(path) do
+    {:noreply, Sidebar.open_folder(socket, path)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -868,6 +891,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # OS-notification deeplink above.
   def handle_event("notifications:" <> _ = event, params, socket),
     do: NotificationsDrawerEvents.handle_event(event, params, socket)
+
+  def handle_event("workspace_admin:" <> _ = event, params, socket),
+    do: WorkspaceAdminDrawerEvents.handle_event(event, params, socket)
 
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
@@ -1912,11 +1938,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_summary_visible?(summary, socket) do
-    summary.id == socket.assigns.workspace.id or
-      Workspaces.viewer_owns_workspace?(
-        %{user: summary.user},
-        socket.assigns[:current_user] || %{}
-      )
+    WorkspaceAdminDrawerEvents.summary_visible?(summary, socket)
   end
 
   defp ensure_current_workspace_record(records, workspace) do
@@ -2342,7 +2364,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               navigate={~p"/"}
               class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
             >
-              Open dashboard
+              Open home terminal
             </.link>
           </div>
         </div>

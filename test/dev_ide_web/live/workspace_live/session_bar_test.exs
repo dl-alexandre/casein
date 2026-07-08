@@ -533,6 +533,80 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-picker-active)
       assert html =~ "ex-1"
     end
+
+    test "renders the scratch row with attach_terminal_session kind=scratch" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_ex-1"
+        )
+
+      assert html =~ ~s(id="sidebar-session-scratch")
+      assert html =~ "Scratch"
+      assert html =~ ~s(phx-click="attach_terminal_session")
+      assert html =~ ~s(phx-value-kind="scratch")
+    end
+
+    test "renders the Browse tier with expand toggle and open-terminal action" do
+      browse = [
+        %{
+          kind: :browse_root,
+          id: "browse",
+          dom_id: "sidebar-browse",
+          label: "Browse",
+          detail: "workspaces",
+          title: "Browse directories",
+          path: "/tmp/workspaces",
+          rel: "",
+          expanded?: true,
+          children: [
+            %{
+              kind: :browse_dir,
+              id: "browse:alice",
+              dom_id: "sidebar-browse-alice",
+              label: "alice",
+              detail: "",
+              title: "/tmp/workspaces/alice",
+              path: "/tmp/workspaces/alice",
+              rel: "alice",
+              expanded?: false,
+              children: nil,
+              flat_session?: false,
+              sessions: nil
+            }
+          ],
+          flat_session?: false,
+          sessions: nil
+        }
+      ]
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: browse,
+          active_id: nil
+        )
+
+      assert html =~ ~s(id="sidebar-browse")
+      assert html =~ "Browse"
+      assert html =~ ~s(phx-click="sidebar:toggle_browse")
+      assert html =~ ~s(data-browse-kind="browse_dir")
+      assert html =~ "alice"
+      assert html =~ ~s(phx-click="sidebar:open_folder")
+      assert html =~ ~s(phx-value-path="/tmp/workspaces/alice")
+    end
   end
 
   describe "session_header_indicator/1" do

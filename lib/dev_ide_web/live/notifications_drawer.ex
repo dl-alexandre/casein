@@ -1,9 +1,9 @@
 defmodule DevIdeWeb.NotificationsDrawer do
   @moduledoc """
   Global notifications drawer: bell + unread badge entry point rendered in the
-  dashboard header and the workspace cockpit header, opening a right-side
-  drawer with the durable notification inbox (list, mark read / resolve /
-  mute, mark-all-read), delivery preferences, and the admin push-device table.
+  workspace cockpit header, opening a right-side drawer with the durable
+  notification inbox (list, mark read / resolve / mute, mark-all-read),
+  delivery preferences, and the admin push-device table.
 
   Rendering carried over from the removed `/notifications` full-page LiveView,
   restyled to the cockpit's drawer conventions (see `Show.AuditDrawer`). State

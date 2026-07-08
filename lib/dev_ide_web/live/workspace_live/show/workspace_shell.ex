@@ -25,6 +25,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
   alias DevIdeWeb.NotificationsDrawer
+  alias DevIdeWeb.WorkspaceAdminDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
 
@@ -230,6 +231,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             >
               C-b
             </button>
+            <WorkspaceAdminDrawer.admin_bell
+              id={"workspace-admin-bell-" <> @workspace.id}
+              open={@admin_drawer_open}
+            />
             <NotificationsDrawer.notifications_bell
               id={"notifications-bell-" <> @workspace.id}
               unread_count={@notif_unread_count}
@@ -562,6 +567,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       update_available={@update_available}
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
+    />
+    <WorkspaceAdminDrawer.admin_drawer
+      open={@admin_drawer_open}
+      is_admin={@admin_is_admin}
+      show_all={@admin_show_all}
+      error={@admin_error}
+      create_open={@admin_create_open}
+      create_fields={@admin_create_fields}
+      create_form={@admin_create_form}
+      folder_form={@admin_folder_form}
+      workspaces={@admin_workspaces}
+      current_workspace_id={@workspace.id}
     />
     <.leader_help_overlay />
     """

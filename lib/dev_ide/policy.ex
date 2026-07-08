@@ -20,6 +20,7 @@ defmodule DevIDE.Policy do
   """
 
   alias DevIDE.Policy.{Decision, WorkspaceMode}
+  alias DevIDE.Workspaces.Scratch
   alias DevIDE.Workspaces.State
 
   @type ctx :: %{
@@ -46,6 +47,8 @@ defmodule DevIDE.Policy do
   # Raw shell is fail-safe by default: local host + manual workspace mode only.
   # Set `:raw_terminal_everywhere` to true for deliberately permissive
   # single-user/dev deployments.
+  # Scratch (workspaceless home PTY) is always raw-allowed on local host —
+  # there is no persisted mode record, and mode defaults must not gate it.
   def can_use_raw_terminal?(ctx) do
     cond do
       raw_terminal_everywhere?() ->
@@ -53,6 +56,9 @@ defmodule DevIDE.Policy do
 
       not local_host?(Map.get(ctx, :host_id)) ->
         deny(:raw_terminal, ctx, :requires_local_host)
+
+      Scratch.scratch?(Map.get(ctx, :workspace_id)) ->
+        allow(:raw_terminal, ctx)
 
       mode(ctx) != :manual ->
         deny(:raw_terminal, ctx, :requires_manual_mode)

@@ -591,7 +591,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             navigate={~p"/"}
             class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
           >
-            Open workspace card
+            Open home terminal
           </.link>
         </div>
       <% is_pid(@raw_pane[:ghostty_term]) -> %>

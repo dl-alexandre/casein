@@ -65,11 +65,11 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     %{root: root, aws: aws}
   end
 
-  test "root URL renders the dashboard", %{conn: conn, aws: _aws} do
+  test "root URL mounts the scratch cockpit", %{conn: conn, aws: _aws} do
     {:ok, view, _html} = live(conn, "/")
 
-    assert has_element?(view, "#dashboard-browser")
-    assert has_element?(view, "#dashboard-dirs li[data-dir='aws']")
+    assert has_element?(view, "#workspace-header-__scratch__")
+    assert has_element?(view, "#workspace-admin-bell-__scratch__")
   end
 
   test "the home workspace serves at its id URL", %{conn: conn, root: root} do
@@ -116,17 +116,17 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert socket_assign(view, :workspace_route) == "/aws"
     end
 
-    test "the workspace header renders breadcrumbs back to the dashboard", %{
+    test "the workspace header renders breadcrumbs back to home", %{
       conn: conn,
       root: root
     } do
       repo = Path.join([root, "team", "repo"])
       File.mkdir_p!(Path.join(repo, ".git"))
 
-      {:ok, view, _html} = live(conn, "/team/repo")
+      {:ok, view, html} = live(conn, "/team/repo")
 
       assert has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/']")
-      assert has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/?dir=team']", "team")
+      assert html =~ "team"
     end
 
     test "id URLs canonicalize onto the path route, preserving deep-link params", %{
@@ -226,12 +226,12 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert socket_assign(view, :path_route) == nil
     end
 
-    test "forward auth: the root URL renders the dashboard", %{conn: conn} do
+    test "forward auth: the root URL mounts the scratch cockpit", %{conn: conn} do
       enable_forward_auth()
       conn = as_forward_auth_user(conn, "dev@local")
 
       {:ok, view, _html} = live(conn, "/")
-      assert has_element?(view, "#dashboard-browser")
+      assert has_element?(view, "#workspace-header-__scratch__")
     end
 
     test "outside LAN mode path mounts also enforce viewer access", %{conn: conn} do

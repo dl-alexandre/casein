@@ -13,7 +13,7 @@ defmodule DevIDE.Workspaces do
   """
 
   alias DevIDE.{Workspace, WorkspaceSource}
-  alias DevIDE.Workspaces.{DbIsolation, State}
+  alias DevIDE.Workspaces.{DbIsolation, Scratch, State}
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
   @type auth :: WorkspaceSource.auth()
@@ -34,33 +34,40 @@ defmodule DevIDE.Workspaces do
 
   @spec get(String.t(), auth()) :: {:ok, Workspace.t()} | {:error, term()}
   def get(id, auth \\ nil) do
-    # Folder-attach workspaces have a "folder:" prefix. They bypass the source
-    # (which knows nothing about arbitrary paths) and are reconstructed directly
-    # from the encoded path, falling back to the persisted record if available.
-    case decode_folder_id(id) do
-      path when is_binary(path) ->
-        cond do
-          not File.dir?(path) ->
-            {:error, :not_found}
+    # Scratch is a synthetic workspaceless terminal (PTY at $HOME). Resolve
+    # before folder-attach / source lookup so the cockpit can mount
+    # `/workspaces/__scratch__` without a persisted workspace record.
+    if Scratch.scratch?(id) do
+      {:ok, Scratch.workspace()}
+    else
+      # Folder-attach workspaces have a "folder:" prefix. They bypass the source
+      # (which knows nothing about arbitrary paths) and are reconstructed directly
+      # from the encoded path, falling back to the persisted record if available.
+      case decode_folder_id(id) do
+        path when is_binary(path) ->
+          cond do
+            not File.dir?(path) ->
+              {:error, :not_found}
 
-          not path_under_allowed_roots?(path) ->
-            {:error, :outside_allowed_roots}
+            not path_under_allowed_roots?(path) ->
+              {:error, :outside_allowed_roots}
 
-          true ->
-            ws = build_attached_workspace(path)
-            _ = State.sync(ws)
-            {:ok, ws}
-        end
+            true ->
+              ws = build_attached_workspace(path)
+              _ = State.sync(ws)
+              {:ok, ws}
+          end
 
-      nil ->
-        case WorkspaceSource.impl().get(id, auth) do
-          {:ok, ws} = ok ->
-            _ = State.sync(ws)
-            ok
+        nil ->
+          case WorkspaceSource.impl().get(id, auth) do
+            {:ok, ws} = ok ->
+              _ = State.sync(ws)
+              ok
 
-          other ->
-            other
-        end
+            other ->
+              other
+          end
+      end
     end
   end
 
@@ -152,7 +159,10 @@ defmodule DevIDE.Workspaces do
   """
   @spec viewer_can_access_workspace?(Workspace.t() | map(), map()) :: boolean()
   def viewer_can_access_workspace?(workspace, viewer) when is_map(viewer) do
-    viewer_admin?(viewer) or viewer_owns_workspace?(workspace, viewer)
+    # Scratch is intentionally workspaceless: any authenticated viewer may open
+    # the home-rooted PTY (no owner field on the synthetic struct).
+    Scratch.scratch?(workspace) or viewer_admin?(viewer) or
+      viewer_owns_workspace?(workspace, viewer)
   end
 
   def viewer_can_access_workspace?(_, _), do: false
@@ -259,6 +269,20 @@ defmodule DevIDE.Workspaces do
     end
   end
 
+  def safe_host_path(%Workspace{} = workspace) do
+    if Scratch.scratch?(workspace) do
+      home = Scratch.home_path()
+
+      if File.dir?(home) do
+        {:ok, home}
+      else
+        {:error, :not_found}
+      end
+    else
+      WorkspaceSource.impl().safe_host_path(workspace)
+    end
+  end
+
   def safe_host_path(workspace), do: WorkspaceSource.impl().safe_host_path(workspace)
 
   @typedoc "Where a workspace physically lives."
@@ -274,6 +298,20 @@ defmodule DevIDE.Workspaces do
       {:ok, {:local, expanded}}
     else
       {:error, :not_found}
+    end
+  end
+
+  def safe_host_loc(%Workspace{} = workspace) do
+    if Scratch.scratch?(workspace) do
+      home = Scratch.home_path()
+
+      if File.dir?(home) do
+        {:ok, {:local, home}}
+      else
+        {:error, :not_found}
+      end
+    else
+      WorkspaceSource.impl().safe_host_loc(workspace)
     end
   end
 

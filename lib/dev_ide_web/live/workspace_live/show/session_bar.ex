@@ -368,7 +368,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
       class={[
-        "sessions-picker-sidebar leader-key-control flex w-44 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "sessions-picker-sidebar leader-key-control flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -394,6 +394,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <div class="min-h-0 flex-1 overflow-y-auto py-1">
         <%= for node <- @tree do %>
           <%= cond do %>
+            <% Map.get(node, :kind) in [:browse_root, :browse_dir] -> %>
+              <.sessions_sidebar_browse_node node={node} depth={0} />
             <% node.flat_session? -> %>
               <.sessions_sidebar_session_row
                 session={node.session}
@@ -537,6 +539,76 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
+  attr :node, :map, required: true
+  attr :depth, :integer, default: 0
+
+  defp sessions_sidebar_browse_node(assigns) do
+    ~H"""
+    <div
+      data-picker-tree-branch
+      data-picker-branch-id={@node.dom_id}
+      data-browse-kind={@node.kind}
+      data-browse-rel={@node.rel}
+      class="flex flex-col gap-0.5"
+      style={if(@depth > 0, do: "padding-left: #{@depth * 0.5}rem", else: nil)}
+    >
+      <div class="flex items-center gap-1 px-1">
+        <button
+          type="button"
+          id={@node.dom_id}
+          data-picker-item
+          data-picker-section="browse"
+          phx-click="sidebar:toggle_browse"
+          phx-value-rel={@node.rel}
+          class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+          title={@node.title}
+        >
+          <span class="flex min-w-0 items-center gap-1">
+            <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
+              <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
+            </span>
+            <span data-picker-label class="truncate font-medium">{@node.label}</span>
+          </span>
+          <span
+            :if={@node.detail != ""}
+            class="truncate font-mono text-[10px] text-base-content/50"
+          >
+            {@node.detail}
+          </span>
+        </button>
+        <button
+          :if={@node.kind == :browse_dir and is_binary(@node.path)}
+          type="button"
+          id={"sidebar-open-folder-" <> @node.dom_id}
+          phx-click="sidebar:open_folder"
+          phx-value-path={@node.path}
+          class="shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] text-base-content/55 hover:bg-base-200 hover:text-base-content"
+          title={"Open terminal in " <> @node.path}
+          aria-label={"Open terminal in " <> @node.label}
+        >
+          term
+        </button>
+      </div>
+      <div
+        :if={is_list(@node.children)}
+        data-picker-branch-children
+        data-picker-collapsed={(!@node.expanded? && "") || nil}
+        class={["space-y-0.5", !@node.expanded? && "hidden"]}
+      >
+        <%= if @node.children == [] do %>
+          <p class="px-3 py-1 font-mono text-[10px] italic text-base-content/40">
+            No directories
+          </p>
+        <% else %>
+          <%= for child <- @node.children do %>
+            <.sessions_sidebar_browse_node node={child} depth={@depth + 1} />
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
   attr :session, :map, required: true
   attr :workspace_id, :string, required: true
   attr :current_workspace_id, :string, required: true
@@ -549,8 +621,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :rename_session_id, :string, default: nil
 
   defp sessions_sidebar_session_row(assigns) do
-    cross_workspace? = assigns.workspace_id != assigns.current_workspace_id
-    session_active? = assigns.active_id == assigns.session.id and not cross_workspace?
+    # Scratch is a synthetic workspaceless entry: always fire
+    # `attach_terminal_session` with kind=scratch so the LiveView can
+    # `push_navigate` to `/workspaces/__scratch__` (do not treat it as a
+    # cross-workspace deep-link to a real session id).
+    scratch? = Map.get(assigns.session, :kind) == :scratch
+
+    cross_workspace? =
+      not scratch? and assigns.workspace_id != assigns.current_workspace_id
+
+    session_active? =
+      not scratch? and assigns.active_id == assigns.session.id and not cross_workspace?
 
     href =
       Map.get(assigns.session, :href) ||
@@ -898,7 +979,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar flex w-44 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >

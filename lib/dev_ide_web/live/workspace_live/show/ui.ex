@@ -59,16 +59,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
 
     ~H"""
     <nav class="flex min-w-0 shrink items-center gap-1" aria-label="Breadcrumb">
-      <.link navigate={~p"/"} class="shrink-0 text-primary hover:underline" title="Dashboard">
+      <.link
+        navigate={~p"/"}
+        class="shrink-0 text-primary hover:underline"
+        title="Home (scratch terminal)"
+      >
         ←
       </.link>
       <span :for={crumb <- @crumbs} class="hidden min-w-0 items-center gap-1 sm:inline-flex">
-        <.link
-          navigate={~p"/?#{[dir: crumb.dir]}"}
-          class="max-w-32 truncate font-mono text-xs text-base-content/60 hover:text-base-content hover:underline"
-        >
+        <span class="max-w-32 truncate font-mono text-xs text-base-content/60">
           {crumb.label}
-        </.link>
+        </span>
         <span class="text-base-content/40" aria-hidden="true">/</span>
       </span>
     </nav>

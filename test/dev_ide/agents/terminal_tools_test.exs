@@ -84,6 +84,31 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     refute Map.has_key?(result, :workspace_id)
   end
 
+  test "unscoped list_sessions filters out synthetic scratch sessions" do
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+    real_session = Tmux.session_name("alpha", "u-dev")
+    scratch_session = Tmux.session_name("__scratch__", "u-dev")
+    foreign_session = "foreign_session"
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      real_session => [%{id: "@1", index: 0, name: "main", active: true, panes: 1, activity: 1}],
+      scratch_session => [
+        %{id: "@2", index: 0, name: "main", active: true, panes: 1, activity: 1}
+      ],
+      foreign_session => [
+        %{id: "@3", index: 0, name: "main", active: true, panes: 1, activity: 1}
+      ]
+    })
+
+    assert {:ok, %{sessions: sessions}} = TerminalTools.list_sessions(%{})
+    names = Enum.map(sessions, & &1.session)
+
+    assert real_session in names
+    refute scratch_session in names
+    refute foreign_session in names
+  end
+
   test "report_worktree refreshes session-scoped MCP env for reported tmux session" do
     root = tmp_repo!("report-worktree-parent")
     worktree = Path.join(root, "agent-worktree")

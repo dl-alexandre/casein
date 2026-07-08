@@ -1,8 +1,7 @@
 defmodule DevIdeWeb.NotificationsDrawerEvents do
-  # Notifications drawer state + handle_event clauses, delegated from both
-  # global surfaces (WorkspaceLive.Dashboard and WorkspaceLive.Show — mirrors
-  # HistoryEvents). Absorbs the former NotificationLive.Index full-page
-  # LiveView into an in-viewer drawer.
+  # Notifications drawer state + handle_event clauses, delegated from
+  # WorkspaceLive.Show (mirrors HistoryEvents). Absorbs the former
+  # NotificationLive.Index full-page LiveView into an in-viewer drawer.
   #
   # Lazy by construction: mount only subscribes to the viewer's notification
   # topic and loads the unread *count* (one indexed aggregate — cheap enough

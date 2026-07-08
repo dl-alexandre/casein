@@ -1,17 +1,12 @@
 defmodule DevIdeWeb.LegacyWorkspaceController do
   @moduledoc """
-  Legacy picker URL. The `/workspaces` index is absorbed by the dashboard at
-  `/` (path-first navigation Stage 3); this keeps old links and bookmarks
-  working. `/workspaces/:id` routes stay live for opaque-id workspace access.
+  Legacy URL redirects into the cockpit shell.
 
-  `/workspaces/:id/previous-sessions` is absorbed by the cockpit's History
-  side panel: it redirects to the workspace's canonical URL with the
-  `tab=history` deep-link param, preserving any search query params the old
-  page accepted. Viewer access is enforced by the cockpit mount, not here.
+  `/workspaces` → `/` (scratch cockpit; listing is the SESSIONS sidebar).
+  `/notifications` → `/?drawer=notifications` (in-viewer notifications drawer).
+  `/workspaces/:id/previous-sessions` → cockpit History panel (`?tab=history`).
 
-  `/notifications` is absorbed by the in-viewer notifications drawer: it
-  redirects to the dashboard with the `drawer=notifications` deep-link param.
-  Notifications stay scoped to the mounted viewer inside the drawer.
+  Viewer access is enforced by the cockpit mount, not here.
   """
 
   use DevIdeWeb, :controller
