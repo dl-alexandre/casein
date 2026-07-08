@@ -1,0 +1,35 @@
+{
+  "workspace": "dalexandre-reports",
+  "app_surface": "app",
+  "login": {
+    "type": "session_inject",
+    "path": "/auth/superadmin/mock",
+    "params": { "email": "dalexandre@milcgroup.com", "role": "superadmin" },
+    "lands_on": "/superadmin"
+  },
+  "pages": [
+    { "name": "Dashboard",        "path": "/superadmin",                  "budget_ms": 8000,  "note": "landing card grid" },
+    { "name": "Codebase HexDocs", "path": "/superadmin/hexdocs/index.html","budget_ms": 8000, "note": "dev-only static" },
+    { "name": "LiveDashboard",    "path": "/dev/dashboard",               "budget_ms": 10000, "note": "Phoenix LiveDashboard" },
+    { "name": "Support View",     "path": "/superadmin/support-view",     "budget_ms": 15000, "note": "unbounded list loads + external MilcAgent; may be empty" },
+    { "name": "Metrics",          "path": "/superadmin/metrics",          "budget_ms": 20000, "note": "heaviest: sync repo/queue/cache/service/latency in mount, 30s auto-refresh" },
+    { "name": "Audit Log",        "path": "/superadmin/audit-log",        "budget_ms": 12000, "note": "empty unless rows; paginated" },
+    { "name": "Themes",          "path": "/superadmin/themes",           "budget_ms": 8000,  "note": "needs >=1 theme to exercise edit/preview" },
+    { "name": "Symphony",         "path": "/superadmin/symphony",         "budget_ms": 20000, "role_gated": true, "note": "sync external HTTP in handle_params; most flaky; needs role=superadmin" }
+  ],
+  "safety": {
+    "read_only": true,
+    "env_check": [
+      "ONE_API_URL", "ANIMAL_API_URL", "FACILITY_API_URL", "FEED_API_URL",
+      "PEOPLE_API_URL", "SCALE_API_URL", "ANALYTICS_API_URL", "AUTH_API_URL"
+    ],
+    "deny_events": [
+      "trigger_migration", "send_email",
+      "delete", "confirm_delete", "deactivate", "delete_photo",
+      "delete_theme", "reset_token", "clear_issue", "request_refresh",
+      "save"
+    ],
+    "note": "OneBackend-v3 routes writes to *.onemilc.com PROD by default (write-rollout 0%). Local one_dev DB is throwaway, but upstream writes are NOT. Stay read-only unless the *_API_URL above are confirmed non-prod on the running instance. :4003 == :21032 (same instance/DB/config)."
+  },
+  "report": { "name": "onebackend-v3-superadmin-smoke", "baseline": false }
+}
