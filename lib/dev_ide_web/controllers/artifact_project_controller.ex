@@ -57,6 +57,12 @@ defmodule DevIdeWeb.ArtifactProjectController do
   # would leak nothing new — we can tell the owner *why* a file is missing. A
   # retired artifact (worktree cleaned/expired/gone) gets a friendly landing
   # page; a live artifact with a merely-missing sub-path still 404s opaquely.
+  #
+  # `file` is PathSafety-resolved (traversal + symlink-escape guarded) with a
+  # dotfile denylist, and we set nosniff — the served path and its derived
+  # content-type are not attacker-steered, so the traversal/content-type findings
+  # below are mitigated at resolve_file/2.
+  # sobelow_skip ["Traversal.SendFile", "XSS.ContentType"]
   defp serve_or_landing(conn, project, segments) do
     case resolve_file(project.worktree_path, segments) do
       {:ok, file} ->
@@ -182,7 +188,10 @@ defmodule DevIdeWeb.ArtifactProjectController do
 
   # 410 Gone: the id was valid and owned by the viewer, but the artifact's files
   # are no longer on disk. Owner-only (we already authorized), so it's safe to
-  # echo the title/branch/commit back.
+  # echo the title/branch/commit back. retired_html/1 interpolates ONLY
+  # html-escaped values (see esc/1), so the dynamically-built body is not
+  # attacker-controlled — the send_resp XSS finding is mitigated there.
+  # sobelow_skip ["XSS.SendResp"]
   defp render_retired(conn, project) do
     meta = ArtifactProjects.share_metadata(project)
 
