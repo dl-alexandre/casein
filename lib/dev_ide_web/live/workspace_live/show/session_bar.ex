@@ -368,7 +368,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
       class={[
-        "sessions-picker-sidebar leader-key-control flex w-fit min-w-44 max-w-72 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "sessions-picker-sidebar leader-key-control flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -979,7 +979,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar flex w-fit min-w-44 max-w-72 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
