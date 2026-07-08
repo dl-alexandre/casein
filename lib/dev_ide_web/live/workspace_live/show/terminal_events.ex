@@ -20,6 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
+  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def handle_event("terminal:user_interaction", _params, socket) do
@@ -213,7 +214,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       :ok ->
         {:noreply,
          socket
-         |> assign(:window_sidebar_open?, false)
+         |> Sidebar.close()
          |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.acknowledge_active_quiet_window()
@@ -645,6 +646,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         socket
       end
 
+    socket =
+      socket
+      |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+      |> Sidebar.maybe_focus_windows_after_attach(true)
+      |> Sidebar.assign_sessions_sidebar_tree()
+
     {:noreply,
      TerminalState.focus_active_terminal(socket, %{"reason" => "attach_terminal_session"})}
   end
@@ -671,7 +678,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
     {:noreply,
-     socket |> TerminalState.refresh_session_tabs() |> Show.assign_workspace_summaries()}
+     socket
+     |> TerminalState.refresh_session_tabs()
+     |> Show.assign_workspace_summaries()
+     |> Sidebar.assign_sessions_sidebar_tree()}
   end
 
   # Cmd/Ctrl+Click on a detected file path in terminal output. Show routes all

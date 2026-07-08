@@ -68,6 +68,12 @@ defmodule DevIDE.Terminals do
     to: SessionDirectory,
     as: :subscribe
 
+  @doc "Drops the caller's session-tab PubSub subscription and directory watch."
+  @spec unsubscribe_session_tabs(String.t(), pid()) :: :ok
+  defdelegate unsubscribe_session_tabs(workspace_id, watcher_pid \\ self()),
+    to: SessionDirectory,
+    as: :unsubscribe
+
   @doc "Applies the per-viewer staleness/default-shell filters to a tab list."
   @spec visible_tabs([Info.t()], String.t() | nil) :: [Info.t()]
   defdelegate visible_tabs(tabs, default_sid), to: Compose, as: :visible_for

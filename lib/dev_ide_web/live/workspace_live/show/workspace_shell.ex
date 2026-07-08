@@ -209,18 +209,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           <% end %>
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
             <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-              <SessionBar.session_dropdown
+              <SessionBar.session_header_indicator
                 workspace_id={@workspace.id}
-                path_base={@workspace_route}
                 tabs={@session_tabs}
-                workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
-                preview_panes={@preview_panes}
                 active_fallback_label={session_kind_label(@active_session_kind)}
                 active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_session_id={@tmux_rename_session_id}
-                default_sid={@default_terminal_sid}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
             <% end %>
@@ -386,10 +380,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             type="button"
             tabindex="-1"
             data-leader-action="rename-session"
-            phx-click={
-              JS.set_attribute({"open", "open"}, to: "#session-dropdown-#{@workspace.id}")
-              |> JS.push("terminal:rename_session_start")
-            }
+            phx-click="terminal:rename_session_start"
             phx-value-session-id={@terminal_sid}
           ></button>
           <%= if @tmux_mutations_enabled? do %>
@@ -624,7 +615,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :tmux_window_tabs,
       :tmux_topology_structure_version,
       :tmux_rename_window_id,
-      :window_sidebar_open?
+      :tmux_rename_session_id,
+      :window_sidebar_open?,
+      :sessions_sidebar_open?,
+      :sessions_sidebar_tree,
+      :windows_sidebar_tree,
+      :sessions_sidebar_sort,
+      :windows_sidebar_sort
     ])
   end
 

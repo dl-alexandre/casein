@@ -1,12 +1,10 @@
-// Keyboard navigation for the transient window-picker sidebar rail. Mirrors
-// SessionPicker's choose-tree semantics on a vertical list opened by C-b w:
-// ↑/↓ move, type-to-filter, o/l/r/& shortcuts, Enter activates. Closes on
-// Escape (empty filter) or window selection so the tab bar stays canonical.
+// Keyboard navigation for the summoned SESSIONS sidebar (workspace ▸ session tree).
+// Mirrors WindowPickerSidebar choose-tree semantics: ↑/↓, type-filter, Enter.
 
 import {copyPickerLink} from "./picker_link_copy"
 import {applyTreePickerFilter} from "./window_picker_sidebar_utils.mjs"
 
-export const WindowPickerSidebar = {
+export const SessionsPickerSidebar = {
   mounted() {
     this._filter = ""
     this._onKeydown = (e) => this.handleKeydown(e)
@@ -14,45 +12,41 @@ export const WindowPickerSidebar = {
     this._onSidebarFocus = () => this.focusInitial()
     this.el.addEventListener("keydown", this._onKeydown)
     this.el.addEventListener("click", this._onClick, true)
-    this.el.addEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
-    this.handleEvent("sidebar:focus_windows", () => this.focusInitial())
+    this.el.addEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
+
+    this.handleEvent("sidebar:focus_sessions", () => this.focusInitial())
   },
 
   destroyed() {
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("click", this._onClick, true)
-    this.el.removeEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
+    this.el.removeEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
   },
 
   handleClick(e) {
-    const item = e.target?.closest?.("a[data-picker-item][href][phx-click]")
+    const item = e.target?.closest?.("a[data-picker-item][href][phx-click], a[data-picker-item][href][data-phx-link]")
     if (!item || !this.el.contains(item)) return
     if (wantsBrowserNavigation(e)) {
       e.stopPropagation()
       return
     }
     e.preventDefault()
-    this._closeSidebar()
   },
 
   handleKeydown(e) {
     switch (e.key) {
-      case "ArrowLeft":
-        e.preventDefault()
-        this.pushEvent("sidebar:reveal_sessions", {})
-        break
-      case "ArrowRight": {
-        e.preventDefault()
-        const row = this.currentItem()
-        const windowId = row?.getAttribute("phx-value-window-id")
-        if (windowId) this.pushEvent("sidebar:toggle_window", {"window-id": windowId})
-        break
-      }
       case "ArrowDown":
       case "ArrowUp":
         e.preventDefault()
         this.moveFocus(e.key === "ArrowDown" ? 1 : -1)
         break
+      case "ArrowRight": {
+        e.preventDefault()
+        const row = this.currentItem()
+        const wsId = row?.getAttribute("phx-value-workspace-id")
+        if (wsId) this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+        break
+      }
       case "Enter":
         e.preventDefault()
         this.currentItem()?.click()
@@ -78,14 +72,6 @@ export const WindowPickerSidebar = {
         e.preventDefault()
         if (e.key === "o") this.openCurrentInNewTab()
         else this.copyCurrentLink()
-        break
-      case "r":
-        e.preventDefault()
-        this.renameCurrentItem()
-        break
-      case "&":
-        e.preventDefault()
-        this.killCurrentWindow()
         break
       default:
         if (
@@ -153,22 +139,7 @@ export const WindowPickerSidebar = {
   copyCurrentLink() {
     const item = this.currentItem()
     if (!item?.href) return
-    copyPickerLink(item.href, "window")
-  },
-
-  renameCurrentItem() {
-    const item = this.currentItem()
-    const windowId = item?.getAttribute("phx-value-window-id")
-    if (!windowId) return
-    this.pushEvent("tmux:rename_start", {window_id: windowId})
-  },
-
-  killCurrentWindow() {
-    const item = this.currentItem()
-    const windowId = item?.getAttribute("phx-value-window-id")
-    if (!windowId) return
-    if (!window.confirm("Kill this tmux window and everything running in it?")) return
-    this.pushEvent("tmux:kill_window", {window_id: windowId})
+    copyPickerLink(item.href, "session")
   },
 
   _closeSidebar() {
@@ -178,5 +149,5 @@ export const WindowPickerSidebar = {
 }
 
 function wantsBrowserNavigation(e) {
-  return e.metaKey || e.ctrlKey || e.shiftKey && e.button === 0
+  return e.metaKey || e.ctrlKey || (e.shiftKey && e.button === 0)
 }

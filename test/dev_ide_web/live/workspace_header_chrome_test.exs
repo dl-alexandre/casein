@@ -84,7 +84,8 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ ~s(data-leader-prefix-button="true")
     assert has_element?(view, "#leader-prefix-button-#{workspace_id}", "C-b")
     assert html =~ "header-p-touch-show"
-    assert html =~ ~s(id="session-dropdown-#{workspace_id}")
+    assert html =~ ~s(id="attention-surface-#{workspace_id}")
+    refute html =~ ~s(id="session-dropdown-#{workspace_id}")
     assert html =~ ~s(id="header-terminal-pickers-#{workspace_id}")
     refute html =~ ~s(id="window-dropdown-#{workspace_id}")
     # The ⋯ menu renders unconditionally — it is the canonical home for
@@ -130,13 +131,27 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~
              "header-terminal-pickers flex min-w-0 flex-1 items-center pointer-coarse:hidden"
 
-    render_hook(view, "sidebar:open", %{})
+    render_hook(view, "sidebar:open", %{"mode" => "windows"})
     assert :sys.get_state(view.pid).socket.assigns.window_sidebar_open?
+    assert :sys.get_state(view.pid).socket.assigns.sidebar_mode == :windows_only
 
     # Rail DOM is gated on tmux windows; a stopped workspace may have none yet.
     html = render_hook(view, "sidebar:close", %{})
     refute :sys.get_state(view.pid).socket.assigns.window_sidebar_open?
     refute html =~ ~s(id="window-sidebar-#{workspace_id}")
+  end
+
+  test "sessions sidebar opens in both-column mode", %{conn: conn, workspace_id: workspace_id} do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
+    state = :sys.get_state(view.pid).socket.assigns
+    assert state.sidebar_mode == :both
+    assert state.sessions_sidebar_open?
+    assert state.window_sidebar_open?
+    assert is_list(state.sessions_sidebar_tree)
+    assert MapSet.member?(state.sidebar_expanded_workspaces, workspace_id)
   end
 
   test "mobile key bar includes palette and mode chip sheet trigger", %{

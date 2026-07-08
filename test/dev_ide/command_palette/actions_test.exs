@@ -100,6 +100,7 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       ids = Enum.map(view, & &1.id)
 
       assert "view:window_sidebar" in ids
+      assert "view:sessions_sidebar" in ids
       refute "view:window_picker_tabs" in ids
       refute "view:window_picker_dropdown" in ids
       assert "action:terminal:toggle_chrome" in ids
@@ -108,7 +109,7 @@ defmodule DevIDE.CommandPalette.ActionsTest do
 
       item = Enum.find(view, &(&1.id == "view:window_sidebar"))
       assert item.payload.event == "sidebar:open"
-      assert item.payload.params == %{}
+      assert item.payload.params == %{"mode" => "windows"}
     end
   end
 

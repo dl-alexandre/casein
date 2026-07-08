@@ -220,20 +220,18 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
-    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#attention-surface-ws-1")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
     assert has_element?(view, "#mobile-key-bar-scroll-ws-1")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     # The default/landing session is a normal row marked "home" (no separate shell entry).
     assert has_element?(view, "#active_sessions-u-dev")
     assert has_element?(view, "#active_sessions-u-dev [aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='u-dev-extra']")
     refute has_element?(view, "[phx-value-session-id='u-dev-extra']", "Shell")
-    # Choose-tree: the session dropdown shows a window count per session and
-    # an expandable window list.
-    assert has_element?(view, "button[title='1 window']", "1")
-    assert has_element?(view, "#session-windows-active_sessions-u-dev-extra a", "scratch")
-
     render_click(view, "terminal:cycle_session", %{"dir" => "next"})
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
     assert_push_event(view, "terminal:focus_active", %{"reason" => "terminal:cycle_session"})
@@ -254,17 +252,21 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              "[phx-value-session-id='u-dev-extra'][class*='text-primary']"
            )
 
-    # Clicking an expanded window row attaches the session and selects that
-    # window (choose-tree style).
-    view
-    |> element("#session-windows-active_sessions-u-dev-extra a[phx-value-window-id='@0']")
-    |> render_click()
+    # Attach the other session on a specific window (window rows live in the
+    # WINDOWS column starting Slice 2; until then use attach directly).
+    render_click(view, "attach_terminal_session", %{
+      "session-id" => "u-dev-extra",
+      "tmux-session" => extra_tmux_session,
+      "window-id" => "@0"
+    })
 
     assert_receive {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
 
     assert has_element?(view, "#tmux-window--0 a", "scratch")
     refute has_element?(view, "#tmux-window--1 a", "tests")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
 
     view
     |> element("#active_sessions-u-dev")
@@ -436,7 +438,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
     refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
 
-    render_hook(view, "sidebar:open", %{})
+    render_hook(view, "sidebar:open", %{"mode" => "windows"})
 
     assert has_element?(
              view,
@@ -499,6 +501,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:kill_window"})
     refute has_element?(view, "#tmux-window--0")
 
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     view
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
@@ -515,9 +519,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # Session rename: pencil opens the inline form, submit sets the tmux alias
     # and the re-scan surfaces it as the session label.
     view
-    |> element(
-      "#session-dropdown-ws-1 button[phx-click='terminal:rename_session_start'][phx-value-session-id='u-dev-extra']"
-    )
+    |> element("button[data-leader-action='rename-session'][phx-value-session-id='u-dev-extra']")
     |> render_click()
 
     assert has_element?(view, "#session-rename-form-active_sessions-u-dev-extra")
@@ -529,7 +531,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_submit()
 
     assert_receive {:fake_tmux_set_session_alias, ^extra_tmux_session, "billing"}
-    assert has_element?(view, "#session-dropdown-ws-1", "billing")
+    assert has_element?(view, ".leader-key-control", "billing")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}
@@ -688,18 +690,27 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     current_tmux = DevIDE.Terminals.Tmux.session_name("alpha", "u-alice")
     owned_tmux = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned")
+    owned_tmux2 = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-2")
+    # The owned workspace's landing (home) shell folds away in the cross-workspace
+    # tree; a newer home shell keeps the two `u-alice-owned*` shells as real,
+    # navigable folded sessions to assert on.
+    owned_home_tmux = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-home")
     teammate_tmux = DevIDE.Terminals.Tmux.session_name("bob-owned", "u-bob-owned")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       current_tmux => [tmux_window(activity_now)],
       owned_tmux => [tmux_window(activity_now)],
+      owned_tmux2 => [tmux_window(activity_now)],
+      owned_home_tmux => [tmux_window(activity_now + 100)],
       teammate_tmux => [tmux_window(activity_now)]
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       current_tmux => [tmux_pane(workspace_path)],
       owned_tmux => [tmux_pane(owned_path)],
+      owned_tmux2 => [tmux_pane(owned_path)],
+      owned_home_tmux => [tmux_pane(owned_path)],
       teammate_tmux => [tmux_pane(teammate_path)]
     })
 
@@ -743,9 +754,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     refute has_element?(view, "#workspace-session-rail")
 
-    assert has_element?(view, "#workspace_sessions-owned-ws-u-alice-owned")
+    # Cross-workspace navigation now lives in the summoned SESSIONS sidebar: the
+    # owned workspace shows as a node whose sessions load (and fold in) on expand,
+    # while a teammate's workspace never appears at all.
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+    render_async(view)
 
-    refute has_element?(view, "#workspace_sessions-owned-ws-u-alice-owned", "Shell")
+    # The owned workspace surfaces as its own sidebar node; expanding it folds in
+    # its (non-home) sessions.
+    assert has_element?(view, "[data-picker-sessions-id='sidebar-ws-owned-ws']")
+
+    render_hook(view, "sidebar:toggle_workspace", %{"workspace-id" => "owned-ws"})
+    render_async(view)
+
+    assert has_element?(view, "#active_sessions-u-alice-owned")
+
+    refute has_element?(view, "#active_sessions-u-alice-owned", "Shell")
 
     assert has_element?(view, "a[href*='/workspaces/owned-ws'][href*='session=u-alice-owned']")
     refute has_element?(view, "a[href*='/workspaces/teammate-ws']")
@@ -877,6 +901,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
+    # Session rows (home marker, browser-tab shells, explicit shells) live in the
+    # summoned SESSIONS sidebar now.
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     assert has_element?(view, "[aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='#{stale_sid}']")
     assert has_element?(view, "[phx-value-session-id='#{explicit_sid}']")
@@ -985,6 +1013,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
+    # The stale session row lives in the summoned SESSIONS sidebar.
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     assert has_element?(view, "[phx-value-session-id='u-dev-stale']")
 
     view
@@ -1077,9 +1108,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # No recovery banner and no error flash — just drop into the live (Home) session.
     refute has_element?(view, "#view-link-notice")
     refute has_element?(view, "#flash-error")
-    assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
 
     assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%400")
+
+    # The active-session marker now lives in the summoned SESSIONS sidebar.
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+    assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 
   test "pane and zoom deep link restores view state", %{conn: conn} do
@@ -1230,6 +1264,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
+
+    # The stale session row lives in the summoned SESSIONS sidebar.
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
 
     view
     |> element("[phx-value-session-id='u-dev-stale']")

@@ -143,6 +143,24 @@ defmodule DevIDE.Terminals.SessionDirectory do
     end
   end
 
+  @doc """
+  Drops the caller's PubSub subscription and directory watch for a workspace.
+
+  Stops the per-workspace poll when the last watcher goes away. Safe to call
+  when not subscribed.
+  """
+  @spec unsubscribe(String.t(), pid()) :: :ok
+  def unsubscribe(workspace_id, watcher_pid \\ self()) when is_binary(workspace_id) do
+    :ok = Phoenix.PubSub.unsubscribe(@pubsub, topic(workspace_id))
+
+    case Registry.lookup(@registry, key(workspace_id)) do
+      [{pid, _}] -> GenServer.cast(pid, {:unwatch, watcher_pid})
+      _ -> :ok
+    end
+
+    :ok
+  end
+
   @doc false
   def ensure_started(workspace_id, opts \\ []) when is_binary(workspace_id) do
     case Registry.lookup(@registry, key(workspace_id)) do
@@ -214,6 +232,22 @@ defmodule DevIDE.Terminals.SessionDirectory do
       ref = Process.monitor(pid)
       state = %{state | watchers: Map.put(state.watchers, ref, pid)}
       {:noreply, schedule_poll(state)}
+    end
+  end
+
+  def handle_cast({:unwatch, pid}, state) do
+    {removed, kept} =
+      Enum.split_with(state.watchers, fn {_ref, watcher} -> watcher == pid end)
+
+    Enum.each(removed, fn {ref, _} -> Process.demonitor(ref, [:flush]) end)
+
+    watchers = Map.new(kept)
+    state = %{state | watchers: watchers}
+
+    if map_size(watchers) == 0 do
+      {:stop, :normal, state}
+    else
+      {:noreply, state}
     end
   end
 
