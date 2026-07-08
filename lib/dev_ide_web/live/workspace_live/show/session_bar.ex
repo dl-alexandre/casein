@@ -546,7 +546,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         ></span>
         <span class="text-[10px] text-base-content/40">▾</span>
       </summary>
-      <div class="absolute top-full right-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+      <div class="absolute top-full right-0 z-50 mt-0.5 max-h-[80vh] min-w-52 max-w-[90vw] overflow-y-auto overscroll-contain rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
           data-picker-filter
