@@ -212,11 +212,13 @@ defmodule PreviewCtl.Session do
     url =
       url || observation_url(observation) || current_url(%{entry | adapter_state: adapter_state})
 
-    Registry.update(session_id, fn e ->
-      e
-      |> Map.put(:adapter_state, adapter_state)
-      |> Map.put(:current_url, url)
-    end)
+    with :ok <- ensure_allowed_url(entry, url) do
+      Registry.update(session_id, fn e ->
+        e
+        |> Map.put(:adapter_state, adapter_state)
+        |> Map.put(:current_url, url)
+      end)
+    end
   end
 
   defp ensure_allowed_url(entry, url) do
