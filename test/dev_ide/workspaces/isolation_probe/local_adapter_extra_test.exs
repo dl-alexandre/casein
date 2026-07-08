@@ -218,6 +218,72 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapterExtraTest do
     assert iso.source == :docker_compose
   end
 
+  test "compose file with YAML mapping DATABASE_URL: line is detected", %{root: root} do
+    # `environment:` as a YAML mapping (`KEY: value`) rather than the env-file
+    # list form (`- KEY=value`). The `postgres` service host -> :ephemeral.
+    File.write!(Path.join(root, "docker-compose.yml"), """
+    services:
+      web:
+        environment:
+          DATABASE_URL: postgres://x:y@postgres:5432/app
+    """)
+
+    iso = LocalAdapter.detect(%{}, root)
+    assert iso.isolation == :ephemeral
+    assert iso.source == :docker_compose
+    assert Enum.any?(iso.signals, &(&1.kind == :url))
+  end
+
+  test "YAML mapping POSTGRES_HOST: line produces a host signal", %{root: root} do
+    File.write!(Path.join(root, "compose.yaml"), """
+    services:
+      db:
+        environment:
+          POSTGRES_HOST: localhost
+    """)
+
+    iso = LocalAdapter.detect(%{}, root)
+    assert iso.isolation == :local
+    assert iso.source == :docker_compose
+    assert iso.summary == "host: localhost"
+  end
+
+  test "the production docker-compose.yml classifies as :ephemeral (container postgres)",
+       %{root: root} do
+    # Verbatim from the DevIDE repo root: an interpolated DATABASE_URL in YAML
+    # mapping form pointing at the `postgres` compose service. Before the
+    # mapping-form fix this regressed to unknown/none — the exact bug the live
+    # audit bus surfaced (workspace.db_isolation_detected: unknown/none).
+    File.write!(Path.join(root, "docker-compose.yml"), """
+    services:
+      postgres:
+        image: postgres:16-alpine
+        environment:
+          POSTGRES_USER: ${POSTGRES_USER:-dev_ide}
+          POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_ide_local_password}
+          POSTGRES_DB: ${POSTGRES_DB:-dev_ide_prod}
+        healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ide} -d ${POSTGRES_DB:-dev_ide_prod}"]
+
+      dev_ide:
+        build: .
+        image: dev_ide:latest
+        environment:
+          PHX_SERVER: "true"
+          PHX_HOST: ${PHX_HOST:-localhost}
+          PORT: ${PORT:-4000}
+          SECRET_KEY_BASE: ${SECRET_KEY_BASE:?required}
+          DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
+    """)
+
+    iso = LocalAdapter.detect(%{}, root)
+    assert iso.isolation == :ephemeral
+    assert iso.source == :docker_compose
+    # Redacted summary keeps the container host + port but never credentials.
+    assert iso.summary =~ "postgres:5432"
+    refute iso.summary =~ "dev_ide_local_password"
+  end
+
   test "compose-only file with no recognizable env yields a raw signal and :unknown",
        %{root: root} do
     File.write!(Path.join(root, "docker-compose.yaml"), """

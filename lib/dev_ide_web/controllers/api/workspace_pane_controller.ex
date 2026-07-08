@@ -16,6 +16,15 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
   alias DevIDE.Export
   alias DevIDE.Terminals
 
+  # Root every action in a fresh correlation context so the tmux.pane_* audit
+  # events these mutations emit are traced (DevIDE.Signals.EntryContext is the
+  # LiveView analog; MCP tool calls get the same in each *_mcp.ex call_tool/3).
+  def action(conn, _opts) do
+    DevIDE.Signals.Context.with_new(fn ->
+      apply(__MODULE__, action_name(conn), [conn, conn.params])
+    end)
+  end
+
   def create_pane(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),

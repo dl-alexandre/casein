@@ -10,6 +10,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   server-side PTY (FP-1); every event passes the `authz_gate/3` fail-closed hook.
   """
   use DevIdeWeb, :live_view
+  # Root every user event in a fresh correlation context so audit signals
+  # emitted while handling it are traced (covers delegated sub-module events).
+  use DevIDE.Signals.EntryContext
 
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
