@@ -68,6 +68,27 @@ spawn_worker_window_name() {
   printf 'worker-%s\n' "$(spawn_worker_sanitize_slug "$slug")"
 }
 
+# Resolve the primary (main) working tree for a candidate checkout.
+#
+# In an agent's environment DEVIDE_CHECKOUT points at *that agent's own* linked
+# worktree, not the primary repo. Launching a worker there is a trap:
+# agent_worktree_ensure adopts any linked worktree it is started inside instead
+# of branching a fresh one (see scripts/lib/agent-worktree.sh), so the worker
+# would silently share the orchestrator's checkout and branch. git lists the
+# main working tree first in `worktree list`, so resolve to that — worktrees
+# must be branched from the primary.
+spawn_worker_resolve_primary_checkout() {
+  local candidate="$1"
+  local primary
+  if primary="$(git -C "$candidate" worktree list --porcelain 2>/dev/null |
+    awk '/^worktree /{print $2; exit}')" &&
+    [[ -n "$primary" && -d "$primary" ]]; then
+    printf '%s\n' "$primary"
+    return 0
+  fi
+  printf '%s\n' "$candidate"
+}
+
 if [[ $# -lt 2 || $# -gt 3 ]]; then
   usage >&2
   exit 1
@@ -107,15 +128,28 @@ if [[ ! -d "$CHECKOUT" ]]; then
   exit 1
 fi
 
+# DEVIDE_CHECKOUT may point at the orchestrator's own linked worktree; the
+# worker must branch off the primary repo, not launch inside it.
+CHECKOUT="$(spawn_worker_resolve_primary_checkout "$CHECKOUT")"
+
 if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   echo "error: tmux session not found: ${SESSION}" >&2
   exit 1
 fi
 
 WINDOW_NAME="$(spawn_worker_window_name "$TASK_SLUG")"
-# Clear stale worktree pointers from tmux session env so each spawn gets a
-# fresh agent/grok/<slug>-<stamp> worktree off the primary checkout.
-LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
+# Clear stale worktree pointers and pin DEVIDE_CHECKOUT to the primary so each
+# spawn gets a fresh agent/<runtime>/<slug>-<stamp> worktree off the primary
+# checkout. Both matter: launch-devide-agent.sh keys worktree creation off the
+# cwd *and* DEVIDE_CHECKOUT, and an inherited value would point back at the
+# orchestrator's linked worktree.
+LAUNCH_CMD="cd $(printf '%q' "$CHECKOUT") && unset DEVIDE_AGENT_WORKTREE_PATH DEVIDE_WORKTREE DEVIDE_GIT_DIR && export DEVIDE_CHECKOUT=$(printf '%q' "$CHECKOUT") && DEVIDE_AGENT_TASK=$(printf '%q' "$TASK_SLUG") bash $(printf '%q' "${CHECKOUT}/scripts/launch-devide-agent.sh") $(printf '%q' "$RUNTIME")"
+
+if [[ "${DEVIDE_SPAWN_DRY_RUN:-0}" == "1" ]]; then
+  printf 'session=%s\ncheckout=%s\nwindow=%s\nlaunch=%s\n' \
+    "$SESSION" "$CHECKOUT" "$WINDOW_NAME" "$LAUNCH_CMD"
+  exit 0
+fi
 
 PANE_ID="$(
   tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -P -F '#{pane_id}' "$LAUNCH_CMD" 2>/dev/null ||
