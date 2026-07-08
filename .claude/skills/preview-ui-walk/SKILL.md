@@ -1,0 +1,165 @@
+---
+name: preview-ui-walk
+description: >
+  Drive an automated, READ-ONLY UI smoke walk of a DevIDE workspace app through
+  the preview stack — reuse the running preview, log in, walk a manifest of pages
+  capturing a screenshot + console/network errors + timing per page, record the
+  session, and emit one Artifact report with the playback video embedded. Use for
+  superadmin/admin-panel smoke tests or any multi-page visual+error walk of a
+  workspace app. NOT for driving dev_ide's own UI (use `verify`), and NOT for
+  mutating flows.
+---
+
+# Preview UI walk
+
+A repeatable, recorded, read-only walk of a workspace app's pages, driven from
+outside the app via the DevIDE preview MCP. The engine is generic; each app
+supplies a **walk manifest**. Output is a single Artifact report (screenshots +
+per-page timings + console/network error counts + pass/fail) with the recording
+embedded.
+
+## ⚠️ Safety gate — READ THIS FIRST, every run
+
+A workspace app can be backed by **production upstream APIs even when its local DB
+is throwaway** (OneBackend-v3 is: writes route to `*.onemilc.com` by default —
+see [[onebackend-v3-superadmin-uitest]]). So:
+
+1. **Default to strictly read-only**: navigate + screenshot + `preview_report_errors`
+   only. Page *loads* fire the app's normal reads — fine. Do **not** click, type,
+   submit, or fire any event in the manifest's `deny_events` list.
+2. Only relax to interactions if you have **confirmed the app's write path is
+   non-prod** for this instance — i.e. `ONE_API_URL` / `*_API_URL` are overridden
+   to a non-prod host, or a shadow/legacy-safe flag is on. If unconfirmed, stay
+   read-only. When in doubt, screenshot; never click.
+3. The manifest carries the app's `safety` block (denylist, the env keys to
+   check). Honor it. Log what you skipped.
+
+## What it produces
+
+- **One Artifact report** (HTML), the single conclusion window: an embedded
+  `<video>` of the walk at the top, then a row per page — thumbnail screenshot,
+  load time (ms), console-error count, network-error count, PASS/FAIL.
+- The report is the deliverable; **close the live walk pane** afterward — it was
+  just the execution surface.
+
+## Prerequisites
+
+- **Target app running + preview reachable.** Per [[devbox-preview-routing]], a
+  stopped v3 workspace 404s through the preview-router. Ensure it's `running`
+  (once PR #188 ships, opening its preview auto-starts it; until then start via
+  the manager `POST /api/workspaces/:id/start` and wait for loopback
+  `:{ports.http}/health` → 200). See [[reports-preview-readiness]].
+- **The walk manifest** (see `references/manifest-schema.md`). It lives in the
+  TARGET repo at `.devide/preview-walk.json` (the app owns its own page list +
+  safety); `references/onebackend-v3-superadmin.json` is a worked example.
+
+## 1. Resolve the target's scoped preview MCP
+
+The DevIDE MCP tools are workspace-scoped, so to drive a *non-dev_ide* app you use
+that workspace's own credentials. From the box:
+
+```bash
+source /home/devbox/.devide/agent-mcp/<workspace-name>/env.sh
+# → DEVIDE_PREVIEW_MCP_URL (workspace-scoped, includes ?workspace_id&tmux_session)
+# → DEV_IDE_API_TOKEN (64-char, workspace-scoped)
+```
+
+Drive tools over plain JSON-RPC (never echo the token):
+
+```bash
+curl -sS "$DEVIDE_PREVIEW_MCP_URL" \
+  -H "Authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
+       "params":{"name":"<tool>","arguments":{...}}}'
+```
+
+The result JSON is in `result.content[0].text`. (When this skill runs *inside* the
+target workspace's own agent, use the native `preview_*` MCP tools directly and
+skip the token plumbing.) `references/walk.py` is a ready driver that wraps this —
+but it only works for **unauthenticated / no-redirect** targets (see Auth reality).
+
+## Auth reality — the preview MCP cannot do redirect/cookie logins
+
+Learned the hard way (OneBackend-v3 superadmin walk). **`preview_navigate` blocks
+302 redirects** (an origin-safety guard in DevIDE's nav layer), so a redirect-based
+login (`/auth/…/mock` → 302 that sets the session cookie → 302 to the panel) never
+persists: the browser drops the cookie, every gated page 302s to `/login`, and the
+screenshot silently stays on the previous page — **a false green**. `default_headers`
+Cookie injection also did *not* carry the session through the block, and the
+"logo double-click" (in-page `window.location`, the only bypass) is defeated by the
+per-click visible-ack timeout (clicks serialize seconds apart, need <500ms).
+
+**So pick the driver by auth model:**
+- **No auth / no login redirect** → `references/walk.py` (preview MCP: navigate +
+  screenshot + report_errors). Fine for public pages.
+- **Cookie/redirect login (most admin panels)** → **drive the cached Chromium via
+  Playwright directly** with a server-minted cookie. Mint it with `curl` (which
+  follows redirects and keeps the Set-Cookie): `curl -c jar -L
+  "http://127.0.0.1:<port><login_path>?…"`, extract the session cookie, launch
+  Chromium (`playwright-core` + a cached `chromium` build are on the box), set the
+  cookie, then navigate/screenshot/collect-console+network per page. This is the
+  only path that actually authenticates today.
+- **ALWAYS verify the landed URL per page** (final url matches the requested path,
+  not `/login`) — do not trust HTTP 200 alone, or you ship the false green.
+
+A durable follow-up would be teaching DevIDE preview to carry an injected
+cookie/storage-state so the MCP path works for authed apps too.
+
+## 2. Reuse the running preview (do not open fresh)
+
+Get the live app surface and its session, don't spin a new one:
+
+- `preview_surfaces` → confirm the `app` surface `server_active: true`.
+- Reuse the existing session for that origin (one pane per surface/origin). Only
+  `preview_open_app` if none exists; pass `new_control_session` **only** when you
+  deliberately want an isolated lane (see Parallelization).
+
+## 3. Record → login → walk → stop
+
+1. `preview_record_start(session_id)`.
+2. **Login** per the manifest's `login` step — but heed *Auth reality* above: for a
+   redirect/cookie login you must mint the cookie server-side and drive Playwright
+   directly (the `preview_navigate` session-inject will silently fail). Only for a
+   no-redirect target does navigating the login path work. The "enter via the logo"
+   gesture maps to hitting the login route, but the redirect-block still applies.
+3. For each manifest page, in order:
+   - `preview_navigate(session_id, path)`
+   - wait for render (these apps often have **no `assign_async`** → budget generous
+     per-page timeouts; expect a blank dead-render before the WS connects)
+   - `preview_screenshot(session_id)` → keep the PNG bytes (data URI in the result)
+   - `preview_report_errors(session_id)` → console + network error counts
+   - record elapsed ms; mark PASS/FAIL against the manifest's per-page budget
+4. `preview_record_stop(session_id)` → webm artifact path.
+
+## 4. Build the report + present as one window
+
+- Assemble an HTML report: embedded `<video src=<webm-path>>` (same-origin under
+  `devide.devbox.milcgroup.com`, so it should play inline) + a row per page.
+- Publish it via the artifact MCP (`artifact_create`/`update`, then `artifact_serve`)
+  and open it with `preview_open` using the returned `preview_open_arguments`.
+- **Fallback** if CSP blocks the inline video: put a "▶ Open playback" link in the
+  report that the operator uses to fire `preview_playback_open(artifact_path)` into
+  its own looping pane.
+- Close the live walk pane. The report is the single conclusion surface.
+
+## 5. Parallelization (optional; default sequential)
+
+Sequential is right for a small read-only walk — it yields one clean, ordered
+video, one login, simple aggregation. When the page count grows or the slow pages
+(e.g. Metrics/Symphony) dominate, shard across concurrent lanes: `preview_open`
+with `new_control_session: true` + a distinct `isolation_key` per lane gives
+separate browser/auth/storage contexts against the *same* origin (verified
+supported). Each lane logs in independently; then either record one "narrator"
+lane or produce per-lane clips the report tabs between. This is a config change to
+the page-sharding, not a redesign.
+
+## Notes
+
+- Assert on the screenshot artifact + error counts, NOT on `observe_pane`'s
+  `operator_visible`/`browser_loaded` (operator-iframe telemetry; wrong signal for
+  a headless driver — see [[preview-pane-e2e-harness]]).
+- Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
+  prior run's screenshots for visual-diff regression once a baseline exists (only
+  meaningful for pages with stable content).
