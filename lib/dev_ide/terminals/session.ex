@@ -209,8 +209,7 @@ defmodule DevIDE.Terminals.Session do
           workspace: workspace,
           sid: sid,
           tmux: tmux_session,
-          ospid: ospid,
-          recreated: recreated?
+          ospid: ospid
         )
 
         {:noreply,
