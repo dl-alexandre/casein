@@ -13,7 +13,7 @@ defmodule DevIde.Application do
 
   @impl true
   def start(_type, _args) do
-    assert_forward_auth_bind!()
+    DevIdeWeb.Plugs.ForwardAuth.assert_safe_listener_bind!()
     configure_tmux_ctl!()
     configure_preview_ctl!()
     configure_git_ctl!()
@@ -111,51 +111,6 @@ defmodule DevIde.Application do
     Application.get_env(:dev_ide, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
       DevIDE.Terminals.Shims.shell_command()
-  end
-
-  # Defense-in-depth (audit #10 / F3): when forward-auth is enabled, DevIDE
-  # trusts the `X-Auth-Request-Email` header, which is only safe behind the proxy
-  # on a loopback / unix-socket bind. If the HTTP listener is bound somewhere a
-  # client could reach directly, identity can be spoofed. runtime.exs already
-  # binds loopback in that case; this asserts it at boot so a misconfiguration is
-  # caught loudly. Raises in dev/test (fail fast); warns + continues in prod (no
-  # surprise deploys).
-  defp assert_forward_auth_bind! do
-    if DevIdeWeb.Plugs.ForwardAuth.enabled?() and not loopback_or_socket_bound?() do
-      ip = endpoint_bind_ip()
-
-      message =
-        "Forward-auth is enabled (DevIDE trusts X-Auth-Request-Email) but the HTTP " <>
-          "listener is bound to #{inspect(ip)}, not loopback/unix-socket — a client " <>
-          "that reaches this port directly can spoof identity. Bind 127.0.0.1, ::1, " <>
-          "or a unix socket behind the proxy. (audit #10 / F3)"
-
-      if Application.get_env(:dev_ide, :env, :prod) in [:dev, :test] do
-        raise message
-      else
-        require Logger
-        Logger.warning(message)
-      end
-    end
-
-    :ok
-  end
-
-  defp loopback_or_socket_bound? do
-    case endpoint_bind_ip() do
-      {127, 0, 0, 1} -> true
-      {0, 0, 0, 0, 0, 0, 0, 1} -> true
-      {:local, _} -> true
-      # No explicit bind configured (e.g. server not started): nothing to assert.
-      nil -> true
-      _ -> false
-    end
-  end
-
-  defp endpoint_bind_ip do
-    Application.get_env(:dev_ide, DevIdeWeb.Endpoint, [])
-    |> Keyword.get(:http, [])
-    |> Keyword.get(:ip)
   end
 
   defp configure_git_ctl! do
