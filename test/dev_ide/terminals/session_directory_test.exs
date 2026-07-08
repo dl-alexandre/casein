@@ -482,6 +482,95 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert metadata.source in ["git_discovery", nil]
   end
 
+  test "worktree tabs sharing one operator session each show only their own window" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    name = "alpha-#{System.unique_integer([:positive])}"
+    root = git_repo!()
+    worktree_a = root <> "-agent-a"
+    worktree_b = root <> "-agent-b"
+    git!(root, ["worktree", "add", "-b", "agent-a", worktree_a, "main"])
+    git!(root, ["worktree", "add", "-b", "agent-b", worktree_b, "main"])
+
+    # One operator tmux session multiplexes both agents as sibling windows,
+    # each pane rooted in its own worktree. Both worktree runtimes report this
+    # shared session as their tmux_session_id — the fan-out trigger.
+    operator = DevIDE.Terminals.Tmux.session_name(name, "wt-operator")
+
+    TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.put(windows, operator, [
+        %{id: "@1", index: 0, name: "agent-a", active: true, panes: 1, activity: 0},
+        %{id: "@2", index: 1, name: "agent-b", active: false, panes: 1, activity: 0}
+      ])
+    end)
+
+    TmuxCtl.Test.FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.put(panes, operator, [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "claude",
+          current_path: worktree_a
+        },
+        %{
+          id: "%2",
+          window_id: "@2",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "codex",
+          current_path: worktree_b
+        }
+      ])
+    end)
+
+    _ =
+      State.sync(%Workspace{id: ws, name: name, status: :running, path: root, metadata: %{}})
+
+    for {rid, branch, wt} <- [{"wt-a", "agent-a", worktree_a}, {"wt-b", "agent-b", worktree_b}] do
+      {:ok, _} =
+        RuntimeSeed.seed_runtime(ws,
+          runtime_id: rid,
+          host_id: "local",
+          branch: branch,
+          status: "provisioned",
+          tmux_session_id: operator,
+          worktree_path: wt,
+          metadata: %{
+            "kind" => "agent_worktree",
+            "provisioning_model" => "agent_worktree",
+            "git_worktree" => true,
+            "worktree_path" => wt,
+            "git_toplevel" => wt
+          }
+        )
+    end
+
+    tabs = SessionDirectory.read(ws, workspace_name: name)
+    by_sid = Map.new(tabs, &{&1.sid, &1})
+
+    # Each worktree tab is narrowed to the single window rooted in it — not the
+    # whole operator session — and its cwd resolves to its own worktree.
+    assert %{metadata: %{windows: [%{id: "@1", name: "agent-a"}], cwd: ^worktree_a}} =
+             by_sid["wt-a"]
+
+    assert %{metadata: %{windows: [%{id: "@2", name: "agent-b"}], cwd: ^worktree_b}} =
+             by_sid["wt-b"]
+
+    # The operator/multiplexer row itself (scanned shell, no worktree_path) keeps
+    # the full window list — it is the deliberate whole-session view.
+    assert %{metadata: %{windows: operator_windows}} = by_sid["wt-operator"]
+    assert Enum.map(operator_windows, & &1.id) == ["@1", "@2"]
+  end
+
   test "switching to a worktree shell uses that worktree as the active cwd" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     name = "alpha-#{System.unique_integer([:positive])}"
