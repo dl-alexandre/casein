@@ -85,6 +85,31 @@ defmodule PreviewCtl.SessionTest do
     assert last_type.opts == %{nth: 1}
   end
 
+  test "click that navigates off-allowlist origin is refused without updating session" do
+    base = "https://alice.devbox.example.com"
+    entry = put_runtime!(base)
+    off_origin_link = ~s(a[href="https://example.com/news"])
+
+    assert {:error, {:origin_not_allowed, _observation}} =
+             Session.click(entry.session.id, %{selector: off_origin_link})
+
+    updated = Registry.get(entry.session.id)
+    assert updated.adapter_state.current_url == base
+    refute updated.adapter_state.current_url == "https://example.com/news"
+  end
+
+  test "click that navigates within allowlist still succeeds" do
+    base = "https://alice.devbox.example.com"
+    entry = put_runtime!(base)
+    same_origin_link = ~s(a[href="/settings"])
+
+    assert {:ok, _, observation} =
+             Session.click(entry.session.id, %{selector: same_origin_link})
+
+    assert observation.url == "https://alice.devbox.example.com:443/settings"
+    assert Registry.get(entry.session.id).current_url == observation.url
+  end
+
   defp put_runtime!(url) do
     session = %{id: System.unique_integer([:positive]), current_url: url}
     preview = %{url: url}

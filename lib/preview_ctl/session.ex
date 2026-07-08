@@ -64,9 +64,11 @@ defmodule PreviewCtl.Session do
     with {:ok, entry} <- fetch(session_id),
          :ok <- ensure_target(target),
          {:ok, adapter_state, observation} <-
-           entry.adapter_module.click(entry.adapter_state, target),
-         {:ok, entry} <- commit_state(session_id, entry, adapter_state, observation) do
-      {:ok, entry, observation}
+           entry.adapter_module.click(entry.adapter_state, target) do
+      case commit_state(session_id, entry, adapter_state, observation) do
+        {:ok, entry} -> {:ok, entry, observation}
+        {:error, :origin_not_allowed} -> {:error, {:origin_not_allowed, observation}}
+      end
     end
   end
 
@@ -212,11 +214,13 @@ defmodule PreviewCtl.Session do
     url =
       url || observation_url(observation) || current_url(%{entry | adapter_state: adapter_state})
 
-    Registry.update(session_id, fn e ->
-      e
-      |> Map.put(:adapter_state, adapter_state)
-      |> Map.put(:current_url, url)
-    end)
+    with :ok <- ensure_allowed_url(entry, url) do
+      Registry.update(session_id, fn e ->
+        e
+        |> Map.put(:adapter_state, adapter_state)
+        |> Map.put(:current_url, url)
+      end)
+    end
   end
 
   defp ensure_allowed_url(entry, url) do
