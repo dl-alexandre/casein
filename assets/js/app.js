@@ -397,6 +397,13 @@ window.addEventListener("phx:devide:reload_page", () => {
   window.location.reload()
 })
 
+// A draining instance asked its still-attached clients to move. Reuse the same
+// background reconnect the "Update now" button uses: invisible for code-only
+// deploys, and it lets the old node drain and stop instead of lingering.
+window.addEventListener("phx:devide:deploy_reconnect", () => {
+  applyDeployUpdate()
+})
+
 function shortcutHintFromButton(button) {
   if (!button) return null
 

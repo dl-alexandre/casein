@@ -221,6 +221,15 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     assert render(view) =~ String.duplicate("d", 12)
   end
 
+  test "a deploy_reconnect broadcast pushes a background-reconnect event to the client",
+       %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:deploy_reconnect})
+
+    assert_push_event(view, "devide:deploy_reconnect", %{})
+  end
+
   test "a stale client_version connect param does NOT flag update state (string check retired)",
        %{conn: conn} do
     {:ok, view, _html} =
