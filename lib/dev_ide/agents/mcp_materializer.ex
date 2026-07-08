@@ -26,6 +26,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
       :ok = write_codex_config(staging, urls, workspace)
       :ok = write_opencode_config(staging, urls, workspace)
       :ok = write_mcp_json(staging, urls, token, workspace)
+      :ok = stage_agent_scripts(staging)
       :ok = write_claude_hooks_settings(staging)
       :ok = write_env_sh(staging, workspace, urls, token, checkout, opts)
 
@@ -219,13 +220,56 @@ defmodule DevIDE.Agents.MCPMaterializer do
     write_file(Path.join(staging, "cursor/mcp.json"), json)
   end
 
+  # Copy the checkout-independent agent hook scripts into the workspace staging
+  # home so DevIDE's hooks resolve regardless of which project is the checkout.
+  # $DEVIDE_SCRIPTS previously pointed at "<checkout>/scripts", which only exists
+  # when the paired project is the dev_ide repo itself; every other workspace hit
+  # "devide-agent-state.sh: not found". Source is the release's priv/scripts (dev
+  # falls back to the checkout tree), mirroring scripts/materialize-agent-mcp.sh.
+  @staged_agent_scripts ~w(devide-agent-state.sh devide-codex-notify.sh)
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp stage_agent_scripts(staging) do
+    Enum.each(@staged_agent_scripts, fn name ->
+      case priv_script_source(name) do
+        {:ok, src} ->
+          dest = Path.join(staging, name)
+          :ok = File.cp(src, dest)
+          File.chmod(dest, 0o755)
+
+        :error ->
+          :ok
+      end
+    end)
+
+    :ok
+  end
+
+  defp priv_script_source(name) do
+    rel = Path.join(["priv", "scripts", name])
+
+    release_path =
+      if Code.ensure_loaded?(Application),
+        do: Application.app_dir(:dev_ide, rel),
+        else: rel
+
+    source_path = Path.expand(rel)
+
+    cond do
+      File.regular?(release_path) -> {:ok, release_path}
+      File.regular?(source_path) -> {:ok, source_path}
+      true -> :error
+    end
+  end
+
   # Claude Code hooks settings, injected by the launcher via `claude --settings`.
-  # The hook command runs through a shell, so $DEVIDE_SCRIPTS resolves from the
-  # agent's env (set by env.sh) at hook time. Mirrors scripts/materialize-agent-mcp.sh.
+  # The hook command runs through a shell, so $DEVIDE_AGENT_MCP_HOME (the staging
+  # home, exported by env.sh) resolves at hook time and holds the staged copy.
+  # Mirrors scripts/materialize-agent-mcp.sh.
   # staging is the workspace MCP staging directory; the written filename is fixed.
   # sobelow_skip ["Traversal.FileModule"]
   defp write_claude_hooks_settings(staging) do
-    command = ~s("$DEVIDE_SCRIPTS"/devide-agent-state.sh)
+    command = ~s("$DEVIDE_AGENT_MCP_HOME"/devide-agent-state.sh)
     entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
 
     pretooluse = [

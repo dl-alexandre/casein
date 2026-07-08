@@ -455,6 +455,23 @@ if [ -z "${devide_curl_script_dir}" ]; then
   exit 1
 fi
 
+# Agent hook scripts staged per-workspace by the materializer (copied out of the
+# release's priv/scripts). Missing here means non-dev_ide workspaces get no live
+# agent-state / codex notify hook.
+for hook_script in devide-agent-state.sh devide-codex-notify.sh; do
+  hook_script_path="$(
+    sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path "*/priv/scripts/${hook_script}" -print -quit 2>/dev/null
+  )"
+  if [ -z "${hook_script_path}" ]; then
+    echo "error: ${hook_script} missing from release priv/scripts" >&2
+    exit 1
+  fi
+  if [ ! -x "${hook_script_path}" ]; then
+    echo "error: ${hook_script} is not executable in release priv/scripts" >&2
+    exit 1
+  fi
+done
+
 terminal_tools_json="$(
   curl -fsS --unix-socket "${NEW_SOCKET}" \
     -X POST http://localhost/api/terminals/mcp \

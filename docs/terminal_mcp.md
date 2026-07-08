@@ -183,8 +183,11 @@ report; `blocked`/`done` are never inferred from the title):
 - **Explicit reports** via the MCP tool below. Launched agents report
   automatically (opt out of all of it with `DEVIDE_AGENT_STATE_HOOKS=0`):
   - **Claude Code**: hooks in a materialized `--settings` file run
-    `scripts/devide-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
-    Notification (blocked), Stop (done), SessionStart/End (idle).
+    `devide-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
+    Notification (blocked), Stop (done), SessionStart/End (idle). The
+    materializer stages the script into the workspace MCP home and the hook
+    resolves it via `$DEVIDE_AGENT_MCP_HOME`, so it works for any paired
+    project, not only the dev_ide checkout itself.
   - **Grok**: the launcher installs a global hook file
     (`~/.grok/hooks/devide-agent-state.json`, from
     `scripts/agent-hooks/grok-devide-agent-state.json`) that runs the same
