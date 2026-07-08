@@ -159,6 +159,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      # Cross-session switching lives in the summoned SESSIONS sidebar now; open
+      # it so the workspace's own session rows render.
+      render_hook(view, "sidebar:open", %{"mode" => "both"})
+
       assert has_element?(view, ~s([phx-value-session-id="#{extra_sid}"]))
 
       # Terminals are raw everywhere now.
