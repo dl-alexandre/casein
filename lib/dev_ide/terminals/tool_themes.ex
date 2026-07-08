@@ -122,6 +122,9 @@ defmodule DevIDE.Terminals.ToolThemes do
     end
   end
 
+  # Target paths come from the compile-time registry expanded against
+  # operator/app configuration, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp do_ensure_scheme_variant(name, %{path: path, stamp: stamp}, scheme) do
     %{format: :toml, section: section, key: key, values: values} = stamp
     value = Map.fetch!(values, scheme)
