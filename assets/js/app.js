@@ -400,9 +400,33 @@ window.addEventListener("phx:devide:reload_page", () => {
 // A draining instance asked its still-attached clients to move. Reuse the same
 // background reconnect the "Update now" button uses: invisible for code-only
 // deploys, and it lets the old node drain and stop instead of lingering.
-window.addEventListener("phx:devide:deploy_reconnect", () => {
+//
+// Defer while the user is mid-edit in a real form field: a reconnect remounts
+// the LiveView, dropping unsaved socket-assign state. A tmux terminal is safe
+// to reconnect under (its state lives server-side), and its input capture may
+// itself be a hidden <textarea>, so terminal focus is explicitly NOT treated as
+// editing. Retry on an interval, capped so a permanently-focused field still
+// moves off well before Drain's 30-minute hard timeout fires.
+const DEPLOY_RECONNECT_RETRY_MS = 15000
+const DEPLOY_RECONNECT_MAX_ATTEMPTS = 40
+
+function userIsEditingForm() {
+  const active = document.activeElement
+  if (!active || !active.closest) return false
+  if (active.closest('[phx-hook="GhosttyTerminal"]')) return false
+  return Boolean(active.closest('input, textarea, select, [contenteditable="true"]'))
+}
+
+function deployReconnectWhenSafe(attempt = 0) {
+  if (userIsEditingForm() && attempt < DEPLOY_RECONNECT_MAX_ATTEMPTS) {
+    window.setTimeout(() => deployReconnectWhenSafe(attempt + 1), DEPLOY_RECONNECT_RETRY_MS)
+    return
+  }
+
   applyDeployUpdate()
-})
+}
+
+window.addEventListener("phx:devide:deploy_reconnect", () => deployReconnectWhenSafe())
 
 function shortcutHintFromButton(button) {
   if (!button) return null
