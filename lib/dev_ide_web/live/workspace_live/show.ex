@@ -40,6 +40,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
+  alias DevIdeWeb.WorkspaceLive.Show.NavEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
   alias DevIdeWeb.WorkspaceLive.Show.PanelGate
@@ -643,15 +644,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @impl true
-  def handle_event("switch_tab", %{"tab" => tab}, socket) do
-    {:noreply, select_tab(socket, tab)}
-  end
+  # Mobile navigation and tab-switch events are handled by NavEvents (extracted
+  # from this module — pure code motion).
+  def handle_event("switch_tab" = event, params, socket),
+    do: NavEvents.handle_event(event, params, socket)
 
-  def handle_event("refresh", _params, socket) do
-    # Older Ghostty assets sent component refreshes to the parent LiveView.
-    # Keep that harmless during rolling deploys instead of crashing the socket.
-    {:noreply, socket}
-  end
+  def handle_event("refresh" = event, params, socket),
+    do: NavEvents.handle_event(event, params, socket)
+
+  def handle_event("mobile_nav:" <> _ = event, params, socket),
+    do: NavEvents.handle_event(event, params, socket)
 
   # Session-template events are handled by TmuxTemplateEvents (extracted from
   # this module). Other "tmux:*" events fall through to the catch-all below,
@@ -695,48 +697,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:close", _params, socket) do
     {:noreply, assign(socket, :window_sidebar_open?, false)}
-  end
-
-  # The sheet is window-picker dominant: the keybar chip opens on the attached
-  # session's window list (with a back arrow to the sessions list), falling
-  # back to the sessions list when the attached session has no tmux windows.
-  def handle_event("mobile_nav:toggle", _params, socket) do
-    view = mobile_nav_resolved_view(socket, "windows")
-
-    {:noreply,
-     socket
-     |> update(:mobile_nav_open, &(!&1))
-     |> assign(:mobile_nav_view, view)
-     |> assign(:mobile_nav_focus, view)}
-  end
-
-  # Opened by the Ctrl+B leader shortcut on touch/narrow layouts (see
-  # assets/js/workspace_leader.js). `focus` lands the in-sheet keyboard cursor
-  # on the active session ("sessions") or active window ("windows") and picks
-  # the matching sheet view.
-  def handle_event("mobile_nav:open", %{"focus" => focus}, socket)
-      when focus in ~w(sessions windows) do
-    {:noreply,
-     socket
-     |> assign(:mobile_nav_open, true)
-     |> assign(:mobile_nav_view, mobile_nav_resolved_view(socket, focus))
-     |> assign(:mobile_nav_focus, focus)}
-  end
-
-  # Back arrow (windows → sessions) and the hook's ← hop use this to flip the
-  # open sheet between its two views without closing it.
-  def handle_event("mobile_nav:set_view", %{"view" => view}, socket)
-      when view in ~w(sessions windows) do
-    view = mobile_nav_resolved_view(socket, view)
-
-    {:noreply,
-     socket
-     |> assign(:mobile_nav_view, view)
-     |> assign(:mobile_nav_focus, view)}
-  end
-
-  def handle_event("mobile_nav:close", _params, socket) do
-    {:noreply, assign(socket, :mobile_nav_open, false)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -871,9 +831,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
-  defp select_tab(socket, tab, params \\ %{})
+  @doc false
+  def select_tab(socket, tab, params \\ %{})
 
-  defp select_tab(socket, tab, params) when tab in @tabs do
+  def select_tab(socket, tab, params) when tab in @tabs do
     socket = assign(socket, :tab, tab)
     socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
 
@@ -893,7 +854,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if tab == "history", do: HistoryEvents.open(socket, params), else: socket
   end
 
-  defp select_tab(socket, _tab, _params), do: socket
+  def select_tab(socket, _tab, _params), do: socket
 
   # `?tab=` deep link (docs/deep_links.md): open a cockpit tab from the URL —
   # e.g. `?tab=history` restores the old /previous-sessions bookmarks via the
@@ -3104,23 +3065,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp schedule_preview_demo_open(socket) do
     Process.send_after(self(), {:open_preview_demo, 1}, @preview_demo_open_delay_ms)
     socket
-  end
-
-  # The session tab the terminal is currently attached to, if any — nil while
-  # on the default shell (no tmux) or before session tabs load.
-  defp mobile_nav_active_tab(assigns) do
-    Enum.find(assigns[:session_tabs] || [], &(&1.id == assigns[:terminal_sid]))
-  end
-
-  # "windows" only makes sense when the attached session actually has tmux
-  # windows to list; everything else lands on the sessions tree.
-  defp mobile_nav_resolved_view(_socket, "sessions"), do: "sessions"
-
-  defp mobile_nav_resolved_view(socket, "windows") do
-    case mobile_nav_active_tab(socket.assigns) do
-      %{windows: [_ | _]} -> "windows"
-      _ -> "sessions"
-    end
   end
 
   # Called from mount (for the default-raw case) and from the explicit
