@@ -11,6 +11,7 @@ defmodule DevIDE.Terminals.Boundary do
   alias DevIDE.Policy.Decision
   alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.InspectionCommands
+  alias DevIDE.Workspaces.Scratch
 
   @interactive_command_ids ~w(agent claude clauded codex grok opencode)
 
@@ -28,7 +29,10 @@ defmodule DevIDE.Terminals.Boundary do
     session_id = Keyword.get(opts, :session_id)
     decision = raw_decision(workspace_id, host_id)
 
-    unless raw_session_attached_audited?(workspace_id, session_id) do
+    # Scratch is synthetic (no workspace_records row). Skip ledger rows so we
+    # do not write audit events keyed to a non-existent workspace.
+    unless Scratch.scratch?(workspace_id) or
+             raw_session_attached_audited?(workspace_id, session_id) do
       _ =
         Ledger.raw_session_attached(decision, %{
           workspace_id: workspace_id,

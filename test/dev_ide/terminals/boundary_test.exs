@@ -101,6 +101,21 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert allowed.target_type == "session"
   end
 
+  test "raw terminal allows scratch on local host without a persisted mode" do
+    # Default mode is :review in this setup; real workspaces are denied, but
+    # synthetic scratch must still open a home-rooted raw shell on local.
+    refute Boundary.raw_allowed?("ws-1", "local")
+
+    assert Boundary.raw_allowed?("__scratch__", "local")
+    assert :ok = Boundary.authorize_raw("__scratch__", actor_id: "user-1", host_id: "local")
+
+    assert {:error, :requires_local_host} =
+             Boundary.authorize_raw("__scratch__", host_id: "remote")
+
+    # No ledger rows for the synthetic workspace.
+    assert Ledger.recent_for("__scratch__", 5) == []
+  end
+
   test "raw terminal stays gated when raw everywhere is explicitly disabled" do
     Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
 

@@ -182,6 +182,42 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
            end) == :ok
   end
 
+  test "kill_idle keeps scratch shells durable when a live SessionOwner backs them" do
+    # Scratch uses the same durable-shell path as real workspaces: a live
+    # :shell SessionOwner marks the tmux session durable, so idle GC must not
+    # special-case/kill `devide___scratch___*`.
+    Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
+    workspace_key = "__scratch__"
+    sid = unique("shell_")
+    session = DevIDE.Terminals.Tmux.session_name(workspace_key, sid)
+
+    info = DevIDE.Terminals.Session.Info.new_shell("__scratch__", sid)
+
+    assert {:ok, owner_pid} =
+             DynamicSupervisor.start_child(
+               DevIDE.Terminals.Supervisor,
+               {DevIDE.Terminals.SessionOwner, {"__scratch__", info}}
+             )
+
+    on_exit(fn ->
+      if Process.alive?(owner_pid), do: GenServer.stop(owner_pid, :normal)
+    end)
+
+    :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
+
+    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(session)
+
+    TmuxJanitor.subscribe(session)
+    TmuxJanitor.unsubscribe(session)
+
+    assert eventually(fn ->
+             not Map.has_key?(TmuxJanitor.__state__().sessions, session)
+           end) == :ok
+
+    # Owner still alive — janitor dropped bookkeeping without killing the shell.
+    assert Process.alive?(owner_pid)
+  end
+
   test "session name without devide_ prefix is rejected at subscribe time" do
     # Guards against accidentally tracking — and later killing — the
     # dev-time `phoenix` or `mock_manager` tmux sessions.

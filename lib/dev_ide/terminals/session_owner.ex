@@ -988,28 +988,33 @@ defmodule DevIDE.Terminals.SessionOwner do
   # push, via the `terminal.size_fight` alert definition. Fire-and-forget:
   # `Audit.emit!` swallows failures and no-ops without a workspace_id, so a
   # missing audit backend or an unscoped owner never disturbs the resize path.
+  # Scratch is synthetic — skip audit rows for a non-existent workspace.
   defp emit_size_fight_alert(%{workspace_id: workspace_id} = state, {cols, rows}, actual, streak)
        when is_binary(workspace_id) do
-    {actual_cols, actual_rows} = actual
+    if DevIDE.Workspaces.Scratch.scratch?(workspace_id) do
+      :ok
+    else
+      {actual_cols, actual_rows} = actual
 
-    DevIDE.Audit.emit!(%{
-      workspace_id: workspace_id,
-      action: "terminal.size_fight",
-      target_type: "terminal_session",
-      target_ref: state.info.sid,
-      reason:
-        "another writer keeps resizing this terminal to #{actual_cols}x#{actual_rows} " <>
-          "against the applied #{cols}x#{rows} (likely a stale instance from a recent deploy)",
-      metadata: %{
-        "kind" => to_string(state.info.kind),
-        "applied" => "#{cols}x#{rows}",
-        "observed" => "#{actual_cols}x#{actual_rows}",
-        "streak" => streak,
-        "session_id" => state.info.sid
-      }
-    })
+      DevIDE.Audit.emit!(%{
+        workspace_id: workspace_id,
+        action: "terminal.size_fight",
+        target_type: "terminal_session",
+        target_ref: state.info.sid,
+        reason:
+          "another writer keeps resizing this terminal to #{actual_cols}x#{actual_rows} " <>
+            "against the applied #{cols}x#{rows} (likely a stale instance from a recent deploy)",
+        metadata: %{
+          "kind" => to_string(state.info.kind),
+          "applied" => "#{cols}x#{rows}",
+          "observed" => "#{actual_cols}x#{actual_rows}",
+          "streak" => streak,
+          "session_id" => state.info.sid
+        }
+      })
 
-    :ok
+      :ok
+    end
   end
 
   defp emit_size_fight_alert(_state, _size, _actual, _streak), do: :ok

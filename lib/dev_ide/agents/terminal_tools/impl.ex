@@ -10,6 +10,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.Scratch
   alias DevIDE.Workspaces.State
 
   @session_prefix "devide_"
@@ -669,7 +670,10 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   defp filter_workspace(sessions, params) do
     case workspace_prefixes(params) do
       [] ->
-        sessions
+        # Unscoped MCP listing must not leak synthetic scratch shells
+        # (`devide___scratch___*`). Scoped workspace_id calls already exclude
+        # them via prefix matching.
+        Enum.reject(sessions, &scratch_session?/1)
 
       prefixes ->
         Enum.filter(sessions, fn %{session: name} ->
@@ -677,6 +681,12 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
         end)
     end
   end
+
+  defp scratch_session?(%{session: name}) when is_binary(name) do
+    String.starts_with?(name, Tmux.workspace_session_prefix(Scratch.id()))
+  end
+
+  defp scratch_session?(_), do: false
 
   defp sessions_for(params) do
     tmux().list_sessions()
