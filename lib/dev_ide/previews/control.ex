@@ -127,8 +127,13 @@ defmodule DevIDE.Previews.Control do
             {:ok, observation}
           end
 
-        {:error, {:origin_not_allowed, observation}} ->
+        {:error, {:origin_not_allowed, observation}} when is_map(observation) ->
           {:error, {:origin_not_allowed, observation}}
+
+        # fetch/ensure_target failures (stale or malformed session) surface here
+        # as {:error, term}; propagate rather than raise CaseClauseError.
+        other ->
+          other
       end
     end
   end

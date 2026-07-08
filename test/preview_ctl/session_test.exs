@@ -110,6 +110,23 @@ defmodule PreviewCtl.SessionTest do
     assert Registry.get(entry.session.id).current_url == observation.url
   end
 
+  test "screenshot is refused when the adapter has drifted off the allowlist" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+
+    # Defense-in-depth: the interaction gate refuses to *commit* an off-origin
+    # url, but the underlying browser can still end up off-allowlist via a path
+    # the gate didn't mediate (JS/meta redirect). A screenshot must not capture
+    # that page.
+    off = %{
+      entry
+      | adapter_state: %{entry.adapter_state | current_url: "https://evil.example.com/x"}
+    }
+
+    :ok = Registry.put(entry.session.id, off)
+
+    assert {:error, :origin_not_allowed} = Session.screenshot(entry.session.id)
+  end
+
   defp put_runtime!(url) do
     session = %{id: System.unique_integer([:positive]), current_url: url}
     preview = %{url: url}
