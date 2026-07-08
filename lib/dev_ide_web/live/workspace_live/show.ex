@@ -34,6 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIDE.Panes
+  alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
@@ -798,7 +799,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: RunEvents.handle_event(event, params, socket)
 
   def handle_event("agent:" <> _ = event, params, socket),
-    do: RunEvents.handle_event(event, params, socket)
+    do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("audit_drawer:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("annotation:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
 
   # "proposal:*" events land on ProposalPanelComponent via phx-target; the
   # component runs PanelGate.gate_event since this LV's authz hook cannot
@@ -809,18 +816,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # concrete event and dispatches it back through handle_event/3 here.
   def handle_event("palette:" <> _ = event, params, socket),
     do: PaletteEvents.handle_event(event, params, socket)
-
-  # Drawer open/closed is hub state: the palette dispatches toggle through
-  # this LV and run_ledger:open closes the drawer. The stream/counters/filter
-  # live in AuditDrawerComponent, which refreshes itself on the open
-  # transition and receives live events via send_update.
-  def handle_event("audit_drawer:toggle", _params, socket) do
-    {:noreply, assign(socket, :audit_drawer_open, not socket.assigns.audit_drawer_open)}
-  end
-
-  def handle_event("audit_drawer:close", _params, socket) do
-    {:noreply, assign(socket, :audit_drawer_open, false)}
-  end
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case context_host_loc(socket) do
@@ -837,15 +832,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       _ ->
         {:noreply, assign(socket, :search_state, {:error, :no_root})}
-    end
-  end
-
-  def handle_event("annotation:open", %{"path" => path} = params, socket) do
-    line = parse_line(params["line"])
-
-    case context_host_loc(socket) do
-      {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
-      _ -> {:noreply, socket}
     end
   end
 
@@ -980,7 +966,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> RunEvents.attach_existing_run()
         |> RunEvents.refresh_run_ledger()
-        |> RunEvents.load_review_commands()
+        |> AgentEvents.load_review_commands()
       else
         socket
       end
@@ -2048,7 +2034,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> put_flash(:error, "That action isn't available here.")
   end
 
-  defp open_annotation_file(socket, loc, path, line) do
+  @doc false
+  def open_annotation_file(socket, loc, path, line) do
     case FileAccess.read_text(loc, path) do
       {:ok, file} ->
         mode = annotation_render_mode(socket, file)
@@ -2503,18 +2490,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp live_session_tab?(%{status: :active, id: id}) when is_binary(id) and id != "", do: true
   defp live_session_tab?(_), do: false
-
-  defp parse_line(nil), do: nil
-  defp parse_line(""), do: nil
-
-  defp parse_line(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {n, ""} when n > 0 -> n
-      _ -> nil
-    end
-  end
-
-  defp parse_line(_), do: nil
 
   defp palette_query(socket, q), do: PaletteItems.query(socket, q)
 
