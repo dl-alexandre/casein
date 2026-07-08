@@ -848,6 +848,45 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 1_000
   end
 
+  test "shell owner schedules backend recover on term_exit instead of stopping" do
+    unique = "recover-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-recover", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-recover", info)
+    register_subscriber(owner_pid, self(), :raw)
+    monitor = Process.monitor(owner_pid)
+
+    send(owner_pid, {:term_exit, make_ref(), {:exit_status, 0}})
+
+    # Must not exit subscribers immediately — recover path keeps the owner alive.
+    refute_receive {:terminal_payload, :exit, _}, 200
+    refute_receive {:DOWN, ^monitor, :process, ^owner_pid, _}, 200
+    assert Process.alive?(owner_pid)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
+  test "Tmux.kill deletes scrollback archive for the session" do
+    session = "devide_kill_archive_#{System.unique_integer([:positive])}"
+
+    dir =
+      Path.join(System.tmp_dir!(), "devide-kill-archive-#{System.unique_integer([:positive])}")
+
+    Application.put_env(:dev_ide, :tmux_scrollback_archive_dir, dir)
+    DevIDE.Terminals.ScrollbackArchive.ensure_table!()
+    DevIDE.Terminals.ScrollbackArchive.put(session, "doomed output\n")
+    assert DevIDE.Terminals.ScrollbackArchive.present?(session)
+
+    # kill may fail if tmux has no such session; archive still must be cleared.
+    _ = Terminals.tmux_adapter().kill(session)
+    # Prefer the real facade when the adapter is the default Tmux module.
+    _ = DevIDE.Terminals.Tmux.kill(session)
+
+    refute DevIDE.Terminals.ScrollbackArchive.present?(session)
+  after
+    Application.delete_env(:dev_ide, :tmux_scrollback_archive_dir)
+  end
+
   test "subscriber_count/1 and Terminals.owner_subscriber_count/1 return correct live count" do
     unique = "subcount-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-subcount", "sid-#{unique}")

@@ -1286,6 +1286,8 @@ defmodule TmuxCtl.Client do
       [
         {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
         {["set-option", "-s", "escape-time", "0"], "escape-time"},
+        # Survive last-session teardown; DevIDE owns session lifecycle.
+        {["set-option", "-s", "exit-empty", "off"], "exit-empty"},
         {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
         {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
         {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},

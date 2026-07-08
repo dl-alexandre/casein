@@ -50,4 +50,22 @@ defmodule DevIDE.Terminals.SessionEvents do
   end
 
   def broadcast_output(_workspace_id, _sid, _gen), do: :ok
+
+  @doc """
+  Broadcast a recovery notice for the session (tmux recreated empty, history
+  reseed, template re-apply). Same topic as content events so existing
+  watchers can observe without a second subscription.
+  """
+  @spec broadcast_recovery(String.t(), String.t(), map()) :: :ok
+  def broadcast_recovery(workspace_id, sid, notice)
+      when is_binary(workspace_id) and is_binary(sid) and is_map(notice) do
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      topic(workspace_id, sid),
+      {:terminal_session_event,
+       Map.put(notice, :workspace_id, workspace_id) |> Map.put(:sid, sid)}
+    )
+  end
+
+  def broadcast_recovery(_, _, _), do: :ok
 end

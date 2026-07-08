@@ -15,6 +15,8 @@ defmodule DevIDE.Terminals.Session do
   use GenServer
   require Logger
 
+  alias DevIDE.Terminals.ScrollbackArchive
+  alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.Shims
   alias DevIDE.Terminals.Theme
   alias DevIDE.Terminals.Tmux
@@ -28,6 +30,9 @@ defmodule DevIDE.Terminals.Session do
   # show the operator what happened while they were gone, instead of an
   # empty pane that picks up only future bytes.
   @buffer_bytes 64 * 1024
+
+  # Spill scrollback archive at most this often so disk I/O stays off the hot path.
+  @archive_spill_ms 5_000
 
   ## Public API
 
@@ -122,7 +127,10 @@ defmodule DevIDE.Terminals.Session do
        subscribers: %{},
        cols: @default_cols,
        rows: @default_rows,
-       buffer: <<>>
+       buffer: <<>>,
+       archive_timer: nil,
+       archive_dirty?: false,
+       recreated?: false
      }, {:continue, :spawn}}
   end
 
@@ -137,22 +145,32 @@ defmodule DevIDE.Terminals.Session do
 
     # Seed scrollback only in local mode; over ssh the round-trip to capture
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
-    # which redraws on attach).
-    seeded_buffer =
-      if resumed? do
-        Tmux.capture_scrollback(tmux_session)
-        |> trim_to(@buffer_bytes)
-      else
-        <<>>
+    # which redraws on attach). When the session is *missing* (server wipe),
+    # reseed from the out-of-band archive so operators still see a recent tail.
+    {seeded_buffer, _history_restored?} =
+      cond do
+        resumed? ->
+          {Tmux.capture_scrollback(tmux_session) |> trim_to(@buffer_bytes), false}
+
+        match?({:local, _}, loc) ->
+          SessionRecovery.seed_from_archive(tmux_session)
+
+        true ->
+          {<<>>, false}
       end
 
-    # Bring the PTY up at the right width. A *new* tmux session is created at the
-    # default size, but a *resumed* one already has a window size set by whatever
-    # client last drove it. erlexec allocates the attach PTY small; left to the
-    # `:exec.winsz` below at the hardcoded default would mismatch a resumed
-    # window's real width under `window-size manual`. Seed the winsz from the
-    # existing window so a resume opens at its
-    # real width; the browser's fit still adjusts to the actual viewport after.
+    recreated? = not resumed? and match?({:local, _}, loc)
+
+    # Recovery banner/template notify is owned by SessionOwner (manager UUID).
+    # Session only reseeds from archive here — workspace keys are name-based
+    # and must not be used as PubSub workspace_id (LiveView subscribes by UUID).
+
+    # Bring the PTY up at the right width. A *new* tmux session is created
+    # without fixed -x/-y (avoids known server crashes under fast resize after
+    # create-with-geometry). We set the attach PTY winsz and let SessionOwner
+    # assert the authoritative viewer size via resize-window once viewers report.
+    # A *resumed* session already has a window size; seed winsz from it so
+    # window-size manual does not collapse to the bootstrap default.
     {cols, rows} =
       with true <- resumed?,
            {:ok, {w, h}} <- Tmux.window_size(tmux_session) do
@@ -181,6 +199,12 @@ defmodule DevIDE.Terminals.Session do
       {:ok, exec_pid, ospid} ->
         _ = :exec.winsz(ospid, rows, cols)
 
+        # For a brand-new session, push an explicit resize-window once so
+        # window-size manual has a stable size without baking -x/-y into create.
+        if not resumed? and match?({:local, _}, loc) do
+          _ = Tmux.resize_window(tmux_session, cols, rows)
+        end
+
         Logger.debug("terminal session started",
           workspace: workspace,
           sid: sid,
@@ -196,8 +220,11 @@ defmodule DevIDE.Terminals.Session do
              ospid: ospid,
              cols: cols,
              rows: rows,
-             buffer: seeded_buffer
-         }}
+             buffer: seeded_buffer,
+             recreated?: recreated?,
+             archive_dirty?: seeded_buffer != <<>>
+         }
+         |> schedule_archive_spill()}
 
       {:error, reason} ->
         {:stop, {:exec_failed, reason}, state}
@@ -270,23 +297,43 @@ defmodule DevIDE.Terminals.Session do
   end
 
   def handle_info({:DOWN, ospid, :process, _pid, reason}, %{ospid: ospid} = state) do
+    spill_archive(state)
+
     for pid <- Map.values(state.subscribers),
         do: send(pid, {:term_exit, state.ref, reason})
 
     {:stop, :normal, state}
   end
 
+  def handle_info(:spill_scrollback_archive, state) do
+    state = %{state | archive_timer: nil}
+
+    state =
+      if state.archive_dirty? do
+        spill_archive(state)
+        %{state | archive_dirty?: false}
+      else
+        state
+      end
+
+    {:noreply, state}
+  end
+
   def handle_info(_, state), do: {:noreply, state}
 
   @impl true
-  def terminate(_reason, %{ospid: ospid}) do
+  def terminate(_reason, %{ospid: ospid} = state) do
+    spill_archive(state)
     _ = :exec.kill(ospid, 15)
     :ok
   catch
     :exit, _ -> :ok
   end
 
-  def terminate(_reason, _state), do: :ok
+  def terminate(_reason, state) do
+    spill_archive(state)
+    :ok
+  end
 
   ## Internal
 
@@ -304,6 +351,10 @@ defmodule DevIDE.Terminals.Session do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
     default_theme_opts = [scheme: Theme.default_scheme(), preset: Theme.default_preset_id()]
 
+    # Intentionally omit -x/-y on create. Fixed create geometry + later fast
+    # resize has crashed the tmux server (see upstream resize issues and the
+    # 2026-07-08 devbox segfault). Size is applied via winsz + resize-window
+    # after the session exists.
     new_session_args = fn opts ->
       [
         "new-session",
@@ -314,11 +365,7 @@ defmodule DevIDE.Terminals.Session do
           "-s",
           tmux_session,
           "-c",
-          exec_cwd,
-          "-x",
-          Integer.to_string(@default_cols),
-          "-y",
-          Integer.to_string(@default_rows)
+          exec_cwd
         ]
     end
 
@@ -380,7 +427,7 @@ defmodule DevIDE.Terminals.Session do
     # Quote path for the remote shell. `cd` first so the tmux session inherits
     # the workspace as cwd; `-A` reattaches if the session already exists.
     remote =
-      "cd #{shell_quote(path)} && exec tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+      "cd #{shell_quote(path)} && exec tmux new-session -A -s #{tmux_session}"
 
     cmd =
       ~c"ssh -tt -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=10 #{host} -- #{shell_quote(remote)}"
@@ -421,8 +468,28 @@ defmodule DevIDE.Terminals.Session do
     for pid <- Map.values(state.subscribers),
         do: send(pid, {:term_data, state.ref, bin})
 
-    %{state | buffer: DevIDE.BoundedBuffer.append(state.buffer, bin, @buffer_bytes)}
+    state
+    |> Map.put(:buffer, DevIDE.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
+    |> Map.put(:archive_dirty?, true)
+    |> schedule_archive_spill()
   end
+
+  defp schedule_archive_spill(%{archive_timer: ref} = state) when is_reference(ref), do: state
+
+  defp schedule_archive_spill(state) do
+    ref = Process.send_after(self(), :spill_scrollback_archive, @archive_spill_ms)
+    %{state | archive_timer: ref}
+  end
+
+  defp spill_archive(%{tmux: tmux, buffer: buffer}) when is_binary(tmux) and is_binary(buffer) do
+    if buffer != <<>> do
+      ScrollbackArchive.put(tmux, buffer)
+    end
+
+    :ok
+  end
+
+  defp spill_archive(_), do: :ok
 
   # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
   # (one tab + maybe one watcher in realistic cases).

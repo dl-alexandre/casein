@@ -268,6 +268,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
 | Tab closed, tmux session vanished | Check `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
+| All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-devide-tmux.sh`. Pin binary: `bash scripts/ensure-devide-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
 | Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |

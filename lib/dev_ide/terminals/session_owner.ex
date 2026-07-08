@@ -10,6 +10,8 @@ defmodule DevIDE.Terminals.SessionOwner do
   require Logger
 
   alias DevIDE.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
+  alias DevIDE.Terminals.ScrollbackArchive
+  alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Theme
   alias DevIDE.Terminals.Tmux
@@ -28,6 +30,15 @@ defmodule DevIDE.Terminals.SessionOwner do
   # Slow tick: re-assert tmux window size when an external client moved it
   # under `window-size manual`. Cheap — one display-message per interval.
   @tmux_drift_check_interval_ms 30_000
+
+  # Minimum gap between resize-window tasks (coalesce still latest-wins).
+  # Prevents flappy SIGWINCH storms that have crashed the tmux server.
+  @tmux_resize_min_interval_ms 150
+
+  # After term_exit, attempt to re-open the shell attachment this many times
+  # before broadcasting exit and stopping the owner.
+  @backend_recover_max 5
+  @backend_recover_backoff_ms 400
 
   # Bound synchronous tmux window_size on attach/drift so a wedged adapter
   # cannot block the owner mailbox indefinitely.
@@ -96,11 +107,16 @@ defmodule DevIDE.Terminals.SessionOwner do
     # latest size requested meanwhile. See `maybe_resize_tmux_window/3`.
     tmux_resize: nil,
     tmux_resize_pending: nil,
+    # Monotonic ms of the last resize-window task start (rate-limit).
+    tmux_resize_last_ms: 0,
     tmux_drift_timer: nil,
     # Consecutive drift-check re-asserts without ever finding the window at
     # applied_size. A sustained streak means another writer is fighting us
     # (stale draining instance, duplicate owner, external client).
     tmux_drift_streak: 0,
+    # Backend reattach after term_exit (shell owners with live viewers).
+    backend_recover_attempts: 0,
+    backend_recover_timer: nil,
     cursor: nil,
     # Session-level terminal theme used to rewrite OSC color query responses
     # (last-writer-wins across viewers via `set_theme/3`). `theme` caches the
@@ -458,14 +474,37 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   @impl true
   def handle_info({:term_exit, reason}, state) do
-    broadcast_exit(state.subscribers, reason)
-    {:stop, :normal, state}
+    handle_term_exit(state, reason)
   end
 
   @impl true
   def handle_info({:term_exit, _ref, reason}, state) do
-    broadcast_exit(state.subscribers, reason)
-    {:stop, :normal, state}
+    handle_term_exit(state, reason)
+  end
+
+  @impl true
+  def handle_info(:backend_recover, state) do
+    state = %{state | backend_recover_timer: nil}
+
+    case attempt_backend_recover(state) do
+      {:stop, reason, next} -> {:stop, reason, next}
+      next -> {:noreply, next}
+    end
+  end
+
+  @impl true
+  def handle_info(:tmux_resize_rate_limit, state) do
+    case state.tmux_resize_pending do
+      nil ->
+        {:noreply, state}
+
+      size when state.tmux_resize == nil ->
+        {:noreply, start_tmux_resize(%{state | tmux_resize_pending: nil}, size)}
+
+      _pending ->
+        # Task still in flight; completion path will run pending.
+        {:noreply, state}
+    end
   end
 
   # Serialized tmux resize task finished (async_nolink reply). Run the latest
@@ -510,6 +549,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     state =
       state
       |> Map.put(:tmux_drift_timer, nil)
+      |> maybe_recover_missing_tmux_session()
       |> assert_tmux_window_size()
       |> schedule_tmux_drift_check()
 
@@ -524,6 +564,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @impl true
   def terminate(_reason, state) do
     _ = cancel_tmux_drift_timer(state)
+    _ = cancel_backend_recover_timer(state)
     Telemetry.owner_stopped(self())
 
     if state.attachment != nil do
@@ -536,6 +577,186 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     :ok
   end
+
+  # Shell owners with live viewers re-open the Session attachment instead of
+  # dying — tmux -A recreates an empty session if the server wiped, and
+  # ScrollbackArchive reseeds history when available. Agent placeholders and
+  # owners with no subscribers keep the legacy broadcast+stop path.
+  defp handle_term_exit(%{info: %Info{kind: :shell}} = state, reason) do
+    if map_size(state.subscribers) > 0 do
+      Logger.warning(
+        "terminal owner backend exited; scheduling recover reason=#{inspect(reason)} kind=shell"
+      )
+
+      state =
+        state
+        |> clear_dead_attachment()
+        |> schedule_backend_recover()
+
+      {:noreply, state}
+    else
+      broadcast_exit(state.subscribers, reason)
+      {:stop, :normal, state}
+    end
+  end
+
+  defp handle_term_exit(state, reason) do
+    broadcast_exit(state.subscribers, reason)
+    {:stop, :normal, state}
+  end
+
+  defp clear_dead_attachment(%{attachment: nil} = state), do: state
+
+  defp clear_dead_attachment(state) do
+    Telemetry.owner_attachment_closed()
+    # Session is already dead; close is best-effort.
+    try do
+      Attachment.close(state.attachment)
+    catch
+      :exit, _ -> :ok
+    end
+
+    %{state | attachment: nil}
+  end
+
+  defp schedule_backend_recover(state) do
+    state = cancel_backend_recover_timer(state)
+    ref = Process.send_after(self(), :backend_recover, @backend_recover_backoff_ms)
+    %{state | backend_recover_timer: ref}
+  end
+
+  defp cancel_backend_recover_timer(%{backend_recover_timer: ref} = state)
+       when is_reference(ref) do
+    Process.cancel_timer(ref)
+    %{state | backend_recover_timer: nil}
+  end
+
+  defp cancel_backend_recover_timer(state), do: state
+
+  defp attempt_backend_recover(state) do
+    attempts = state.backend_recover_attempts + 1
+
+    if attempts > @backend_recover_max do
+      Logger.error(
+        "terminal owner backend recover exhausted attempts=#{attempts}; stopping owner"
+      )
+
+      broadcast_exit(state.subscribers, :backend_recover_failed)
+      {:stop, :normal, %{state | backend_recover_attempts: attempts}}
+    else
+      session = tmux_session_for(state)
+      # Detect wipe *before* open_attachment creates a fresh session.
+      missing? = is_binary(session) and not Tmux.session_exists?(session)
+      history_restored? = is_binary(session) and ScrollbackArchive.present?(session)
+
+      case open_attachment(state, []) do
+        {:ok, attachment} ->
+          Logger.info(
+            "terminal owner backend recovered attempt=#{attempts} session=#{session} missing=#{missing?}"
+          )
+
+          Telemetry.owner_attachment_opened()
+
+          :telemetry.execute(
+            [:dev_ide, :terminals, :owner, :backend_recovered],
+            %{count: 1},
+            %{attempt: attempts, missing: missing?}
+          )
+
+          # Only notify when the tmux session was gone (server wipe / kill).
+          # Client-only death that reattaches an existing session stays silent.
+          if missing? do
+            SessionRecovery.notify_session_recreated(
+              tmux_session: session,
+              workspace_id: state.workspace_id,
+              sid: state.info.sid,
+              reason: :session_missing_on_recover,
+              history_restored?: history_restored?,
+              template_id: SessionRecovery.recovery_template(state.workspace_id)
+            )
+          end
+
+          s2 = %{
+            state
+            | attachment: attachment,
+              backend_recover_attempts: 0
+          }
+
+          s2 =
+            if tmux_tracks_client_colors?() do
+              report_client_colors(s2)
+            else
+              s2
+            end
+
+          # Replay retained Session buffer, then re-assert the last known
+          # viewer size so a fresh new-session is not left at bootstrap geometry.
+          s2
+          |> replay_all_raw_subscribers()
+          |> reassert_size_after_recover()
+
+        {:error, reason} ->
+          Logger.warning(
+            "terminal owner backend recover failed attempt=#{attempts} reason=#{inspect(reason)}"
+          )
+
+          state
+          |> Map.put(:backend_recover_attempts, attempts)
+          |> schedule_backend_recover()
+      end
+    end
+  end
+
+  defp reassert_size_after_recover(%{applied_size: {cols, rows}} = state)
+       when is_integer(cols) and is_integer(rows) do
+    state
+    |> maybe_resize_tmux_window(cols, rows)
+    |> then(fn s ->
+      if s.attachment do
+        _ = Attachment.resize(s.attachment, cols, rows)
+      end
+
+      s
+    end)
+    |> assert_tmux_window_size()
+  end
+
+  defp reassert_size_after_recover(state), do: assert_tmux_window_size(state)
+
+  defp replay_all_raw_subscribers(state) do
+    Enum.reduce(MapSet.to_list(state.raw_subscribers), state, fn pid, acc ->
+      replay_to_subscriber(acc, pid)
+    end)
+  end
+
+  defp tmux_session_for(%{workspace_key: key, info: %{sid: sid}})
+       when is_binary(key) and is_binary(sid),
+       do: Tmux.session_name(key, sid)
+
+  defp tmux_session_for(_), do: nil
+
+  # Drift tick: if the tmux session vanished under us (server wipe) while the
+  # PTY client is still somehow attached, force a backend recover.
+  defp maybe_recover_missing_tmux_session(
+         %{workspace_key: key, info: %{kind: :shell, sid: sid}, attachment: att} = state
+       )
+       when is_binary(key) and is_binary(sid) and not is_nil(att) do
+    session = Tmux.session_name(key, sid)
+
+    if Tmux.session_exists?(session) do
+      state
+    else
+      Logger.warning("tmux session missing under live owner; recovering session=#{session}")
+
+      # Notify is deferred until successful recover (UUID + history flags
+      # accurate). Dedupe covers any race with term_exit recover.
+      state
+      |> clear_dead_attachment()
+      |> schedule_backend_recover()
+    end
+  end
+
+  defp maybe_recover_missing_tmux_session(state), do: state
 
   # Attachment context binds once per owner. A later attach without these opts
   # (e.g. a re-join that omits :loc) or with a conflicting value must not
@@ -813,6 +1034,21 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp maybe_resize_tmux_window(state, _cols, _rows), do: state
 
   defp start_tmux_resize(%{workspace_key: key, info: %{sid: sid}} = state, {cols, rows} = size) do
+    now = System.monotonic_time(:millisecond)
+    last = state.tmux_resize_last_ms || 0
+    elapsed = now - last
+
+    # Rate-limit resize-window storms; keep latest size pending.
+    if elapsed < @tmux_resize_min_interval_ms and last > 0 do
+      delay = @tmux_resize_min_interval_ms - elapsed
+      Process.send_after(self(), :tmux_resize_rate_limit, delay)
+      %{state | tmux_resize_pending: size}
+    else
+      do_start_tmux_resize(state, key, sid, cols, rows, size, now)
+    end
+  end
+
+  defp do_start_tmux_resize(state, key, sid, cols, rows, size, now) do
     # A draining instance must not write to shared tmux state: its owners can
     # outlive the deploy handoff for as long as a stale browser tab holds a
     # connection (up to the drain hard-timeout), and the replacement instance's
@@ -833,8 +1069,11 @@ defmodule DevIDE.Terminals.SessionOwner do
 
            %{ref: task.ref, size: size}
          end) do
-      :noop -> state
-      resize -> %{state | tmux_resize: resize}
+      :noop ->
+        state
+
+      resize ->
+        %{state | tmux_resize: resize, tmux_resize_last_ms: now}
     end
   end
 
