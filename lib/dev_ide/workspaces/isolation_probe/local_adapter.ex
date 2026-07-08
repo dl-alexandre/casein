@@ -123,6 +123,9 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
     binary_part(c, 0, 200) <> "…"
   end
 
+  # `abs` is confined to `root` by `PathSafety.resolve/2` before any read, so
+  # Sobelow's low-confidence traversal flag on `File.read/1` is a false positive.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_safe(root, rel) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          {:ok, %File.Stat{type: :regular, size: size}} when size <= @max_file_bytes <-
