@@ -187,8 +187,16 @@ defmodule DevIDE.Deployment.LastDeployTest do
 
     Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
 
+    {:ok, sub_id} =
+      Jido.Signal.Bus.subscribe(
+        DevIDE.SignalBus.name(),
+        DevIDE.Signals.Publish.domain_subscription_pattern(), dispatch: {:pid, target: self()})
+
+    on_exit(fn -> Jido.Signal.Bus.unsubscribe(DevIDE.SignalBus.name(), sub_id) end)
+
     assert :failed = LastDeploy.check_and_broadcast(remote_head: {:ok, @remote})
     assert_receive {:deploy_failure, %{phase: "gate"}}
+    assert_receive {:signal, %{type: "devide.deploy.failed", data: %{phase: "gate"}}}
   end
 
   defp restore_env(key, nil), do: System.delete_env(key)

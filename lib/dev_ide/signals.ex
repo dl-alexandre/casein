@@ -16,7 +16,10 @@ defmodule DevIDE.Signals do
   alias Jido.Signal
   alias Jido.Signal.Trace
 
+  alias DevIDE.Signals.Context
+
   @type_prefix "devide.audit."
+  @domain_prefix "devide."
 
   @doc "Signal-type prefix for audit-derived signals."
   @spec type_prefix() :: String.t()
@@ -25,6 +28,10 @@ defmodule DevIDE.Signals do
   @doc "CloudEvents type for an audit action, e.g. \"devide.audit.agent.blocked\"."
   @spec type_for(String.t()) :: String.t()
   def type_for(action) when is_binary(action), do: @type_prefix <> action
+
+  @doc "CloudEvents type for a domain event, e.g. \"devide.deploy.failed\"."
+  @spec domain_type(String.t()) :: String.t()
+  def domain_type(event) when is_binary(event), do: @domain_prefix <> event
 
   @doc """
   Convert an audit event into a CloudEvents signal.
@@ -76,6 +83,46 @@ defmodule DevIDE.Signals do
         Trace.put!(signal, ctx)
     end
   end
+
+  @doc """
+  Build a CloudEvents signal for a non-audit domain event.
+
+  Domain events use the `devide.<event>` type namespace (distinct from
+  `devide.audit.*`) so bus consumers can subscribe broadly while audit
+  routing keeps its existing prefix.
+  """
+  @spec from_domain_event(String.t(), map(), keyword()) :: Signal.t()
+  def from_domain_event(event, data, opts \\ []) when is_binary(event) and is_map(data) do
+    workspace_id = Keyword.get(opts, :workspace_id)
+    subject = Keyword.get(opts, :subject)
+    id = Keyword.get_lazy(opts, :id, &Ecto.UUID.generate/0)
+    now = DateTime.utc_now() |> DateTime.to_iso8601()
+
+    stamped =
+      Context.stamp(%{
+        metadata: %{
+          "event" => event,
+          "domain" => true
+        }
+      })
+
+    payload =
+      data
+      |> Map.put(:event, event)
+      |> Map.put(:workspace_id, workspace_id)
+      |> Map.put(:metadata, stamped.metadata)
+
+    Signal.new!(domain_type(event), payload, %{
+      id: id,
+      source: domain_source(workspace_id, event),
+      subject: subject,
+      time: now
+    })
+    |> put_trace(stamped.metadata)
+  end
+
+  defp domain_source(nil, event), do: "/devide/domain/#{event}"
+  defp domain_source(workspace_id, _event), do: "/devide/domain/#{workspace_id}"
 
   defp new_span_id do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)

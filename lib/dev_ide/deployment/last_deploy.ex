@@ -140,6 +140,7 @@ defmodule DevIDE.Deployment.LastDeploy do
         )
 
         broadcast({:deploy_failure, info})
+        publish_deploy_failure(info)
         :failed
 
       :idle ->
@@ -307,6 +308,23 @@ defmodule DevIDE.Deployment.LastDeploy do
     |> then(fn trimmed ->
       if trimmed == "", do: nil, else: trimmed
     end)
+  end
+
+  defp publish_deploy_failure(info) do
+    DevIDE.Signals.Publish.domain_event(
+      "deploy.failed",
+      %{
+        outcome: info.outcome,
+        target_sha: info.target_sha,
+        target_short: info.target_short,
+        from_sha: info.from_sha,
+        phase: info.phase,
+        reason: info.reason,
+        message: info.message,
+        started_at: info.started_at,
+        finished_at: info.finished_at
+      }
+    )
   end
 
   defp broadcast(message) do

@@ -291,25 +291,29 @@ defmodule DevIDE.Runtimes do
     metadata = PreviewServer.put_status(runtime.metadata || %{}, status, failure_reason)
     runtime = %{runtime | metadata: metadata, heartbeat_at: DateTime.utc_now()}
 
-    impl().update_runtime(
-      runtime,
-      event(runtime, runtime.status, "runtime_preview_#{status}",
-        metadata:
-          %{
-            "preview_server_id" =>
-              runtime.metadata
-              |> PreviewServer.for_metadata()
-              |> case do
-                %{} = server -> server["id"]
-                _ -> nil
-              end,
-            "preview_status" => status,
-            "failure_reason" => failure_reason
-          }
-          |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-          |> Map.new()
+    result =
+      impl().update_runtime(
+        runtime,
+        event(runtime, runtime.status, "runtime_preview_#{status}",
+          metadata:
+            %{
+              "preview_server_id" =>
+                runtime.metadata
+                |> PreviewServer.for_metadata()
+                |> case do
+                  %{} = server -> server["id"]
+                  _ -> nil
+                end,
+              "preview_status" => status,
+              "failure_reason" => failure_reason
+            }
+            |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+            |> Map.new()
+        )
       )
-    )
+
+    if status == "failed", do: publish_preview_failure(runtime, failure_reason)
+    result
   end
 
   def mark_preview_server(_, _, _), do: {:error, :invalid_runtime}
@@ -895,6 +899,24 @@ defmodule DevIDE.Runtimes do
     |> Map.put("runtime_id", runtime.id)
     |> Map.put("runtime_path", runtime.worktree_path)
     |> Map.put("routing", routing)
+  end
+
+  defp publish_preview_failure(%Runtime{} = runtime, failure_reason) do
+    preview_server = PreviewServer.for_metadata(runtime.metadata)
+
+    DevIDE.Signals.Publish.domain_event(
+      "runtime.preview_failed",
+      %{
+        runtime_id: runtime.id,
+        workspace_id: runtime.workspace_id,
+        preview_server_id: preview_server && preview_server["id"],
+        preview_status: "failed",
+        failure_reason: failure_reason,
+        worktree_path: runtime.worktree_path
+      },
+      workspace_id: runtime.workspace_id,
+      subject: runtime.id
+    )
   end
 
   defp transition_runtime(runtime_id, transition, event_name, attrs, updater) do
