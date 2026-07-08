@@ -220,20 +220,18 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
-    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#attention-surface-ws-1")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
     assert has_element?(view, "#mobile-key-bar-scroll-ws-1")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     # The default/landing session is a normal row marked "home" (no separate shell entry).
     assert has_element?(view, "#active_sessions-u-dev")
     assert has_element?(view, "#active_sessions-u-dev [aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='u-dev-extra']")
     refute has_element?(view, "[phx-value-session-id='u-dev-extra']", "Shell")
-    # Choose-tree: the session dropdown shows a window count per session and
-    # an expandable window list.
-    assert has_element?(view, "button[title='1 window']", "1")
-    assert has_element?(view, "#session-windows-active_sessions-u-dev-extra a", "scratch")
-
     render_click(view, "terminal:cycle_session", %{"dir" => "next"})
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
     assert_push_event(view, "terminal:focus_active", %{"reason" => "terminal:cycle_session"})
@@ -254,17 +252,21 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              "[phx-value-session-id='u-dev-extra'][class*='text-primary']"
            )
 
-    # Clicking an expanded window row attaches the session and selects that
-    # window (choose-tree style).
-    view
-    |> element("#session-windows-active_sessions-u-dev-extra a[phx-value-window-id='@0']")
-    |> render_click()
+    # Attach the other session on a specific window (window rows live in the
+    # WINDOWS column starting Slice 2; until then use attach directly).
+    render_click(view, "attach_terminal_session", %{
+      "session-id" => "u-dev-extra",
+      "tmux-session" => extra_tmux_session,
+      "window-id" => "@0"
+    })
 
     assert_receive {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
 
     assert has_element?(view, "#tmux-window--0 a", "scratch")
     refute has_element?(view, "#tmux-window--1 a", "tests")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
 
     view
     |> element("#active_sessions-u-dev")
@@ -436,7 +438,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
     refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
 
-    render_hook(view, "sidebar:open", %{})
+    render_hook(view, "sidebar:open", %{"mode" => "windows"})
 
     assert has_element?(
              view,
@@ -499,6 +501,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:kill_window"})
     refute has_element?(view, "#tmux-window--0")
 
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
     view
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
@@ -516,7 +520,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # and the re-scan surfaces it as the session label.
     view
     |> element(
-      "#session-dropdown-ws-1 button[phx-click='terminal:rename_session_start'][phx-value-session-id='u-dev-extra']"
+      "button[data-leader-action='rename-session'][phx-value-session-id='u-dev-extra']"
     )
     |> render_click()
 
@@ -529,7 +533,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_submit()
 
     assert_receive {:fake_tmux_set_session_alias, ^extra_tmux_session, "billing"}
-    assert has_element?(view, "#session-dropdown-ws-1", "billing")
+    assert has_element?(view, ".leader-key-control", "billing")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}

@@ -718,6 +718,19 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert sids == ["u-alice", "u-bob"]
   end
 
+  test "unsubscribe drops watcher and stops directory when last watcher leaves" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    put_fake_session("devide_#{ws}_u-alice")
+
+    assert :ok = SessionDirectory.subscribe(ws, workspace_name: ws)
+    assert {:ok, pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
+    :sys.get_state(pid)
+    monitor = Process.monitor(pid)
+
+    assert :ok = SessionDirectory.unsubscribe(ws)
+    assert_receive {:DOWN, ^monitor, :process, ^pid, :normal}, 1_000
+  end
+
   test "directory stops when its last watcher goes away" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     put_fake_session("devide_#{ws}_u-alice")

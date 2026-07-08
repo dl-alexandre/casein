@@ -353,34 +353,20 @@ export const WorkspaceLeader = {
         return
       }
 
-      // rename-session: open the session dropdown first so the form is visible,
-      // then click the active session's rename button.
       if (action === "rename-session") {
         const token = this._beginLeaderCommand()
-        const picker = document.querySelector('[data-leader-action="session-picker"]')
         const rename = document.querySelector('[data-leader-action="rename-session"]')
 
         this._withLeaderDispatch(() => {
-          picker?.click()
           rename?.click()
         })
-        this._watchLeaderClickLoading(rename || picker, token)
-        return
-      }
-
-      // rename-session: open the session dropdown first so the form is visible,
-      // then click the active session's rename button.
-      if (action === "rename-session") {
-        this._withLeaderDispatch(() => {
-          document.querySelector('[data-leader-action="session-picker"]')?.click()
-          document.querySelector('[data-leader-action="rename-session"]')?.click()
-        })
+        this._watchLeaderClickLoading(rename, token)
         return
       }
 
       const target = document.querySelector(`[data-leader-action="${action}"]`)
-      const sessionPicker = document.querySelector('[data-leader-action="session-picker"]')
-      const onMobileLayout = !sessionPicker || sessionPicker.offsetParent === null
+      const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
+      const onMobileLayout = mobileKeyBar && mobileKeyBar.offsetParent !== null
 
       // On touch/narrow layouts the desktop pickers are CSS-hidden (the mobile
       // nav sheet takes over). Route C-b s / C-b w to the sheet instead.
@@ -408,7 +394,7 @@ export const WorkspaceLeader = {
           }
 
           const token = this._beginLeaderCommand()
-          this.pushEvent("sidebar:open", {}, () => {
+          this.pushEvent("sidebar:open", {mode: "windows"}, () => {
             this._finishLeaderCommand(token)
             requestAnimationFrame(() => {
               const el = document.querySelector("[data-window-picker-sidebar]")
@@ -421,10 +407,31 @@ export const WorkspaceLeader = {
           return
         }
 
-        // Session picker: hold the key to navigate with arrows, release to
-        // activate the focused item. Quick tap leaves the dropdown open.
-        this._dispatchLeaderAction(target)
-        this._startHoldWatch(key, target)
+        if (action === "session-picker") {
+          const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
+
+          if (sessionsEl && sessionsEl.offsetParent !== null) {
+            sessionsEl.dispatchEvent(
+              new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
+            )
+            this._startSessionsSidebarHoldWatch(key, sessionsEl)
+            return
+          }
+
+          const token = this._beginLeaderCommand()
+          this.pushEvent("sidebar:open", {mode: "both"}, () => {
+            this._finishLeaderCommand(token)
+            requestAnimationFrame(() => {
+              const el = document.querySelector("[data-sessions-picker-sidebar]")
+              if (!el) return
+              el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+              this._startSessionsSidebarHoldWatch(key, el)
+            })
+          })
+          this._setLeaderCommandFallback(token)
+          return
+        }
+
         return
       }
 
@@ -596,6 +603,69 @@ export const WorkspaceLeader = {
 
       if (!inHoldMode) {
         sidebarEl.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+        return
+      }
+
+      const focused = document.activeElement
+      if (navigated && sidebarEl.contains(focused) && focused.matches("[data-picker-item]")) {
+        focused.click()
+      } else {
+        this.pushEvent?.("sidebar:close", {})
+        window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+      }
+    }
+
+    window.addEventListener("keydown", onKeydown, true)
+    window.addEventListener("keyup", onKeyup, true)
+  },
+
+  _startSessionsSidebarHoldWatch(key, sidebarEl) {
+    if (!sidebarEl) return
+
+    let inHoldMode = false
+    let navigated = false
+
+    const getItems = () =>
+      Array.from(sidebarEl.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && el.style.display !== "none" && !el.disabled
+      )
+
+    const holdTimer = setTimeout(() => {
+      inHoldMode = true
+      const items = getItems()
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
+      ;(active || items[0])?.focus()
+    }, 150)
+
+    const onKeydown = (e) => {
+      if (e.key === key) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (!inHoldMode) return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        e.stopPropagation()
+        const items = getItems()
+        if (!items.length) return
+        const idx = items.indexOf(document.activeElement)
+        const next = e.key === "ArrowDown"
+          ? (idx < 0 ? 0 : Math.min(idx + 1, items.length - 1))
+          : (idx < 0 ? items.length - 1 : Math.max(idx - 1, 0))
+        items[next].focus()
+        navigated = true
+      }
+    }
+
+    const onKeyup = (e) => {
+      if (e.key !== key) return
+      clearTimeout(holdTimer)
+      window.removeEventListener("keyup", onKeyup, true)
+      window.removeEventListener("keydown", onKeydown, true)
+
+      if (!inHoldMode) {
+        sidebarEl.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
         return
       }
 

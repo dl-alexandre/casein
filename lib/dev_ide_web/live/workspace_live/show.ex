@@ -54,6 +54,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
@@ -113,7 +114,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
-    sidebar:open sidebar:close
+    sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_workspace
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -328,7 +329,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:node_rename, nil)
         |> assign(:node_delete, nil)
         |> assign(:workspace_summaries, [])
-        |> assign(:workspace_session_tabs, [])
+
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
         |> assign(:previews_count, 0)
@@ -337,7 +338,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:session_tabs, [])
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
-        |> assign(:window_sidebar_open?, false)
+        |> then(
+          &Enum.reduce(Sidebar.initial_assigns(), &1, fn {key, value}, s ->
+            assign(s, key, value)
+          end)
+        )
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
         |> assign(:mobile_nav_view, "windows")
@@ -695,12 +700,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Transient window sidebar beside the terminal. Tab bar is always the default
   # header presentation; the rail opens via C-b w or the palette and closes on
   # Escape or window selection.
-  def handle_event("sidebar:open", _params, socket) do
-    {:noreply, assign(socket, :window_sidebar_open?, true)}
+  def handle_event("sidebar:open", params, socket) do
+    mode = Map.get(params, "mode", "windows")
+
+    socket =
+      socket
+      |> Sidebar.open(mode)
+      |> TerminalState.refresh_session_tabs()
+      |> assign_workspace_summaries()
+      |> TerminalState.refresh_tmux_topology()
+
+    {:noreply, socket}
   end
 
   def handle_event("sidebar:close", _params, socket) do
-    {:noreply, assign(socket, :window_sidebar_open?, false)}
+    {:noreply, Sidebar.close(socket)}
+  end
+
+  def handle_event("sidebar:reveal_sessions", _params, socket) do
+    {:noreply, Sidebar.reveal_sessions(socket)}
+  end
+
+  def handle_event("sidebar:toggle_workspace", %{"workspace-id" => workspace_id}, socket) do
+    {:noreply, Sidebar.toggle_workspace(socket, workspace_id)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -957,8 +979,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # another browser tab, an agent worktree session, the janitor). The directory
   # broadcasts the viewer-independent list; we apply this viewer's filter.
   def handle_info({source, {:sessions_updated, ws_id, tabs}}, socket) do
-    if Terminals.session_tabs_event_source?(source) and socket.assigns.workspace.id == ws_id do
-      {:noreply, TerminalState.assign_session_tabs(socket, tabs)}
+    if Terminals.session_tabs_event_source?(source) do
+      socket =
+        if socket.assigns.workspace.id == ws_id do
+          socket
+          |> TerminalState.assign_session_tabs(tabs)
+          |> Sidebar.assign_sessions_sidebar_tree()
+        else
+          Sidebar.sessions_updated(socket, ws_id, tabs)
+        end
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -1377,10 +1408,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_async(:refresh_git_status, _result, socket), do: {:noreply, socket}
 
   def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
-    {:noreply, assign_workspace_summaries(socket, summaries)}
+    {:noreply, socket |> assign_workspace_summaries(summaries) |> Sidebar.assign_sessions_sidebar_tree()}
   end
 
   def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}
+
+  def handle_async({:sidebar_ws_sessions, workspace_id}, {:ok, infos}, socket)
+      when is_binary(workspace_id) and is_list(infos) do
+    {:noreply, Sidebar.handle_async_sessions(socket, workspace_id, {:ok, infos})}
+  end
+
+  def handle_async({:sidebar_ws_sessions, _workspace_id}, _result, socket) do
+    {:noreply, socket}
+  end
 
   def handle_async(:run_search, {:ok, {:ok, results}}, socket) do
     state = if results == [], do: :empty, else: :ok
@@ -1808,12 +1848,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp assign_workspace_summaries(socket, summaries) do
     summaries = Enum.filter(summaries, &workspace_summary_visible?(&1, socket))
 
-    socket
-    |> assign(:workspace_summaries, summaries)
-    |> assign(
-      :workspace_session_tabs,
-      SessionBarVM.workspace_session_tabs(summaries, socket.assigns.workspace.id)
-    )
+    assign(socket, :workspace_summaries, summaries)
   end
 
   defp workspace_summaries_for(workspace) do

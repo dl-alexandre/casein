@@ -14,6 +14,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex min-h-0 flex-1 overflow-hidden">
+              <%= if @sessions_sidebar_open? and @sessions_sidebar_tree != [] do %>
+                <SessionBar.sessions_sidebar
+                  workspace_id={@workspace.id}
+                  tree={@sessions_sidebar_tree}
+                  active_id={@terminal_sid}
+                  default_sid={@default_terminal_sid}
+                  preview_panes={@preview_panes}
+                  path_base={@workspace_route}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_session_id={@tmux_rename_session_id}
+                  class="pointer-coarse:hidden"
+                />
+              <% end %>
               <%= if @window_sidebar_open? and length(@tmux_window_tabs) > 0 do %>
                 <SessionBar.window_sidebar
                   workspace_id={@workspace.id}

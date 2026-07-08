@@ -342,6 +342,368 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   attr :workspace_id, :string, required: true
+  attr :tree, :list, required: true, doc: "SessionBarVM.workspace_session_tree/4 nodes"
+  attr :active_id, :string, default: nil
+  attr :default_sid, :string, default: nil
+  attr :preview_panes, :map, default: %{}
+  attr :path_base, :string, default: nil
+  attr :mutations_allowed?, :boolean, default: false
+  attr :rename_session_id, :string, default: nil
+
+  attr :class, :any,
+    default: nil,
+    doc: "layout classes — desktop-only summoned SESSIONS rail"
+
+  def sessions_sidebar(assigns) do
+    ~H"""
+    <nav
+      :if={@tree != []}
+      id={"sessions-sidebar-" <> @workspace_id}
+      data-sessions-picker-sidebar="true"
+      data-shortcut="Ctrl + B, then S"
+      phx-hook="SessionsPickerSidebar"
+      aria-label="Workspaces and sessions"
+      class={[
+        "sessions-picker-sidebar leader-key-control flex w-44 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        @class
+      ]}
+    >
+      <div class="shrink-0 border-b border-base-300/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+        Sessions
+      </div>
+      <div
+        data-picker-filter
+        class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
+      >
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto py-1">
+        <%= for node <- @tree do %>
+          <%= cond do %>
+            <% node.flat_session? -> %>
+              <.sessions_sidebar_session_row
+                session={node.session}
+                workspace_id={@workspace_id}
+                current_workspace_id={@workspace_id}
+                active_id={@active_id}
+                default_sid={@default_sid}
+                preview_panes={@preview_panes}
+                path_base={@path_base}
+                parent_dom_id={nil}
+                mutations_allowed?={@mutations_allowed?}
+                rename_session_id={@rename_session_id}
+              />
+            <% node.expanded? -> %>
+              <div class="flex flex-col gap-0.5">
+                <div class="flex items-center gap-1 px-1">
+                  <button
+                    type="button"
+                    data-picker-item
+                    data-picker-section="workspaces"
+                    data-picker-sessions-id={node.dom_id}
+                    phx-click="sidebar:toggle_workspace"
+                    phx-value-workspace-id={node.workspace_id}
+                    class={[sidebar_row_class(node.current?), "min-w-0 flex-1"]}
+                    title={node.title}
+                  >
+                    <span class="flex min-w-0 items-center gap-1">
+                      <span data-picker-label class="truncate font-medium">{node.label}</span>
+                      <span
+                        :if={not node.live?}
+                        class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+                        title="No live tmux sessions"
+                      />
+                    </span>
+                    <span
+                      :if={node.detail != ""}
+                      class="truncate font-mono text-[10px] text-base-content/50"
+                    >
+                      {node.detail}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    phx-click="sidebar:toggle_workspace"
+                    phx-value-workspace-id={node.workspace_id}
+                    class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
+                    aria-label={"Collapse " <> node.label}
+                  >
+                    {node.session_count}
+                    <span class="flex rotate-90 transition-transform">
+                      <.icon name="hero-chevron-right" class="size-3" />
+                    </span>
+                  </button>
+                </div>
+                <div id={"sidebar-ws-sessions-" <> node.workspace_id} class="space-y-0.5 pl-3">
+                  <%= for session <- node.sessions || [] do %>
+                    <.sessions_sidebar_session_row
+                      session={session}
+                      workspace_id={Map.get(session, :workspace_id, node.workspace_id)}
+                      current_workspace_id={@workspace_id}
+                      active_id={@active_id}
+                      default_sid={@default_sid}
+                      preview_panes={@preview_panes}
+                      path_base={@path_base}
+                      parent_dom_id={node.dom_id}
+                      mutations_allowed?={@mutations_allowed?}
+                      rename_session_id={@rename_session_id}
+                    />
+                  <% end %>
+                </div>
+              </div>
+            <% true -> %>
+              <div class="flex items-center gap-1 px-1">
+                <button
+                  type="button"
+                  data-picker-item
+                  data-picker-section="workspaces"
+                  phx-click="sidebar:toggle_workspace"
+                  phx-value-workspace-id={node.workspace_id}
+                  class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+                  title={node.title}
+                >
+                  <span class="flex min-w-0 items-center gap-1">
+                    <span data-picker-label class="truncate font-medium">{node.label}</span>
+                    <span
+                      :if={not node.live?}
+                      class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+                      title="No live tmux sessions"
+                    />
+                  </span>
+                  <span
+                    :if={node.detail != ""}
+                    class="truncate font-mono text-[10px] text-base-content/50"
+                  >
+                    {node.detail}
+                  </span>
+                </button>
+                <button
+                  :if={node.session_count > 0}
+                  type="button"
+                  tabindex="-1"
+                  phx-click="sidebar:toggle_workspace"
+                  phx-value-workspace-id={node.workspace_id}
+                  class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
+                  aria-label={"Expand " <> node.label}
+                >
+                  {node.session_count}
+                  <span class="flex transition-transform">
+                    <.icon name="hero-chevron-right" class="size-3" />
+                  </span>
+                </button>
+              </div>
+          <% end %>
+        <% end %>
+      </div>
+      <button
+        type="button"
+        phx-click="terminal:refresh_sessions"
+        class="shrink-0 border-t border-base-300/70 px-2 py-2 text-xs text-base-content/70 hover:bg-base-200"
+        title="Refresh workspaces and sessions"
+        aria-label="Refresh workspaces and sessions"
+      >
+        <span class="inline-flex items-center gap-1">
+          <.icon name="hero-arrow-path" class="size-3.5" /> Refresh
+        </span>
+      </button>
+    </nav>
+    """
+  end
+
+  attr :session, :map, required: true
+  attr :workspace_id, :string, required: true
+  attr :current_workspace_id, :string, required: true
+  attr :active_id, :string, default: nil
+  attr :default_sid, :string, default: nil
+  attr :preview_panes, :map, default: %{}
+  attr :path_base, :string, default: nil
+  attr :parent_dom_id, :any, default: nil
+  attr :mutations_allowed?, :boolean, default: false
+  attr :rename_session_id, :string, default: nil
+
+  defp sessions_sidebar_session_row(assigns) do
+    cross_workspace? = assigns.workspace_id != assigns.current_workspace_id
+    session_active? = assigns.active_id == assigns.session.id and not cross_workspace?
+    href = Map.get(assigns.session, :href) || sidebar_session_href(assigns.workspace_id, assigns.session.id)
+
+    assigns =
+      assigns
+      |> assign(:cross_workspace?, cross_workspace?)
+      |> assign(:session_active?, session_active?)
+      |> assign(:href, href)
+
+    ~H"""
+    <div class="flex items-center gap-1 px-1">
+      <%= if @cross_workspace? do %>
+        <.link
+          id={@session.dom_id}
+          navigate={@href}
+          data-picker-item
+          data-picker-section="sessions"
+          data-picker-parent={@parent_dom_id}
+          class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+          title={@session.title}
+        >
+          <.sessions_sidebar_session_labels session={@session} preview_panes={@preview_panes} default_sid={@default_sid} />
+        </.link>
+      <% else %>
+        <a
+          id={@session.dom_id}
+          href={session_href(@workspace_id, @session.id, @path_base)}
+          data-picker-item
+          data-picker-section="sessions"
+          data-picker-active={@session_active? || nil}
+          data-picker-parent={@parent_dom_id}
+          phx-click="attach_terminal_session"
+          phx-value-session-id={@session.id}
+          phx-value-kind={Atom.to_string(@session.kind)}
+          phx-value-tmux-session={@session.tmux_session}
+          class={[sidebar_row_class(@session_active?), "min-w-0 flex-1"]}
+          title={@session.title}
+        >
+          <.sessions_sidebar_session_labels session={@session} preview_panes={@preview_panes} default_sid={@default_sid} />
+        </a>
+      <% end %>
+      <.copy_link_button
+        url={if(@cross_workspace?, do: session_share_url_from_href(@href), else: session_share_url(@workspace_id, @session.id, @path_base))}
+        label={@session.label}
+        visible?={false}
+      />
+      <%= if @mutations_allowed? and not @cross_workspace? and is_binary(@session.tmux_session) and
+              @session.tmux_session != "" and @rename_session_id == @session.id do %>
+        <.form
+          for={to_form(%{}, as: :session)}
+          id={"session-rename-form-" <> @session.dom_id}
+          phx-submit="terminal:rename_session"
+          class="flex items-center gap-1 px-1"
+        >
+          <input type="hidden" name="session[id]" value={@session.id} />
+          <input type="hidden" name="session[tmux_session]" value={@session.tmux_session} />
+          <input
+            type="text"
+            id={"session-rename-input-" <> @session.dom_id}
+            name="session[name]"
+            value={@session.label}
+            phx-hook="RenameInput"
+            phx-keydown="terminal:rename_session_cancel"
+            phx-key="Escape"
+            autocomplete="off"
+            class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+          />
+          <button type="submit" class="rounded p-1 text-primary hover:bg-primary/10" title="Save session name">
+            <.icon name="hero-check" class="size-3" />
+          </button>
+          <button
+            type="button"
+            phx-click="terminal:rename_session_cancel"
+            class="rounded p-1 text-base-content/45 hover:bg-base-200"
+            title="Cancel rename"
+          >
+            <.icon name="hero-x-mark" class="size-3" />
+          </button>
+        </.form>
+      <% end %>
+    </div>
+    """
+  end
+
+  attr :session, :map, required: true
+  attr :preview_panes, :map, default: %{}
+  attr :default_sid, :string, default: nil
+
+  defp sessions_sidebar_session_labels(assigns) do
+    ~H"""
+    <span class="flex min-w-0 items-center gap-1">
+      <span
+        :if={@session.id == @default_sid}
+        class="flex shrink-0 text-base-content/40"
+        title="Home session — your landing shell"
+        aria-label="Home session"
+      >
+        <.icon name="hero-home" class="size-3" />
+      </span>
+      <span data-picker-label class="truncate font-medium">{@session.label}</span>
+      <.preview_badge
+        count={preview_pane_count(@session.pane_ids, @preview_panes)}
+        id={"sidebar-session-preview-" <> @session.dom_id}
+        scope="session"
+      />
+      <span
+        :if={@session.quiet_count > 0}
+        data-attention={@session.attention}
+        class={quiet_badge_class(@session.attention)}
+        title={quiet_badge_label(@session.quiet_count, @session.unseen_quiet_count)}
+        aria-label={quiet_badge_label(@session.quiet_count, @session.unseen_quiet_count)}
+      />
+      <span
+        :if={@session.quiet_count == 0 and Map.get(@session, :activity_state) != :idle}
+        data-activity-state={@session.activity_state}
+        class={["size-1.5 shrink-0 rounded-full", @session.activity_class]}
+        title={@session.activity_label}
+        aria-label={@session.activity_label}
+      />
+    </span>
+    <span :if={@session.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+      {@session.detail}
+    </span>
+    """
+  end
+
+  attr :workspace_id, :string, required: true
+  attr :tabs, :list, required: true
+  attr :active_id, :string, default: nil
+  attr :active_fallback_label, :string, default: "session"
+  attr :active_fallback_detail, :string, default: ""
+
+  def session_header_indicator(assigns) do
+    ~H"""
+    <div
+      class="leader-key-control flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs pointer-coarse:hidden"
+      data-shortcut="Ctrl + B, then S"
+      title={
+        active_session_picker_title(
+          @tabs,
+          @active_id,
+          @active_fallback_label,
+          @active_fallback_detail
+        )
+      }
+    >
+      <span
+        id={"attention-surface-" <> @workspace_id}
+        phx-hook="AttentionSurface"
+        class="hidden"
+        aria-hidden="true"
+      ></span>
+      <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label)
+
+      summary_detail =
+        active_session_detail(@tabs, @active_id, @active_fallback_detail) %>
+      <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
+        <span class="header-p-min-full">{summary_label}</span>
+        <span class="header-p-min-short" title={summary_label}>
+          {session_picker_short_label(summary_label)}
+        </span>
+        <span
+          :if={summary_detail != "" and summary_detail != summary_label}
+          class="header-p-low header-p-as-inline font-mono font-normal text-base-content/50"
+        >
+          {" · " <> summary_detail}
+        </span>
+      </span>
+      <span
+        :if={quiet_window_count(@tabs) > 0}
+        id={"session-quiet-badge-" <> @workspace_id}
+        data-attention={quiet_badge_attention(@tabs)}
+        class={quiet_badge_class(quiet_badge_attention(@tabs))}
+        title={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
+        aria-label={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
+      ></span>
+    </div>
+    """
+  end
+
+  attr :workspace_id, :string, required: true
   attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
@@ -474,485 +836,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     do:
       "flex max-w-56 shrink-0 flex-col items-start rounded border border-base-300 px-2.5 py-1 text-left text-xs leading-tight text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
 
-  # ---------------------------------------------------------------------------
-  # Dropdown variants (single-bar chrome)
-  # ---------------------------------------------------------------------------
 
-  attr :workspace_id, :string, required: true
-  attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
-  attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
-  attr :active_id, :string, default: nil, doc: "current terminal_sid"
-  attr :preview_panes, :map, default: %{}, doc: "pane_id => preview registration (live registry)"
-  attr :active_fallback_label, :string, default: "session"
-  attr :active_fallback_detail, :string, default: ""
-  attr :mutations_allowed?, :boolean, default: false
-  attr :rename_session_id, :string, default: nil, doc: "session id currently in rename mode"
-  attr :path_base, :string, default: nil
+  defp sidebar_row_class(true),
+    do:
+      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2 py-1.5 text-left text-xs text-primary"
 
-  attr :default_sid, :string,
-    default: nil,
-    doc: "the viewer's landing session id — rendered as a normal row marked \"home\""
+  defp sidebar_row_class(false),
+    do:
+      "flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs text-base-content/80 hover:bg-base-200"
 
-  def session_dropdown(assigns) do
-    ~H"""
-    <details
-      class="leader-key-control relative shrink-0"
-      id={"session-dropdown-" <> @workspace_id}
-      data-shortcut="Ctrl + B, then S"
-      phx-hook="SessionPicker"
-    >
-      <span
-        id={"attention-surface-" <> @workspace_id}
-        phx-hook="AttentionSurface"
-        class="hidden"
-        aria-hidden="true"
-      ></span>
-      <summary
-        data-leader-action="session-picker"
-        phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
-        title={
-          active_session_picker_title(
-            @tabs,
-            @active_id,
-            @active_fallback_label,
-            @active_fallback_detail
-          )
-        }
-        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
-      >
-        <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label)
-
-        summary_detail =
-          active_session_detail(@tabs, @active_id, @active_fallback_detail) %>
-        <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
-          <span class="header-p-min-full">{summary_label}</span>
-          <span class="header-p-min-short" title={summary_label}>
-            {session_picker_short_label(summary_label)}
-          </span>
-          <span
-            :if={summary_detail != "" and summary_detail != summary_label}
-            class="header-p-low header-p-as-inline font-mono font-normal text-base-content/50"
-          >
-            {" · " <> summary_detail}
-          </span>
-        </span>
-        <span
-          :if={quiet_window_count(@tabs) > 0}
-          id={"session-quiet-badge-" <> @workspace_id}
-          data-attention={quiet_badge_attention(@tabs)}
-          class={quiet_badge_class(quiet_badge_attention(@tabs))}
-          title={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
-          aria-label={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
-        ></span>
-        <span class="text-[10px] text-base-content/40">▾</span>
-      </summary>
-      <div class="absolute top-full right-0 z-50 mt-0.5 max-h-[80vh] min-w-52 max-w-[90vw] overflow-y-auto overscroll-contain rounded border border-base-300 bg-base-100 py-1 shadow-lg">
-        <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
-        <div
-          data-picker-filter
-          class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
-        >
-        </div>
-        <%= for tab <- @tabs do %>
-          <div
-            id={if(tab.id == @default_sid, do: "terminal-session-shell-" <> @workspace_id)}
-            data-picker-active={(tab.id == @default_sid and @active_id == tab.id) || nil}
-            class={dropdown_row_class(@active_id == tab.id)}
-          >
-            <a
-              id={tab.dom_id}
-              href={session_href(@workspace_id, tab.id, @path_base)}
-              data-picker-item
-              data-picker-active={@active_id == tab.id || nil}
-              data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
-              phx-click={
-                JS.push("attach_terminal_session")
-                |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-              }
-              phx-value-session-id={tab.id}
-              phx-value-kind={Atom.to_string(tab.kind)}
-              phx-value-tmux-session={tab.tmux_session}
-              class={[
-                "flex min-w-0 flex-1 flex-col items-start text-left",
-                @active_id == tab.id && "text-primary"
-              ]}
-              title={tab.title}
-            >
-              <span class="flex w-full min-w-0 items-center gap-1.5">
-                <span
-                  :if={tab.id == @default_sid}
-                  class="flex shrink-0 text-base-content/40"
-                  title="Home session — your landing shell"
-                  aria-label="Home session"
-                >
-                  <.icon name="hero-home" class="size-3" />
-                </span>
-                <span data-picker-label class="truncate font-medium">{tab.label}</span>
-                <.preview_badge
-                  count={preview_pane_count(tab.pane_ids, @preview_panes)}
-                  id={"session-preview-" <> tab.dom_id}
-                  scope="session"
-                />
-                <span
-                  :if={tab.quiet_count > 0}
-                  id={"session-quiet-" <> tab.dom_id}
-                  data-attention={tab.attention}
-                  class={quiet_badge_class(tab.attention)}
-                  title={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
-                  aria-label={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
-                ></span>
-                <span
-                  :if={tab.quiet_count == 0 and tab.activity_state != :idle}
-                  id={"session-activity-" <> tab.dom_id}
-                  data-activity-state={tab.activity_state}
-                  class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
-                  title={tab.activity_label}
-                  aria-label={tab.activity_label}
-                ></span>
-              </span>
-              <span
-                :if={tab.detail != ""}
-                data-picker-label
-                class="truncate font-mono text-[10px] text-base-content/50"
-              >
-                {tab.detail}
-              </span>
-            </a>
-            <.copy_link_button
-              url={session_share_url(@workspace_id, tab.id, @path_base)}
-              label={tab.label}
-            />
-            <a
-              href={session_href(@workspace_id, tab.id, @path_base)}
-              target="_blank"
-              rel="noreferrer"
-              tabindex="-1"
-              class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
-              title="Open in new tab"
-              aria-label={"Open " <> tab.label <> " in new tab"}
-            >
-              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-            </a>
-            <button
-              :if={tab.window_count > 0}
-              id={"session-windows-toggle-" <> tab.dom_id}
-              type="button"
-              tabindex="-1"
-              phx-click={
-                JS.toggle(to: "#session-windows-" <> tab.dom_id, display: "block")
-                |> JS.toggle_class("rotate-90", to: "#session-windows-chevron-" <> tab.dom_id)
-              }
-              class="ml-2 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
-              title={"#{tab.window_count} window#{if tab.window_count == 1, do: "", else: "s"}"}
-              aria-label={"Toggle windows of " <> tab.label}
-            >
-              {tab.window_count}
-              <span
-                id={"session-windows-chevron-" <> tab.dom_id}
-                class="flex transition-transform"
-              >
-                <.icon name="hero-chevron-right" class="size-3" />
-              </span>
-            </button>
-            <%= if @mutations_allowed? and is_binary(tab.tmux_session) and tab.tmux_session != "" do %>
-              <%= if @rename_session_id == tab.id do %>
-                <.form
-                  for={to_form(%{}, as: :session)}
-                  id={"session-rename-form-" <> tab.dom_id}
-                  phx-submit="terminal:rename_session"
-                  class="ml-1 flex items-center gap-1"
-                >
-                  <input type="hidden" name="session[id]" value={tab.id} />
-                  <input type="hidden" name="session[tmux_session]" value={tab.tmux_session} />
-                  <input
-                    type="text"
-                    id={"session-rename-input-" <> tab.dom_id}
-                    name="session[name]"
-                    value={tab.label}
-                    phx-hook="RenameInput"
-                    phx-keydown="terminal:rename_session_cancel"
-                    phx-key="Escape"
-                    autocomplete="off"
-                    class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                  <button
-                    type="submit"
-                    phx-click={JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")}
-                    class="rounded p-1 text-primary hover:bg-primary/10"
-                    title="Save session name"
-                  >
-                    <.icon name="hero-check" class="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    phx-click={
-                      JS.push("terminal:rename_session_cancel")
-                      |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-                    }
-                    class="rounded p-1 text-base-content/45 hover:bg-base-200"
-                    title="Cancel rename"
-                  >
-                    <.icon name="hero-x-mark" class="size-3" />
-                  </button>
-                </.form>
-              <% else %>
-                <button
-                  type="button"
-                  phx-click="terminal:rename_session_start"
-                  phx-value-session-id={tab.id}
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                  title="Rename tmux session"
-                  aria-label="Rename tmux session"
-                >
-                  <.icon name="hero-pencil-square" class="size-3" />
-                </button>
-              <% end %>
-              <button
-                :if={tab.id != @default_sid}
-                type="button"
-                phx-click={
-                  JS.push("terminal:kill_session")
-                  |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-                }
-                phx-value-session-id={tab.id}
-                phx-value-tmux-session={tab.tmux_session}
-                data-confirm="Kill this tmux session and everything running in it?"
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                title="Close tmux session"
-                aria-label="Close tmux session"
-              >
-                <.icon name="hero-x-mark" class="size-3" />
-              </button>
-            <% end %>
-          </div>
-          <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
-            <%= for window <- tab.windows do %>
-              <div class="group flex w-full items-center gap-0.5 py-1 pr-3 pl-7 text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content">
-                <a
-                  href={session_window_href(@workspace_id, tab.id, window.id, path_base: @path_base)}
-                  data-picker-item
-                  data-picker-parent={tab.dom_id}
-                  phx-click={
-                    JS.push("attach_terminal_session")
-                    |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-                  }
-                  phx-value-session-id={tab.id}
-                  phx-value-kind={Atom.to_string(tab.kind)}
-                  phx-value-tmux-session={tab.tmux_session}
-                  phx-value-window-id={window.id}
-                  class="flex min-w-0 flex-1 items-center gap-1 text-left"
-                  title={"Attach " <> tab.label <> " on window " <> window.display_name}
-                >
-                  <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                  <span data-picker-label class="max-w-36 truncate">{window.display_name}</span>
-                  <.preview_badge
-                    count={preview_pane_count(window.pane_ids, @preview_panes)}
-                    id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
-                    scope="window"
-                  />
-                  <span
-                    :if={window.active?}
-                    class="size-1.5 shrink-0 rounded-full bg-primary/70"
-                    title="Active window"
-                  ></span>
-                  <span
-                    :if={window.quiet?}
-                    data-quiet="true"
-                    data-attention={window.attention}
-                    class={quiet_badge_class(window.attention)}
-                    title={window_quiet_badge_label(window)}
-                    aria-label={window_quiet_badge_label(window)}
-                  ></span>
-                  <span
-                    :if={not window.active? and not window.quiet? and window.activity_state != :idle}
-                    data-activity-state={window.activity_state}
-                    class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                    title={window.activity_label}
-                    aria-label={window.activity_label}
-                  ></span>
-                </a>
-                <.copy_link_button
-                  url={window_share_url(@workspace_id, tab.id, window.id, @path_base)}
-                  label={tab.label <> " · " <> window.name}
-                  kind="window"
-                />
-                <a
-                  href={session_window_href(@workspace_id, tab.id, window.id, path_base: @path_base)}
-                  target="_blank"
-                  rel="noreferrer"
-                  tabindex="-1"
-                  class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
-                  title="Open in new tab"
-                  aria-label={"Open " <> tab.label <> " on window " <> window.name <> " in new tab"}
-                >
-                  <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                </a>
-              </div>
-            <% end %>
-          </div>
-        <% end %>
-        <%= for tab <- @workspace_tabs do %>
-          <div class={dropdown_row_class(false)}>
-            <%= if tab.href do %>
-              <.link
-                id={tab.dom_id}
-                navigate={tab.href}
-                data-picker-item
-                data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
-                class="flex min-w-0 flex-1 flex-col items-start text-left"
-                title={tab.title}
-              >
-                <span class="flex w-full min-w-0 items-center gap-1.5">
-                  <span data-picker-label class="truncate font-medium">{tab.label}</span>
-                  <.preview_badge
-                    count={tab.preview_count}
-                    id={"session-preview-" <> tab.dom_id}
-                    scope="session"
-                  />
-                  <span
-                    :if={tab.quiet_count > 0}
-                    id={"session-quiet-" <> tab.dom_id}
-                    data-attention={tab.attention}
-                    class={quiet_badge_class(tab.attention)}
-                    title={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
-                    aria-label={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
-                  ></span>
-                  <span
-                    :if={tab.quiet_count == 0 and tab.activity_state != :idle}
-                    id={"session-activity-" <> tab.dom_id}
-                    data-activity-state={tab.activity_state}
-                    class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
-                    title={tab.activity_label}
-                    aria-label={tab.activity_label}
-                  ></span>
-                </span>
-                <span
-                  :if={tab.detail != ""}
-                  data-picker-label
-                  class="truncate font-mono text-[10px] text-base-content/50"
-                >
-                  {tab.detail}
-                </span>
-              </.link>
-              <.copy_link_button url={session_share_url_from_href(tab.href)} label={tab.label} />
-              <a
-                href={tab.href}
-                target="_blank"
-                rel="noreferrer"
-                tabindex="-1"
-                class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
-                title="Open in new tab"
-                aria-label={"Open " <> tab.label <> " in new tab"}
-              >
-                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-              </a>
-            <% else %>
-              <button
-                id={tab.dom_id}
-                type="button"
-                data-picker-item
-                class={[
-                  dropdown_item_class(false),
-                  "flex min-w-0 flex-1 flex-col items-start opacity-50 cursor-default"
-                ]}
-                title={tab.title}
-                disabled
-              >
-                <span data-picker-label class="truncate font-medium">{tab.label}</span>
-                <span
-                  :if={tab.detail != ""}
-                  data-picker-label
-                  class="truncate font-mono text-[10px] text-base-content/50"
-                >
-                  {tab.detail}
-                </span>
-              </button>
-            <% end %>
-            <button
-              :if={tab.window_count > 0}
-              id={"session-windows-toggle-" <> tab.dom_id}
-              type="button"
-              tabindex="-1"
-              phx-click={
-                JS.toggle(to: "#session-windows-" <> tab.dom_id, display: "block")
-                |> JS.toggle_class("rotate-90", to: "#session-windows-chevron-" <> tab.dom_id)
-              }
-              class="ml-2 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
-              title={"#{tab.window_count} window#{if tab.window_count == 1, do: "", else: "s"}"}
-              aria-label={"Toggle windows of " <> tab.label}
-            >
-              {tab.window_count}
-              <span
-                id={"session-windows-chevron-" <> tab.dom_id}
-                class="flex transition-transform"
-              >
-                <.icon name="hero-chevron-right" class="size-3" />
-              </span>
-            </button>
-          </div>
-          <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
-            <%= for window <- tab.windows do %>
-              <.link
-                :if={tab.href}
-                navigate={session_window_href(tab.workspace_id, tab.session_id, window.id)}
-                data-picker-item
-                data-picker-parent={tab.dom_id}
-                class="group flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                title={"Open " <> tab.label <> " on window " <> window.display_name}
-              >
-                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span data-picker-label class="max-w-36 truncate">{window.display_name}</span>
-                <.preview_badge
-                  count={window.preview_count}
-                  id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
-                  scope="window"
-                />
-                <span
-                  :if={window.active?}
-                  class="size-1.5 shrink-0 rounded-full bg-primary/70"
-                  title="Active window"
-                ></span>
-                <span
-                  :if={window.quiet?}
-                  data-quiet="true"
-                  data-attention={window.attention}
-                  class={quiet_badge_class(window.attention)}
-                  title={window_quiet_badge_label(window)}
-                  aria-label={window_quiet_badge_label(window)}
-                ></span>
-                <span
-                  :if={not window.active? and not window.quiet? and window.activity_state != :idle}
-                  data-activity-state={window.activity_state}
-                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                  title={window.activity_label}
-                  aria-label={window.activity_label}
-                ></span>
-              </.link>
-            <% end %>
-          </div>
-        <% end %>
-        <div class="mt-1 border-t border-base-300 px-2 pt-1">
-          <button
-            type="button"
-            data-picker-item
-            phx-click={
-              JS.push("terminal:refresh_sessions")
-              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-            }
-            class="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
-          >
-            ↻ refresh
-          </button>
-        </div>
-        <.picker_keyboard_hint />
-        <%!-- choose-tree style preview of the focused entry — filled client-side --%>
-        <pre
-          data-picker-preview
-          class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
-        ></pre>
-      </div>
-    </details>
-    """
+  defp sidebar_session_href(workspace_id, session_id)
+       when is_binary(workspace_id) and is_binary(session_id) do
+    "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
   end
 
   defp session_picker_short_label(label) when is_binary(label) do
@@ -1002,7 +897,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         label
       end
 
-    "Pick a session (" <> session <> "). Shortcut: Ctrl + B, then S"
+    "Active session: " <> session <> ". Shortcut: Ctrl + B, then S opens the sessions sidebar"
   end
 
   attr :kill_hint, :boolean, default: false

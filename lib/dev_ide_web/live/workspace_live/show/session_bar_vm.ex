@@ -287,6 +287,129 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp to_string_or_nil(nil), do: nil
   defp to_string_or_nil(value), do: to_string(value)
 
+  @type workspace_tree_node :: %{
+          id: String.t(),
+          dom_id: String.t(),
+          workspace_id: String.t(),
+          label: String.t(),
+          detail: String.t(),
+          title: String.t(),
+          current?: boolean(),
+          live?: boolean(),
+          session_count: non_neg_integer(),
+          expanded?: boolean(),
+          flat_session?: boolean(),
+          session: tab() | workspace_tab() | nil,
+          sessions: [tab() | workspace_tab()] | nil
+        }
+
+  @doc """
+  Builds the SESSIONS sidebar tree: workspace upper tier, session children when
+  expanded. Collapsed rows carry only cheap summary badges; callers must not
+  enumerate sessions until `expanded?: true`. A workspace with exactly one
+  attachable session collapses to a single flat row (`flat_session?: true`).
+  """
+  @spec workspace_session_tree([map()], String.t(), keyword()) :: [workspace_tree_node()]
+  def workspace_session_tree(summaries, current_workspace_id, opts \\ [])
+      when is_list(summaries) do
+    expanded = Keyword.get(opts, :expanded_workspaces, MapSet.new())
+    current_session_tabs = Keyword.get(opts, :current_session_tabs, [])
+    sidebar_ws_sessions = Keyword.get(opts, :sidebar_ws_sessions, %{})
+
+    summaries
+    |> order_workspace_summaries(current_workspace_id)
+    |> Enum.map(
+      &workspace_tree_node(
+        &1,
+        current_workspace_id,
+        expanded,
+        current_session_tabs,
+        sidebar_ws_sessions
+      )
+    )
+  end
+
+  defp order_workspace_summaries(summaries, current_workspace_id) do
+    Enum.sort_by(summaries, fn summary ->
+      if summary_id(summary) == current_workspace_id, do: 0, else: 1
+    end)
+  end
+
+  defp workspace_tree_node(summary, current_workspace_id, expanded, current_tabs, sidebar_ws) do
+    workspace_id = summary_id(summary) || "workspace"
+    current? = workspace_id == current_workspace_id
+    expanded? = MapSet.member?(expanded, workspace_id)
+    session_count = summary_session_count(summary)
+    live? = workspace_summary_live?(summary)
+
+    sessions =
+      if expanded? do
+        tabs =
+          if current? do
+            current_tabs
+          else
+            Map.get(sidebar_ws, workspace_id, [])
+          end
+
+        Enum.map(tabs, &Map.put(&1, :workspace_id, workspace_id))
+      else
+        nil
+      end
+
+    flat_session? = expanded? and is_list(sessions) and length(sessions) == 1
+
+    %{
+      id: workspace_id,
+      dom_id: "sidebar-ws-" <> dom_fragment(workspace_id),
+      workspace_id: workspace_id,
+      label: summary_workspace_label(summary),
+      detail: summary_workspace_detail(summary),
+      title: summary_workspace_title(summary),
+      current?: current?,
+      live?: live?,
+      session_count: session_count,
+      expanded?: expanded? and not flat_session?,
+      flat_session?: flat_session?,
+      session: if(flat_session?, do: List.first(sessions), else: nil),
+      sessions: if(flat_session?, do: nil, else: sessions)
+    }
+  end
+
+  defp summary_workspace_label(summary) do
+    Map.get(summary, :name) || Map.get(summary, "name") || summary_id(summary) || "workspace"
+  end
+
+  defp summary_workspace_detail(summary) do
+    branch = Map.get(summary, :branch) || Map.get(summary, "branch")
+    path_label = Map.get(summary, :path_label) || Map.get(summary, "path_label")
+
+    cond do
+      is_binary(branch) and branch != "" -> branch
+      is_binary(path_label) and path_label != "" -> path_label
+      true -> ""
+    end
+  end
+
+  defp summary_workspace_title(summary) do
+    label = summary_workspace_label(summary)
+    detail = summary_workspace_detail(summary)
+
+    if detail != "" and detail != label do
+      label <> " · " <> detail
+    else
+      label
+    end
+  end
+
+  defp summary_session_count(summary) do
+    count = Map.get(summary, :session_count) || Map.get(summary, "session_count")
+
+    case count do
+      n when is_integer(n) and n >= 0 -> n
+      _ -> length(sessions_from_summary(summary))
+    end
+  end
+
   @spec workspace_session_tabs([map()], String.t()) :: [workspace_tab()]
   def workspace_session_tabs(summaries, current_workspace_id) when is_list(summaries) do
     summaries

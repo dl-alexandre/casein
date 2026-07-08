@@ -445,23 +445,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                }
              ] = workspace_tabs
 
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-current",
-          tabs: [],
-          workspace_tabs: workspace_tabs,
-          active_id: nil,
-          shell_active?: true
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{
+              id: "ws-preview",
+              name: "preview-workspace",
+              session_count: 1,
+              live?: true,
+              sessions: []
+            }
+          ],
+          "ws-current",
+          expanded_workspaces: MapSet.new(["ws-preview"]),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{"ws-preview" => workspace_tabs}
         )
 
-      assert html =~ ~s(id="session-preview-workspace_sessions-ws-preview-u-alice-preview")
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-current",
+          tree: tree,
+          active_id: nil,
+          preview_panes: %{"%6" => %{}}
+        )
+
+      assert html =~ ~s(id="sidebar-session-preview-workspace_sessions-ws-preview-u-alice-preview")
       assert html =~ ~s(data-preview-running="true")
 
-      assert html =~
-               ~s(id="session-window-preview-workspace_sessions-ws-preview-u-alice-preview-1")
-
-      refute html =~
-               ~s(id="session-window-preview-workspace_sessions-ws-preview-u-alice-preview-0")
     end
 
     test "renders orphan tmux inventory tabs without navigation" do
@@ -485,472 +496,66 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           shell_active?: true
         )
 
-      assert html =~ ~s(id="workspace_sessions-tmux-devide_ws-adapter_sid-adapter")
-      assert html =~ ~s(disabled)
       refute html =~ ~s(href="#")
       assert html =~ "ws-adapter"
       assert html =~ "sid-adapter"
     end
   end
 
-  describe "session_dropdown/1" do
-    test "shows a window count and expandable window rows for tmux-backed tabs" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{id: "@1", index: 1, name: "logs", active: true},
-            %{id: "@0", index: 0, name: "build", active: false}
-          ]
-        })
+  describe "sessions_sidebar/1" do
+    test "renders summoned workspace tree with expand toggle and active session row" do
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("ex-1", "tmux-ex-1"),
+          agent_info("ex-2", "tmux-ex-2")
+        ])
 
-      assert [%{window_count: 2, windows: [%{name: "build"}, %{name: "logs", active?: true}]}] =
-               tabs = SessionBarVM.session_tabs([info])
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 2, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
         )
 
-      assert html =~ ~s(title="2 windows")
-      assert html =~ ~s(id="session-windows-active_sessions-agent_ex-9")
-      assert html =~ ~s(phx-value-window-id="@0")
-      assert html =~ ~s(phx-value-window-id="@1")
-      assert html =~ "build"
-      assert html =~ "logs"
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_ex-1"
+        )
+
+      assert html =~ ~s(id="sessions-sidebar-ws-1")
+      assert html =~ ~s(phx-hook="SessionsPickerSidebar")
+      assert html =~ ~s(phx-click="sidebar:toggle_workspace")
+      assert html =~ ~s(data-picker-active)
+      assert html =~ "ex-1"
     end
+  end
 
-    test "marks sessions and windows with activity dots from window_activity metadata" do
-      now = DateTime.utc_now() |> DateTime.to_unix()
-
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{id: "@1", index: 1, name: "logs", active: true},
-            %{id: "@0", index: 0, name: "build", active: false}
-          ],
-          window_activity: %{"@0" => now, "@1" => now - 3_600}
-        })
-
-      assert [tab] = tabs = SessionBarVM.session_tabs([info])
-
-      # The session row inherits the freshest window state.
-      assert tab.activity_state == :fresh
-
-      assert [%{id: "@0", activity_state: :fresh}, %{id: "@1", activity_state: :idle}] =
-               tab.windows
+  describe "session_header_indicator/1" do
+    test "renders read-only active session label and quiet badge without a dropdown" do
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("ex-9", "tmux-ex-9")
+          |> Map.put(:metadata, %{
+            windows: [%{id: "@1", index: 1, name: "agent", active: false, quiet: true}]
+          })
+        ])
 
       html =
-        render_component(&SessionBar.session_dropdown/1,
+        render_component(&SessionBar.session_header_indicator/1,
           workspace_id: "ws-1",
           tabs: tabs,
-          active_id: nil,
-          shell_active?: true
+          active_id: "agent_ex-9",
+          active_fallback_label: "session"
         )
 
-      assert html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
-      assert html =~ ~s(data-activity-state="fresh")
-    end
-
-    test "marks quiet agent windows and badges the trigger and session row" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{id: "@1", index: 1, name: "agent", active: false, quiet: true},
-            %{id: "@0", index: 0, name: "build", active: true, quiet: false}
-          ]
-        })
-
-      assert [tab] = tabs = SessionBarVM.session_tabs([info])
-      assert tab.quiet_count == 1
-      assert [%{quiet?: false}, %{id: "@1", quiet?: true}] = tab.windows
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      # Trigger badge, session-row dot, and the window-row dot all render.
+      refute html =~ "<details"
+      refute html =~ "session-dropdown"
+      assert html =~ ~s(id="attention-surface-ws-1")
       assert html =~ ~s(id="session-quiet-badge-ws-1")
-      assert html =~ ~s(id="session-quiet-active_sessions-agent_ex-9")
-      assert html =~ ~s(data-quiet="true")
-      assert html =~ ~s(data-attention="inline")
-      assert html =~ "1 quiet agent window"
-      # Quiet supersedes the activity dot on the session row.
-      refute html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
-    end
-
-    test "marks unseen quiet agent windows distinctly until acknowledged" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{id: "@1", index: 1, name: "agent", active: false, quiet: true},
-            %{id: "@0", index: 0, name: "build", active: true, quiet: false}
-          ]
-        })
-
-      assert [tab] =
-               tabs =
-               SessionBarVM.session_tabs([info],
-                 unseen_quiet_window_ids: MapSet.new([{"agent_ex-9", "@1"}])
-               )
-
-      assert tab.quiet_count == 1
-      assert tab.unseen_quiet_count == 1
-      assert tab.attention == "unseen"
-      assert [%{quiet?: false}, %{id: "@1", quiet?: true, attention: "unseen"}] = tab.windows
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      assert html =~ ~s(data-attention="unseen")
-      assert html =~ "1 unseen quiet agent window"
-      assert html =~ "Unseen quiet agent window"
-    end
-
-    test "uses task summaries as session picker window labels" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{
-              id: "@1",
-              index: 1,
-              name: "claude",
-              active: false,
-              quiet: true,
-              pane_state: :ready,
-              task_summary: "Review agent state"
-            }
-          ]
-        })
-
-      assert [tab] = tabs = SessionBarVM.session_tabs([info])
-      assert [%{display_name: "Review agent state", quiet?: true}] = tab.windows
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      assert html =~ "Review agent state"
-      assert html =~ ~s(title="Agent pane ready or awaiting input")
-    end
-
-    test "session picker keeps a deliberately named window's name" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{
-              id: "@1",
-              index: 1,
-              name: "updates",
-              manual_name: true,
-              active: false,
-              quiet: true,
-              pane_state: :ready,
-              task_summary: "Review agent state"
-            }
-          ]
-        })
-
-      assert [tab] = SessionBarVM.session_tabs([info])
-      assert [%{display_name: "updates", task_summary: "Review agent state"}] = tab.windows
-    end
-
-    test "badges sessions and windows hosting a live preview pane" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [
-            %{id: "@1", index: 1, name: "preview", active: true},
-            %{id: "@0", index: 0, name: "build", active: false}
-          ],
-          window_panes: %{"@1" => ["%5", "%6"], "@0" => ["%1"]}
-        })
-
-      assert [tab] = tabs = SessionBarVM.session_tabs([info])
-      assert Enum.sort(tab.pane_ids) == ["%1", "%5", "%6"]
-      assert [%{id: "@0", pane_ids: ["%1"]}, %{id: "@1", pane_ids: ["%5", "%6"]}] = tab.windows
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          preview_panes: %{"%6" => %{pane_id: "%6"}},
-          shell_active?: true
-        )
-
-      # Session-row badge (aggregated) and the @1 window-row badge render; the
-      # preview-free @0 window does not.
-      assert html =~ ~s(id="session-preview-active_sessions-agent_ex-9")
-      assert html =~ ~s(data-preview-running="true")
-      assert html =~ ~s(id="session-window-preview-active_sessions-agent_ex-9-1")
-      refute html =~ ~s(id="session-window-preview-active_sessions-agent_ex-9-0")
-    end
-
-    test "omits the preview badge when no pane is previewing" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [%{id: "@1", index: 1, name: "logs", active: true}],
-          window_panes: %{"@1" => ["%1"]}
-        })
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: SessionBarVM.session_tabs([info]),
-          active_id: nil,
-          preview_panes: %{},
-          shell_active?: true
-        )
-
-      refute html =~ ~s(data-preview-running="true")
-    end
-
-    test "omits activity dots when windows are idle" do
-      info =
-        "ex-9"
-        |> agent_info("tmux-ex-9")
-        |> Map.put(:metadata, %{
-          windows: [%{id: "@1", index: 1, name: "logs", active: true}],
-          window_activity: %{"@1" => 0}
-        })
-
-      assert [%{activity_state: :idle}] = tabs = SessionBarVM.session_tabs([info])
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      refute html =~ "session-activity-"
-    end
-
-    test "omits the window toggle when a session has no window metadata" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-      assert [%{window_count: 0, windows: []}] = tabs
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      refute html =~ "session-windows-"
-    end
-
-    test "shows close controls on attachable sessions when mutations are allowed" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true,
-          mutations_allowed?: true
-        )
-
-      document = LazyHTML.from_fragment(html)
-
-      kill_items = LazyHTML.query(document, ~s([phx-click*="kill_session"]))
-      assert Enum.count(kill_items) == 1
-      assert LazyHTML.attribute(kill_items, "phx-value-tmux-session") == ["tmux-ex-1"]
-      assert LazyHTML.attribute(kill_items, "data-confirm") != [nil]
-      refute html =~ ~s([phx-click*="kill_session"][data-picker-item])
-    end
-
-    test "hides close controls when mutations are not allowed" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true,
-          mutations_allowed?: false
-        )
-
-      refute html =~ "terminal:kill_session"
-    end
-
-    test "shows a rename-session button on attachable sessions when mutations are allowed" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-      [%{id: tab_id}] = tabs
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true,
-          mutations_allowed?: true
-        )
-
-      document = LazyHTML.from_fragment(html)
-      rename = LazyHTML.query(document, ~s([phx-click="terminal:rename_session_start"]))
-
-      assert Enum.count(rename) == 1
-      assert LazyHTML.attribute(rename, "phx-value-session-id") == [tab_id]
-    end
-
-    test "hides the rename-session button when mutations are not allowed" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true,
-          mutations_allowed?: false
-        )
-
-      refute html =~ "terminal:rename_session_start"
-    end
-
-    test "renders the inline rename form for the session in rename mode" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-      [%{id: tab_id}] = tabs
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: tab_id,
-          shell_active?: true,
-          mutations_allowed?: true,
-          rename_session_id: tab_id
-        )
-
-      document = LazyHTML.from_fragment(html)
-
-      form = LazyHTML.query(document, ~s(form[phx-submit="terminal:rename_session"]))
-      assert Enum.count(form) == 1
-
-      hidden = LazyHTML.query(document, ~s(input[name="session[tmux_session]"]))
-      assert LazyHTML.attribute(hidden, "value") == ["tmux-ex-1"]
-
-      input = LazyHTML.query(document, ~s(input[name="session[name]"]))
-      assert LazyHTML.attribute(input, "phx-hook") == ["RenameInput"]
-      assert LazyHTML.attribute(input, "phx-key") == ["Escape"]
-
-      # The plain rename pencil is replaced by the form while editing.
-      refute html =~ "terminal:rename_session_start"
-    end
-
-    test "marks the attached entry with data-picker-active so the picker selection starts there" do
-      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
-      [%{id: tab_id}] = tabs
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: tab_id,
-          shell_active?: false
-        )
-
-      active = html |> LazyHTML.from_fragment() |> LazyHTML.query("[data-picker-active]")
-      assert Enum.count(active) == 1
-      assert LazyHTML.attribute(active, "phx-value-session-id") == [tab_id]
-
-      # The default/landing session is a normal row marked "home" — it carries
-      # the selection when attached, not a separate shell entry.
-      home_html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: tab_id,
-          shell_active?: true,
-          default_sid: tab_id
-        )
-
-      document = LazyHTML.from_fragment(home_html)
-
-      assert LazyHTML.query(document, "[data-picker-active]")
-             |> LazyHTML.attribute("phx-value-session-id") == [tab_id]
-
-      assert document |> LazyHTML.query("[aria-label='Home session']") |> Enum.count() == 1
-    end
-
-    test "uses the active session fallback while the tab cache is stale" do
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: [],
-          active_id: "exec-missing",
-          shell_active?: false,
-          active_fallback_label: "Exec",
-          active_fallback_detail: "runner-1"
-        )
-
-      assert html =~ "Exec"
-      assert html =~ "runner-1"
-      refute html =~ ">session<"
-    end
-
-    test "renders copy-session buttons with explicit session share URLs" do
-      info =
-        "ex-copy"
-        |> agent_info("tmux-ex-copy")
-        |> Map.put(:metadata, %{cwd: "/workspace/copy"})
-
-      assert [tab] = tabs = SessionBarVM.session_tabs([info])
-      base = DevIdeWeb.Endpoint.url()
-
-      html =
-        render_component(&SessionBar.session_dropdown/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: nil,
-          shell_active?: true
-        )
-
-      document = LazyHTML.from_fragment(html)
-
-      copy_urls =
-        LazyHTML.query(document, "[data-copy-session-link]")
-        |> LazyHTML.attribute("data-copy-session-link")
-
-      assert length(copy_urls) == 1
-      assert Enum.all?(copy_urls, &String.starts_with?(&1, base))
-      assert Enum.any?(copy_urls, &(&1 =~ "/workspaces/ws-1?session=#{tab.id}"))
     end
   end
 

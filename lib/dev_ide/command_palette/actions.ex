@@ -55,7 +55,15 @@ defmodule DevIDE.CommandPalette.Actions do
         category: :view,
         label: "Open window sidebar",
         detail: "Transient vertical window rail beside the terminal (desktop)",
-        payload: %{event: "sidebar:open", params: %{}}
+        payload: %{event: "sidebar:open", params: %{"mode" => "windows"}}
+      },
+      %Item{
+        id: "view:sessions_sidebar",
+        kind: :action,
+        category: :view,
+        label: "Open sessions sidebar",
+        detail: "Miller-column workspace and session rail beside the terminal (desktop)",
+        payload: %{event: "sidebar:open", params: %{"mode" => "both"}}
       }
     ]
   end
