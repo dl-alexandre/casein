@@ -14,7 +14,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIDE.Previews.Url, as: PreviewUrl
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
+  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
@@ -677,6 +679,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   # logic (LinkResolver re-validation, pane anchoring, files-tab fallback).
   def handle_event("terminal:open_file_link", params, socket),
     do: FilePaneEvents.handle_event("terminal:open_file_link", params, socket)
+
+  # Cmd/Ctrl+Click on a detected http(s) URL in terminal output opens it in a
+  # split preview pane (plain click opens a browser tab, handled client-side).
+  # Re-validate the scheme here — the URL crossed the wire from the client — then
+  # delegate to the same path the "preview:open" UI event uses.
+  def handle_event("terminal:open_web_link_preview", %{"url" => url}, socket)
+      when is_binary(url) do
+    if PreviewUrl.http_url?(url) do
+      PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("terminal:open_web_link_preview", _params, socket), do: {:noreply, socket}
 
   @send_agent_text_max_bytes 32 * 1024
 

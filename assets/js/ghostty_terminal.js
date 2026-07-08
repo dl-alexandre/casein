@@ -1349,9 +1349,9 @@ function applyLinkCursor(hook) {
 // fires on a mouseup that never dragged past a few pixels from the mousedown,
 // and the release must land on the same link.
 //
-// Ctrl/Cmd/Shift/Alt+Click is intentionally a no-op here (the mousedown guard
-// below records no pending click): Ctrl+Click is reserved for the future
-// "open in preview pane" gesture (slice 2).
+// Cmd/Ctrl+Click opens the URL in the workspace preview pane instead
+// (terminal:open_web_link_preview), resolved on mousedown like the file-link
+// handler. Shift/Alt combos remain a no-op.
 
 const WEB_LINK_DRAG_SLOP_PX = 4
 
@@ -1425,11 +1425,25 @@ function refreshWebLinkHover(hook, event) {
   setWebLinkHover(hook, webLinkAtEvent(hook, pointer))
 }
 
-// Slice 1: default activation opens the URL in a new browser tab. noopener
-// severs the opener reference (the new tab cannot reach window.opener).
+// Plain click: open the URL in a new browser tab. noopener severs the opener
+// reference (the new tab cannot reach window.opener).
 function openWebLink(url) {
   if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return
   window.open(url, "_blank", "noopener,noreferrer")
+}
+
+// Cmd/Ctrl+Click: open the URL in the workspace preview pane instead of a new
+// tab. The server (terminal:open_web_link_preview) validates the URL and drives
+// the preview; whether it renders depends on the target allowing embedding.
+function openWebLinkPreview(hook, url) {
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return
+
+  const payload = {url, pane_id: fileLinkPaneId(hook)}
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "terminal:open_web_link_preview", payload)
+  } else {
+    hook.pushEvent("terminal:open_web_link_preview", payload)
+  }
 }
 
 function installTerminalWebLinks(hook) {
@@ -1444,7 +1458,28 @@ function installTerminalWebLinks(hook) {
   // begins on a link selects text as usual. The pending click is cancelled the
   // moment the pointer drags past the slop (see mousemove).
   hook.__onWebLinkMouseDown = (e) => {
-    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+    if (e.button !== 0) {
+      hook.__webLinkPendingClick = null
+      return
+    }
+
+    // Cmd/Ctrl+Click → open in the preview pane. Resolved immediately (like
+    // the file-link handler): the native selection handler ignores modifier
+    // mousedowns, so there is no selection to suppress and no drag to wait
+    // out. Shift/Alt are excluded so odd combos fall through to no-op.
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      hook.__webLinkPendingClick = null
+      const hover = webLinkAtEvent(hook, e)
+      if (!hover) return
+
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      setWebLinkHover(hook, null)
+      openWebLinkPreview(hook, hover.link.url)
+      return
+    }
+
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
       hook.__webLinkPendingClick = null
       return
     }
