@@ -34,7 +34,11 @@ defmodule Scripts.SpawnAgentWorkerTest do
         env: [
           {"DEVIDE_SPAWN_DRY_RUN", "1"},
           {"DEVIDE_CHECKOUT", linked},
-          {"PATH", fakebin <> ":" <> System.get_env("PATH")}
+          {"PATH", fakebin <> ":" <> System.get_env("PATH")},
+          # Satisfy agent_env_resolve's first branch (already-exported creds) so
+          # the script doesn't abort looking for a DevIDE tmux pane / env file.
+          {"DEV_IDE_API_TOKEN", "test-token"},
+          {"DEVIDE_WORKSPACE_ID", "test-ws"}
         ]
       )
 
