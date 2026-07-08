@@ -48,6 +48,77 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorkerTest do
     assert_receive {:pane_frame, "pane-gen-1", %{content_gen: 2}}, 1_000
   end
 
+  test "empty incremental frames are skipped without advancing the visible frame stream" do
+    worker = start_worker()
+    handler_id = "pane-worker-frame-#{System.unique_integer([:positive])}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler_id,
+      [:dev_ide, :terminal, :pane_worker, :frame],
+      fn event, measurements, metadata, _cfg ->
+        send(test_pid, {:pane_worker_frame, event, measurements, metadata})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    send(worker, {:terminal_payload, :data, %{data: "a", gen: 1}})
+    assert_receive {:pane_frame, "pane-gen-1", %{frame_seq: 0, frame_epoch: 1}}, 1_000
+
+    assert_receive {:pane_worker_frame, [:dev_ide, :terminal, :pane_worker, :frame],
+                    %{changed_rows: 5}, %{status: :sent, frame_seq: 0, frame_epoch: 1}},
+                   1_000
+
+    send(worker, {:terminal_payload, :data, %{data: "", gen: 2}})
+
+    assert_receive {:pane_worker_frame, [:dev_ide, :terminal, :pane_worker, :frame],
+                    %{changed_rows: 0}, %{status: :skipped, frame_seq: 1, frame_epoch: 1}},
+                   1_000
+
+    refute_receive {:pane_frame, "pane-gen-1", _}, 100
+
+    send(worker, {:terminal_payload, :data, %{data: "b", gen: 3}})
+
+    assert_receive {:pane_frame, "pane-gen-1", %{frame_seq: 1, frame_epoch: 1, content_gen: 3}},
+                   1_000
+  end
+
+  test "flush scheduling stays low latency for small output and batches large output" do
+    worker = start_worker()
+    handler_id = "pane-worker-flush-schedule-#{System.unique_integer([:positive])}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler_id,
+      [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+      fn event, measurements, metadata, _cfg ->
+        send(test_pid, {:flush_schedule, event, measurements, metadata})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    send(worker, {:terminal_payload, :data, %{data: "x", gen: 1}})
+
+    assert_receive {:flush_schedule, [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+                    %{interval_ms: 8, pending_bytes: 1},
+                    %{pane_id: "pane-gen-1", burst?: false, burst_frames: 0}},
+                   1_000
+
+    assert_receive {:pane_frame, "pane-gen-1", _}, 1_000
+
+    large = String.duplicate("y", 4 * 1024)
+    send(worker, {:terminal_payload, :data, %{data: large, gen: 2}})
+
+    assert_receive {:flush_schedule, [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+                    %{interval_ms: 24, pending_bytes: 4096},
+                    %{pane_id: "pane-gen-1", burst?: true}},
+                   1_000
+  end
+
   test "session_owner resize from a passive viewer does not reach the owner" do
     {:ok, worker} =
       PaneWorker.start_link(

@@ -1114,9 +1114,19 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
 
   hook.__lastRenderPayload = payload
   const paint = () => {
+    const started = typeof performance !== "undefined" ? performance.now() : 0
     upstreamRender(payload)
     alignCursorPosition(hook)
     updateScrollbarChrome(hook, payload.scrollbar)
+    const durationMs = typeof performance !== "undefined" ? performance.now() - started : 0
+    markTerminalPerf(hook, "paint", {
+      duration_ms: Number(durationMs.toFixed(3)),
+      renderer: hook.__terminalRenderer || "dom",
+      full_frame: fullFramePayload(payload),
+      rows: payload.cells?.length || 0,
+      cols: payload.cells?.[0]?.length || 0,
+      changed_rows: Array.isArray(payload.rows) ? payload.rows.length : payload.cells?.length || 0
+    })
     termLatOnApply(payload)
   }
   const delay = termLatHalfDelay()
@@ -1842,8 +1852,15 @@ const GhosttyTerminal = {
     // Default DOM renderer; canvas is opt-in (see terminal_canvas.js). Canvas
     // falls back to the DOM RLE painter for any frame it can't draw (e.g. before
     // cell metrics are available).
-    this.onRenderCells = canvasRendererEnabled(this)
-      ? canvasCoalesceEnabled(this)
+    const useCanvasRenderer = canvasRendererEnabled(this)
+    const useCanvasCoalesce = useCanvasRenderer && canvasCoalesceEnabled(this)
+    this.__terminalRenderer = useCanvasRenderer
+      ? useCanvasCoalesce
+        ? "canvas_raf"
+        : "canvas"
+      : "dom"
+    this.onRenderCells = useCanvasRenderer
+      ? useCanvasCoalesce
         ? // Experimental, default-OFF: collapse bursty renders to one paint/frame.
           (pre, rows) =>
             paintCanvasCellsCoalesced(this, pre, rows, terminalCellMetrics, renderCellsRLE)

@@ -34,6 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.NotificationsDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.TerminalTelemetry
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIDE.Panes
   alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
@@ -1041,6 +1042,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:pane_frame, pane_id, payload}, socket) do
     socket =
       if get_pane_data(socket, pane_id) do
+        emit_terminal_push_telemetry(pane_id, payload)
         push_event(socket, "ghostty:render", payload)
       else
         # Pane closed between the worker building the frame and us receiving
@@ -1423,6 +1425,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   ## Helpers
+
+  defp emit_terminal_push_telemetry(pane_id, payload) do
+    :telemetry.execute(
+      [:dev_ide, :terminal, :live_view, :push_frame],
+      %{
+        count: 1,
+        changed_rows: TerminalTelemetry.changed_row_count(payload)
+      }
+      |> Map.merge(TerminalTelemetry.sampled_payload_measurements(payload)),
+      %{
+        pane_id: pane_id,
+        id: Map.get(payload, :id),
+        full_frame?: Map.get(payload, :full_frame) == true,
+        frame_seq: Map.get(payload, :frame_seq),
+        frame_epoch: Map.get(payload, :frame_epoch)
+      }
+    )
+  end
 
   # OSC 52 set-clipboard: ESC ] 52 ; <sel> ; <base64> (BEL | ST). PTY reads can
   # split that escape sequence anywhere, and agent CLIs often copy much more

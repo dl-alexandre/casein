@@ -18,6 +18,7 @@ const base =
   "http://127.0.0.1:4196/workspaces/preview-sandbox?host=local";
 const samples = parseInt(process.argv[3] || "50", 10);
 const injects = [0, 40, 80, 160];
+const authEmail = process.env.DEVIDE_FORWARD_AUTH_EMAIL || "admin@local";
 
 const sep = base.includes("?") ? "&" : "?";
 const browser = await chromium.launch();
@@ -25,7 +26,10 @@ const browser = await chromium.launch();
 const rows = [];
 for (const inject of injects) {
   // Fresh context+page per RTT — a reused page raced the terminal remount.
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    extraHTTPHeaders: { "x-auth-request-email": authEmail }
+  });
   const page = await context.newPage();
   page.on("console", (m) => {
     const t = m.text();
@@ -33,7 +37,7 @@ for (const inject of injects) {
   });
 
   const url = `${base}${sep}termlat=${inject}`;
-  await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
 
   await page
     .waitForFunction(() => typeof window.devideTermLatency === "object", { timeout: 25000 })
