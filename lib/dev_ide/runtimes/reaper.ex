@@ -15,7 +15,7 @@ defmodule DevIDE.Runtimes.Reaper do
 
   alias DevIDE.Git
   alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.{PreviewKiller, PreviewServer, Runtime}
+  alias DevIDE.Runtimes.{PreviewKiller, PreviewServer, Runtime, WorktreeAlarm}
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
@@ -54,8 +54,35 @@ defmodule DevIDE.Runtimes.Reaper do
     )
 
     _ = do_sweep([])
+    _ = sweep_worktree_alarms()
     if enabled?(), do: schedule_sweep()
     {:noreply, state}
+  end
+
+  # Surface stale worktrees the runtime reaper does NOT remove — dirty ones (hold
+  # uncommitted agent work) and unreported ones — as `workspace.agent_worktree_stale`
+  # audit events. WorktreeAlarm never deletes; it is the triage signal so abandoned
+  # dirty worktrees stop rotting invisibly. Removal of clean+idle+pushed worktrees is
+  # handled out-of-band by scripts/cleanup-agent-worktrees.sh (systemd timer).
+  defp sweep_worktree_alarms do
+    result = WorktreeAlarm.sweep_now(emit: true)
+
+    if result.alarm_count > 0 do
+      Logger.info(
+        "[runtime-reaper] worktree alarms scanned=#{result.scanned} " <>
+          "alarms=#{result.alarm_count} emitted=#{result.emitted}"
+      )
+    end
+
+    result
+  rescue
+    error ->
+      Logger.warning("[runtime-reaper] worktree alarm sweep failed: #{inspect(error)}")
+      :error
+  catch
+    :exit, reason ->
+      Logger.warning("[runtime-reaper] worktree alarm sweep exited: #{inspect(reason)}")
+      :error
   end
 
   defp do_sweep(opts) do

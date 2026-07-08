@@ -341,6 +341,72 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
              ] = workspace_tabs
     end
 
+    test "cross-workspace agent tab labels from its task title, not the worktree dir name" do
+      [with_title, no_title, aliased] =
+        SessionBarVM.workspace_session_tabs(
+          [
+            %{
+              id: "ws-a",
+              name: "agent-claude-adhoc-20260708033939",
+              path_label: "agent-worktrees/agent-claude-adhoc-20260708033939",
+              sessions: [
+                %{
+                  id: "sid-a",
+                  kind: :agent,
+                  agent_title: "Fix the session picker",
+                  href: "/workspaces/ws-a?session=sid-a",
+                  metadata: %{
+                    cwd: "/wt/agent-claude-adhoc-20260708033939",
+                    git_toplevel: "/wt/agent-claude-adhoc-20260708033939"
+                  }
+                }
+              ]
+            },
+            %{
+              id: "ws-b",
+              name: "agent-grok-adhoc-20260708040155",
+              path_label: "agent-worktrees/agent-grok-adhoc-20260708040155",
+              sessions: [
+                %{
+                  id: "sid-b",
+                  kind: :agent,
+                  href: "/workspaces/ws-b?session=sid-b",
+                  metadata: %{
+                    cwd: "/wt/agent-grok-adhoc-20260708040155",
+                    git_toplevel: "/wt/agent-grok-adhoc-20260708040155"
+                  }
+                }
+              ]
+            },
+            %{
+              id: "ws-c",
+              name: "agent-codex-adhoc-20260708021144",
+              path_label: "agent-worktrees/agent-codex-adhoc-20260708021144",
+              sessions: [
+                %{
+                  id: "sid-c",
+                  kind: :agent,
+                  agent_title: "some activity",
+                  href: "/workspaces/ws-c?session=sid-c",
+                  metadata: %{
+                    session_alias: "release-cut",
+                    cwd: "/wt/agent-codex-adhoc-20260708021144"
+                  }
+                }
+              ]
+            }
+          ],
+          "ws-current"
+        )
+
+      # task title beats the flattened dir name
+      assert with_title.label == "Fix the session picker"
+      # no title → falls back to the context (dir) label, not crashing
+      assert no_title.label == "agent-grok-adhoc-20260708040155"
+      # an explicit alias always wins over the task title
+      assert aliased.label == "release-cut"
+    end
+
     test "preserves cross-workspace preview pane signifiers" do
       workspace_tabs =
         SessionBarVM.workspace_session_tabs(
