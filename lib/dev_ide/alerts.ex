@@ -40,6 +40,20 @@ defmodule DevIDE.Alerts do
       channels: ["in_app", "push"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 300
+    },
+    # Operator-facing: a terminal owner's tmux window size is being fought by
+    # another writer (a stale draining instance that outlived a deploy, a
+    # duplicate owner, or an external client). This is the "narrow column"
+    # class made self-announcing — in-app drawer only, not a mobile push:
+    # it's a platform/operator signal, not an end-user run event. The wide
+    # dedupe window keeps a flapping deploy from spamming one card per owner.
+    "terminal.size_fight" => %{
+      type: "terminal_size_fight",
+      severity: "warning",
+      title: "Terminal size conflict",
+      channels: ["in_app"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 900
     }
   }
 

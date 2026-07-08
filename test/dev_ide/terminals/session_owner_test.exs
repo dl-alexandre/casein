@@ -1065,6 +1065,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       [:dev_ide, :terminals, :owner, :drift_fight]
     ])
 
+    # A sustained fight also raises a drawer alert through the audit spine.
+    :ok = DevIDE.Audit.subscribe("ws-drift-fight")
+
     # Play the fighting writer: after every re-assert, knock the window back
     # to 80x24 before the owner's next drift tick (the fake adapter's
     # resize_window records the re-asserted size, so a one-shot mismatch
@@ -1086,6 +1089,17 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     assert_receive {[:dev_ide, :terminals, :owner, :drift_fight], _ref, %{streak: 4},
                     %{applied: {120, 40}, actual: {80, 24}}}
+
+    # ...and exactly one alert-worthy audit event, scoped to the workspace so
+    # it deep-links from the notifications drawer.
+    assert_receive {:audit_event,
+                    %DevIDE.Audit.Event{
+                      action: "terminal.size_fight",
+                      workspace_id: "ws-drift-fight"
+                    } = alert_event}
+
+    assert DevIDE.Alerts.alert?(alert_event)
+    refute_receive {:audit_event, %DevIDE.Audit.Event{action: "terminal.size_fight"}}, 50
 
     # The window settling at the applied size resets the streak.
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {120, 40}})
