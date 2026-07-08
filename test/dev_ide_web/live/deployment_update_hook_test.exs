@@ -1,14 +1,11 @@
 defmodule DevIdeWeb.DeploymentUpdateHookTest do
   @moduledoc """
-  Covers the deploy-update banner wiring in `DeploymentUpdateHook`.
+  Covers deploy-state wiring in `DeploymentUpdateHook`.
 
   Two guarantees:
 
     * A runtime deploy push (`{:update_available, ...}` on `"deploy:updates"`)
-      flips the banner on, and it actually renders — it lives in the :live
-      layout (layouts/live.html.heex), which re-renders on connected diffs. (It
-      used to live in the root layout, which is static after the disconnected
-      mount, so the banner never appeared.)
+      flips the notifications bell dot and surfaces a System card in the drawer.
 
     * There is NO connect-time git-revision comparison. Whether a reconnected
       client needs a hard reload is answered by `static_changed?/1` (the
@@ -21,14 +18,22 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIDE.Integrations.Manager.Client
 
   setup do
     MemoryAdapter.clear()
 
+    prev_watch = System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH")
+    System.put_env("DEV_IDE_DEPLOY_POLLER_WATCH", "0")
+
+    on_exit(fn ->
+      if prev_watch,
+        do: System.put_env("DEV_IDE_DEPLOY_POLLER_WATCH", prev_watch),
+        else: System.delete_env("DEV_IDE_DEPLOY_POLLER_WATCH")
+    end)
+
     # Isolate from the box's real poller status file: on the devbox an actual
-    # deploy may be in flight, and its in-progress banner suppresses the
-    # update banner this file asserts on. Tests that need a status file set
+    # deploy may be in flight, and its in-progress signal suppresses the
+    # update card this file asserts on. Tests that need a status file set
     # their own path on top of this.
     prev_deploy = Application.get_env(:dev_ide, :deployment)
 
@@ -63,23 +68,26 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     :ok
   end
 
-  test "renders the update banner when a deploy push arrives at runtime", %{conn: conn} do
+  test "surfaces update state on the bell and in the drawer when a deploy push arrives at runtime",
+       %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
-    # No banner on a normal connect…
-    refute has_element?(view, "#deploy-update-banner")
+    assert :sys.get_state(view.pid).socket.assigns.update_available == false
 
-    # …until the draining instance broadcasts on the deploy topic. The banner is
-    # in the :live layout, so it is part of the tracked render.
     Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:update_available, "v2", 3})
 
-    assert has_element?(view, "#deploy-update-banner")
+    assert has_element?(view, "#notifications-bell-dot")
+    assert :sys.get_state(view.pid).socket.assigns.update_available == true
+
+    view |> element("#notifications-bell") |> render_click()
+
+    assert has_element?(view, "#deploy-system-update")
     assert render(view) =~ "New version available"
     assert render(view) =~ "3"
-    assert :sys.get_state(view.pid).socket.assigns.update_available == true
+    assert has_element?(view, "#deploy-update-now")
   end
 
-  test "renders the deploy failure banner when the poller status file reports a gate failure",
+  test "surfaces deploy failure on the bell and in the drawer when the poller status file reports a gate failure",
        %{conn: conn} do
     path =
       Path.join(
@@ -138,12 +146,16 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     {:ok, view, _html} = live(conn, ~p"/")
 
-    assert has_element?(view, "#deploy-failure-banner")
+    assert has_element?(view, "#notifications-bell-dot")
+
+    view |> element("#notifications-bell") |> render_click()
+
+    assert has_element?(view, "#deploy-system-failure")
     assert render(view) =~ "pre-push gate"
     assert render(view) =~ String.duplicate("c", 12)
   end
 
-  test "renders the in-progress banner when the poller status file reports an active deploy",
+  test "surfaces in-progress deploy state on the bell and in the drawer when the poller status file reports an active deploy",
        %{conn: conn} do
     path =
       Path.join(
@@ -200,22 +212,25 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     {:ok, view, _html} = live(conn, ~p"/")
 
-    assert has_element?(view, "#deploy-in-progress-banner")
+    assert has_element?(view, "#notifications-bell-dot")
+
+    view |> element("#notifications-bell") |> render_click()
+
+    assert has_element?(view, "#deploy-system-in-progress")
     assert render(view) =~ "Running pre-push gate"
     assert render(view) =~ String.duplicate("d", 12)
   end
 
-  test "a stale client_version connect param does NOT flag the banner (string check retired)",
+  test "a stale client_version connect param does NOT flag update state (string check retired)",
        %{conn: conn} do
     {:ok, view, _html} =
       conn
       |> put_connect_params(%{"client_version" => "some-stale-revision"})
       |> live(~p"/")
 
-    # The retired git-revision handshake would have flagged here; static_changed?
-    # now owns the "needs a hard reload" decision instead.
+    # Drift or poller status may still light the bell dot; this test only
+    # guards the retired connect-time update_available handshake.
     assert :sys.get_state(view.pid).socket.assigns.update_available == false
-    refute has_element?(view, "#deploy-update-banner")
   end
 
   defp restore_branch_env(key, nil), do: System.delete_env(key)
