@@ -239,6 +239,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             <NotificationsDrawer.notifications_bell
               id={"notifications-bell-" <> @workspace.id}
               unread_count={@notif_unread_count}
+              deploy_failure={@deploy_failure}
+              deploy_in_progress={@deploy_in_progress}
+              update_available={@update_available}
+              deploy_drift={@deploy_drift}
+              update_commits_behind={@update_commits_behind}
             />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
             <button
@@ -561,6 +566,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       admin?={@notif_admin?}
       device_stats={@notif_device_stats}
       devices={@notif_devices}
+      deploy_failure={@deploy_failure}
+      deploy_in_progress={@deploy_in_progress}
+      update_available={@update_available}
+      deploy_drift={@deploy_drift}
+      update_commits_behind={@update_commits_behind}
     />
     <.leader_help_overlay />
     """

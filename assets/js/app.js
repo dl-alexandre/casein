@@ -73,55 +73,25 @@ function applyDeployUpdate() {
   }
 }
 
-const DeployUpdateBanner = {
+const DeployUpdateNow = {
   mounted() {
-    // A background reconnect is far less disruptive than a full reload, so we
-    // can move much sooner than the old 45s gate — just avoid interrupting an
-    // active keystroke (see userIsActive).
-    this.idleMs = 8000
-    this.lastActivity = Date.now()
-    this.status = this.el.querySelector("[data-deploy-idle-status]")
-    this.onActivity = () => {
-      this.lastActivity = Date.now()
-      this.renderStatus()
-    }
-    this.interval = window.setInterval(() => this.maybeApply(), 1000)
-    ;["pointerdown", "keydown", "wheel", "touchstart", "focusin"].forEach((event) => {
-      window.addEventListener(event, this.onActivity, { passive: true, capture: true })
-    })
-    this.renderStatus()
+    this.onClick = () => applyDeployUpdate()
+    this.el.addEventListener("click", this.onClick)
   },
 
   destroyed() {
-    window.clearInterval(this.interval)
-    ;["pointerdown", "keydown", "wheel", "touchstart", "focusin"].forEach((event) => {
-      window.removeEventListener(event, this.onActivity, { capture: true })
-    })
+    this.el.removeEventListener("click", this.onClick)
+  },
+}
+
+const DeploySyncNow = {
+  mounted() {
+    this.onClick = () => window.location.reload()
+    this.el.addEventListener("click", this.onClick)
   },
 
-  maybeApply() {
-    if (this.userIsActive()) {
-      this.renderStatus()
-      return
-    }
-
-    applyDeployUpdate()
-  },
-
-  userIsActive() {
-    if (Date.now() - this.lastActivity < this.idleMs) return true
-
-    const active = document.activeElement
-    return Boolean(
-      active?.closest?.('[phx-hook="GhosttyTerminal"], input, textarea, select, [contenteditable="true"]')
-    )
-  },
-
-  renderStatus() {
-    if (!this.status) return
-
-    const remaining = Math.max(0, Math.ceil((this.idleMs - (Date.now() - this.lastActivity)) / 1000))
-    this.status.textContent = remaining > 0 ? `updating when idle in ${remaining}s` : "updating…"
+  destroyed() {
+    this.el.removeEventListener("click", this.onClick)
   },
 }
 
@@ -243,7 +213,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: devideLongPollFallbackMs(),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, WindowTabStrip},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, WindowTabStrip},
 })
 
 installPickerLinkCopy()

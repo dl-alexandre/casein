@@ -500,7 +500,14 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
                 {if @show_all, do: "showing: all users", else: "showing: mine"}
               </button>
             <% end %>
-            <NotificationsDrawer.notifications_bell unread_count={@notif_unread_count} />
+            <NotificationsDrawer.notifications_bell
+              unread_count={@notif_unread_count}
+              deploy_failure={@deploy_failure}
+              deploy_in_progress={@deploy_in_progress}
+              update_available={@update_available}
+              deploy_drift={@deploy_drift}
+              update_commits_behind={@update_commits_behind}
+            />
           </div>
         </div>
       </header>
@@ -846,6 +853,11 @@ defmodule DevIdeWeb.WorkspaceLive.Dashboard do
         admin?={@notif_admin?}
         device_stats={@notif_device_stats}
         devices={@notif_devices}
+        deploy_failure={@deploy_failure}
+        deploy_in_progress={@deploy_in_progress}
+        update_available={@update_available}
+        deploy_drift={@deploy_drift}
+        update_commits_behind={@update_commits_behind}
       />
     </div>
     """

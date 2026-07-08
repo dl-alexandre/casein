@@ -29,18 +29,38 @@ defmodule DevIdeWeb.NotificationsDrawer do
 
   attr :id, :string, default: "notifications-bell"
   attr :unread_count, :integer, required: true
+  attr :deploy_failure, :any, default: nil
+  attr :deploy_in_progress, :any, default: nil
+  attr :update_available, :boolean, default: false
+  attr :deploy_drift, :any, default: nil
+  attr :update_commits_behind, :integer, default: 0
 
   def notifications_bell(assigns) do
+    assigns =
+      assigns
+      |> assign(:deploy_severity, deploy_severity(assigns))
+      |> assign(:deploy_signal?, deploy_signal?(assigns))
+      |> assign(:bell_alert?, assigns.unread_count > 0 or deploy_signal?(assigns))
+
     ~H"""
     <button
       type="button"
       id={@id}
       phx-click="notifications:toggle"
       class="relative inline-flex items-center justify-center rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:p-0"
-      title="Notifications"
-      aria-label={"Notifications (" <> Integer.to_string(@unread_count) <> " unread)"}
+      title={bell_title(assigns)}
+      aria-label={bell_aria_label(assigns)}
     >
-      <.icon name="hero-bell" class="size-4" />
+      <.icon
+        name={if(@bell_alert?, do: "hero-bell-alert", else: "hero-bell")}
+        class={[
+          "size-4",
+          @bell_alert? && @deploy_signal? && @unread_count == 0 && @deploy_severity == :failure &&
+            "text-red-600",
+          @bell_alert? && @deploy_signal? && @unread_count == 0 && @deploy_severity == :warning &&
+            "text-amber-500"
+        ]}
+      />
       <span
         :if={@unread_count > 0}
         id={@id <> "-badge"}
@@ -48,6 +68,15 @@ defmodule DevIdeWeb.NotificationsDrawer do
       >
         {@unread_count}
       </span>
+      <span
+        :if={@deploy_signal? and @unread_count == 0}
+        id={@id <> "-dot"}
+        class={[
+          "absolute -right-0.5 -top-0.5 size-2 rounded-full",
+          deploy_dot_class(@deploy_severity)
+        ]}
+        aria-hidden="true"
+      ></span>
     </button>
     """
   end
@@ -64,12 +93,19 @@ defmodule DevIdeWeb.NotificationsDrawer do
   attr :admin?, :boolean, required: true
   attr :device_stats, :any, default: nil
   attr :devices, :list, default: []
+  attr :deploy_failure, :any, default: nil
+  attr :deploy_in_progress, :any, default: nil
+  attr :update_available, :boolean, default: false
+  attr :deploy_drift, :any, default: nil
+  attr :update_commits_behind, :integer, default: 0
 
   def notifications_drawer(assigns) do
     assigns =
       assigns
       |> assign(:event_types, @event_types)
       |> assign(:channels, @channels)
+      |> assign(:deploy_system_visible?, deploy_system_visible?(assigns))
+      |> assign(:drift_visible?, drift_visible?(assigns))
 
     ~H"""
     <div :if={@open} id="notifications-drawer" class="fixed inset-0 z-40 pointer-events-none">
@@ -130,6 +166,81 @@ defmodule DevIdeWeb.NotificationsDrawer do
         </div>
 
         <div class="min-h-0 flex-1 space-y-4 overflow-auto px-3 py-3">
+          <section :if={@deploy_system_visible?} id="deploy-system-section" class="space-y-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">System</h3>
+
+            <article
+              :if={@deploy_failure}
+              id="deploy-system-failure"
+              class="rounded border border-red-200 bg-red-50 p-3 text-red-950 shadow-sm"
+            >
+              <div class="text-sm font-semibold">Deploy failed</div>
+              <p class="mt-1 text-xs text-red-900/85">
+                {deploy_field(@deploy_failure, :message, "The on-box deploy poller aborted.")}
+              </p>
+              <p class="mt-2 font-mono text-[10px] text-red-900/70">
+                target: {deploy_field(@deploy_failure, :target_short) ||
+                  deploy_field(@deploy_failure, :target_sha, "unknown")}
+              </p>
+            </article>
+
+            <article
+              :if={@deploy_in_progress && !@deploy_failure}
+              id="deploy-system-in-progress"
+              class="flex items-center gap-2 rounded border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950 shadow-sm"
+            >
+              <span class="size-2 shrink-0 animate-pulse rounded-full bg-sky-500"></span>
+              <span>
+                {deploy_field(@deploy_in_progress, :message, "Deploy in progress…")}
+              </span>
+            </article>
+
+            <article
+              :if={@update_available && !@deploy_failure && !@deploy_in_progress}
+              id="deploy-system-update"
+              class="flex flex-wrap items-center gap-2 rounded border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950 shadow-sm"
+            >
+              <span class="size-2 shrink-0 rounded-full bg-indigo-500"></span>
+              <span class="font-medium">New version available</span>
+              <span
+                :if={@update_commits_behind > 0}
+                class="rounded-full bg-indigo-200 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-indigo-900"
+              >
+                {@update_commits_behind}
+              </span>
+              <button
+                id="deploy-update-now"
+                type="button"
+                phx-hook="DeployUpdateNow"
+                class="ml-auto rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+              >
+                Update now
+              </button>
+            </article>
+
+            <article
+              :if={@drift_visible?}
+              id="deploy-system-drift"
+              class="rounded border border-amber-200 bg-amber-50 p-3 text-amber-950 shadow-sm"
+            >
+              <div class="text-sm font-semibold">Running revision is not durable</div>
+              <p class="mt-1 text-xs text-amber-900/85">
+                {deploy_field(@deploy_drift, :message, "Running revision differs from origin/master.")}
+              </p>
+              <p class="mt-2 font-mono text-[10px] text-amber-900/70">
+                current: {deploy_field(@deploy_drift, :current, "unknown")}
+              </p>
+              <button
+                id="deploy-sync-now"
+                type="button"
+                phx-hook="DeploySyncNow"
+                class="mt-2 rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-500"
+              >
+                Sync now
+              </button>
+            </article>
+          </section>
+
           <%= if not @loaded? do %>
             <div
               id="notifications-loading"
@@ -327,6 +438,84 @@ defmodule DevIdeWeb.NotificationsDrawer do
       </aside>
     </div>
     """
+  end
+
+  defp deploy_severity(assigns) do
+    cond do
+      assigns[:deploy_failure] ->
+        :failure
+
+      assigns[:deploy_in_progress] || assigns[:update_available] || drift_visible?(assigns) ->
+        :warning
+
+      true ->
+        nil
+    end
+  end
+
+  defp deploy_signal?(assigns), do: deploy_severity(assigns) != nil
+
+  defp deploy_system_visible?(assigns) do
+    assigns[:deploy_failure] ||
+      assigns[:deploy_in_progress] ||
+      (assigns[:update_available] && !assigns[:deploy_failure] && !assigns[:deploy_in_progress]) ||
+      drift_visible?(assigns)
+  end
+
+  defp drift_visible?(assigns) do
+    case assigns[:deploy_drift] do
+      nil ->
+        false
+
+      drift ->
+        reason = drift[:reason] || drift["reason"]
+
+        reason == :manual_revision or
+          (is_nil(assigns[:deploy_failure]) and is_nil(assigns[:deploy_in_progress]))
+    end
+  end
+
+  defp deploy_dot_class(:failure), do: "bg-red-600"
+  defp deploy_dot_class(:warning), do: "bg-amber-500"
+  defp deploy_dot_class(_), do: "bg-zinc-400"
+
+  defp deploy_field(info, key, default \\ nil)
+
+  defp deploy_field(info, key, default) when is_map(info) do
+    Map.get(info, key) || Map.get(info, Atom.to_string(key)) || default
+  end
+
+  defp deploy_field(_, _key, default), do: default
+
+  defp bell_title(assigns) do
+    cond do
+      assigns.deploy_failure -> "Notifications — deploy failed"
+      assigns.deploy_in_progress -> "Notifications — deploy in progress"
+      assigns.update_available -> "Notifications — update available"
+      drift_visible?(assigns) -> "Notifications — revision drift"
+      true -> "Notifications"
+    end
+  end
+
+  defp bell_aria_label(assigns) do
+    base = "Notifications"
+
+    cond do
+      assigns.unread_count > 0 and deploy_signal?(assigns) ->
+        base <>
+          " (" <>
+          Integer.to_string(assigns.unread_count) <>
+          " unread, system alert active)"
+
+      assigns.unread_count > 0 ->
+        base <> " (" <> Integer.to_string(assigns.unread_count) <> " unread)"
+
+      deploy_signal?(assigns) ->
+        base <> " (system alert active)"
+
+      true ->
+        base
+    end
   end
 
   defp preference_enabled?(preference, type, channel) do

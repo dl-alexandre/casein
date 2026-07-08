@@ -118,15 +118,6 @@ body {
     padding-top: 0.25rem;
   }
 
-  #deploy-update-banner,
-  #deploy-in-progress-banner,
-  #deploy-failure-banner {
-    top: 1rem;
-  }
-
-  #deploy-drift-banner {
-    top: 5rem;
-  }
 }
 
 @supports (-webkit-touch-callout: none) {
