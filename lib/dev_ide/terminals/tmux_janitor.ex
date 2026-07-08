@@ -18,7 +18,7 @@ defmodule DevIDE.Terminals.TmuxJanitor do
 
   require Logger
 
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.{SessionOwner, Tmux}
 
   @prefix "devide_"
 
@@ -113,9 +113,14 @@ defmodule DevIDE.Terminals.TmuxJanitor do
             {:noreply, put_in(state.sessions[session], %{entry | kill_timer: nil})}
 
           String.starts_with?(session, @prefix) ->
-            Logger.info("TmuxJanitor: killing idle session #{session}")
-            _ = Tmux.kill(session)
-            {:noreply, %{state | sessions: Map.delete(state.sessions, session)}}
+            if SessionOwner.durable_shell_session?(session) do
+              Logger.info("TmuxJanitor: skipping idle kill for durable shell #{session}")
+              {:noreply, %{state | sessions: Map.delete(state.sessions, session)}}
+            else
+              Logger.info("TmuxJanitor: killing idle session #{session}")
+              _ = Tmux.kill(session)
+              {:noreply, %{state | sessions: Map.delete(state.sessions, session)}}
+            end
 
           true ->
             # Defensive: refuse to kill anything outside our namespace.

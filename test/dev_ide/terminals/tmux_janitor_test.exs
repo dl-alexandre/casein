@@ -152,6 +152,36 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
     assert MapSet.member?(entry.subscribers, self())
   end
 
+  test "kill_idle skips durable workspace shells backed by a live SessionOwner" do
+    Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
+    workspace_key = "jtest_ws"
+    sid = unique("shell_")
+    session = "devide_#{workspace_key}_#{sid}"
+
+    info = DevIDE.Terminals.Session.Info.new_shell("ws-id", sid)
+
+    assert {:ok, owner_pid} =
+             DynamicSupervisor.start_child(
+               DevIDE.Terminals.Supervisor,
+               {DevIDE.Terminals.SessionOwner, {"ws-id", info}}
+             )
+
+    on_exit(fn ->
+      if Process.alive?(owner_pid), do: GenServer.stop(owner_pid, :normal)
+    end)
+
+    :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
+
+    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(session)
+
+    TmuxJanitor.subscribe(session)
+    TmuxJanitor.unsubscribe(session)
+
+    assert eventually(fn ->
+             not Map.has_key?(TmuxJanitor.__state__().sessions, session)
+           end) == :ok
+  end
+
   test "session name without devide_ prefix is rejected at subscribe time" do
     # Guards against accidentally tracking — and later killing — the
     # dev-time `phoenix` or `mock_manager` tmux sessions.

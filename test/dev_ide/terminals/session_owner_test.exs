@@ -6,6 +6,23 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   alias DevIDE.Terminals.Session.Info
   alias DevIDE.Terminals.{CommandLog, SessionEvents}
 
+  test "durable_shell_session? matches a live shell owner's tmux session name" do
+    workspace_key = "ws-durable-guard"
+    sid = "shell-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-durable-guard-id", sid)
+    owner_pid = start_shell_owner("ws-durable-guard-id", info)
+
+    on_exit(fn ->
+      if Process.alive?(owner_pid), do: GenServer.stop(owner_pid, :normal)
+    end)
+
+    :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
+
+    expected = DevIDE.Terminals.Tmux.session_name(workspace_key, sid)
+    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(expected)
+    refute DevIDE.Terminals.SessionOwner.durable_shell_session?("devide_other_ws_other_sid")
+  end
+
   test "shell owners remain alive after explicit detach (no auto-stop)" do
     info = Terminals.new_shell("ws-shell-stop", "shell-keep-alive")
 
