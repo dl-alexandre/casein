@@ -18,6 +18,11 @@ import {
   termVar
 } from "./terminal_themes"
 import {BOLD, ITALIC, OVERLINE, effectiveCellFlags} from "./terminal_cell_flags.mjs"
+import {
+  copyOnSelectText,
+  normalizeCellSelection,
+  selectedTextFromRows
+} from "./terminal_cell_selection.mjs"
 import {backgroundLeadingPad} from "./terminal_bg_fill.mjs"
 import {
   canvasCoalesceEnabled,
@@ -611,40 +616,13 @@ function hasActiveSelectionWithin(pre) {
   }
 }
 
-function normalizeCellSelection(anchor, focus) {
-  if (!anchor || !focus) return null
-
-  if (focus.row < anchor.row || (focus.row === anchor.row && focus.col < anchor.col)) {
-    return { start: focus, end: anchor }
-  }
-
-  if (anchor.row === focus.row && anchor.col === focus.col) return null
-
-  return { start: anchor, end: focus }
-}
-
 function selectedTextFromCells(hook) {
-  const selection = normalizeCellSelection(hook.__selectionAnchor, hook.__selectionFocus)
-  if (!selection) return ""
-
-  const lines = []
-  const cols = hook.cols || 0
-  const rowsData = hook.rowsData || []
-
-  for (let row = selection.start.row; row <= selection.end.row; row += 1) {
-    const sourceRow = rowsData[row] || []
-    const startCol = row === selection.start.row ? selection.start.col : 0
-    const endCol = row === selection.end.row ? selection.end.col : cols - 1
-    let text = ""
-
-    for (let col = startCol; col <= endCol; col += 1) {
-      text += sourceRow[col]?.[0] || " "
-    }
-
-    lines.push(text.trimEnd())
-  }
-
-  return lines.join("\n")
+  return selectedTextFromRows(
+    hook.rowsData || [],
+    hook.cols || 0,
+    hook.__selectionAnchor,
+    hook.__selectionFocus
+  )
 }
 
 function nativeSelectionTextWithin(pre) {
@@ -2220,6 +2198,16 @@ const GhosttyTerminal = {
       if (point) {
         this.__selectionFocus = point
         renderCellSelection(this)
+      }
+
+      // Copy-on-select: desktop cell selection only (touch never sets
+      // __nativeSelecting — long-press keeps the system callout). Write the
+      // clipboard synchronously inside the mouseup gesture so Safari/async
+      // clipboard policies still allow the write; do not defer via rAF.
+      // Keep the highlight so the operator can see what was copied.
+      const copyText = copyOnSelectText(selectedTextFromCells(this))
+      if (copyText != null) {
+        copyTextSync(copyText, this.input)
       }
 
       afterSelectionSettles(() => {

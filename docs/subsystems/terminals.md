@@ -245,6 +245,10 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   to the human's clipboard. Server desktop helpers (`wl-copy`, `xclip`, `xsel`,
   `pbcopy`, etc.) are not the primary route because they target the server or
   container desktop environment, not the user's browser.
+- **Desktop drag-select is copy-on-select.** Finishing a cell selection (mouseup
+  after a real drag) writes the selection to the browser clipboard immediately
+  while keeping the highlight. Cmd/Ctrl+C, the context-menu Copy action, and
+  OSC52 still work. Touch keeps the system long-press callout (no auto-copy).
 - **Terminal shims are scoped, lazy, and self-healing for known tools.**
   `DevIDE.Terminals.Shims` materializes wrappers under
   `~/.devide/terminal-shims/`, installer backends under
