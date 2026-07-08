@@ -1,0 +1,71 @@
+name: Preview pane e2e
+
+# Daily visual-regression check for the preview-pane pipeline. Runs the
+# :preview_e2e suite (excluded from the normal gate) against the REAL playwright
+# control adapter + headless Chromium.
+#
+# Scheduled (not per-PR) on purpose: it's an environmental smoke check, not a
+# blocking gate. Pixel goldens can drift with a Chromium/font bump, so a nightly
+# run catches that without adding a Chromium launch to every PR.
+#
+# It MUST run on the self-hosted devbox runner: the golden PNG
+# (test/fixtures/preview_goldens/) is pixel-compared, so it only matches on the
+# same Chromium build + font stack it was generated on.
+#
+# Scheduled and manual-dispatch runs always execute the DEFAULT-BRANCH (master)
+# workflow + code, so there is no fork-PR exposure on the self-hosted runner.
+# NOTE: schedule triggers only fire from the workflow file on master — this takes
+# effect once merged, not from a PR branch.
+
+on:
+  schedule:
+    # 08:00 UTC daily — a quiet hour on the box.
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: preview-e2e
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preview-e2e:
+    runs-on: [self-hosted, devbox]
+    timeout-minutes: 30
+    env:
+      MIX_ENV: test
+      # Isolated test DB so this job never collides with the pr-gate's default
+      # `dev_ide_test` database if both run on the devbox at once
+      # (config/test.exs suffixes the DB name with MIX_TEST_PARTITION).
+      MIX_TEST_PARTITION: _pe2e
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Persistent self-hosted runner: keep the incremental build/deps cache
+          # (same rationale as the pr-gate job).
+          clean: false
+
+      - name: Set up toolchain, node bridge, and Chromium
+        shell: bash
+        run: |
+          # Non-login runner shell: put mise (reads .tool-versions) on PATH so
+          # `mise exec -- mix ...` resolves the pinned elixir/erlang.
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
+          mise exec -- mix deps.get
+          # Node Playwright bridge used by the :playwright adapter for
+          # screenshot + compare_snapshots.
+          mise exec -- mix preview.npm
+          # Ensure the Chromium build Playwright expects is installed (idempotent
+          # — a no-op once cached on the persistent runner).
+          ( cd priv/scripts && npx --yes playwright install chromium )
+
+      - name: Run preview-pane e2e (visual regression)
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          # Compare-only: never pass PREVIEW_UPDATE_GOLDEN here — a golden refresh
+          # is a deliberate local action, committed and reviewed like any change.
+          mise exec -- mix test --only preview_e2e

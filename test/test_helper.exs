@@ -18,7 +18,7 @@
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
 ExUnit.start(
-  exclude: [:pty, :tmux, :tidewave_available],
+  exclude: [:pty, :tmux, :tidewave_available, :preview_e2e],
   max_cases: 4,
   assert_receive_timeout: 5_000
 )
