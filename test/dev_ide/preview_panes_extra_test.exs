@@ -106,17 +106,86 @@ defmodule DevIDE.PreviewPanesExtraTest do
              })
   end
 
-  test "register with an untrusted external http url returns untrusted_url" do
+  test "register rejects non-http(s) schemes at the http_url guard" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_extra_untrusted"
     pane_id = "%32"
     seed_session!(session, pane_id)
 
-    # A non-loopback, non-allowed origin is rejected by validate_trusted_url/2.
     assert {:error, :untrusted_url} =
              PreviewPanes.register(%{
                "pane_id" => pane_id,
                "url" => "ftp://example.com/foo",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+  end
+
+  test "register accepts a well-formed external https url and persists it via the preview changeset" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_external_https"
+    pane_id = "%32a"
+    seed_session!(session, pane_id)
+    url = "https://cdn.external.example/dashboard"
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => url,
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    preview = Repo.get!(DevIDE.Previews.Preview, registration.preview_id)
+    assert preview.url == url
+    assert "https://cdn.external.example:443" in preview.metadata["allowed_origins"]
+  end
+
+  test "register accepts a well-formed external http url on a non-loopback host" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_external_http"
+    pane_id = "%32b"
+    seed_session!(session, pane_id)
+    url = "http://api.external.example:8080/v1"
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => url,
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    preview = Repo.get!(DevIDE.Previews.Preview, registration.preview_id)
+    assert preview.url == url
+    assert "http://api.external.example:8080" in preview.metadata["allowed_origins"]
+  end
+
+  test "register rejects https urls with an invalid port before the changeset" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_bad_port"
+    pane_id = "%32c"
+    seed_session!(session, pane_id)
+
+    assert {:error, :untrusted_url} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "https://external.example:99999/page",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+  end
+
+  test "register rejects https urls without a host before the changeset" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_no_host"
+    pane_id = "%32d"
+    seed_session!(session, pane_id)
+
+    assert {:error, :untrusted_url} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "https:///no-host",
                "cwd" => path,
                "tmux_session" => session
              })
@@ -212,6 +281,17 @@ defmodule DevIDE.PreviewPanesExtraTest do
     assert {:error, :not_found} = PreviewPanes.go_back("%missing-hist")
     assert {:error, :not_found} = PreviewPanes.go_forward("%missing-hist")
     assert {:error, :not_found} = PreviewPanes.reload("%missing-hist")
+  end
+
+  test "navigate to external https passes the http_url guard but may fail at control origin check" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_nav_external_https"
+    pane_id = "%38a"
+    seed_session!(session, pane_id)
+    _registration = register_pane!(session, pane_id, path)
+
+    result = PreviewPanes.navigate(pane_id, "https://external.example.com/page")
+    refute match?({:error, :untrusted_url}, result)
   end
 
   test "navigate to an untrusted preview url returns an error" do

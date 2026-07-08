@@ -167,6 +167,45 @@ defmodule DevIDE.PreviewsExtraTest do
     end
   end
 
+  describe "preview changeset external-host boundary" do
+    test "accepts an external https origin when self-included in allowed_origins metadata" do
+      url = "https://cdn.external.example/app"
+
+      changeset =
+        Preview.changeset(%Preview{}, %{
+          url: url,
+          workspace_id: @workspace.id,
+          metadata: %{"allowed_origins" => ["https://cdn.external.example:443"]}
+        })
+
+      assert changeset.valid?
+    end
+
+    test "rejects an external https url absent from allowed_origins" do
+      changeset =
+        Preview.changeset(%Preview{}, %{
+          url: "https://evil.external.example/app",
+          workspace_id: @workspace.id,
+          metadata: %{"allowed_origins" => ["http://localhost:4000"]}
+        })
+
+      refute changeset.valid?
+      assert "must be an http or https URL" in errors_on(changeset).url
+    end
+
+    test "rejects malformed https urls at the changeset" do
+      changeset =
+        Preview.changeset(%Preview{}, %{
+          url: "https:///no-host",
+          workspace_id: @workspace.id,
+          metadata: %{"allowed_origins" => ["https://evil.external.example:443"]}
+        })
+
+      refute changeset.valid?
+      assert "must be an http or https URL" in errors_on(changeset).url
+    end
+  end
+
   describe "update_url/4" do
     test "returns nil when the preview does not exist" do
       assert Previews.update_url(-1, "ws-extra-1", "http://localhost:4000") == nil

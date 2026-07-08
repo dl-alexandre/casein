@@ -1,5 +1,5 @@
 defmodule DevIDE.Release.Update.ManifestTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias DevIDE.Release.Metadata
   alias DevIDE.Release.Update.Manifest
@@ -45,6 +45,24 @@ defmodule DevIDE.Release.Update.ManifestTest do
     assert {:ok, manifest} = Manifest.decode(@manifest_json)
     assert manifest.channel == "canary"
     assert length(manifest.artifacts) == 1
+  end
+
+  test "fetch ensures :req is started before issuing the HTTP request" do
+    _ = Application.stop(:req)
+
+    bypass = Bypass.open()
+
+    Bypass.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, @manifest_json)
+    end)
+
+    assert {:ok, manifest} =
+             Manifest.fetch("http://127.0.0.1:#{bypass.port}/devide-canary.json")
+
+    assert manifest.channel == "canary"
+    assert Enum.any?(Application.started_applications(), fn {app, _, _} -> app == :req end)
   end
 
   test "fetch decodes application/json responses as raw manifest JSON" do
