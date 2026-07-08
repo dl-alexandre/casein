@@ -30,6 +30,35 @@ defmodule DevIDE.Signals.ContextTest do
     end)
   end
 
+  test "async propagates the caller snapshot into the task" do
+    Context.with_new(fn ->
+      snap = Context.snapshot()
+
+      task =
+        Context.async(fn ->
+          assert Context.current().trace_id == snap.trace_id
+          :done
+        end)
+
+      assert Task.await(task) == :done
+    end)
+  end
+
+  test "async/2 accepts an explicit Task.Supervisor" do
+    result =
+      Context.with_new(fn ->
+        task =
+          Context.async(DevIDE.TaskSupervisor, fn ->
+            Context.current().trace_id
+          end)
+
+        Task.await(task)
+      end)
+
+    assert is_binary(result)
+    assert Context.current() == nil
+  end
+
   test "snapshot survives a process boundary via with_snapshot" do
     Context.with_new(fn ->
       snap = Context.snapshot()
