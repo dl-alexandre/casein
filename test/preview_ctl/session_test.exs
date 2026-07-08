@@ -90,7 +90,7 @@ defmodule PreviewCtl.SessionTest do
     entry = put_runtime!(base)
     off_origin_link = ~s(a[href="https://example.com/news"])
 
-    assert {:error, :origin_not_allowed} =
+    assert {:error, {:origin_not_allowed, _observation}} =
              Session.click(entry.session.id, %{selector: off_origin_link})
 
     updated = Registry.get(entry.session.id)

@@ -64,9 +64,11 @@ defmodule PreviewCtl.Session do
     with {:ok, entry} <- fetch(session_id),
          :ok <- ensure_target(target),
          {:ok, adapter_state, observation} <-
-           entry.adapter_module.click(entry.adapter_state, target),
-         {:ok, entry} <- commit_state(session_id, entry, adapter_state, observation) do
-      {:ok, entry, observation}
+           entry.adapter_module.click(entry.adapter_state, target) do
+      case commit_state(session_id, entry, adapter_state, observation) do
+        {:ok, entry} -> {:ok, entry, observation}
+        {:error, :origin_not_allowed} -> {:error, {:origin_not_allowed, observation}}
+      end
     end
   end
 
