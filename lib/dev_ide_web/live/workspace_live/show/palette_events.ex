@@ -1,15 +1,19 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
-  # Command-palette handle_event clauses extracted verbatim from
+  # Command-palette and search handle_event clauses extracted verbatim from
   # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
-  # Show delegates every "palette:*" event here via a prefix delegator.
+  # Show delegates every "palette:*" and "search:*" event here via prefix
+  # delegators.
   # `palette:execute` resolves a palette item to a concrete event and dispatches
   # it back through `Show.handle_event/3` (the same call the inlined version made
   # via `__MODULE__.handle_event/3`).
   @moduledoc false
 
   import Phoenix.Component
+  import Phoenix.LiveView
+  import DevIdeWeb.WorkspaceLive.Show.Context
 
   alias DevIDE.CommandPalette.Usage
+  alias DevIDE.Workspaces.FileAccess
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -94,6 +98,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   def handle_event("palette:execute", %{"_top_id" => id}, socket),
     do: handle_event("palette:execute", %{"id" => id}, socket)
+
+  def handle_event("search:run", %{"query" => query}, socket) do
+    case context_host_loc(socket) do
+      {:ok, loc} ->
+        # Run the filesystem grep off the LiveView process so a slow/large
+        # search never blocks the channel. Prior results stay visible until
+        # handle_async(:run_search, ...) lands.
+        trimmed = String.trim(query)
+
+        {:noreply,
+         socket
+         |> assign(:search_query, query)
+         |> start_async(:run_search, fn -> FileAccess.search(loc, trimmed, []) end)}
+
+      _ ->
+        {:noreply, assign(socket, :search_state, {:error, :no_root})}
+    end
+  end
 
   def handle_event("palette:execute", %{"id" => id}, socket) do
     root =

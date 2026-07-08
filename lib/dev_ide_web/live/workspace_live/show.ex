@@ -817,23 +817,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("palette:" <> _ = event, params, socket),
     do: PaletteEvents.handle_event(event, params, socket)
 
-  def handle_event("search:run", %{"query" => query}, socket) do
-    case context_host_loc(socket) do
-      {:ok, loc} ->
-        # Run the filesystem grep off the LiveView process so a slow/large
-        # search never blocks the channel. Prior results stay visible until
-        # handle_async(:run_search, ...) lands.
-        trimmed = String.trim(query)
-
-        {:noreply,
-         socket
-         |> assign(:search_query, query)
-         |> start_async(:run_search, fn -> FileAccess.search(loc, trimmed, []) end)}
-
-      _ ->
-        {:noreply, assign(socket, :search_state, {:error, :no_root})}
-    end
-  end
+  def handle_event("search:" <> _ = event, params, socket),
+    do: PaletteEvents.handle_event(event, params, socket)
 
   def handle_event("artifact:refresh", _params, socket) do
     {:noreply, refresh_artifact_projects(socket)}
