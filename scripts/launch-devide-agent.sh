@@ -15,6 +15,8 @@ source "${ROOT}/scripts/lib/real-agent-bin.sh"
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
 # shellcheck source=lib/sidechat.sh
 source "${ROOT}/scripts/lib/sidechat.sh"
+# shellcheck source=lib/agent-skills.sh
+source "${ROOT}/scripts/lib/agent-skills.sh"
 
 usage() {
   cat <<'EOF'
@@ -380,6 +382,12 @@ case "$RUNTIME" in
       esac
     done
     set -- "${claude_user_args[@]}"
+
+    # Stage DevIDE-infra skills (e.g. delegate-to-grok) into this launch's Claude
+    # config home so agents in non-dev_ide workspaces still have them. enforce_owner_auth
+    # above sets CLAUDE_CONFIG_DIR when the workspace uses an owner profile; otherwise
+    # Claude reads the host global ~/.claude. Opt out with DEVIDE_AGENT_SKILLS=0.
+    agent_skills_install "${ROOT}/.claude/skills" "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
 
     # Source MCP from this workspace's isolated staging tree (one per workspace),
     # like GROK_HOME/CODEX_HOME do — never from a shared-checkout project file,
