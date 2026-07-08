@@ -21,7 +21,8 @@ defmodule DevIde.Supervision.PlatformServices do
       DevIDE.DeviceLinks.Reaper,
       DevIDE.Runtimes.Reaper,
       DevIDE.SignalBus.child_spec(),
-      DevIDE.Signals.AlertsRouter
+      DevIDE.Signals.AlertsRouter,
+      DevIDE.Signals.DegradationWatch
     ]
   end
 

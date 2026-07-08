@@ -54,6 +54,20 @@ defmodule DevIDE.Alerts do
       channels: ["in_app"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 900
+    },
+    # Platform/operator signal from `DevIDE.Signals.DegradationWatch`: an audit
+    # signal is storming with an identical degraded payload (e.g. a detector
+    # stuck reporting unknown/none). Loud on push too — a stuck detector is a
+    # latent bug, and this is the pattern the db_isolation issue hid behind.
+    # DegradationWatch already dedupes per episode, so a short window here is
+    # just belt-and-suspenders against a re-arm flap.
+    "signal.degradation_storm" => %{
+      type: "degradation_storm",
+      severity: "warning",
+      title: "Signal degradation storm",
+      channels: ["in_app", "push"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 300
     }
   }
 
