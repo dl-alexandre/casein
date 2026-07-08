@@ -62,6 +62,12 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
            |> assign(:deploy_failure, nil)
            |> assign(:deploy_in_progress, nil)}
 
+        {:deploy_reconnect}, socket ->
+          # The draining instance we're attached to has waited out its grace and
+          # wants us gone. Do a background LiveSocket reconnect (silent for
+          # code-only deploys) so the old node can drain and stop.
+          {:halt, push_event(socket, "devide:deploy_reconnect", %{})}
+
         _msg, socket ->
           {:cont, socket}
       end)

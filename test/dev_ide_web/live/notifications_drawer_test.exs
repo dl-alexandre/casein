@@ -291,4 +291,56 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
       _ -> :ok
     end
   end
+
+  describe "bell deploy severity" do
+    test "a deploy failure renders a red alert dot" do
+      html =
+        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+          id: "notifications-bell",
+          unread_count: 0,
+          deploy_failure: %{message: "gate failed"}
+        )
+
+      assert html =~ "hero-bell-alert"
+      assert html =~ ~s(id="notifications-bell-dot")
+      assert html =~ "bg-red-600"
+    end
+
+    test "an available update renders an amber (warning) dot, not red" do
+      html =
+        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+          id: "notifications-bell",
+          unread_count: 0,
+          update_available: true
+        )
+
+      assert html =~ ~s(id="notifications-bell-dot")
+      assert html =~ "bg-amber-500"
+      refute html =~ "bg-red-600"
+    end
+
+    test "unread notifications keep the numeric badge and suppress the deploy dot" do
+      html =
+        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+          id: "notifications-bell",
+          unread_count: 2,
+          update_available: true
+        )
+
+      assert html =~ ~s(id="notifications-bell-badge")
+      refute html =~ ~s(id="notifications-bell-dot")
+    end
+
+    test "no signals render a plain bell with no dot" do
+      html =
+        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+          id: "notifications-bell",
+          unread_count: 0
+        )
+
+      assert html =~ "hero-bell"
+      refute html =~ "hero-bell-alert"
+      refute html =~ ~s(id="notifications-bell-dot")
+    end
+  end
 end

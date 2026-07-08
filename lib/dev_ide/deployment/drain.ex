@@ -7,12 +7,20 @@ defmodule DevIDE.Deployment.Drain do
   waits for connections to drop to zero before stopping the VM. A hard
   timeout ensures the node eventually exits even if connections never
   fully close.
+
+  Because "New version available" is now a passive bell signal (clients no
+  longer auto-reload on it), connections rarely reach zero on their own. After
+  `@auto_reconnect_ms` still draining with clients attached, we broadcast
+  `{:deploy_reconnect}` so those clients do a background LiveSocket reconnect
+  onto the live instance — draining this node in ~seconds instead of lingering
+  until the hard timeout.
   """
 
   use GenServer
 
   @grace_ms 5_000
   @hard_ms 1_800_000
+  @auto_reconnect_ms 90_000
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -73,6 +81,7 @@ defmodule DevIDE.Deployment.Drain do
       draining: false,
       grace_ref: nil,
       hard_ref: nil,
+      auto_ref: nil,
       monitors: %{}
     }
 
@@ -112,8 +121,9 @@ defmodule DevIDE.Deployment.Drain do
     )
 
     hard_ref = Process.send_after(self(), :hard_timeout, @hard_ms)
+    auto_ref = Process.send_after(self(), :auto_reconnect, @auto_reconnect_ms)
 
-    state = %{state | draining: true, hard_ref: hard_ref}
+    state = %{state | draining: true, hard_ref: hard_ref, auto_ref: auto_ref}
     state = if state.count == 0, do: maybe_start_grace(state), else: state
 
     {:reply, :ok, state}
@@ -128,7 +138,9 @@ defmodule DevIDE.Deployment.Drain do
   end
 
   def handle_call(:reset_for_test, _from, state) do
-    for ref <- [state.grace_ref, state.hard_ref], ref, do: Process.cancel_timer(ref)
+    for ref <- [state.grace_ref, state.hard_ref, state.auto_ref],
+        ref,
+        do: Process.cancel_timer(ref)
 
     {:reply, :ok,
      %{
@@ -136,6 +148,7 @@ defmodule DevIDE.Deployment.Drain do
        draining: false,
        grace_ref: nil,
        hard_ref: nil,
+       auto_ref: nil,
        monitors: %{}
      }}
   end
@@ -167,6 +180,20 @@ defmodule DevIDE.Deployment.Drain do
 
   def handle_info(:hard_timeout, state) do
     {:noreply, %{state | hard_ref: nil}}
+  end
+
+  # Clients didn't move off this draining node on their own. Nudge the ones
+  # still attached to reconnect: a background LiveSocket reconnect re-dials the
+  # current.sock symlink onto the live instance (silent for code-only deploys),
+  # letting this node drain to zero and stop via the grace path rather than
+  # waiting out the hard timeout. No-op once connections have already drained.
+  def handle_info(:auto_reconnect, %{draining: true, count: count} = state) when count > 0 do
+    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:deploy_reconnect})
+    {:noreply, %{state | auto_ref: nil}}
+  end
+
+  def handle_info(:auto_reconnect, state) do
+    {:noreply, %{state | auto_ref: nil}}
   end
 
   # ---------------------------------------------------------------------------

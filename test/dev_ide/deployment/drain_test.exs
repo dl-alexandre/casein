@@ -46,6 +46,31 @@ defmodule DevIDE.Deployment.DrainTest do
     assert {:error, :already_draining} = Drain.start_drain(1)
   end
 
+  test "auto_reconnect nudges still-attached clients to move off the draining node" do
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    {:ok, holder} = start_supervised({Holder, []})
+    assert :ok = Drain.track(holder)
+
+    assert :ok = Drain.start_drain(0)
+    assert_receive {:update_available, _version, 0}
+
+    # Simulate the @auto_reconnect_ms timer firing without waiting it out.
+    send(Process.whereis(Drain), :auto_reconnect)
+    assert_receive {:deploy_reconnect}
+  end
+
+  test "auto_reconnect stays silent once connections have already drained" do
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+
+    assert :ok = Drain.start_drain(0)
+    assert_receive {:update_available, _version, 0}
+
+    # No tracked connections (count == 0): the grace/stop path owns shutdown,
+    # so there is no one to nudge.
+    send(Process.whereis(Drain), :auto_reconnect)
+    refute_receive {:deploy_reconnect}, 200
+  end
+
   test "guard_shared_write runs the callback when not draining" do
     assert Drain.guard_shared_write(fn -> :ran end) == :ran
   end
