@@ -29,6 +29,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   # under `window-size manual`. Cheap — one display-message per interval.
   @tmux_drift_check_interval_ms 30_000
 
+  # Bound synchronous tmux window_size on attach/drift so a wedged adapter
+  # cannot block the owner mailbox indefinitely.
+  @default_tmux_window_size_timeout_ms 2_000
+
   # Query-response classification (see `classify_query_response/1`). One tmux
   # query fans out to N viewer emulators; answers of the same class arriving
   # within this window are duplicates of one underlying query, not new answers.
@@ -865,12 +869,46 @@ defmodule DevIDE.Terminals.SessionOwner do
   # client). One warning per streak — the per-tick info lines continue.
   @drift_fight_threshold 4
 
+  defp tmux_window_size_timeout_ms do
+    Application.get_env(
+      :dev_ide,
+      :tmux_window_size_timeout_ms,
+      @default_tmux_window_size_timeout_ms
+    )
+  end
+
+  defp fetch_tmux_window_size(tmux, session) do
+    timeout = tmux_window_size_timeout_ms()
+    task = Task.async(fn -> tmux.window_size(session) end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} ->
+        result
+
+      nil ->
+        Logger.warning(
+          "tmux window_size timed out session=#{session} timeout_ms=#{timeout}",
+          kind: :drift_guard
+        )
+
+        :error
+
+      {:exit, reason} ->
+        Logger.warning(
+          "tmux window_size failed session=#{session} reason=#{inspect(reason)}",
+          kind: :drift_guard
+        )
+
+        :error
+    end
+  end
+
   defp do_assert_tmux_window_size(%{workspace_key: key, info: %{sid: sid}} = state, size) do
     {cols, rows} = size
     session = Tmux.session_name(key, sid)
     tmux = DevIDE.Terminals.tmux_adapter()
 
-    case tmux.window_size(session) do
+    case fetch_tmux_window_size(tmux, session) do
       {:ok, {^cols, ^rows}} ->
         %{state | tmux_drift_streak: 0}
 

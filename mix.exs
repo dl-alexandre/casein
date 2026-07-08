@@ -130,18 +130,8 @@ defmodule DevIde.MixProject do
       {:xamal, "~> 0.4", only: [:dev, :test], runtime: false},
       # systemd unit/timer + D-Bus control without shelling to systemctl —
       # on-topic for the self-hosted deploy poller. Pure Elixir, ships in prod.
-      {:systemdkit, "~> 0.1"},
-      # Feature libs (runtime) — inert until wired into app code:
-      {:phoenix_replay, "~> 0.2"},
-      {:ttycast, "~> 0.1"},
-      {:safe_rpc, "~> 0.1"},
-      {:unitctl, "~> 0.1"},
-      {:cringe, "~> 0.5"},
-      {:fsst, "~> 0.1"},
+      {:systemdkit, "~> 0.1"}
       # Code-intelligence / deploy-planning tools — dev/test only:
-      {:exograph, "~> 0.8", only: [:dev, :test], runtime: false},
-      {:quackdb, "~> 0.5", only: [:dev, :test], runtime: false},
-      {:host_kit, "0.1.0-beta.7", only: [:dev, :test], runtime: false}
     ]
   end
 

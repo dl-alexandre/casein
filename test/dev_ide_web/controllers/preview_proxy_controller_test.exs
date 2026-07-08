@@ -178,6 +178,33 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
+  test "forwards Authorization headers unchanged to the upstream", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
+        :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
+      end)
+
+    register_preview_port!(workspace_id, port)
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> put_req_header("authorization", "Bearer upstream-app-token")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    assert response(conn, 200) == "ok"
+    assert_receive {:preview_proxy_request, request}
+    assert request =~ "authorization: Bearer upstream-app-token"
+    refute request =~ "[FILTERED]"
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
   test "forwards request cookies and preserves repeated set-cookie responses", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 

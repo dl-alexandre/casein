@@ -139,6 +139,22 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Redact auth secrets from Phoenix request param logs. Phoenix router dispatch
+# logs params only (not Authorization headers); preview-proxy forwarding must
+# keep req_headers intact — do not mutate headers for logging.
+config :phoenix, :filter_parameters, [
+  "authorization",
+  "token",
+  "api_token",
+  "bearer",
+  "access_token",
+  "refresh_token",
+  "workspace_api_tokens",
+  "dev_ide_api_token",
+  "password",
+  "secret"
+]
+
 # Where DevIDE.Agents.TidewaveCapability resolves the locally-hosted Tidewave
 # base URL from. Configured as an MFA so contexts never reference the web
 # endpoint directly (keeps the context->web dependency inverted). Only fires
