@@ -1973,14 +1973,30 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
       {:ok, %{status: status}} when status in 200..399 or status in [401, 403] ->
         :ok
 
+      # A stopped devbox workspace has no active Caddy route, so its public
+      # subdomain falls through to DevIDE's preview-router, which answers 404
+      # with this marker body (scripts/preview-router.sh). That is "the app
+      # isn't running", NOT a bad URL — classify it distinctly so the caller
+      # knows to start the workspace rather than fix the URL.
+      {:ok, %{status: 404, body: body}}
+      when is_binary(body) and body != "" ->
+        if String.contains?(body, "No active preview environment") do
+          {:error,
+           %{
+             error: :workspace_app_not_running,
+             url: url,
+             status: 404,
+             message:
+               "Workspace app is not running — the devbox preview-router returned " <>
+                 "\"No active preview environment\" for #{url}. Start the workspace's app " <>
+                 "(its dev server), then retry; no preview pane was opened."
+           }}
+        else
+          preview_http_status_error(url, 404)
+        end
+
       {:ok, %{status: status}} ->
-        {:error,
-         %{
-           error: :preview_http_status,
-           url: url,
-           status: status,
-           message: "Preview URL responded with HTTP #{status}; no preview pane was opened."
-         }}
+        preview_http_status_error(url, status)
 
       {:error, reason} ->
         {:error,
@@ -1999,6 +2015,16 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
        error: :invalid_preview_url,
        url: inspect(url),
        message: "Preview URL must be a string; no preview pane was opened."
+     }}
+  end
+
+  defp preview_http_status_error(url, status) do
+    {:error,
+     %{
+       error: :preview_http_status,
+       url: url,
+       status: status,
+       message: "Preview URL responded with HTTP #{status}; no preview pane was opened."
      }}
   end
 

@@ -1672,6 +1672,32 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
+  test "invoke open_localhost classifies the preview-router fallback 404 as workspace_app_not_running" do
+    bypass = Bypass.open()
+    Application.put_env(:dev_ide, :preview_open_preflight, true)
+
+    # Mirrors what DevIDE's preview-router (scripts/preview-router.sh) returns
+    # when a stopped workspace's subdomain falls through Caddy.
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(conn, 404, "No active preview environment for localhost:#{bypass.port}")
+    end)
+
+    ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:error, %{error: :workspace_app_not_running, status: 404, message: message}} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    assert message =~ "not running"
+
+    # A plain 404 (no marker body) still classifies as the generic http-status error.
+    assert [%{id: "%1"}] = FakeState.get(:fake_tmux_panes, %{}) |> Map.fetch!(tmux_session)
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
   test "invoke open_localhost rejects disallowed ports" do
     assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{"port" => 9999})
