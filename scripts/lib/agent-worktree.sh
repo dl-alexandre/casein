@@ -152,23 +152,33 @@ agent_worktree_ensure() {
     return 0
   fi
 
-  if [[ -n "${DEVIDE_AGENT_WORKTREE_PATH:-}" && -d "${DEVIDE_AGENT_WORKTREE_PATH}" ]]; then
-    export DEVIDE_CHECKOUT="${DEVIDE_AGENT_WORKTREE_PATH}"
-    export DEVIDE_WORKTREE=1
-    agent_worktree_report_mcp "${DEVIDE_AGENT_WORKTREE_PATH}" "$runtime"
-    return 0
-  fi
+  # Adoption paths: a human launching *inside* an existing worktree reuses it.
+  # A SPAWNED worker (DEVIDE_AGENT_FORCE_FRESH_WORKTREE=1, set by
+  # spawn-agent-worker.sh) must NEVER adopt — adopting silently shares the
+  # orchestrator's checkout and branch, so the worker's git ops (including a
+  # tree-wide `git restore`/discard to satisfy a gate) hit other sessions' work.
+  # Force it past adoption to branch a fresh worktree off the primary; because
+  # agent_worktree_create runs `git -C <primary> worktree add`, it works even
+  # when PWD is a linked worktree.
+  if [[ "${DEVIDE_AGENT_FORCE_FRESH_WORKTREE:-0}" != "1" ]]; then
+    if [[ -n "${DEVIDE_AGENT_WORKTREE_PATH:-}" && -d "${DEVIDE_AGENT_WORKTREE_PATH}" ]]; then
+      export DEVIDE_CHECKOUT="${DEVIDE_AGENT_WORKTREE_PATH}"
+      export DEVIDE_WORKTREE=1
+      agent_worktree_report_mcp "${DEVIDE_AGENT_WORKTREE_PATH}" "$runtime"
+      return 0
+    fi
 
-  if agent_worktree_is_linked "${PWD}"; then
-    export DEVIDE_CHECKOUT="$(git -C "${PWD}" rev-parse --show-toplevel)"
-    export DEVIDE_WORKTREE=1
-    agent_worktree_report_mcp "${DEVIDE_CHECKOUT}" "$runtime"
-    return 0
-  fi
+    if agent_worktree_is_linked "${PWD}"; then
+      export DEVIDE_CHECKOUT="$(git -C "${PWD}" rev-parse --show-toplevel)"
+      export DEVIDE_WORKTREE=1
+      agent_worktree_report_mcp "${DEVIDE_CHECKOUT}" "$runtime"
+      return 0
+    fi
 
-  if ! agent_worktree_inside_primary "${PWD}"; then
-    export DEVIDE_WORKTREE=1
-    return 0
+    if ! agent_worktree_inside_primary "${PWD}"; then
+      export DEVIDE_WORKTREE=1
+      return 0
+    fi
   fi
 
   local primary path
