@@ -367,21 +367,26 @@ defmodule DevIDE.Terminals.SessionDirectory do
     case directory_inventory(opts) do
       {:ok, %{windows: windows_by_session, panes: panes_by_session}} ->
         Enum.map(tabs, fn tab ->
-          panes = session_entries(panes_by_session, tab)
+          {windows, panes} =
+            scope_to_worktree(
+              tab,
+              session_entries(windows_by_session, tab),
+              session_entries(panes_by_session, tab)
+            )
 
           tab
           |> put_session_cwd(panes)
-          |> put_session_windows(session_entries(windows_by_session, tab), panes)
+          |> put_session_windows(windows, panes)
           |> put_session_window_panes(panes)
         end)
 
       :error ->
         Enum.map(tabs, fn tab ->
-          panes = fallback_panes(tab)
+          {windows, panes} = scope_to_worktree(tab, fallback_windows(tab), fallback_panes(tab))
 
           tab
           |> put_session_cwd(panes)
-          |> put_session_windows(fallback_windows(tab), panes)
+          |> put_session_windows(windows, panes)
           |> put_session_window_panes(panes)
         end)
     end
@@ -393,6 +398,48 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp session_entries(_by_session, _tab), do: []
+
+  # A multi-agent run multiplexes many worktrees as sibling *windows* of one
+  # operator tmux session, and every agent's `report_worktree` records that
+  # shared session as its own `tmux_session_id`. Left unfiltered, each worktree
+  # tab would inherit the whole session's window list (the "N windows on every
+  # row" fan-out). When a worktree tab's session is demonstrably shared — some
+  # of its panes are rooted OUTSIDE this worktree — narrow it to just the
+  # window(s) actually rooted in this worktree. Tabs with no `worktree_path`
+  # (scanned shells, including the operator/multiplexer row itself) and
+  # sessions dedicated to a single worktree are left whole.
+  defp scope_to_worktree(%{metadata: %{worktree_path: wt}}, windows, panes)
+       when is_binary(wt) and wt != "" do
+    case Enum.split_with(panes, &pane_under_path?(&1, wt)) do
+      {_mine, []} ->
+        {windows, panes}
+
+      {mine, _foreign} ->
+        own_window_ids =
+          mine
+          |> Enum.map(&pane_window_id/1)
+          |> Enum.reject(&is_nil/1)
+          |> MapSet.new()
+
+        {Enum.filter(windows, &MapSet.member?(own_window_ids, window_id(&1))),
+         Enum.filter(panes, &MapSet.member?(own_window_ids, pane_window_id(&1)))}
+    end
+  end
+
+  defp scope_to_worktree(_tab, windows, panes), do: {windows, panes}
+
+  defp pane_under_path?(pane, root) do
+    case pane_current_path(pane) do
+      path when is_binary(path) and path != "" ->
+        path == root or String.starts_with?(path, root <> "/")
+
+      _ ->
+        false
+    end
+  end
+
+  defp window_id(window), do: Map.get(window, :id) || Map.get(window, "id")
+  defp pane_window_id(pane), do: Map.get(pane, :window_id) || Map.get(pane, "window_id")
 
   defp fallback_panes(%{tmux_session: tmux_session})
        when is_binary(tmux_session) and tmux_session != "",
