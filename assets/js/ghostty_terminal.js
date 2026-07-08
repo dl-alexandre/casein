@@ -35,6 +35,7 @@ import {
   saveStoredDisplayZoom
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
+import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -1153,6 +1154,8 @@ function renderPatched(hook, payload, upstreamRender) {
   // whose full frame resets the store.
   updateFileLinkStore(hook.__fileLinks, accepted.payload)
   refreshFileLinkHover(hook)
+  updateWebLinkStore(hook.__webLinks, accepted.payload)
+  refreshWebLinkHover(hook)
 
   paintAcceptedPayload(hook, accepted.payload, upstreamRender)
 }
@@ -1203,7 +1206,8 @@ function setFileLinkHover(hook, hover) {
   if (!layer) return
 
   layer.innerHTML = ""
-  if (hook.pre) hook.pre.style.cursor = hover ? "pointer" : ""
+  hook.__fileLinkHoverActive = Boolean(hover)
+  applyLinkCursor(hook)
   if (!hover) return
 
   const metrics = terminalCellMetrics(hook)
@@ -1323,6 +1327,190 @@ function teardownTerminalFileLinks(hook) {
   hook.__fileLinks = null
   hook.__fileLinkPointerEvent = null
   hook.__fileLinkModifier = false
+  hook.__fileLinkHoverActive = false
+  applyLinkCursor(hook)
+}
+
+// The <pre> cursor is shared between file-link and web-link hovers, and a cell
+// is only ever one or the other. Arbitrate from both flags each refresh so a
+// later refresh (web after file) can't clobber the other's pointer cursor.
+function applyLinkCursor(hook) {
+  if (!hook.pre) return
+  hook.pre.style.cursor =
+    hook.__fileLinkHoverActive || hook.__webLinkHoverActive ? "pointer" : ""
+}
+
+// --- Terminal web links --------------------------------------------------------
+//
+// Server-detected http(s) URLs in terminal output (payload.web_links, scanned
+// in PaneWorker). Unlike file links (Cmd/Ctrl-gated, selection-first), web
+// links are "web-like": the URL underlines on plain hover and a plain click
+// opens it in a new browser tab. Drag-select is preserved — the click only
+// fires on a mouseup that never dragged past a few pixels from the mousedown,
+// and the release must land on the same link.
+//
+// Ctrl/Cmd/Shift/Alt+Click is intentionally a no-op here (the mousedown guard
+// below records no pending click): Ctrl+Click is reserved for the future
+// "open in preview pane" gesture (slice 2).
+
+const WEB_LINK_DRAG_SLOP_PX = 4
+
+function ensureWebLinkLayer(hook) {
+  if (hook.__webLinkLayer?.isConnected) return hook.__webLinkLayer
+
+  const host = hook.screen || hook.el
+  if (!host) return null
+
+  const layer = document.createElement("div")
+  layer.setAttribute("aria-hidden", "true")
+  Object.assign(layer.style, {
+    position: "absolute",
+    inset: "0",
+    pointerEvents: "none",
+    zIndex: "6"
+  })
+  host.appendChild(layer)
+  hook.__webLinkLayer = layer
+  return layer
+}
+
+function webLinkAtEvent(hook, event) {
+  if (!terminalPreTarget(hook, event.target)) return null
+
+  const point = terminalCellPointFromEvent(hook, event)
+  if (!point) return null
+
+  const link = webLinkAt(hook.__webLinks, point.row, point.col)
+  return link ? {link, point} : null
+}
+
+// Underline the hovered URL and show a pointer cursor (no modifier required).
+// Drawn as a pointer-events-none overlay positioned from cell metrics, same as
+// setFileLinkHover.
+function setWebLinkHover(hook, hover) {
+  const layer = ensureWebLinkLayer(hook)
+  if (!layer) return
+
+  layer.innerHTML = ""
+  hook.__webLinkHoverActive = Boolean(hover)
+  applyLinkCursor(hook)
+  if (!hover) return
+
+  const metrics = terminalCellMetrics(hook)
+  if (!metrics) return
+
+  const underline = document.createElement("div")
+  Object.assign(underline.style, {
+    position: "absolute",
+    left: `${metrics.paddingLeft + hover.link.from * metrics.width}px`,
+    top: `${metrics.paddingTop + (hover.point.row + 1) * metrics.height - 2}px`,
+    width: `${(hover.link.to - hover.link.from + 1) * metrics.width}px`,
+    height: "1px",
+    background: termVar("--devide-term-link") || "rgba(137, 180, 250, 0.9)"
+  })
+  layer.appendChild(underline)
+}
+
+function refreshWebLinkHover(hook, event) {
+  if (event) hook.__webLinkPointerEvent = event
+
+  const pointer = hook.__webLinkPointerEvent
+  // Suppress the hover affordance mid drag-select: the user is selecting text,
+  // not aiming at a link.
+  if (!pointer || hook.__nativeSelecting) {
+    setWebLinkHover(hook, null)
+    return
+  }
+
+  setWebLinkHover(hook, webLinkAtEvent(hook, pointer))
+}
+
+// Slice 1: default activation opens the URL in a new browser tab. noopener
+// severs the opener reference (the new tab cannot reach window.opener).
+function openWebLink(url) {
+  if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return
+  window.open(url, "_blank", "noopener,noreferrer")
+}
+
+function installTerminalWebLinks(hook) {
+  hook.__webLinks = new Map()
+  hook.__webLinkPointerEvent = null
+  hook.__webLinkPendingClick = null
+  hook.__webLinkHoverActive = false
+
+  // Plain primary mousedown over a URL records a pending click. We do NOT
+  // preventDefault/stopImmediatePropagation — the native selection handler
+  // (registered after this one) still starts its selection, so a drag that
+  // begins on a link selects text as usual. The pending click is cancelled the
+  // moment the pointer drags past the slop (see mousemove).
+  hook.__onWebLinkMouseDown = (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      hook.__webLinkPendingClick = null
+      return
+    }
+
+    const hover = webLinkAtEvent(hook, e)
+    hook.__webLinkPendingClick = hover
+      ? {url: hover.link.url, x: e.clientX, y: e.clientY}
+      : null
+  }
+
+  hook.__onWebLinkMouseMove = (e) => {
+    const pending = hook.__webLinkPendingClick
+    if (
+      pending &&
+      Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > WEB_LINK_DRAG_SLOP_PX
+    ) {
+      hook.__webLinkPendingClick = null
+    }
+    refreshWebLinkHover(hook, e)
+  }
+
+  hook.__onWebLinkMouseLeave = () => {
+    hook.__webLinkPointerEvent = null
+    setWebLinkHover(hook, null)
+  }
+
+  // Window-level (capture) so a release that drifts off the <pre> still
+  // resolves the pending click. Opens only when the release lands back on the
+  // same link and the pointer never dragged past the slop.
+  hook.__onWebLinkMouseUp = (e) => {
+    const pending = hook.__webLinkPendingClick
+    hook.__webLinkPendingClick = null
+    if (!pending || e.button !== 0) return
+    if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > WEB_LINK_DRAG_SLOP_PX) return
+
+    const hover = webLinkAtEvent(hook, e)
+    if (!hover || hover.link.url !== pending.url) return
+
+    openWebLink(pending.url)
+  }
+
+  hook.el.addEventListener("mousedown", hook.__onWebLinkMouseDown, true)
+  hook.el.addEventListener("mousemove", hook.__onWebLinkMouseMove)
+  hook.el.addEventListener("mouseleave", hook.__onWebLinkMouseLeave)
+  window.addEventListener("mouseup", hook.__onWebLinkMouseUp, true)
+}
+
+function teardownTerminalWebLinks(hook) {
+  if (hook.__onWebLinkMouseDown) {
+    hook.el.removeEventListener("mousedown", hook.__onWebLinkMouseDown, true)
+    hook.el.removeEventListener("mousemove", hook.__onWebLinkMouseMove)
+    hook.el.removeEventListener("mouseleave", hook.__onWebLinkMouseLeave)
+    window.removeEventListener("mouseup", hook.__onWebLinkMouseUp, true)
+    hook.__onWebLinkMouseDown = null
+    hook.__onWebLinkMouseMove = null
+    hook.__onWebLinkMouseLeave = null
+    hook.__onWebLinkMouseUp = null
+  }
+
+  hook.__webLinkLayer?.remove()
+  hook.__webLinkLayer = null
+  hook.__webLinks = null
+  hook.__webLinkPointerEvent = null
+  hook.__webLinkPendingClick = null
+  hook.__webLinkHoverActive = false
+  applyLinkCursor(hook)
 }
 
 function refreshHookTheme(hook) {
@@ -1947,6 +2135,11 @@ const GhosttyTerminal = {
     // Cmd/Ctrl+Click link handler sees the event first.
     installTerminalFileLinks(this)
 
+    // Web links register their capture-phase mousedown before the selection
+    // handler too (so it runs first), but deliberately don't suppress it — a
+    // drag still selects; a plain click resolves to "open" on mouseup.
+    installTerminalWebLinks(this)
+
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
     // <pre>, and the vendor disables its own cell selection when tmux enables
@@ -2501,6 +2694,7 @@ const GhosttyTerminal = {
     }
 
     teardownTerminalFileLinks(this)
+    teardownTerminalWebLinks(this)
 
     this.__clipboardCleanup?.()
     this.__clipboardCleanup = null
