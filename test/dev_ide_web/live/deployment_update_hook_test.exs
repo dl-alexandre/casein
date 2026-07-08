@@ -157,6 +157,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
       "outcome" => "in_progress",
       "target_sha" => String.duplicate("d", 40),
       "target_short" => String.duplicate("d", 12),
+      "phase" => "gate",
       "started_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
@@ -200,7 +201,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     {:ok, view, _html} = live(conn, ~p"/")
 
     assert has_element?(view, "#deploy-in-progress-banner")
-    assert render(view) =~ "Deploying"
+    assert render(view) =~ "Running pre-push gate"
     assert render(view) =~ String.duplicate("d", 12)
   end
 

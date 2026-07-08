@@ -13,6 +13,7 @@ defmodule DevIDE.Deployment.LastDeploy do
 
   @default_path "/run/devide/last-deploy.json"
   @stale_in_progress_ms 2_700_000
+  @phase_stale_in_progress_ms %{"activate" => 600_000}
 
   @type outcome :: :idle | :in_progress | :failed | :success | :unknown
   @type banner_info :: %{
@@ -197,6 +198,19 @@ defmodule DevIDE.Deployment.LastDeploy do
     }
   end
 
+  defp human_message(%{"outcome" => "in_progress", "phase" => "gate"} = record),
+    do: progress_message(record, "Running pre-push gate")
+
+  defp human_message(%{"outcome" => "in_progress", "phase" => "build"} = record),
+    do: progress_message(record, "Building release")
+
+  defp human_message(%{"outcome" => "in_progress", "phase" => "activate"} = record),
+    do: progress_message(record, "Activating release")
+
+  defp human_message(%{"outcome" => "in_progress", "phase" => phase} = record)
+       when is_binary(phase) and phase != "",
+       do: progress_message(record, "Deploy #{phase}")
+
   defp human_message(%{"outcome" => "failed", "phase" => "gate", "reason" => reason})
        when is_binary(reason) and reason != "",
        do: "Deploy failed at pre-push gate: #{reason}"
@@ -214,23 +228,46 @@ defmodule DevIDE.Deployment.LastDeploy do
 
   defp human_message(%{"outcome" => "failed"}), do: "Deploy failed"
 
-  defp human_message(%{"outcome" => "in_progress", "target_short" => short})
-       when is_binary(short) and short != "",
-       do: "Deploying #{short}…"
-
-  defp human_message(%{"outcome" => "in_progress"}), do: "Deploy in progress…"
+  defp human_message(%{"outcome" => "in_progress"} = record),
+    do: progress_message(record, "Deploying")
 
   defp human_message(_), do: "Deploy status updated"
+
+  defp progress_message(record, label) do
+    [label, target_fragment(record), elapsed_fragment(record)]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" ")
+    |> Kernel.<>("…")
+  end
+
+  defp target_fragment(%{"target_short" => short}) when is_binary(short) and short != "",
+    do: short
+
+  defp target_fragment(%{"target_sha" => sha}) when is_binary(sha) and sha != "",
+    do: short_sha(sha)
+
+  defp target_fragment(_), do: nil
+
+  defp elapsed_fragment(%{"started_at" => started_at}) when is_binary(started_at) do
+    with {:ok, dt, _} <- DateTime.from_iso8601(started_at),
+         seconds when seconds >= 60 <- DateTime.diff(DateTime.utc_now(), dt, :second) do
+      "#{div(seconds, 60)}m"
+    else
+      _ -> nil
+    end
+  end
+
+  defp elapsed_fragment(_), do: nil
 
   defp actionable_target?(target, deployed, remote_sha) do
     is_binary(target) and target != "" and not sha_matches?(target, deployed) and
       sha_matches?(target, remote_sha)
   end
 
-  defp stale_in_progress?(%{"started_at" => started_at}) when is_binary(started_at) do
+  defp stale_in_progress?(%{"started_at" => started_at} = record) when is_binary(started_at) do
     case DateTime.from_iso8601(started_at) do
       {:ok, dt, _} ->
-        DateTime.diff(DateTime.utc_now(), dt, :millisecond) > stale_in_progress_ms()
+        DateTime.diff(DateTime.utc_now(), dt, :millisecond) > stale_in_progress_ms(record)
 
       _ ->
         false
@@ -238,6 +275,15 @@ defmodule DevIDE.Deployment.LastDeploy do
   end
 
   defp stale_in_progress?(_), do: false
+
+  defp stale_in_progress_ms(%{"phase" => phase}) when is_binary(phase) do
+    :dev_ide
+    |> Application.get_env(:deployment, [])
+    |> Keyword.get(:phase_stale_in_progress_ms, @phase_stale_in_progress_ms)
+    |> Map.get(phase, stale_in_progress_ms())
+  end
+
+  defp stale_in_progress_ms(_record), do: stale_in_progress_ms()
 
   defp stale_in_progress_ms do
     config(:stale_in_progress_ms, @stale_in_progress_ms)

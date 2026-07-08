@@ -57,7 +57,7 @@ write_deploy_status() {
   fi
 
   if [ "$outcome" = "in_progress" ]; then
-    DEPLOY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    DEPLOY_STARTED_AT="${DEPLOY_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
     export DEPLOY_STARTED_AT
     export DEPLOY_IN_FLIGHT=1
   else
@@ -311,6 +311,7 @@ fi
 
 # --- test gate (same suite as pre-push hook) ---------------------------------
 setup_build_cache
+write_deploy_status in_progress "$target" gate "" "$deployed_full"
 log "using deploy cache ${CACHE_ROOT}"
 log "running pre-push gate in worktree ${target_short}"
 if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
@@ -321,6 +322,7 @@ if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
 fi
 
 # --- build + activate --------------------------------------------------------
+write_deploy_status in_progress "$target" build "" "$deployed_full"
 log "building release from ${target_short}"
 if ! ( cd "$WORKTREE" && ./scripts/build-release.sh ); then
   log "error: build-release.sh failed — aborting deploy"
@@ -342,6 +344,7 @@ tarball="$(mktemp /tmp/dev_ide-autodeploy-XXXXXX.tgz)"
 trap 'rm -f "$tarball"' EXIT
 tar -C "$WORKTREE/release-out" -czf "$tarball" .
 
+write_deploy_status in_progress "$target" activate "" "$deployed_full"
 log "activating ${target_short} via deploy-devbox-release.sh"
 if ! "$WORKTREE/scripts/deploy-devbox-release.sh" "$tarball" "$target"; then
   log "error: deploy-devbox-release.sh failed — aborting deploy"

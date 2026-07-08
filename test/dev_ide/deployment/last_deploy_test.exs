@@ -46,13 +46,36 @@ defmodule DevIDE.Deployment.LastDeployTest do
     record = %{
       "outcome" => "in_progress",
       "target_sha" => @target,
+      "phase" => "build",
       "started_at" => DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
-    assert {:in_progress, %{target_sha: target_sha}} =
+    assert {:in_progress, %{target_sha: target_sha, message: message}} =
              LastDeploy.assess(@deployed, {:ok, @remote}, record)
 
     assert target_sha == @target
+    assert message =~ "Building release"
+    assert message =~ String.slice(@target, 0, 12)
+  end
+
+  test "in_progress messages include elapsed minutes once deploy has been running" do
+    started_at =
+      DateTime.utc_now()
+      |> DateTime.add(-185, :second)
+      |> DateTime.to_iso8601()
+
+    record = %{
+      "outcome" => "in_progress",
+      "target_sha" => @target,
+      "phase" => "gate",
+      "started_at" => started_at
+    }
+
+    assert {:in_progress, %{message: message}} =
+             LastDeploy.assess(@deployed, {:ok, @remote}, record)
+
+    assert message =~ "Running pre-push gate"
+    assert message =~ "3m"
   end
 
   test "assess ignores stale in_progress records" do
@@ -63,6 +86,25 @@ defmodule DevIDE.Deployment.LastDeployTest do
     }
 
     assert :idle = LastDeploy.assess(@deployed, {:ok, @remote}, record)
+  end
+
+  test "assess treats activation records as stale before long build records" do
+    started_at =
+      DateTime.utc_now()
+      |> DateTime.add(-700, :second)
+      |> DateTime.to_iso8601()
+
+    activate_record = %{
+      "outcome" => "in_progress",
+      "target_sha" => @target,
+      "phase" => "activate",
+      "started_at" => started_at
+    }
+
+    build_record = %{activate_record | "phase" => "build"}
+
+    assert :idle = LastDeploy.assess(@deployed, {:ok, @remote}, activate_record)
+    assert {:in_progress, _info} = LastDeploy.assess(@deployed, {:ok, @remote}, build_record)
   end
 
   test "assess returns idle when the target already matches the running revision" do
