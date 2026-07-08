@@ -39,8 +39,22 @@ mapfile -t _worktrees < <(git worktree list --porcelain 2>/dev/null | awk '/^wor
 primary="${_worktrees[0]:-}"
 self="$(pwd -P)"
 
-# current_path of every pane in the DevIDE tmux server = "something is running here".
-live_paths="$(tmux -L "$TMUX_LABEL" list-panes -a -F '#{pane_current_path}' 2>/dev/null | sort -u || true)"
+# current_path of every pane in the DevIDE tmux server = "something is running
+# here". This is the safety probe: if we CANNOT reach tmux we must not delete,
+# because every worktree would look idle and a live one could be removed.
+tmux_ok=0
+if live_paths="$(tmux -L "$TMUX_LABEL" list-panes -a -F '#{pane_current_path}' 2>/dev/null)"; then
+  live_paths="$(sort -u <<<"$live_paths")"
+  tmux_ok=1
+else
+  live_paths=""
+fi
+
+if [[ "$APPLY" == "1" && "$tmux_ok" != "1" ]]; then
+  echo "error: cannot reach tmux (-L $TMUX_LABEL) to verify which worktrees are live." >&2
+  echo "       refusing to delete anything. (set DEVIDE_TMUX_LABEL, or run as the tmux owner)" >&2
+  exit 3
+fi
 
 is_live() { # $1 = worktree path
   [[ -n "$live_paths" ]] && grep -qF -- "$1" <<<"$live_paths"

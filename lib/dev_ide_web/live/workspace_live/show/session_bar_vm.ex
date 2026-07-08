@@ -427,19 +427,57 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp cross_workspace_label(session, info, summary) when is_map(info) do
     context_label = session_tab_label(info)
+    agent_title = cross_workspace_agent_title(session)
 
-    if context_label in ["workspace", "Shell"] do
-      [
-        Map.get(session, :cwd_label),
-        Map.get(session, "cwd_label"),
-        Map.get(session, :label),
-        Map.get(session, "label"),
-        summary_path_basename(summary)
-      ]
-      |> Enum.find(&(is_binary(&1) and &1 != "")) || context_label
-    else
-      context_label
+    cond do
+      # An explicit operator/agent alias is deliberate naming — always keep it.
+      session_alias?(session) ->
+        context_label
+
+      # For an agent worktree the context label is just its flattened dir name
+      # (`agent-<tool>-adhoc-<stamp>`); the task title is what it is actually
+      # doing, which is what the operator wants to recognise it by.
+      agent_session?(session) and is_binary(agent_title) ->
+        agent_title
+
+      # Generic label with no better signal: fall through cwd → path basename.
+      context_label in ["workspace", "Shell", "Agent"] ->
+        [
+          agent_title,
+          Map.get(session, :cwd_label),
+          Map.get(session, "cwd_label"),
+          Map.get(session, :label),
+          Map.get(session, "label"),
+          summary_path_basename(summary)
+        ]
+        |> Enum.find(&(is_binary(&1) and &1 != "")) || context_label
+
+      true ->
+        context_label
     end
+  end
+
+  defp cross_workspace_agent_title(session) do
+    case Map.get(session, :agent_title) || Map.get(session, "agent_title") do
+      title when is_binary(title) ->
+        case String.trim(title) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp agent_session?(session) do
+    (Map.get(session, :kind) || Map.get(session, "kind")) == :agent
+  end
+
+  defp session_alias?(session) do
+    metadata = Map.get(session, :metadata) || Map.get(session, "metadata") || %{}
+    value = Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias")
+    is_binary(value) and String.trim(value) != ""
   end
 
   defp summary_path_basename(summary) do
