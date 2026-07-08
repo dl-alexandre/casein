@@ -180,6 +180,8 @@ defmodule DevIDE.ArtifactProjects do
       preview_url: project.preview_url,
       preview_server: project.preview_server,
       public_url: public_url(project),
+      commit: commit_sha(project),
+      retired: retired?(project),
       prompt_history: project.prompt_history,
       metadata: project.metadata || %{},
       created_at: iso(project.created_at),
@@ -187,6 +189,60 @@ defmodule DevIDE.ArtifactProjects do
       preview_open_arguments: preview_open_arguments(project)
     }
   end
+
+  @doc """
+  Human-facing share metadata for the durable public URL — what a teammate sees
+  when the link is pasted in a PR: the title, the branch/commit it was cut from,
+  whether it is still live, and when it last changed. Safe to expose to any
+  viewer already authorized for the artifact.
+  """
+  @spec share_metadata(Project.t()) :: %{
+          title: String.t(),
+          branch: String.t() | nil,
+          commit: String.t() | nil,
+          status: String.t(),
+          retired: boolean(),
+          created_at: String.t() | nil,
+          updated_at: String.t() | nil
+        }
+  def share_metadata(%Project{} = project) do
+    %{
+      title: project.name,
+      branch: project.branch,
+      commit: commit_sha(project),
+      status: project.status,
+      retired: retired?(project),
+      created_at: iso(project.created_at),
+      updated_at: iso(project.updated_at)
+    }
+  end
+
+  @doc """
+  True when the artifact can no longer be served from disk — its runtime was
+  expired or cleaned, or its worktree is gone. Lets the public route tell a
+  retired artifact (show the owner a landing page) apart from a live artifact
+  with a merely-missing sub-path (a plain 404).
+  """
+  @spec retired?(Project.t()) :: boolean()
+  def retired?(%Project{status: status}) when status in ["expired", "cleaned"], do: true
+  def retired?(%Project{worktree_path: path}) when is_binary(path), do: not File.dir?(path)
+  def retired?(_project), do: true
+
+  @doc """
+  HEAD sha of the artifact's worktree, or nil when the worktree is gone. Part of
+  the share metadata pasted alongside a public artifact link.
+  """
+  @spec commit_sha(Project.t()) :: String.t() | nil
+  def commit_sha(%Project{worktree_path: path}) when is_binary(path) do
+    if File.dir?(path) do
+      case current_sha(path) do
+        {:ok, sha} -> sha
+        _ -> nil
+      end
+    end
+  end
+
+  def commit_sha(_project), do: nil
 
   # Durable, login-gated URL served by DevIdeWeb.ArtifactProjectController straight
   # from the worktree — safe to paste in a PR (references stable ids, not the
