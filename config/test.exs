@@ -81,6 +81,17 @@ config :dev_ide,
        :deployment_instance_dir,
        Path.join(System.tmp_dir!(), "devide-test-instances-#{System.pid()}")
 
+# Neutralize SessionOwner.superseded?/0 in tests. It compares the inherited
+# DEVIDE_HTTP_SOCKET against whatever /run/devide/current.sock resolves to;
+# devbox test VMs inherit a real DEVIDE_HTTP_SOCKET from the spawning canary, so
+# without this every test owner would read as "superseded" and stop asserting
+# tmux sizes. Point the seam at a path that isn't a symlink → read_link fails →
+# not superseded. The dedicated superseded? test overrides this with a temp
+# symlink it controls.
+config :dev_ide,
+       :deployment_current_socket,
+       Path.join(System.tmp_dir!(), "devide-test-no-current-#{System.pid()}.sock")
+
 # Keep runtime-minted workspace tokens (DevIDE.Agents.WorkspaceTokens) out of
 # the real ~/.devide store when tests exercise the materializer/pane env.
 config :dev_ide,

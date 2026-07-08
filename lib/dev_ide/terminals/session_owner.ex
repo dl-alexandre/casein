@@ -846,15 +846,52 @@ defmodule DevIDE.Terminals.SessionOwner do
     :exit, _ -> false
   end
 
+  @current_socket "/run/devide/current.sock"
+
+  # True when a newer instance owns the shared traffic socket — `current.sock`
+  # no longer resolves to ours. A superseded instance that never received (or
+  # lost) its drain signal is not `draining?`, yet its SessionOwners share the
+  # same tmux sessions as the live instance; if it keeps re-asserting window
+  # sizes it drift-fights the live owner (the zombie-canary bug). Standing down
+  # here is defense in depth behind the deploy's drain/stop of old instances.
+  #
+  # Conservative by construction: only true when we positively have our own
+  # managed socket AND `current.sock` resolves to a DIFFERENT one. Dev/test and
+  # the legacy service (no DEVIDE_HTTP_SOCKET) read as not-superseded, as does a
+  # brand-new instance before the deploy swaps `current.sock` to it (it is
+  # legitimately not yet the owner). Reads the env directly — no cross-process
+  # call on this per-owner 30s hot path.
+  defp superseded? do
+    case System.get_env("DEVIDE_HTTP_SOCKET") do
+      our_socket when is_binary(our_socket) and our_socket != "" ->
+        case File.read_link(current_socket_path()) do
+          {:ok, ^our_socket} -> false
+          {:ok, _other_socket} -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  # Seam for tests: point the "which socket is live" symlink at a temp file the
+  # test controls. Defaults to the real path.
+  defp current_socket_path do
+    Application.get_env(:dev_ide, :deployment_current_socket, @current_socket)
+  end
+
   # Compare tmux's live window against `applied_size` and re-assert when an
   # external client (SSH attach, etc.) moved it. Cheap guard under manual mode.
   defp assert_tmux_window_size(
          %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
        )
        when is_binary(key) and is_binary(sid) and is_tuple(size) do
-    if draining?() do
-      # See start_tmux_resize/2: a draining instance's applied_size is stale by
-      # definition — the replacement instance owns the shared size now.
+    if draining?() or superseded?() do
+      # draining: see start_tmux_resize/2 — a draining instance's applied_size
+      # is stale by definition; the replacement instance owns the shared size.
+      # superseded: a newer instance owns current.sock and these tmux sessions;
+      # re-asserting here would drift-fight the live owner.
       state
     else
       do_assert_tmux_window_size(state, size)

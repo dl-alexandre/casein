@@ -2,10 +2,14 @@
 #
 # Deploy a prebuilt DevIDE release tarball on the devbox host.
 #
-# Intended caller:
+# Intended caller: run as a FILE PATH from a repo checkout so the sibling
+# scripts/lib/canary-drain.sh is resolvable, e.g.
 #   scripts/build-release.sh
 #   tar -C release-out -czf /tmp/dev_ide-release.tgz .
-#   ssh devbox@host 'bash -s' -- /tmp/dev_ide-release.tgz < scripts/deploy-devbox-release.sh
+#   "$WORKTREE/scripts/deploy-devbox-release.sh" /tmp/dev_ide-release.tgz <rev>
+# (scripts/deploy-poller.sh and scripts/deploy-local.sh both invoke it this
+# way). Piping the body via `bash -s < …` is unsupported now that it sources a
+# lib — BASH_SOURCE would not resolve.
 
 set -euo pipefail
 
@@ -39,58 +43,20 @@ log() {
   printf '>>> %s\n' "$*"
 }
 
-# Stale instance JSON records store a PID that may be reused by unrelated
-# processes (mix test, opencode, etc.). Require an /opt/devide/release beam.
-dev_ide_release_pid_alive() {
-  pid="$1"
-  [ -n "${pid}" ] || return 1
-  kill -0 "${pid}" 2>/dev/null || return 1
-  cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
-  case "${cmdline}" in
-    */opt/devide/release/*) return 0 ;;
-    *dev_ide_*@*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-# Instance liveness with the systemd unit as the authority. The heartbeat pid
-# can be poisoned: a secondary boot under the same DEVIDE_INSTANCE_UUID
-# (release eval, seeds) overwrites the record with its own short-lived pid,
-# which then reads as dead. Treating such a record as stale deleted it before
-# the drain loop ran — every deploy logged "no old instances found to drain"
-# and the superseded instance ran forever (seen 2026-07-07: zombie canaries
-# fighting the live one over tmux window sizes).
-dev_ide_instance_alive() {
-  inst_uuid="$1"
-  inst_pid="$2"
-  if [ -n "${inst_uuid}" ] && systemctl is-active --quiet "devide-${inst_uuid}" 2>/dev/null; then
-    return 0
-  fi
-  dev_ide_release_pid_alive "${inst_pid}"
-}
-
-# UUIDs of running devide-<16hex> canary units, one per line. systemd is the
-# source of truth for what is actually running; instance records are advisory.
-running_canary_uuids() {
-  systemctl list-units --type=service --state=running --plain --no-legend 'devide-*' 2>/dev/null |
-    awk '{print $1}' |
-    sed -n 's/^devide-\([0-9a-f]\{16\}\)\.service$/\1/p'
-}
-
-# Stop a canary unit. sudo policy on the devbox intentionally forbids
-# `systemctl stop`, so fall back to signalling the devbox-owned beam directly
-# (units run with Restart=no, so it stays down).
-stop_canary_unit() {
-  stop_uuid="$1"
-  if sudo -n systemctl stop "devide-${stop_uuid}" >/dev/null 2>&1; then
-    return 0
-  fi
-  stop_pid="$(systemctl show "devide-${stop_uuid}" -p MainPID --value 2>/dev/null || true)"
-  if [ -n "${stop_pid}" ] && [ "${stop_pid}" != "0" ]; then
-    kill "${stop_pid}" 2>/dev/null || true
-  fi
-  return 0
-}
+# Canary drain/stop helpers (dev_ide_release_pid_alive, dev_ide_instance_alive,
+# running_canary_uuids, current_sock_uuid, canary_uuid_in_list,
+# stop_canary_unit, drain_instance). Extracted into a lib so
+# scripts/test-canary-drain.sh can exercise them hermetically; they read log(),
+# token, INST_DIR, CURRENT_SYMLINK, and drain_count from this scope.
+DEPLOY_SCRIPT_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [ -z "${DEPLOY_SCRIPT_SELF_DIR}" ] || [ ! -r "${DEPLOY_SCRIPT_SELF_DIR}/lib/canary-drain.sh" ]; then
+  echo "error: cannot locate scripts/lib/canary-drain.sh next to this script." >&2
+  echo "       Run deploy-devbox-release.sh as a file path from a repo checkout," >&2
+  echo "       not piped via 'bash -s' (see the header comment)." >&2
+  exit 1
+fi
+# shellcheck source=scripts/lib/canary-drain.sh
+source "${DEPLOY_SCRIPT_SELF_DIR}/lib/canary-drain.sh"
 
 cleanup_stale_instance_records() {
   for inst_file in "${INST_DIR}"/*.json; do
@@ -628,68 +594,22 @@ cleanup_stale_instance_records
 log "signalling old instances to drain (if any)"
 drain_count=0
 
-drain_instance() {
-  # $1 uuid (may be empty for record-only instances), $2 socket, $3 port, $4 revision
-  d_uuid="$1"
-  d_socket="$2"
-  d_port="$3"
-  d_revision="$4"
+# drain_instance() lives in scripts/lib/canary-drain.sh (sourced above).
 
-  commits_behind=0
-  if [ -n "${d_revision}" ] && [ "${d_revision}" != "dev" ] && \
-     git cat-file -e "${d_revision}" 2>/dev/null; then
-    commits_behind="$(git rev-list "${d_revision}..HEAD" --count 2>/dev/null || echo 0)"
-  fi
-
-  drain_payload="{\"commits_behind\": ${commits_behind}}"
-  drain_status=""
-
-  if [ -n "${d_socket}" ] && [ -S "${d_socket}" ]; then
-    drain_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
-      -H "authorization: Bearer ${token}" \
-      -H "content-type: application/json" \
-      -d "${drain_payload}" \
-      --unix-socket "${d_socket}" \
-      http://localhost/api/drain 2>/dev/null || true)"
-  elif [ -n "${d_port}" ]; then
-    drain_status="$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
-      -H "authorization: Bearer ${token}" \
-      -H "content-type: application/json" \
-      -d "${drain_payload}" \
-      "http://127.0.0.1:${d_port}/api/drain" 2>/dev/null || true)"
-  fi
-
-  case "${drain_status}" in
-    200)
-      drain_count=$((drain_count + 1))
-      log "drain signalled (${d_uuid:-record-only}${d_socket:+ socket ${d_socket}}, ${commits_behind} commits behind)"
-      return 0
-      ;;
-    409)
-      # Already draining from an earlier deploy; its 30-minute hard timeout is
-      # armed. Leave it be.
-      log "already draining (${d_uuid:-record-only}${d_socket:+ socket ${d_socket}})"
-      return 0
-      ;;
-  esac
-
-  # Unreachable over its socket/port. If its unit is still running it is a
-  # zombie that will never drain itself — stop it directly.
-  if [ -n "${d_uuid}" ] && systemctl is-active --quiet "devide-${d_uuid}" 2>/dev/null; then
-    log "drain unreachable for running unit devide-${d_uuid} — stopping it"
-    stop_canary_unit "${d_uuid}"
-  else
-    log "drain skipped (${d_uuid:-record-only}) — instance not reachable and not running"
-  fi
-  return 0
-}
+# Never touch the instance we just started or whichever instance currently
+# serves traffic (they can differ under a concurrent deploy — see
+# current_sock_uuid). Space-padded so a substring match can't misfire.
+LIVE_UUID="$(current_sock_uuid)"
+protected_uuids=" ${NEW_UUID} ${LIVE_UUID} "
 
 drained_uuids=" "
 for inst_file in "${INST_DIR}"/*.json; do
   [ -f "${inst_file}" ] || continue
   inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
-  if [ "${inst_uuid}" = "${NEW_UUID}" ]; then
-    continue  # skip the instance we just started
+  if [ -n "${inst_uuid}" ]; then
+    case "${protected_uuids}" in
+      *" ${inst_uuid} "*) continue ;;  # the new or the live-serving instance
+    esac
   fi
 
   old_socket="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
@@ -702,9 +622,9 @@ done
 
 # Running canary units without a (surviving) instance record.
 for unit_uuid in $(running_canary_uuids); do
-  if [ "${unit_uuid}" = "${NEW_UUID}" ]; then
-    continue
-  fi
+  case "${protected_uuids}" in
+    *" ${unit_uuid} "*) continue ;;
+  esac
   case "${drained_uuids}" in
     *" ${unit_uuid} "*) continue ;;
   esac
