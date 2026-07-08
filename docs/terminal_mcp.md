@@ -233,6 +233,24 @@ It returns immediately if the pane is already in a target state. A timeout is no
 an error — the result carries `timed_out: true` and `matched: false`; re-issue the
 call to keep long-polling.
 
+### Agent skills (cross-repo)
+
+DevIDE-infrastructure skills live in the dev_ide repo under `.claude/skills`, so
+they only travel with dev_ide checkouts. But agents routinely run in **other**
+product-repo worktrees (e.g. auditing OneBackend-v3) that do not carry them — so
+an orchestrator there could not invoke `delegate-to-grok` even though delegation
+is host infrastructure, not app code.
+
+On every Claude launch the launcher stages the allow-listed global skills into
+the launch's resolved Claude config home (`$CLAUDE_CONFIG_DIR`, the per-owner auth
+profile when the workspace uses one, else `~/.claude`), so they are available in
+any repo. Staging is idempotent and refreshes when the canonical source changes
+(`scripts/lib/agent-skills.sh`). The allowlist defaults to `delegate-to-grok`;
+project-only skills like `verify` are excluded because they only make sense inside
+the dev_ide checkout, where the project `.claude/skills` copy already provides
+them. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt out entirely with
+`DEVIDE_AGENT_SKILLS=0`.
+
 ### Devbox smoke test
 
 ```bash

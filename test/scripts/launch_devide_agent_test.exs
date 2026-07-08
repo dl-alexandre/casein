@@ -17,6 +17,15 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ "agent-hooks/grok-devide-agent-state.json"
   end
 
+  test "claude launches stage DevIDE-infra skills into the resolved config home" do
+    text = File.read!(@script)
+
+    assert text =~ "lib/agent-skills.sh"
+    assert text =~ ~S(agent_skills_install "${ROOT}/.claude/skills")
+    # Must target the owner profile's config dir when set, else host global ~/.claude.
+    assert text =~ ~S(${CLAUDE_CONFIG_DIR:-${HOME}/.claude})
+  end
+
   test "codex MCP overrides use unquoted server keys" do
     text = File.read!(@script)
 
