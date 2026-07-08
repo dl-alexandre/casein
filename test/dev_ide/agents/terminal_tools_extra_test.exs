@@ -21,6 +21,16 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
     Runtimes.clear()
     DevIDE.Audit.MemoryAdapter.clear()
 
+    # Fake tmux state lives in global :tmux_ctl app env (see FakeState), so it
+    # leaks across the run — including from async tests in other files. Start
+    # every test from a clean slate so ones that assert "no sessions" aren't
+    # tripped by windows a prior test left behind; each test seeds exactly what
+    # it needs. `previous` above is still restored on_exit to stay a good citizen.
+    TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+    TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
+    TmuxCtl.Test.FakeState.delete(:fake_tmux_scrollback)
+    TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
+
     on_exit(fn ->
       TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
       TmuxCtl.Test.FakeState.restore(:fake_tmux_panes, previous.fake_tmux_panes)
