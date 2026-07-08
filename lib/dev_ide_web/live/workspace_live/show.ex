@@ -33,6 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.NotificationsDrawerEvents
+  alias DevIdeWeb.WorkspaceAdminDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.TerminalTelemetry
   alias DevIdeWeb.WorkspaceLive.PaneWorker
@@ -116,6 +117,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_workspace sidebar:toggle_window
     sidebar:cycle_sessions_sort sidebar:cycle_windows_sort
+    sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -126,6 +128,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     notifications:toggle notifications:close notifications:refresh
     notifications:mark_read notifications:resolve notifications:mute
     notifications:mark_all_read notifications:save_preferences
+    workspace_admin:toggle workspace_admin:close workspace_admin:create_toggle
+    workspace_admin:toggle_all workspace_admin:create workspace_admin:attach_folder
+    workspace_admin:start workspace_admin:stop
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
     palette:open palette:ide palette:category palette:nav palette:close palette:query
@@ -321,6 +326,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # subscribes to the viewer's notification topic and loads the unread
         # badge count on the connected mount; the inbox list is lazy (opens).
         |> NotificationsDrawerEvents.mount()
+        # Workspace admin drawer — create/attach/start/stop/show-all actions
+        # relocated from WorkspaceLive.Dashboard (Stage 4c).
+        |> WorkspaceAdminDrawerEvents.mount()
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -613,6 +621,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # `?drawer=notifications` deep link (docs/deep_links.md) — one-shot like
     # `?tab=`; patches without the param leave the drawer state alone.
     socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
+    socket = WorkspaceAdminDrawerEvents.apply_drawer_param(socket, params)
 
     socket =
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
@@ -874,6 +883,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # OS-notification deeplink above.
   def handle_event("notifications:" <> _ = event, params, socket),
     do: NotificationsDrawerEvents.handle_event(event, params, socket)
+
+  def handle_event("workspace_admin:" <> _ = event, params, socket),
+    do: WorkspaceAdminDrawerEvents.handle_event(event, params, socket)
 
   # Tab selection shared by the "switch_tab" event and the `?tab=` deep link.
   # Per-tab hydration stays lazy: it runs on selection, never at cockpit mount.
@@ -1879,11 +1891,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_summary_visible?(summary, socket) do
-    summary.id == socket.assigns.workspace.id or
-      Workspaces.viewer_owns_workspace?(
-        %{user: summary.user},
-        socket.assigns[:current_user] || %{}
-      )
+    WorkspaceAdminDrawerEvents.summary_visible?(summary, socket)
   end
 
   defp ensure_current_workspace_record(records, workspace) do
