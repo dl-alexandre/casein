@@ -46,6 +46,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   alias DevIDE.FilePanes.LinkResolver
   alias DevIDE.Terminals
   alias DevIDE.Terminals.FileLinkScanner
+  alias DevIDE.Terminals.WebLinkScanner
   alias DevIdeWeb.TerminalRender
   alias DevIdeWeb.TerminalTelemetry
 
@@ -533,10 +534,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           emit_worker_frame_telemetry(:skipped, state, payload, started)
           state
         else
+          rows = scannable_rows(payload, cells)
+
           payload =
             payload
             |> put_content_gen(state.content_gen)
-            |> put_file_links(state, cells, id)
+            |> put_file_links(state, rows, id)
+            |> put_web_links(rows, id)
 
           send(state.parent, {:pane_frame, state.pane_id, payload})
           emit_worker_frame_telemetry(:sent, state, payload, started)
@@ -608,12 +612,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     end
   end
 
-  defp put_file_links(payload, %{link_root: nil}, _cells, _id), do: payload
+  defp put_file_links(payload, %{link_root: nil}, _rows, _id), do: payload
 
-  defp put_file_links(payload, state, cells, id) do
+  defp put_file_links(payload, state, rows, id) do
     started = System.monotonic_time()
 
-    rows = scannable_rows(payload, cells)
     candidates = FileLinkScanner.scan_rows(rows)
     links = validate_links(state.link_root, candidates)
 
@@ -637,6 +640,33 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   defp validate_links(_root, []), do: []
   defp validate_links(root, candidates), do: LinkResolver.validate_frame(root, candidates)
 
+  # --- terminal web-link detection ----------------------------------------------
+  #
+  # Scan the same changed rows for http(s) URLs and attach `payload.web_links`
+  # so they ride the ghostty:render frame alongside file links. No link_root
+  # gate and no filesystem validation — a URL is self-describing — so web links
+  # work for remote sessions too. The scanner's own `"://"` binary gate keeps
+  # the common (URL-free) row cheap.
+  defp put_web_links(payload, rows, id) do
+    started = System.monotonic_time()
+    links = WebLinkScanner.scan_rows(rows)
+
+    :telemetry.execute(
+      [:dev_ide, :terminal, :web_link_scan],
+      %{
+        duration_us:
+          System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
+        rows: length(rows),
+        links: length(links)
+      },
+      %{id: id, full_frame?: payload[:full_frame] == true}
+    )
+
+    # Empty is omitted: the client clears link state for every repainted row,
+    # so absence means "no links" (same contract as file links).
+    if links == [], do: payload, else: Map.put(payload, :web_links, links)
+  end
+
   # Changed rows only on incremental frames; every row on a full frame.
   defp scannable_rows(%{rows: rows}, cells) when is_list(rows) do
     grid = List.to_tuple(cells)
@@ -652,8 +682,6 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     |> Enum.with_index()
     |> Enum.map(fn {row, index} -> {index, FileLinkScanner.row_text(row)} end)
   end
-
-  defp scannable_rows(_payload, _cells), do: []
 
   defp next_frame_position(state, true), do: {0, state.frame_epoch + 1}
   defp next_frame_position(state, false), do: {state.frame_seq + 1, state.frame_epoch}

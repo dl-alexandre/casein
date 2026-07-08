@@ -257,6 +257,41 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorkerTest do
       assert_receive {:pane_frame, "pane-gen-1", payload}, 1_000
       refute Map.has_key?(payload, :file_links)
     end
+
+    test "frames carry web_links for changed rows", %{root: root} do
+      worker = start_link_worker(root, "pane-weblinks")
+
+      send(worker, {:terminal_payload, :data, %{data: "open https://example.com/x now"}})
+
+      assert_receive {:pane_frame, "pane-weblinks", %{web_links: links}}, 1_000
+      assert [%{row: 0, url: "https://example.com/x", from: 5, to: 25}] = links
+
+      GenServer.stop(worker, :normal)
+    end
+
+    test "web_links need no local loc — remote sessions still linkify URLs" do
+      worker = start_worker()
+
+      send(worker, {:terminal_payload, :data, %{data: "see http://a.test/y"}})
+
+      assert_receive {:pane_frame, "pane-gen-1", payload}, 1_000
+      assert [%{row: 0, url: "http://a.test/y"}] = payload.web_links
+      # A non-local worker linkifies URLs but never file paths.
+      refute Map.has_key?(payload, :file_links)
+
+      GenServer.stop(worker, :normal)
+    end
+
+    test "frames omit web_links when the changed rows carry no URL", %{root: root} do
+      worker = start_link_worker(root, "pane-nourls")
+
+      send(worker, {:terminal_payload, :data, %{data: "just some plain text"}})
+
+      assert_receive {:pane_frame, "pane-nourls", payload}, 1_000
+      refute Map.has_key?(payload, :web_links)
+
+      GenServer.stop(worker, :normal)
+    end
   end
 
   test "terminal_owner_size resizes the local grid without owner_resize" do
