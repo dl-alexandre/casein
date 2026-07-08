@@ -619,7 +619,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :window_sidebar_open?,
       :sessions_sidebar_open?,
       :sessions_sidebar_tree,
-      :windows_sidebar_tree
+      :windows_sidebar_tree,
+      :sessions_sidebar_sort,
+      :windows_sidebar_sort
     ])
   end
 

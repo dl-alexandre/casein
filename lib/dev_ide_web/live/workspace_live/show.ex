@@ -115,6 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_workspace sidebar:toggle_window
+    sidebar:cycle_sessions_sort sidebar:cycle_windows_sort
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -727,6 +728,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:toggle_window", %{"window-id" => window_id}, socket) do
     {:noreply, Sidebar.toggle_window(socket, window_id)}
+  end
+
+  def handle_event("sidebar:cycle_sessions_sort", _params, socket) do
+    {:noreply, Sidebar.cycle_sessions_sort(socket)}
+  end
+
+  def handle_event("sidebar:cycle_windows_sort", _params, socket) do
+    {:noreply, Sidebar.cycle_windows_sort(socket)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),

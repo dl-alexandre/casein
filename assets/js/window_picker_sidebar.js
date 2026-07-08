@@ -4,7 +4,7 @@
 // Escape (empty filter) or window selection so the tab bar stays canonical.
 
 import {copyPickerLink} from "./picker_link_copy"
-import {matchesPickerFilter} from "./window_picker_sidebar_utils.mjs"
+import {applyTreePickerFilter} from "./window_picker_sidebar_utils.mjs"
 
 export const WindowPickerSidebar = {
   mounted() {
@@ -103,21 +103,10 @@ export const WindowPickerSidebar = {
   },
 
   applyFilter() {
-    const query = this._filter.toLowerCase()
-    const display = this.el.querySelector("[data-picker-filter]")
-
-    if (display) {
-      display.textContent = this._filter ? `filter: ${this._filter}` : ""
-      display.style.display = this._filter ? "block" : "none"
-    }
-
-    this.el.querySelectorAll("[data-picker-item]").forEach((el) => {
-      const match = matchesPickerFilter(el, query)
-      el.style.display = match ? "" : "none"
-    })
+    applyTreePickerFilter(this.el, this._filter)
 
     const current = this.currentItem()
-    if (query !== "" && (!current || current.style.display === "none")) {
+    if (this._filter !== "" && (!current || current.style.display === "none")) {
       this.visibleItems()[0]?.focus()
     }
   },

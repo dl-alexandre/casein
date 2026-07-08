@@ -24,9 +24,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
           sidebar_ws_sessions: %{}
         )
 
-      assert [%{workspace_id: "ws-a"}, %{workspace_id: "ws-b"}] = tree
+      assert [%{workspace_id: "ws-a", flat_session?: true}, %{workspace_id: "ws-b"}] = tree
       assert Enum.all?(tree, &(&1.sessions == nil))
-      assert Enum.all?(tree, &(&1.flat_session? == false))
+      refute Enum.all?(tree, &(&1.flat_session? == false))
     end
 
     test "expands current workspace with live session tabs" do
@@ -145,7 +145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert node.pane == nil
     end
 
-    test "collapses multi-pane windows when not expanded" do
+    test "collapses multi-pane windows when not expanded but keeps panes in tree data" do
       panes = [pane("%1"), pane("%2", index: 1)]
 
       [node] =
@@ -156,8 +156,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
 
       refute node.flat_window?
       refute node.expanded?
-      assert node.panes == nil
+      assert length(node.panes) == 2
       assert node.pane_count == 2
+    end
+  end
+
+  describe "sidebar sort helpers" do
+    test "cycle_sort_mode rotates recency → name → liveness" do
+      assert SessionBarVM.cycle_sort_mode(:recency) == :name
+      assert SessionBarVM.cycle_sort_mode(:name) == :liveness
+      assert SessionBarVM.cycle_sort_mode(:liveness) == :recency
+    end
+
+    test "sort_workspace_summaries_for_sidebar pins current workspace first" do
+      summaries = [
+        %{id: "ws-b", name: "beta", session_count: 1, live?: false},
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true}
+      ]
+
+      sorted =
+        SessionBarVM.sort_workspace_summaries_for_sidebar(summaries, :name, "ws-b")
+
+      assert [%{id: "ws-b"}, %{id: "ws-a"}] = sorted
+    end
+
+    test "sort_session_tabs orders by name and liveness" do
+      tabs = [
+        %{label: "zebra", activity_state: :idle},
+        %{label: "alpha", activity_state: :fresh}
+      ]
+
+      assert [%{label: "alpha"}, %{label: "zebra"}] =
+               SessionBarVM.sort_session_tabs(tabs, :name)
+
+      assert [%{label: "alpha"}, %{label: "zebra"}] =
+               SessionBarVM.sort_session_tabs(tabs, :liveness)
+    end
+
+    test "sort_window_tree puts active window first in liveness mode" do
+      nodes = [
+        %{display_name: "idle", name: "idle", active?: false, activity_state: :idle, index: 0},
+        %{display_name: "active", name: "active", active?: true, activity_state: :fresh, index: 1}
+      ]
+
+      assert [%{active?: true}, %{active?: false}] =
+               SessionBarVM.sort_window_tree(nodes, :liveness)
     end
   end
 end

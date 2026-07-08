@@ -18,6 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                 <SessionBar.sessions_sidebar
                   workspace_id={@workspace.id}
                   tree={@sessions_sidebar_tree}
+                  sort_mode={@sessions_sidebar_sort}
                   active_id={@terminal_sid}
                   default_sid={@default_terminal_sid}
                   preview_panes={@preview_panes}
@@ -32,6 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   workspace_id={@workspace.id}
                   path_base={@workspace_route}
                   tree={@windows_sidebar_tree}
+                  sort_mode={@windows_sidebar_sort}
                   terminal_sid={@terminal_sid}
                   topology_version={@tmux_topology_structure_version}
                   mutations_allowed?={@tmux_mutations_enabled?}

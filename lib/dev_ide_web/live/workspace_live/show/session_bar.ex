@@ -14,6 +14,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   use DevIdeWeb, :html
 
+  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
   attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
@@ -350,6 +352,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :mutations_allowed?, :boolean, default: false
   attr :rename_session_id, :string, default: nil
 
+  attr :sort_mode, :atom, default: :recency
+
   attr :class, :any,
     default: nil,
     doc: "layout classes — desktop-only summoned SESSIONS rail"
@@ -368,8 +372,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         @class
       ]}
     >
-      <div class="shrink-0 border-b border-base-300/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
-        Sessions
+      <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
+        <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+          Sessions
+        </span>
+        <button
+          type="button"
+          phx-click="sidebar:cycle_sessions_sort"
+          class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
+          aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
+        >
+          {SessionBarVM.sort_mode_label(@sort_mode)}
+        </button>
       </div>
       <div
         data-picker-filter
@@ -392,8 +407,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 mutations_allowed?={@mutations_allowed?}
                 rename_session_id={@rename_session_id}
               />
-            <% node.expanded? -> %>
-              <div class="flex flex-col gap-0.5">
+            <% is_list(node.sessions) -> %>
+              <div
+                data-picker-tree-branch
+                data-picker-branch-id={node.dom_id}
+                class="flex flex-col gap-0.5"
+              >
                 <div class="flex items-center gap-1 px-1">
                   <button
                     type="button"
@@ -426,16 +445,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     phx-click="sidebar:toggle_workspace"
                     phx-value-workspace-id={node.workspace_id}
                     class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
-                    aria-label={"Collapse " <> node.label}
+                    aria-label={
+                      if(node.expanded?, do: "Collapse " <> node.label, else: "Expand " <> node.label)
+                    }
                   >
                     {node.session_count}
-                    <span class="flex rotate-90 transition-transform">
+                    <span class={["flex transition-transform", node.expanded? && "rotate-90"]}>
                       <.icon name="hero-chevron-right" class="size-3" />
                     </span>
                   </button>
                 </div>
-                <div id={"sidebar-ws-sessions-" <> node.workspace_id} class="space-y-0.5 pl-3">
-                  <%= for session <- node.sessions || [] do %>
+                <div
+                  id={"sidebar-ws-sessions-" <> node.workspace_id}
+                  data-picker-branch-children
+                  data-picker-collapsed={(!node.expanded? && "") || nil}
+                  class={["space-y-0.5 pl-3", !node.expanded? && "hidden"]}
+                >
+                  <%= for session <- node.sessions do %>
                     <.sessions_sidebar_session_row
                       session={session}
                       workspace_id={Map.get(session, :workspace_id, node.workspace_id)}
@@ -457,6 +483,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   type="button"
                   data-picker-item
                   data-picker-section="workspaces"
+                  data-picker-sessions-id={node.dom_id}
                   phx-click="sidebar:toggle_workspace"
                   phx-value-workspace-id={node.workspace_id}
                   class={[sidebar_row_class(false), "min-w-0 flex-1"]}
@@ -699,6 +726,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       href={window_href(@workspace_id, @terminal_sid, @node.id, path_base: @path_base)}
       data-picker-item
       data-picker-section="windows"
+      data-picker-branch-id={@node.dom_id}
       data-picker-active={@node.active? || nil}
       data-picker-parent={@parent_dom_id}
       phx-click="tmux:select_window"
@@ -833,6 +861,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
   attr :path_base, :string, default: nil
+  attr :sort_mode, :atom, default: :recency
 
   attr :class, :any,
     default: nil,
@@ -853,6 +882,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         @class
       ]}
     >
+      <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
+        <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+          Windows
+        </span>
+        <button
+          type="button"
+          phx-click="sidebar:cycle_windows_sort"
+          class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
+          aria-label={"Sort windows by " <> SessionBarVM.sort_mode_label(@sort_mode)}
+        >
+          {SessionBarVM.sort_mode_label(@sort_mode)}
+        </button>
+      </div>
       <div
         data-picker-filter
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
@@ -871,11 +914,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 mutations_allowed?={@mutations_allowed?}
                 rename_window_id={@rename_window_id}
               />
-            <% node.expanded? -> %>
+            <% node.pane_count > 1 -> %>
               <div
                 id={"tmux-window-sidebar-" <> node.dom_frag}
                 data-ctx-menu="window_tab"
                 data-ctx-window-id={node.id}
+                data-picker-tree-branch
+                data-picker-branch-id={node.dom_id}
                 class="flex flex-col gap-0.5"
               >
                 <div class="flex items-center gap-1 px-1">
@@ -893,10 +938,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     phx-click="sidebar:toggle_window"
                     phx-value-window-id={node.id}
                     class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
-                    aria-label={"Collapse panes of " <> node.display_name}
+                    aria-label={
+                      if(node.expanded?, do: "Collapse panes of " <> node.display_name,
+                        else: "Expand panes of " <> node.display_name
+                      )
+                    }
                   >
                     {node.pane_count}
-                    <span class="flex rotate-90 transition-transform">
+                    <span class={["flex transition-transform", node.expanded? && "rotate-90"]}>
                       <.icon name="hero-chevron-right" class="size-3" />
                     </span>
                   </button>
@@ -910,7 +959,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     show_cancel?={false}
                   />
                 <% end %>
-                <div id={"sidebar-window-panes-" <> node.dom_frag} class="space-y-0.5 pl-3">
+                <div
+                  id={"sidebar-window-panes-" <> node.dom_frag}
+                  data-picker-branch-children
+                  data-picker-collapsed={(!node.expanded? && "") || nil}
+                  class={["space-y-0.5 pl-3", !node.expanded? && "hidden"]}
+                >
                   <%= for pane <- node.panes || [] do %>
                     <.window_sidebar_pane_row
                       pane={pane}
@@ -923,45 +977,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   <% end %>
                 </div>
               </div>
-            <% true -> %>
-              <div
-                id={"tmux-window-sidebar-" <> node.dom_frag}
-                data-ctx-menu="window_tab"
-                data-ctx-window-id={node.id}
-                class="flex items-center gap-1 px-1"
-              >
-                <.window_sidebar_window_link
-                  node={node}
-                  workspace_id={@workspace_id}
-                  terminal_sid={@terminal_sid}
-                  path_base={@path_base}
-                  parent_dom_id={nil}
-                  class={[sidebar_row_class(node.active?), "min-w-0 flex-1"]}
-                />
-                <button
-                  :if={node.pane_count > 1}
-                  type="button"
-                  tabindex="-1"
-                  phx-click="sidebar:toggle_window"
-                  phx-value-window-id={node.id}
-                  class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
-                  aria-label={"Expand panes of " <> node.display_name}
-                >
-                  {node.pane_count}
-                  <span class="flex transition-transform">
-                    <.icon name="hero-chevron-right" class="size-3" />
-                  </span>
-                </button>
-              </div>
-              <%= if @mutations_allowed? and @rename_window_id == node.id do %>
-                <.window_inline_rename_form
-                  window={node}
-                  id_suffix="-sidebar"
-                  form_class="flex items-center gap-1 px-1"
-                  input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
-                  show_cancel?={false}
-                />
-              <% end %>
           <% end %>
         <% end %>
       </div>

@@ -22,7 +22,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       sidebar_ws_sessions: %{},
       sidebar_ws_subscriptions: MapSet.new(),
       sessions_sidebar_tree: [],
-      windows_sidebar_tree: []
+      windows_sidebar_tree: [],
+      sessions_sidebar_sort: :recency,
+      windows_sidebar_sort: :recency
     ]
   end
 
@@ -70,6 +72,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     |> assign(:sidebar_ws_subscriptions, MapSet.new())
     |> assign(:sessions_sidebar_tree, [])
     |> assign(:windows_sidebar_tree, [])
+    |> assign(:sessions_sidebar_sort, :recency)
+    |> assign(:windows_sidebar_sort, :recency)
   end
 
   @spec reveal_sessions(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
@@ -109,15 +113,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   def assign_windows_sidebar_tree(socket) do
     tree =
       if socket.assigns.window_sidebar_open? do
-        SessionBarVM.window_tree(
-          socket.assigns.tmux_window_tabs || [],
-          expanded_windows: socket.assigns.sidebar_expanded_windows
-        )
+        socket.assigns.tmux_window_tabs
+        |> SessionBarVM.window_tree(expanded_windows: socket.assigns.sidebar_expanded_windows)
+        |> SessionBarVM.sort_window_tree(socket.assigns.windows_sidebar_sort)
       else
         []
       end
 
     assign(socket, :windows_sidebar_tree, tree)
+  end
+
+  @spec cycle_sessions_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def cycle_sessions_sort(socket) do
+    mode = SessionBarVM.cycle_sort_mode(socket.assigns.sessions_sidebar_sort)
+
+    socket
+    |> assign(:sessions_sidebar_sort, mode)
+    |> assign_sessions_sidebar_tree()
+  end
+
+  @spec cycle_windows_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def cycle_windows_sort(socket) do
+    mode = SessionBarVM.cycle_sort_mode(socket.assigns.windows_sidebar_sort)
+
+    socket
+    |> assign(:windows_sidebar_sort, mode)
+    |> assign_windows_sidebar_tree()
   end
 
   @spec toggle_workspace(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
@@ -135,14 +156,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   def assign_sessions_sidebar_tree(socket) do
     socket = ensure_current_workspace_summary(socket)
 
-    tree =
-      SessionBarVM.workspace_session_tree(
+    summaries =
+      SessionBarVM.sort_workspace_summaries_for_sidebar(
         socket.assigns.workspace_summaries,
+        socket.assigns.sessions_sidebar_sort,
+        socket.assigns.workspace.id
+      )
+
+    tree =
+      summaries
+      |> SessionBarVM.workspace_session_tree(
         socket.assigns.workspace.id,
         expanded_workspaces: socket.assigns.sidebar_expanded_workspaces,
         current_session_tabs: socket.assigns.session_tabs,
         sidebar_ws_sessions: socket.assigns.sidebar_ws_sessions
       )
+      |> SessionBarVM.sort_sessions_in_tree(socket.assigns.sessions_sidebar_sort)
 
     assign(socket, :sessions_sidebar_tree, tree)
   end

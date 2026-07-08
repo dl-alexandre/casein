@@ -287,6 +287,100 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp to_string_or_nil(nil), do: nil
   defp to_string_or_nil(value), do: to_string(value)
 
+  @doc "Cycles sidebar sort mode: recency → name → liveness → recency."
+  @spec cycle_sort_mode(atom()) :: atom()
+  def cycle_sort_mode(:recency), do: :name
+  def cycle_sort_mode(:name), do: :liveness
+  def cycle_sort_mode(:liveness), do: :recency
+  def cycle_sort_mode(_), do: :name
+
+  @spec sort_mode_label(atom()) :: String.t()
+  def sort_mode_label(:recency), do: "Recent"
+  def sort_mode_label(:name), do: "Name"
+  def sort_mode_label(:liveness), do: "Live"
+  def sort_mode_label(_), do: "Recent"
+
+  @doc """
+  Sorts workspace summaries for the SESSIONS sidebar. The current workspace
+  stays pinned first regardless of mode.
+  """
+  @spec sort_workspace_summaries_for_sidebar([map()], atom(), String.t()) :: [map()]
+  def sort_workspace_summaries_for_sidebar(summaries, mode, current_workspace_id)
+      when is_list(summaries) and is_binary(current_workspace_id) do
+    {current, rest} = Enum.split_with(summaries, &(summary_id(&1) == current_workspace_id))
+    current ++ sort_workspace_summaries_list(rest, mode)
+  end
+
+  defp sort_workspace_summaries_list(summaries, :recency), do: summaries
+
+  defp sort_workspace_summaries_list(summaries, :name) do
+    Enum.sort_by(summaries, &String.downcase(summary_workspace_label(&1)))
+  end
+
+  defp sort_workspace_summaries_list(summaries, :liveness) do
+    Enum.sort_by(summaries, fn summary ->
+      {if(workspace_summary_live?(summary), do: 0, else: 1),
+       String.downcase(summary_workspace_label(summary))}
+    end)
+  end
+
+  @doc "Sorts session children inside SESSIONS sidebar tree nodes."
+  @spec sort_sessions_in_tree([workspace_tree_node()], atom()) :: [workspace_tree_node()]
+  def sort_sessions_in_tree(nodes, mode) when is_list(nodes) do
+    Enum.map(nodes, fn
+      %{sessions: sessions} = node when is_list(sessions) ->
+        Map.put(node, :sessions, sort_session_tabs(sessions, mode))
+
+      node ->
+        node
+    end)
+  end
+
+  @doc "Sorts session tab view-models for sidebar display."
+  @spec sort_session_tabs([tab()], atom()) :: [tab()]
+  def sort_session_tabs(tabs, mode) when is_list(tabs) do
+    case mode do
+      :name -> Enum.sort_by(tabs, &String.downcase(&1.label))
+      :liveness -> Enum.sort_by(tabs, &{activity_liveness_rank(&1.activity_state), String.downcase(&1.label)})
+      _ -> tabs
+    end
+  end
+
+  @doc "Sorts WINDOWS sidebar tree nodes."
+  @spec sort_window_tree([window_tree_node()], atom()) :: [window_tree_node()]
+  def sort_window_tree(nodes, mode) when is_list(nodes), do: sort_window_nodes(nodes, mode)
+
+  defp sort_window_nodes(nodes, :recency) do
+    Enum.sort_by(nodes, fn window ->
+      {window_recency_rank(window), activity_liveness_rank(window.activity_state),
+       String.downcase(window_label(window))}
+    end)
+  end
+
+  defp sort_window_nodes(nodes, :name) do
+    Enum.sort_by(nodes, &String.downcase(window_label(&1)))
+  end
+
+  defp sort_window_nodes(nodes, :liveness) do
+    Enum.sort_by(nodes, fn window ->
+      {if(window.active?, do: 0, else: 1), activity_liveness_rank(window.activity_state),
+       String.downcase(window_label(window))}
+    end)
+  end
+
+  defp window_label(%{display_name: name}) when is_binary(name) and name != "", do: name
+  defp window_label(%{name: name}) when is_binary(name), do: name
+  defp window_label(_), do: ""
+
+  defp window_recency_rank(%{active?: true}), do: 0
+  defp window_recency_rank(%{index: index}) when is_integer(index), do: 1 + index
+  defp window_recency_rank(_), do: 999
+
+  defp activity_liveness_rank(:fresh), do: 0
+  defp activity_liveness_rank(:recent), do: 1
+  defp activity_liveness_rank(:idle), do: 2
+  defp activity_liveness_rank(_), do: 3
+
   @type workspace_tree_node :: %{
           id: String.t(),
           dom_id: String.t(),
@@ -343,20 +437,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     live? = workspace_summary_live?(summary)
 
     sessions =
-      if expanded? do
-        tabs =
-          if current? do
-            current_tabs
-          else
-            Map.get(sidebar_ws, workspace_id, [])
-          end
+      cond do
+        current? and is_list(current_tabs) ->
+          Enum.map(current_tabs, &Map.put(&1, :workspace_id, workspace_id))
 
-        Enum.map(tabs, &Map.put(&1, :workspace_id, workspace_id))
-      else
-        nil
+        expanded? ->
+          sidebar_ws
+          |> Map.get(workspace_id, [])
+          |> Enum.map(&Map.put(&1, :workspace_id, workspace_id))
+
+        true ->
+          nil
       end
 
-    flat_session? = expanded? and is_list(sessions) and length(sessions) == 1
+    flat_session? = is_list(sessions) and length(sessions) == 1
 
     %{
       id: workspace_id,
@@ -845,8 +939,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp window_tree_panes(true, _expanded?, _panes), do: nil
-  defp window_tree_panes(false, true, panes), do: panes
-  defp window_tree_panes(false, false, _panes), do: nil
+  defp window_tree_panes(false, _expanded?, panes), do: panes
 
   @doc """
   Maps raw tmux topology windows (as produced by `TmuxTopology.snapshot/2`)
