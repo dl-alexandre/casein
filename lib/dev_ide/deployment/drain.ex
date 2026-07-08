@@ -38,6 +38,20 @@ defmodule DevIDE.Deployment.Drain do
     GenServer.call(__MODULE__, :draining?)
   end
 
+  @doc """
+  Runs `fun` when this node is not draining a deploy; returns `:noop` otherwise.
+
+  Shared tmux-server and box-global writers must use this so a draining canary
+  does not stomp state the replacement instance owns. Degrades to running `fun`
+  when the Drain server is unavailable (slim test trees).
+  """
+  @spec guard_shared_write((-> term())) :: term() | :noop
+  def guard_shared_write(fun) when is_function(fun, 0) do
+    if draining?(), do: :noop, else: fun.()
+  catch
+    :exit, _ -> fun.()
+  end
+
   @spec connection_count() :: integer()
   def connection_count do
     GenServer.call(__MODULE__, :connection_count)

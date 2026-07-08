@@ -38,6 +38,7 @@ defmodule TmuxCtl.ClientExtraTest do
       runner: Application.get_env(:tmux_ctl, :runner),
       terminal_env: Application.get_env(:tmux_ctl, :terminal_env),
       default_command: Application.get_env(:tmux_ctl, :default_command),
+      shared_write_guard: Application.get_env(:tmux_ctl, :shared_write_guard),
       pid: FakeState.get(:fake_tmux_runner_pid),
       script: FakeState.get(:script_response),
       script_responses: FakeState.get(:script_responses),
@@ -66,12 +67,31 @@ defmodule TmuxCtl.ClientExtraTest do
       if previous.default_command,
         do: Application.put_env(:tmux_ctl, :default_command, previous.default_command),
         else: Application.delete_env(:tmux_ctl, :default_command)
+
+      if previous.shared_write_guard,
+        do: Application.put_env(:tmux_ctl, :shared_write_guard, previous.shared_write_guard),
+        else: Application.delete_env(:tmux_ctl, :shared_write_guard)
     end)
 
     :ok
   end
 
   defp script(out, code), do: FakeState.put(:script_response, {out, code})
+
+  # Force the shared-write guard to report "draining" deterministically.
+  #
+  # The production wiring routes `TmuxCtl.SharedWriteGuard` at the singleton
+  # `DevIDE.Deployment.Drain` GenServer (`config :tmux_ctl, :shared_write_guard`).
+  # Driving these tests through the *live* Drain process makes them flaky: under
+  # full-suite load that process is busy with `:track`/`:DOWN` traffic, its
+  # `draining?/0` call can transiently time out, and `guard_shared_write/1`
+  # deliberately fails open (`catch :exit -> fun.()`) — so the guarded write
+  # slips through and the `refute_receive` trips. The Drain -> guard wiring is
+  # covered in `DevIDE.Deployment.DrainTest`; here we only need the Client to
+  # honor a guard that says `:noop`, so we install a stub via the documented
+  # config seam. `setup` restores the real guard on exit.
+  defp stub_draining_guard,
+    do: Application.put_env(:tmux_ctl, :shared_write_guard, fn _fun -> :noop end)
 
   # Scripts distinct responses per argv head (e.g. "display-message" vs "-V").
   defp script_by_head(by_head) when is_map(by_head),
@@ -867,6 +887,26 @@ defmodule TmuxCtl.ClientExtraTest do
     # Only the binary/binary pair drives a tmux call; the others are skipped.
     assert :ok = Client.set_environments(@session, %{"A" => "1", :skip => "x", "B" => 2})
     assert_receive {:tmux_runner, ["set-environment", "-t", @session, "A", "1"]}
+  end
+
+  test "set_environments is a no-op while draining" do
+    stub_draining_guard()
+
+    assert :ok = Client.set_environments(@session, %{"A" => "1"})
+    refute_receive {:tmux_runner, _}, 50
+  end
+
+  test "apply_defaults skips server-global -s writes while draining" do
+    stub_draining_guard()
+
+    script("", 0)
+    assert :ok = Client.apply_defaults(@session)
+
+    refute_receive {:tmux_runner, ["set-option", "-s" | _]}, 50
+    refute_receive {:tmux_runner, ["bind-key" | _]}, 50
+    assert_receive {:tmux_runner, argv}
+    assert Enum.member?(argv, "-t")
+    refute Enum.member?(argv, "-s")
   end
 
   # --- ensure_session/2 -------------------------------------------------------

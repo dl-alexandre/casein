@@ -11,7 +11,10 @@ defmodule DevIDE.Terminals.ToolThemes do
   `:static` files carry a marker as their first line; a marker-less file is
   treated as user-managed and never touched. `:scheme_variant` files are
   user-owned — only the single registry-declared key is stamped and all other
-  content is preserved byte-for-byte.
+  content is preserved byte-for-byte. Those targets are box-global (e.g.
+  `~/.grok/config.toml` is shared by every workspace on the host and hot-reloaded
+  by grok); a draining deploy instance must not re-stamp them — see
+  `DevIDE.Deployment.Drain.guard_shared_write/1`.
   """
 
   require Logger
@@ -109,7 +112,20 @@ defmodule DevIDE.Terminals.ToolThemes do
   # Target paths come from the compile-time registry expanded against
   # operator/app configuration, not web input.
   # sobelow_skip ["Traversal.FileModule"]
-  defp ensure_scheme_variant(name, %{path: path, stamp: stamp}, scheme) do
+  defp ensure_scheme_variant(name, theme_spec, scheme) do
+    case DevIDE.Deployment.Drain.guard_shared_write(fn -> :write end) do
+      :noop ->
+        :ok
+
+      _ ->
+        do_ensure_scheme_variant(name, theme_spec, scheme)
+    end
+  end
+
+  # Target paths come from the compile-time registry expanded against
+  # operator/app configuration, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp do_ensure_scheme_variant(name, %{path: path, stamp: stamp}, scheme) do
     %{format: :toml, section: section, key: key, values: values} = stamp
     value = Map.fetch!(values, scheme)
     target = expand_path(path)

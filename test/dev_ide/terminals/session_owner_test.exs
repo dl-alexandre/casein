@@ -1275,6 +1275,29 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "a draining instance does not issue refresh-client on raw attach replay heal" do
+    swap_in_fake_tmux_adapter()
+
+    unique = "drain-refresh-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-drain-refresh", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-drain-refresh", info)
+    seed_stub_attachment(owner_pid)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-drain-refresh", replay_buffer: "\e[2Jretained tail"}
+    end)
+
+    :ok = DevIDE.Deployment.Drain.start_drain(1)
+    on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
+
+    assert {:ok, _payload} = GenServer.call(owner_pid, {:attach, self(), :raw, []})
+    assert_receive {:terminal_payload, :data, %{replay: true}}
+    refute_receive {:fake_tmux_refresh_client, _}, 200
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "tmux resizes are single-flight, coalesce to latest, and end with a refresh heal" do
     swap_in_fake_tmux_adapter()
 

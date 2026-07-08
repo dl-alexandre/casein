@@ -45,4 +45,13 @@ defmodule DevIDE.Deployment.DrainTest do
 
     assert {:error, :already_draining} = Drain.start_drain(1)
   end
+
+  test "guard_shared_write runs the callback when not draining" do
+    assert Drain.guard_shared_write(fn -> :ran end) == :ran
+  end
+
+  test "guard_shared_write returns :noop while draining" do
+    assert :ok = Drain.start_drain(0)
+    assert Drain.guard_shared_write(fn -> flunk("should not run") end) == :noop
+  end
 end

@@ -105,6 +105,12 @@ defmodule DevIde.Application do
     if Application.get_env(:tmux_ctl, :default_command, :unset) == :unset do
       Application.put_env(:tmux_ctl, :default_command, terminal_shell_command())
     end
+
+    Application.put_env(
+      :tmux_ctl,
+      :shared_write_guard,
+      {DevIDE.Deployment.Drain, :guard_shared_write}
+    )
   end
 
   defp terminal_shell_command do
