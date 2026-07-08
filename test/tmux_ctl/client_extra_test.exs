@@ -1,6 +1,7 @@
 defmodule TmuxCtl.ClientExtraTest do
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.Deployment.Drain
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
 
@@ -867,6 +868,30 @@ defmodule TmuxCtl.ClientExtraTest do
     # Only the binary/binary pair drives a tmux call; the others are skipped.
     assert :ok = Client.set_environments(@session, %{"A" => "1", :skip => "x", "B" => 2})
     assert_receive {:tmux_runner, ["set-environment", "-t", @session, "A", "1"]}
+  end
+
+  test "set_environments is a no-op while draining" do
+    Drain.reset_for_test!()
+    on_exit(fn -> Drain.reset_for_test!() end)
+    assert :ok = Drain.start_drain(0)
+
+    assert :ok = Client.set_environments(@session, %{"A" => "1"})
+    refute_receive {:tmux_runner, _}, 50
+  end
+
+  test "apply_defaults skips server-global -s writes while draining" do
+    Drain.reset_for_test!()
+    on_exit(fn -> Drain.reset_for_test!() end)
+    assert :ok = Drain.start_drain(0)
+
+    script("", 0)
+    assert :ok = Client.apply_defaults(@session)
+
+    refute_receive {:tmux_runner, ["set-option", "-s" | _]}, 50
+    refute_receive {:tmux_runner, ["bind-key" | _]}, 50
+    assert_receive {:tmux_runner, argv}
+    assert Enum.member?(argv, "-t")
+    refute Enum.member?(argv, "-s")
   end
 
   # --- ensure_session/2 -------------------------------------------------------

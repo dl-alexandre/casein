@@ -1318,6 +1318,7 @@ defmodule TmuxCtl.Client do
         {prefix_session_picker_bind(session), "prefix-s-hint"}
       ]
       |> List.flatten()
+      |> skip_server_global_when_draining()
 
     # Happy path: one tmux invocation with all options chained via `;`
     # (1 subprocess instead of 14). tmux keeps executing the queue after a
@@ -1364,9 +1365,14 @@ defmodule TmuxCtl.Client do
   """
   def set_environment(session, key, value)
       when is_binary(session) and is_binary(key) and is_binary(value) do
-    case run(["set-environment", "-t", session, key, value]) do
-      {_, 0} -> :ok
-      {out, code} -> {:error, {code, out}}
+    case TmuxCtl.SharedWriteGuard.guard(fn ->
+           case run(["set-environment", "-t", session, key, value]) do
+             {_, 0} -> :ok
+             {out, code} -> {:error, {code, out}}
+           end
+         end) do
+      :noop -> :ok
+      result -> result
     end
   end
 
@@ -1433,6 +1439,21 @@ defmodule TmuxCtl.Client do
 
       _ ->
         []
+    end
+  end
+
+  defp server_global_option?({args, _name}) do
+    case args do
+      ["set-option", "-s" | _] -> true
+      ["bind-key" | _] -> true
+      _ -> false
+    end
+  end
+
+  defp skip_server_global_when_draining(options) do
+    case TmuxCtl.SharedWriteGuard.guard(fn -> :allowed end) do
+      :noop -> Enum.reject(options, &server_global_option?/1)
+      _ -> options
     end
   end
 

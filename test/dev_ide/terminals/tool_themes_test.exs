@@ -100,6 +100,15 @@ defmodule DevIDE.Terminals.ToolThemesTest do
   end
 
   describe "scheme_variant mode (grok)" do
+    test "does not stamp while draining", %{home: home} do
+      DevIDE.Deployment.Drain.reset_for_test!()
+      on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
+      assert :ok = DevIDE.Deployment.Drain.start_drain(0)
+
+      assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
+      refute File.exists?(grok_path(home))
+    end
+
     test "creates a fresh file with just the stamped section", %{home: home} do
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
       assert File.read!(grok_path(home)) == "[ui]\ntheme = \"groknight\"\n"

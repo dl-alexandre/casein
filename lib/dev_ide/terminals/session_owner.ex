@@ -819,31 +819,23 @@ defmodule DevIDE.Terminals.SessionOwner do
     # owners are already asserting the live viewers' sizes. Both writing means
     # the two releases ping-pong `resize-window` against each other every drift
     # tick — the operator sees the window snap between sizes twice a minute.
-    if draining?() do
-      state
-    else
-      session = Tmux.session_name(key, sid)
-      # Resolve inside the owner (not the task) so test adapter swaps are stable.
-      tmux = DevIDE.Terminals.tmux_adapter()
+    case DevIDE.Deployment.Drain.guard_shared_write(fn ->
+           session = Tmux.session_name(key, sid)
+           # Resolve inside the owner (not the task) so test adapter swaps are stable.
+           tmux = DevIDE.Terminals.tmux_adapter()
 
-      task =
-        Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
-          _ = tmux.resize_window(session, cols, rows)
-          _ = tmux.refresh_client(session)
-          :ok
-        end)
+           task =
+             Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+               _ = tmux.resize_window(session, cols, rows)
+               _ = tmux.refresh_client(session)
+               :ok
+             end)
 
-      %{state | tmux_resize: %{ref: task.ref, size: size}}
+           %{ref: task.ref, size: size}
+         end) do
+      :noop -> state
+      resize -> %{state | tmux_resize: resize}
     end
-  end
-
-  # Deployment.Drain may not be running (tests boot slimmed supervision
-  # trees); a missing or busy drain server must never take an owner down or
-  # block a resize, so degrade to "not draining".
-  defp draining? do
-    DevIDE.Deployment.Drain.draining?()
-  catch
-    :exit, _ -> false
   end
 
   @current_socket "/run/devide/current.sock"
@@ -887,14 +879,20 @@ defmodule DevIDE.Terminals.SessionOwner do
          %{workspace_key: key, info: %{sid: sid}, applied_size: size} = state
        )
        when is_binary(key) and is_binary(sid) and is_tuple(size) do
-    if draining?() or superseded?() do
-      # draining: see start_tmux_resize/2 — a draining instance's applied_size
-      # is stale by definition; the replacement instance owns the shared size.
-      # superseded: a newer instance owns current.sock and these tmux sessions;
-      # re-asserting here would drift-fight the live owner.
+    if superseded?() do
+      # A newer instance owns current.sock and these tmux sessions; re-asserting
+      # here would drift-fight the live owner.
       state
     else
-      do_assert_tmux_window_size(state, size)
+      case DevIDE.Deployment.Drain.guard_shared_write(fn -> :proceed end) do
+        :noop ->
+          # See start_tmux_resize/2: a draining instance's applied_size is stale by
+          # definition — the replacement instance owns the shared size now.
+          state
+
+        _ ->
+          do_assert_tmux_window_size(state, size)
+      end
     end
   end
 
@@ -1045,12 +1043,15 @@ defmodule DevIDE.Terminals.SessionOwner do
   # ordering is naturally correct — and is idempotent for existing viewers.
   defp request_tmux_refresh(%{workspace_key: key, info: %{sid: sid}})
        when is_binary(key) and is_binary(sid) do
-    session = Tmux.session_name(key, sid)
-    tmux = DevIDE.Terminals.tmux_adapter()
+    _ =
+      DevIDE.Deployment.Drain.guard_shared_write(fn ->
+        session = Tmux.session_name(key, sid)
+        tmux = DevIDE.Terminals.tmux_adapter()
 
-    Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-      _ = tmux.refresh_client(session)
-    end)
+        Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
+          _ = tmux.refresh_client(session)
+        end)
+      end)
 
     :ok
   end
