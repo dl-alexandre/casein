@@ -10,7 +10,13 @@ import {
   pasteFromNavigatorClipboard
 } from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
-import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
+import {
+  applyServerThemeBundle,
+  readableTerminalColor,
+  remapColor,
+  terminalBackgroundRgb,
+  termVar
+} from "./terminal_themes"
 import {BOLD, ITALIC, OVERLINE, effectiveCellFlags} from "./terminal_cell_flags.mjs"
 import {backgroundLeadingPad} from "./terminal_bg_fill.mjs"
 import {
@@ -191,8 +197,8 @@ function cellStyle(fg, bg, flags) {
   const styles = []
   const decorations = []
 
-  const mappedFg = remapColor(fg)
   const mappedBg = remapColor(bg)
+  const mappedFg = readableTerminalColor(remapColor(fg), mappedBg || terminalBackgroundRgb())
 
   if (mappedFg) styles.push(`color:rgb(${mappedFg[0]}, ${mappedFg[1]}, ${mappedFg[2]})`)
 

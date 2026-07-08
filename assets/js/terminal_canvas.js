@@ -24,7 +24,7 @@
  * for quick in-browser checks, `localStorage["devide:terminal-renderer"] =
  * "canvas"`. Falls back to the DOM renderer if a 2D context isn't available.
  */
-import {remapColor, termVar} from "./terminal_themes"
+import {readableTerminalColor, remapColor, terminalBackgroundRgb, termVar} from "./terminal_themes"
 import {
   BOLD,
   FAINT,
@@ -138,6 +138,13 @@ function colorString(rgb, fallback) {
   return `rgb(${mapped[0]}, ${mapped[1]}, ${mapped[2]})`
 }
 
+function readableColorString(fg, bg, fallback) {
+  const mappedBg = remapColor(bg) || terminalBackgroundRgb()
+  const mappedFg = readableTerminalColor(remapColor(fg), mappedBg)
+  if (!mappedFg) return fallback
+  return `rgb(${mappedFg[0]}, ${mappedFg[1]}, ${mappedFg[2]})`
+}
+
 // Reset paint caches so the next frame fully repaints (theme/resize changes).
 export function resetCanvasRenderer(hook) {
   hook.__canvasRows = null
@@ -238,7 +245,7 @@ function paintRow(ctx, row, r, opts) {
 
     const flags = effectiveCellFlags(char0, flags0 || 0)
     const inverse = flags & INVERSE
-    let cellFg = colorString(row[col][1], fg)
+    let cellFg = readableColorString(row[col][1], row[col][2], fg)
     let cellBg = row[col][2] ? colorString(row[col][2], bg) : null
     if (inverse) {
       const tmp = cellBg || bg

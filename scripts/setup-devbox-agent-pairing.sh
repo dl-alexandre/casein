@@ -138,6 +138,9 @@ $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
+case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
+case ":\${PATH:-}:" in *":\${DEV_IDE_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${DEV_IDE_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 EOF
 chmod 600 "$AGENT_ENV"
 

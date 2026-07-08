@@ -212,6 +212,60 @@ export function remapColor(rgb) {
   return currentPalette[index] || rgb
 }
 
+function relativeLuminance(rgb) {
+  const channel = (value) => {
+    const c = value / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+
+  return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+}
+
+function contrastRatio(a, b) {
+  const l1 = relativeLuminance(a)
+  const l2 = relativeLuminance(b)
+  const lighter = Math.max(l1, l2)
+  const darker = Math.min(l1, l2)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function parseRgb(value) {
+  if (!value) return null
+
+  const hex = value.trim().match(/^#([0-9a-f]{6})$/i)
+  if (hex) return hexToRgb(hex[0])
+
+  const rgb = value.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+  if (!rgb) return null
+
+  return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]
+}
+
+export function terminalBackgroundRgb() {
+  return parseRgb(termVar("--devide-term-bg")) || hexToRgb("#0a0a0a")
+}
+
+export function terminalForegroundRgb() {
+  return parseRgb(termVar("--devide-term-fg")) || hexToRgb("#e4e4e7")
+}
+
+export function readableTerminalColor(fg, bg) {
+  if (!fg) return fg
+
+  const background = bg || terminalBackgroundRgb()
+  if (!background || contrastRatio(fg, background) >= 3) return fg
+
+  const candidates = [
+    terminalForegroundRgb(),
+    [245, 245, 245],
+    [24, 24, 27]
+  ]
+
+  return candidates
+    .filter(Boolean)
+    .sort((a, b) => contrastRatio(b, background) - contrastRatio(a, background))[0] || fg
+}
+
 export function termVar(name) {
   if (typeof document === "undefined") return ""
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
