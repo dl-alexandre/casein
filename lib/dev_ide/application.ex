@@ -20,6 +20,9 @@ defmodule DevIde.Application do
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
     DevIDE.Terminals.CommandLog.ensure_table!()
+    DevIDE.Terminals.ScrollbackArchive.ensure_table!()
+    DevIDE.Terminals.TemplatePreference.ensure_table!()
+    DevIDE.Terminals.SessionRecovery.ensure_table!()
 
     # jido_signal extensions self-register only via @after_compile, which
     # never fires for precompiled deps — without this, the trace extension

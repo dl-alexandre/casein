@@ -56,7 +56,21 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate list_sessions(), to: TmuxCtl.Client
   defdelegate list_panes(), to: TmuxCtl.Client
   defdelegate kill_window(session, window_id), to: TmuxCtl.Client
-  defdelegate kill(session), to: TmuxCtl.Client
+
+  @doc """
+  Kill a managed `devide_*` session and drop its scrollback archive.
+
+  Archive delete is intentional: idle GC / operator kill must not leave a
+  stale spill that reseeds (and false-positive recovers) on next open.
+  """
+  def kill(session) when is_binary(session) do
+    result = TmuxCtl.Client.kill(session)
+    _ = DevIDE.Terminals.ScrollbackArchive.delete(session)
+    result
+  end
+
+  def kill(session), do: TmuxCtl.Client.kill(session)
+
   defdelegate session_exists?(session), to: TmuxCtl.Client
   defdelegate session_alive?(session), to: TmuxCtl.Client
   defdelegate apply_defaults(session), to: TmuxCtl.Client

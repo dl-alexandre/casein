@@ -26,6 +26,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.SessionRecovery
+  alias DevIDE.Terminals.TemplatePreference
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Workspaces.Isolation
@@ -1128,6 +1130,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket = maybe_auto_reattach_pane(socket, pane_id, status)
 
     {:noreply, socket}
+  end
+
+  # tmux server/session wipe: Session/SessionOwner emitted a recovery notice.
+  # Banner the operator and best-effort re-apply the last session template so
+  # agent_pair layout comes back without a manual template click.
+  def handle_info({:terminal_recovery, %{type: :session_recreated} = notice}, socket) do
+    history =
+      if notice.history_restored?,
+        do: " Recent scrollback was restored from archive.",
+        else: " Pane history may be empty."
+
+    socket =
+      put_flash(
+        socket,
+        :error,
+        "Terminal session was recreated after a tmux reset.#{history}"
+      )
+
+    socket =
+      case notice.template_id do
+        id when is_binary(id) and id != "" ->
+          # Fire-and-forget best effort; don't block UI on template failure.
+          Process.send_after(self(), {:auto_apply_recovery_template, id}, 500)
+          socket
+
+        _ ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:auto_apply_recovery_template, template_id}, socket)
+      when is_binary(template_id) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      apply_session_template(socket, template_id, recovery?: true)
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:auto_reattach_pane, pane_id, attempt}, socket) do
@@ -2319,6 +2360,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp subscribe_pane_labels(socket) do
     if connected?(socket) do
       :ok = Labels.subscribe(socket.assigns.workspace.id)
+      _ = SessionRecovery.subscribe_workspace(socket.assigns.workspace.id)
     end
 
     socket
@@ -2566,6 +2608,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp applied_session_template(socket, template_id, result) do
+    # Store under both UUID and workspace name so Session (keyed by name)
+    # and LiveView recovery can both resolve the last template.
+    ws = socket.assigns.workspace
+    _ = TemplatePreference.put(ws.id, template_id)
+    if is_binary(ws.name) and ws.name != "", do: TemplatePreference.put(ws.name, template_id)
+
     socket =
       socket
       |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
@@ -3397,8 +3445,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp recoverable_pane_exit?(reason),
-    do: reason in [:pty_died, :process_died, :terminal_died]
+  # Broad recover set: the retry budget (@pane_auto_retry_limit) bounds loops
+  # for genuinely broken launches (missing tmux binary, etc.). Cover erlexec
+  # exit shapes from a crashed/restarted tmux client as well as Ghostty atoms.
+  defp recoverable_pane_exit?(reason) when reason in [:pty_died, :process_died, :terminal_died],
+    do: true
+
+  defp recoverable_pane_exit?({:exit_status, code}) when is_integer(code), do: true
+  defp recoverable_pane_exit?(:normal), do: true
+  defp recoverable_pane_exit?(:shutdown), do: true
+  defp recoverable_pane_exit?(:backend_recover_failed), do: true
+  defp recoverable_pane_exit?(:process_exit), do: true
+  defp recoverable_pane_exit?(:signal), do: true
+  defp recoverable_pane_exit?(reason) when is_atom(reason), do: true
+  defp recoverable_pane_exit?(reason) when is_integer(reason), do: true
+  defp recoverable_pane_exit?(_), do: false
 
   defp normalize_pane_exit_reason({:exit_status, status}) when is_integer(status), do: status
   defp normalize_pane_exit_reason(reason), do: reason
