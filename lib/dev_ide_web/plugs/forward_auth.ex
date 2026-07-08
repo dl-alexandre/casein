@@ -112,6 +112,45 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
     end
   end
 
+  @doc """
+  Asserts the HTTP listener is loopback- or unix-socket-bound when forward-auth
+  is enabled. Raises on misconfiguration in every environment (fail closed).
+  """
+  @spec assert_safe_listener_bind!() :: :ok
+  def assert_safe_listener_bind! do
+    if enabled?() and not listener_bind_safe?() do
+      raise bind_unsafe_message(endpoint_bind_ip())
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec listener_bind_safe?() :: boolean()
+  def listener_bind_safe? do
+    loopback_or_socket_ip?(endpoint_bind_ip())
+  end
+
+  defp bind_unsafe_message(ip) do
+    "Forward-auth is enabled (DevIDE trusts X-Auth-Request-Email) but the HTTP " <>
+      "listener is bound to #{inspect(ip)}, not loopback/unix-socket — a client " <>
+      "that reaches this port directly can spoof identity. Bind 127.0.0.1, ::1, " <>
+      "or a unix socket behind the proxy. (audit #10 / F3)"
+  end
+
+  defp loopback_or_socket_ip?({127, 0, 0, 1}), do: true
+  defp loopback_or_socket_ip?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
+  defp loopback_or_socket_ip?({:local, _}), do: true
+  # No explicit bind configured (e.g. server not started): nothing to assert.
+  defp loopback_or_socket_ip?(nil), do: true
+  defp loopback_or_socket_ip?(_), do: false
+
+  defp endpoint_bind_ip do
+    Application.get_env(:dev_ide, DevIdeWeb.Endpoint, [])
+    |> Keyword.get(:http, [])
+    |> Keyword.get(:ip)
+  end
+
   defp put_user(conn, user) do
     conn
     |> assign(:current_user, user)

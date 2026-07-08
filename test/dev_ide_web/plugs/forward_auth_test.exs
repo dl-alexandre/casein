@@ -139,6 +139,53 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
     end
   end
 
+  describe "assert_safe_listener_bind!/0" do
+    setup do
+      prev_forward = Application.get_env(:dev_ide, :forward_auth)
+      prev_endpoint = Application.get_env(:dev_ide, DevIdeWeb.Endpoint)
+
+      on_exit(fn ->
+        case prev_forward do
+          nil -> Application.delete_env(:dev_ide, :forward_auth)
+          val -> Application.put_env(:dev_ide, :forward_auth, val)
+        end
+
+        case prev_endpoint do
+          nil -> Application.delete_env(:dev_ide, DevIdeWeb.Endpoint)
+          val -> Application.put_env(:dev_ide, DevIdeWeb.Endpoint, val)
+        end
+      end)
+
+      :ok
+    end
+
+    test "passes when forward-auth is disabled" do
+      Application.put_env(:dev_ide, :forward_auth, false)
+      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {0, 0, 0, 0}])
+
+      assert :ok = ForwardAuth.assert_safe_listener_bind!()
+    end
+
+    test "passes when forward-auth is enabled on loopback" do
+      Application.put_env(:dev_ide, :forward_auth, true)
+      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {127, 0, 0, 1}])
+
+      assert :ok = ForwardAuth.assert_safe_listener_bind!()
+      assert ForwardAuth.listener_bind_safe?()
+    end
+
+    test "raises when forward-auth is enabled outside loopback (fail closed in all envs)" do
+      Application.put_env(:dev_ide, :forward_auth, true)
+      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}])
+
+      assert_raise RuntimeError, ~r/Forward-auth is enabled/, fn ->
+        ForwardAuth.assert_safe_listener_bind!()
+      end
+
+      refute ForwardAuth.listener_bind_safe?()
+    end
+  end
+
   describe "AssignCurrentUser.from_session/1" do
     test "reads the identity ForwardAuth stashed in the session" do
       user = %{id: "x", username: "x", email: "x@example.com", role: :owner}
