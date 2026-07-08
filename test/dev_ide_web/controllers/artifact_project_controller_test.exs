@@ -1,0 +1,158 @@
+defmodule DevIdeWeb.ArtifactProjectControllerTest do
+  use DevIdeWeb.ConnCase, async: false
+
+  alias DevIDE.ArtifactProjects
+  alias DevIDE.Runtimes
+  alias DevIDE.Workspace
+  alias DevIDE.Workspaces.State
+  alias DevIDE.Workspaces.State.MemoryAdapter
+
+  @workspace_id "ws-art-public"
+
+  # Ownership source used by the controller's authorize gate: "owner" owns any
+  # workspace id, so we can exercise the gate without the manager backend.
+  defmodule OwnedSource do
+    def get(id, _auth), do: {:ok, %Workspace{id: id, name: id, user: "owner", status: :running}}
+  end
+
+  setup do
+    prev = %{
+      artifact_root: Application.get_env(:dev_ide, :artifact_projects_root),
+      agent_roots: Application.get_env(:dev_ide, :agent_worktree_roots),
+      launcher: Application.get_env(:dev_ide, :runtime_preview_launcher_enabled),
+      runtimes: Application.get_env(:dev_ide, :runtimes_adapter),
+      wstate: Application.get_env(:dev_ide, :workspace_state_adapter),
+      source: Application.get_env(:dev_ide, :workspace_source),
+      fa: Application.get_env(:dev_ide, :forward_auth)
+    }
+
+    base = Path.join(System.tmp_dir!(), "artifact-pub-#{System.unique_integer([:positive])}")
+    repo = Path.join(base, "repo")
+
+    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :artifact_projects_root, Path.join(base, "artifacts"))
+    Application.put_env(:dev_ide, :agent_worktree_roots, [])
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
+    # Identity comes from the X-Auth-Request-Email header, as in prod.
+    Application.put_env(:dev_ide, :forward_auth, true)
+
+    MemoryAdapter.clear()
+    Runtimes.clear()
+    init_repo!(repo)
+    seed_workspace!(@workspace_id, repo)
+
+    {:ok, project} = ArtifactProjects.create(@workspace_id, %{name: "Smoke Report"})
+
+    on_exit(fn ->
+      MemoryAdapter.clear()
+      Runtimes.clear()
+      File.rm_rf!(base)
+      Enum.each(prev, fn {k, v} -> restore(env_key(k), v) end)
+    end)
+
+    %{project_id: project.id, worktree: project.worktree_path}
+  end
+
+  test "serves the artifact index.html to the workspace owner with a tight CSP", ctx do
+    conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
+
+    assert response(conn, 200) =~ "Smoke Report"
+    assert get_resp_header(conn, "content-type") |> hd() =~ "text/html"
+    assert [csp] = get_resp_header(conn, "content-security-policy")
+    assert csp =~ "default-src 'self'"
+    assert csp =~ "frame-ancestors 'self'"
+    assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
+  end
+
+  test "serves a named file under the worktree", ctx do
+    conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id, "index.html"))
+    assert response(conn, 200) =~ "Smoke Report"
+  end
+
+  test "404 for a non-owner (IDOR guard)", ctx do
+    conn = ctx.conn |> as("intruder@example.com") |> get(artifact_path(ctx.project_id))
+    assert text_response(conn, 404) == "not found"
+  end
+
+  test "404 when the artifact does not belong to the requested workspace", ctx do
+    # Owner owns "other-ws" too (OwnedSource), but the artifact belongs to @workspace_id.
+    conn =
+      ctx.conn
+      |> as("owner@example.com")
+      |> get("/artifact-projects/other-ws/#{ctx.project_id}/")
+
+    assert text_response(conn, 404) == "not found"
+  end
+
+  test "404 for dotfiles (.git / .devide never served)", ctx do
+    conn =
+      ctx.conn
+      |> as("owner@example.com")
+      |> get(artifact_path(ctx.project_id, ".devide/artifact.json"))
+
+    assert text_response(conn, 404) == "not found"
+  end
+
+  test "404 for path traversal", ctx do
+    conn =
+      ctx.conn
+      |> as("owner@example.com")
+      |> get("/artifact-projects/#{@workspace_id}/#{ctx.project_id}/../../README.md")
+
+    assert text_response(conn, 404) == "not found"
+  end
+
+  test "401 without a forwarded identity", ctx do
+    conn = get(ctx.conn, artifact_path(ctx.project_id))
+    assert conn.status == 401
+  end
+
+  # --- helpers ---
+
+  defp artifact_path(project_id, sub \\ ""),
+    do: "/artifact-projects/#{@workspace_id}/#{project_id}/#{sub}"
+
+  defp as(conn, email), do: put_req_header(conn, "x-auth-request-email", email)
+
+  defp seed_workspace!(id, path) do
+    {:ok, _} =
+      State.sync(%Workspace{
+        id: id,
+        name: "Artifact Workspace",
+        user: "owner",
+        branch: "main",
+        status: :running,
+        path: path,
+        metadata: %{"id" => id, "branch" => "main"}
+      })
+  end
+
+  defp init_repo!(path) do
+    File.mkdir_p!(path)
+    git!(path, ["init", "--initial-branch=main"])
+    git!(path, ["config", "user.name", "Test"])
+    git!(path, ["config", "user.email", "test@example.com"])
+    File.write!(Path.join(path, "README.md"), "# Test\n")
+    git!(path, ["add", "README.md"])
+    git!(path, ["commit", "-m", "init"])
+    :ok
+  end
+
+  defp git!(cwd, args) do
+    {out, 0} = System.cmd("git", args, cd: cwd, stderr_to_stdout: true)
+    String.trim(out)
+  end
+
+  defp env_key(:artifact_root), do: :artifact_projects_root
+  defp env_key(:agent_roots), do: :agent_worktree_roots
+  defp env_key(:launcher), do: :runtime_preview_launcher_enabled
+  defp env_key(:runtimes), do: :runtimes_adapter
+  defp env_key(:wstate), do: :workspace_state_adapter
+  defp env_key(:source), do: :workspace_source
+  defp env_key(:fa), do: :forward_auth
+
+  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+end
