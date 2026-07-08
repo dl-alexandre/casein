@@ -920,6 +920,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-tmux-window-index="0")
       assert html =~ ~s(data-tmux-window-index="1")
       refute html =~ ~s(target="_blank")
+      # The drag-and-drop gate reads this as a string ("true"/"false"), so it
+      # must render with an explicit value — a bare boolean attribute leaves
+      # dataset.mutationsAllowed = "" and silently disables dragging.
+      assert html =~ ~s(data-mutations-allowed="false")
+    end
+
+    test "drag-and-drop gate attribute renders an explicit string when allowed" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      html =
+        render_component(&SessionBar.window_tabs/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 7,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(data-mutations-allowed="true")
     end
 
     test "renders preview marker on window tabs" do
