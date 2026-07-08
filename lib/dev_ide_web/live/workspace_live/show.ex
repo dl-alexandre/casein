@@ -3445,20 +3445,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Broad recover set: the retry budget (@pane_auto_retry_limit) bounds loops
-  # for genuinely broken launches (missing tmux binary, etc.). Cover erlexec
-  # exit shapes from a crashed/restarted tmux client as well as Ghostty atoms.
-  defp recoverable_pane_exit?(reason) when reason in [:pty_died, :process_died, :terminal_died],
-    do: true
+  # Recover process/PTY death and SessionOwner recover exhaustion. Do NOT
+  # reattach on clean integer exit statuses (shell `exit`, normalized
+  # `{:exit_status, n}`) — those are intentional pane ends and are covered by
+  # WorkspacePaneSplitTest. SessionOwner reattaches the backend on term_exit
+  # without tearing the PaneWorker when possible.
+  defp recoverable_pane_exit?(reason)
+       when reason in [
+              :pty_died,
+              :process_died,
+              :terminal_died,
+              :backend_recover_failed,
+              :process_exit,
+              :signal
+            ],
+       do: true
 
-  defp recoverable_pane_exit?({:exit_status, code}) when is_integer(code), do: true
-  defp recoverable_pane_exit?(:normal), do: true
-  defp recoverable_pane_exit?(:shutdown), do: true
-  defp recoverable_pane_exit?(:backend_recover_failed), do: true
-  defp recoverable_pane_exit?(:process_exit), do: true
-  defp recoverable_pane_exit?(:signal), do: true
-  defp recoverable_pane_exit?(reason) when is_atom(reason), do: true
-  defp recoverable_pane_exit?(reason) when is_integer(reason), do: true
   defp recoverable_pane_exit?(_), do: false
 
   defp normalize_pane_exit_reason({:exit_status, status}) when is_integer(status), do: status
