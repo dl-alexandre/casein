@@ -3,6 +3,8 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
 
   import Phoenix.LiveViewTest
 
+  alias DevIDE.Audit
+  alias DevIDE.Signals.Context
   alias DevIdeWeb.WorkspaceLive.AuditDrawerComponent
 
   defp config(overrides) do
@@ -87,6 +89,59 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
 
       assert socket.assigns.audit_window_filter == "main"
       refute_received {:panel_flash, _, _}
+    end
+  end
+
+  describe "handle_event/3 (causal chain)" do
+    test "trace loads the correlation chain in causal order" do
+      cid =
+        Context.with_new(fn ->
+          {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wtrace"})
+          {:ok, _} = Audit.emit(%{action: "chain.second", workspace_id: "wtrace"})
+          Context.current().trace_id
+        end)
+
+      {:noreply, socket} =
+        AuditDrawerComponent.handle_event(
+          "audit_drawer:trace",
+          %{"correlation" => cid},
+          socket()
+        )
+
+      assert socket.assigns.audit_trace.correlation_id == cid
+
+      assert Enum.map(socket.assigns.audit_trace.events, & &1.action) ==
+               ["chain.first", "chain.second"]
+    end
+
+    test "trace_close clears the chain" do
+      seeded = socket()
+
+      seeded = %{
+        seeded
+        | assigns: Map.put(seeded.assigns, :audit_trace, %{correlation_id: "x", events: []})
+      }
+
+      {:noreply, socket} =
+        AuditDrawerComponent.handle_event("audit_drawer:trace_close", %{}, seeded)
+
+      assert socket.assigns.audit_trace == nil
+    end
+
+    test "an unauthorized viewer cannot trace" do
+      unauthorized = socket(%{current_user: %{id: "intruder", username: "intruder"}})
+
+      {:noreply, socket} =
+        AuditDrawerComponent.handle_event(
+          "audit_drawer:trace",
+          %{"correlation" => "any"},
+          unauthorized
+        )
+
+      assert %{action: :ui_event, verdict: :deny, reason: :forbidden} =
+               socket.assigns.last_decision
+
+      assert_received {:panel_flash, :error, "You do not have access to this workspace."}
     end
   end
 end

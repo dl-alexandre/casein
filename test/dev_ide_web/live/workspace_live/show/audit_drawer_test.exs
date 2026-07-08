@@ -362,5 +362,105 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawerTest do
 
       refute html =~ ~s(phx-click="run_ledger:open")
     end
+
+    test "trace button appears only for events carrying a correlation_id" do
+      traced =
+        event(
+          action: "policy.check",
+          decision: :deny,
+          target_ref: "fs/write",
+          metadata: %{"correlation_id" => "corr-123"}
+        )
+
+      plain = event(action: "policy.check", decision: :allow, target_ref: "fs/read")
+      stream = [traced, plain] |> Enum.map(fn e -> {"audit-events-#{e.id}", e} end)
+      assigns = drawer_assigns(streams: %{audit_events: stream})
+
+      html =
+        rendered_to_string(~H"""
+        <AuditDrawer.audit_drawer
+          audit_drawer_open={@audit_drawer_open}
+          audit_events_count={@audit_events_count}
+          audit_ledger_count={@audit_ledger_count}
+          audit_window_filter={@audit_window_filter}
+          workspace={@workspace}
+          streams={@streams}
+        />
+        """)
+
+      assert html =~ ~s(phx-click="audit_drawer:trace")
+      assert html =~ ~s(phx-value-correlation="corr-123")
+      assert html =~ ~s(id="audit-trace-corr-123-)
+    end
+
+    test "no trace button when no event carries a correlation_id" do
+      plain = event(action: "policy.check", decision: :allow, target_ref: "fs/read")
+      stream = [{"audit-events-#{plain.id}", plain}]
+      assigns = drawer_assigns(streams: %{audit_events: stream})
+
+      html =
+        rendered_to_string(~H"""
+        <AuditDrawer.audit_drawer
+          audit_drawer_open={@audit_drawer_open}
+          audit_events_count={@audit_events_count}
+          audit_ledger_count={@audit_ledger_count}
+          audit_window_filter={@audit_window_filter}
+          workspace={@workspace}
+          streams={@streams}
+        />
+        """)
+
+      refute html =~ ~s(phx-click="audit_drawer:trace")
+    end
+
+    test "renders the causal-chain panel in order when audit_trace is set" do
+      first = event(action: "deploy.triggered", target_ref: "master")
+      second = event(action: "canary.drained", target_ref: "old-canary")
+
+      assigns =
+        drawer_assigns(
+          audit_trace: %{correlation_id: "corr-abcdef123456", events: [first, second]}
+        )
+
+      html =
+        rendered_to_string(~H"""
+        <AuditDrawer.audit_drawer
+          audit_drawer_open={@audit_drawer_open}
+          audit_events_count={@audit_events_count}
+          audit_ledger_count={@audit_ledger_count}
+          audit_window_filter={@audit_window_filter}
+          audit_trace={@audit_trace}
+          workspace={@workspace}
+          streams={@streams}
+        />
+        """)
+
+      assert html =~ "causal chain · 2 event(s)"
+      assert html =~ ~s(phx-click="audit_drawer:trace_close")
+      assert html =~ "triggered"
+      assert html =~ "drained"
+      # correlation id is shown truncated to 12 chars
+      assert html =~ "corr-abcdef1"
+    end
+
+    test "no chain panel when audit_trace is nil" do
+      assigns = drawer_assigns(audit_trace: nil)
+
+      html =
+        rendered_to_string(~H"""
+        <AuditDrawer.audit_drawer
+          audit_drawer_open={@audit_drawer_open}
+          audit_events_count={@audit_events_count}
+          audit_ledger_count={@audit_ledger_count}
+          audit_window_filter={@audit_window_filter}
+          audit_trace={@audit_trace}
+          workspace={@workspace}
+          streams={@streams}
+        />
+        """)
+
+      refute html =~ "causal chain"
+      refute html =~ ~s(phx-click="audit_drawer:trace_close")
+    end
   end
 end

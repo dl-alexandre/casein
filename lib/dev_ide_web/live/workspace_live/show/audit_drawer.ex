@@ -14,6 +14,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
     default: nil,
     doc: "phx-target for refresh/filter events; toggle/close stay on the root LV (hub state)"
 
+  attr :audit_trace, :map,
+    default: nil,
+    doc: "when set (%{correlation_id, events}), renders the drilled-in causal chain panel"
+
   def audit_drawer(assigns) do
     ~H"""
     <div
@@ -88,21 +92,75 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
                 <span class="text-zinc-700 break-all">
                   {audit_detail(e)}
                 </span>
-                <%= if run_id = audit_run_id(e) do %>
-                  <button
-                    id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
-                    phx-click="run_ledger:open"
-                    phx-value-id={run_id}
-                    class="ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
-                    title="open run timeline"
-                  >
-                    run
-                  </button>
-                <% end %>
+                <span class="ml-auto flex gap-1 shrink-0">
+                  <%= if cid = audit_correlation_id(e) do %>
+                    <button
+                      id={"audit-trace-#{dom_fragment(cid)}-#{dom_fragment(e.id)}"}
+                      phx-click="audit_drawer:trace"
+                      phx-value-correlation={cid}
+                      phx-target={@target}
+                      class="rounded border px-1 py-0.5 text-[10px] text-indigo-600 hover:bg-indigo-50"
+                      title="show causal chain"
+                    >
+                      trace
+                    </button>
+                  <% end %>
+                  <%= if run_id = audit_run_id(e) do %>
+                    <button
+                      id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
+                      phx-click="run_ledger:open"
+                      phx-value-id={run_id}
+                      class="rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
+                      title="open run timeline"
+                    >
+                      run
+                    </button>
+                  <% end %>
+                </span>
               </li>
             <% end %>
           </ol>
         </div>
+        <%= if @audit_trace do %>
+          <section
+            id="audit-causal-chain"
+            class="border-t bg-indigo-50/60 px-3 py-2 text-[11px] max-h-48 overflow-y-auto"
+          >
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-medium text-indigo-700">
+                causal chain · {length(@audit_trace.events)} event(s)
+              </span>
+              <button
+                phx-click="audit_drawer:trace_close"
+                phx-target={@target}
+                class="rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-white"
+                title="close causal chain"
+              >
+                close
+              </button>
+            </div>
+            <%= if @audit_trace.events == [] do %>
+              <p class="text-zinc-400 italic">no linked events</p>
+            <% else %>
+              <ol class="space-y-0.5">
+                <%= for ce <- @audit_trace.events do %>
+                  <li class="flex gap-2 items-baseline">
+                    <span class="text-zinc-400 shrink-0">
+                      {Calendar.strftime(ce.inserted_at, "%H:%M:%S")}
+                    </span>
+                    <span class={"shrink-0 font-medium " <> audit_verb_class(ce)}>
+                      {audit_verb(ce)}
+                    </span>
+                    <span class="text-zinc-700 break-all">{audit_detail(ce)}</span>
+                  </li>
+                <% end %>
+              </ol>
+            <% end %>
+            <div class="mt-1 text-[10px] text-zinc-500 font-mono">
+              correlation {String.slice(@audit_trace.correlation_id, 0, 12)}… · causal order
+            </div>
+          </section>
+        <% end %>
         <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
           newest first · capped at 50 · time-ordered stream (product.md §9.4)
         </footer>
@@ -164,6 +222,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   end
 
   defp audit_run_id(_), do: nil
+
+  # A correlation id means this event belongs to a causal chain worth drilling
+  # into (stamped by DevIDE.Signals.Context at entry points / MCP tool calls).
+  defp audit_correlation_id(%{metadata: metadata}) when is_map(metadata) do
+    case Map.get(metadata, "correlation_id") || Map.get(metadata, :correlation_id) do
+      cid when is_binary(cid) and cid != "" -> cid
+      _ -> nil
+    end
+  end
+
+  defp audit_correlation_id(_), do: nil
 
   defp dom_fragment(value) when is_binary(value),
     do: String.replace(value, ~r/[^a-zA-Z0-9_-]/, "-")
