@@ -249,6 +249,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
     end
   end
 
+  describe "terminal:open_web_link_preview" do
+    defp preview_socket(assigns) do
+      %Phoenix.LiveView.Socket{
+        assigns:
+          Map.merge(
+            %{__changed__: %{}, flash: %{}, workspace: %Workspace{id: "ws-1", name: "alpha"}},
+            assigns
+          )
+      }
+    end
+
+    test "a valid http(s) URL with no tmux session flashes the start-a-session hint" do
+      socket = preview_socket(%{tmux_session: ""})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:open_web_link_preview",
+                 %{"url" => "https://example.com/x"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "tmux terminal session"
+    end
+
+    test "a non-http scheme is rejected before any preview open" do
+      socket = preview_socket(%{tmux_session: ""})
+
+      assert {:noreply, ^socket} =
+               TerminalEvents.handle_event(
+                 "terminal:open_web_link_preview",
+                 %{"url" => "javascript:alert(1)"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) == nil
+    end
+
+    test "a missing url param is a no-op" do
+      socket = preview_socket(%{})
+
+      assert {:noreply, ^socket} =
+               TerminalEvents.handle_event("terminal:open_web_link_preview", %{}, socket)
+    end
+  end
+
   defp flush_mailbox do
     receive do
       _ -> flush_mailbox()
