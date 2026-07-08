@@ -190,7 +190,9 @@ defmodule DevIDE.Deployment.LastDeployTest do
     {:ok, sub_id} =
       Jido.Signal.Bus.subscribe(
         DevIDE.SignalBus.name(),
-        DevIDE.Signals.Publish.domain_subscription_pattern(), dispatch: {:pid, target: self()})
+        DevIDE.Signals.Publish.domain_subscription_pattern(),
+        dispatch: {:pid, target: self()}
+      )
 
     on_exit(fn -> Jido.Signal.Bus.unsubscribe(DevIDE.SignalBus.name(), sub_id) end)
 

@@ -3,6 +3,7 @@ defmodule DevIDE.Test.ObanSignalsWorker do
 
   use DevIDE.Signals.ObanWorker, queue: :default
 
+  @impl DevIDE.Signals.ObanWorker
   def execute(_job) do
     stamped = DevIDE.Signals.Context.stamp(%{action: "oban.worker"})
     Process.put({__MODULE__, :correlation_id}, stamped.metadata["correlation_id"])

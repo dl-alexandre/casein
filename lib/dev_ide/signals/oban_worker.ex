@@ -6,9 +6,13 @@ defmodule DevIDE.Signals.ObanWorker do
   `ObanMiddleware.new_job/2`). Implement `execute/1` instead of `perform/1`.
   """
 
+  @callback execute(Oban.Job.t()) :: Oban.Worker.result()
+
   defmacro __using__(opts) do
     quote do
       use Oban.Worker, unquote(opts)
+
+      @behaviour DevIDE.Signals.ObanWorker
 
       @before_compile DevIDE.Signals.ObanWorker
     end
@@ -23,11 +27,6 @@ defmodule DevIDE.Signals.ObanWorker do
       def perform(%Job{} = job) do
         ObanMiddleware.perform_job(job, &__MODULE__.execute/1)
       end
-
-      @spec execute(Job.t()) :: Oban.Worker.result()
-      def execute(%Job{}), do: :ok
-
-      defoverridable execute: 1
     end
   end
 end
