@@ -137,10 +137,18 @@ defmodule DevIDE.Deployment.Registry do
     :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
   end
 
-  # A heartbeat is owned by another process when its recorded pid is a live OS
-  # process that isn't us. Liveness comes from /proc (the deploy target is
-  # Linux); where /proc is unavailable this degrades to today's overwrite
-  # behavior rather than blocking the boot.
+  # A heartbeat is owned by another process when its recorded pid is a live
+  # *DevIDE* process that isn't us. Liveness and identity come from /proc (the
+  # deploy target is Linux); where /proc is unavailable this degrades to today's
+  # overwrite behavior rather than blocking the boot.
+  #
+  # The cmdline check is not paranoia: a bare `/proc/<pid>` existence test would
+  # false-positive if the recorded pid died and the OS recycled that number for
+  # an unrelated process — we would then refuse to write our heartbeat and run
+  # invisibly to list_instances/0 (health, drift). Requiring a beam/dev_ide
+  # cmdline matches the deploy script's dev_ide_release_pid_alive and confines a
+  # conflict to a genuine sibling DevIDE boot under the shared instance UUID.
+  #
   # The pid is digit-validated before any path use.
   # sobelow_skip ["Traversal.FileModule"]
   defp heartbeat_owner_conflict(file_path) do
@@ -148,10 +156,36 @@ defmodule DevIDE.Deployment.Registry do
          {:ok, %{"pid" => pid}} when is_binary(pid) <- Jason.decode(body),
          true <- pid =~ ~r/^\d+$/,
          true <- pid != System.pid(),
-         true <- File.dir?("/proc/#{pid}") do
+         true <- owner_alive?(pid) do
       {:conflict, pid}
     else
       _ -> :ok
+    end
+  end
+
+  # Seam for tests: /proc-based identity is Linux-only and hard to fabricate
+  # (you can't easily spawn an OS process whose cmdline reads as a DevIDE beam),
+  # so the conflict path would otherwise be untestable off the devbox. Defaults
+  # to the real check; tests inject a predicate. Mirrors Drain.stop_system/1.
+  defp owner_alive?(pid) do
+    case Application.get_env(:dev_ide, :deployment_owner_liveness) do
+      fun when is_function(fun, 1) -> fun.(pid)
+      _ -> dev_ide_process?(pid)
+    end
+  end
+
+  # True when /proc/<pid>/cmdline belongs to a DevIDE beam. cmdline is
+  # NUL-separated; match the same markers the deploy script keys on (a release
+  # under /opt/devide/release, or a dev_ide_*@host node name).
+  # sobelow_skip ["Traversal.FileModule"]
+  defp dev_ide_process?(pid) do
+    case File.read("/proc/#{pid}/cmdline") do
+      {:ok, raw} ->
+        cmdline = String.replace(raw, <<0>>, " ")
+        String.contains?(cmdline, "/opt/devide/release/") or cmdline =~ ~r/dev_ide_\w+@/
+
+      _ ->
+        false
     end
   end
 

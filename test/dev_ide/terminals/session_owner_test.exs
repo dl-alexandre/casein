@@ -1007,6 +1007,63 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "a superseded instance (current.sock points elsewhere) stops re-asserting" do
+    # Defense in depth behind the deploy's drain/stop of old instances: a
+    # canary that lost its drain signal must not keep fighting the live owner
+    # over tmux window sizes just because it is still running.
+    swap_in_fake_tmux_adapter()
+
+    tmp = Path.join(System.tmp_dir!(), "devide-superseded-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(tmp)
+    current = Path.join(tmp, "current.sock")
+    live_socket = Path.join(tmp, "live.sock")
+    our_socket = Path.join(tmp, "ours.sock")
+    File.ln_s!(live_socket, current)
+
+    prev_current = Application.get_env(:dev_ide, :deployment_current_socket)
+    prev_env = System.get_env("DEVIDE_HTTP_SOCKET")
+    Application.put_env(:dev_ide, :deployment_current_socket, current)
+    System.put_env("DEVIDE_HTTP_SOCKET", our_socket)
+
+    on_exit(fn ->
+      File.rm_rf!(tmp)
+
+      case prev_current do
+        nil -> Application.delete_env(:dev_ide, :deployment_current_socket)
+        _ -> Application.put_env(:dev_ide, :deployment_current_socket, prev_current)
+      end
+
+      case prev_env do
+        nil -> System.delete_env("DEVIDE_HTTP_SOCKET")
+        _ -> System.put_env("DEVIDE_HTTP_SOCKET", prev_env)
+      end
+    end)
+
+    unique = "superseded-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-superseded", "sid-#{unique}")
+    owner_pid = start_shell_owner("ws-superseded", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-superseded", applied_size: {120, 40}}
+    end)
+
+    session = "devide_ws-superseded_sid-#{unique}"
+    TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
+
+    # current.sock resolves to live_socket, not ours → superseded → no re-assert.
+    send(owner_pid, :tmux_drift_check)
+    refute_receive {:fake_tmux_resize_window, ^session, 120, 40}, 200
+
+    # Repoint current.sock at our socket → no longer superseded → it re-asserts.
+    File.rm!(current)
+    File.ln_s!(our_socket, current)
+    send(owner_pid, :tmux_drift_check)
+    assert_receive {:fake_tmux_resize_window, ^session, 120, 40}
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "a fitted size flapping back to the bootstrap default emits a breadcrumb" do
     # The PR #148 incident signature: the same viewer reports a real fitted
     # size, then 80x24 (the component/vendor dataset default) moments later —

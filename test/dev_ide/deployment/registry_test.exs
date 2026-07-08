@@ -54,21 +54,26 @@ defmodule DevIDE.Deployment.RegistryTest do
   # them, so a secondary boot (mix test, release eval) shares the serving
   # instance's identity. Overwriting its heartbeat with our short-lived pid made
   # the deploy's stale-record cleanup delete it, and the instance then never
-  # received its drain signal.
-  test "init leaves a heartbeat owned by another live process untouched" do
+  # received its drain signal. Liveness is injected (see owner_alive?/1) so this
+  # runs the same on macOS dev machines as on the Linux devbox.
+  test "init leaves a heartbeat owned by another live DevIDE process untouched" do
     dir = isolated_instance_dir!()
     put_instance_uuid!("conflict-test")
+    stub_owner_liveness!(fn _pid -> true end)
 
     path = Path.join(dir, "conflict-test.json")
-    File.write!(path, Jason.encode!(%{"id" => "conflict-test", "pid" => "1"}))
+    File.write!(path, Jason.encode!(%{"id" => "conflict-test", "pid" => "424242"}))
 
     assert {:ok, %{file_path: nil}} = Registry.init([])
-    assert %{"pid" => "1"} = path |> File.read!() |> Jason.decode!()
+    assert %{"pid" => "424242"} = path |> File.read!() |> Jason.decode!()
   end
 
-  test "init overwrites a heartbeat whose owner pid is dead" do
+  test "init overwrites a heartbeat whose owner is not a live DevIDE process" do
     dir = isolated_instance_dir!()
     put_instance_uuid!("dead-owner-test")
+    # False stands in for both "pid is dead" and "pid was recycled by an
+    # unrelated process" — the cmdline check rejects the recycled case too.
+    stub_owner_liveness!(fn _pid -> false end)
 
     path = Path.join(dir, "dead-owner-test.json")
     File.write!(path, Jason.encode!(%{"id" => "dead-owner-test", "pid" => "999999999"}))
@@ -76,6 +81,19 @@ defmodule DevIDE.Deployment.RegistryTest do
     assert {:ok, %{file_path: ^path}} = Registry.init([])
     assert %{"pid" => pid} = path |> File.read!() |> Jason.decode!()
     assert pid == System.pid()
+  end
+
+  test "init ignores a heartbeat that records our own pid" do
+    dir = isolated_instance_dir!()
+    put_instance_uuid!("self-pid-test")
+    # Liveness would say true, but a record bearing our own pid must never count
+    # as a foreign owner — otherwise a re-init over our own file would refuse.
+    stub_owner_liveness!(fn _pid -> true end)
+
+    path = Path.join(dir, "self-pid-test.json")
+    File.write!(path, Jason.encode!(%{"id" => "self-pid-test", "pid" => System.pid()}))
+
+    assert {:ok, %{file_path: ^path}} = Registry.init([])
   end
 
   defp isolated_instance_dir! do
@@ -96,5 +114,17 @@ defmodule DevIDE.Deployment.RegistryTest do
     prev = System.get_env("DEVIDE_INSTANCE_UUID")
     System.put_env("DEVIDE_INSTANCE_UUID", id)
     on_exit(fn -> restore_env("DEVIDE_INSTANCE_UUID", prev) end)
+  end
+
+  defp stub_owner_liveness!(fun) do
+    prev = Application.get_env(:dev_ide, :deployment_owner_liveness)
+    Application.put_env(:dev_ide, :deployment_owner_liveness, fun)
+
+    on_exit(fn ->
+      case prev do
+        nil -> Application.delete_env(:dev_ide, :deployment_owner_liveness)
+        _ -> Application.put_env(:dev_ide, :deployment_owner_liveness, prev)
+      end
+    end)
   end
 end
