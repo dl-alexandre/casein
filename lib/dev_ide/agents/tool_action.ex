@@ -22,7 +22,10 @@ defmodule DevIDE.Agents.ToolAction do
   """
 
   alias DevIDE.PayloadAttrs
+  alias DevIDE.Signals.Context
   alias McpCtl.Tool
+
+  @default_timeout_ms 30_000
 
   @doc "MCP JSON Schema for tools/list, built with `McpCtl.Tool.object/2`."
   @callback parameters() :: map()
@@ -55,8 +58,56 @@ defmodule DevIDE.Agents.ToolAction do
 
     with {:ok, params} <- check_required(params, schema),
          {:ok, validated} <- validate(action, params) do
-      action.run(validated, context)
+      run_with_timeout(action, validated, context)
     end
+  end
+
+  defp run_with_timeout(action, validated, context) do
+    timeout_ms = timeout_ms_for(action)
+    started_at = System.monotonic_time(:millisecond)
+    task = Context.async(fn -> action.run(validated, context) end)
+
+    result =
+      case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+        {:ok, run_result} ->
+          emit_tool_stop(action, started_at, false)
+          run_result
+
+        {:exit, reason} ->
+          emit_tool_stop(action, started_at, false)
+          {:error, %{error: :tool_crashed, message: Exception.format_exit(reason)}}
+
+        nil ->
+          emit_tool_stop(action, started_at, true)
+
+          {:error,
+           %{
+             error: :timeout,
+             message: "tool #{action.name()} timed out after #{timeout_ms}ms"
+           }}
+      end
+
+    result
+  end
+
+  defp timeout_ms_for(action) do
+    action
+    |> mcp_metadata()
+    |> Map.get(:timeout_ms, @default_timeout_ms)
+  end
+
+  defp mcp_metadata(action) do
+    if function_exported?(action, :mcp_metadata, 0), do: action.mcp_metadata(), else: %{}
+  end
+
+  defp emit_tool_stop(action, started_at, timed_out?) do
+    duration = System.monotonic_time(:millisecond) - started_at
+
+    :telemetry.execute(
+      [:dev_ide, :agents, :tool, :stop],
+      %{duration: duration},
+      %{tool: action.name(), timed_out: timed_out?}
+    )
   end
 
   defp aliases(action) do

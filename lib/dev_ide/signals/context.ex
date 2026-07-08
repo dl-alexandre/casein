@@ -32,6 +32,26 @@ defmodule DevIDE.Signals.Context do
   def with_snapshot(nil, fun) when is_function(fun, 0), do: fun.()
   def with_snapshot(%Trace.Context{} = ctx, fun) when is_function(fun, 0), do: scoped(ctx, fun)
 
+  @default_task_supervisor DevIDE.TaskSupervisor
+
+  @doc """
+  Run `fun` in a supervised task, propagating the caller's context snapshot.
+
+  Returns a `Task` suitable for `Task.yield/2` / `Task.await/2`. Uses
+  `DevIDE.TaskSupervisor` by default; pass a supervisor to `async/2`.
+  """
+  @spec async((-> term())) :: Task.t()
+  def async(fun) when is_function(fun, 0), do: async(@default_task_supervisor, fun)
+
+  @spec async(Task.Supervisor.name(), (-> term())) :: Task.t()
+  def async(supervisor, fun) when is_function(fun, 0) do
+    snap = snapshot()
+
+    Task.Supervisor.async_nolink(supervisor, fn ->
+      with_snapshot(snap, fun)
+    end)
+  end
+
   @doc "Capture the current context for cross-process handoff."
   @spec snapshot() :: t() | nil
   def snapshot, do: TraceContext.current()
