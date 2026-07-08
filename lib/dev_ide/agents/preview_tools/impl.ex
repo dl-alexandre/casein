@@ -144,7 +144,8 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
-    with {:ok, url} <- surface_url(workspace, surface, params),
+    with :ok <- ensure_workspace_started(workspace),
+         {:ok, url} <- surface_url(workspace, surface, params),
          :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
@@ -185,7 +186,8 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
         |> Map.put("tmux_session", session)
         |> Map.put("runtime_required", true)
 
-      with {:ok, url} <- surface_url(workspace, surface, params),
+      with :ok <- ensure_workspace_started(workspace),
+           {:ok, url} <- surface_url(workspace, surface, params),
            :ok <- ensure_unambiguous_tmux_session(workspace, params),
            {:ok, placement} <- resolve_preview_placement(session, params),
            opts <-
@@ -2030,6 +2032,114 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
 
   defp preview_preflight_reason(%{reason: reason}), do: reason
   defp preview_preflight_reason(reason), do: inspect(reason)
+
+  # Opening the app preview for a STOPPED devbox workspace 404s: Caddy has no
+  # active route, so the subdomain falls through to DevIDE's preview-router. Fix
+  # it at the source — start the workspace via the manager and wait (bounded) for
+  # its loopback /health before opening.
+  #
+  # Scope: v3 host-stage workspaces only (that's where the ports.http + /health
+  # convention holds). Config-gated (:preview_autostart_stopped_workspace,
+  # default true). A missing/non-:stopped status — session-scoped tools,
+  # folder-attach workspaces, already-running apps, and test fixtures without a
+  # status — is a no-op that proceeds to the normal open path.
+  defp ensure_workspace_started(workspace) do
+    if autostart_enabled?(), do: maybe_start_and_await(workspace), else: :ok
+  end
+
+  defp maybe_start_and_await(%{status: status, id: id, metadata: %{type: :v3}} = workspace)
+       when status in [:stopped, :starting] and is_binary(id) do
+    case workspace_http_port(workspace) do
+      nil ->
+        # No known app port — can't readiness-probe; let the normal open path
+        # (and the :workspace_app_not_running preflight classifier) handle it.
+        :ok
+
+      port ->
+        # Idempotent on the manager side: start/2 no-ops an already-running or
+        # in-flight workspace. Only fire it when we believe it's stopped.
+        if status == :stopped, do: DevIDE.Workspaces.start(id)
+        await_workspace_health(id, workspace, port)
+    end
+  end
+
+  defp maybe_start_and_await(_workspace), do: :ok
+
+  # Poll the workspace app's loopback readiness endpoint until 2xx or the bounded
+  # window elapses. Mirrors the manager's own host-stage probe (loopback /health,
+  # ~4s request timeout). Cold starts run deps+assets+build and can take minutes,
+  # so on timeout we do NOT block — return an actionable "still starting" so the
+  # caller retries, rather than holding the MCP call open.
+  defp await_workspace_health(id, workspace, port) do
+    url = "http://127.0.0.1:#{port}/health"
+    interval = min(1_000, max(1, autostart_wait_ms()))
+    attempts = max(1, div(autostart_wait_ms(), interval))
+
+    1..attempts
+    |> Enum.reduce_while(:pending, fn _attempt, _acc ->
+      if workspace_health_ok?(url) do
+        {:halt, :ok}
+      else
+        Process.sleep(interval)
+        {:cont, :pending}
+      end
+    end)
+    |> case do
+      :ok -> :ok
+      :pending -> {:error, workspace_starting_error(id, workspace)}
+    end
+  end
+
+  defp workspace_health_ok?(url) do
+    case Req.get(url,
+           redirect: false,
+           retry: false,
+           connect_options: [timeout: 4_000],
+           receive_timeout: 4_000
+         ) do
+      {:ok, %{status: status}} when status in 200..299 -> true
+      _ -> false
+    end
+  end
+
+  defp workspace_http_port(%{metadata: %{ports: ports}}) when is_map(ports),
+    do: normalize_port(ports["http"] || ports[:http] || ports["app"] || ports[:app])
+
+  defp workspace_http_port(_), do: nil
+
+  defp normalize_port(port) when is_integer(port) and port > 0, do: port
+
+  defp normalize_port(port) when is_binary(port) do
+    case Integer.parse(port) do
+      {n, _} when n > 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp normalize_port(_), do: nil
+
+  defp autostart_enabled?,
+    do: Application.get_env(:dev_ide, :preview_autostart_stopped_workspace, true)
+
+  defp autostart_wait_ms,
+    do: Application.get_env(:dev_ide, :preview_autostart_wait_ms, 20_000)
+
+  defp workspace_starting_error(id, workspace) do
+    %{
+      error: :workspace_starting,
+      workspace_id: id,
+      status: :starting,
+      message:
+        "Workspace #{workspace_display_name(workspace)} was stopped; DevIDE started it, but its " <>
+          "app is not serving yet (loopback /health not ready after " <>
+          "#{div(autostart_wait_ms(), 1000)}s). First/cold starts run deps+assets+build and can " <>
+          "take several minutes — retry preview_open shortly; no preview pane was opened."
+    }
+  end
+
+  defp workspace_display_name(%{name: name}) when is_binary(name) and name != "", do: name
+  defp workspace_display_name(%{id: id}) when is_binary(id), do: id
+  defp workspace_display_name(_), do: "workspace"
 
   defp split_target_pane_id(tmux_session, opts) do
     case Keyword.get(opts, :anchor_pane_id) do

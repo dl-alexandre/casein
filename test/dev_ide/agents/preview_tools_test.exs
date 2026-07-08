@@ -1698,6 +1698,39 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
+  test "invoke open_app starts a stopped v3 workspace and reports still-starting until /health is ready" do
+    prev_wait = Application.get_env(:dev_ide, :preview_autostart_wait_ms)
+    Application.put_env(:dev_ide, :preview_autostart_wait_ms, 50)
+
+    on_exit(fn ->
+      if prev_wait,
+        do: Application.put_env(:dev_ide, :preview_autostart_wait_ms, prev_wait),
+        else: Application.delete_env(:dev_ide, :preview_autostart_wait_ms)
+    end)
+
+    # A guaranteed-dead loopback port so the /health readiness probe never passes.
+    dead = Bypass.open()
+    port = dead.port
+    Bypass.down(dead)
+
+    ws_id = "ws-stopped-#{System.unique_integer([:positive])}"
+    # The manager start endpoint must be reachable (idempotent no-op semantics).
+    DevIDE.Test.ManagerStub.stub_start(ws_id)
+
+    workspace = %{
+      id: ws_id,
+      status: :stopped,
+      metadata: %{type: :v3, domain_base: "alice.devbox.example.com", ports: %{"http" => port}}
+    }
+
+    # Stopped + not-yet-healthy short-circuits BEFORE surface/preflight with an
+    # actionable "starting" error (so no public URL or pane is needed).
+    assert {:error, %{error: :workspace_starting, workspace_id: ^ws_id, message: message}} =
+             PreviewTools.invoke("preview_open_app", workspace, %{"actor_id" => "agent-1"})
+
+    assert message =~ "started it"
+  end
+
   test "invoke open_localhost rejects disallowed ports" do
     assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{"port" => 9999})
