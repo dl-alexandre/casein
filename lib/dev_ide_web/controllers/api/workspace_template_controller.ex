@@ -16,6 +16,15 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   alias DevIDE.Export
   alias DevIDE.Terminals
 
+  # Root every action in a fresh correlation context so the tmux.template_* audit
+  # events these mutations emit are traced (DevIDE.Signals.EntryContext is the
+  # LiveView analog; MCP tool calls get the same in each *_mcp.ex call_tool/3).
+  def action(conn, _opts) do
+    DevIDE.Signals.Context.with_new(fn ->
+      apply(__MODULE__, action_name(conn), [conn, conn.params])
+    end)
+  end
+
   def templates(conn, %{"id" => id}) do
     case Export.status(id) do
       {:ok, _status} ->
