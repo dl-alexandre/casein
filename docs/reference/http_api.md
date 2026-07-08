@@ -66,7 +66,7 @@ The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
 
 | Method | Path | Controller / LiveView · action | Purpose |
 |---|---|---|---|
-| LIVE | `/` | `WorkspaceLive.Dashboard` · `:index` | Filesystem-shaped dashboard: directory browser over the path root plus the workspace table (live session `:default`, `DeploymentUpdateHook`); `?dir=` browses subdirectories |
+| LIVE | `/` | `WorkspaceLive.Show` · `:root` | Scratch cockpit: workspaceless home-rooted PTY (`__scratch__`); admin drawer + SESSIONS sidebar Browse tier replace the retired full-page dashboard |
 | GET | `/workspaces` | `LegacyWorkspaceController` · `:index` | Redirect to `/` (picker absorbed by the dashboard) |
 | LIVE | `/workspaces/:id` | `WorkspaceLive.Show` · `:show` | Workspace cockpit (terminal/preview). URL query grammar in [`../deep_links.md`](../deep_links.md) |
 | GET | `/preview-artifacts/:workspace_id/:filename` | `PreviewArtifactController` · `:show` | Preview snapshot PNG; `?fit=preview` wraps it in a responsive HTML page |

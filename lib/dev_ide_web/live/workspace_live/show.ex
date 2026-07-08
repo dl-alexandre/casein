@@ -441,9 +441,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # In trusted LAN mode, canonicalize onto the path route when the
       # workspace has one. Untrusted deployments keep opaque id URLs (path
       # routes expose host path shape — see WorkspaceRoutes). The bare "/"
-      # route is excluded because it is the dashboard, not a workspace mount —
-      # the path-root workspace (e.g. /workspaces/home) keeps serving at its
-      # id URL, as do workspaces outside the path root.
+      # route is the scratch cockpit (not a path-root workspace mount) — keep
+      # path-root workspaces (e.g. /workspaces/home) on their id URL when
+      # PathResolver would otherwise collapse them to "/".
       with true <- PanelGate.path_access_pre_authorized?(),
            {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
         {:redirect, route <> id_route_query(params)}
@@ -456,10 +456,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp resolve_mount_workspace(params, _user) do
     segments = Map.get(params, "lan_path", [])
 
-    # "/" itself routes to the dashboard, so a root mount can only arrive via
-    # an oddball URL the router normalized to empty segments — send it home.
+    # Root `/` (and empty lan_path) mounts the synthetic scratch workspace
+    # directly — do NOT redirect to ~p"/" (that would loop). Path segments
+    # continue through PathResolver → workspace_for_host_path.
     if root_lan_path?(segments) do
-      {:redirect, ~p"/"}
+      {:ok,
+       %{
+         workspace: DevIDE.Workspaces.Scratch.workspace(),
+         path_route: nil,
+         workspace_route: nil
+       }}
     else
       resolve_path_mount(segments)
     end
@@ -2317,7 +2323,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               navigate={~p"/"}
               class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
             >
-              Open dashboard
+              Open home terminal
             </.link>
           </div>
         </div>

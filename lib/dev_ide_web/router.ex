@@ -128,19 +128,21 @@ defmodule DevIdeWeb.Router do
         {DevIdeWeb.AssignCurrentUserHook, :default},
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
-      live "/", WorkspaceLive.Dashboard, :index
+      # Root lands in the cockpit on the workspaceless scratch PTY ($HOME).
+      # Admin actions live in the header drawer; dir browse is the SESSIONS
+      # Browse tier (Stage 4b). No separate full-page dashboard.
+      live "/", WorkspaceLive.Show, :root
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
 
-    # The picker is absorbed by the dashboard at "/" (Stage 3).
+    # Legacy picker URL — redirects to scratch cockpit at "/".
     get "/workspaces", LegacyWorkspaceController, :index
 
-    # The notifications page is absorbed by the in-viewer notifications drawer
-    # (?drawer=notifications); this keeps old links and bookmarks working.
+    # Notifications page absorbed by the in-viewer notifications drawer
+    # (?drawer=notifications on the cockpit).
     get "/notifications", LegacyWorkspaceController, :notifications
 
-    # The previous-sessions page is absorbed by the cockpit's History panel
-    # (?tab=history); this keeps old links and bookmarks working.
+    # Previous-sessions page absorbed by the cockpit History panel (?tab=history).
     get "/workspaces/:id/previous-sessions", LegacyWorkspaceController, :previous_sessions
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show

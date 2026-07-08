@@ -203,10 +203,11 @@ defmodule DevIdeWeb.WorkspaceAdminDrawerEvents do
   defp format_error({:http, status, body}), do: "Source HTTP #{status}: #{inspect(body)}"
   defp format_error(other), do: inspect(other)
 
-  defp format_attach_error(:not_a_directory), do: "Folder path is not a directory."
-
-  defp format_attach_error(:outside_allowed_roots),
-    do: "Folder path is outside the allowed roots."
-
-  defp format_attach_error(other), do: "Attach failed: #{inspect(other)}"
+  defp format_attach_error(reason) do
+    case reason do
+      :not_a_directory -> "Folder path is not a directory."
+      :outside_allowed_roots -> "Folder path is outside the allowed roots."
+      other -> "Attach failed: #{inspect(other)}"
+    end
+  end
 end

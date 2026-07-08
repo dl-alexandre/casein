@@ -2,8 +2,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Browse do
   @moduledoc false
 
   # Pure directory-browse helpers for the SESSIONS sidebar "Browse" tier.
-  # Ported from WorkspaceLive.Dashboard browse/2 so cockpit and dashboard
-  # share PathSafety + forward-auth visibility rules.
+  # Ported from the retired WorkspaceLive.Dashboard browse/2 so the SESSIONS
+  # Browse tier shares PathSafety + forward-auth visibility rules.
 
   alias DevIDE.Files.PathSafety
   alias DevIDE.Workspaces.PathResolver
