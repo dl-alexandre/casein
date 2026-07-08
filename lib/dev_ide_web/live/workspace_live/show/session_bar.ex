@@ -551,7 +551,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp sessions_sidebar_session_row(assigns) do
     cross_workspace? = assigns.workspace_id != assigns.current_workspace_id
     session_active? = assigns.active_id == assigns.session.id and not cross_workspace?
-    href = Map.get(assigns.session, :href) || sidebar_session_href(assigns.workspace_id, assigns.session.id)
+
+    href =
+      Map.get(assigns.session, :href) ||
+        sidebar_session_href(assigns.workspace_id, assigns.session.id)
 
     assigns =
       assigns
@@ -571,7 +574,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class={[sidebar_row_class(false), "min-w-0 flex-1"]}
           title={@session.title}
         >
-          <.sessions_sidebar_session_labels session={@session} preview_panes={@preview_panes} default_sid={@default_sid} />
+          <.sessions_sidebar_session_labels
+            session={@session}
+            preview_panes={@preview_panes}
+            default_sid={@default_sid}
+          />
         </.link>
       <% else %>
         <a
@@ -588,11 +595,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class={[sidebar_row_class(@session_active?), "min-w-0 flex-1"]}
           title={@session.title}
         >
-          <.sessions_sidebar_session_labels session={@session} preview_panes={@preview_panes} default_sid={@default_sid} />
+          <.sessions_sidebar_session_labels
+            session={@session}
+            preview_panes={@preview_panes}
+            default_sid={@default_sid}
+          />
         </a>
       <% end %>
       <.copy_link_button
-        url={if(@cross_workspace?, do: session_share_url_from_href(@href), else: session_share_url(@workspace_id, @session.id, @path_base))}
+        url={
+          if(@cross_workspace?,
+            do: session_share_url_from_href(@href),
+            else: session_share_url(@workspace_id, @session.id, @path_base)
+          )
+        }
         label={@session.label}
         visible?={false}
       />
@@ -617,7 +633,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             autocomplete="off"
             class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
           />
-          <button type="submit" class="rounded p-1 text-primary hover:bg-primary/10" title="Save session name">
+          <button
+            type="submit"
+            class="rounded p-1 text-primary hover:bg-primary/10"
+            title="Save session name"
+          >
             <.icon name="hero-check" class="size-3" />
           </button>
           <button
@@ -939,7 +959,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     phx-value-window-id={node.id}
                     class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
                     aria-label={
-                      if(node.expanded?, do: "Collapse panes of " <> node.display_name,
+                      if(node.expanded?,
+                        do: "Collapse panes of " <> node.display_name,
                         else: "Expand panes of " <> node.display_name
                       )
                     }
@@ -1042,7 +1063,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     do:
       "flex max-w-56 shrink-0 flex-col items-start rounded border border-base-300 px-2.5 py-1 text-left text-xs leading-tight text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
 
-
   defp sidebar_row_class(true),
     do:
       "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2 py-1.5 text-left text-xs text-primary"
@@ -1106,18 +1126,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     "Active session: " <> session <> ". Shortcut: Ctrl + B, then S opens the sessions sidebar"
   end
 
-  attr :kill_hint, :boolean, default: false
-
-  defp picker_keyboard_hint(assigns) do
-    ~H"""
-    <div class="border-t border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/45">
-      ↑↓ move · o open · l copy link · r rename<%= if @kill_hint do %>
-        · & kill
-      <% end %>
-    </div>
-    """
-  end
-
   attr :url, :string, required: true
   attr :label, :string, required: true
   attr :kind, :string, default: "session"
@@ -1172,9 +1180,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     DevIdeWeb.Endpoint.url() <> href
   end
 
-  defp window_share_url(workspace_id, session_id, window_id, path_base),
-    do: share_url(workspace_id, session_id, window_id, path_base: path_base)
-
   defp window_href(workspace_id, window_id, opts) when is_list(opts),
     do: query_href(path_base(workspace_id, opts[:path_base]), window: window_id)
 
@@ -1191,7 +1196,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp window_href(workspace_id, _session_id, window_id, opts),
     do: window_href(workspace_id, window_id, opts)
 
-  defp session_window_href(workspace_id, session_id, window_id, opts \\ []) do
+  defp session_window_href(workspace_id, session_id, window_id, opts) do
     pane = Keyword.get(opts, :pane)
     zoom? = Keyword.get(opts, :zoom) == true
     path_base = Keyword.get(opts, :path_base)
@@ -1223,17 +1228,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp query_href(base, ""), do: base
   defp query_href(base, query), do: base <> "?" <> query
-
-  defp dropdown_item_class(false),
-    do:
-      "group flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
-
-  defp dropdown_row_class(true),
-    do: "group flex w-full items-center px-3 py-1.5 text-xs bg-primary/5 text-primary"
-
-  defp dropdown_row_class(false),
-    do:
-      "group flex w-full items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
 
   defp quiet_window_count(tabs) when is_list(tabs) do
     Enum.reduce(tabs, 0, fn tab, total ->
@@ -1270,8 +1264,4 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp quiet_badge_label(1, _unseen_count), do: "1 quiet agent window"
   defp quiet_badge_label(count, _unseen_count), do: "#{count} quiet agent windows"
-
-  defp window_quiet_badge_label(%{unseen_quiet?: true}), do: "Unseen quiet agent window"
-
-  defp window_quiet_badge_label(window), do: window.quiet_label
 end
