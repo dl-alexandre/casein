@@ -893,7 +893,12 @@ defmodule TmuxCtl.ClientExtraTest do
     stub_draining_guard()
 
     assert :ok = Client.set_environments(@session, %{"A" => "1"})
-    refute_receive {:tmux_runner, _}, 50
+    # Match the write set_environment/3 would emit, not a bare wildcard: under
+    # full-suite load a background process can send an unrelated {:tmux_runner, _}
+    # to the registered fake-runner pid, tripping the wildcard even though the
+    # guarded write was correctly skipped (guard stub returns :noop, so `run` is
+    # never called). The specific pattern still fails if the write slips through.
+    refute_receive {:tmux_runner, ["set-environment" | _]}, 50
   end
 
   test "apply_defaults skips server-global -s writes while draining" do
