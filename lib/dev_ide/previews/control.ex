@@ -112,17 +112,27 @@ defmodule DevIDE.Previews.Control do
   @doc "Click an element by CSS selector or viewport point."
   @spec click(session_id(), map()) :: {:ok, map()} | {:error, term()}
   def click(session_id, target) when is_map(target) do
-    with :ok <- ensure_local_runtime(session_id),
-         {:ok, entry, observation} <- Session.click(session_id, target),
-         observation <- persist_diff_observation(entry.session, observation),
-         {:ok, _} <- sync_session_url(entry, observation) do
-      _ =
-        record_action_and_observation(entry.session, "click", target, observation,
-          actor_id: entry.session.actor_id
-        )
+    with :ok <- ensure_local_runtime(session_id) do
+      case Session.click(session_id, target) do
+        {:ok, entry, observation} ->
+          observation = persist_diff_observation(entry.session, observation)
 
-      _ = broadcast_observation(entry, observation)
-      {:ok, observation}
+          with {:ok, _} <- sync_session_url(entry, observation) do
+            _ =
+              record_action_and_observation(entry.session, "click", target, observation,
+                actor_id: entry.session.actor_id
+              )
+
+            _ = broadcast_observation(entry, observation)
+            {:ok, observation}
+          end
+
+        {:error, {:origin_not_allowed, observation}} when is_map(observation) ->
+          {:error, {:origin_not_allowed, observation}}
+
+        other ->
+          other
+      end
     end
   end
 

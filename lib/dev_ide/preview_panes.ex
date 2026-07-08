@@ -1452,10 +1452,11 @@ defmodule DevIDE.PreviewPanes do
 
   # Registration/navigation accept any well-formed http(s) URL — including
   # external sites and dynamic dev-server ports — the same way a browser tab
-  # would. The origin allowlist in Previews.trusted_url?/2 is for a narrower
-  # job: deciding whether an *already-open* control session's navigation
-  # stayed same-origin (see Origin.within_origin?), not gating what a pane
-  # may be registered/navigated to in the first place.
+  # would. This is intentional (browser-tab model): pane register/navigate gates
+  # check http_url?/1 only. Stricter embed policy lives on Preview.changeset via
+  # valid_preview_url?/2 (workspace allowlist + self-included origins). Control
+  # sessions additionally enforce Origin.within_origin?/3 on navigate and on any
+  # Playwright action that would change current_url (see PreviewCtl.Session).
   defp validate_trusted_url(_workspace, url) do
     if Url.http_url?(url) do
       :ok

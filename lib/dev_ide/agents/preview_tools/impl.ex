@@ -1292,9 +1292,17 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, target} <- click_target(id, params) do
       visible_or_fallback(id, "click", target, params, fn ->
-        with {:ok, observation} <-
-               PreviewControl.click(id, Map.merge(target, preview_diff_opts(params))) do
-          {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
+        case PreviewControl.click(id, Map.merge(target, preview_diff_opts(params))) do
+          {:ok, observation} ->
+            {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
+
+          {:error, {:origin_not_allowed, observation}} when is_map(observation) ->
+            {:ok,
+             maybe_show_snapshot(id, observation, :untrusted_preview_url)
+             |> guide_observation(id)}
+
+          other ->
+            other
         end
       end)
     end

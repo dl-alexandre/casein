@@ -73,6 +73,26 @@ defmodule PreviewCtl.SessionTest do
     refute Map.has_key?(target, :nth)
   end
 
+  test "click that navigates off-allowlist rejects origin_not_allowed" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+
+    assert {:error, {:origin_not_allowed, %{url: "https://example.com/news"}}} =
+             Session.click(entry.session.id, %{selector: ~s(a[href="https://example.com/news"])})
+
+    assert Registry.get(entry.session.id).adapter_state.current_url ==
+             "https://alice.devbox.example.com"
+  end
+
+  test "click that stays on-allowlist commits the new url" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/settings"}} =
+             Session.click(entry.session.id, %{selector: ~s(a[href="/settings"])})
+
+    assert Registry.get(entry.session.id).current_url ==
+             "https://alice.devbox.example.com:443/settings"
+  end
+
   test "type threads an explicit nth into the adapter opts" do
     entry = put_runtime!("https://alice.devbox.example.com")
     selector = "button[type=submit]"
