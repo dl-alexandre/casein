@@ -549,8 +549,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :rename_session_id, :string, default: nil
 
   defp sessions_sidebar_session_row(assigns) do
-    cross_workspace? = assigns.workspace_id != assigns.current_workspace_id
-    session_active? = assigns.active_id == assigns.session.id and not cross_workspace?
+    # Scratch is a synthetic workspaceless entry: always fire
+    # `attach_terminal_session` with kind=scratch so the LiveView can
+    # `push_navigate` to `/workspaces/__scratch__` (do not treat it as a
+    # cross-workspace deep-link to a real session id).
+    scratch? = Map.get(assigns.session, :kind) == :scratch
+
+    cross_workspace? =
+      not scratch? and assigns.workspace_id != assigns.current_workspace_id
+
+    session_active? =
+      not scratch? and assigns.active_id == assigns.session.id and not cross_workspace?
 
     href =
       Map.get(assigns.session, :href) ||

@@ -17,7 +17,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.PaneState
+  alias DevIDE.Workspaces.Scratch
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias DevIdeWeb.WorkspaceRoutes
 
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
     only: [
@@ -410,6 +412,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   expanded. Collapsed rows carry only cheap summary badges; callers must not
   enumerate sessions until `expanded?: true`. A workspace with exactly one
   attachable session collapses to a single flat row (`flat_session?: true`).
+
+  Always prepends a workspaceless **Scratch** node (`kind: :scratch`) so the
+  home-rooted PTY is one click away without selecting a real workspace.
   """
   @spec workspace_session_tree([map()], String.t(), keyword()) :: [workspace_tree_node()]
   def workspace_session_tree(summaries, current_workspace_id, opts \\ [])
@@ -418,17 +423,91 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     current_session_tabs = Keyword.get(opts, :current_session_tabs, [])
     sidebar_ws_sessions = Keyword.get(opts, :sidebar_ws_sessions, %{})
 
-    summaries
-    |> order_workspace_summaries(current_workspace_id)
-    |> Enum.map(
-      &workspace_tree_node(
-        &1,
-        current_workspace_id,
-        expanded,
-        current_session_tabs,
-        sidebar_ws_sessions
+    workspace_nodes =
+      summaries
+      |> order_workspace_summaries(current_workspace_id)
+      |> Enum.map(
+        &workspace_tree_node(
+          &1,
+          current_workspace_id,
+          expanded,
+          current_session_tabs,
+          sidebar_ws_sessions
+        )
       )
-    )
+
+    # When already mounted on scratch, the current-workspace node carries the
+    # live shell tabs — do not prepend a second synthetic entry.
+    if Scratch.scratch?(current_workspace_id) do
+      workspace_nodes
+    else
+      [scratch_tree_node(current?: false) | workspace_nodes]
+    end
+  end
+
+  @doc """
+  Top-of-tree SESSIONS node for the workspaceless scratch terminal.
+
+  Modeled as a single flat session row so the existing
+  `sessions_sidebar` branch-1 renderer paints it and click fires
+  `attach_terminal_session` with `kind=scratch` (or navigates via `href`
+  when the current cockpit workspace is a different id).
+  """
+  @spec scratch_tree_node(keyword()) :: workspace_tree_node()
+  def scratch_tree_node(opts \\ []) do
+    current? = Keyword.get(opts, :current?, false)
+    session = scratch_tab()
+
+    %{
+      id: Scratch.id(),
+      dom_id: "sidebar-ws-" <> dom_fragment(Scratch.id()),
+      workspace_id: Scratch.id(),
+      label: "Scratch",
+      detail: "home",
+      title: "Scratch terminal ($HOME)",
+      current?: current?,
+      live?: true,
+      session_count: 1,
+      expanded?: false,
+      flat_session?: true,
+      session: session,
+      sessions: nil
+    }
+  end
+
+  @doc """
+  Minimal `tab()` / workspace-tab shape for the scratch home PTY.
+
+  Mirrors `tmux_inventory_tab/1` so the sessions sidebar row contract is
+  satisfied without a live SessionDirectory entry.
+  """
+  @spec scratch_tab() :: workspace_tab()
+  def scratch_tab do
+    id = Scratch.id()
+
+    %{
+      id: id,
+      dom_id: "sidebar-session-scratch",
+      workspace_id: id,
+      session_id: id,
+      kind: :scratch,
+      label: "Scratch",
+      detail: "home",
+      title: "Scratch terminal ($HOME)",
+      cwd: Scratch.home_path(),
+      href: WorkspaceRoutes.workspace_path(id, "local"),
+      tmux_session: nil,
+      windows: [],
+      window_count: 0,
+      pane_ids: [],
+      preview_count: 0,
+      quiet_count: 0,
+      unseen_quiet_count: 0,
+      attention: "none",
+      activity_state: :idle,
+      activity_class: window_activity_class(:idle),
+      activity_label: window_activity_label(:idle)
+    }
   end
 
   defp order_workspace_summaries(summaries, current_workspace_id) do

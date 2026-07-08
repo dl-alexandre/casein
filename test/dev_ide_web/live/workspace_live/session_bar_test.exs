@@ -533,6 +533,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-picker-active)
       assert html =~ "ex-1"
     end
+
+    test "renders the scratch row with attach_terminal_session kind=scratch" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_ex-1"
+        )
+
+      assert html =~ ~s(id="sidebar-session-scratch")
+      assert html =~ "Scratch"
+      assert html =~ ~s(phx-click="attach_terminal_session")
+      assert html =~ ~s(phx-value-kind="scratch")
+    end
   end
 
   describe "session_header_indicator/1" do

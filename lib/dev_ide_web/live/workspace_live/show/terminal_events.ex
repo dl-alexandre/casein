@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   alias DevIDE.Terminals
   alias DevIDE.Attention.Policy, as: AttentionPolicy
+  alias DevIDE.Workspaces.Scratch
   alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIDE.Previews.Url, as: PreviewUrl
@@ -22,6 +23,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
   alias DevIdeWeb.WorkspaceLive.Show.Sidebar
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
+  alias DevIdeWeb.WorkspaceRoutes
 
   def handle_event("terminal:user_interaction", _params, socket) do
     {:noreply, ViewDeepLink.touch_terminal_interaction(socket)}
@@ -625,6 +627,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
      socket
      |> WindowTerminalMode.set_mode(:raw)
      |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
+  end
+
+  # Workspaceless scratch entry in the SESSIONS sidebar — open the home-rooted
+  # PTY via the existing `/workspaces/__scratch__` mount (Stage 4a). Prefer this
+  # over in-place attach so mount owns SessionOwner + loc resolution.
+  def handle_event("attach_terminal_session", %{"kind" => "scratch"}, socket) do
+    {:noreply, push_navigate(socket, to: WorkspaceRoutes.workspace_path(Scratch.id(), "local"))}
   end
 
   # Attach to an execution tmux session. The channel resolves the session type

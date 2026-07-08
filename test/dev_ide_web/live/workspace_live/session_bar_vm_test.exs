@@ -2,13 +2,58 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
   use ExUnit.Case, async: true
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias DevIDE.Workspaces.Scratch
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
 
   defp shell_info(sid) do
     SessionInfo.new_shell("ws-a", sid, metadata: %{})
   end
 
+  defp workspace_nodes(tree), do: Enum.reject(tree, &Scratch.scratch?(&1.workspace_id))
+
   describe "workspace_session_tree/4" do
+    test "prepends a scratch flat-session node at the top of the tree" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []}
+      ]
+
+      tabs = SessionBarVM.session_tabs([shell_info("shell-1")])
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(["ws-a"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      assert [%{workspace_id: "__scratch__", flat_session?: true, session: session} | rest] = tree
+      assert session.kind == :scratch
+      assert session.workspace_id == Scratch.id()
+      assert session.label == "Scratch"
+      assert session.href =~ "/workspaces/__scratch__"
+      assert Enum.any?(rest, &(&1.workspace_id == "ws-a"))
+    end
+
+    test "does not prepend scratch when the current workspace is already scratch" do
+      summaries = [
+        %{id: "__scratch__", name: "__scratch__", session_count: 1, live?: true, sessions: []}
+      ]
+
+      tabs = SessionBarVM.session_tabs([shell_info("home-shell")])
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "__scratch__",
+          expanded_workspaces: MapSet.new(["__scratch__"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      assert Enum.count(tree, &Scratch.scratch?(&1.workspace_id)) == 1
+
+      assert [%{workspace_id: "__scratch__", flat_session?: true, session: %{id: "home-shell"}}] =
+               tree
+    end
+
     test "orders current workspace first and keeps collapsed rows session-free" do
       summaries = [
         %{id: "ws-b", name: "beta", session_count: 2, live?: true, sessions: [%{id: "s1"}]},
@@ -24,9 +69,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
           sidebar_ws_sessions: %{}
         )
 
-      assert [%{workspace_id: "ws-a", flat_session?: true}, %{workspace_id: "ws-b"}] = tree
-      assert Enum.all?(tree, &(&1.sessions == nil))
-      refute Enum.all?(tree, &(&1.flat_session? == false))
+      assert [%{workspace_id: "ws-a", flat_session?: true}, %{workspace_id: "ws-b"}] =
+               workspace_nodes(tree)
+
+      assert Enum.all?(workspace_nodes(tree), &(&1.sessions == nil))
+      refute Enum.all?(workspace_nodes(tree), &(&1.flat_session? == false))
     end
 
     test "expands current workspace with live session tabs" do
@@ -37,10 +84,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       tabs = SessionBarVM.session_tabs([shell_info("shell-1"), shell_info("shell-2")])
 
       [node] =
-        SessionBarVM.workspace_session_tree(summaries, "ws-a",
-          expanded_workspaces: MapSet.new(["ws-a"]),
-          current_session_tabs: tabs,
-          sidebar_ws_sessions: %{}
+        workspace_nodes(
+          SessionBarVM.workspace_session_tree(summaries, "ws-a",
+            expanded_workspaces: MapSet.new(["ws-a"]),
+            current_session_tabs: tabs,
+            sidebar_ws_sessions: %{}
+          )
         )
 
       assert node.expanded?
@@ -57,10 +106,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       tabs = SessionBarVM.session_tabs([shell_info("only")])
 
       [node] =
-        SessionBarVM.workspace_session_tree(summaries, "ws-a",
-          expanded_workspaces: MapSet.new(["ws-a"]),
-          current_session_tabs: tabs,
-          sidebar_ws_sessions: %{}
+        workspace_nodes(
+          SessionBarVM.workspace_session_tree(summaries, "ws-a",
+            expanded_workspaces: MapSet.new(["ws-a"]),
+            current_session_tabs: tabs,
+            sidebar_ws_sessions: %{}
+          )
         )
 
       assert node.flat_session?
@@ -87,6 +138,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
       assert other.flat_session?
       assert other.session.id == "remote-shell"
+    end
+  end
+
+  describe "scratch_tab/0 and scratch_tree_node/1" do
+    test "scratch_tab builds a kind=:scratch workspace tab" do
+      tab = SessionBarVM.scratch_tab()
+
+      assert tab.kind == :scratch
+      assert tab.id == Scratch.id()
+      assert tab.workspace_id == Scratch.id()
+      assert tab.dom_id == "sidebar-session-scratch"
+      assert is_binary(tab.href)
+    end
+
+    test "scratch_tree_node is a flat_session row wrapping scratch_tab" do
+      node = SessionBarVM.scratch_tree_node(current?: true)
+
+      assert node.flat_session?
+      assert node.current?
+      assert node.workspace_id == Scratch.id()
+      assert node.session.kind == :scratch
+      assert node.sessions == nil
     end
   end
 
