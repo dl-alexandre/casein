@@ -132,6 +132,7 @@ defmodule PreviewCtl.Session do
     with {:ok, entry} <- fetch(session_id),
          {:ok, adapter_state, observation, artifact} <-
            entry.adapter_module.screenshot(entry.adapter_state),
+         :ok <- ensure_allowed_url(entry, current_url(%{entry | adapter_state: adapter_state})),
          {:ok, entry} <-
            Registry.update(session_id, fn e -> %{e | adapter_state: adapter_state} end) do
       {:ok, entry, observation, artifact}
