@@ -649,6 +649,129 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
+  attr :node, :map, required: true
+  attr :workspace_id, :string, required: true
+  attr :terminal_sid, :string, default: nil
+  attr :path_base, :string, default: nil
+  attr :parent_dom_id, :any, default: nil
+  attr :mutations_allowed?, :boolean, default: false
+  attr :rename_window_id, :string, default: nil
+
+  defp window_sidebar_window_row(assigns) do
+    ~H"""
+    <div
+      id={"tmux-window-sidebar-" <> @node.dom_frag}
+      data-ctx-menu="window_tab"
+      data-ctx-window-id={@node.id}
+      class="px-1"
+    >
+      <.window_sidebar_window_link
+        node={@node}
+        workspace_id={@workspace_id}
+        terminal_sid={@terminal_sid}
+        path_base={@path_base}
+        parent_dom_id={@parent_dom_id}
+        class={[sidebar_row_class(@node.active?), "w-full"]}
+      />
+      <%= if @mutations_allowed? and @rename_window_id == @node.id do %>
+        <.window_inline_rename_form
+          window={@node}
+          id_suffix="-sidebar"
+          form_class="flex items-center gap-1 px-1"
+          input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
+          show_cancel?={false}
+        />
+      <% end %>
+    </div>
+    """
+  end
+
+  attr :node, :map, required: true
+  attr :workspace_id, :string, required: true
+  attr :terminal_sid, :string, default: nil
+  attr :path_base, :string, default: nil
+  attr :parent_dom_id, :any, default: nil
+  attr :class, :any, default: nil
+
+  defp window_sidebar_window_link(assigns) do
+    ~H"""
+    <a
+      href={window_href(@workspace_id, @terminal_sid, @node.id, path_base: @path_base)}
+      data-picker-item
+      data-picker-section="windows"
+      data-picker-active={@node.active? || nil}
+      data-picker-parent={@parent_dom_id}
+      phx-click="tmux:select_window"
+      phx-value-window-id={@node.id}
+      data-tmux-window-index={@node.index}
+      class={@class}
+      title={"Select tmux window " <> @node.full_title}
+    >
+      <span class="flex min-w-0 items-center gap-1.5">
+        <.window_row_name
+          window={@node}
+          picker_label?
+          name_class="min-w-0 flex-1 truncate font-medium"
+        />
+        <.window_row_indicators window={@node} preview_aria_hidden? />
+      </span>
+    </a>
+    """
+  end
+
+  attr :pane, :map, required: true
+  attr :window_id, :string, required: true
+  attr :workspace_id, :string, required: true
+  attr :terminal_sid, :string, default: nil
+  attr :path_base, :string, default: nil
+  attr :parent_dom_id, :string, required: true
+
+  defp window_sidebar_pane_row(assigns) do
+    ~H"""
+    <a
+      id={"sidebar-pane-" <> @pane.dom_frag}
+      href={
+        window_href(@workspace_id, @terminal_sid, @window_id,
+          path_base: @path_base,
+          pane: @pane.id
+        )
+      }
+      data-picker-item
+      data-picker-section="panes"
+      data-picker-parent={@parent_dom_id}
+      data-picker-active={@pane.active? || nil}
+      phx-click="tmux:select_pane"
+      phx-value-pane-id={@pane.id}
+      phx-value-window-id={@window_id}
+      class={sidebar_row_class(@pane.active?)}
+      title={@pane.title}
+    >
+      <span class="flex min-w-0 items-center gap-1.5">
+        <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@pane.index}</span>
+        <span data-picker-label class="min-w-0 truncate font-medium">{@pane.label}</span>
+        <span
+          :if={@pane.preview?}
+          class="inline-flex size-3.5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+          title="Preview pane"
+          aria-label="Preview pane"
+        >
+          <.icon name="hero-globe-alt" class="size-2.5" />
+        </span>
+        <span
+          :if={not @pane.preview?}
+          data-activity-state={@pane.activity_state}
+          class={["size-1.5 shrink-0 rounded-full", @pane.activity_class]}
+          title={@pane.activity_label}
+          aria-label={@pane.activity_label}
+        />
+      </span>
+      <span :if={@pane.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+        {@pane.detail}
+      </span>
+    </a>
+    """
+  end
+
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true
   attr :active_id, :string, default: nil
@@ -704,7 +827,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   attr :workspace_id, :string, required: true
-  attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
+  attr :tree, :list, required: true, doc: "SessionBarVM.window_tree/2 nodes"
+  attr :terminal_sid, :string, default: nil
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
@@ -717,13 +841,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def window_sidebar(assigns) do
     ~H"""
     <nav
-      :if={@windows != []}
+      :if={@tree != []}
       id={"window-sidebar-" <> @workspace_id}
       data-window-picker-sidebar="true"
       data-version={@topology_version}
       data-shortcut="Ctrl + B, then W"
       phx-hook="WindowPickerSidebar"
-      aria-label="Tmux windows"
+      aria-label="Tmux windows and panes"
       class={[
         "window-picker-sidebar flex w-44 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
@@ -735,43 +859,110 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       >
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto py-1">
-        <%= for window <- @windows do %>
-          <div
-            id={"tmux-window-sidebar-" <> window.dom_frag}
-            data-ctx-menu="window_tab"
-            data-ctx-window-id={window.id}
-            class={[
-              "group flex flex-col gap-0.5 border-b border-base-300/40 px-2 py-1.5 last:border-b-0",
-              window.active? && "bg-base-100 shadow-inner"
-            ]}
-          >
-            <a
-              href={window_href(@workspace_id, window.id, path_base: @path_base)}
-              data-picker-item
-              data-picker-active={window.active? || nil}
-              phx-click="tmux:select_window"
-              phx-value-window-id={window.id}
-              data-tmux-window-index={window.index}
-              class="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-base-200/80"
-              title={"Select tmux window " <> window.full_title}
-            >
-              <.window_row_name
-                window={window}
-                picker_label?
-                name_class="min-w-0 flex-1 truncate font-medium"
+        <%= for node <- @tree do %>
+          <%= cond do %>
+            <% node.flat_window? -> %>
+              <.window_sidebar_window_row
+                node={node}
+                workspace_id={@workspace_id}
+                terminal_sid={@terminal_sid}
+                path_base={@path_base}
+                parent_dom_id={nil}
+                mutations_allowed?={@mutations_allowed?}
+                rename_window_id={@rename_window_id}
               />
-              <.window_row_indicators window={window} preview_aria_hidden? />
-            </a>
-            <%= if @mutations_allowed? and @rename_window_id == window.id do %>
-              <.window_inline_rename_form
-                window={window}
-                id_suffix="-sidebar"
-                form_class="flex items-center gap-1 px-1"
-                input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
-                show_cancel?={false}
-              />
-            <% end %>
-          </div>
+            <% node.expanded? -> %>
+              <div
+                id={"tmux-window-sidebar-" <> node.dom_frag}
+                data-ctx-menu="window_tab"
+                data-ctx-window-id={node.id}
+                class="flex flex-col gap-0.5"
+              >
+                <div class="flex items-center gap-1 px-1">
+                  <.window_sidebar_window_link
+                    node={node}
+                    workspace_id={@workspace_id}
+                    terminal_sid={@terminal_sid}
+                    path_base={@path_base}
+                    parent_dom_id={nil}
+                    class={[sidebar_row_class(node.active?), "min-w-0 flex-1"]}
+                  />
+                  <button
+                    type="button"
+                    tabindex="-1"
+                    phx-click="sidebar:toggle_window"
+                    phx-value-window-id={node.id}
+                    class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
+                    aria-label={"Collapse panes of " <> node.display_name}
+                  >
+                    {node.pane_count}
+                    <span class="flex rotate-90 transition-transform">
+                      <.icon name="hero-chevron-right" class="size-3" />
+                    </span>
+                  </button>
+                </div>
+                <%= if @mutations_allowed? and @rename_window_id == node.id do %>
+                  <.window_inline_rename_form
+                    window={node}
+                    id_suffix="-sidebar"
+                    form_class="flex items-center gap-1 px-1"
+                    input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
+                    show_cancel?={false}
+                  />
+                <% end %>
+                <div id={"sidebar-window-panes-" <> node.dom_frag} class="space-y-0.5 pl-3">
+                  <%= for pane <- node.panes || [] do %>
+                    <.window_sidebar_pane_row
+                      pane={pane}
+                      window_id={node.id}
+                      workspace_id={@workspace_id}
+                      terminal_sid={@terminal_sid}
+                      path_base={@path_base}
+                      parent_dom_id={node.dom_id}
+                    />
+                  <% end %>
+                </div>
+              </div>
+            <% true -> %>
+              <div
+                id={"tmux-window-sidebar-" <> node.dom_frag}
+                data-ctx-menu="window_tab"
+                data-ctx-window-id={node.id}
+                class="flex items-center gap-1 px-1"
+              >
+                <.window_sidebar_window_link
+                  node={node}
+                  workspace_id={@workspace_id}
+                  terminal_sid={@terminal_sid}
+                  path_base={@path_base}
+                  parent_dom_id={nil}
+                  class={[sidebar_row_class(node.active?), "min-w-0 flex-1"]}
+                />
+                <button
+                  :if={node.pane_count > 1}
+                  type="button"
+                  tabindex="-1"
+                  phx-click="sidebar:toggle_window"
+                  phx-value-window-id={node.id}
+                  class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-base-content/45 hover:bg-base-200"
+                  aria-label={"Expand panes of " <> node.display_name}
+                >
+                  {node.pane_count}
+                  <span class="flex transition-transform">
+                    <.icon name="hero-chevron-right" class="size-3" />
+                  </span>
+                </button>
+              </div>
+              <%= if @mutations_allowed? and @rename_window_id == node.id do %>
+                <.window_inline_rename_form
+                  window={node}
+                  id_suffix="-sidebar"
+                  form_class="flex items-center gap-1 px-1"
+                  input_class="h-6 min-w-0 flex-1 rounded border border-base-300 bg-base-100 px-1.5 text-xs"
+                  show_cancel?={false}
+                />
+              <% end %>
+          <% end %>
         <% end %>
       </div>
       <%= if @mutations_allowed? do %>

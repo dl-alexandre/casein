@@ -41,6 +41,13 @@ export const WindowPickerSidebar = {
         e.preventDefault()
         this.pushEvent("sidebar:reveal_sessions", {})
         break
+      case "ArrowRight": {
+        e.preventDefault()
+        const row = this.currentItem()
+        const windowId = row?.getAttribute("phx-value-window-id")
+        if (windowId) this.pushEvent("sidebar:toggle_window", {"window-id": windowId})
+        break
+      }
       case "ArrowDown":
       case "ArrowUp":
         e.preventDefault()

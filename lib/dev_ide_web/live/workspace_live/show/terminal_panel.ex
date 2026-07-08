@@ -27,11 +27,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   class="pointer-coarse:hidden"
                 />
               <% end %>
-              <%= if @window_sidebar_open? and length(@tmux_window_tabs) > 0 do %>
+              <%= if @window_sidebar_open? and @windows_sidebar_tree != [] do %>
                 <SessionBar.window_sidebar
                   workspace_id={@workspace.id}
                   path_base={@workspace_route}
-                  windows={@tmux_window_tabs}
+                  tree={@windows_sidebar_tree}
+                  terminal_sid={@terminal_sid}
                   topology_version={@tmux_topology_structure_version}
                   mutations_allowed?={@tmux_mutations_enabled?}
                   rename_window_id={@tmux_rename_window_id}

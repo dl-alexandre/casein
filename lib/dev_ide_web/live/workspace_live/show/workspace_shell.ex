@@ -618,7 +618,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :tmux_rename_session_id,
       :window_sidebar_open?,
       :sessions_sidebar_open?,
-      :sessions_sidebar_tree
+      :sessions_sidebar_tree,
+      :windows_sidebar_tree
     ])
   end
 

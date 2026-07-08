@@ -18,9 +18,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       window_sidebar_open?: false,
       sessions_sidebar_open?: false,
       sidebar_expanded_workspaces: MapSet.new(),
+      sidebar_expanded_windows: MapSet.new(),
       sidebar_ws_sessions: %{},
       sidebar_ws_subscriptions: MapSet.new(),
-      sessions_sidebar_tree: []
+      sessions_sidebar_tree: [],
+      windows_sidebar_tree: []
     ]
   end
 
@@ -40,11 +42,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         if sidebar_mode == :both, do: MapSet.put(set, current_id), else: set
       end)
 
+    expanded_windows = expanded_windows_on_open(socket)
+
     socket =
       socket
       |> assign_sidebar_mode(sidebar_mode)
       |> assign(:sidebar_expanded_workspaces, expanded)
+      |> assign(:sidebar_expanded_windows, expanded_windows)
       |> assign_sessions_sidebar_tree()
+      |> assign_windows_sidebar_tree()
 
     if sidebar_mode == :both do
       push_event(socket, "sidebar:focus_sessions", %{})
@@ -59,9 +65,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     |> unsubscribe_all_sidebar_workspaces()
     |> assign_sidebar_mode(:closed)
     |> assign(:sidebar_expanded_workspaces, MapSet.new())
+    |> assign(:sidebar_expanded_windows, MapSet.new())
     |> assign(:sidebar_ws_sessions, %{})
     |> assign(:sidebar_ws_subscriptions, MapSet.new())
     |> assign(:sessions_sidebar_tree, [])
+    |> assign(:windows_sidebar_tree, [])
   end
 
   @spec reveal_sessions(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
@@ -79,6 +87,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       |> push_event("sidebar:focus_sessions", %{})
 
     socket
+  end
+
+  @spec toggle_window(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
+  def toggle_window(socket, window_id) when is_binary(window_id) do
+    expanded = socket.assigns.sidebar_expanded_windows
+
+    expanded =
+      if MapSet.member?(expanded, window_id) do
+        MapSet.delete(expanded, window_id)
+      else
+        MapSet.put(expanded, window_id)
+      end
+
+    socket
+    |> assign(:sidebar_expanded_windows, expanded)
+    |> assign_windows_sidebar_tree()
+  end
+
+  @spec assign_windows_sidebar_tree(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def assign_windows_sidebar_tree(socket) do
+    tree =
+      if socket.assigns.window_sidebar_open? do
+        SessionBarVM.window_tree(
+          socket.assigns.tmux_window_tabs || [],
+          expanded_windows: socket.assigns.sidebar_expanded_windows
+        )
+      else
+        []
+      end
+
+    assign(socket, :windows_sidebar_tree, tree)
   end
 
   @spec toggle_workspace(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
@@ -296,6 +335,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   defp summary_workspace_name(summary, workspace_id) do
     name = Map.get(summary, :name) || Map.get(summary, "name")
     if is_binary(name) and name != "", do: name, else: workspace_id
+  end
+
+  defp expanded_windows_on_open(socket) do
+    case Enum.find(socket.assigns.tmux_window_tabs || [], & &1.active?) do
+      %{id: window_id, pane_count: count} when count > 1 ->
+        MapSet.put(socket.assigns.sidebar_expanded_windows, window_id)
+
+      _ ->
+        socket.assigns.sidebar_expanded_windows
+    end
   end
 
 end

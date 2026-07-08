@@ -559,6 +559,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
+  describe "window_sidebar/1" do
+    test "renders a multi-pane window tree with pane select handlers" do
+      windows =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              pane_list: [
+                pane(%{id: "%1", index: 0, active: true}),
+                pane(%{id: "%2", index: 1, active: false})
+              ]
+            })
+          ],
+          "%1",
+          %{}
+        )
+
+      tree =
+        SessionBarVM.window_tree(windows, expanded_windows: MapSet.new(["@1"]))
+
+      html =
+        render_component(&SessionBar.window_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          terminal_sid: "u-alice",
+          topology_version: 3,
+          mutations_allowed?: false,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(phx-hook="WindowPickerSidebar")
+      assert html =~ ~s(phx-click="tmux:select_window")
+      assert html =~ ~s(phx-click="tmux:select_pane")
+      assert html =~ ~s(phx-value-pane-id="%1")
+      assert html =~ ~s(phx-value-window-id="@1")
+      assert html =~ ~s(phx-click="sidebar:toggle_window")
+      assert html =~ ~s(data-picker-section="panes")
+      assert html =~ ~s(data-picker-parent="sidebar-window--1")
+    end
+
+    test "single-pane windows stay flat without pane rows" do
+      windows = SessionBarVM.window_tabs([window(%{pane_list: [pane("%1")]})], "%1", %{})
+
+      tree = SessionBarVM.window_tree(windows, expanded_windows: MapSet.new(["@1"]))
+
+      html =
+        render_component(&SessionBar.window_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          terminal_sid: "u-alice",
+          mutations_allowed?: false
+        )
+
+      refute html =~ ~s(data-picker-section="panes")
+      refute html =~ ~s(phx-click="sidebar:toggle_window")
+    end
+  end
+
   describe "window_tabs/1" do
     test "renders windows with activity state and hides mutation controls when not allowed" do
       windows =

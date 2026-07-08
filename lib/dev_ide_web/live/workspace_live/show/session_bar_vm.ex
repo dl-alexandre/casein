@@ -808,6 +808,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           pane_count: non_neg_integer()
         }
 
+  @type window_tree_node :: %{
+          optional(atom()) => term(),
+          dom_id: String.t(),
+          flat_window?: boolean(),
+          expanded?: boolean(),
+          pane: pane_tab() | nil,
+          panes: [pane_tab()] | nil
+        }
+
+  @doc """
+  Builds the WINDOWS sidebar tree: window upper tier, pane children when
+  expanded. A window with exactly one pane collapses to a single flat row
+  (`flat_window?: true`) with no pane child tier.
+  """
+  @spec window_tree([window_tab()], keyword()) :: [window_tree_node()]
+  def window_tree(windows, opts \\ []) when is_list(windows) do
+    expanded = Keyword.get(opts, :expanded_windows, MapSet.new())
+
+    Enum.map(windows, &window_tree_node(&1, expanded))
+  end
+
+  defp window_tree_node(window, expanded) do
+    panes = Map.get(window, :panes, [])
+    pane_count = Map.get(window, :pane_count, length(panes))
+    flat_window? = pane_count <= 1
+    window_id = window.id
+    expanded? = MapSet.member?(expanded, window_id) and not flat_window?
+
+    window
+    |> Map.put(:dom_id, "sidebar-window-" <> window.dom_frag)
+    |> Map.put(:flat_window?, flat_window?)
+    |> Map.put(:expanded?, expanded?)
+    |> Map.put(:pane, if(flat_window?, do: List.first(panes), else: nil))
+    |> Map.put(:panes, window_tree_panes(flat_window?, expanded?, panes))
+  end
+
+  defp window_tree_panes(true, _expanded?, _panes), do: nil
+  defp window_tree_panes(false, true, panes), do: panes
+  defp window_tree_panes(false, false, _panes), do: nil
+
   @doc """
   Maps raw tmux topology windows (as produced by `TmuxTopology.snapshot/2`)
   to render-ready window tabs. Activity state is baked in because window

@@ -89,4 +89,75 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert other.session.id == "remote-shell"
     end
   end
+
+  describe "window_tree/2" do
+    defp pane(id, attrs \\ []) do
+      Map.merge(%{id: id, dom_frag: String.trim_leading(id, "%"), index: 0, label: "pane", detail: "", title: id, active?: false, preview?: false, activity_state: :idle, activity_class: "", activity_label: ""}, Map.new(attrs))
+    end
+
+    defp window_tab(attrs) when is_map(attrs) do
+      panes = Map.get(attrs, :panes, [])
+      base = %{
+        id: "@1",
+        dom_frag: "1",
+        index: 0,
+        name: "main",
+        display_name: "main",
+        active?: true,
+        attention: "none",
+        activity_state: :idle,
+        activity_class: "",
+        activity_label: "",
+        command: nil,
+        full_title: "main",
+        panes: panes,
+        pane_count: length(panes)
+      }
+
+      Map.merge(base, Map.drop(attrs, [:panes]))
+    end
+
+    test "keeps single-pane windows flat with no pane children" do
+      [node] =
+        SessionBarVM.window_tree(
+          [window_tab(%{panes: [pane("%1")]})],
+          expanded_windows: MapSet.new(["@1"])
+        )
+
+      assert node.flat_window?
+      refute node.expanded?
+      assert node.pane.id == "%1"
+      assert node.panes == nil
+    end
+
+    test "expands multi-pane windows when listed in expanded_windows" do
+      panes = [pane("%1"), pane("%2", index: 1)]
+
+      [node] =
+        SessionBarVM.window_tree(
+          [window_tab(%{panes: panes, pane_count: 2})],
+          expanded_windows: MapSet.new(["@1"])
+        )
+
+      refute node.flat_window?
+      assert node.expanded?
+      assert length(node.panes) == 2
+      assert node.pane == nil
+    end
+
+    test "collapses multi-pane windows when not expanded" do
+      panes = [pane("%1"), pane("%2", index: 1)]
+
+      [node] =
+        SessionBarVM.window_tree(
+          [window_tab(%{panes: panes, pane_count: 2})],
+          expanded_windows: MapSet.new()
+        )
+
+      refute node.flat_window?
+      refute node.expanded?
+      assert node.panes == nil
+      assert node.pane_count == 2
+    end
+  end
 end

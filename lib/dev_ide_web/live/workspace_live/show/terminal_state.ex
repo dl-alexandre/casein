@@ -13,6 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIDE.Labels
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
@@ -225,7 +226,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         pane_labels: socket.assigns[:pane_labels] || %{}
       )
 
-    assign(socket, :tmux_window_tabs, tabs)
+    socket
+    |> assign(:tmux_window_tabs, tabs)
+    |> Sidebar.assign_windows_sidebar_tree()
   end
 
   defp sync_ui_highlight_pane_id(
