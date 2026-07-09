@@ -6,8 +6,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
 
-  # items/3 and the ctx:* handlers are pure given assigns; the workspace owner
-  # allows can_edit_file?, a non-owner viewer denies it (see DevIDE.Policy).
+  # items/3 and the ctx:* handlers are pure given assigns. Flat peer model:
+  # any authenticated identity may mutate; empty identity is read-only.
   defp owner_assigns(extra \\ %{}) do
     Map.merge(
       %{
@@ -20,7 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
   end
 
   defp viewer_assigns(extra \\ %{}) do
-    owner_assigns(Map.merge(%{current_user: %{id: "u2", username: "bob"}}, extra))
+    owner_assigns(Map.merge(%{current_user: %{}}, extra))
   end
 
   defp socket(assigns) do

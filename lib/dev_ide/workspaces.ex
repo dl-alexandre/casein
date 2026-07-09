@@ -154,23 +154,24 @@ defmodule DevIDE.Workspaces do
   def viewer_owns_workspace?(_, _), do: false
 
   @doc """
-  True when `viewer` may open or mutate a workspace in the multi-user cockpit.
-  Admins and workspace owners qualify.
+  True when `viewer` may open or use a workspace in the multi-user cockpit.
+
+  **Flat peer model:** any authenticated identity (has `id` / `username` /
+  `email`) may access every workspace. DevIDE does not elevate an "admin"
+  role over peers and does not owner-gate shared surfaces (artifacts, preview
+  proxy, terminals, files). The outer gate is oauth2-proxy / API token auth —
+  once you're in, peers are equal. Unauthenticated or empty maps are denied.
   """
   @spec viewer_can_access_workspace?(Workspace.t() | map(), map()) :: boolean()
-  def viewer_can_access_workspace?(workspace, viewer) when is_map(viewer) do
-    # Scratch is intentionally workspaceless: any authenticated viewer may open
-    # the home-rooted PTY (no owner field on the synthetic struct).
-    Scratch.scratch?(workspace) or viewer_admin?(viewer) or
-      viewer_owns_workspace?(workspace, viewer)
+  def viewer_can_access_workspace?(_workspace, viewer) when is_map(viewer) do
+    authenticated_viewer?(viewer)
   end
 
   def viewer_can_access_workspace?(_, _), do: false
 
   @doc """
-  True when the viewer may use owner-level terminal capabilities (raw fast
-  path and capability tokens). Workspace owners and admins qualify; link
-  collaborators fall back to the full auth path.
+  True when the viewer may use terminal capabilities (raw fast path and
+  capability tokens). Same flat peer rule as `viewer_can_access_workspace?/2`.
   """
   @spec viewer_terminal_owner?(Workspace.t() | map(), map()) :: boolean()
   def viewer_terminal_owner?(workspace, viewer) when is_map(viewer) do
@@ -248,9 +249,18 @@ defmodule DevIDE.Workspaces do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
-  defp viewer_admin?(%{role: :admin}), do: true
-  defp viewer_admin?(%{"role" => "admin"}), do: true
-  defp viewer_admin?(_), do: false
+  # Identity present after ForwardAuth / session — not an empty map spoof.
+  defp authenticated_viewer?(viewer) when is_map(viewer) do
+    [
+      map_string_or_atom(viewer, :id),
+      map_string_or_atom(viewer, :username),
+      map_string_or_atom(viewer, :email)
+    ]
+    |> Enum.any?(fn
+      v when is_binary(v) -> String.trim(v) != ""
+      _ -> false
+    end)
+  end
 
   defp forward_auth_email_domain do
     Application.get_env(:dev_ide, :forward_auth_email_domain) ||

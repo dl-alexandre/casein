@@ -183,14 +183,21 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       Plug.Conn.put_req_header(conn, "x-auth-request-email", email)
     end
 
-    test "forward auth overrides LAN trust: non-owner path mounts are refused", %{conn: conn} do
+    test "forward auth: any authenticated peer may mount any path URL (flat model)", %{
+      conn: conn,
+      aws: aws
+    } do
       enable_forward_auth()
 
       # "dev" does not own the "aws" folder (owner derives from the
-      # /<root>/<user>/... layout).
+      # /<root>/<user>/... layout) — flat peer access still allows the mount.
       conn = as_forward_auth_user(conn, "dev@local")
 
-      assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/aws")
+      {:ok, view, _html} = live(conn, "/aws")
+      assert socket_assign(view, :workspace).path == aws
+
+      html = render_hook(view, "terminal:toggle_chrome", %{})
+      refute html =~ "You do not have access to this workspace."
     end
 
     test "forward auth: the folder owner may mount its path URL", %{conn: conn, aws: aws} do
@@ -205,7 +212,10 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       refute html =~ "You do not have access to this workspace."
     end
 
-    test "forward auth: admins may mount any path URL", %{conn: conn, aws: aws} do
+    test "forward auth: peer emails (legacy admins list ignored) may mount any path URL", %{
+      conn: conn,
+      aws: aws
+    } do
       enable_forward_auth()
       Application.put_env(:dev_ide, :admins, ["boss@local"])
       conn = as_forward_auth_user(conn, "boss@local")
@@ -219,8 +229,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       root: root
     } do
       enable_forward_auth()
-      Application.put_env(:dev_ide, :admins, ["boss@local"])
-      conn = as_forward_auth_user(conn, "boss@local")
+      conn = as_forward_auth_user(conn, "peer@local")
 
       alpha = Path.join(root, ".devide-workspaces/alpha")
       File.mkdir_p!(alpha)
@@ -239,11 +248,16 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert has_element?(view, "#workspace-header-__scratch__")
     end
 
-    test "outside LAN mode path mounts also enforce viewer access", %{conn: conn} do
+    test "outside LAN mode path mounts allow any authenticated peer (flat model)", %{
+      conn: conn,
+      aws: aws
+    } do
       Application.put_env(:dev_ide, :lan_mode, false)
 
-      # The static dev fallback user does not own the "aws" folder.
-      assert {:error, {:live_redirect, %{to: "/"}}} = live(conn, "/aws")
+      # Static dev fallback is an authenticated identity — flat peer access
+      # allows the mount even when the folder is owned by someone else.
+      {:ok, view, _html} = live(conn, "/aws")
+      assert socket_assign(view, :workspace).path == aws
     end
   end
 

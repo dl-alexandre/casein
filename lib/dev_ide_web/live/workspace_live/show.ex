@@ -1945,16 +1945,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> SessionSummary.build_many()
   end
 
-  # Sessions rail visibility: always include the current workspace, plus
-  # anything the viewer owns. Admins see every summary (no header "show all"
-  # toggle — that lived on the removed workspace-admin drawer).
-  defp workspace_summary_visible?(summary, socket) do
-    summary.id == socket.assigns.workspace.id or
-      ForwardAuth.admin?(socket.assigns[:current_user]) or
-      Workspaces.viewer_owns_workspace?(
-        %{user: summary.user},
-        socket.assigns[:current_user] || %{}
-      )
+  # Sessions rail: flat peer model — every authenticated viewer sees every
+  # workspace summary. oauth2-proxy is the only identity gate.
+  defp workspace_summary_visible?(_summary, socket) do
+    case socket.assigns[:current_user] do
+      %{} = user -> ForwardAuth.admin?(user)
+      _ -> false
+    end
   end
 
   defp ensure_current_workspace_record(records, workspace) do

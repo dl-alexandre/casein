@@ -52,15 +52,15 @@ defmodule DevIDE.WorkspacesTest do
              Workspaces.safe_host_path(%Workspace{id: "x", name: "n", path: ""})
   end
 
-  test "viewer_can_access_workspace? allows admins and owners only" do
+  test "viewer_can_access_workspace? allows any authenticated peer (flat model)" do
     ws = %Workspace{id: "x", name: "n", user: "alice"}
     alice = %{id: "alice", email: "alice@example.com"}
     bob = %{id: "bob", email: "bob@example.com"}
-    admin = %{id: "ops", email: "ops@example.com", role: :admin}
 
     assert Workspaces.viewer_can_access_workspace?(ws, alice)
-    refute Workspaces.viewer_can_access_workspace?(ws, bob)
-    assert Workspaces.viewer_can_access_workspace?(ws, admin)
+    assert Workspaces.viewer_can_access_workspace?(ws, bob)
+    refute Workspaces.viewer_can_access_workspace?(ws, %{})
+    refute Workspaces.viewer_can_access_workspace?(ws, nil)
   end
 
   test "viewer_owns_workspace? matches id, username, or email local part" do
@@ -70,11 +70,12 @@ defmodule DevIDE.WorkspacesTest do
     refute Workspaces.viewer_owns_workspace?(ws, %{id: "bob", email: "bob@example.com"})
   end
 
-  test "viewer_terminal_owner? is true for admins even when they do not own the workspace" do
+  test "viewer_terminal_owner? is true for any authenticated peer on any workspace" do
     ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
 
-    assert Workspaces.viewer_terminal_owner?(ws, %{id: "boss", role: :admin})
-    refute Workspaces.viewer_terminal_owner?(ws, %{id: "bob", role: :owner})
+    assert Workspaces.viewer_terminal_owner?(ws, %{id: "boss", email: "boss@example.com"})
+    assert Workspaces.viewer_terminal_owner?(ws, %{id: "bob", email: "bob@example.com"})
+    refute Workspaces.viewer_terminal_owner?(ws, %{})
   end
 
   test "forward_auth_email derives owner username plus configured domain" do

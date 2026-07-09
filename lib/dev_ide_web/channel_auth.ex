@@ -164,8 +164,8 @@ defmodule DevIdeWeb.ChannelAuth do
   defp pairing_email(%{email: email}) when is_binary(email) or is_nil(email), do: email
   defp pairing_email(_), do: nil
 
-  defp pairing_role(%{role: :admin}), do: :admin
-  defp pairing_role(_), do: :owner
+  # Flat peer model: no elevated admin pairing role.
+  defp pairing_role(_), do: :user
 
   defp normalize_terminal_workspace_loc(claims) when is_map(claims) do
     case normalize_workspace_loc(claims[:workspace_loc]) do

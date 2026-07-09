@@ -50,15 +50,16 @@ defmodule DevIDE.DeviceLinksTest do
     assert %Token{last_seen_at: %DateTime{}} = Repo.get!(Token, link.id)
   end
 
-  test "does not issue a persistent token for a non-owner" do
+  test "issues a persistent token for any authenticated peer (flat peer model)" do
     claims = %{
       owner_claims()
-      | id: "intruder",
-        username: "intruder",
-        email: "intruder@example.com"
+      | id: "peer",
+        username: "peer",
+        email: "peer@example.com"
     }
 
-    assert {:error, :unauthorized} = DeviceLinks.create_from_pairing_claims(claims, %{})
+    assert {:ok, %{token: raw_token}} = DeviceLinks.create_from_pairing_claims(claims, %{})
+    assert is_binary(raw_token) and raw_token != ""
   end
 
   test "revoked token no longer verifies" do
