@@ -171,7 +171,14 @@ defmodule DevIDE.PreviewPanes do
   def init(_opts) do
     # :public so browser-control tasks can update registrations without blocking
     # the GenServer mailbox on Playwright round-trips.
-    :ets.new(@table, [:named_table, :set, :public])
+    :ets.new(@table, [
+      :named_table,
+      :set,
+      :public,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
     {:ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
   end
 

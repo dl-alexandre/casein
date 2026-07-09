@@ -57,7 +57,13 @@ defmodule DevIDE.FilePanes do
 
   @impl true
   def init(_opts) do
-    :ets.new(@table, [:named_table, :set, :public])
+    :ets.new(@table, [
+      :named_table,
+      :set,
+      :public,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
 
     {:ok,
      %{
