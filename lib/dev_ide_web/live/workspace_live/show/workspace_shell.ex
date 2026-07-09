@@ -80,6 +80,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
         >
           <div class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip">
             {render_slot(@header_back_nav)}
+            <div
+              :if={@tab == "terminal" and match?({:ok, _}, @host_loc)}
+              class="flex min-w-0 shrink items-center gap-0.5 pointer-coarse:hidden"
+            >
+              <SessionBar.session_header_indicator
+                workspace_id={@workspace.id}
+                tabs={@session_tabs}
+                active_id={@terminal_sid}
+                active_fallback_label={session_kind_label(@active_session_kind)}
+                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+              />
+              <SessionBar.copy_link_button
+                url={
+                  SessionBar.share_url(@workspace.id, @terminal_sid, nil, path_base: @workspace_route)
+                }
+                label={terminal_session_label(@tmux_session, @terminal_sid)}
+                kind="session"
+                visible?={true}
+              />
+            </div>
             <h1
               class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
               title={workspace_path}
@@ -109,21 +129,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             >
               Start unavailable
             </span>
-            <button
-              :if={
-                @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
-                  match?({:ok, _}, @host_loc)
-              }
-              type="button"
-              id="header-session-copy"
-              phx-hook="CopyText"
-              data-copy-text={terminal_session_label(@tmux_session, @terminal_sid)}
-              class="header-p-low header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
-              title="Copy tmux session name"
-              aria-label={"Copy tmux session " <> terminal_session_label(@tmux_session, @terminal_sid)}
-            >
-              {terminal_session_label(@tmux_session, @terminal_sid)}
-            </button>
           </div>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div
@@ -133,6 +138,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <SessionBar.window_tabs
                 workspace_id={@workspace.id}
                 path_base={@workspace_route}
+                terminal_sid={@terminal_sid}
                 windows={@tmux_window_tabs}
                 topology_version={@tmux_topology_structure_version}
                 mutations_allowed?={@tmux_mutations_enabled?}
