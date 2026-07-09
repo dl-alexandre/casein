@@ -1200,6 +1200,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     # The window settling at the applied size resets the streak.
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {120, 40}})
     send(owner_pid, :tmux_drift_check)
+    await_window_size_probe_settled(owner_pid)
     assert %{tmux_drift_streak: 0} = :sys.get_state(owner_pid)
 
     GenServer.stop(owner_pid, :normal)
@@ -2086,6 +2087,20 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       _in_flight ->
         Process.sleep(10)
         await_resize_settled(owner_pid, attempts - 1)
+    end
+  end
+
+  defp await_window_size_probe_settled(owner_pid, attempts \\ 100)
+  defp await_window_size_probe_settled(_owner_pid, 0), do: :ok
+
+  defp await_window_size_probe_settled(owner_pid, attempts) do
+    case :sys.get_state(owner_pid) do
+      %{tmux_window_size_probe: nil} ->
+        :ok
+
+      _in_flight ->
+        Process.sleep(10)
+        await_window_size_probe_settled(owner_pid, attempts - 1)
     end
   end
 

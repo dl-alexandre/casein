@@ -40,8 +40,9 @@ defmodule DevIDE.Terminals.SessionOwner do
   @backend_recover_max 5
   @backend_recover_backoff_ms 400
 
-  # Bound synchronous tmux window_size on attach/drift so a wedged adapter
-  # cannot block the owner mailbox indefinitely.
+  # Bound async tmux window_size probes on attach/drift so a wedged adapter
+  # cannot leave a hung Task.Supervisor child forever. The owner mailbox is
+  # never blocked — the probe runs under Task.Supervisor.async_nolink.
   @default_tmux_window_size_timeout_ms 2_000
 
   # Query-response classification (see `classify_query_response/1`). One tmux
@@ -114,6 +115,9 @@ defmodule DevIDE.Terminals.SessionOwner do
     # applied_size. A sustained streak means another writer is fighting us
     # (stale draining instance, duplicate owner, external client).
     tmux_drift_streak: 0,
+    # Single-flight async window_size probe: %{ref, pid, session, timer}.
+    # See `do_assert_tmux_window_size/2` — never blocks the owner mailbox.
+    tmux_window_size_probe: nil,
     # Backend reattach after term_exit (shell owners with live viewers).
     backend_recover_attempts: 0,
     backend_recover_timer: nil,
@@ -515,6 +519,17 @@ defmodule DevIDE.Terminals.SessionOwner do
     {:noreply, run_pending_tmux_resize(%{state | tmux_resize: nil})}
   end
 
+  # Async window_size probe finished (async_nolink reply). Act on the result
+  # without having blocked the owner mailbox during the shell-out.
+  @impl true
+  def handle_info({ref, result}, %{tmux_window_size_probe: %{ref: ref} = probe} = state)
+      when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+    _ = cancel_timer_ref(probe.timer)
+    state = %{state | tmux_window_size_probe: nil}
+    {:noreply, apply_tmux_window_size_result(state, probe.session, result)}
+  end
+
   # The resize task crashed before replying. Clear the single-flight slot so
   # the next size change (or the queued one) can still run — best-effort, same
   # as the old fire-and-forget behavior on failure.
@@ -522,6 +537,36 @@ defmodule DevIDE.Terminals.SessionOwner do
   def handle_info({:DOWN, ref, :process, _pid, _reason}, %{tmux_resize: %{ref: ref}} = state) do
     {:noreply, run_pending_tmux_resize(%{state | tmux_resize: nil})}
   end
+
+  # Window-size probe task crashed/killed before replying.
+  @impl true
+  def handle_info(
+        {:DOWN, ref, :process, _pid, _reason},
+        %{tmux_window_size_probe: %{ref: ref} = probe} = state
+      ) do
+    _ = cancel_timer_ref(probe.timer)
+    {:noreply, %{state | tmux_window_size_probe: nil}}
+  end
+
+  # Probe hung past the timeout: kill the task so Task.Supervisor does not
+  # accumulate wedged children. Owner never waited on the result.
+  @impl true
+  def handle_info(
+        {:tmux_window_size_timeout, ref},
+        %{tmux_window_size_probe: %{ref: ref, pid: pid, session: session}} = state
+      ) do
+    Process.demonitor(ref, [:flush])
+    Process.exit(pid, :kill)
+
+    Logger.warning(
+      "tmux window_size timed out session=#{session} timeout_ms=#{tmux_window_size_timeout_ms()}",
+      kind: :drift_guard
+    )
+
+    {:noreply, %{state | tmux_window_size_probe: nil}}
+  end
+
+  def handle_info({:tmux_window_size_timeout, _ref}, state), do: {:noreply, state}
 
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
@@ -1151,71 +1196,100 @@ defmodule DevIDE.Terminals.SessionOwner do
     )
   end
 
-  defp fetch_tmux_window_size(tmux, session) do
-    timeout = tmux_window_size_timeout_ms()
-    task = Task.async(fn -> tmux.window_size(session) end)
+  defp cancel_timer_ref(ref) when is_reference(ref) do
+    Process.cancel_timer(ref)
+    :ok
+  end
 
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} ->
-        result
+  defp cancel_timer_ref(_), do: :ok
+
+  # Kick off a non-blocking window_size probe. Result lands in
+  # `handle_info({ref, result}, …)` / timeout / DOWN handlers above.
+  # Single-flight: a probe already in progress is left alone (next drift tick
+  # will re-check). Mirrors `do_start_tmux_resize/6`.
+  defp do_assert_tmux_window_size(%{workspace_key: key, info: %{sid: sid}} = state, _size) do
+    case state.tmux_window_size_probe do
+      %{ref: _} ->
+        state
 
       nil ->
-        Logger.warning(
-          "tmux window_size timed out session=#{session} timeout_ms=#{timeout}",
-          kind: :drift_guard
-        )
+        session = Tmux.session_name(key, sid)
+        # Resolve inside the owner (not the task) so test adapter swaps are stable.
+        tmux = DevIDE.Terminals.tmux_adapter()
 
-        :error
+        task =
+          Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+            tmux.window_size(session)
+          end)
 
-      {:exit, reason} ->
-        Logger.warning(
-          "tmux window_size failed session=#{session} reason=#{inspect(reason)}",
-          kind: :drift_guard
-        )
+        timer =
+          Process.send_after(
+            self(),
+            {:tmux_window_size_timeout, task.ref},
+            tmux_window_size_timeout_ms()
+          )
 
-        :error
+        %{
+          state
+          | tmux_window_size_probe: %{
+              ref: task.ref,
+              pid: task.pid,
+              session: session,
+              timer: timer
+            }
+        }
     end
   end
 
-  defp do_assert_tmux_window_size(%{workspace_key: key, info: %{sid: sid}} = state, size) do
-    {cols, rows} = size
-    session = Tmux.session_name(key, sid)
-    tmux = DevIDE.Terminals.tmux_adapter()
+  # Apply a completed window_size probe against the *current* applied_size so a
+  # viewer resize that landed while the probe was in flight is not clobbered.
+  defp apply_tmux_window_size_result(state, session, result) do
+    case {state.applied_size, result} do
+      {nil, _} ->
+        state
 
-    case fetch_tmux_window_size(tmux, session) do
-      {:ok, {^cols, ^rows}} ->
-        %{state | tmux_drift_streak: 0}
-
-      {:ok, {actual_cols, actual_rows}} ->
-        Logger.info(
-          "tmux window drift #{actual_cols}x#{actual_rows} -> re-asserting #{cols}x#{rows}",
-          kind: state.info.kind
-        )
-
-        streak = state.tmux_drift_streak + 1
-
-        if streak == @drift_fight_threshold do
-          Logger.warning(
-            "tmux window size fight: #{streak} consecutive drift re-asserts " <>
-              "(#{actual_cols}x#{actual_rows} keeps returning against applied " <>
-              "#{cols}x#{rows}) — another writer is resizing this session " <>
-              "(stale draining instance, duplicate owner, or external client); " <>
-              "viewers=#{map_size(state.subscriber_sizes)}",
+      {{cols, rows} = size, {:ok, {actual_cols, actual_rows}}} ->
+        if cols == actual_cols and rows == actual_rows do
+          %{state | tmux_drift_streak: 0}
+        else
+          Logger.info(
+            "tmux window drift #{actual_cols}x#{actual_rows} -> re-asserting #{cols}x#{rows}",
             kind: state.info.kind
           )
 
-          :telemetry.execute(
-            [:dev_ide, :terminals, :owner, :drift_fight],
-            %{streak: streak},
-            %{kind: state.info.kind, applied: size, actual: {actual_cols, actual_rows}}
-          )
+          streak = state.tmux_drift_streak + 1
 
-          emit_size_fight_alert(state, size, {actual_cols, actual_rows}, streak)
+          if streak == @drift_fight_threshold do
+            Logger.warning(
+              "tmux window size fight: #{streak} consecutive drift re-asserts " <>
+                "(#{actual_cols}x#{actual_rows} keeps returning against applied " <>
+                "#{cols}x#{rows}) — another writer is resizing this session " <>
+                "(stale draining instance, duplicate owner, or external client); " <>
+                "viewers=#{map_size(state.subscriber_sizes)}",
+              kind: state.info.kind
+            )
+
+            :telemetry.execute(
+              [:dev_ide, :terminals, :owner, :drift_fight],
+              %{streak: streak},
+              %{kind: state.info.kind, applied: size, actual: {actual_cols, actual_rows}}
+            )
+
+            emit_size_fight_alert(state, size, {actual_cols, actual_rows}, streak)
+          end
+
+          maybe_resize_tmux_window(%{state | tmux_drift_streak: streak}, cols, rows)
         end
 
-        maybe_resize_tmux_window(%{state | tmux_drift_streak: streak}, cols, rows)
+      {_size, :error} ->
+        state
 
-      :error ->
+      {_size, other} ->
+        Logger.warning(
+          "tmux window_size unexpected result session=#{session} result=#{inspect(other)}",
+          kind: :drift_guard
+        )
+
         state
     end
   end
