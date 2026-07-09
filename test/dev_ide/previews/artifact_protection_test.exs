@@ -7,7 +7,10 @@ defmodule DevIDE.Previews.ArtifactProtectionTest do
   setup do
     prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
     prev_max = Application.get_env(:dev_ide, :preview_max_artifacts)
-    root = Path.join(System.tmp_dir!(), "artifact-protection-#{System.unique_integer([:positive])}")
+
+    root =
+      Path.join(System.tmp_dir!(), "artifact-protection-#{System.unique_integer([:positive])}")
+
     File.rm_rf!(root)
     File.mkdir_p!(root)
     Application.put_env(:dev_ide, :preview_artifacts_root, root)

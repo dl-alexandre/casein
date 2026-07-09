@@ -31,7 +31,9 @@ defmodule DevIdeWeb.Plugs.DeployWebhookAuthTest do
   end
 
   defp clear_secret do
-    config = Application.get_env(:dev_ide, :deployment, []) |> Keyword.delete(:github_webhook_secret)
+    config =
+      Application.get_env(:dev_ide, :deployment, []) |> Keyword.delete(:github_webhook_secret)
+
     Application.put_env(:dev_ide, :deployment, config)
     System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
   end

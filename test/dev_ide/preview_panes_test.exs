@@ -975,7 +975,10 @@ defmodule DevIDE.PreviewPanesTest do
     end
 
     assert Enum.all?(pane_ids, fn pane_id ->
-             match?(%PreviewPaneRegistration{status: :open}, Repo.get_by(PreviewPaneRegistration, pane_id: pane_id))
+             match?(
+               %PreviewPaneRegistration{status: :open},
+               Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
+             )
            end)
 
     FakeState.put(:fake_tmux_panes, %{session => []})
