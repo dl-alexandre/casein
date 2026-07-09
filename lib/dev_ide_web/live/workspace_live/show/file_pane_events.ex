@@ -30,9 +30,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
 
   alias DevIDE.FilePanes
   alias DevIDE.FilePanes.LinkResolver
+  alias DevIDE.Files.BrowserViewable
   alias DevIDE.Panes
   alias DevIDE.Panes.Pane
   alias DevIDE.Policy
+  alias DevIDE.Previews.FileServer
   alias DevIDE.Workspaces
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
@@ -103,6 +105,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   def handle_event("terminal:open_file_link", %{"path" => path} = params, socket)
       when is_binary(path) do
     line = parse_line(params["line"])
+    mode = link_mode(params["mode"])
 
     case local_link_root(socket.assigns.workspace) do
       {:ok, root} ->
@@ -110,7 +113,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
         # resolver that admitted the link when the frame was scanned.
         case LinkResolver.resolve(root, path) do
           {:ok, rel} ->
-            open_link_in_pane(socket, rel, line, params)
+            surface =
+              case mode do
+                :flip -> BrowserViewable.other(BrowserViewable.surface(rel))
+                _ -> BrowserViewable.surface(rel)
+              end
+
+            case surface do
+              :preview -> open_link_in_preview(socket, rel, params)
+              :file -> open_link_in_pane(socket, rel, line, params)
+            end
 
           {:error, :not_found} ->
             # Existed at scan time but vanished (or a stale client store):
@@ -274,6 +286,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
     end
   end
 
+  defp link_mode("flip"), do: :flip
+  defp link_mode(:flip), do: :flip
+  defp link_mode(_), do: :default
+
   defp open_link_in_pane(socket, rel, line, params) do
     tmux_session = socket.assigns[:tmux_session]
     anchor = link_anchor_pane_id(socket, params)
@@ -304,6 +320,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
              socket,
              :error,
              "Could not open file in a pane: #{format_file_error(reason)}"
+           )}
+      end
+    else
+      open_in_files_tab(socket, rel)
+    end
+  end
+
+  # Open a browser-viewable path in a :preview pane pointed at the per-workspace
+  # static file server. Fallbacks mirror open_link_in_pane: no tmux/anchor →
+  # files tab; confinement is already enforced by LinkResolver upstream.
+  defp open_link_in_preview(socket, rel, params) do
+    tmux_session = socket.assigns[:tmux_session]
+    anchor = link_anchor_pane_id(socket, params)
+
+    if is_binary(tmux_session) and tmux_session != "" and is_binary(anchor) do
+      case FileServer.ensure_started(socket.assigns.workspace, tmux_session: tmux_session) do
+        {:ok, port} ->
+          url = "http://127.0.0.1:#{port}/" <> URI.encode(rel)
+
+          case PreviewPaneEvents.split_workspace_preview(socket, url, params) do
+            {:ok, socket} ->
+              {:noreply, assign(socket, :tab, "terminal")}
+
+            {:error, reason, socket}
+            when reason in [:no_tmux_session, :no_active_pane, :window_not_found] ->
+              open_in_files_tab(socket, rel)
+
+            {:error, reason, socket} ->
+              {:noreply,
+               put_flash(
+                 socket,
+                 :error,
+                 "Could not open file in a preview pane: #{format_file_error(reason)}"
+               )}
+          end
+
+        {:error, reason} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not start file preview server: #{format_file_error(reason)}"
            )}
       end
     else
