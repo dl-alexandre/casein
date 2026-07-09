@@ -795,6 +795,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-mutations-allowed="true")
     end
 
+    test "advertises leader second-keys: p/n on neighbours, digit on active, c on +" do
+      windows =
+        SessionBarVM.window_tabs([
+          window(%{id: "@1", index: 0, name: "editor", active: false}),
+          window(%{id: "@2", index: 1, name: "server", active: true}),
+          window(%{id: "@3", index: 2, name: "logs", active: false})
+        ])
+
+      html =
+        render_component(&SessionBar.window_tabs/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      # Active is middle: left neighbour → p, right → n, active keeps its digit.
+      assert html =~ ~s(data-window-leader-key="p")
+      assert html =~ ~s(data-window-leader-key="n")
+      assert html =~ ~s(data-window-leader-key="1")
+      # Neighbours prefer n/p over their own digits.
+      refute html =~ ~s(data-window-leader-key="0")
+      refute html =~ ~s(data-window-leader-key="2")
+      # New-window control uses the shared chrome second-key chip.
+      assert html =~ ~s(data-leader-second-key="c")
+    end
+
     test "renders preview marker on window tabs" do
       windows =
         SessionBarVM.window_tabs(

@@ -299,15 +299,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         data-tab-scroller
         class="tab-strip-scroller flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        <%= for window <- @windows do %>
+        <%= for {window, tab_idx} <- Enum.with_index(@windows) do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
             data-ctx-menu="window_tab"
             data-ctx-window-id={window.id}
             data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
             data-active-window={window.active? || nil}
+            data-window-leader-key={window_leader_key(@windows, window, tab_idx)}
             class={[
-              "group flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+              "group relative flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
                 do: "border-primary bg-base-100 text-base-content shadow-sm",
                 else:
@@ -374,7 +375,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <button
           type="button"
           phx-click="tmux:new_window"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+          class="leader-key-control relative shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+          data-leader-second-key="c"
           title="New window · Ctrl + B c"
           aria-label="New tmux window"
         >
@@ -384,6 +386,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     </div>
     """
   end
+
+  # Leader-armed badge for a window tab:
+  #   * prev of active → "p" (C-b p)
+  #   * next of active → "n" (C-b n)
+  #   * otherwise index 0–9 → that digit (C-b 0–9)
+  # Neighbours win over digits so sequential n/p browsing stays obvious.
+  defp window_leader_key(windows, window, tab_idx) when is_list(windows) do
+    active_idx = Enum.find_index(windows, & &1.active?)
+
+    cond do
+      is_integer(active_idx) and tab_idx == active_idx - 1 ->
+        "p"
+
+      is_integer(active_idx) and tab_idx == active_idx + 1 ->
+        "n"
+
+      is_integer(window.index) and window.index >= 0 and window.index <= 9 ->
+        Integer.to_string(window.index)
+
+      true ->
+        nil
+    end
+  end
+
+  defp window_leader_key(_windows, _window, _tab_idx), do: nil
 
   attr :workspace_id, :string, required: true
   attr :tree, :list, required: true, doc: "SessionBarVM.workspace_session_tree/4 nodes"
