@@ -1,44 +1,29 @@
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
+import {pickerLinkToastDetail, resolvePickerCopyTarget} from "./picker_link_copy_url.mjs"
 
-export function pickerLinkToastDetail(url) {
-  if (!url) return null
-
-  try {
-    const u = new URL(url, window.location.origin)
-    const session = u.searchParams.get("session")
-    const window = u.searchParams.get("window")
-    const pane = u.searchParams.get("pane")
-    const zoom = u.searchParams.get("zoom")
-    const parts = []
-
-    if (session) {
-      const suffix = session.match(/-([a-z0-9]{6,8}|t[a-z0-9]{6})$/)?.[1] || session.slice(-8)
-      parts.push(suffix)
-    }
-
-    if (window) parts.push(`window ${window}`)
-    if (pane) parts.push(`pane ${pane}`)
-    if (zoom) parts.push("zoomed")
-
-    return parts.length ? parts.join(" · ") : null
-  } catch (_) {
-    return null
-  }
-}
+export {pickerLinkToastDetail, resolvePickerCopyTarget}
 
 export function copyPickerLink(url, kind = "session") {
   if (!url) return false
 
   const detail = pickerLinkToastDetail(url)
   const base =
-    kind === "window" ? "Window link copied" : kind === "view" ? "Link copied" : "Session link copied"
+    kind === "agent"
+      ? "Agent MCP link copied"
+      : kind === "window"
+        ? "Window link copied"
+        : kind === "view"
+          ? "Link copied"
+          : "Session link copied"
   const message = detail ? `${base} · ${detail}` : base
   const error =
-    kind === "window"
-      ? "Could not copy window link"
-      : kind === "view"
-        ? "Could not copy link"
-        : "Could not copy session link"
+    kind === "agent"
+      ? "Could not copy agent MCP link"
+      : kind === "window"
+        ? "Could not copy window link"
+        : kind === "view"
+          ? "Could not copy link"
+          : "Could not copy session link"
 
   if (copyTextSync(url)) {
     showClipboardToast(message)
@@ -60,7 +45,7 @@ export function installPickerLinkCopy() {
     e.preventDefault()
     e.stopPropagation()
 
-    const kind = btn.dataset.copyLinkKind || "session"
-    copyPickerLink(btn.dataset.copySessionLink, kind)
+    const {url, kind} = resolvePickerCopyTarget(btn.dataset, e)
+    copyPickerLink(url, kind)
   })
 }

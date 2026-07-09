@@ -686,6 +686,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
+  describe "agent_mcp_url/2" do
+    test "builds a terminal MCP URL pre-scoped to the workspace and tmux session" do
+      url = SessionBar.agent_mcp_url("ws-1", "devide_ws-adapter_wt-abc123")
+
+      assert url =~ "/api/terminals/mcp"
+      assert url =~ "workspace_id=ws-1"
+      assert url =~ "tmux_session=devide_ws-adapter_wt-abc123"
+    end
+
+    test "returns nil when there is no concrete tmux session to scope to" do
+      assert SessionBar.agent_mcp_url("ws-1", nil) == nil
+      assert SessionBar.agent_mcp_url("ws-1", "") == nil
+      assert SessionBar.agent_mcp_url("", "devide_ws_wt-abc") == nil
+    end
+  end
+
+  describe "copy_link_button/1" do
+    test "carries the agent MCP link and a Ctrl/Cmd hint when an agent_url is given" do
+      html =
+        render_component(&SessionBar.copy_link_button/1,
+          url: "https://host/workspaces/ws-1?session=wt-abc123",
+          agent_url:
+            "https://host/api/terminals/mcp?workspace_id=ws-1&tmux_session=devide_ws_wt-abc",
+          label: "shell",
+          kind: "session"
+        )
+
+      assert html =~ ~s(data-copy-session-link="https://host/workspaces/ws-1?session=wt-abc123")
+
+      assert html =~
+               ~s(data-copy-session-link-agent="https://host/api/terminals/mcp?workspace_id=ws-1&amp;tmux_session=devide_ws_wt-abc")
+
+      assert html =~ "Ctrl/⌘-click copies the agent MCP link"
+    end
+
+    test "omits the agent attribute and hint when no agent_url is given" do
+      html =
+        render_component(&SessionBar.copy_link_button/1,
+          url: "https://host/workspaces/ws-1?session=wt-abc123",
+          label: "shell",
+          kind: "session"
+        )
+
+      refute html =~ "data-copy-session-link-agent"
+      refute html =~ "Ctrl/⌘-click"
+      assert html =~ ~s(title="Copy link to shell")
+    end
+  end
+
   describe "window_sidebar/1" do
     test "renders a multi-pane window tree with pane select handlers" do
       windows =

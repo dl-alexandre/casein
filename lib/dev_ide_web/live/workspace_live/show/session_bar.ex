@@ -1322,6 +1322,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :url, :string, required: true
   attr :label, :string, required: true
   attr :kind, :string, default: "session"
+  attr :agent_url, :string, default: nil
   attr :visible?, :boolean, default: false
 
   def copy_link_button(assigns) do
@@ -1330,19 +1331,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       type="button"
       tabindex="-1"
       data-copy-session-link={@url}
+      data-copy-session-link-agent={@agent_url}
       data-copy-link-kind={@kind}
       class={[
         "shrink-0 rounded p-1 transition-opacity hover:bg-base-300/60",
         @visible? && "opacity-100",
         !@visible? && "opacity-0 group-hover:opacity-100"
       ]}
-      title={"Copy link to " <> @label}
+      title={copy_link_title(@label, @agent_url)}
       aria-label={"Copy link to " <> @label}
     >
       <.icon name="hero-link" class="size-3" />
     </button>
     """
   end
+
+  defp copy_link_title(label, agent_url) when is_binary(agent_url) and agent_url != "",
+    do: "Copy link to " <> label <> " (Ctrl/⌘-click copies the agent MCP link)"
+
+  defp copy_link_title(label, _agent_url), do: "Copy link to " <> label
+
+  @doc """
+  Absolute terminal MCP endpoint URL pre-scoped to this workspace and tmux session.
+
+  This is the agent-facing handle (workspace_id + tmux_session) another agent can
+  point its MCP client at, distinct from the human viewer `?session=` share link.
+  Returns nil when there is no concrete tmux session to scope to.
+  """
+  @spec agent_mcp_url(String.t(), String.t() | nil) :: String.t() | nil
+  def agent_mcp_url(workspace_id, tmux_session)
+      when is_binary(workspace_id) and workspace_id != "" and
+             is_binary(tmux_session) and tmux_session != "" do
+    DevIDE.Agents.MCPUrls.terminal_url(workspace_id, tmux_session: tmux_session)
+  end
+
+  def agent_mcp_url(_workspace_id, _tmux_session), do: nil
 
   @doc "Absolute share URL for the workspace session, optionally pinned to a window/pane/zoom."
   @spec share_url(String.t(), String.t(), String.t() | nil, keyword()) :: String.t() | nil
