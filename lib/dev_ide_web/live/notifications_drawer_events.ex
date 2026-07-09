@@ -23,8 +23,6 @@ defmodule DevIdeWeb.NotificationsDrawerEvents do
   alias DevIdeWeb.Plugs.ForwardAuth
 
   @list_opts [limit: 80, open_only: true]
-  # Bounded sweep for mark-all-read: the domain caps list reads at 200.
-  @mark_all_limit 200
 
   # --- state -----------------------------------------------------------------
 
@@ -129,12 +127,7 @@ defmodule DevIdeWeb.NotificationsDrawerEvents do
   end
 
   def handle_event("notifications:mark_all_read", _params, socket) do
-    user_id = socket.assigns.notif_user_id
-
-    user_id
-    |> Notifications.list_for_user(limit: @mark_all_limit, unread_only: true, open_only: true)
-    |> Enum.each(&Notifications.mark_read(&1.id, user_id))
-
+    _ = Notifications.mark_all_read(socket.assigns.notif_user_id)
     {:noreply, socket |> clear_status() |> load_state()}
   end
 

@@ -124,6 +124,98 @@ defmodule DevIDE.NotificationsTest do
     assert resolved.resolved_at == @later
   end
 
+  test "mark_all_read/1 sets read_at only on unread+unresolved rows and returns the count" do
+    :ok = Notifications.subscribe("dev")
+
+    assert {:ok, unread_a, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "dev",
+                 workspace_id: "ws-1",
+                 type: "needs_review",
+                 severity: "warning",
+                 title: "Unread A",
+                 dedupe_key: "mark-all:a"
+               },
+               now: @now
+             )
+
+    assert {:ok, unread_b, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "dev",
+                 workspace_id: "ws-1",
+                 type: "needs_review",
+                 severity: "warning",
+                 title: "Unread B",
+                 dedupe_key: "mark-all:b"
+               },
+               now: @now
+             )
+
+    assert {:ok, already_read, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "dev",
+                 workspace_id: "ws-1",
+                 type: "needs_review",
+                 severity: "info",
+                 title: "Already read",
+                 dedupe_key: "mark-all:read"
+               },
+               now: @now
+             )
+
+    assert {:ok, already_read} =
+             Notifications.mark_read(already_read.id, "dev", now: @now)
+
+    assert {:ok, resolved, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "dev",
+                 workspace_id: "ws-1",
+                 type: "needs_review",
+                 severity: "warning",
+                 title: "Resolved unread",
+                 dedupe_key: "mark-all:resolved"
+               },
+               now: @now
+             )
+
+    assert {:ok, resolved} = Notifications.resolve(resolved.id, "dev", now: @now)
+    refute is_nil(resolved.resolved_at)
+    assert is_nil(resolved.read_at)
+
+    assert {:ok, _other_user, :created} =
+             Notifications.deliver(
+               %{
+                 user_id: "other",
+                 workspace_id: "ws-1",
+                 type: "needs_review",
+                 severity: "warning",
+                 title: "Other user",
+                 dedupe_key: "mark-all:other"
+               },
+               now: @now
+             )
+
+    assert 2 = Notifications.mark_all_read("dev", now: @later)
+    assert_receive {:notification_updated, :mark_all_read}, 1_000
+
+    reloaded_a = Repo.get!(Notification, unread_a.id)
+    reloaded_b = Repo.get!(Notification, unread_b.id)
+    reloaded_read = Repo.get!(Notification, already_read.id)
+    reloaded_resolved = Repo.get!(Notification, resolved.id)
+
+    assert reloaded_a.read_at == @later
+    assert reloaded_b.read_at == @later
+    assert reloaded_read.read_at == @now
+    assert is_nil(reloaded_resolved.read_at)
+    assert reloaded_resolved.resolved_at == @now
+    assert Notifications.unread_count("dev") == 0
+    assert 0 = Notifications.mark_all_read("dev", now: @later)
+  end
+
   test "alert audit events can be shaped into durable notification attrs" do
     event =
       Event.new(%{
