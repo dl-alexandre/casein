@@ -352,6 +352,14 @@ body[data-leader-command-active]
 .window-picker-sidebar {
   contain: layout paint;
   isolation: isolate;
+  overflow: hidden;
+  background-color: var(--color-base-100, oklch(100% 0 0));
+}
+
+.sessions-picker-sidebar [data-picker-item],
+.window-picker-sidebar [data-picker-item] {
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* Window tab strip: soft amber wash while leader is armed (C-b 1–9 / n p c). */

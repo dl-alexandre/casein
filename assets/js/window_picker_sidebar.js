@@ -39,15 +39,13 @@ export const WindowPickerSidebar = {
     switch (e.key) {
       case "ArrowLeft": {
         e.preventDefault()
-        // Miller-column: if a multi-pane window is expanded, collapse it first;
-        // otherwise hop focus back to the Sessions rail.
-        const row = this.currentItem()
-        if (this._collapseIfExpanded(row)) break
+        // Dual-rail hop: Left always drops back into Sessions.
         this._focusSessionsRail()
         break
       }
       case "ArrowRight": {
         e.preventDefault()
+        // Expand/collapse multi-pane windows; stay in the Windows column.
         const row = this.currentItem()
         const windowId = row?.getAttribute("phx-value-window-id")
         if (windowId) this.pushEvent("sidebar:toggle_window", {"window-id": windowId})
@@ -141,10 +139,13 @@ export const WindowPickerSidebar = {
 
   focusInitial() {
     requestAnimationFrame(() => {
-      if (this.currentItem() && this.el.contains(document.activeElement)) return
-      const items = this.visibleItems()
-      const active = items.find((el) => el.hasAttribute("data-picker-active"))
-      ;(active || items[0])?.focus()
+      requestAnimationFrame(() => {
+        const items = this.visibleItems()
+        if (items.length === 0) return
+        if (this.currentItem() && this.el.contains(document.activeElement)) return
+        const active = items.find((el) => el.hasAttribute("data-picker-active"))
+        ;(active || items[0])?.focus({preventScroll: false})
+      })
     })
   },
 
@@ -181,26 +182,16 @@ export const WindowPickerSidebar = {
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
   },
 
-  _collapseIfExpanded(row) {
-    if (!row) return false
-    const branch = row.closest?.("[data-picker-tree-branch]")
-    if (!branch || !this.el.contains(branch)) return false
-    const children = branch.querySelector("[data-picker-branch-children]")
-    if (!children) return false
-    const collapsed =
-      children.hasAttribute("data-picker-collapsed") || children.classList.contains("hidden")
-    if (collapsed) return false
-    const windowId = row.getAttribute("phx-value-window-id")
-    if (!windowId) return false
-    this.pushEvent("sidebar:toggle_window", {"window-id": windowId})
-    return true
-  },
-
   // Drop focus into the Sessions column (Miller-style Left).
   _focusSessionsRail() {
     const rail = document.querySelector("[data-sessions-picker-sidebar]")
     if (rail) {
       rail.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus"))
+      const items = Array.from(rail.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && el.style.display !== "none"
+      )
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
+      ;(active || items[0])?.focus({preventScroll: false})
       return
     }
     this.pushEvent("sidebar:reveal_sessions", {})
