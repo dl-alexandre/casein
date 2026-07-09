@@ -35,12 +35,21 @@ defmodule DevIDE.Runtimes.EctoAdapter do
 
   @impl true
   def update_runtime(%Runtime{} = runtime, event) do
+    # Upsert: if the row is missing (race, partial create, or adapter lag),
+    # insert instead of crashing with Ecto.NoResultsError.
     Repo.transaction(fn ->
       row =
-        RuntimeRow
-        |> Repo.get!(runtime.id)
-        |> Ecto.Changeset.change(runtime_attrs(runtime))
-        |> Repo.update!()
+        case Repo.get(RuntimeRow, runtime.id) do
+          nil ->
+            %RuntimeRow{}
+            |> Ecto.Changeset.change(runtime_attrs(runtime))
+            |> Repo.insert!()
+
+          existing ->
+            existing
+            |> Ecto.Changeset.change(runtime_attrs(runtime))
+            |> Repo.update!()
+        end
 
       if event, do: insert_event!(event)
       to_runtime(row)
