@@ -20,6 +20,11 @@ defmodule DevIDE.Previews.FileServer.Plug do
   def init(opts), do: opts
 
   @impl true
+  # Re-serving workspace file bytes is the feature: root-jailed via FileAccess,
+  # loopback-only Bandit listener, authorized by the preview proxy. The body is
+  # never DevIDE-trusted markup and carries nosniff so it runs as the file's own
+  # content-type — same posture as PreviewProxyController's XSS.SendResp skip.
+  # sobelow_skip ["XSS.SendResp"]
   def call(conn, opts) do
     loc = Keyword.fetch!(opts, :loc)
     # Any hit (200 or 404) counts as activity so a live preview iframe/proxy
