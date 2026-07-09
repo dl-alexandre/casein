@@ -430,6 +430,17 @@ function esc(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
+function liveviewHero(rt) {
+  const top = (rt?.liveview?.liveviews || [])[0];
+  if (!top) return { view: null, title: null, keys: [], path: null };
+  return {
+    view: top.view || null,
+    title: (top.fields && (top.fields.page_title || top.fields.pageTitle)) || null,
+    keys: top.assign_keys || [],
+    path: top.current_path || null,
+  };
+}
+
 function writeReport(out, m, results, runtimeBag) {
   const rows = results.map((r) => {
     const img = r.shot ? `<img src="${r.shot}" width="240">` : "—";
@@ -442,6 +453,18 @@ function writeReport(out, m, results, runtimeBag) {
       .map((s) => `<div style="font-size:11px;color:#f85149;max-width:28rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s)}</div>`)
       .join("");
     const rt = r.runtime || {};
+    const hero = liveviewHero(rt);
+    // Hero under page name: LiveView module + page_title (what a human reads first)
+    const heroLine =
+      hero.view || hero.title
+        ? `<div style="margin-top:.25rem;font-size:12px;color:#c9d1d9">` +
+          (hero.title ? `<b>${esc(hero.title)}</b>` : "") +
+          (hero.view
+            ? `${hero.title ? " · " : ""}<code style="color:#79c0ff">${esc(hero.view)}</code>`
+            : "") +
+          `</div>`
+        : "";
+
     let twCell = "—";
     if (rt.status === "ok") {
       const errN = rt.error_log_count || 0;
@@ -462,14 +485,18 @@ function writeReport(out, m, results, runtimeBag) {
       }
       let lvBit = "";
       if (rt.liveview && rt.liveview.status === "ok") {
-        const top = (rt.liveview.liveviews || [])[0];
-        const keys = (top?.assign_keys || []).slice(0, 10).join(", ");
-        const more = (top?.assign_keys || []).length > 10 ? "…" : "";
+        const keys = hero.keys || [];
+        const keyPreview = keys.slice(0, 6).join(", ");
+        const keyBlock =
+          keys.length
+            ? `<details style="margin-top:.2rem"><summary style="cursor:pointer;color:#9aa4b2;font-size:11px">assign keys (${keys.length})</summary>` +
+              `<div style="font-size:11px;color:#9aa4b2;max-width:22rem;word-break:break-word">${esc(keys.join(", "))}</div></details>`
+            : "";
         lvBit =
           `<div style="font-size:11px;color:#9aa4b2">lv=${rt.liveview.count}` +
-          (top?.view ? ` <code>${esc(top.view)}</code>` : "") +
-          (keys ? `<br>keys: ${esc(keys)}${more}` : "") +
-          `</div>`;
+          (hero.path ? ` · path <code>${esc(hero.path)}</code>` : "") +
+          (keyPreview && !keys.length ? "" : "") +
+          `</div>${keyBlock}`;
       } else if (rt.liveview?.status && rt.liveview.status !== "disabled") {
         lvBit = `<div style="font-size:11px;color:#d29922">lv ${esc(rt.liveview.status)}${rt.liveview.error ? `: ${esc(rt.liveview.error)}` : ""}</div>`;
       }
@@ -509,7 +536,7 @@ function writeReport(out, m, results, runtimeBag) {
         .join("") || "—";
     }
 
-    return `<tr><td>${img}</td><td><b>${esc(r.name)}</b><br><code>${esc(r.path)}</code>${redirect}` +
+    return `<tr><td>${img}</td><td><b>${esc(r.name)}</b>${heroLine}<br><code>${esc(r.path)}</code>${redirect}` +
       `<br><small>landed ${esc(String(r.landed || ""))}</small></td>` +
       `<td>${r.ms}ms<br><small>budget ${r.budget_ms}</small>` +
       (r.main_status != null ? `<br><small>HTTP ${r.main_status}</small>` : "") +
