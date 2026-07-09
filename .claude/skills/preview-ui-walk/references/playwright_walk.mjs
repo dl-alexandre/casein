@@ -17,10 +17,10 @@
 // Usage:
 //   node playwright_walk.mjs --manifest m.json --base http://127.0.0.1:<port> --out ./run [--settle-ms 1500]
 //
-// Manifest login block for this driver:
-//   "login": { "type": "cookie", "path": "/auth/superadmin/mock",
-//              "params": { "email": "you@x.com", "role": "superadmin" },
-//              "lands_on": "/superadmin" }
+// Manifest login block for this driver (app-owned .devide/preview-walk.json):
+//   "login": { "type": "cookie", "path": "/dev/login",
+//              "params": { "email": "you@x.com", "role": "admin" },
+//              "lands_on": "/admin" }
 //
 // Emits: <out>/report.html, <out>/results.json, <out>/shot-*.png.
 

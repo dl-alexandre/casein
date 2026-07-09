@@ -21,16 +21,15 @@ embedded.
 ## ⚠️ Safety gate — READ THIS FIRST, every run
 
 A workspace app can be backed by **production upstream APIs even when its local DB
-is throwaway** (OneBackend-v3 is: writes route to `*.onemilc.com` by default —
-see [[onebackend-v3-superadmin-uitest]]). So:
+is throwaway**. The app's own walk manifest documents that risk under `safety`. So:
 
 1. **Default to strictly read-only**: navigate + screenshot + `preview_report_errors`
    only. Page *loads* fire the app's normal reads — fine. Do **not** click, type,
    submit, or fire any event in the manifest's `deny_events` list.
 2. Only relax to interactions if you have **confirmed the app's write path is
-   non-prod** for this instance — i.e. `ONE_API_URL` / `*_API_URL` are overridden
-   to a non-prod host, or a shadow/legacy-safe flag is on. If unconfirmed, stay
-   read-only. When in doubt, screenshot; never click.
+   non-prod** for this instance (check the env keys listed in `safety.env_check`,
+   or an explicit non-prod flag the app documents). If unconfirmed, stay read-only.
+   When in doubt, screenshot; never click.
 3. The manifest carries the app's `safety` block (denylist, the env keys to
    check). Honor it. Log what you skipped.
 
@@ -47,16 +46,15 @@ see [[onebackend-v3-superadmin-uitest]]). So:
 
 ## Prerequisites
 
-- **Target app running + preview reachable.** Per [[devbox-preview-routing]], a
-  stopped v3 workspace 404s through the preview-router. Ensure it's `running`
-  (once PR #188 ships, opening its preview auto-starts it; until then start via
-  the manager `POST /api/workspaces/:id/start` and wait for loopback
-  `:{ports.http}/health` → 200). See [[reports-preview-readiness]].
-- **The walk manifest** (see `references/manifest-schema.md`). It lives in the
-  TARGET repo at `.devide/preview-walk.json` (the app owns its own page list +
-  safety). Worked examples: `references/onebackend-v3-superadmin.json` and
-  `references/authed-admin-example.json` — both are **cookie** logins driven by
-  `playwright_walk.mjs` (redirect/cookie auth; the MCP path is a false green).
+- **Target app running + preview reachable.** A stopped manager workspace often
+  404s through the preview-router. Ensure it's `running` (manager
+  `POST /api/workspaces/:id/start`, wait for loopback `:{ports.http}/health` → 200).
+- **The walk manifest** (see `references/manifest-schema.md`). **It lives in the
+  TARGET product repo** at `.devide/preview-walk.json` — page list, login route,
+  safety denylist, and prod-write notes are app-owned. DevIDE only ships the
+  generic engine (`walk.py` / `playwright_walk.mjs`) plus a shape example
+  (`references/authed-admin-example.json`). Do **not** add product-specific
+  manifests under this skill.
 
 ## 1. Resolve the target's scoped preview MCP
 
@@ -88,14 +86,14 @@ login use `references/playwright_walk.mjs` instead (see Auth reality).
 
 ## Auth reality — the preview MCP cannot do redirect/cookie logins
 
-Learned the hard way (OneBackend-v3 superadmin walk). **`preview_navigate` blocks
-302 redirects** (an origin-safety guard in DevIDE's nav layer), so a redirect-based
+Learned the hard way on real admin apps. **`preview_navigate` blocks 302
+redirects** (an origin-safety guard in DevIDE's nav layer), so a redirect-based
 login (`/auth/…/mock` → 302 that sets the session cookie → 302 to the panel) never
 persists: the browser drops the cookie, every gated page 302s to `/login`, and the
 screenshot silently stays on the previous page — **a false green**. `default_headers`
-Cookie injection also did *not* carry the session through the block, and the
-"logo double-click" (in-page `window.location`, the only bypass) is defeated by the
-per-click visible-ack timeout (clicks serialize seconds apart, need <500ms).
+Cookie injection also did *not* carry the session through the block, and in-page
+`window.location` bypasses are defeated by the per-click visible-ack timeout
+(clicks serialize seconds apart, need <500ms).
 
 **So pick the driver by auth model:**
 - **No auth / no login redirect** → `references/walk.py` (preview MCP: navigate +
@@ -191,10 +189,12 @@ the page-sharding, not a redesign.
 - Assert on the screenshot artifact + error counts, NOT on `observe_pane`'s
   `operator_visible`/`browser_loaded` (operator-iframe telemetry; wrong signal for
   a headless driver — see [[preview-pane-e2e-harness]]).
-- **`playwright_walk.mjs` noise filter** — CSP-blocked third-party badges (HexDocs
-  README shields) and nested LiveDashboard iframe CSP do not fail the page by
+- **`playwright_walk.mjs` noise filter** — common CSP noise (third-party badge
+  images, nested-iframe CSP, nonce inline style/script) does not fail the page by
   default; wrong `lands_on` / main-document 4xx still do. See
   `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
 - Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
   prior run's screenshots for visual-diff regression once a baseline exists (only
   meaningful for pages with stable content).
+- **Boundary:** product routes, login params, and prod-write safety stay in the
+  target repo's `.devide/preview-walk.json`. This skill must stay app-agnostic.
