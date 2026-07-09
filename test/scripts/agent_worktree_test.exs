@@ -30,6 +30,41 @@ defmodule Scripts.AgentWorktreeTest do
     refute String.trim(branch) == "HEAD"
   end
 
+  test "agent_worktree_create defaults to origin HEAD when the remote uses main" do
+    %{repo: repo, root: worktree_root} = git_fixture!()
+
+    git!(["-C", repo, "branch", "-m", "main"])
+
+    remote = Path.join(Path.dirname(repo), "remote.git")
+    git!(["init", "--bare", "--initial-branch=main", remote])
+    git!(["-C", repo, "remote", "add", "origin", remote])
+    git!(["-C", repo, "push", "-u", "origin", "main"])
+    git!(["-C", repo, "remote", "set-head", "origin", "-a"])
+
+    {path, 0} =
+      bash_agent_worktree(
+        """
+        agent_worktree_create codex mainrepo
+        """,
+        env: [
+          {"DEVIDE_CHECKOUT", repo},
+          {"DEVIDE_AGENT_WORKTREE_ROOT", worktree_root}
+        ]
+      )
+
+    worktree_path = String.trim(path)
+    assert File.dir?(worktree_path)
+
+    {branch, 0} = System.cmd("git", ["-C", worktree_path, "rev-parse", "--abbrev-ref", "HEAD"])
+    assert String.starts_with?(String.trim(branch), "agent/codex/mainrepo-")
+
+    {merge_base, 0} =
+      System.cmd("git", ["-C", worktree_path, "merge-base", "HEAD", "origin/main"])
+
+    {origin_main, 0} = System.cmd("git", ["-C", worktree_path, "rev-parse", "origin/main"])
+    assert String.trim(merge_base) == String.trim(origin_main)
+  end
+
   test "agent_worktree_ensure with FORCE_FRESH branches a new worktree instead of adopting a linked one" do
     %{repo: repo, root: worktree_root} = git_fixture!()
     # Simulate the orchestrator's own linked worktree that a spawned worker
