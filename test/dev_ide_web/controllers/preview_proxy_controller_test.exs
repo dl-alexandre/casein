@@ -315,8 +315,10 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
-  test "forwards PUT/PATCH/DELETE/HEAD/OPTIONS methods to the upstream", %{conn: _conn} do
-    for method <- [:put, :patch, :delete, :head, :options] do
+  test "forwards PUT/PATCH/DELETE/HEAD methods to the upstream", %{conn: _conn} do
+    # OPTIONS is rejected by ForwardAuth (405) so a client-supplied
+    # X-Auth-Request-Email cannot spoof identity on the preview-proxy catch-all.
+    for method <- [:put, :patch, :delete, :head] do
       {root, workspace_id} = seed_authorized_workspace!()
 
       {listen, port, task} =
@@ -340,7 +342,6 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
           :patch -> patch(conn, path, "body")
           :delete -> delete(conn, path)
           :head -> head(conn, path)
-          :options -> options(conn, path)
         end
 
       assert conn.status == 200

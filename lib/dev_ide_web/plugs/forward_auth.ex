@@ -29,11 +29,16 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   cannot survive an authenticated path. Two matcher exclusions bypass
   forward-auth entirely — `OPTIONS` requests and `/site.webmanifest` —
   and on those paths a client-supplied header would pass through
-  unmodified. This is acceptable today because the Phoenix router
-  defines no OPTIONS routes (unmatched OPTIONS → 404 before this plug
-  could be trusted with anything), and `/site.webmanifest` is static.
-  If an OPTIONS-routable endpoint is ever added behind the `:browser`
-  pipeline, the Caddy matcher must be revisited first.
+  unmodified. `/site.webmanifest` is static. OPTIONS is more subtle:
+  Caddy skips oauth2-proxy for OPTIONS, but the Phoenix router still has
+  a `match :*` preview-proxy catch-all that accepts OPTIONS. Trusting a
+  client-supplied `X-Auth-Request-Email` on OPTIONS would let an attacker
+  spoof identity and proxy a victim's loopback server. This plug therefore
+  rejects all OPTIONS with 405 and never reads the header on that method.
+  GET/POST (and other authenticated methods) remain trusted because Caddy
+  resets the header from oauth2-proxy on those paths. CORS preflight for
+  embedded apps is not required through this path: preview-proxy content
+  is same-origin to the iframe, so browsers do not preflight those loads.
   """
 
   import Plug.Conn
@@ -43,6 +48,16 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   @session_key "current_user"
 
   def init(opts), do: opts
+
+  def call(%Plug.Conn{method: "OPTIONS"} = conn, _opts) do
+    # Never trust client-supplied identity on OPTIONS (Caddy bypasses
+    # oauth2-proxy for preflight; the preview-proxy catch-all would otherwise
+    # accept a spoofed X-Auth-Request-Email).
+    conn
+    |> put_resp_content_type("text/plain")
+    |> send_resp(405, "Method Not Allowed")
+    |> halt()
+  end
 
   def call(conn, _opts) do
     if enabled?() do

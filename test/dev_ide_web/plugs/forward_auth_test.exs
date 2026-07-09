@@ -19,9 +19,9 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
     :ok
   end
 
-  defp build_conn(headers) do
+  defp build_conn(headers, method \\ :get) do
     headers
-    |> Enum.reduce(conn(:get, "/"), fn {k, v}, c -> put_req_header(c, k, v) end)
+    |> Enum.reduce(conn(method, "/"), fn {k, v}, c -> put_req_header(c, k, v) end)
     |> Plug.Test.init_test_session(%{})
   end
 
@@ -122,6 +122,18 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
       assert conn.halted
       assert conn.status == 401
+    end
+
+    test "rejects OPTIONS with 405 and does not trust X-Auth-Request-Email" do
+      conn =
+        [{"x-auth-request-email", "victim@example.com"}]
+        |> build_conn(:options)
+        |> ForwardAuth.call([])
+
+      assert conn.halted
+      assert conn.status == 405
+      refute Map.has_key?(conn.assigns, :current_user)
+      assert get_session(conn, "current_user") == nil
     end
   end
 
