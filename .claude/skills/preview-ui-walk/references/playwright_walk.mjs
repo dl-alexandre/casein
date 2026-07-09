@@ -140,6 +140,37 @@ function urlOk(landed, expected) {
   return p.includes(want) || p === expected;
 }
 
+// Smoke walks care about "did the page land and render?", not third-party badge
+// CSP, nested-iframe CSP (LiveDashboard embed), or nonce inline-style noise.
+// Those still show up as raw counts/samples; they do not flip PASS→FAIL unless
+// the page opts into `strict_errors: true`.
+const DEFAULT_NOISE_RE =
+  /Content Security Policy|ERR_BLOCKED_BY_CSP|\bcsp\b|shields\.io|badge\.svg|github\.com\/.*\/badge|Applying inline style violates|Executing inline script violates/i;
+
+function noisePatterns(page, manifest) {
+  const extras = []
+    .concat(manifest.noise_patterns || [])
+    .concat(page.noise_patterns || []);
+  if (!extras.length) return DEFAULT_NOISE_RE;
+  const parts = [DEFAULT_NOISE_RE.source, ...extras.map((p) => {
+    try { return new RegExp(p, "i").source; } catch { return null; }
+  }).filter(Boolean)];
+  return new RegExp(parts.join("|"), "i");
+}
+
+function actionable(errors, noiseRe) {
+  return (errors || []).filter((e) => !noiseRe.test(String(e)));
+}
+
+function pageVerdict({ loaded, within, uok, mainStatus, actionableConsole, actionableNetwork }) {
+  if (!loaded || !within || uok === false) return "FAIL";
+  if (mainStatus != null && mainStatus >= 400) return "FAIL";
+  // Default smoke: after noise filter, leftover console/network still fail so
+  // real JS/API breaks don't greenwash. Document 4xx already handled above.
+  if (actionableConsole.length || actionableNetwork.length) return "FAIL";
+  return "PASS";
+}
+
 async function main() {
   const a = parseArgs(process.argv.slice(2));
   const m = JSON.parse(fs.readFileSync(a.manifest, "utf8"));
@@ -160,10 +191,19 @@ async function main() {
   for (const pg of m.pages) {
     const consoleErrors = [];
     const networkErrors = [];
+    let mainStatus = null;
     const onConsole = (msg) => { if (msg.type() === "error") consoleErrors.push(msg.text()); };
     const onPageError = (err) => consoleErrors.push(String(err));
-    const onResponse = (r) => { if (r.status() >= 400) networkErrors.push(`${r.status()} ${r.url()}`); };
-    const onFailed = (req) => networkErrors.push(`failed ${req.url()}`);
+    const onResponse = (r) => {
+      try {
+        if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) {
+          mainStatus = r.status();
+        }
+      } catch { /* frame torn down */ }
+      if (r.status() >= 400) networkErrors.push(`${r.status()} ${r.url()}`);
+    };
+    const onFailed = (req) =>
+      networkErrors.push(`failed ${req.url()} ${req.failure()?.errorText || ""}`.trim());
     page.on("console", onConsole);
     page.on("pageerror", onPageError);
     page.on("response", onResponse);
@@ -181,6 +221,13 @@ async function main() {
     const elapsed = Date.now() - t0;
     const landed = page.url();
     const uok = urlOk(landed, pg.lands_on || pg.path);
+    const noiseRe = noisePatterns(pg, m);
+    const actConsole = actionable(consoleErrors, noiseRe);
+    const actNetwork = actionable(networkErrors, noiseRe);
+    // strict_errors: true keeps pre-filter behavior (any console/network fails).
+    const strict = pg.strict_errors === true || m.strict_errors === true;
+    const ceForVerdict = strict ? consoleErrors : actConsole;
+    const neForVerdict = strict ? networkErrors : actNetwork;
 
     const shotFile = `shot-${String(results.length).padStart(2, "0")}.png`;
     let shot = null;
@@ -196,16 +243,32 @@ async function main() {
     page.off("requestfailed", onFailed);
 
     const within = elapsed <= budget;
-    const status =
-      loaded && within && consoleErrors.length === 0 && uok !== false ? "PASS" : "FAIL";
+    const status = pageVerdict({
+      loaded,
+      within,
+      uok,
+      mainStatus,
+      actionableConsole: ceForVerdict,
+      actionableNetwork: neForVerdict,
+    });
     results.push({
       name: pg.name, path: pg.path, ms: elapsed, budget_ms: pg.budget_ms,
       console_errors: consoleErrors.length, network_errors: networkErrors.length,
+      actionable_console_errors: actConsole.length,
+      actionable_network_errors: actNetwork.length,
+      console_samples: actConsole.slice(0, 5),
+      network_samples: actNetwork.slice(0, 5),
+      main_status: mainStatus,
       status, shot, shot_file: shot ? shotFile : null, landed, url_ok: uok,
     });
     const flag = uok === false ? `  ⚠ landed=${landed}` : "";
+    const noise =
+      consoleErrors.length - actConsole.length + networkErrors.length - actNetwork.length;
+    const noiseNote = noise > 0 ? ` noise=${noise}` : "";
     console.log(
-      `[preview-ui-walk] ${status.padEnd(4)} ${pg.name.padEnd(16)} ${String(elapsed).padStart(6)}ms  ce=${consoleErrors.length} ne=${networkErrors.length}${flag}`,
+      `[preview-ui-walk] ${status.padEnd(4)} ${pg.name.padEnd(16)} ${String(elapsed).padStart(6)}ms  ` +
+        `ce=${actConsole.length}/${consoleErrors.length} ne=${actNetwork.length}/${networkErrors.length}` +
+        `${noiseNote}${flag}`,
     );
   }
 
@@ -234,9 +297,16 @@ function writeReport(out, m, results) {
       r.url_ok === false
         ? `<br><small style="color:#f85149">↳ redirected to ${esc(r.landed)}</small>`
         : "";
+    const samples = (r.console_samples || []).concat(r.network_samples || []).slice(0, 3)
+      .map((s) => `<div style="font-size:11px;color:#f85149;max-width:28rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s)}</div>`)
+      .join("");
     return `<tr><td>${img}</td><td><b>${esc(r.name)}</b><br><code>${esc(r.path)}</code>${redirect}</td>` +
-      `<td>${r.ms}ms<br><small>budget ${r.budget_ms}</small></td>` +
-      `<td>console ${r.console_errors}<br>network ${r.network_errors}</td>` +
+      `<td>${r.ms}ms<br><small>budget ${r.budget_ms}</small>` +
+      (r.main_status != null ? `<br><small>HTTP ${r.main_status}</small>` : "") +
+      `</td>` +
+      `<td>console ${r.actionable_console_errors ?? r.console_errors}/${r.console_errors}` +
+      `<br>network ${r.actionable_network_errors ?? r.network_errors}/${r.network_errors}` +
+      `${samples}</td>` +
       `<td style="color:${color}"><b>${r.status}</b></td></tr>`;
   });
   const name = (m.report && m.report.name) || "preview-ui-walk";
@@ -245,7 +315,8 @@ function writeReport(out, m, results) {
 table{border-collapse:collapse;width:100%}td{border-top:1px solid #333;padding:.6rem;vertical-align:top}
 code{color:#79c0ff}th{text-align:left;padding:.6rem}</style>
 <h1>${esc(name)}</h1>
-<p>Authenticated (Playwright) read-only walk of <code>${esc(m.workspace || "")}</code>.</p>
+<p>Authenticated (Playwright) read-only walk of <code>${esc(m.workspace || "")}</code>.
+Error counts are <code>actionable/raw</code>; CSP badge/iframe noise is filtered by default.</p>
 <table><tr><th>Screen</th><th>Page</th><th>Load</th><th>Errors</th><th>Result</th></tr>
 ${rows.join("\n")}</table>`;
   fs.writeFileSync(path.join(out, "report.html"), doc);

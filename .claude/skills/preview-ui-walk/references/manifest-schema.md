@@ -10,8 +10,10 @@ reads it and drives the preview accordingly.
   "app_surface": "app",                // preview_surfaces name to reuse (usually "app")
 
   "login": {
-    "type": "session_inject",          // session_inject | cookie | click | none
-    "path": "/auth/superadmin/mock",   // dev bypass route that sets the session
+    "type": "cookie",                  // cookie | session_inject | click | none
+                                       // cookie = redirect login (most admin apps) → playwright_walk.mjs
+                                       // session_inject = no-redirect bypass only → walk.py / preview MCP
+    "path": "/auth/superadmin/mock",   // dev bypass route that sets the session cookie
     "params": { "email": "you@example.com", "role": "superadmin" },
     "lands_on": "/superadmin"          // expected post-login path (sanity check)
   },
@@ -60,6 +62,13 @@ Field notes:
   (the "false green"). See `references/authed-admin-example.json` for the cookie shape.
 - **pages[].budget_ms** — generous; these apps often lack `assign_async`, so first
   render can be slow and a blank dead-render precedes the WS connect.
+- **Error noise (playwright_walk.mjs)** — by default CSP blocks of third-party
+  badges (`shields.io`, GitHub badge SVGs), nested-iframe CSP
+  (`ERR_BLOCKED_BY_CSP`), and nonce inline style/script noise do **not** fail a
+  page. They still appear as raw counts; the report shows `actionable/raw`.
+  Override with `strict_errors: true` (page or manifest) to fail on any
+  console/network error, or extend filters via `noise_patterns: ["regex", …]`.
+  Main-document HTTP ≥400 always fails.
 - **safety.deny_events** — the skill must never trigger these; they mutate and may
   route to prod APIs. Read-only nav/screenshot only.
 - Keep the manifest app-truth: derive it from the app's router + existing smoke

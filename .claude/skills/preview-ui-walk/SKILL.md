@@ -54,9 +54,9 @@ see [[onebackend-v3-superadmin-uitest]]). So:
   `:{ports.http}/health` → 200). See [[reports-preview-readiness]].
 - **The walk manifest** (see `references/manifest-schema.md`). It lives in the
   TARGET repo at `.devide/preview-walk.json` (the app owns its own page list +
-  safety). Worked examples: `references/onebackend-v3-superadmin.json` (session-inject
-  login via the MCP) and `references/authed-admin-example.json` (cookie login via
-  `playwright_walk.mjs`).
+  safety). Worked examples: `references/onebackend-v3-superadmin.json` and
+  `references/authed-admin-example.json` — both are **cookie** logins driven by
+  `playwright_walk.mjs` (redirect/cookie auth; the MCP path is a false green).
 
 ## 1. Resolve the target's scoped preview MCP
 
@@ -191,6 +191,10 @@ the page-sharding, not a redesign.
 - Assert on the screenshot artifact + error counts, NOT on `observe_pane`'s
   `operator_visible`/`browser_loaded` (operator-iframe telemetry; wrong signal for
   a headless driver — see [[preview-pane-e2e-harness]]).
+- **`playwright_walk.mjs` noise filter** — CSP-blocked third-party badges (HexDocs
+  README shields) and nested LiveDashboard iframe CSP do not fail the page by
+  default; wrong `lands_on` / main-document 4xx still do. See
+  `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
 - Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
   prior run's screenshots for visual-diff regression once a baseline exists (only
   meaningful for pages with stable content).

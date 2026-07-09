@@ -1,21 +1,71 @@
 {
   "workspace": "dalexandre-reports",
   "app_surface": "app",
+  "_driver": "references/playwright_walk.mjs (cookie login — preview MCP blocks 302s; session_inject is a false green on this app)",
+  "_note": "OneBackend-v3 superadmin mock auth is a redirect/cookie login (/auth/superadmin/mock → 302 + Set-Cookie → /superadmin). Drive with playwright_walk.mjs against the app loopback, not walk.py / preview_navigate. Paths match OneWeb.Routes.Superadmin on develop: docs live at /superadmin/docs (HexdocsLive), LiveDashboard shell at /superadmin/live-dashboard (iframe embed may CSP-noise; driver filters that). Symphony route removed from develop — not listed.",
   "login": {
-    "type": "session_inject",
+    "type": "cookie",
     "path": "/auth/superadmin/mock",
     "params": { "email": "dalexandre@milcgroup.com", "role": "superadmin" },
     "lands_on": "/superadmin"
   },
   "pages": [
-    { "name": "Dashboard",        "path": "/superadmin",                  "budget_ms": 8000,  "note": "landing card grid" },
-    { "name": "Codebase HexDocs", "path": "/superadmin/hexdocs/index.html","budget_ms": 8000, "note": "dev-only static" },
-    { "name": "LiveDashboard",    "path": "/dev/dashboard",               "budget_ms": 10000, "note": "Phoenix LiveDashboard" },
-    { "name": "Support View",     "path": "/superadmin/support-view",     "budget_ms": 15000, "note": "unbounded list loads + external MilcAgent; may be empty" },
-    { "name": "Metrics",          "path": "/superadmin/metrics",          "budget_ms": 20000, "note": "heaviest: sync repo/queue/cache/service/latency in mount, 30s auto-refresh" },
-    { "name": "Audit Log",        "path": "/superadmin/audit-log",        "budget_ms": 12000, "note": "empty unless rows; paginated" },
-    { "name": "Themes",          "path": "/superadmin/themes",           "budget_ms": 8000,  "note": "needs >=1 theme to exercise edit/preview" },
-    { "name": "Symphony",         "path": "/superadmin/symphony",         "budget_ms": 20000, "role_gated": true, "note": "sync external HTTP in handle_params; most flaky; needs role=superadmin" }
+    {
+      "name": "Dashboard",
+      "path": "/superadmin",
+      "lands_on": "/superadmin",
+      "budget_ms": 8000,
+      "note": "landing card grid"
+    },
+    {
+      "name": "Codebase HexDocs",
+      "path": "/superadmin/docs",
+      "lands_on": "/superadmin/docs",
+      "budget_ms": 8000,
+      "note": "HexdocsLive shell; static /superadmin/hexdocs/* is separate. ExDoc README badges hit shields.io/github and are CSP-blocked (noise, not a shell failure)."
+    },
+    {
+      "name": "LiveDashboard",
+      "path": "/superadmin/live-dashboard",
+      "lands_on": "/superadmin/live-dashboard",
+      "budget_ms": 10000,
+      "note": "Superadmin.LiveDashboardLive shell; raw /dev/dashboard is redirected here. Nested iframe embed may CSP-block under loopback http — shell landing is the smoke signal."
+    },
+    {
+      "name": "Support View",
+      "path": "/superadmin/support-view",
+      "lands_on": "/superadmin/support-view",
+      "budget_ms": 15000,
+      "note": "unbounded list loads + external MilcAgent; may be empty"
+    },
+    {
+      "name": "Metrics",
+      "path": "/superadmin/metrics",
+      "lands_on": "/superadmin/metrics",
+      "budget_ms": 20000,
+      "note": "heaviest: sync repo/queue/cache/service/latency in mount, 30s auto-refresh"
+    },
+    {
+      "name": "Audit Log",
+      "path": "/superadmin/audit-log",
+      "lands_on": "/superadmin/audit-log",
+      "budget_ms": 12000,
+      "note": "empty unless rows; paginated"
+    },
+    {
+      "name": "Themes",
+      "path": "/superadmin/themes",
+      "lands_on": "/superadmin/themes",
+      "budget_ms": 8000,
+      "note": "needs >=1 theme to exercise edit/preview"
+    },
+    {
+      "name": "System Health",
+      "path": "/superadmin/system-health",
+      "lands_on": "/superadmin/system-health",
+      "budget_ms": 15000,
+      "note": "replaces retired /superadmin/symphony (NoRouteError on develop)"
+    }
   ],
   "safety": {
     "read_only": true,
