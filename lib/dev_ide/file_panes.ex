@@ -808,12 +808,27 @@ defmodule DevIDE.FilePanes do
         status: :open
       }
 
-      existing =
-        Repo.one(from r in FilePaneRegistration, where: r.pane_id == ^reg.pane_id, limit: 1)
-
-      changeset = FilePaneRegistration.changeset(existing || %FilePaneRegistration{}, attrs)
-
-      case Repo.insert_or_update(changeset) do
+      # Partial unique index file_pane_registrations_open_pane_id_index
+      # (pane_id WHERE status = 'open') — single round-trip upsert.
+      case %FilePaneRegistration{}
+           |> FilePaneRegistration.changeset(attrs)
+           |> Repo.insert(
+             on_conflict:
+               {:replace,
+                [
+                  :workspace_id,
+                  :tmux_session,
+                  :pane_window_id,
+                  :placement,
+                  :anchor_pane_id,
+                  :anchor_window_id,
+                  :open_files,
+                  :active_path,
+                  :status,
+                  :updated_at
+                ]},
+             conflict_target: {:unsafe_fragment, "(pane_id) WHERE (status = 'open')"}
+           ) do
         {:ok, row} -> {:ok, row}
         {:error, _} = err -> err
       end

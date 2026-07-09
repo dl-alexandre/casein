@@ -1259,17 +1259,33 @@ defmodule DevIDE.PreviewPanes do
       status: :open
     }
 
-    case Repo.get_by(PreviewPaneRegistration, pane_id: registration.pane_id, status: :open) do
-      %PreviewPaneRegistration{} = persisted ->
-        persisted
-        |> PreviewPaneRegistration.changeset(attrs)
-        |> Repo.update()
-
-      nil ->
-        %PreviewPaneRegistration{}
-        |> PreviewPaneRegistration.changeset(attrs)
-        |> Repo.insert()
-    end
+    # Partial unique index preview_pane_registrations_open_pane_id_index
+    # (pane_id WHERE status = 'open') — single round-trip upsert.
+    %PreviewPaneRegistration{}
+    |> PreviewPaneRegistration.changeset(attrs)
+    |> Repo.insert(
+      on_conflict:
+        {:replace,
+         [
+           :workspace_id,
+           :tmux_session,
+           :preview_id,
+           :control_session_id,
+           :url,
+           :display_url,
+           :source_url,
+           :viewport,
+           :shared,
+           :source_pane_id,
+           :placement,
+           :anchor_pane_id,
+           :anchor_window_id,
+           :pane_window_id,
+           :status,
+           :updated_at
+         ]},
+      conflict_target: {:unsafe_fragment, "(pane_id) WHERE (status = 'open')"}
+    )
   end
 
   defp close_persisted_registration(%{pane_id: pane_id}) when is_binary(pane_id) do
