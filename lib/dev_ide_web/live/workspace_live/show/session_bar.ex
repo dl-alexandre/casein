@@ -351,6 +351,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :path_base, :string, default: nil
   attr :mutations_allowed?, :boolean, default: false
   attr :rename_session_id, :string, default: nil
+  attr :session_tabs, :list, default: [], doc: "for quiet/attention badge aggregate"
+  attr :chrome_visible?, :boolean, default: true, doc: "focus-mode state for the header toggle"
 
   attr :sort_mode, :atom, default: :recency
 
@@ -365,26 +367,66 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       id={"sessions-sidebar-" <> @workspace_id}
       data-sessions-picker-sidebar="true"
       data-shortcut="Ctrl + B, then S"
+      data-leader-second-key="S"
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
       class={[
-        "sessions-picker-sidebar leader-key-control flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "sessions-picker-sidebar leader-key-control relative flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
       <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
-          Sessions
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+            Sessions
+          </span>
+          <span
+            :if={quiet_window_count(@session_tabs) > 0}
+            id={"session-quiet-badge-" <> @workspace_id}
+            data-attention={quiet_badge_attention(@session_tabs)}
+            class={quiet_badge_class(quiet_badge_attention(@session_tabs))}
+            title={
+              quiet_badge_label(
+                quiet_window_count(@session_tabs),
+                unseen_quiet_window_count(@session_tabs)
+              )
+            }
+            aria-label={
+              quiet_badge_label(
+                quiet_window_count(@session_tabs),
+                unseen_quiet_window_count(@session_tabs)
+              )
+            }
+          ></span>
         </span>
-        <button
-          type="button"
-          phx-click="sidebar:cycle_sessions_sort"
-          class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
-          title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
-          aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
-        >
-          {SessionBarVM.sort_mode_label(@sort_mode)}
-        </button>
+        <span class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            id={"sessions-focus-mode-" <> @workspace_id}
+            phx-click="terminal:toggle_chrome"
+            data-shortcut="Ctrl/Cmd + Shift + F"
+            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            title={
+              if(@chrome_visible?,
+                do: "Focus mode — hide header. Shortcut: Ctrl/Cmd + Shift + F",
+                else: "Show header. Shortcut: Ctrl/Cmd + Shift + F"
+              )
+            }
+            aria-label={if(@chrome_visible?, do: "Enter focus mode", else: "Exit focus mode")}
+            aria-pressed={to_string(not @chrome_visible?)}
+          >
+            {if @chrome_visible?, do: "Focus", else: "Chrome"}
+          </button>
+          <button
+            type="button"
+            phx-click="sidebar:cycle_sessions_sort"
+            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
+            aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
+          >
+            {SessionBarVM.sort_mode_label(@sort_mode)}
+          </button>
+        </span>
       </div>
       <div
         data-picker-filter
@@ -902,60 +944,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   attr :workspace_id, :string, required: true
-  attr :tabs, :list, required: true
-  attr :active_id, :string, default: nil
-  attr :active_fallback_label, :string, default: "session"
-  attr :active_fallback_detail, :string, default: ""
-
-  def session_header_indicator(assigns) do
-    ~H"""
-    <div
-      class="leader-key-control flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs pointer-coarse:hidden"
-      data-shortcut="Ctrl + B, then S"
-      title={
-        active_session_picker_title(
-          @tabs,
-          @active_id,
-          @active_fallback_label,
-          @active_fallback_detail
-        )
-      }
-    >
-      <span
-        id={"attention-surface-" <> @workspace_id}
-        phx-hook="AttentionSurface"
-        class="hidden"
-        aria-hidden="true"
-      ></span>
-      <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label)
-
-      summary_detail =
-        active_session_detail(@tabs, @active_id, @active_fallback_detail) %>
-      <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
-        <span class="header-p-min-full">{summary_label}</span>
-        <span class="header-p-min-short" title={summary_label}>
-          {session_picker_short_label(summary_label)}
-        </span>
-        <span
-          :if={summary_detail != "" and summary_detail != summary_label}
-          class="header-p-low header-p-as-inline font-mono font-normal text-base-content/50"
-        >
-          {" · " <> summary_detail}
-        </span>
-      </span>
-      <span
-        :if={quiet_window_count(@tabs) > 0}
-        id={"session-quiet-badge-" <> @workspace_id}
-        data-attention={quiet_badge_attention(@tabs)}
-        class={quiet_badge_class(quiet_badge_attention(@tabs))}
-        title={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
-        aria-label={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
-      ></span>
-    </div>
-    """
-  end
-
-  attr :workspace_id, :string, required: true
   attr :tree, :list, required: true, doc: "SessionBarVM.window_tree/2 nodes"
   attr :terminal_sid, :string, default: nil
   attr :topology_version, :integer, default: 0
@@ -976,10 +964,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-window-picker-sidebar="true"
       data-version={@topology_version}
       data-shortcut="Ctrl + B, then W"
+      data-leader-second-key="W"
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar leader-key-control relative flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -1155,56 +1144,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do
     "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
-  end
-
-  defp session_picker_short_label(label) when is_binary(label) do
-    label
-    |> String.split(~r/\s+/, trim: true)
-    |> List.first()
-    |> case do
-      nil ->
-        "…"
-
-      word ->
-        # Path-like labels (cwd "owner/repo") repeat the owner across every
-        # workspace — surface the distinguishing tail, not the prefix.
-        word
-        |> String.split("/", trim: true)
-        |> List.last()
-        |> clamp_short_label()
-    end
-  end
-
-  defp clamp_short_label(nil), do: "…"
-  defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
-  defp clamp_short_label(word), do: word
-
-  defp active_session_label(tabs, active_id, fallback_label) do
-    case Enum.find(tabs, &(&1.id == active_id)) do
-      %{label: label} -> label
-      nil -> fallback_label
-    end
-  end
-
-  defp active_session_detail(tabs, active_id, fallback_detail) do
-    case Enum.find(tabs, &(&1.id == active_id)) do
-      %{detail: detail} -> detail
-      nil -> fallback_detail
-    end
-  end
-
-  defp active_session_picker_title(tabs, active_id, fallback_label, fallback_detail) do
-    label = active_session_label(tabs, active_id, fallback_label)
-    detail = active_session_detail(tabs, active_id, fallback_detail)
-
-    session =
-      if detail != "" and detail != label do
-        label <> " · " <> detail
-      else
-        label
-      end
-
-    "Active session: " <> session <> ". Shortcut: Ctrl + B, then S opens the sessions sidebar"
   end
 
   attr :url, :string, required: true

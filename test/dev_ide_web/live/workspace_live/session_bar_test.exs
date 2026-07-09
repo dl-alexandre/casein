@@ -609,8 +609,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
-  describe "session_header_indicator/1" do
-    test "renders read-only active session label and quiet badge without a dropdown" do
+  describe "sessions_sidebar/1 focus + quiet chrome" do
+    test "renders focus mode control and quiet badge from session tabs" do
       tabs =
         SessionBarVM.session_tabs([
           agent_info("ex-9", "tmux-ex-9")
@@ -619,18 +619,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           })
         ])
 
-      html =
-        render_component(&SessionBar.session_header_indicator/1,
-          workspace_id: "ws-1",
-          tabs: tabs,
-          active_id: "agent_ex-9",
-          active_fallback_label: "session"
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
         )
 
-      refute html =~ "<details"
-      refute html =~ "session-dropdown"
-      assert html =~ ~s(id="attention-surface-ws-1")
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_ex-9",
+          default_sid: "agent_ex-9",
+          session_tabs: tabs,
+          chrome_visible?: true,
+          mutations_allowed?: false
+        )
+
+      assert html =~ ~s(id="sessions-focus-mode-ws-1")
+      assert html =~ ~s(phx-click="terminal:toggle_chrome")
+      assert html =~ "Focus"
       assert html =~ ~s(id="session-quiet-badge-ws-1")
+      assert html =~ ~s(data-leader-second-key="S")
     end
   end
 

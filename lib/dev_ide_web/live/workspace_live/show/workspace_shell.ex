@@ -25,11 +25,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
   alias DevIdeWeb.NotificationsDrawer
-  alias DevIdeWeb.WorkspaceAdminDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
-
-  alias Phoenix.LiveView.JS
 
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
@@ -59,6 +56,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
     />
     <Layouts.flash_group flash={@flash} />
     <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
+    <%!-- Attention surface must stay mounted even when session chrome is gone:
+         it reports focused/visible/hidden for quiet-window badge priority. --%>
+    <div
+      id={"attention-surface-" <> @workspace.id}
+      phx-hook="AttentionSurface"
+      class="hidden"
+      aria-hidden="true"
+    >
+    </div>
     <div
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
@@ -136,12 +142,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             </div>
             <%!-- Window/pane actions — inline only for what has no
                  direct-manipulation equivalent (splits, zoom). Window cycling
-                 uses the tab bar and C-b n/p. Everything else lives in the ⋯
-                 overflow menu + C-b keys. --%>
+                 uses the tab bar and C-b n/p. Display zoom lives on Ctrl+scroll
+                 / mobile keybar; focus mode lives on the sessions rail + palette.
+                 Leader mode (keyboard C-b) highlights these controls in place. --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
               <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
                 <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                <%!-- Splits and zoom --%>
                 <.leader_key_button
                   key="%"
                   phx_click="split_right"
@@ -177,64 +183,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                     class="size-3.5"
                   />
                 </.leader_key_button>
-                <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300 pointer-coarse:hidden"></span>
-                <button
-                  type="button"
-                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{delta: -0.1})}
-                  class="inline-flex size-6 shrink-0 items-center justify-center rounded border border-base-300 text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
-                  title="Decrease display zoom · Ctrl + scroll"
-                  aria-label="Decrease display zoom"
-                >
-                  <.icon name="hero-magnifying-glass-minus" class="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{reset: true})}
-                  class="inline-flex h-6 shrink-0 items-center justify-center rounded border border-base-300 px-1.5 font-mono text-[10px] leading-none text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
-                  title="Reset display zoom"
-                  aria-label="Reset display zoom"
-                >
-                  100%
-                </button>
-                <button
-                  type="button"
-                  phx-click={JS.dispatch("devide:terminal-display-zoom", detail: %{delta: 0.1})}
-                  class="inline-flex size-6 shrink-0 items-center justify-center rounded border border-base-300 text-base-content/70 transition hover:bg-base-200 pointer-coarse:hidden"
-                  title="Increase display zoom · Ctrl + scroll"
-                  aria-label="Increase display zoom"
-                >
-                  <.icon name="hero-magnifying-glass-plus" class="size-3.5" />
-                </button>
               <% end %>
             </div>
           <% end %>
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
-            <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-              <SessionBar.session_header_indicator
-                workspace_id={@workspace.id}
-                tabs={@session_tabs}
-                active_id={@terminal_sid}
-                active_fallback_label={session_kind_label(@active_session_kind)}
-                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
-              />
-              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-            <% end %>
-            <button
-              :if={@tab == "terminal"}
-              id={"leader-prefix-button-" <> @workspace.id}
-              type="button"
-              data-leader-prefix-button="true"
-              class="leader-prefix-button header-p-mid header-p-as-block shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
-              title="tmux prefix key"
-              aria-label="tmux prefix key"
-              aria-pressed="false"
-            >
-              C-b
-            </button>
-            <WorkspaceAdminDrawer.admin_bell
-              id={"workspace-admin-bell-" <> @workspace.id}
-              open={@admin_drawer_open}
-            />
             <NotificationsDrawer.notifications_bell
               id={"notifications-bell-" <> @workspace.id}
               unread_count={@notif_unread_count}
@@ -245,15 +197,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               update_commits_behind={@update_commits_behind}
             />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
-            <button
-              phx-click="terminal:toggle_chrome"
-              data-shortcut="Ctrl/Cmd + Shift + F"
-              class="inline-flex items-center justify-center rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:p-0"
-              title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
-              aria-label="Hide header for a terminal-only view"
-            >
-              <span class="leading-none pointer-coarse:text-xs" aria-hidden="true">▴</span>
-            </button>
           </div>
         </header>
       <% else %>
@@ -568,18 +511,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
     />
-    <WorkspaceAdminDrawer.admin_drawer
-      open={@admin_drawer_open}
-      is_admin={@admin_is_admin}
-      show_all={@admin_show_all}
-      error={@admin_error}
-      create_open={@admin_create_open}
-      create_fields={@admin_create_fields}
-      create_form={@admin_create_form}
-      folder_form={@admin_folder_form}
-      workspaces={@admin_workspaces}
-      current_workspace_id={@workspace.id}
-    />
     <.leader_help_overlay />
     """
   end
@@ -638,7 +569,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :sessions_sidebar_tree,
       :windows_sidebar_tree,
       :sessions_sidebar_sort,
-      :windows_sidebar_sort
+      :windows_sidebar_sort,
+      :chrome_visible
     ])
   end
 
