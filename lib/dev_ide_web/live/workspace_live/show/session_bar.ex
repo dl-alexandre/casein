@@ -414,10 +414,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       aria-label="Workspaces and sessions"
       class={
         [
-          # Content-driven width: grow with labels, floor at 14rem, cap before the
-          # terminal becomes a sliver. Fixed w-56 left long agent/worktree names
-          # crushed; max-w-md (~28rem) is still less than half a typical desktop pane.
-          "sessions-picker-sidebar leader-key-control relative flex w-fit min-w-56 max-w-md shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+          # Free-expand: size to the longest untruncated label. Soft viewport cap
+          # only so a pathological name cannot steal the whole terminal.
+          "sessions-picker-sidebar leader-key-control relative flex w-max min-w-56 max-w-[min(40rem,55vw)] shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
           @class
         ]
       }
@@ -512,22 +511,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     data-picker-sessions-id={node.dom_id}
                     phx-click="sidebar:toggle_workspace"
                     phx-value-workspace-id={node.workspace_id}
-                    class={[sidebar_row_class(node.current?), "min-w-0 flex-1"]}
+                    class={[sidebar_row_class(node.current?), "min-w-max flex-1"]}
                     title={node.title}
                   >
-                    <span class="flex min-w-0 items-center gap-1">
-                      <span data-picker-label class="truncate font-medium">{node.label}</span>
+                    <span class="flex items-center gap-1.5 whitespace-nowrap">
+                      <span data-picker-label class="font-medium">{node.label}</span>
                       <span
                         :if={not node.live?}
                         class="size-1.5 shrink-0 rounded-full bg-base-content/25"
                         title="No live tmux sessions"
                       />
-                    </span>
-                    <span
-                      :if={node.detail != ""}
-                      class="truncate font-mono text-[10px] text-base-content/50"
-                    >
-                      {middle_ellipsis(node.detail)}
+                      <span
+                        :if={node.detail != ""}
+                        class="font-mono text-[10px] text-base-content/50"
+                      >
+                        {node.detail}
+                      </span>
                     </span>
                   </button>
                   <button
@@ -577,22 +576,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   data-picker-sessions-id={node.dom_id}
                   phx-click="sidebar:toggle_workspace"
                   phx-value-workspace-id={node.workspace_id}
-                  class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+                  class={[sidebar_row_class(false), "min-w-max flex-1"]}
                   title={node.title}
                 >
-                  <span class="flex min-w-0 items-center gap-1">
-                    <span data-picker-label class="truncate font-medium">{node.label}</span>
+                  <span class="flex items-center gap-1.5 whitespace-nowrap">
+                    <span data-picker-label class="font-medium">{node.label}</span>
                     <span
                       :if={not node.live?}
                       class="size-1.5 shrink-0 rounded-full bg-base-content/25"
                       title="No live tmux sessions"
                     />
-                  </span>
-                  <span
-                    :if={node.detail != ""}
-                    class="truncate font-mono text-[10px] text-base-content/50"
-                  >
-                    {middle_ellipsis(node.detail)}
+                    <span
+                      :if={node.detail != ""}
+                      class="font-mono text-[10px] text-base-content/50"
+                    >
+                      {node.detail}
+                    </span>
                   </span>
                 </button>
                 <button
@@ -649,20 +648,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           data-picker-section="browse"
           phx-click="sidebar:toggle_browse"
           phx-value-rel={@node.rel}
-          class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+          class={[sidebar_row_class(false), "min-w-max flex-1"]}
           title={@node.title}
         >
-          <span class="flex min-w-0 items-center gap-1">
+          <span class="flex items-center gap-1.5 whitespace-nowrap">
             <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
               <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
             </span>
-            <span data-picker-label class="truncate font-medium">{@node.label}</span>
-          </span>
-          <span
-            :if={@node.detail != ""}
-            class="truncate font-mono text-[10px] text-base-content/50"
-          >
-            {@node.detail}
+            <span data-picker-label class="font-medium">{@node.label}</span>
+            <span
+              :if={@node.detail != ""}
+              class="font-mono text-[10px] text-base-content/50"
+            >
+              {@node.detail}
+            </span>
           </span>
         </button>
         <button
@@ -741,7 +740,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           data-picker-item
           data-picker-section="sessions"
           data-picker-parent={@parent_dom_id}
-          class={[sidebar_row_class(false), "min-w-0 flex-1"]}
+          class={[sidebar_row_class(false), "min-w-max flex-1"]}
           title={@session.title}
         >
           <.sessions_sidebar_session_labels
@@ -762,7 +761,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           phx-value-session-id={@session.id}
           phx-value-kind={Atom.to_string(@session.kind)}
           phx-value-tmux-session={@session.tmux_session}
-          class={[sidebar_row_class(@session_active?), "min-w-0 flex-1"]}
+          class={[sidebar_row_class(@session_active?), "min-w-max flex-1"]}
           title={@session.title}
         >
           <.sessions_sidebar_session_labels
@@ -830,7 +829,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sessions_sidebar_session_labels(assigns) do
     ~H"""
-    <span class="flex min-w-0 items-center gap-1">
+    <span class="flex items-center gap-1.5 whitespace-nowrap">
       <span
         :if={@session.id == @default_sid}
         class="flex shrink-0 text-base-content/40"
@@ -839,7 +838,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       >
         <.icon name="hero-home" class="size-3" />
       </span>
-      <span data-picker-label class="truncate font-medium">{@session.label}</span>
+      <span data-picker-label class="font-medium">{@session.label}</span>
       <.preview_badge
         count={preview_pane_count(@session.pane_ids, @preview_panes)}
         id={"sidebar-session-preview-" <> @session.dom_id}
@@ -860,9 +859,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         aria-label={@session.activity_label}
       />
     </span>
-    <span :if={@session.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-      {middle_ellipsis(@session.detail)}
-    </span>
+    <%!-- Detail (worktree hash / sid tail) lives in the row title only — a
+         second mono line of middle-ellipsized hashes made the rail unreadable. --%>
     """
   end
 
@@ -925,11 +923,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       class={@class}
       title={"Select tmux window " <> @node.full_title}
     >
-      <span class="flex min-w-0 items-center gap-1.5">
+      <span class="flex items-center gap-1.5 whitespace-nowrap">
         <.window_row_name
           window={@node}
           picker_label?
-          name_class="min-w-0 flex-1 truncate font-medium"
+          name_class="font-medium"
         />
         <.window_row_indicators window={@node} preview_aria_hidden? />
       </span>
@@ -964,9 +962,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       class={sidebar_row_class(@pane.active?)}
       title={@pane.title}
     >
-      <span class="flex min-w-0 items-center gap-1.5">
+      <span class="flex items-center gap-1.5 whitespace-nowrap">
         <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@pane.index}</span>
-        <span data-picker-label class="min-w-0 truncate font-medium">{@pane.label}</span>
+        <span data-picker-label class="font-medium">{@pane.label}</span>
         <span
           :if={@pane.preview?}
           class="inline-flex size-3.5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
@@ -982,9 +980,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           title={@pane.activity_label}
           aria-label={@pane.activity_label}
         />
-      </span>
-      <span :if={@pane.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-        {middle_ellipsis(@pane.detail)}
       </span>
     </a>
     """
@@ -1076,7 +1071,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar leader-key-control relative flex w-fit min-w-56 max-w-md shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar leader-key-control relative flex w-max min-w-56 max-w-[min(40rem,55vw)] shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -1128,7 +1123,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     terminal_sid={@terminal_sid}
                     path_base={@path_base}
                     parent_dom_id={nil}
-                    class={[sidebar_row_class(node.active?), "min-w-0 flex-1"]}
+                    class={[sidebar_row_class(node.active?), "min-w-max flex-1"]}
                   />
                   <button
                     type="button"
@@ -1243,11 +1238,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sidebar_row_class(true),
     do:
-      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs leading-snug text-primary"
+      "flex w-max max-w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs leading-snug text-primary"
 
   defp sidebar_row_class(false),
     do:
-      "flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs leading-snug text-base-content/80 hover:bg-base-200"
+      "flex w-max max-w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs leading-snug text-base-content/80 hover:bg-base-200"
 
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do

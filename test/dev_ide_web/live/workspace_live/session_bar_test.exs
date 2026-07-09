@@ -644,10 +644,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "Focus"
       assert html =~ ~s(id="session-quiet-badge-ws-1")
       assert html =~ ~s(data-leader-second-key="S")
-      # Content-driven width (not the cramped fixed w-56).
+      # Free-expand rails: size to labels, soft viewport cap only.
       assert html =~ "min-w-56"
-      assert html =~ "max-w-md"
+      assert html =~ "max-w-[min(40rem,55vw)]"
       refute html =~ ~s(flex w-56 shrink-0)
+      refute html =~ "max-w-md"
     end
   end
 
