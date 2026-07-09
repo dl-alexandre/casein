@@ -152,11 +152,13 @@ its worktree:
 GET /artifact-projects/:workspace_id/:artifact_project_id/*path
 ```
 
-It runs under the devbox oauth2-proxy `forward_auth` and additionally gates on
-workspace ownership (404, not 403, on any authz failure). `ArtifactProjects.payload/1`
-exposes this as `public_url` (plus `commit` and `retired`), so `artifact_create/
-serve/get` responses carry the shareable link directly. The link references stable
-ids — not the ephemeral loopback preview port — so it survives restarts and deploys.
+It runs under the devbox oauth2-proxy `forward_auth`. **Any authenticated peer**
+(flat model — no owner/admin privilege tier) may open the URL after Google login.
+The artifact must still belong to the workspace id in the path (404 on mismatch).
+`ArtifactProjects.payload/1` exposes this as `public_url` (plus `commit` and
+`retired`), so `artifact_create/serve/get` responses carry the shareable link
+directly. The link references stable ids — not the ephemeral loopback preview
+port — so it survives restarts and deploys.
 
 **Origin selection.** `public_url` is built from the first configured of:
 

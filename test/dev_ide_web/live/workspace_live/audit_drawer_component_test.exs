@@ -17,7 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
         id: "audit-drawer",
         open: false,
         workspace: %{id: ws_id, name: ws_id, user: "u1"},
-        current_user: %{id: "u1", username: "u1", role: :admin}
+        current_user: %{id: "u1", username: "u1", role: :user}
       },
       Map.new(overrides)
     )
@@ -67,8 +67,8 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
   end
 
   describe "handle_event/3 (viewer gate)" do
-    test "denies an unauthorized viewer" do
-      unauthorized = socket(%{current_user: %{id: "intruder", username: "intruder"}})
+    test "denies an unauthenticated viewer" do
+      unauthorized = socket(%{current_user: %{}})
 
       {:noreply, socket} =
         AuditDrawerComponent.handle_event("audit_drawer:refresh", %{}, unauthorized)
@@ -128,8 +128,8 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
       assert socket.assigns.audit_trace == nil
     end
 
-    test "an unauthorized viewer cannot trace" do
-      unauthorized = socket(%{current_user: %{id: "intruder", username: "intruder"}})
+    test "an unauthenticated viewer cannot trace" do
+      unauthorized = socket(%{current_user: %{}})
 
       {:noreply, socket} =
         AuditDrawerComponent.handle_event(

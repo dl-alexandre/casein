@@ -40,11 +40,17 @@ export const SessionsPickerSidebar = {
         e.preventDefault()
         this.moveFocus(e.key === "ArrowDown" ? 1 : -1)
         break
+      case "ArrowLeft": {
+        e.preventDefault()
+        // Collapse an expanded branch; stay in the Sessions column.
+        this._collapseIfExpanded(this.currentItem())
+        break
+      }
       case "ArrowRight": {
         e.preventDefault()
-        const row = this.currentItem()
-        const wsId = row?.getAttribute("phx-value-workspace-id")
-        if (wsId) this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+        // Dual-rail hop: Right always drops into Windows. Expand/collapse is
+        // click (or Left) so arrows reliably move between columns.
+        this._focusWindowsRail()
         break
       }
       case "Enter":
@@ -121,11 +127,16 @@ export const SessionsPickerSidebar = {
   },
 
   focusInitial() {
+    // Force focus into this rail even when another rail currently holds it
+    // (Miller hop). Double-rAF waits for any pending LiveView patch.
     requestAnimationFrame(() => {
-      if (this.currentItem() && this.el.contains(document.activeElement)) return
-      const items = this.visibleItems()
-      const active = items.find((el) => el.hasAttribute("data-picker-active"))
-      ;(active || items[0])?.focus()
+      requestAnimationFrame(() => {
+        const items = this.visibleItems()
+        if (items.length === 0) return
+        if (this.currentItem() && this.el.contains(document.activeElement)) return
+        const active = items.find((el) => el.hasAttribute("data-picker-active"))
+        ;(active || items[0])?.focus({preventScroll: false})
+      })
     })
   },
 
@@ -145,6 +156,47 @@ export const SessionsPickerSidebar = {
   _closeSidebar() {
     this.pushEvent("sidebar:close", {})
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+  },
+
+  _collapseIfExpanded(row) {
+    if (!row) return false
+    const branch = row.closest?.("[data-picker-tree-branch]")
+    if (!branch || !this.el.contains(branch)) return false
+    const children = branch.querySelector("[data-picker-branch-children]")
+    if (!children) return false
+    const collapsed =
+      children.hasAttribute("data-picker-collapsed") || children.classList.contains("hidden")
+    if (collapsed) return false
+
+    const wsId = row.getAttribute("phx-value-workspace-id")
+    if (wsId) {
+      this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+      return true
+    }
+    const rel = row.getAttribute("phx-value-rel")
+    if (rel !== null && rel !== undefined) {
+      this.pushEvent("sidebar:toggle_browse", {rel})
+      return true
+    }
+    return false
+  },
+
+  // Drop focus into the Windows column (Miller-style Right).
+  _focusWindowsRail() {
+    const rail = document.querySelector("[data-window-picker-sidebar]")
+    if (rail) {
+      // Prefer the LiveView hook path; also focus immediately so hop is snappy
+      // even if the custom event is lost across a patch boundary.
+      rail.dispatchEvent(new CustomEvent("devide:window-sidebar:focus"))
+      const items = Array.from(rail.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && el.style.display !== "none"
+      )
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
+      ;(active || items[0])?.focus({preventScroll: false})
+      return
+    }
+    // Windows rail not mounted — open both columns and ask the server to focus it.
+    this.pushEvent("sidebar:open", {mode: "both", focus: "windows"})
   },
 }
 

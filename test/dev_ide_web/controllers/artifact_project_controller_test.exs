@@ -73,9 +73,10 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     assert response(conn, 200) =~ "Smoke Report"
   end
 
-  test "404 for a non-owner (IDOR guard)", ctx do
-    conn = ctx.conn |> as("intruder@example.com") |> get(artifact_path(ctx.project_id))
-    assert text_response(conn, 404) == "not found"
+  test "serves the artifact to any authenticated peer (flat peer model)", ctx do
+    conn = ctx.conn |> as("peer@example.com") |> get(artifact_path(ctx.project_id))
+
+    assert response(conn, 200) =~ "Smoke Report"
   end
 
   test "404 when the artifact does not belong to the requested workspace", ctx do
@@ -179,11 +180,12 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
              )
   end
 
-  test "a retired artifact still 404s opaquely for a non-owner", ctx do
+  test "a retired artifact shows any authenticated peer the 410 landing page", ctx do
     File.rm_rf!(ctx.worktree)
 
-    conn = ctx.conn |> as("intruder@example.com") |> get(artifact_path(ctx.project_id))
-    assert text_response(conn, 404) == "not found"
+    conn = ctx.conn |> as("peer@example.com") |> get(artifact_path(ctx.project_id))
+    body = response(conn, 410)
+    assert body =~ "retired"
   end
 
   # --- helpers ---

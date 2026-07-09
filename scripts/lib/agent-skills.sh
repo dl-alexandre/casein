@@ -17,7 +17,9 @@
 # which runs the dev_ide dev server from the current checkout) are intentionally
 # excluded: they only make sense inside the dev_ide checkout, where the project
 # .claude/skills copy already provides them. Space-separated; override to extend.
-: "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok}"
+# preview-ui-walk is host infrastructure for product-repo agents (OneBackend-v3
+# etc.): it drives DevIDE preview/artifact MCP, not the dev_ide checkout itself.
+: "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk}"
 
 # agent_skills_install <source-skills-dir> <dest-config-dir>
 #

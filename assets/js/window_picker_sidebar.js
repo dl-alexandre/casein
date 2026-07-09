@@ -37,12 +37,15 @@ export const WindowPickerSidebar = {
 
   handleKeydown(e) {
     switch (e.key) {
-      case "ArrowLeft":
+      case "ArrowLeft": {
         e.preventDefault()
-        this.pushEvent("sidebar:reveal_sessions", {})
+        // Dual-rail hop: Left always drops back into Sessions.
+        this._focusSessionsRail()
         break
+      }
       case "ArrowRight": {
         e.preventDefault()
+        // Expand/collapse multi-pane windows; stay in the Windows column.
         const row = this.currentItem()
         const windowId = row?.getAttribute("phx-value-window-id")
         if (windowId) this.pushEvent("sidebar:toggle_window", {"window-id": windowId})
@@ -136,10 +139,13 @@ export const WindowPickerSidebar = {
 
   focusInitial() {
     requestAnimationFrame(() => {
-      if (this.currentItem() && this.el.contains(document.activeElement)) return
-      const items = this.visibleItems()
-      const active = items.find((el) => el.hasAttribute("data-picker-active"))
-      ;(active || items[0])?.focus()
+      requestAnimationFrame(() => {
+        const items = this.visibleItems()
+        if (items.length === 0) return
+        if (this.currentItem() && this.el.contains(document.activeElement)) return
+        const active = items.find((el) => el.hasAttribute("data-picker-active"))
+        ;(active || items[0])?.focus({preventScroll: false})
+      })
     })
   },
 
@@ -175,8 +181,23 @@ export const WindowPickerSidebar = {
     this.pushEvent("sidebar:close", {})
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
   },
+
+  // Drop focus into the Sessions column (Miller-style Left).
+  _focusSessionsRail() {
+    const rail = document.querySelector("[data-sessions-picker-sidebar]")
+    if (rail) {
+      rail.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus"))
+      const items = Array.from(rail.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && el.style.display !== "none"
+      )
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
+      ;(active || items[0])?.focus({preventScroll: false})
+      return
+    }
+    this.pushEvent("sidebar:reveal_sessions", {})
+  },
 }
 
 function wantsBrowserNavigation(e) {
-  return e.metaKey || e.ctrlKey || e.shiftKey && e.button === 0
+  return e.metaKey || e.ctrlKey || (e.shiftKey && e.button === 0)
 }

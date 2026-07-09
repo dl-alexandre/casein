@@ -32,7 +32,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
       assert user.username == "dalexandre"
       assert user.id == "dalexandre"
       assert user.email == "dalexandre@example.com"
-      assert user.role == :owner
+      assert user.role == :user
     end
 
     test "lowercases mixed-case emails (matches manager normalizeUser)" do
@@ -41,9 +41,17 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
       assert user.username == "foo.bar"
       assert user.email == "foo.bar@example.com"
     end
+
+    test "user_from_email/1 never elevates via the legacy admins list" do
+      Application.put_env(:dev_ide, :admins, ["boss@example.com"])
+      on_exit(fn -> Application.delete_env(:dev_ide, :admins) end)
+
+      assert ForwardAuth.user_from_email("boss@example.com").role == :user
+      assert ForwardAuth.user_from_email("dev@example.com").role == :user
+    end
   end
 
-  describe "admins" do
+  describe "admins (legacy list, no privileges)" do
     setup do
       prev = Application.get_env(:dev_ide, :admins)
       prev_env = System.get_env("DEV_IDE_ADMINS")
@@ -63,13 +71,6 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
       :ok
     end
 
-    test "user_from_email/1 tags emails in the admins list with role :admin" do
-      Application.put_env(:dev_ide, :admins, ["boss@example.com"])
-
-      assert ForwardAuth.user_from_email("boss@example.com").role == :admin
-      assert ForwardAuth.user_from_email("dev@example.com").role == :owner
-    end
-
     test "admins/0 lowercases the configured list" do
       Application.put_env(:dev_ide, :admins, ["Foo@Bar.com", "baz@qux.com"])
       assert ForwardAuth.admins() == ["foo@bar.com", "baz@qux.com"]
@@ -81,9 +82,9 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
       assert ForwardAuth.admins() == []
     end
 
-    test "admin?/1 reads the role, tolerates non-identity input" do
-      assert ForwardAuth.admin?(%{role: :admin})
-      refute ForwardAuth.admin?(%{role: :owner})
+    test "admin?/1 is true for any authenticated identity, false otherwise" do
+      assert ForwardAuth.admin?(%{id: "boss", email: "boss@example.com", role: :user})
+      assert ForwardAuth.admin?(%{id: "peer", email: "peer@example.com", role: :user})
       refute ForwardAuth.admin?(%{})
       refute ForwardAuth.admin?(nil)
     end

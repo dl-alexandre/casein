@@ -47,10 +47,11 @@ defmodule DevIdeWeb.PairingControllerTest do
              ChannelAuth.verify_pairing_token(payload["token"])
   end
 
-  test "non-owner cannot mint a pairing token", %{conn: conn} do
-    conn = conn |> as("intruder@example.com") |> get(~p"/pair/ws-1")
+  test "any authenticated peer can mint a pairing token (flat peer model)", %{conn: conn} do
+    conn = conn |> as("peer@example.com") |> get(~p"/pair/ws-1")
 
-    assert html_response(conn, 403) =~ "not allowed"
+    assert html = html_response(conn, 200)
+    assert html =~ "Pairing code"
   end
 
   defp pairing_code(html) do
