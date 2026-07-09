@@ -23,7 +23,7 @@
 # .claude/skills copy already provides them. Space-separated; override to extend.
 # preview-ui-walk is host infrastructure for product-repo agents (OneBackend-v3
 # etc.): it drives DevIDE preview/artifact MCP, not the dev_ide checkout itself.
-: "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk}"
+: "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair}"
 
 # agent_skills_install <source-skills-dir> <dest-config-dir>
 #
