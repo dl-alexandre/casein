@@ -1,17 +1,34 @@
 # Walk manifest schema
 
-A walk manifest is the **app-owned contract** for a UI smoke walk (default
-read-only; optional gated interactions).
+A walk manifest is the **app-owned contract** for one UI smoke **workflow**
+(default read-only; optional gated interactions). Apps may ship many workflows.
 
 | Layer | Owns | Lives in |
 |-------|------|----------|
-| **Product** | paths, login, safety, runtime probes, page steps | target repo `.devide/preview-walk.json` |
+| **Product** | paths, login, safety, runtime probes, page steps | `.devide/preview-walk.json` **and/or** `.devide/preview-walks/<id>.json` |
 | **DevIDE** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
 
 Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).
 Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.json).
 
 **Do not** check product-specific manifests into the DevIDE skill tree.
+
+## Multi-workflow layout
+
+```text
+<product-repo>/
+  .devide/
+    preview-walk.json                 # optional default (back-compat)
+    preview-walks/
+      README.md                       # optional index
+      superadmin-smoke.json
+      facility-parity.json
+      login-only.json
+```
+
+Each JSON file is a full manifest (same schema). Drivers accept any path via
+`--manifest`. Prefer a unique `report.name` per workflow so artifact slugs do not
+collide. Superadmin smoke is **one** workflow among many — not the skill’s only use.
 
 ## Layers in one file
 
@@ -172,9 +189,20 @@ walk-level probes, server log delta total.
 ## Validation
 
 ```bash
-# example with check-jsonschema if installed
+# default or named workflow
 check-jsonschema --schemafile references/preview-walk.schema.json \
   /path/to/app/.devide/preview-walk.json
+
+check-jsonschema --schemafile references/preview-walk.schema.json \
+  /path/to/app/.devide/preview-walks/facility-parity.json
 ```
 
 Or any draft-07 validator. Drivers should fail closed on schema-invalid manifests once validation is wired into the skill entrypoint.
+
+## Authoring checklist (new or improved workflow)
+
+1. Copy a sibling walk or the fictional example (shape only).
+2. Derive `pages[].path` from the product router / LiveView routes — never guess.
+3. Keep `safety.read_only: true` until env_check is proven non-prod.
+4. Unique `report.name`; document intent in `_note` or `preview-walks/README.md`.
+5. Schema-validate; run once; tighten asserts/probes from real failures.

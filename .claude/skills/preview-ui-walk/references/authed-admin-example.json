@@ -2,7 +2,7 @@
   "version": 1,
   "$schema": "./preview-walk.schema.json",
   "_driver": "playwright_walk.mjs when login.kind=redirect_cookie (preview MCP cannot follow 302s)",
-  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json. Shows browser baseline + Tidewave evidence + assert steps + gated interaction shape.",
+  "_note": "FICTIONAL shape only — not a real product. Real workflows live in the target repo at .devide/preview-walk.json and/or .devide/preview-walks/<id>.json. Shows browser baseline + Tidewave evidence + assert steps + gated interaction shape.",
   "login": {
     "kind": "redirect_cookie",
     "path": "/dev/login",

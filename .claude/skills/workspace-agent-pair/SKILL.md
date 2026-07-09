@@ -131,7 +131,8 @@ Wrong-workspace check: MCP server names / URLs must include **this**
 
 | Goal | Next skill / action |
 |------|---------------------|
-| Superadmin / app UI smoke | `preview-ui-walk` (product `.devide/preview-walk.json`) |
+| App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.devide/preview-walk.json` and/or `.devide/preview-walks/<id>.json` |
+| Author/improve a walk | Edit/add product manifests; do not fork the skill |
 | Parallel Grok implementation | `delegate-to-grok` |
 | DevIDE-itself UI check | `verify` (only inside dev_ide checkout) |
 

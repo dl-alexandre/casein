@@ -1,21 +1,71 @@
 ---
 name: preview-ui-walk
 description: >
-  Drive an automated UI smoke walk of a DevIDE workspace app (default read-only;
-  optional gated interactions) — log in, walk a manifest of pages capturing
-  screenshot + console/network errors + timing + Tidewave evidence (logs, probes,
-  SQL, LiveView keys) + optional assert/click steps, and publish one Artifact
-  report with a durable login-gated public URL. Use for superadmin/admin-panel
-  smoke tests. NOT for driving dev_ide's own UI (use `verify`).
+  Drive automated UI smoke walks of any DevIDE workspace app via product-owned
+  workflow manifests (default read-only; optional gated interactions). Log in,
+  walk pages with screenshot + console/network errors + timing + Tidewave
+  evidence (logs, probes, SQL, LiveView keys) + assert/click steps, publish one
+  Artifact report with a durable login-gated public URL. Use for any app surface
+  (superadmin, facility, feed, login, kiosk, …) — not only one panel. Create or
+  improve workflows by editing manifests under .devide/. NOT for driving
+  dev_ide's own UI (use `verify`). Pair product agents first with
+  workspace-agent-pair when MCP/skills are missing.
 ---
 
 # Preview UI walk
 
-A repeatable, recorded walk of a workspace app's pages. Default is **read-only**
-(navigate + assert + screenshot). Product manifests may opt into **gated
-interactions** (`safety.allow_interactions`) when env_check is non-prod. The
-engine is generic; each app supplies a **walk manifest**. Output is a single
-Artifact report (screenshots + timings + browser/server evidence + pass/fail).
+A **generic** UI walk engine for product apps on DevIDE. Default is **read-only**
+(navigate + assert + screenshot). Product workflows may opt into **gated
+interactions** (`safety.allow_interactions`) when env_check is non-prod.
+
+| Layer | Owns |
+|-------|------|
+| **This skill + drivers** | How to walk, assert, collect evidence, publish reports |
+| **Product repo** | *Which* pages/login/safety/probes — one **workflow manifest** per scenario |
+
+Output: one Artifact report per workflow run (screenshots + timings + browser/server
+evidence + pass/fail) with a durable login-gated `public_url`.
+
+## Workflows (app-owned catalog — not a single hard-coded flow)
+
+A **workflow** is one JSON walk manifest. Products can ship **many** and improve
+them over time without changing this skill.
+
+| Path | Role |
+|------|------|
+| `.devide/preview-walk.json` | **Default** workflow (back-compat; optional once named walks exist) |
+| `.devide/preview-walks/<id>.json` | **Named** workflows (`superadmin-smoke`, `facility-parity`, `login-only`, …) |
+| `.devide/preview-walks/README.md` | Optional human index (ids, when to run, risk notes) |
+
+`id` = `^[a-z0-9][a-z0-9._-]*$` (matches `report.name` style). Drivers take any path:
+
+```bash
+node …/playwright_walk.mjs --manifest .devide/preview-walks/facility-parity.json --base http://127.0.0.1:<port> --out ./run
+python3 …/walk.py --manifest .devide/preview-walk.json --out ./run
+```
+
+### Resolve which workflow to run
+
+1. User named a workflow → `.devide/preview-walks/<id>.json` (or an explicit path).
+2. Else list candidates: default file (if present) + every `preview-walks/*.json`.
+3. One candidate → run it. Multiple → list ids + `report.name` / `_note` and ask, or
+   prefer `preview-walk.json` only when the user said “the default walk”.
+4. **None** → author a first workflow (below); do not invent product routes in the skill tree.
+
+### Author or improve a workflow
+
+1. Prefer **copying** an existing walk in the same repo (or
+   `references/authed-admin-example.json` for shape only — fictional).
+2. Set unique `report.name` (artifact slug) and a clear `_note` (when to run).
+3. Fill `login`, `pages[]` (paths from the **product router**, not guesses),
+   `safety` (env_check + deny_events), optional `runtime` probes.
+4. Validate: `check-jsonschema --schemafile <skill>/references/preview-walk.schema.json <manifest>`.
+5. Dry-run once read-only; fix probes/login before expanding pages.
+6. Commit the manifest in the **product** repo under `.devide/` — never under
+   `.claude/skills/preview-ui-walk/`.
+
+Improving a walk = edit the product JSON (pages, asserts, probes, budgets). The
+engine stays stable; **workflows are product data**.
 
 ## ⚠️ Safety gate — READ THIS FIRST, every run
 
@@ -45,15 +95,17 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
 
 ## Prerequisites
 
+- **Agent pairing** on the product workspace (MCP + this skill). If OpenCode/Claude
+  cannot see DevIDE tools or this skill, run **`workspace-agent-pair`** first
+  (`ensure-workspace-agent-pair.sh --workspace <name> --runtime … --verify`).
 - **Target app running + preview reachable.** A stopped manager workspace often
   404s through the preview-router. Ensure it's `running` (manager
   `POST /api/workspaces/:id/start`, wait for loopback `:{ports.http}/health` → 200).
-- **The walk manifest** (see `references/manifest-schema.md` and the machine
-  schema `references/preview-walk.schema.json`). **It lives in the TARGET product
-  repo** at `.devide/preview-walk.json` — page list, login, safety, and optional
-  Tidewave `runtime` probes are app-owned. DevIDE only ships the generic engine
+- **At least one workflow manifest** in the **target product repo** (see catalog
+  above; schema in `references/manifest-schema.md` +
+  `references/preview-walk.schema.json`). DevIDE only ships the generic engine
   (`walk.py` / `playwright_walk.mjs`) plus a fictional example
-  (`references/authed-admin-example.json`). Do **not** add product-specific
+  (`references/authed-admin-example.json`). **Never** add product-specific
   manifests under this skill.
 
 ## 1. Resolve the target's scoped preview MCP
@@ -205,8 +257,10 @@ the page-sharding, not a redesign.
   `skipped: tidewave_unavailable` (unless `require_tidewave: true`).
   See `references/runtime_evidence.mjs`, `page_steps.mjs`, and schema `runtime` /
   `pages[].steps`.
-- Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
-  prior run's screenshots for visual-diff regression once a baseline exists (only
-  meaningful for pages with stable content).
+- Re-runnable: same workflow manifest → same walk. Use `preview_compare_snapshots`
+  against a prior run's screenshots for visual-diff regression once a baseline
+  exists (only meaningful for pages with stable content).
 - **Boundary:** product routes, login, safety, and runtime probes stay in the
-  target repo's `.devide/preview-walk.json`. This skill must stay app-agnostic.
+  target repo under `.devide/preview-walk.json` and/or `.devide/preview-walks/*.json`.
+  This skill must stay app-agnostic — new product scenarios are new manifests, not
+  skill forks.
