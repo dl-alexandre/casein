@@ -337,6 +337,25 @@ defmodule DevIDE.Terminals.Session do
 
   ## Internal
 
+  # Resolve a directory a *host* tmux new-session (and its erlexec spawn) can
+  # safely start in. The requested `cwd` is honored when it exists; otherwise we
+  # fall back to `$HOME`, then `/`. This guarantees a host session never starts
+  # in a nonexistent directory — which would otherwise leave the pane in the
+  # tmux server's (possibly reaped) cwd and produce `getcwd failed` shells — and
+  # that a freshly-spawned host tmux server never inherits a dead cwd via the
+  # erlexec `{:cd, …}` option. `dir_exists?` is injectable for tests.
+  @doc false
+  @spec safe_local_cwd(term(), (String.t() -> boolean())) :: String.t()
+  def safe_local_cwd(cwd, dir_exists? \\ &File.dir?/1) do
+    home = System.get_env("HOME")
+
+    cond do
+      is_binary(cwd) and dir_exists?.(cwd) -> cwd
+      is_binary(home) and home != "" and dir_exists?.(home) -> home
+      true -> "/"
+    end
+  end
+
   # Build the erlexec argv for the underlying PTY command, returning the cmd
   # and any extra opts (like {:cd, ...}). Local mode spawns tmux through the
   # configured WorkspaceSource's argv wrapper — for the milc-devbox manager
@@ -349,13 +368,20 @@ defmodule DevIDE.Terminals.Session do
   # ssh-allocated pty.
   defp build_cmd({:local, cwd}, tmux_session) do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
+    # Host tmux runs on the host, where the manager's container exec workdir
+    # (`exec_cwd`, e.g. `/app`) does not exist. Creating a host session with
+    # `-c` pointed at a nonexistent dir makes the pane silently fall back to the
+    # tmux *server's* own cwd — which can be a since-reaped agent worktree,
+    # producing `getcwd: ... No such file or directory` shells. So host sessions
+    # start in the real host `cwd`, sanitized to a directory that exists.
+    host_cwd = safe_local_cwd(cwd)
     default_theme_opts = [scheme: Theme.default_scheme(), preset: Theme.default_preset_id()]
 
     # Intentionally omit -x/-y on create. Fixed create geometry + later fast
     # resize has crashed the tmux server (see upstream resize issues and the
     # 2026-07-08 devbox segfault). Size is applied via winsz + resize-window
     # after the session exists.
-    new_session_args = fn opts ->
+    new_session_args = fn opts, session_cwd ->
       [
         "new-session",
         "-A"
@@ -365,21 +391,23 @@ defmodule DevIDE.Terminals.Session do
           "-s",
           tmux_session,
           "-c",
-          exec_cwd
+          session_cwd
         ]
     end
 
     # Host-targeted invocations carry the configured server label (`-L …`) and
-    # config (`-f …`) so they match management calls in TmuxRunner; the
-    # container branch runs tmux inside the workspace's own isolated server.
+    # config (`-f …`) so they match management calls in TmuxRunner, and start in
+    # the host `cwd`. The container branch runs tmux inside the workspace's own
+    # isolated server, where the container exec workdir (`exec_cwd`) is correct.
     host_argv = fn extra ->
-      TmuxRunner.host_argv(new_session_args.(default_theme_opts) ++ extra)
+      TmuxRunner.host_argv(new_session_args.(default_theme_opts, host_cwd) ++ extra)
     end
 
     container_argv = fn extra ->
       [
         "tmux"
-        | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false)) ++ extra
+        | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false), exec_cwd) ++
+            extra
       ]
     end
 
@@ -420,7 +448,7 @@ defmodule DevIDE.Terminals.Session do
       |> resolve_executable()
       |> Enum.map(&to_charlist/1)
 
-    {cmd, [{:cd, to_charlist(cwd)}]}
+    {cmd, [{:cd, to_charlist(host_cwd)}]}
   end
 
   defp build_cmd({:remote, host, path}, tmux_session) do
