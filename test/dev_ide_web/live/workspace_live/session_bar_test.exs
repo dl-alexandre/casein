@@ -644,6 +644,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "Focus"
       assert html =~ ~s(id="session-quiet-badge-ws-1")
       assert html =~ ~s(data-leader-second-key="S")
+      # Content-driven width (not the cramped fixed w-56).
+      assert html =~ "min-w-56"
+      assert html =~ "max-w-md"
+      refute html =~ ~s(flex w-56 shrink-0)
+    end
+  end
+
+  describe "session_header_indicator/1" do
+    test "is a toggle button that opens the sessions rail" do
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("ex-9", "tmux-ex-9")
+        ])
+
+      html =
+        render_component(&SessionBar.session_header_indicator/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: "agent_ex-9",
+          active_fallback_label: "session",
+          open?: false
+        )
+
+      assert html =~ ~s(id="session-header-indicator-ws-1")
+      assert html =~ ~s(phx-click="sidebar:toggle_sessions")
+      assert html =~ ~s(aria-expanded="false")
+
+      open_html =
+        render_component(&SessionBar.session_header_indicator/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: "agent_ex-9",
+          open?: true
+        )
+
+      assert open_html =~ ~s(aria-expanded="true")
+      assert open_html =~ "border-primary/50"
     end
   end
 

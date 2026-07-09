@@ -90,6 +90,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 active_id={@terminal_sid}
                 active_fallback_label={session_kind_label(@active_session_kind)}
                 active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+                open?={@sessions_sidebar_open?}
               />
               <SessionBar.copy_link_button
                 url={

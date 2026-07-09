@@ -412,12 +412,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-leader-second-key="S"
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
-      class={[
-        "sessions-picker-sidebar leader-key-control relative flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
-        @class
-      ]}
+      class={
+        [
+          # Content-driven width: grow with labels, floor at 14rem, cap before the
+          # terminal becomes a sliver. Fixed w-56 left long agent/worktree names
+          # crushed; max-w-md (~28rem) is still less than half a typical desktop pane.
+          "sessions-picker-sidebar leader-key-control relative flex w-fit min-w-56 max-w-md shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+          @class
+        ]
+      }
     >
-      <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
+      <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
         <span class="flex min-w-0 items-center gap-1.5">
           <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
             Sessions
@@ -475,7 +480,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
       >
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto py-1">
+      <div class="min-h-0 flex-1 overflow-y-auto px-1 py-1.5">
         <%= for node <- @tree do %>
           <%= cond do %>
             <% Map.get(node, :kind) in [:browse_root, :browse_dir] -> %>
@@ -990,12 +995,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :active_id, :string, default: nil
   attr :active_fallback_label, :string, default: "session"
   attr :active_fallback_detail, :string, default: ""
+  attr :open?, :boolean, default: false, doc: "sessions rail currently open"
 
   def session_header_indicator(assigns) do
     ~H"""
-    <div
-      class="leader-key-control flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs pointer-coarse:hidden"
+    <button
+      type="button"
+      id={"session-header-indicator-" <> @workspace_id}
+      phx-click="sidebar:toggle_sessions"
       data-shortcut="Ctrl + B, then S"
+      data-leader-second-key="S"
+      class={[
+        "leader-key-control relative flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs transition pointer-coarse:hidden",
+        @open? && "border-primary/50 bg-primary/10 text-primary",
+        !@open? &&
+          "border-transparent text-base-content/80 hover:border-base-300 hover:bg-base-200 hover:text-base-content"
+      ]}
       title={
         active_session_picker_title(
           @tabs,
@@ -1004,9 +1019,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           @active_fallback_detail
         )
       }
+      aria-label={
+        if(@open?,
+          do: "Close sessions sidebar",
+          else: "Open sessions sidebar"
+        )
+      }
+      aria-expanded={to_string(@open?)}
+      aria-pressed={to_string(@open?)}
     >
       <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label) %>
-      <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
+      <span class="max-w-[7rem] truncate font-medium sm:max-w-52">
         <span class="header-p-min-full">{summary_label}</span>
         <span class="header-p-min-short" title={summary_label}>
           {session_picker_short_label(summary_label)}
@@ -1020,7 +1043,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         title={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
         aria-label={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
       ></span>
-    </div>
+      <.icon
+        name={if(@open?, do: "hero-chevron-left", else: "hero-chevron-right")}
+        class="size-3.5 shrink-0 opacity-60"
+      />
+    </button>
     """
   end
 
@@ -1049,18 +1076,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar leader-key-control relative flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar leader-key-control relative flex w-fit min-w-56 max-w-md shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
-      <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
+      <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
           Windows
         </span>
         <button
           type="button"
           phx-click="sidebar:cycle_windows_sort"
-          class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          class="rounded px-1.5 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
           title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
           aria-label={"Sort windows by " <> SessionBarVM.sort_mode_label(@sort_mode)}
         >
@@ -1072,7 +1099,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
       >
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto py-1">
+      <div class="min-h-0 flex-1 overflow-y-auto px-1 py-1.5">
         <%= for node <- @tree do %>
           <%= cond do %>
             <% node.flat_window? -> %>
@@ -1216,11 +1243,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sidebar_row_class(true),
     do:
-      "flex w-full flex-col items-start gap-0 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-left text-xs leading-tight text-primary"
+      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs leading-snug text-primary"
 
   defp sidebar_row_class(false),
     do:
-      "flex w-full flex-col items-start gap-0 rounded px-2 py-1 text-left text-xs leading-tight text-base-content/80 hover:bg-base-200"
+      "flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs leading-snug text-base-content/80 hover:bg-base-200"
 
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do
@@ -1252,10 +1279,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   # Detail lines carry id-like strings (worktree hashes, cwd paths) in a
   # fixed-width mono font, where the distinguishing bits live at BOTH ends.
   # End-truncation (CSS `truncate`) would hide the tail, so clip the middle
-  # instead — "wt-db375e05…9c2a" keeps prefix and suffix. The char cap is sized
-  # to the mono glyph run that fits the w-56 rail; `truncate` stays as a
-  # belt-and-suspenders guard for pathological widths.
-  @detail_max_chars 26
+  # instead — "wt-db375e05…9c2a" keeps prefix and suffix. Cap sized for the
+  # content-driven rail (min-w-56 … max-w-md); CSS truncate remains as backup.
+  @detail_max_chars 42
   defp middle_ellipsis(text) when is_binary(text) do
     if String.length(text) <= @detail_max_chars do
       text
@@ -1294,7 +1320,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         label
       end
 
-    "Active session: " <> session <> ". Shortcut: Ctrl + B, then S opens the sessions sidebar"
+    "Active session: " <>
+      session <> ". Click to open sessions. Shortcut: Ctrl + B, then S"
   end
 
   attr :url, :string, required: true

@@ -84,10 +84,15 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ ~s(data-leader-prefix-button="true")
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="attention-surface-#{workspace_id}")
-    # Session title, workspace admin, header display zoom, and header focus
-    # chevron are gone — focus mode lives on the sessions rail + palette;
-    # display zoom remains on Ctrl+scroll and the mobile keybar only.
-    refute html =~ "session_header_indicator"
+    # Left session chip opens the sessions rail; admin gear / display zoom /
+    # header focus chevron stay gone.
+    assert has_element?(view, "#session-header-indicator-#{workspace_id}")
+
+    assert has_element?(
+             view,
+             "#session-header-indicator-#{workspace_id}[phx-click='sidebar:toggle_sessions']"
+           )
+
     refute html =~ ~s(id="workspace-admin-bell-#{workspace_id}")
     refute html =~ "hero-magnifying-glass-minus"
     refute html =~ "hero-magnifying-glass-plus"
@@ -165,6 +170,29 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert state.window_sidebar_open?
     assert is_list(state.sessions_sidebar_tree)
     assert MapSet.member?(state.sidebar_expanded_workspaces, workspace_id)
+  end
+
+  test "header session chip toggles the sessions sidebar", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    refute :sys.get_state(view.pid).socket.assigns.sessions_sidebar_open?
+
+    view
+    |> element("#session-header-indicator-#{workspace_id}")
+    |> render_click()
+
+    state = :sys.get_state(view.pid).socket.assigns
+    assert state.sessions_sidebar_open?
+    assert state.sidebar_mode == :both
+
+    view
+    |> element("#session-header-indicator-#{workspace_id}")
+    |> render_click()
+
+    refute :sys.get_state(view.pid).socket.assigns.sessions_sidebar_open?
   end
 
   test "mobile key bar includes palette and mode chip sheet trigger", %{
