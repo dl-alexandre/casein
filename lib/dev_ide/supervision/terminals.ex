@@ -9,6 +9,11 @@ defmodule DevIde.Supervision.Terminals do
 
   @impl true
   def init(_opts) do
+    # Claim the host tmux server from a stable cwd BEFORE the Session
+    # DynamicSupervisor (and, transitively, the Endpoint) can lazily spawn it
+    # from a disposable worktree. Synchronous + never-raises by design.
+    DevIDE.Terminals.HostServerAnchor.ensure!()
+
     children = [
       {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
       {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
