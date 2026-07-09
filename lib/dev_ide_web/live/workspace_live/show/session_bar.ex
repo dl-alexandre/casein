@@ -393,6 +393,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :path_base, :string, default: nil
   attr :mutations_allowed?, :boolean, default: false
   attr :rename_session_id, :string, default: nil
+  attr :session_tabs, :list, default: [], doc: "for quiet/attention badge aggregate"
+  attr :chrome_visible?, :boolean, default: true, doc: "focus-mode state for the header toggle"
 
   attr :sort_mode, :atom, default: :recency
 
@@ -407,26 +409,66 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       id={"sessions-sidebar-" <> @workspace_id}
       data-sessions-picker-sidebar="true"
       data-shortcut="Ctrl + B, then S"
+      data-leader-second-key="S"
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
       class={[
-        "sessions-picker-sidebar leader-key-control flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "sessions-picker-sidebar leader-key-control relative flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
       <div class="flex shrink-0 items-center justify-between gap-1 border-b border-base-300/70 px-2 py-1">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
-          Sessions
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+            Sessions
+          </span>
+          <span
+            :if={quiet_window_count(@session_tabs) > 0}
+            id={"session-quiet-badge-" <> @workspace_id}
+            data-attention={quiet_badge_attention(@session_tabs)}
+            class={quiet_badge_class(quiet_badge_attention(@session_tabs))}
+            title={
+              quiet_badge_label(
+                quiet_window_count(@session_tabs),
+                unseen_quiet_window_count(@session_tabs)
+              )
+            }
+            aria-label={
+              quiet_badge_label(
+                quiet_window_count(@session_tabs),
+                unseen_quiet_window_count(@session_tabs)
+              )
+            }
+          ></span>
         </span>
-        <button
-          type="button"
-          phx-click="sidebar:cycle_sessions_sort"
-          class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
-          title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
-          aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
-        >
-          {SessionBarVM.sort_mode_label(@sort_mode)}
-        </button>
+        <span class="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            id={"sessions-focus-mode-" <> @workspace_id}
+            phx-click="terminal:toggle_chrome"
+            data-shortcut="Ctrl/Cmd + Shift + F"
+            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            title={
+              if(@chrome_visible?,
+                do: "Focus mode — hide header. Shortcut: Ctrl/Cmd + Shift + F",
+                else: "Show header. Shortcut: Ctrl/Cmd + Shift + F"
+              )
+            }
+            aria-label={if(@chrome_visible?, do: "Enter focus mode", else: "Exit focus mode")}
+            aria-pressed={to_string(not @chrome_visible?)}
+          >
+            {if @chrome_visible?, do: "Focus", else: "Chrome"}
+          </button>
+          <button
+            type="button"
+            phx-click="sidebar:cycle_sessions_sort"
+            class="rounded px-1 py-0.5 font-mono text-[9px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+            title={"Sort: " <> SessionBarVM.sort_mode_label(@sort_mode) <> " (click to cycle)"}
+            aria-label={"Sort sessions by " <> SessionBarVM.sort_mode_label(@sort_mode)}
+          >
+            {SessionBarVM.sort_mode_label(@sort_mode)}
+          </button>
+        </span>
       </div>
       <div
         data-picker-filter
@@ -963,12 +1005,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         )
       }
     >
-      <span
-        id={"attention-surface-" <> @workspace_id}
-        phx-hook="AttentionSurface"
-        class="hidden"
-        aria-hidden="true"
-      ></span>
       <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label) %>
       <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
         <span class="header-p-min-full">{summary_label}</span>
@@ -1009,10 +1045,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-window-picker-sidebar="true"
       data-version={@topology_version}
       data-shortcut="Ctrl + B, then W"
+      data-leader-second-key="W"
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar leader-key-control relative flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >

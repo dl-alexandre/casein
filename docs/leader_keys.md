@@ -24,14 +24,18 @@ Mounted on the persistent workspace container so it survives tab switches.
   `<button>` in a dispatch div in the workspace LiveView, rendered outside
   the chrome block — so bindings keep working in focus mode (chrome hidden).
   Visible chrome buttons share the `phx-click` handlers but carry no
-  `data-leader-action`. Exceptions: `C-b s` lives on the session dropdown
-  `<summary>`; `C-b w` opens the transient window sidebar beside the terminal;
-  and `1`–`9` targets the window tabs — those require visible chrome.
+  `data-leader-action`. Exceptions: `C-b s` opens the sessions sidebar;
+  `C-b w` opens the transient window sidebar beside the terminal; and
+  `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
-- The header `C-b` button toggles the same leader mode for pointer/touch users.
-- While armed, `<body>` carries `data-leader-active` for styling (the header
-  `C-b` button and `.leader-kbd` hints in the chrome light up).
+- **Desktop:** keyboard `C-b` is the only way to arm leader mode. Bound
+  chrome (`.leader-key-control` with `data-leader-second-key`) lights up and
+  shows the second-key glyph while armed — there is no permanent header
+  `C-b` chip.
+- **Touch:** the mobile keybar keeps a `C-b` button (`[data-leader-prefix-button]`)
+  that toggles the same leader mode for pointer users.
+- While armed, `<body>` carries `data-leader-active` for styling.
 
 ### `SessionPicker` (`assets/js/session_picker.js`)
 
@@ -91,6 +95,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `w`       | choose window     | `window-picker` — opens the transient window sidebar |
 | `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
 | `c`       | new window        | `new-window`                         |
+| `C`       | (custom)          | `new-window-tab` — new window in a new browser tab |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |
 | `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
@@ -118,8 +123,9 @@ All of these require the `C-b` prefix first (except where noted).
 | Keys          | Behavior                                                        |
 | ------------- | --------------------------------------------------------------- |
 | `C-b :`       | Open the command palette (tmux command prompt)                  |
-| `C-b ?`       | Open the help overlay; press again to cycle its tabs (Shortcuts / Preview). `Esc` or a backdrop click closes it |
+| `C-b ?`       | Open the help overlay; press again (or `Tab` / `Shift+Tab`) to cycle its tabs (Shortcuts / Preview / Agents). `Esc` or a backdrop click closes it |
 | `Space`       | Focus the active terminal when nothing interactive is focused   |
+| `Ctrl+←↑↓→`   | Directional pane focus (not session switching — use `C-b (` / `)`) |
 | `C-b C-b`     | Cancel leader mode (deliberate deviation — see below)           |
 | `C-b Escape`  | Cancel leader mode                                              |
 

@@ -25,6 +25,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   path_base={@workspace_route}
                   mutations_allowed?={@tmux_mutations_enabled?}
                   rename_session_id={@tmux_rename_session_id}
+                  session_tabs={@session_tabs}
+                  chrome_visible?={@chrome_visible}
                   class="pointer-coarse:hidden"
                 />
               <% end %>

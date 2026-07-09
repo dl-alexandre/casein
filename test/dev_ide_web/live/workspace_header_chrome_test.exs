@@ -4,7 +4,6 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
@@ -80,11 +79,20 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
              ~s(class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-x-clip)
 
     assert html =~ "header-terminal-pickers"
-    assert html =~ ~s(id="leader-prefix-button-#{workspace_id}")
+    # Desktop leader is keyboard-only; the C-b chip lives on the mobile keybar.
+    refute html =~ ~s(id="leader-prefix-button-#{workspace_id}")
     assert html =~ ~s(data-leader-prefix-button="true")
-    assert has_element?(view, "#leader-prefix-button-#{workspace_id}", "C-b")
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="attention-surface-#{workspace_id}")
+    # Session title, workspace admin, header display zoom, and header focus
+    # chevron are gone — focus mode lives on the sessions rail + palette;
+    # display zoom remains on Ctrl+scroll and the mobile keybar only.
+    refute html =~ "session_header_indicator"
+    refute html =~ ~s(id="workspace-admin-bell-#{workspace_id}")
+    refute html =~ "hero-magnifying-glass-minus"
+    refute html =~ "hero-magnifying-glass-plus"
+    refute html =~ ">100%<"
+    refute html =~ "Hide header for a terminal-only view"
     refute html =~ ~s(id="session-dropdown-#{workspace_id}")
     assert html =~ ~s(id="header-terminal-pickers-#{workspace_id}")
     refute html =~ ~s(id="window-dropdown-#{workspace_id}")
@@ -92,6 +100,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # secondary window/pane actions, not a responsive spillover bucket.
     assert html =~ "header-overflow"
     assert has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
+    assert has_element?(view, "#notifications-bell-#{workspace_id}")
 
     # Template palette/library ids are canonical in the ⋯ menu and must render
     # exactly once (duplicate DOM ids corrupt LiveView patching).
@@ -107,6 +116,10 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     for action <- ~w(new-window last-window next-window prev-window) do
       assert has_element?(view, "[data-leader-action='#{action}']")
     end
+
+    # Leader-bound chrome advertises its second key for armed highlighting.
+    assert html =~ ~s(data-leader-second-key="%")
+    assert html =~ ~s(data-leader-second-key="Z")
 
     refute html =~ ~s(id="terminal-mode-raw")
     assert html =~ ">stopped<"

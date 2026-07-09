@@ -20,7 +20,7 @@ Query parameters (stable order when DevIDE writes them):
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
 | `tmux_session` | `devide_…` | Attach hint when switching sessions (internal) |
 | `tab` | `history` | Cockpit tab to open (`terminal`, `files`, `search`, `diff`, `artifacts`, `run`, `proposals`, `logs`, `history`); unknown values are ignored |
-| `drawer` | `notifications` | Overlay drawer to open (`notifications` is the only value today); unknown values are ignored |
+| `drawer` | `notifications` | Overlay drawer to open (`notifications` is the only value); unknown values are ignored |
 
 `tab` is a one-shot open hint: it selects the tab (with that tab's lazy
 hydration) on the mount/patch that carries it, and DevIDE does not re-emit it

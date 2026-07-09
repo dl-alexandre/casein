@@ -197,6 +197,12 @@ repair_session() {
   local tidewave_url
   tidewave_url="$(discover_tidewave_mcp_url "$workspace_name" "$workspace_id")"
 
+  # Heal partial shim loss before rewriting PATH (claude missing / siblings ok).
+  if [[ -x "${ROOT}/scripts/install-agent-shims.sh" ]]; then
+    bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null 2>&1 ||
+      log "warn: agent shim ensure failed for ${session} — continuing env repair"
+  fi
+
   materialize_workspace "$workspace_name" "$workspace_id" "$session" "$agent_token"
 
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
@@ -222,10 +228,27 @@ repair_session() {
   tmux set-environment -t "$session" DEVIDE_AGENT_MCP_HOME "$staging"
   tmux set-environment -t "$session" DEVIDE_SCRIPTS "$scripts"
   tmux set-environment -t "$session" DEVIDE_AGENT_ENV_FILE "$env_sh"
-  local npm_prefix
+  local npm_prefix terminal_shims tools_bin repaired_path
   npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  terminal_shims="${DEV_IDE_TERMINAL_SHIMS_DIR:-${HOME}/.devide/terminal-shims}"
+  tools_bin="${DEV_IDE_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}/bin"
+  # Match PaneEnv / Shims.path_with_shims order: terminal shims → tools →
+  # agent launchers → npm package bins → existing PATH (deduped below).
+  repaired_path="${terminal_shims}:${tools_bin}:${HOME}/.local/bin:${npm_prefix}/bin:${PATH}"
+  repaired_path="$(
+    PATH="$repaired_path" python3 - <<'PY'
+import os
+seen = set()
+out = []
+for part in os.environ.get("PATH", "").split(":"):
+    if part and part not in seen:
+        seen.add(part)
+        out.append(part)
+print(":".join(out))
+PY
+  )"
   tmux set-environment -t "$session" DEV_IDE_NPM_PREFIX "$npm_prefix"
-  tmux set-environment -t "$session" PATH "${HOME}/.local/bin:${npm_prefix}/bin:${PATH}"
+  tmux set-environment -t "$session" PATH "$repaired_path"
 
   log "repaired ${session} (${workspace_name})"
 }

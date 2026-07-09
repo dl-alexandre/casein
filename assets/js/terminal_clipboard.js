@@ -1,3 +1,5 @@
+import {formatPaths} from "./terminal_clipboard_format.mjs"
+
 const MAX_FILE_BYTES = 25 * 1024 * 1024
 const LARGE_TEXT_BYTES = 16 * 1024
 const LARGE_FILE_BYTES = 5 * 1024 * 1024
@@ -74,14 +76,6 @@ function textFromClipboardData(data) {
   }
 
   return ""
-}
-
-function pathQuote(path) {
-  return `'${String(path).replace(/'/g, `'\\''`)}'`
-}
-
-function basename(path) {
-  return String(path).split("/").pop() || "file"
 }
 
 function base64FromArrayBuffer(buffer) {
@@ -173,33 +167,6 @@ async function uploadFiles(files, opts) {
   }
 
   return saved
-}
-
-function pathModeFor(saved, opts) {
-  const configured = typeof opts.pathFormat === "function" ? opts.pathFormat(saved) : opts.pathFormat
-  if (configured && configured !== "auto") return configured
-  return opts.detectPathFormat?.(saved) || "shell"
-}
-
-function formatPath(file, mode) {
-  const path = file.path
-
-  if (mode === "agent") return `@${path}`
-
-  if (mode === "markdown") {
-    const label = basename(file.relative_path || path)
-    if (file.content_type?.startsWith("image/")) return `![${label}](${path})`
-    return `[${label}](${path})`
-  }
-
-  if (mode === "plain") return path
-
-  return pathQuote(path)
-}
-
-function formatPaths(saved, opts) {
-  const mode = pathModeFor(saved, opts)
-  return saved.map((file) => formatPath(file, mode)).join(" ")
 }
 
 async function pastePayload({ text = "", files = [] }, opts) {

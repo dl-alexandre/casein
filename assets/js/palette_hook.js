@@ -57,9 +57,10 @@ export const PaletteHook = {
         return
       }
 
-      // Ctrl + Arrow keys navigate panes (left/right) and sessions (up/down)
+      // Ctrl + Arrow keys navigate panes directionally (left/right/up/down)
       // in the workspace terminal view. These are distinct from the palette's
-      // plain ArrowUp/Down (which only apply when the palette list is open).
+      // plain ArrowUp/Down (which only apply when the palette list is open)
+      // and from C-b ( / ) session cycling.
       if (e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.key === "ArrowLeft") {
           e.preventDefault()

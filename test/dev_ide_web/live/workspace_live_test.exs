@@ -435,8 +435,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # Last window moved from an inline clock button to the ⋯ overflow menu.
     assert has_element?(view, ".header-overflow button[phx-click='tmux:last_window']")
 
+    # Both rails advertise leader second-keys while open (C-b s / C-b w).
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
-    refute has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+    # Focus mode lives on the sessions rail (not the header).
+    assert has_element?(view, "#sessions-focus-mode-ws-1")
 
     render_hook(view, "sidebar:open", %{"mode" => "windows"})
 
@@ -445,8 +448,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              "[data-window-picker-sidebar][data-shortcut='Ctrl + B, then W']"
            )
 
+    # windows-only mode closes the sessions rail (and its focus control).
+    refute has_element?(view, "#sessions-focus-mode-ws-1")
+
     render_hook(view, "sidebar:close", %{})
-    assert has_element?(view, "button[data-shortcut='Ctrl/Cmd + Shift + F']")
+    refute has_element?(view, "button[data-shortcut='Ctrl/Cmd + Shift + F']")
+
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+    assert has_element?(view, "#sessions-focus-mode-ws-1[data-shortcut='Ctrl/Cmd + Shift + F']")
 
     cheatsheet_html = render(view)
     assert cheatsheet_html =~ "Ctrl+P"
@@ -531,7 +540,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_submit()
 
     assert_receive {:fake_tmux_set_session_alias, ^extra_tmux_session, "billing"}
-    assert has_element?(view, ".leader-key-control", "billing")
+    # Alias surfaces on the sessions rail (header session title is gone).
+    assert has_element?(view, "#sessions-sidebar-ws-1", "billing")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}

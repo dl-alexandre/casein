@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.WorkspaceRootLiveTest do
   @moduledoc """
   Root `/` lands in the cockpit on the synthetic scratch workspace (Stage 4c).
-  There is no full-page dashboard; admin actions live in the header drawer.
+  There is no full-page dashboard or workspace-admin drawer.
   """
 
   use DevIdeWeb.ConnCase, async: false
@@ -38,7 +38,8 @@ defmodule DevIdeWeb.WorkspaceRootLiveTest do
              has_element?(view, "#workspace-header-" <> Scratch.id())
 
     assert has_element?(view, "#workspace-header-" <> Scratch.id())
-    assert has_element?(view, "#workspace-admin-bell-" <> Scratch.id())
+    assert has_element?(view, "#notifications-bell-" <> Scratch.id())
+    refute has_element?(view, "#workspace-admin-bell-" <> Scratch.id())
     # Mounted at home-rooted scratch — no bounce back through /.
     refute_redirected(view, ~p"/")
     assert Path.expand(home) == Scratch.home_path()
@@ -52,16 +53,5 @@ defmodule DevIdeWeb.WorkspaceRootLiveTest do
   test "GET /notifications redirects to cockpit drawer deep link", %{conn: conn} do
     conn = get(conn, ~p"/notifications")
     assert redirected_to(conn) == ~p"/?drawer=notifications"
-  end
-
-  test "workspace admin drawer opens from the header", %{conn: conn} do
-    {:ok, view, _html} = live(conn, ~p"/")
-
-    view
-    |> element("#workspace-admin-bell-" <> Scratch.id())
-    |> render_click()
-
-    assert has_element?(view, "#workspace-admin-drawer[data-admin-drawer-open]")
-    assert has_element?(view, "#workspace-admin-attach-form")
   end
 end

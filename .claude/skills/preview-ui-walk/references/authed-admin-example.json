@@ -2,7 +2,7 @@
   "workspace": "example-admin",
   "app_surface": "app",
   "_driver": "references/playwright_walk.mjs (cookie login — the preview MCP cannot follow the 302; see SKILL.md 'Auth reality')",
-  "_note": "Illustrative shape for a cookie/redirect-authenticated admin app. Derive the real login route + page list from the app's router, not these placeholders. Every gated page sets `lands_on` so a lost-session bounce to /login FAILS instead of shipping a false green.",
+  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json (app owns routes, login, safety). Derive paths from that app's router. Every gated page sets lands_on so a lost-session bounce to /login FAILS instead of shipping a false green.",
   "login": {
     "type": "cookie",
     "path": "/dev/login",

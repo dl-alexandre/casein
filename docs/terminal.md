@@ -123,9 +123,10 @@ and independent PTY workers (`PaneWorker`). Each pane owns its own tmux session
 - Keyboard navigation (Ctrl+arrows), double-click to equalize, arrow nudges on resizer.
 - Persistence via localStorage + defensive `restore_pane_layout` guard (only
   accepts layouts whose pane ids exactly match current live panes).
-- "Focus mode" (Ctrl/Cmd+Shift+F or palette) collapses the workspace header +
-  terminal utility bar for maximum vertical real estate; a thin reveal strip
-  remains.
+- "Focus mode" (Ctrl/Cmd+Shift+F, palette, or the sessions rail **Focus**
+  control) collapses the workspace header for maximum vertical real estate; a
+  thin reveal strip remains. Display zoom is Ctrl+scroll (or the mobile
+  keybar), not a header control.
 - Per-pane error states, snapshots ("snap all"), and equalize/reset.
 
 **Remote hosts**: an SSH adapter behind a `DevIDE.Terminals.Adapter` behaviour
