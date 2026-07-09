@@ -304,6 +304,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
+        |> assign(:file_symbols, [])
         |> assign(:file_render_mode, nil)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
@@ -2087,7 +2088,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket
         |> assign(:tab, "files")
-        |> assign(:open_file, file)
+        |> assign_open_file(file)
         |> assign(:file_render_mode, mode)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
@@ -2097,6 +2098,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         assign(socket, :file_error, format_file_error(reason))
     end
+  end
+
+  @doc false
+  # Compute Elixir symbols once when a file opens/refreshes/saves so the Files
+  # panel does not re-parse the whole buffer on every unrelated tree interaction.
+  def assign_open_file(socket, nil) do
+    socket
+    |> assign(:open_file, nil)
+    |> assign(:file_symbols, [])
+  end
+
+  def assign_open_file(socket, %{path: path, content: content} = file)
+      when is_binary(path) and is_binary(content) do
+    socket
+    |> assign(:open_file, file)
+    |> assign(:file_symbols, ElixirNav.symbols(content, path))
+  end
+
+  def assign_open_file(socket, file) when is_map(file) do
+    socket
+    |> assign(:open_file, file)
+    |> assign(:file_symbols, [])
   end
 
   defp annotation_file_payload(socket, loc, file, mode) do

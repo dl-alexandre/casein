@@ -10,7 +10,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   use DevIdeWeb, :html
 
-  alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Links.Markdown
   alias DevIDE.Search
 
@@ -22,6 +21,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   attr :project_meta, :any, default: nil
   attr :tooling, :any, default: nil
   attr :open_file, :any, required: true, doc: "%{path:, size:, content: ...} | nil"
+  attr :file_symbols, :list, default: [], doc: "precomputed ElixirNav.symbols/2 for open_file"
   attr :rename_input, :string, default: nil
   attr :delete_confirm, :string, default: nil
   attr :save_error, :string, default: nil
@@ -882,9 +882,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   defp render_symbols_panel(assigns) do
     case assigns.open_file do
-      %{path: path, content: content} ->
-        symbols = ElixirNav.symbols(content, path)
-        assigns = Map.put(assigns, :file_symbols, symbols) |> Map.put(:file_path, path)
+      %{path: path} ->
+        # Symbols are precomputed into the LiveView assign when the file opens
+        # (see Show.assign_open_file/2) so tree toggles don't re-parse content.
+        assigns =
+          assigns
+          |> Map.put(:file_path, path)
+          |> Map.put(:file_symbols, assigns[:file_symbols] || [])
 
         ~H"""
         <details class="border-t pt-1 mt-2 text-[11px]" open>

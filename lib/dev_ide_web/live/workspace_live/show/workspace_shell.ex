@@ -426,6 +426,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           project_meta={@project_meta}
           tooling={@tooling}
           open_file={@open_file}
+          file_symbols={@file_symbols}
           rename_input={@rename_input}
           delete_confirm={@delete_confirm}
           save_error={@save_error}
