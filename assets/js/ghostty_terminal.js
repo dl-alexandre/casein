@@ -1345,7 +1345,9 @@ function installTerminalFileLinks(hook) {
   // start and the vendor's focus handling for this event only). Everything
   // else falls through to the selection-first mouse model unchanged.
   hook.__onFileLinkMouseDown = (e) => {
-    if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return
+    // Cmd/Ctrl+Click → open on the server's default surface for the file type.
+    // Cmd/Ctrl+Shift+Click → force the other surface. Alt still falls through.
+    if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || e.altKey) return
 
     const hover = fileLinkAtEvent(hook, e)
     if (!hover) return
@@ -1359,7 +1361,8 @@ function installTerminalFileLinks(hook) {
       line: hover.link.line ?? null,
       pane_id: fileLinkPaneId(hook),
       row: hover.point.row,
-      col: hover.point.col
+      col: hover.point.col,
+      mode: e.shiftKey ? "flip" : "default"
     })
   }
 

@@ -15,6 +15,8 @@ defmodule DevIde.Supervision.Previews do
       DevIDE.PreviewPanes,
       DevIDE.FilePanes,
       DevIDE.FilePanes.LinkResolver,
+      {Registry, keys: :unique, name: DevIDE.Previews.FileServer.Registry},
+      {DynamicSupervisor, name: DevIDE.Previews.FileServer.Supervisor, strategy: :one_for_one},
       PreviewCtl.Registry,
       {Registry, keys: :duplicate, name: DevIdeWeb.PreviewProxy.WebSocketRegistry}
     ]
