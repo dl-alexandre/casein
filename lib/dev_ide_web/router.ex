@@ -229,6 +229,7 @@ defmodule DevIdeWeb.Router do
     delete "/preview/panes/:id", PreviewPaneController, :delete
 
     get "/deploy_status", DeployStatusController, :show
+    get "/smoke/terminal", TerminalSmokeController, :show
     post "/drain", DrainController, :drain
   end
 

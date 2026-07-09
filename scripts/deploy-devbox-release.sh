@@ -483,6 +483,16 @@ terminal_tools_json="$(
 printf '%s' "${terminal_tools_json}" | grep -q '"terminal_list_sessions"'
 printf '%s' "${terminal_tools_json}" | grep -q '"terminal_capture"'
 
+# ── Terminal usability smoke — open a real terminal and assert it lands in a
+# live cwd. The tools/list checks above pass even when a freshly-opened pane is
+# unusable; this guards the 2026-07-09 `getcwd failed` class (host tmux server
+# stranded in a reaped-worktree cwd). Pre-swap, so a 503 aborts promotion via the
+# rollback trap with the old instance still serving. ──────────────────────────
+log "smoke checking terminal usability on new instance"
+curl -fsS --unix-socket "${NEW_SOCKET}" \
+  -H "authorization: Bearer ${token}" \
+  http://localhost/api/smoke/terminal >/dev/null
+
 # ── Atomic symlink swap — new traffic goes to new instance ───────────────────
 log "swapping ${CURRENT_SYMLINK} → ${NEW_SOCKET}"
 if [ -L "${CURRENT_SYMLINK}" ]; then
