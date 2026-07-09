@@ -32,9 +32,9 @@ Runtimes:
             pass --sidechat <target> for a read-only advisor (target: %pane,
             session:pane, or agent)
   opencode  injects per-workspace MCP via project .opencode/opencode.json
-            (paired primary checkout OR agent worktree) and stages
-            preview-ui-walk / delegate-to-grok into ~/.config/opencode/skills
-            plus project .opencode/skills
+            (paired primary checkout OR agent worktree) and stages host
+            skills (delegate-to-grok, preview-ui-walk, workspace-agent-pair)
+            into ~/.config/opencode/skills + project .opencode/skills
   agent     MCP env + real agent binary
 EOF
 }

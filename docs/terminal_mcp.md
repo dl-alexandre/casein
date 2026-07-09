@@ -248,17 +248,25 @@ any repo. On every **OpenCode** launch it stages the same allowlist into
 `~/.config/opencode/skills` and the project `.opencode/skills` (OpenCode also
 auto-loads `~/.claude/skills` as external skills). Staging is idempotent and
 refreshes when the canonical source changes (`scripts/lib/agent-skills.sh`). The
-allowlist defaults to `delegate-to-grok` and `preview-ui-walk` (product-repo UI
-smoke walks); project-only skills like `verify` are excluded because they only
-make sense inside the dev_ide checkout, where the project `.claude/skills` copy
-already provides them. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt
-out entirely with `DEVIDE_AGENT_SKILLS=0`.
+allowlist defaults to `delegate-to-grok`, `preview-ui-walk`, and
+`workspace-agent-pair` (re-pair any product workspace's agent MCP + skills);
+project-only skills like `verify` are excluded because they only make sense
+inside the dev_ide checkout, where the project `.claude/skills` copy already
+provides them. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt out
+entirely with `DEVIDE_AGENT_SKILLS=0`.
 
 OpenCode MCP is injected as project `.opencode/opencode.json` from the workspace
 staging tree whenever the launch is paired (`DEVIDE_WORKSPACE_ID` +
 `DEVIDE_AGENT_MCP_HOME`) — primary checkout or agent worktree. Grok still keeps
 project `.mcp.json` injection worktree-only to avoid colliding shared primary
 checkouts.
+
+**Ad-hoc re-pair (any product workspace):** skill `workspace-agent-pair` or:
+
+```bash
+bash scripts/ensure-workspace-agent-pair.sh \
+  --workspace <name> --runtime opencode --verify
+```
 
 ### Devbox smoke test
 
