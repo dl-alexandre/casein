@@ -32,8 +32,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     :ok
   end
 
-  test "denies cockpit mount for another user's folder workspace", %{conn: conn} do
-    root = Path.join(System.tmp_dir!(), "devide-folder-forbidden-#{System.unique_integer()}")
+  test "allows cockpit mount for another user's folder workspace (flat peer model)", %{
+    conn: conn
+  } do
+    root = Path.join(System.tmp_dir!(), "devide-folder-peer-#{System.unique_integer()}")
     alice_project = Path.join([root, "alice", "proj"])
     File.mkdir_p!(alice_project)
 
@@ -47,8 +49,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     folder_id = "folder:" <> Base.url_encode64(alice_project, padding: false)
 
-    assert {:error, {:live_redirect, %{to: "/"}}} =
-             live(conn, ~p"/workspaces/#{folder_id}")
+    assert {:ok, _view, _html} = live(conn, ~p"/workspaces/#{folder_id}")
   end
 
   test "terminal tab renders tmux windows as actionable tabs", %{conn: conn} do

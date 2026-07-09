@@ -2,9 +2,8 @@ defmodule DevIdeWeb.SessionChannelTest do
   @moduledoc """
   Covers the mobile companion channel's two load-bearing contracts:
 
-    1. The auth gate — only the workspace owner/admin may observe (the same
-       ownership the terminal channel requires), not the policy-default
-       `:viewer` that would leak every workspace to every authenticated user.
+    1. The auth gate — any authenticated peer may observe (flat peer model;
+       oauth2-proxy / pairing token is the outer identity gate).
     2. The live spine — an emitted audit event triggers a debounced snapshot
        push, proving the `Audit` → `SessionChannel` wire is connected.
   """
@@ -106,9 +105,9 @@ defmodule DevIdeWeb.SessionChannelTest do
              subscribe_and_join(socket, DevIdeWeb.SessionChannel, "session:other-ws")
   end
 
-  test "non-owner join is rejected" do
-    assert {:error, %{reason: "unauthorized"}} =
-             join_as(%{id: "intruder", email: "intruder@local"})
+  test "peer join is allowed under the flat peer model" do
+    assert {:ok, _reply, _socket} =
+             join_as(%{id: "peer", email: "peer@local"})
   end
 
   test "missing workspace join explains that the workspace was not found" do
