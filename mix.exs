@@ -124,13 +124,7 @@ defmodule DevIde.MixProject do
       # deploy primitives. Dev/test analysis tools are runtime: false so they
       # never ship in the release.
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
-      {:ex_ast, "~> 0.12", only: [:dev, :test], runtime: false},
-      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
-      {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
-      {:xamal, "~> 0.4", only: [:dev, :test], runtime: false},
-      # systemd unit/timer + D-Bus control without shelling to systemctl —
-      # on-topic for the self-hosted deploy poller. Pure Elixir, ships in prod.
-      {:systemdkit, "~> 0.1"}
+      {:reach, "~> 2.7", only: [:dev, :test], runtime: false}
       # Code-intelligence / deploy-planning tools — dev/test only:
     ]
   end
