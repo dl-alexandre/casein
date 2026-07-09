@@ -4,7 +4,6 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
 
@@ -85,8 +84,10 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
 
     assert html =~ ~s(phx-click="split_right")
     assert html =~ ~s(phx-click="split_down")
-    assert html =~ "devide:terminal-display-zoom"
-    assert html =~ "hero-magnifying-glass-plus"
+    # Display zoom left the header; mobile keybar still owns ZoomUp/Down/Reset
+    # (Ctrl+scroll handles desktop). Splits stay as the raw-surface chrome signal.
+    assert html =~ ~s(data-keybar-key="ZoomUp")
+    assert html =~ ~s(data-keybar-key="ZoomDown")
 
     {:ok, _} = State.set_mode(workspace_id, :manual)
 

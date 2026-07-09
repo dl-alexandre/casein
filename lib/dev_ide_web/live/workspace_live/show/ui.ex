@@ -130,7 +130,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
   @doc false
   def leader_key_button(assigns) do
     ~H"""
-    <div class="leader-key-control shrink-0" data-shortcut={leader_shortcut(@key)}>
+    <div
+      class="leader-key-control relative shrink-0"
+      data-shortcut={leader_shortcut(@key)}
+      data-leader-second-key={leader_key_label(@key)}
+    >
       <button
         type="button"
         id={@id}

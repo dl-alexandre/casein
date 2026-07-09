@@ -129,8 +129,8 @@ defmodule DevIdeWeb.Router do
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
       # Root lands in the cockpit on the workspaceless scratch PTY ($HOME).
-      # Admin actions live in the header drawer; dir browse is the SESSIONS
-      # Browse tier (Stage 4b). No separate full-page dashboard.
+      # Dir browse is the SESSIONS Browse tier (Stage 4b). No separate
+      # full-page dashboard or workspace-admin drawer.
       live "/", WorkspaceLive.Show, :root
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end

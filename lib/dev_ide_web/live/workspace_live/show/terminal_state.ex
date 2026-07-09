@@ -1199,7 +1199,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
             {:noreply,
              socket
              |> assign(:tmux_rename_session_id, nil)
-             |> refresh_session_tabs()}
+             |> refresh_session_tabs()
+             # Sessions rail is the only surface for session labels after the
+             # header title was removed — rebuild it so the alias shows immediately.
+             |> Sidebar.assign_sessions_sidebar_tree()}
 
           {:error, reason} ->
             {:noreply,

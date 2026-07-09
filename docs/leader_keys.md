@@ -24,14 +24,18 @@ Mounted on the persistent workspace container so it survives tab switches.
   `<button>` in a dispatch div in the workspace LiveView, rendered outside
   the chrome block — so bindings keep working in focus mode (chrome hidden).
   Visible chrome buttons share the `phx-click` handlers but carry no
-  `data-leader-action`. Exceptions: `C-b s` lives on the session dropdown
-  `<summary>`; `C-b w` opens the transient window sidebar beside the terminal;
-  and `1`–`9` targets the window tabs — those require visible chrome.
+  `data-leader-action`. Exceptions: `C-b s` opens the sessions sidebar;
+  `C-b w` opens the transient window sidebar beside the terminal; and
+  `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
-- The header `C-b` button toggles the same leader mode for pointer/touch users.
-- While armed, `<body>` carries `data-leader-active` for styling (the header
-  `C-b` button and `.leader-kbd` hints in the chrome light up).
+- **Desktop:** keyboard `C-b` is the only way to arm leader mode. Bound
+  chrome (`.leader-key-control` with `data-leader-second-key`) lights up and
+  shows the second-key glyph while armed — there is no permanent header
+  `C-b` chip.
+- **Touch:** the mobile keybar keeps a `C-b` button (`[data-leader-prefix-button]`)
+  that toggles the same leader mode for pointer users.
+- While armed, `<body>` carries `data-leader-active` for styling.
 
 ### `SessionPicker` (`assets/js/session_picker.js`)
 
