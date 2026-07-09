@@ -91,6 +91,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `w`       | choose window     | `window-picker` — opens the transient window sidebar |
 | `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
 | `c`       | new window        | `new-window`                         |
+| `C`       | (custom)          | `new-window-tab` — new window in a new browser tab |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |
 | `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
@@ -118,8 +119,9 @@ All of these require the `C-b` prefix first (except where noted).
 | Keys          | Behavior                                                        |
 | ------------- | --------------------------------------------------------------- |
 | `C-b :`       | Open the command palette (tmux command prompt)                  |
-| `C-b ?`       | Open the help overlay; press again to cycle its tabs (Shortcuts / Preview). `Esc` or a backdrop click closes it |
+| `C-b ?`       | Open the help overlay; press again (or `Tab` / `Shift+Tab`) to cycle its tabs (Shortcuts / Preview / Agents). `Esc` or a backdrop click closes it |
 | `Space`       | Focus the active terminal when nothing interactive is focused   |
+| `Ctrl+←↑↓→`   | Directional pane focus (not session switching — use `C-b (` / `)`) |
 | `C-b C-b`     | Cancel leader mode (deliberate deviation — see below)           |
 | `C-b Escape`  | Cancel leader mode                                              |
 
