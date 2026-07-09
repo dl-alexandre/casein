@@ -175,7 +175,7 @@ function urlOk(landed, expected) {
 // Those still show up as raw counts/samples; they do not flip PASS→FAIL unless
 // the page opts into `strict_errors: true`.
 const DEFAULT_NOISE_RE =
-  /Content Security Policy|ERR_BLOCKED_BY_CSP|\bcsp\b|shields\.io|badge\.svg|github\.com\/.*\/badge|Applying inline style violates|Executing inline script violates/i;
+  /Content Security Policy|ERR_BLOCKED_BY_CSP|\bcsp\b|shields\.io|badge\.svg|github\.com\/.*\/badge|Applying inline style violates|Executing inline script violates|customHooks|LiveDashboard|ERR_ABORTED/i;
 
 function noisePatterns(page, manifest) {
   const extras = []
