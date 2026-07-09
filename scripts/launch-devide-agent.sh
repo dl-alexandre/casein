@@ -32,6 +32,9 @@ Runtimes:
             pass --sidechat <target> for a read-only advisor (target: %pane,
             session:pane, or agent)
   opencode  injects per-workspace MCP via project .opencode/opencode.json
+            (paired primary checkout OR agent worktree) and stages
+            preview-ui-walk / delegate-to-grok into ~/.config/opencode/skills
+            plus project .opencode/skills
   agent     MCP env + real agent binary
 EOF
 }
@@ -153,11 +156,21 @@ sync_project_mcp_config() {
 
   [[ -n "$checkout" && -d "$checkout" && -n "$staging" ]] || return 0
 
+  # Grok writes a project .mcp.json that can collide across shared primary
+  # checkouts — keep that path worktree-only. OpenCode has no per-launch MCP
+  # flag alternative (unlike Codex/Claude), so inject whenever this launch is
+  # paired to a workspace staging tree (primary checkout or worktree).
   if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
     case "$runtime" in
-      grok|agent|opencode)
+      grok|agent)
         echo "warn: skipping project MCP injection for ${runtime} outside an agent worktree" >&2
         return 0
+        ;;
+      opencode)
+        if [[ -z "${DEVIDE_WORKSPACE_NAME:-}" || -z "${DEVIDE_WORKSPACE_ID:-}" ]]; then
+          echo "warn: skipping OpenCode MCP injection — workspace not paired (no DEVIDE_WORKSPACE_*)" >&2
+          return 0
+        fi
         ;;
     esac
   fi
@@ -179,7 +192,24 @@ sync_project_mcp_config() {
   esac
 }
 
+# Stage DevIDE-infra skills for OpenCode. OpenCode also auto-loads
+# ~/.claude/skills, but project .opencode/skills and ~/.config/opencode/skills
+# are the first-class paths (and project skills are often gitignored).
+opencode_install_skills() {
+  local checkout="${DEVIDE_CHECKOUT:-}"
+  local src="${ROOT}/.claude/skills"
+
+  agent_skills_install "$src" "${HOME}/.config/opencode"
+  if [[ -n "$checkout" && -d "$checkout" ]]; then
+    mkdir -p "${checkout}/.opencode" 2>/dev/null || true
+    agent_skills_install "$src" "${checkout}/.opencode"
+  fi
+}
+
 sync_project_mcp_config "$RUNTIME"
+if [[ "$RUNTIME" == "opencode" ]]; then
+  opencode_install_skills
+fi
 
 if [[ -n "${DEVIDE_CHECKOUT:-}" && -d "${DEVIDE_CHECKOUT}" ]]; then
   cd "${DEVIDE_CHECKOUT}"

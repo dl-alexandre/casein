@@ -7,9 +7,13 @@
 # dev_ide skills — so an orchestrator there cannot invoke delegate-to-grok even
 # though the capability is host infrastructure, not app code.
 #
-# This mirrors grok_install_state_hook in launch-devide-agent.sh: copy a
-# canonical source into a global agent home, idempotently, opt-out via
-# DEVIDE_AGENT_SKILLS=0, best-effort (never fail the launch).
+# Used by launch-devide-agent.sh for:
+#   - Claude → $CLAUDE_CONFIG_DIR or ~/.claude  (skills/<name>/SKILL.md)
+#   - OpenCode → ~/.config/opencode and project .opencode
+#     (skills/<name>/SKILL.md; OpenCode also auto-loads ~/.claude/skills)
+#
+# Copies are idempotent, opt-out via DEVIDE_AGENT_SKILLS=0, best-effort
+# (never fail the launch).
 
 # Skills that are DevIDE host infrastructure (they drive DevIDE MCP / the
 # spawn-agent-worker helper) and therefore belong in every agent's config home
