@@ -714,10 +714,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Escape or window selection.
   def handle_event("sidebar:open", params, socket) do
     mode = Map.get(params, "mode", "windows")
+    focus = Map.get(params, "focus")
+
+    opts =
+      case focus do
+        f when f in ["sessions", "windows"] -> [focus: f]
+        _ -> []
+      end
 
     socket =
       socket
-      |> Sidebar.open(mode)
+      |> Sidebar.open(mode, opts)
       |> TerminalState.refresh_session_tabs()
       |> assign_workspace_summaries()
       |> TerminalState.refresh_tmux_topology()
@@ -1961,16 +1968,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> SessionSummary.build_many()
   end
 
-  # Sessions rail visibility: always include the current workspace, plus
-  # anything the viewer owns. Admins see every summary (no header "show all"
-  # toggle — that lived on the removed workspace-admin drawer).
-  defp workspace_summary_visible?(summary, socket) do
-    summary.id == socket.assigns.workspace.id or
-      ForwardAuth.admin?(socket.assigns[:current_user]) or
-      Workspaces.viewer_owns_workspace?(
-        %{user: summary.user},
-        socket.assigns[:current_user] || %{}
-      )
+  # Sessions rail: flat peer model — every authenticated viewer sees every
+  # workspace summary. oauth2-proxy is the only identity gate.
+  defp workspace_summary_visible?(_summary, socket) do
+    case socket.assigns[:current_user] do
+      %{} = user -> ForwardAuth.admin?(user)
+      _ -> false
+    end
   end
 
   defp ensure_current_workspace_record(records, workspace) do

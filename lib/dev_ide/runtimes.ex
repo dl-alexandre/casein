@@ -490,6 +490,10 @@ defmodule DevIDE.Runtimes do
 
       event_metadata = Map.take(metadata, ["agent", "branch", "git_common_dir", "worktree_path"])
 
+      # Single create OR single update — never create(status=requested) then
+      # update(status=provisioned). The two-step path raced/failed with
+      # Ecto.NoResultsError in update_runtime/2 after create appeared to succeed
+      # (artifact worktree on disk, no runtime row), breaking artifact_create.
       result =
         if existing do
           impl().update_runtime(
@@ -501,26 +505,14 @@ defmodule DevIDE.Runtimes do
             )
           )
         else
-          requested = %{runtime | status: "requested"}
-
-          with {:ok, _requested} <-
-                 impl().create_runtime(
-                   requested,
-                   event(requested, nil, "runtime_requested",
-                     actor_id: string_value(attrs, "actor_id"),
-                     runner_id: string_value(attrs, "runner_id"),
-                     metadata: event_metadata
-                   )
-                 ) do
-            impl().update_runtime(
-              runtime,
-              event(runtime, "requested", "runtime_provisioned",
-                actor_id: string_value(attrs, "actor_id"),
-                runner_id: string_value(attrs, "runner_id"),
-                metadata: event_metadata
-              )
+          impl().create_runtime(
+            runtime,
+            event(runtime, nil, "runtime_provisioned",
+              actor_id: string_value(attrs, "actor_id"),
+              runner_id: string_value(attrs, "runner_id"),
+              metadata: event_metadata
             )
-          end
+          )
         end
 
       with {:ok, %Runtime{} = runtime} <- result do

@@ -67,22 +67,25 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   Derive the identity from a forward-auth email. The username is the
   email's local part, lowercased.
 
-  The `:role` is `:admin` when the email is in the configured `admins/0`
-  list (cross-user workspace visibility), otherwise `:owner`.
+  Every authenticated viewer gets the same role (`:user`). There is no
+  elevated admin tier — peers are equal once oauth2-proxy has authenticated
+  them. See `Workspaces.viewer_can_access_workspace?/2`.
   """
   @spec user_from_email(String.t()) :: map()
   def user_from_email(email) when is_binary(email) do
     email = String.downcase(email)
     username = email |> String.split("@") |> hd()
-    role = if email in admins(), do: :admin, else: :owner
 
-    %{id: username, username: username, email: email, role: role}
+    %{id: username, username: username, email: email, role: :user}
   end
 
   @doc """
-  Lowercased admin emails. Admins get cross-user workspace visibility.
-  Set via `:dev_ide, :admins` (list) or env `DEV_IDE_ADMINS`
-  (comma/space separated).
+  Legacy `DEV_IDE_ADMINS` / `:admins` list parser.
+
+  **No longer grants privileges.** Kept so existing env still loads without
+  error and so `runtime.exs` can treat a non-empty value as a signal that
+  forward-auth is intended. New deploys should set `DEV_IDE_FORWARD_AUTH=true`
+  and omit `DEV_IDE_ADMINS`.
   """
   @spec admins() :: [String.t()]
   def admins do
@@ -98,9 +101,26 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
     end
   end
 
-  @doc "True when the identity carries the admin role."
+  @doc """
+  Historical "is this viewer unrestricted?" check.
+
+  Always true for any authenticated identity map so call sites that still
+  gate UI (browse restrictions, device stats, session rail) never create a
+  second privilege tier. Requires a non-empty id/username/email (same rule as
+  workspace access). False for nil, non-maps, or empty maps.
+  """
   @spec admin?(map() | any()) :: boolean()
-  def admin?(%{role: :admin}), do: true
+  def admin?(%{} = viewer) do
+    email = Map.get(viewer, :email) || Map.get(viewer, "email")
+    id = Map.get(viewer, :id) || Map.get(viewer, "id")
+    username = Map.get(viewer, :username) || Map.get(viewer, "username")
+
+    Enum.any?([email, id, username], fn
+      v when is_binary(v) -> String.trim(v) != ""
+      _ -> false
+    end)
+  end
+
   def admin?(_), do: false
 
   @doc "True when forward-auth header trust is enabled."

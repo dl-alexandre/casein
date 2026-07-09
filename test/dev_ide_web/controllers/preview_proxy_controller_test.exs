@@ -26,20 +26,35 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
 
   defp start_ws_echo_upstream! do
     Enum.find_value(@ws_echo_ports, fn port ->
-      case Bandit.start_link(
-             plug: {DevIdeWeb.PreviewProxyControllerTest.EchoPlug, []},
-             scheme: :http,
-             ip: {127, 0, 0, 1},
-             port: port
-           ) do
-        {:ok, pid} ->
-          Process.put({:ws_echo_upstream, port}, pid)
-          port
-
-        {:error, _} ->
-          nil
+      # Probe first: on a shared host (the self-hosted gate runner) an allowed
+      # dev port may already be held by a live workload. Bandit.start_link links,
+      # so a bind failure arrives as a linked EXIT that kills the test before the
+      # fallback loop reaches a free port — skip un-bindable ports up front.
+      with true <- port_bindable?(port),
+           {:ok, pid} <-
+             Bandit.start_link(
+               plug: {DevIdeWeb.PreviewProxyControllerTest.EchoPlug, []},
+               scheme: :http,
+               ip: {127, 0, 0, 1},
+               port: port
+             ) do
+        Process.put({:ws_echo_upstream, port}, pid)
+        port
+      else
+        _ -> nil
       end
     end) || flunk("no allowed dev port free to bind the upstream echo server")
+  end
+
+  defp port_bindable?(port) do
+    case :gen_tcp.listen(port, [:inet, {:ip, {127, 0, 0, 1}}, {:reuseaddr, false}]) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
+    end
   end
 
   defp stop_ws_echo_upstream!(port) do

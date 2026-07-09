@@ -414,9 +414,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       aria-label="Workspaces and sessions"
       class={
         [
-          # Free-expand to content, soft viewport cap, overflow clipped so the
-          # expand-count never paints into the Windows rail.
-          "sessions-picker-sidebar leader-key-control relative z-[1] flex w-max min-w-56 max-w-[min(40rem,50vw)] shrink-0 flex-col overflow-hidden border-r border-base-300/70 bg-base-100 dark:bg-base-200/40",
+          # Fixed rail width (not free-expand): two open columns stay side-by-side
+          # without labels painting into each other. Opaque bg + overflow clip.
+          "sessions-picker-sidebar leader-key-control relative z-[2] flex w-64 max-w-[40vw] shrink-0 flex-col overflow-hidden border-r border-base-300/70 bg-base-100",
           @class
         ]
       }
@@ -479,7 +479,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
       >
       </div>
-      <div class="min-h-0 w-max min-w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
+      <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
         <%= for node <- @tree do %>
           <%= cond do %>
             <% Map.get(node, :kind) in [:browse_root, :browse_dir] -> %>
@@ -512,7 +512,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   phx-value-workspace-id={node.workspace_id}
                   class={[
                     sidebar_row_class(node.current?),
-                    "w-full min-w-0 flex-row items-center gap-2"
+                    "flex-row items-center gap-2"
                   ]}
                   title={node.title}
                   aria-label={
@@ -522,9 +522,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     )
                   }
                 >
-                  <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
-                    <span class="flex items-center gap-1.5 whitespace-nowrap">
-                      <span data-picker-label class="font-medium">{node.label}</span>
+                  <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+                    <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+                      <span data-picker-label class="truncate font-medium">{node.label}</span>
                       <span
                         :if={not node.live?}
                         class="size-1.5 shrink-0 rounded-full bg-base-content/25"
@@ -533,7 +533,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     </span>
                     <span
                       :if={node.detail != ""}
-                      class="whitespace-nowrap font-mono text-[10px] text-base-content/50"
+                      class="max-w-full truncate font-mono text-[10px] text-base-content/50"
                     >
                       {node.detail}
                     </span>
@@ -575,16 +575,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 data-picker-sessions-id={node.dom_id}
                 phx-click="sidebar:toggle_workspace"
                 phx-value-workspace-id={node.workspace_id}
-                class={[
-                  sidebar_row_class(false),
-                  "w-full min-w-0 flex-row items-center gap-2"
-                ]}
+                class={[sidebar_row_class(false), "flex-row items-center gap-2"]}
                 title={node.title}
                 aria-label={"Expand " <> node.label}
               >
-                <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left">
-                  <span class="flex items-center gap-1.5 whitespace-nowrap">
-                    <span data-picker-label class="font-medium">{node.label}</span>
+                <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+                  <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+                    <span data-picker-label class="truncate font-medium">{node.label}</span>
                     <span
                       :if={not node.live?}
                       class="size-1.5 shrink-0 rounded-full bg-base-content/25"
@@ -593,7 +590,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   </span>
                   <span
                     :if={node.detail != ""}
-                    class="whitespace-nowrap font-mono text-[10px] text-base-content/50"
+                    class="max-w-full truncate font-mono text-[10px] text-base-content/50"
                   >
                     {node.detail}
                   </span>
@@ -647,20 +644,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           data-picker-section="browse"
           phx-click="sidebar:toggle_browse"
           phx-value-rel={@node.rel}
-          class={[sidebar_row_class(false), "min-w-max flex-1"]}
+          class={[sidebar_row_class(false), "flex-row items-center gap-2"]}
           title={@node.title}
         >
-          <span class="flex items-center gap-1.5 whitespace-nowrap">
-            <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
-              <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
-            </span>
-            <span data-picker-label class="font-medium">{@node.label}</span>
-            <span
-              :if={@node.detail != ""}
-              class="font-mono text-[10px] text-base-content/50"
-            >
-              {@node.detail}
-            </span>
+          <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col items-start gap-0 overflow-hidden text-left">
+            <span data-picker-label class="truncate font-medium">{@node.label}</span>
           </span>
         </button>
         <button
@@ -828,9 +819,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sessions_sidebar_session_labels(assigns) do
     ~H"""
-    <%!-- nowrap (no truncate): longest label sets rail width via w-max; rail
-         overflow-hidden clips only when the soft max-width is hit. --%>
-    <span class="flex items-center gap-1.5 whitespace-nowrap">
+    <%!-- nowrap sizes the free-expand rail; nav overflow clips past max-width. --%>
+    <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
       <span
         :if={@session.id == @default_sid}
         class="flex shrink-0 text-base-content/40"
@@ -839,7 +829,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       >
         <.icon name="hero-home" class="size-3" />
       </span>
-      <span data-picker-label class="font-medium">{@session.label}</span>
+      <span data-picker-label class="truncate font-medium">{@session.label}</span>
       <.preview_badge
         count={preview_pane_count(@session.pane_ids, @preview_panes)}
         id={"sidebar-session-preview-" <> @session.dom_id}
@@ -1069,10 +1059,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-leader-second-key="W"
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
-      class={[
-        "window-picker-sidebar leader-key-control relative z-[1] flex w-max min-w-56 max-w-[min(40rem,50vw)] shrink-0 flex-col overflow-hidden border-r border-base-300/70 bg-base-100 dark:bg-base-200/40",
-        @class
-      ]}
+      class={
+        [
+          # Fixed rail width + opaque bg so Windows never paints over Sessions.
+          "window-picker-sidebar leader-key-control relative z-[1] flex w-72 max-w-[42vw] shrink-0 flex-col overflow-hidden border-r border-base-300/70 bg-base-100",
+          @class
+        ]
+      }
     >
       <div class="flex shrink-0 items-center justify-between gap-1.5 border-b border-base-300/70 px-3 py-1.5">
         <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
@@ -1093,7 +1086,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
       >
       </div>
-      <div class="min-h-0 w-max min-w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
+      <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
         <%= for node <- @tree do %>
           <%= cond do %>
             <% node.flat_window? -> %>
@@ -1237,11 +1230,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sidebar_row_class(true),
     do:
-      "flex w-max min-w-full max-w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs leading-snug text-primary"
+      "flex w-full max-w-full min-w-0 flex-col items-start gap-0.5 overflow-hidden rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs leading-snug text-primary"
 
   defp sidebar_row_class(false),
     do:
-      "flex w-max min-w-full max-w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs leading-snug text-base-content/80 hover:bg-base-200"
+      "flex w-full max-w-full min-w-0 flex-col items-start gap-0.5 overflow-hidden rounded px-2.5 py-1.5 text-left text-xs leading-snug text-base-content/80 hover:bg-base-200"
 
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do

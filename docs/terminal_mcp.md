@@ -245,10 +245,11 @@ On every Claude launch the launcher stages the allow-listed global skills into
 the launch's resolved Claude config home (`$CLAUDE_CONFIG_DIR`, the per-owner auth
 profile when the workspace uses one, else `~/.claude`), so they are available in
 any repo. Staging is idempotent and refreshes when the canonical source changes
-(`scripts/lib/agent-skills.sh`). The allowlist defaults to `delegate-to-grok`;
-project-only skills like `verify` are excluded because they only make sense inside
-the dev_ide checkout, where the project `.claude/skills` copy already provides
-them. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt out entirely with
+(`scripts/lib/agent-skills.sh`). The allowlist defaults to `delegate-to-grok`
+and `preview-ui-walk` (product-repo UI smoke walks); project-only skills like
+`verify` are excluded because they only make sense inside the dev_ide checkout,
+where the project `.claude/skills` copy already provides them. Override with
+`DEVIDE_GLOBAL_AGENT_SKILLS="a b c"`, or opt out entirely with
 `DEVIDE_AGENT_SKILLS=0`.
 
 ### Devbox smoke test

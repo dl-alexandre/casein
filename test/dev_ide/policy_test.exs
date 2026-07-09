@@ -187,7 +187,7 @@ defmodule DevIDE.PolicyTest do
              })
   end
 
-  test "can_run_command? allows allowlisted ids for owners and denies others" do
+  test "can_run_command? allows allowlisted ids for any authenticated peer" do
     owner_ctx = %{
       workspace_id: "x",
       command_id: "test",
@@ -197,7 +197,7 @@ defmodule DevIDE.PolicyTest do
 
     assert %Decision{verdict: :allow} = Policy.can_run_command?(owner_ctx)
 
-    assert %Decision{verdict: :deny, reason: :forbidden} =
+    assert %Decision{verdict: :allow} =
              Policy.can_run_command?(%{
                workspace_id: "x",
                command_id: "test",
@@ -209,7 +209,7 @@ defmodule DevIDE.PolicyTest do
              Policy.can_run_command?(%{
                workspace_id: "x",
                command_id: "test",
-               actor_role: :operator
+               actor_username: "peer"
              })
 
     assert %Decision{verdict: :deny, reason: :not_allowed} =
@@ -302,38 +302,33 @@ defmodule DevIDE.PolicyTest do
     assert bad.verdict == :deny and bad.reason == :not_allowed
   end
 
-  test "can_set_workspace_mode? allows owner when not config-pinned" do
+  test "can_set_workspace_mode? allows any authenticated peer when not config-pinned" do
     assert %Decision{verdict: :allow} =
              Policy.can_set_workspace_mode?(%{
                workspace_user: "alice",
                actor_username: "alice",
                workspace_mode_source: :default
              })
-  end
 
-  test "can_set_workspace_mode? allows admins and operators" do
-    for role <- [:admin, "operator"] do
-      assert %Decision{verdict: :allow} =
-               Policy.can_set_workspace_mode?(%{
-                 workspace_user: "alice",
-                 actor_username: "bob",
-                 actor_role: role,
-                 workspace_mode_source: :default
-               })
-    end
-  end
-
-  test "workspace_role resolves operator, owner, and viewer" do
-    assert Policy.workspace_role(%{actor_role: :admin}) == :operator
-    assert Policy.workspace_role(%{workspace_user: "alice", actor_username: "alice"}) == :owner
-    assert Policy.workspace_role(%{workspace_user: "alice", actor_username: "bob"}) == :viewer
-  end
-
-  test "can_set_workspace_mode? denies non-owner" do
-    assert %Decision{verdict: :deny, reason: :forbidden} =
+    assert %Decision{verdict: :allow} =
              Policy.can_set_workspace_mode?(%{
                workspace_user: "alice",
                actor_username: "bob",
+               workspace_mode_source: :default
+             })
+  end
+
+  test "workspace_role is operator for any authenticated actor (flat peer model)" do
+    assert Policy.workspace_role(%{actor_username: "alice"}) == :operator
+    assert Policy.workspace_role(%{actor_username: "bob", workspace_user: "alice"}) == :operator
+    assert Policy.workspace_role(%{actor_id: "peer"}) == :operator
+    assert Policy.workspace_role(%{}) == :viewer
+  end
+
+  test "can_set_workspace_mode? denies unauthenticated actor" do
+    assert %Decision{verdict: :deny, reason: :forbidden} =
+             Policy.can_set_workspace_mode?(%{
+               workspace_user: "alice",
                workspace_mode_source: :default
              })
   end
@@ -347,14 +342,16 @@ defmodule DevIDE.PolicyTest do
              })
   end
 
-  test "can_edit_file? allows owners in every mode and denies viewers" do
+  test "can_edit_file? allows any authenticated peer in every mode" do
     owner_ctx = %{workspace_id: "ws", workspace_user: "alice", actor_username: "alice"}
-    viewer_ctx = %{workspace_id: "ws", workspace_user: "alice", actor_username: "bob"}
+    peer_ctx = %{workspace_id: "ws", workspace_user: "alice", actor_username: "bob"}
+    empty_ctx = %{workspace_id: "ws", workspace_user: "alice"}
 
     for mode <- WorkspaceMode.valid_modes() do
       Application.put_env(:dev_ide, :workspace_modes, %{"ws" => mode})
       assert %Decision{verdict: :allow} = Policy.can_edit_file?(owner_ctx)
-      assert %Decision{verdict: :deny, reason: :forbidden} = Policy.can_edit_file?(viewer_ctx)
+      assert %Decision{verdict: :allow} = Policy.can_edit_file?(peer_ctx)
+      assert %Decision{verdict: :deny, reason: :forbidden} = Policy.can_edit_file?(empty_ctx)
     end
   end
 

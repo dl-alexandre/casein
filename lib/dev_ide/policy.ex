@@ -239,16 +239,12 @@ defmodule DevIDE.Policy do
   @doc """
   Resolve the actor's effective role for a workspace.
 
-  Admins/operators can manage shared operational controls. Owners can manage
-  their own workspace. Everyone else is a viewer until a narrower collaborator
-  role is introduced.
+  Flat peer model: any authenticated actor is an operator on every workspace.
+  There is no admin elevation and no owner-only tier for cockpit controls.
+  Unauthenticated / empty actors remain `:viewer` (denied by operator checks).
   """
   def workspace_role(ctx) when is_map(ctx) do
-    cond do
-      admin_or_operator?(ctx) -> :operator
-      workspace_owner?(ctx) -> :owner
-      true -> :viewer
-    end
+    if authenticated_actor?(ctx), do: :operator, else: :viewer
   end
 
   def workspace_role(_ctx), do: :viewer
@@ -283,28 +279,17 @@ defmodule DevIDE.Policy do
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
 
-  defp workspace_owner?(ctx) do
-    case {Map.get(ctx, :workspace_user), Map.get(ctx, :actor_username)} do
-      {ws_user, actor} when is_binary(ws_user) and is_binary(actor) ->
-        String.downcase(ws_user) == String.downcase(actor)
-
-      _ ->
-        false
-    end
-  end
-
   defp workspace_operator?(ctx), do: workspace_role(ctx) in [:operator, :owner]
 
-  defp admin_or_operator?(ctx) do
-    Map.get(ctx, :actor_role)
-    |> role()
-    |> Kernel.in([:admin, :operator])
+  defp authenticated_actor?(ctx) do
+    [
+      Map.get(ctx, :actor_id),
+      Map.get(ctx, :actor_username),
+      Map.get(ctx, :actor_email)
+    ]
+    |> Enum.any?(fn
+      v when is_binary(v) -> String.trim(v) != ""
+      _ -> false
+    end)
   end
-
-  defp role(:admin), do: :admin
-  defp role(:operator), do: :operator
-  defp role("admin"), do: :admin
-  defp role("operator"), do: :operator
-  defp role(role) when is_binary(role), do: role |> String.downcase() |> role()
-  defp role(_), do: :viewer
 end

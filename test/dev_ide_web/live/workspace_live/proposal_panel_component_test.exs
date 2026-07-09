@@ -12,7 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
     {:ok, root: root}
   end
 
-  defp admin_user, do: %{id: "u1", username: "u1", role: :admin}
+  defp admin_user, do: %{id: "u1", username: "u1", role: :user}
 
   defp config(root, overrides \\ %{}) do
     Map.merge(
@@ -103,9 +103,9 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
 
   describe "handle_event/3 (viewer gate)" do
     # Component events bypass Show's authz hook; PanelGate must fail closed
-    # with the same audited denial for a non-owner, non-admin viewer.
-    test "denies an unauthorized viewer and asks the parent LV to flash", %{root: root} do
-      unauthorized = socket(root, %{current_user: %{id: "intruder", username: "intruder"}})
+    # for unauthenticated sockets (empty identity). Peers are equal once authed.
+    test "denies an unauthenticated viewer and asks the parent LV to flash", %{root: root} do
+      unauthorized = socket(root, %{current_user: %{}})
 
       {:noreply, socket} =
         ProposalPanelComponent.handle_event("proposal:refresh", %{}, unauthorized)
@@ -116,10 +116,10 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
       assert_received {:panel_flash, :error, "You do not have access to this workspace."}
     end
 
-    test "does not deny the workspace owner", %{root: root} do
-      owner = socket(root, %{current_user: %{id: "u1", username: "u1"}})
+    test "does not deny an authenticated peer", %{root: root} do
+      peer = socket(root, %{current_user: %{id: "peer", username: "peer"}})
 
-      {:noreply, socket} = ProposalPanelComponent.handle_event("proposal:refresh", %{}, owner)
+      {:noreply, socket} = ProposalPanelComponent.handle_event("proposal:refresh", %{}, peer)
 
       refute Map.get(socket.assigns, :last_decision)
       refute_received {:panel_flash, _, _}
