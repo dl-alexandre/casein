@@ -267,6 +267,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | Poller not deploying after a push | `systemctl status devide-deploy.timer`; `journalctl -u devide-deploy.service`; ensure the timer is installed (`bash scripts/ensure-devide-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
+| `claude: command not found` after template / `clauded` fails | Missing `~/.local/bin/claude` shim (siblings can still be present). Run `bash scripts/install-agent-shims.sh` or `devide agent doctor` (auto-heals). Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. |
 | Tab closed, tmux session vanished | Check `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-devide-tmux.sh`. Pin binary: `bash scripts/ensure-devide-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |

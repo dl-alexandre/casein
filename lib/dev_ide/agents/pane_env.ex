@@ -5,7 +5,15 @@ defmodule DevIDE.Agents.PaneEnv do
   `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
   """
 
-  alias DevIDE.Agents.{AuthProfile, MCPMaterializer, MCPUrls, TidewaveMCP, WorkspaceTokens}
+  alias DevIDE.Agents.{
+    AgentShims,
+    AuthProfile,
+    MCPMaterializer,
+    MCPUrls,
+    TidewaveMCP,
+    WorkspaceTokens
+  }
+
   alias DevIDE.Terminals.{Shims, Tmux}
 
   @doc """
@@ -21,14 +29,20 @@ defmodule DevIDE.Agents.PaneEnv do
       checkout = Keyword.get(opts, :checkout) || workspace[:path] || workspace["path"] || ""
       scripts_root = scripts_root(checkout)
       env_sh = Path.join(staging, "env.sh")
-      local_bin = Path.join(home_dir(), ".local/bin")
-      npm_prefix = npm_prefix()
-      npm_bin = Path.join(npm_prefix, "bin")
+      local_bin = AgentShims.bin_dir()
+      npm_prefix = AgentShims.npm_prefix()
+      npm_bin = AgentShims.npm_bin_dir()
 
+      # Prefer agent launcher shims first so bare `claude`/`grok` always hit
+      # DevIDE MCP injection; Shims.path_with_shims/1 also embeds these dirs so
+      # session create (pre-PaneEnv) is not bashrc-dependent.
       path =
         case System.get_env("PATH") do
-          p when is_binary(p) and p != "" -> "#{local_bin}:#{npm_bin}:#{Shims.path_with_shims(p)}"
-          _ -> "#{local_bin}:#{npm_bin}:/usr/bin:/bin"
+          p when is_binary(p) and p != "" ->
+            path_uniq("#{local_bin}:#{npm_bin}:#{Shims.path_with_shims(p)}")
+
+          _ ->
+            path_uniq("#{local_bin}:#{npm_bin}:#{Shims.path_with_shims("")}")
         end
 
       vars =
@@ -57,10 +71,15 @@ defmodule DevIDE.Agents.PaneEnv do
 
   @doc """
   Materialize MCP client configs and push workspace env into a tmux session.
+
+  Self-heals missing agent launcher shims before pushing PATH so template
+  apply / interactive launch do not leave `claude: command not found`.
   """
   @spec ensure_for_session(String.t(), map(), keyword()) :: :ok | {:error, term()}
   def ensure_for_session(tmux_session, workspace, opts \\ [])
       when is_binary(tmux_session) and is_map(workspace) do
+    _ = AgentShims.ensure_best_effort()
+
     case vars_for_workspace(workspace, Keyword.put_new(opts, :tmux_session, tmux_session)) do
       {:ok, vars} ->
         tmux_adapter().set_environments(tmux_session, vars)
@@ -76,11 +95,18 @@ defmodule DevIDE.Agents.PaneEnv do
 
   Agent binaries on PATH are shimmed (grok, claude, codex, …) so the bare
   command name is enough — MCP injection happens automatically.
+
+  `clauded` is a host bash alias (`claude --dangerously-skip-permissions`).
+  Palette/MCP launches must not rely on that alias: the DevIDE `claude` shim
+  already defaults to skip-permissions via `launch-devide-agent.sh`.
   """
   @spec launch_command(String.t(), map(), keyword()) :: String.t()
   def launch_command(runtime_id, _workspace, _opts \\ [])
       when is_binary(runtime_id) do
-    String.trim(runtime_id)
+    case String.trim(runtime_id) do
+      "clauded" -> "claude"
+      other -> other
+    end
   end
 
   defp scripts_root(checkout) when checkout in [nil, ""], do: ""
@@ -97,11 +123,6 @@ defmodule DevIDE.Agents.PaneEnv do
     end
   end
 
-  defp npm_prefix do
-    non_empty_env("DEV_IDE_NPM_PREFIX") ||
-      Path.join(home_dir(), ".local/share/npm-global")
-  end
-
   defp workspace_id(workspace) do
     Map.get(workspace, :id) || Map.get(workspace, "id") || ""
   end
@@ -110,8 +131,11 @@ defmodule DevIDE.Agents.PaneEnv do
     Map.get(workspace, :name) || Map.get(workspace, "name") || workspace_id(workspace)
   end
 
-  defp home_dir do
-    System.get_env("HOME") || "/home/devbox"
+  defp path_uniq(path) when is_binary(path) do
+    path
+    |> String.split(":", trim: true)
+    |> Enum.uniq()
+    |> Enum.join(":")
   end
 
   defp non_empty_env(name) do

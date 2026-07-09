@@ -19,11 +19,30 @@ warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
 check_shims() {
-  local runtime bin resolved bin_target resolved_target
+  local runtime bin resolved bin_target resolved_target missing_runtimes=()
+
   for runtime in grok claude codex opencode agent devide; do
     bin="${HOME}/.local/bin/${runtime}"
     if [[ ! -x "$bin" ]]; then
-      warn "shim missing: ${runtime} (run scripts/install-agent-shims.sh)"
+      missing_runtimes+=("$runtime")
+    fi
+  done
+
+  # Partial missing sets (claude gone, grok present) have bitten operators after
+  # deploys/npm updates — self-heal once, then hard-fail if still incomplete.
+  if [[ "${#missing_runtimes[@]}" -gt 0 ]]; then
+    warn "shim(s) missing: ${missing_runtimes[*]} — reinstalling via install-agent-shims.sh"
+    if bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null 2>&1; then
+      pass "reinstalled agent shims after detecting missing: ${missing_runtimes[*]}"
+    else
+      fail "could not reinstall agent shims (missing: ${missing_runtimes[*]})"
+    fi
+  fi
+
+  for runtime in grok claude codex opencode agent devide; do
+    bin="${HOME}/.local/bin/${runtime}"
+    if [[ ! -x "$bin" ]]; then
+      fail "shim missing: ${runtime} (run scripts/install-agent-shims.sh)"
       continue
     fi
     pass "shim installed: ${runtime}"
@@ -43,6 +62,21 @@ check_shims() {
       fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${HOME}/.local/bin first on PATH)"
     fi
   done
+
+  # Pane PATH must include both launcher shims and the npm package bin dir so
+  # a missing shim still surfaces a real binary error rather than "not found"
+  # from a release-only PATH — and so reinstall finds package candidates.
+  local npm_prefix npm_bin
+  npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  npm_bin="${npm_prefix}/bin"
+  case ":${PATH:-}:" in
+    *":${HOME}/.local/bin:"*) pass "PATH includes ${HOME}/.local/bin" ;;
+    *) warn "PATH missing ${HOME}/.local/bin — new non-login panes may not find agent shims" ;;
+  esac
+  case ":${PATH:-}:" in
+    *":${npm_bin}:"*) pass "PATH includes npm agent bin (${npm_bin})" ;;
+    *) warn "PATH missing ${npm_bin} — set DEV_IDE_NPM_PREFIX / repair-tmux-env" ;;
+  esac
 }
 
 # Each shim embeds the absolute path of scripts/devide at install time; if the
@@ -50,7 +84,7 @@ check_shims() {
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
 check_shim_targets() {
-  local runtime shim cli missing=0 checked=0
+  local runtime shim cli target_missing=0 checked=0
   for runtime in grok claude codex opencode agent; do
     shim="${HOME}/.local/bin/${runtime}"
     [[ -f "$shim" ]] || continue
@@ -59,11 +93,11 @@ check_shim_targets() {
     checked=$((checked + 1))
     if [[ ! -x "$cli" ]]; then
       fail "shim target missing: ${runtime} → ${cli} (checkout moved? re-run scripts/install-agent-shims.sh)"
-      missing=1
+      target_missing=1
     fi
   done
 
-  if [[ "$checked" -gt 0 && "$missing" -eq 0 ]]; then
+  if [[ "$checked" -gt 0 && "$target_missing" -eq 0 ]]; then
     pass "shim targets executable (embedded devide CLI paths resolve)"
   fi
 }

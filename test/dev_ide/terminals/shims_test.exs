@@ -345,6 +345,10 @@ defmodule DevIDE.Terminals.ShimsTest do
     refute Map.has_key?(Shims.env(include_path?: false), "PATH")
     assert Shims.env()["PATH"] =~ shim_dir
     assert Shims.env()["PATH"] =~ Shims.tools_bin_dir()
+    # Agent launcher + npm bins must be on every pane PATH so template panes
+    # do not depend on bashrc alone for `claude` / `grok`.
+    assert Shims.env()["PATH"] =~ DevIDE.Agents.AgentShims.bin_dir()
+    assert Shims.env()["PATH"] =~ DevIDE.Agents.AgentShims.npm_bin_dir()
   end
 
   test "materializes bash shell integration with OSC 133 and tmux passthrough marks" do

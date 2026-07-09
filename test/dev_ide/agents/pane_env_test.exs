@@ -1,6 +1,7 @@
 defmodule DevIDE.Agents.PaneEnvTest do
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.Agents.AgentShims
   alias DevIDE.Agents.AuthProfile
   alias DevIDE.Agents.PaneEnv
 
@@ -104,6 +105,11 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert PaneEnv.launch_command("codex", @workspace) == "codex"
   end
 
+  test "launch_command maps clauded alias to claude (no bash-alias dependency)" do
+    assert PaneEnv.launch_command("clauded", @workspace) == "claude"
+    assert PaneEnv.launch_command("  clauded  ", @workspace) == "claude"
+  end
+
   test "vars_for_workspace can expose a plain API base distinct from MCP URLs", %{
     staging: staging
   } do
@@ -129,6 +135,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["DEVIDE_AGENT_ENV_FILE"] == Path.join(staging, "env.sh")
     assert File.exists?(vars["DEVIDE_AGENT_ENV_FILE"])
     assert vars["PATH"] =~ ".local/bin"
+    assert vars["PATH"] =~ AgentShims.npm_bin_dir()
   end
 
   test "vars_for_workspace includes signed-in owner provider auth profiles", %{staging: staging} do

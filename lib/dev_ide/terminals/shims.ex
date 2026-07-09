@@ -274,7 +274,14 @@ defmodule DevIDE.Terminals.Shims do
         _ -> @default_path
       end
 
-    [dir(), tools_bin_dir() | String.split(base, ":", trim: true)]
+    # Terminal shims first (elio/devide-open), then tools, then agent launcher
+    # shims + npm package bins so panes can find `claude`/`grok` without
+    # relying on bashrc. Agent bins must precede npm bins so DevIDE shims win
+    # over bare package symlinks (MCP injection).
+    agent_bins = DevIDE.Agents.AgentShims.bin_dir()
+    npm_bins = DevIDE.Agents.AgentShims.npm_bin_dir()
+
+    [dir(), tools_bin_dir(), agent_bins, npm_bins | String.split(base, ":", trim: true)]
     |> Enum.uniq()
     |> Enum.join(":")
   end
