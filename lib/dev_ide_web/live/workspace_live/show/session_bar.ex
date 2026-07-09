@@ -129,14 +129,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :picker_label?, :boolean, default: false
   attr :name_class, :string, default: "min-w-0 truncate font-medium"
 
+  attr :show_index?, :boolean,
+    default: true,
+    doc:
+      "false when the caller renders the index itself (e.g. tab bar copy-number sits outside the select-anchor)"
+
   defp window_row_name(assigns) do
     ~H"""
-    <span class="shrink-0 font-mono text-[10px] text-base-content/45">{@window.index}</span>
+    <span :if={@show_index?} class="shrink-0 font-mono text-[10px] text-base-content/45">
+      {@window.index}
+    </span>
     <%= if @picker_label? do %>
       <span data-picker-label class={@name_class}>{@window.display_name}</span>
     <% else %>
       <span class={@name_class}>{@window.display_name}</span>
     <% end %>
+    """
+  end
+
+  @doc false
+  attr :window, :map, required: true
+  attr :copy_url, :string, default: nil
+
+  # The window index, rendered as its own element so the tab bar can place it
+  # OUTSIDE the window-select anchor: when it carries a session+window deep
+  # link it is a copy-only affordance (a click copies and, sitting outside the
+  # anchor, never also selects the window). Falls back to a plain index label.
+  defp window_index_badge(assigns) do
+    ~H"""
+    <span
+      :if={is_binary(@copy_url) and @copy_url != ""}
+      data-copy-session-link={@copy_url}
+      data-copy-link-kind="window"
+      role="button"
+      tabindex="-1"
+      class="shrink-0 cursor-pointer rounded px-0.5 font-mono text-[10px] text-base-content/45 transition-colors hover:bg-base-300/60 hover:text-base-content"
+      title="Copy link to this session + window"
+      aria-label="Copy link to this session and window"
+    >{@window.index}</span>
+    <span
+      :if={!(is_binary(@copy_url) and @copy_url != "")}
+      class="shrink-0 font-mono text-[10px] text-base-content/45"
+    >{@window.index}</span>
     """
   end
 
@@ -243,6 +277,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :rename_window_id, :string, default: nil
   attr :path_base, :string, default: nil
 
+  attr :terminal_sid, :string,
+    default: nil,
+    doc: "active session id — lets each tab's index copy a session+window deep link"
+
   attr :class, :any,
     default: "mb-2 shrink-0 border-b border-base-300 pb-1",
     doc: "layout-context classes — override to embed the strip inline (e.g. in the header)"
@@ -277,6 +315,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               )
             ]}
           >
+            <.window_index_badge
+              window={window}
+              copy_url={share_url(@workspace_id, @terminal_sid, window.id, path_base: @path_base)}
+            />
             <a
               href={window_href(@workspace_id, window.id, path_base: @path_base)}
               data-window-tab-select
@@ -286,7 +328,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class="flex min-w-0 flex-1 items-center gap-1"
               title={"Select tmux window " <> window.full_title}
             >
-              <.window_row_name window={window} />
+              <.window_row_name window={window} show_index?={false} />
               <.window_row_indicators
                 window={window}
                 preview_id={"tmux-window-preview-" <> window.dom_frag}
@@ -368,7 +410,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="SessionsPickerSidebar"
       aria-label="Workspaces and sessions"
       class={[
-        "sessions-picker-sidebar leader-key-control flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "sessions-picker-sidebar leader-key-control flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -438,7 +480,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                       :if={node.detail != ""}
                       class="truncate font-mono text-[10px] text-base-content/50"
                     >
-                      {node.detail}
+                      {middle_ellipsis(node.detail)}
                     </span>
                   </button>
                   <button
@@ -503,7 +545,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     :if={node.detail != ""}
                     class="truncate font-mono text-[10px] text-base-content/50"
                   >
-                    {node.detail}
+                    {middle_ellipsis(node.detail)}
                   </span>
                 </button>
                 <button
@@ -772,7 +814,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       />
     </span>
     <span :if={@session.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-      {@session.detail}
+      {middle_ellipsis(@session.detail)}
     </span>
     """
   end
@@ -895,7 +937,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         />
       </span>
       <span :if={@pane.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-        {@pane.detail}
+        {middle_ellipsis(@pane.detail)}
       </span>
     </a>
     """
@@ -927,20 +969,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden"
         aria-hidden="true"
       ></span>
-      <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label)
-
-      summary_detail =
-        active_session_detail(@tabs, @active_id, @active_fallback_detail) %>
+      <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label) %>
       <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
         <span class="header-p-min-full">{summary_label}</span>
         <span class="header-p-min-short" title={summary_label}>
           {session_picker_short_label(summary_label)}
-        </span>
-        <span
-          :if={summary_detail != "" and summary_detail != summary_label}
-          class="header-p-low header-p-as-inline font-mono font-normal text-base-content/50"
-        >
-          {" · " <> summary_detail}
         </span>
       </span>
       <span
@@ -979,7 +1012,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       phx-hook="WindowPickerSidebar"
       aria-label="Tmux windows and panes"
       class={[
-        "window-picker-sidebar flex w-fit min-w-44 max-w-64 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
+        "window-picker-sidebar flex w-56 shrink-0 flex-col border-r border-base-300/70 bg-base-200/40",
         @class
       ]}
     >
@@ -1146,11 +1179,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp sidebar_row_class(true),
     do:
-      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2 py-1.5 text-left text-xs text-primary"
+      "flex w-full flex-col items-start gap-0 rounded border border-primary/40 bg-primary/10 px-2 py-1 text-left text-xs leading-tight text-primary"
 
   defp sidebar_row_class(false),
     do:
-      "flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left text-xs text-base-content/80 hover:bg-base-200"
+      "flex w-full flex-col items-start gap-0 rounded px-2 py-1 text-left text-xs leading-tight text-base-content/80 hover:bg-base-200"
 
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do
@@ -1178,6 +1211,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp clamp_short_label(nil), do: "…"
   defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
   defp clamp_short_label(word), do: word
+
+  # Detail lines carry id-like strings (worktree hashes, cwd paths) in a
+  # fixed-width mono font, where the distinguishing bits live at BOTH ends.
+  # End-truncation (CSS `truncate`) would hide the tail, so clip the middle
+  # instead — "wt-db375e05…9c2a" keeps prefix and suffix. The char cap is sized
+  # to the mono glyph run that fits the w-56 rail; `truncate` stays as a
+  # belt-and-suspenders guard for pathological widths.
+  @detail_max_chars 26
+  defp middle_ellipsis(text) when is_binary(text) do
+    if String.length(text) <= @detail_max_chars do
+      text
+    else
+      keep = @detail_max_chars - 1
+      head = div(keep, 2)
+      tail = keep - head
+      String.slice(text, 0, head) <> "…" <> String.slice(text, -tail, tail)
+    end
+  end
+
+  defp middle_ellipsis(text), do: text
 
   defp active_session_label(tabs, active_id, fallback_label) do
     case Enum.find(tabs, &(&1.id == active_id)) do
