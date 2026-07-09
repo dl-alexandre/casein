@@ -72,15 +72,15 @@ defmodule DevIdeWeb.WorkspaceFileControllerTest do
     assert get_resp_header(conn, "x-content-type-options") == ["nosniff"]
   end
 
-  test "returns 404 for a viewer who does not own the workspace", %{conn: conn, root: root} do
-    File.write!(Path.join(root, "secret.txt"), "secret")
+  test "serves files to any authenticated peer (flat peer model)", %{conn: conn, root: root} do
+    File.write!(Path.join(root, "shared.txt"), "shared")
 
     conn =
       conn
-      |> as("intruder@example.com")
-      |> get("/api/workspaces/ws-files/files/secret.txt")
+      |> as("peer@example.com")
+      |> get("/api/workspaces/ws-files/files/shared.txt")
 
-    assert text_response(conn, 404) =~ "not found"
+    assert response(conn, 200) == "shared"
   end
 
   test "returns 404 for traversal attempts", %{conn: conn, root: root} do

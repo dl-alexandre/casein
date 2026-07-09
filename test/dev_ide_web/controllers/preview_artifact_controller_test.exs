@@ -107,14 +107,13 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
     assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
   end
 
-  test "returns 404 for a viewer who does not own the workspace", %{conn: conn} do
+  test "serves preview artifacts to any authenticated peer (flat peer model)", %{conn: conn} do
     path = Artifacts.store_png!("ws-preview-fit", 3, png_bytes())
 
-    # Different identity than the workspace owner — must not be able to read the
-    # snapshot by enumerating the workspace id (the IDOR the audit flagged).
-    conn = conn |> as("intruder@example.com") |> get(path)
+    # Peers share the same access tier as the workspace owner once authenticated.
+    conn = conn |> as("peer@example.com") |> get(path)
 
-    assert text_response(conn, 404) =~ "not found"
+    assert response(conn, 200)
   end
 
   defp store_webm!(workspace_id, id, bytes) do

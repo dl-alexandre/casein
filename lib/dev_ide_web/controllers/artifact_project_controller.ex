@@ -6,17 +6,19 @@ defmodule DevIdeWeb.ArtifactProjectController do
       /artifact-projects/:workspace_id/:artifact_project_id/*path
 
   This is what makes an artifact PR-shareable. It runs under the devbox
-  oauth2-proxy (forward_auth) like the rest of the DevIDE host, and additionally
-  gates on workspace ownership. Unlike the artifact's ephemeral loopback preview
+  oauth2-proxy (forward_auth) like the rest of the DevIDE host. Any
+  authenticated peer may open any artifact URL (flat peer model — no admin /
+  owner privilege tier). Unlike the artifact's ephemeral loopback preview
   server (a `python3 -m http.server` on a churny 41050-41079 port), this reads
   the worktree straight off disk, so the URL survives restarts, port
   reassignment, and deploys — it references stable ids, never a port.
 
-  Security: identity comes from `ForwardAuth`; we verify the viewer owns the
-  workspace AND that the artifact belongs to it (404, not 403, so ids don't
-  leak). Paths are resolved with `DevIDE.Files.PathSafety` (traversal + symlink
-  escape) plus a dotfile/`.git` denylist (PathSafety does not block dotfiles on
-  read), and served under a tight CSP since the content is workspace-authored.
+  Security: identity comes from `ForwardAuth` (oauth2-proxy). We still require
+  the artifact to belong to the workspace id in the URL (404 when mismatched,
+  so ids don't cross workspaces). Paths are resolved with
+  `DevIDE.Files.PathSafety` (traversal + symlink escape) plus a
+  dotfile/`.git` denylist (PathSafety does not block dotfiles on read), and
+  served under a tight CSP since the content is workspace-authored.
   """
   use DevIdeWeb, :controller
 
@@ -84,15 +86,16 @@ defmodule DevIdeWeb.ArtifactProjectController do
     end
   end
 
-  # Mirrors PreviewArtifactController.authorize/2. 404 (via :forbidden at the call
-  # site) rather than 403 so we don't reveal which workspace ids exist.
+  # Any authenticated peer may read artifacts on a workspace they can resolve.
+  # Flat model: no owner/admin tier. 404 (via :forbidden at the call site) when
+  # the workspace is missing or the viewer is unauthenticated.
   defp authorize(conn, workspace_id) do
     viewer = conn.assigns[:current_user]
     auth = viewer && Map.get(viewer, :email)
 
     case Workspaces.get(workspace_id, auth) do
       {:ok, workspace} ->
-        if Workspaces.viewer_terminal_owner?(workspace, viewer || %{}),
+        if Workspaces.viewer_can_access_workspace?(workspace, viewer || %{}),
           do: {:ok, workspace},
           else: :forbidden
 

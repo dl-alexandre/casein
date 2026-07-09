@@ -239,11 +239,11 @@ None — all resolved (see below). Remaining work is §1, the manager Caddy PR.
   the manager ignores `X-Auth-Request-User` and derives the username from
   `X-Auth-Request-Email` via `email.split("@")[0].toLowerCase()`. DevIDE must
   derive it the same way. See "Identity derivation" above.
-- ~~Admin "see all workspaces" view?~~ **Yes** — mirror the manager's
-  precedent. `ForwardAuth` tags `role: :admin` for emails in `DEV_IDE_ADMINS`;
-  `WorkspaceLive.Index` forwards `?all=true` for admins (with a UI toggle back
-  to "mine"). The manager re-checks the flag against its own `admins` list, so
-  it is safe to send whenever the local identity resolved to admin.
+- ~~Admin "see all workspaces" view?~~ **Superseded (flat peer model)** —
+  DevIDE no longer elevates `DEV_IDE_ADMINS` / `role: :admin`. Every
+  oauth2-authenticated viewer may open every workspace and artifact; there is
+  no "mine vs all" privilege tier inside DevIDE. The env list is still parsed
+  (harmless legacy) but grants nothing.
 - ~~Shared pg or dedicated container?~~ **Dedicated Postgres container** —
   isolated from the shared dev pg, one named volume to back up. The audit log
   (a security record) lives here, so the dedicated volume is the thing to

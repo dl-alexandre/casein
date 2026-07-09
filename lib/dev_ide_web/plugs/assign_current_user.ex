@@ -13,7 +13,7 @@ defmodule DevIdeWeb.Plugs.AssignCurrentUser do
 
   import Plug.Conn
 
-  @default %{id: "dev", username: "dev", email: "dev@local", role: :owner}
+  @default %{id: "dev", username: "dev", email: "dev@local", role: :user}
 
   def init(opts), do: opts
 
