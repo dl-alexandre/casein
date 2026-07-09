@@ -55,13 +55,15 @@ defmodule DevIdeWeb.API.DeviceLinkControllerTest do
     assert json_response(conn, 401) == %{"error" => "invalid_pairing_token"}
   end
 
-  test "rechecks resource ownership before issuing a token", %{conn: conn} do
+  test "issues a token for any authenticated peer (flat peer model)", %{conn: conn} do
     pairing_token =
-      ChannelAuth.sign_pairing_token(%{id: "intruder", email: "intruder@example.com"}, "ws-1")
+      ChannelAuth.sign_pairing_token(%{id: "peer", email: "peer@example.com"}, "ws-1")
 
     conn = post(conn, ~p"/api/device-links/exchange", %{token: pairing_token})
 
-    assert json_response(conn, 403) == %{"error" => "resource_forbidden"}
+    payload = json_response(conn, 200)
+    assert is_binary(payload["credential"]["token"])
+    assert payload["workspace_id"] == "ws-1"
   end
 
   test "rotates a device link token and revokes the old one", %{conn: conn} do

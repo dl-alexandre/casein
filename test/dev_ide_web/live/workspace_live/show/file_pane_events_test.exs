@@ -79,10 +79,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
   defp operator_socket(workspace),
     do: socket(%{workspace | user: "dev"}, %{id: "dev", username: "dev"})
 
-  defp viewer_socket(workspace),
-    do: socket(%{workspace | user: "alice"}, %{id: "mallory", username: "mallory"})
+  # Empty identity — unauthenticated for Policy.can_edit_file?/1.
+  defp unauthenticated_socket(workspace),
+    do: socket(%{workspace | user: "alice"}, %{})
 
-  test "pane:input save writes through the file pane when the actor is the operator" do
+  test "pane:input save writes through the file pane when the actor is authenticated" do
     {ws_root, workspace} = seed_workspace!()
     seed_file_pane!(workspace, ws_root, "note.txt", "one")
     version = FilePanes.render_state("%9").active.version
@@ -103,7 +104,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
     assert File.read!(Path.join(ws_root, "note.txt")) == "two"
   end
 
-  test "pane:input save is denied by Policy.can_edit_file? for non-operators" do
+  test "pane:input save is denied by Policy.can_edit_file? when unauthenticated" do
     {ws_root, workspace} = seed_workspace!()
     seed_file_pane!(workspace, ws_root, "note.txt", "one")
     version = FilePanes.render_state("%9").active.version
@@ -118,7 +119,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
                  "content" => "evil",
                  "version" => version
                },
-               viewer_socket(workspace)
+               unauthenticated_socket(workspace)
              )
 
     # The denial is recorded (gate/3 stores the audited decision) and nothing

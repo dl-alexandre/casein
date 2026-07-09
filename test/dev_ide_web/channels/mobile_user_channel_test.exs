@@ -563,7 +563,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     assert outcome.action_id == "approve"
   end
 
-  test "card_action rejects an action on a resource the actor does not own", %{
+  test "card_action allows a peer on another user's workspace (flat peer model)", %{
     workspace_root: workspace_root
   } do
     owner_id = unique_id("owner")
@@ -571,12 +571,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     workspace_id = unique_id("ws")
     run_id = unique_id("run")
     prepare_user(viewer_id)
-    # Workspace owned by a different user; viewer is a non-admin member.
+    # Workspace owned by a different user — flat model still authorizes peers.
     create_workspace(workspace_root, workspace_id, owner_id)
 
     assert {:ok, _reply, socket} = join_mobile(viewer_id, role: :member)
-    # A card id that is genuinely present in the viewer's own snapshot must still
-    # be rejected because the viewer is not authorized on the resource.
     card_id = seed_review_card(viewer_id, workspace_id, run_id)
 
     ref =
@@ -585,8 +583,8 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         "action" => "approve"
       })
 
-    assert_reply ref, :error, %{reason: "unauthorized"}, 1_000
-    assert Ledger.timeline_for(workspace_id, run_id) == []
+    assert_reply ref, :ok, %{}, 1_000
+    assert Ledger.timeline_for(workspace_id, run_id) != []
   end
 
   test "card_action rejects a second device racing on an already-resolved card", %{

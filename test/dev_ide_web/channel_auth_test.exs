@@ -9,7 +9,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
   test "mobile pairing token signs short-lived workspace-scoped claims" do
     token =
       ChannelAuth.sign_pairing_token(
-        %{id: @user_id, email: "dev@local", role: :admin},
+        %{id: @user_id, email: "dev@local", role: :user},
         @workspace_id
       )
 
@@ -17,7 +17,8 @@ defmodule DevIdeWeb.ChannelAuthTest do
     assert claims.id == @user_id
     assert claims.username == @user_id
     assert claims.email == "dev@local"
-    assert claims.role == :admin
+    # Flat peer model: pairing tokens never carry an elevated admin role.
+    assert claims.role == :user
     assert claims.workspace_id == @workspace_id
   end
 
