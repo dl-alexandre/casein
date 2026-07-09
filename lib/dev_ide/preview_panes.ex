@@ -171,7 +171,14 @@ defmodule DevIDE.PreviewPanes do
   def init(_opts) do
     # :public so browser-control tasks can update registrations without blocking
     # the GenServer mailbox on Playwright round-trips.
-    :ets.new(@table, [:named_table, :set, :public])
+    :ets.new(@table, [
+      :named_table,
+      :set,
+      :public,
+      read_concurrency: true,
+      write_concurrency: true
+    ])
+
     {:ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
   end
 
@@ -308,9 +315,12 @@ defmodule DevIDE.PreviewPanes do
         end
       end)
 
+    # One UPDATE for all vanished panes — avoid N+1 close_persisted in the reduce.
+    _ = close_persisted_many(pane_ids)
+
     state =
       Enum.reduce(pane_ids, state, fn pane_id, acc ->
-        case do_deregister(pane_id, acc) do
+        case do_deregister(pane_id, acc, persist?: false) do
           {:ok, next} -> next
           {:error, _, next} -> next
         end
@@ -430,14 +440,17 @@ defmodule DevIDE.PreviewPanes do
     Map.get(attrs, key) in [true, 1, "1", "true", "yes", "on"]
   end
 
-  defp do_deregister(pane_id, state) do
+  defp do_deregister(pane_id, state, opts \\ []) do
     case get_by_pane(pane_id) do
       nil ->
         {:error, :not_found, state}
 
       registration ->
         :ets.delete(@table, pane_id)
-        close_persisted_registration(registration)
+
+        if Keyword.get(opts, :persist?, true) do
+          close_persisted_registration(registration)
+        end
 
         unless session_has_other_registrations?(registration.control_session_id) do
           _ = PreviewControl.close_session(registration.control_session_id)
@@ -1104,8 +1117,11 @@ defmodule DevIDE.PreviewPanes do
       end)
       |> Enum.reject(&pane_still_exists?(session, &1, pane_ids))
 
+    # One UPDATE for all vanished panes — avoid N+1 close_persisted in the reduce.
+    _ = close_persisted_many(stale)
+
     Enum.reduce(stale, state, fn pane_id, acc ->
-      case do_deregister(pane_id, acc) do
+      case do_deregister(pane_id, acc, persist?: false) do
         {:ok, next} -> next
         {:error, _, next} -> next
       end
@@ -1296,19 +1312,30 @@ defmodule DevIDE.PreviewPanes do
 
   defp close_persisted_registration_for_pane(pane_id)
        when is_binary(pane_id) and pane_id != "" do
-    if preview_pane_persistence_enabled?() do
+    close_persisted_many([pane_id])
+  end
+
+  defp close_persisted_registration_for_pane(_pane_id), do: :ok
+
+  # Batched persistence close used by multi-pane teardown paths
+  # (expire_vanished_panes / session_terminated) to avoid N+1 update_all.
+  defp close_persisted_many(pane_ids) when is_list(pane_ids) do
+    pane_ids =
+      pane_ids
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.uniq()
+
+    if pane_ids != [] and preview_pane_persistence_enabled?() do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
       from(r in PreviewPaneRegistration,
-        where: r.pane_id == ^pane_id and r.status == :open
+        where: r.pane_id in ^pane_ids and r.status == :open
       )
       |> Repo.update_all(set: [status: :closed, updated_at: now])
     end
 
     :ok
   end
-
-  defp close_persisted_registration_for_pane(_pane_id), do: :ok
 
   defp close_all_persisted_registrations do
     if preview_pane_persistence_enabled?() do

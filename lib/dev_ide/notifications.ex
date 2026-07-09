@@ -205,6 +205,35 @@ defmodule DevIDE.Notifications do
           {:ok, Notification.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def mark_read(id, user_id, opts \\ []), do: update_lifecycle(id, user_id, :read_at, opts)
 
+  @doc """
+  Mark every unread, unresolved notification for a user as read in one
+  `UPDATE`. Mirrors the drawer mark-all filters (`unread_only` + `open_only`).
+
+  Returns the number of rows updated. Broadcasts a single
+  `{:notification_updated, :mark_all_read}` so connected viewers refresh
+  without an N-row PubSub fan-out.
+  """
+  @spec mark_all_read(String.t(), keyword()) :: non_neg_integer()
+  def mark_all_read(user_id, opts \\ []) when is_binary(user_id) do
+    now = opts |> Keyword.get(:now, DateTime.utc_now()) |> to_usec()
+
+    {count, _} =
+      from(n in Notification,
+        where: n.user_id == ^user_id and is_nil(n.read_at) and is_nil(n.resolved_at)
+      )
+      |> Repo.update_all(set: [read_at: now])
+
+    if count > 0 do
+      Phoenix.PubSub.broadcast(
+        DevIde.PubSub,
+        topic(user_id),
+        {:notification_updated, :mark_all_read}
+      )
+    end
+
+    count
+  end
+
   @spec resolve(String.t(), String.t(), keyword()) ::
           {:ok, Notification.t()} | {:error, :not_found | Ecto.Changeset.t()}
   def resolve(id, user_id, opts \\ []), do: update_lifecycle(id, user_id, :resolved_at, opts)

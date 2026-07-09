@@ -368,8 +368,17 @@ defmodule DevIdeWeb.TerminalChannel do
 
   defp ensure_cache_table! do
     case :ets.whereis(@fast_path_cache_table) do
-      :undefined -> :ets.new(@fast_path_cache_table, [:named_table, :public, :set])
-      _ -> :ok
+      :undefined ->
+        :ets.new(@fast_path_cache_table, [
+          :named_table,
+          :public,
+          :set,
+          read_concurrency: true,
+          write_concurrency: true
+        ])
+
+      _ ->
+        :ok
     end
   end
 

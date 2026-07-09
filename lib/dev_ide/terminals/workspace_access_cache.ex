@@ -24,7 +24,14 @@ defmodule DevIDE.Terminals.WorkspaceAccessCache do
     case :ets.whereis(@table) do
       :undefined ->
         access = Application.get_env(:dev_ide, :ets_table_access, :protected)
-        :ets.new(@table, [:named_table, access, :set])
+
+        :ets.new(@table, [
+          :named_table,
+          access,
+          :set,
+          read_concurrency: true,
+          write_concurrency: true
+        ])
 
       _ ->
         :ok

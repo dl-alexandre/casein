@@ -22,7 +22,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   def handle_event("tree:toggle", %{"path" => path}, socket) do
     case Map.get(socket.assigns.tree, path) do
       {:expanded, _} ->
-        {:noreply, update(socket, :tree, &Map.put(&1, path, {:collapsed, []}))}
+        {:noreply,
+         update(socket, :tree, fn tree ->
+           tree
+           |> Map.put(path, {:collapsed, []})
+           |> drop_tree_descendants(path)
+         end)}
 
       _ ->
         {:noreply, Show.load_tree(socket, path)}
@@ -399,6 +404,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       _ ->
         {:noreply, socket}
     end
+  end
+
+  # Collapse must drop expanded descendant keys (`path/child/...`) so entry
+  # lists do not accumulate in the LiveView assign for the session lifetime.
+  defp drop_tree_descendants(tree, path) when is_map(tree) and is_binary(path) do
+    prefix = path <> "/"
+
+    Map.reject(tree, fn {key, _value} ->
+      is_binary(key) and String.starts_with?(key, prefix)
+    end)
   end
 
   defp file_loaded_payload(socket, file, mode) do

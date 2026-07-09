@@ -18,6 +18,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     assert s2.assigns.tree["lib"] == {:collapsed, []}
   end
 
+  test "tree:toggle collapse drops descendant subtree keys" do
+    tree = %{
+      "A" => {:expanded, [:b]},
+      "A/B" => {:expanded, [:c]},
+      "A/B/C" => {:expanded, [:file]},
+      "other" => {:expanded, [:x]}
+    }
+
+    s = socket(%{tree: tree})
+    assert {:noreply, s2} = FileEvents.handle_event("tree:toggle", %{"path" => "A"}, s)
+
+    assert s2.assigns.tree["A"] == {:collapsed, []}
+    refute Map.has_key?(s2.assigns.tree, "A/B")
+    refute Map.has_key?(s2.assigns.tree, "A/B/C")
+    assert s2.assigns.tree["other"] == {:expanded, [:x]}
+  end
+
   test "tree:select_dir sets the selected directory" do
     s = socket(%{selected_dir: nil})
     assert {:noreply, s2} = FileEvents.handle_event("tree:select_dir", %{"path" => "lib"}, s)

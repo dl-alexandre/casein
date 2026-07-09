@@ -74,7 +74,7 @@ defmodule DevIDE.PreviewPanesTest do
     {root, path}
   end
 
-  defp seed_session!(session, pane_id \\ "%1") do
+  defp seed_session!(session, pane_id) do
     FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
     })
@@ -935,6 +935,67 @@ defmodule DevIDE.PreviewPanesTest do
 
     _ = :sys.get_state(DevIDE.PreviewPanes)
     assert PreviewPanes.get_by_pane(pane_id) == nil
+  end
+
+  test "topology expire closes all persisted registrations for vanished panes" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_batch_expire"
+    pane_ids = ["%50", "%51", "%52"]
+
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 3, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session =>
+        Enum.map(pane_ids, fn pane_id ->
+          %{
+            id: pane_id,
+            window_id: "@1",
+            index: 0,
+            active: true,
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 40,
+            current_command: "devide-preview",
+            current_path: "/tmp"
+          }
+        end)
+    })
+
+    for pane_id <- pane_ids do
+      assert {:ok, _} =
+               PreviewPanes.register(%{
+                 "pane_id" => pane_id,
+                 "url" => "http://localhost:5173/#{pane_id}",
+                 "cwd" => path,
+                 "tmux_session" => session
+               })
+    end
+
+    assert Enum.all?(pane_ids, fn pane_id ->
+             match?(
+               %PreviewPaneRegistration{status: :open},
+               Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
+             )
+           end)
+
+    FakeState.put(:fake_tmux_panes, %{session => []})
+
+    send(
+      Process.whereis(PreviewPanes),
+      {TmuxTopology, {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
+    )
+
+    _ = :sys.get_state(PreviewPanes)
+
+    for pane_id <- pane_ids do
+      assert PreviewPanes.get_by_pane(pane_id) == nil
+
+      assert %PreviewPaneRegistration{status: :closed} =
+               Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
+    end
   end
 
   test "register returns workspace_not_found for unknown cwd" do
