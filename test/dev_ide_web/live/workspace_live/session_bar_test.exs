@@ -644,11 +644,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "Focus"
       assert html =~ ~s(id="session-quiet-badge-ws-1")
       assert html =~ ~s(data-leader-second-key="S")
-      # Free-expand rails: size to labels, soft viewport cap only.
+      # Free-expand rails with overflow clamp (no paint into the neighbor).
       assert html =~ "min-w-56"
-      assert html =~ "max-w-[min(40rem,55vw)]"
+      assert html =~ "max-w-[min(40rem,50vw)]"
+      assert html =~ "overflow-hidden"
       refute html =~ ~s(flex w-56 shrink-0)
-      refute html =~ "max-w-md"
     end
   end
 
