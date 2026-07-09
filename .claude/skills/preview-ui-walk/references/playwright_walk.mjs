@@ -5,8 +5,9 @@
 // cached Chromium directly via playwright-core with a server-minted session
 // cookie, and — critically — verifies the landed URL per page.
 //
-// Still READ-ONLY: navigate + screenshot + collect console/network only. Never
-// click/type/submit; honor the manifest's safety.deny_events regardless.
+// Default READ-ONLY: navigate + screenshot + console/network + Tidewave evidence.
+// Optional pages[].steps may assert (always) or click/fill (only when
+// safety.allow_interactions:true and env_check is non-prod). Honor deny_events.
 //
 // Runtime on the devbox (see SKILL.md "Auth reality"):
 //   - playwright-core lives under ~/.npm/_npx/*/node_modules — run from a dir
@@ -21,9 +22,11 @@
 // Manifest login (app-owned .devide/preview-walk.json):
 //   "login": { "kind": "redirect_cookie", "path": "/dev/login", "lands_on": "/admin" }
 //   // legacy: "type": "cookie"
-// Optional runtime (priority-1 collector):
-//   "runtime": { "tidewave": true, "log_levels": ["error","warning"] }
-//   "safety":  { "env_check": ["APP_API_URL", …] }
+// Optional runtime evidence:
+//   "runtime": { "tidewave": true, "log_levels": ["error","warning"],
+//                "probes": […], "liveview": {…}, "per_page": { "Themes": { "sql": "…" } } }
+//   "safety":  { "env_check": ["APP_API_URL", …], "allow_interactions": false }
+//   pages[].steps: wait_for / assert_* (always); click/fill when interactions allowed
 //
 // Emits: <out>/report.html, <out>/results.json, <out>/shot-*.png.
 
@@ -32,7 +35,8 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beginRuntime, pageRuntimeLogs } from "./runtime_evidence.mjs";
+import { beginRuntime, pageRuntimeEvidence } from "./runtime_evidence.mjs";
+import { runPageSteps } from "./page_steps.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -188,12 +192,23 @@ function actionable(errors, noiseRe) {
   return (errors || []).filter((e) => !noiseRe.test(String(e)));
 }
 
-function pageVerdict({ loaded, within, uok, mainStatus, actionableConsole, actionableNetwork }) {
+function pageVerdict({
+  loaded,
+  within,
+  uok,
+  mainStatus,
+  actionableConsole,
+  actionableNetwork,
+  evidenceFailed,
+  stepsFailed,
+}) {
   if (!loaded || !within || uok === false) return "FAIL";
   if (mainStatus != null && mainStatus >= 400) return "FAIL";
   // Default smoke: after noise filter, leftover console/network still fail so
   // real JS/API breaks don't greenwash. Document 4xx already handled above.
   if (actionableConsole.length || actionableNetwork.length) return "FAIL";
+  if (evidenceFailed > 0) return "FAIL";
+  if (stepsFailed > 0) return "FAIL";
   return "PASS";
 }
 
@@ -219,6 +234,13 @@ async function main() {
     if (risks.length) {
       console.log(
         `[preview-ui-walk] ⚠ env_check prod_like: ${risks.map((r) => r.key).join(", ")}`,
+      );
+    }
+    if (runtimeBag.probes?.length) {
+      const pf = runtimeBag.probes_failed || 0;
+      console.log(
+        `[preview-ui-walk] walk probes ${runtimeBag.probes.length - pf}/${runtimeBag.probes.length} PASS` +
+          (pf ? ` (failed: ${runtimeBag.probes.filter((p) => p.status !== "PASS").map((p) => p.name).join(", ")})` : ""),
       );
     }
   }
@@ -258,16 +280,44 @@ async function main() {
 
     const budget = pg.budget_ms || 15000;
     const t0 = Date.now();
+    const wantPath = pg.lands_on || pg.path;
     let loaded = true;
+    // LiveView apps rarely reach Playwright "networkidle" (open WS / long-poll),
+    // so navigate on domcontentloaded and then wait for the expected path.
     try {
-      await page.goto(a.base + pg.path, { waitUntil: "networkidle", timeout: budget });
+      await page.goto(a.base + pg.path, {
+        waitUntil: "domcontentloaded",
+        timeout: budget,
+      });
+      const remaining = Math.max(500, budget - (Date.now() - t0));
+      await page.waitForFunction(
+        (expected) => {
+          try {
+            const p = location.pathname || "";
+            const want = String(expected).split("?")[0].replace(/\/$/, "");
+            return p.includes(want) || p === expected;
+          } catch {
+            return false;
+          }
+        },
+        wantPath,
+        { timeout: remaining },
+      );
     } catch {
       loaded = false;
     }
     await page.waitForTimeout(a.settleMs);
+
+    // Optional page steps (assert always; click/fill when safety allows).
+    const stepResult = await runPageSteps(page, pg, {
+      manifest: m,
+      runtimeBag,
+      base: a.base,
+    });
+
     const elapsed = Date.now() - t0;
     const landed = page.url();
-    const uok = urlOk(landed, pg.lands_on || pg.path);
+    const uok = urlOk(landed, wantPath);
     const noiseRe = noisePatterns(pg, m);
     const actConsole = actionable(consoleErrors, noiseRe);
     const actNetwork = actionable(networkErrors, noiseRe);
@@ -290,6 +340,15 @@ async function main() {
     page.off("requestfailed", onFailed);
 
     const within = elapsed <= budget;
+
+    // Server log delta + probes + SQL + LiveView assign keys.
+    const runtimePage = await pageRuntimeEvidence(runtimeBag, pg, m);
+    const serverErrors = runtimePage.error_log_count || 0;
+    const evidenceFailed =
+      (runtimePage.evidence_failed || 0) +
+      (runtimePage.status === "ok" && serverErrors > 0 ? 1 : 0);
+    const stepsFailed = stepResult.failed || 0;
+
     let status = pageVerdict({
       loaded,
       within,
@@ -297,15 +356,9 @@ async function main() {
       mainStatus,
       actionableConsole: ceForVerdict,
       actionableNetwork: neForVerdict,
+      evidenceFailed,
+      stepsFailed,
     });
-
-    // Server log *delta* for this page only (Tidewave ring buffer is cumulative).
-    // Silent BEAM errors during the page load fail a "green" shell.
-    const runtimePage = await pageRuntimeLogs(runtimeBag, pg.name);
-    const serverErrors = runtimePage.error_log_count || 0;
-    if (status === "PASS" && runtimePage.status === "ok" && serverErrors > 0) {
-      status = "FAIL";
-    }
 
     results.push({
       name: pg.name, path: pg.path, ms: elapsed, budget_ms: pg.budget_ms,
@@ -316,6 +369,7 @@ async function main() {
       network_samples: actNetwork.slice(0, 5),
       main_status: mainStatus,
       runtime: runtimePage,
+      steps: stepResult,
       status, shot, shot_file: shot ? shotFile : null, landed, url_ok: uok,
     });
     const flag = uok === false ? `  ⚠ landed=${landed}` : "";
@@ -324,23 +378,32 @@ async function main() {
     const noiseNote = noise > 0 ? ` noise=${noise}` : "";
     const twNote =
       runtimePage.status === "ok"
-        ? ` tw_err_logs=${serverErrors}`
+        ? ` tw_err_logs=${serverErrors}` +
+          (runtimePage.probes_failed
+            ? ` probes_fail=${runtimePage.probes_failed}`
+            : "") +
+          (runtimePage.sql?.status === "FAIL" ? " sql=FAIL" : runtimePage.sql ? " sql=ok" : "") +
+          (runtimePage.liveview?.count != null ? ` lv=${runtimePage.liveview.count}` : "")
         : runtimePage.status === "skipped"
           ? " tw=skipped"
           : runtimeBag.requested
             ? ` tw=${runtimePage.status || "?"}`
             : "";
+    const stepNote =
+      stepResult.ran || stepResult.failed
+        ? ` steps=${stepResult.ran || 0}/${(pg.steps || []).length}`
+        : "";
     console.log(
       `[preview-ui-walk] ${status.padEnd(4)} ${pg.name.padEnd(16)} ${String(elapsed).padStart(6)}ms  ` +
         `ce=${actConsole.length}/${consoleErrors.length} ne=${actNetwork.length}/${networkErrors.length}` +
-        `${noiseNote}${twNote}${flag}`,
+        `${noiseNote}${twNote}${stepNote}${flag}`,
     );
   }
 
   await browser.close();
 
-  // Do not serialize internal cursors into the artifact payload.
-  const { _log_cursors: _drop, ...runtimePublic } = runtimeBag;
+  // Do not serialize internal cursors / manifest ref into the artifact payload.
+  const { _log_cursors: _drop, _manifest: _m, ...runtimePublic } = runtimeBag;
   const payload = {
     base: a.base,
     runtime: runtimePublic,
@@ -357,8 +420,9 @@ async function main() {
   // Report needs inline shots — rebuild from results that still have shot in memory
   writeReport(a.out, m, results, runtimeBag);
   const passed = results.filter((r) => r.status === "PASS").length;
+  const walkProbeFail = runtimeBag.probes_failed || 0;
   console.log(`[preview-ui-walk] ${passed}/${results.length} pages PASS -> ${a.out}/report.html`);
-  process.exit(passed === results.length ? 0 : 1);
+  process.exit(passed === results.length && walkProbeFail === 0 ? 0 : 1);
 }
 
 function esc(s) {
@@ -382,6 +446,33 @@ function writeReport(out, m, results, runtimeBag) {
     if (rt.status === "ok") {
       const errN = rt.error_log_count || 0;
       const warnN = rt.logs?.levels?.warning?.count;
+      const probeBits = (rt.probes || [])
+        .map((p) => {
+          const c = p.status === "PASS" ? "#3fb950" : "#f85149";
+          return `<div style="font-size:11px;color:${c}">probe ${esc(p.name)}=${esc(p.status)}${p.error ? ` (${esc(p.error)})` : ""}</div>`;
+        })
+        .join("");
+      let sqlBit = "";
+      if (rt.sql) {
+        const c = rt.sql.status === "PASS" ? "#3fb950" : "#f85149";
+        sqlBit = `<div style="font-size:11px;color:${c}">sql ${esc(rt.sql.status)}` +
+          (rt.sql.scalar != null ? ` → ${esc(String(rt.sql.scalar))}` : "") +
+          (rt.sql.error ? ` (${esc(rt.sql.error)})` : "") +
+          `</div>`;
+      }
+      let lvBit = "";
+      if (rt.liveview && rt.liveview.status === "ok") {
+        const top = (rt.liveview.liveviews || [])[0];
+        const keys = (top?.assign_keys || []).slice(0, 10).join(", ");
+        const more = (top?.assign_keys || []).length > 10 ? "…" : "";
+        lvBit =
+          `<div style="font-size:11px;color:#9aa4b2">lv=${rt.liveview.count}` +
+          (top?.view ? ` <code>${esc(top.view)}</code>` : "") +
+          (keys ? `<br>keys: ${esc(keys)}${more}` : "") +
+          `</div>`;
+      } else if (rt.liveview?.status && rt.liveview.status !== "disabled") {
+        lvBit = `<div style="font-size:11px;color:#d29922">lv ${esc(rt.liveview.status)}${rt.liveview.error ? `: ${esc(rt.liveview.error)}` : ""}</div>`;
+      }
       twCell =
         `error_logs=${errN}` +
         (warnN != null ? `<br>warning_logs=${warnN}` : "") +
@@ -393,7 +484,10 @@ function writeReport(out, m, results, runtimeBag) {
                   `<div style="font-size:11px;color:#f85149;max-width:22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s)}</div>`,
               )
               .join("")
-          : "");
+          : "") +
+        probeBits +
+        sqlBit +
+        lvBit;
     } else if (rt.status === "skipped") {
       twCell = `<span style="color:#d29922">skipped: ${esc(rt.reason || "tidewave_unavailable")}</span>`;
     } else if (rt.status === "disabled") {
@@ -401,6 +495,20 @@ function writeReport(out, m, results, runtimeBag) {
     } else if (rt.status) {
       twCell = esc(rt.status);
     }
+
+    let stepCell = "—";
+    if (r.steps && (r.steps.ran || r.steps.failed || r.steps.steps?.length)) {
+      stepCell = (r.steps.steps || [])
+        .map((s) => {
+          const c =
+            s.status === "PASS" ? "#3fb950" : s.status === "SKIPPED" ? "#d29922" : "#f85149";
+          return `<div style="font-size:11px;color:${c}">${esc(s.action || "?")} ${esc(s.name)}` +
+            (s.error ? ` — ${esc(s.error)}` : "") +
+            `</div>`;
+        })
+        .join("") || "—";
+    }
+
     return `<tr><td>${img}</td><td><b>${esc(r.name)}</b><br><code>${esc(r.path)}</code>${redirect}` +
       `<br><small>landed ${esc(String(r.landed || ""))}</small></td>` +
       `<td>${r.ms}ms<br><small>budget ${r.budget_ms}</small>` +
@@ -410,6 +518,7 @@ function writeReport(out, m, results, runtimeBag) {
       `<br>network ${r.actionable_network_errors ?? r.network_errors}/${r.network_errors}` +
       `${samples}</td>` +
       `<td>${twCell}</td>` +
+      `<td>${stepCell}</td>` +
       `<td style="color:${color}"><b>${r.status}</b></td></tr>`;
   });
 
@@ -427,10 +536,10 @@ code{color:#79c0ff}
 .ok{background:#1a3d24;color:#3fb950}.warn{background:#3d3010;color:#d29922}.bad{background:#3d1a1a;color:#f85149}
 </style>
 <h1>${esc(name)}</h1>
-<p class="meta">Authenticated (Playwright) read-only walk.
-Browser errors are <code>actionable/raw</code>; Tidewave server logs are a separate column.</p>
+<p class="meta">Playwright walk — browser <code>actionable/raw</code> errors, Tidewave evidence
+(logs / probes / SQL / LiveView keys), optional page steps.</p>
 ${strip}
-<table><tr><th>Screen</th><th>Page</th><th>Load</th><th>Browser</th><th>Tidewave</th><th>Result</th></tr>
+<table><tr><th>Screen</th><th>Page</th><th>Load</th><th>Browser</th><th>Tidewave</th><th>Steps</th><th>Result</th></tr>
 ${rows.join("\n")}</table>`;
   fs.writeFileSync(path.join(out, "report.html"), doc);
 }
@@ -459,6 +568,14 @@ function runtimeStripHtml(runtimeBag) {
     })
     .join("");
 
+  const probeRows = (runtimeBag.probes || [])
+    .map((p) => {
+      const pill = p.status === "PASS" ? "ok" : "bad";
+      return `<tr><td><code>${esc(p.name)}</code></td><td><span class="pill ${pill}">${esc(p.status)}</span></td>` +
+        `<td class="meta">${esc(p.error || JSON.stringify(p.value) || "—")}</td></tr>`;
+    })
+    .join("");
+
   return `<div class="strip">
   <div><b>Runtime</b> Tidewave ${twPill}
     ${tw.url ? ` · <code>${esc(tw.url)}</code>` : ""}
@@ -468,12 +585,17 @@ function runtimeStripHtml(runtimeBag) {
     app cwd: <code>${esc(app.cwd || "—")}</code>
     · git: <code>${esc(app.git_sha || "—")}</code>
     · MIX_ENV: <code>${esc(app.mix_env || "—")}</code>
-    · server error log total (sum of per-page tails): <b>${runtimeBag.error_log_total ?? 0}</b>
+    · server error log total (sum of per-page deltas): <b>${runtimeBag.error_log_total ?? 0}</b>
     · env_check source: <code>${esc(runtimeBag.env_check?.source || "none")}</code>
   </div>
   ${
     envRows
       ? `<table style="margin-top:.6rem;max-width:40rem"><tr><th>env</th><th>risk</th><th>preview</th></tr>${envRows}</table>`
+      : ""
+  }
+  ${
+    probeRows
+      ? `<table style="margin-top:.6rem;max-width:40rem"><tr><th>walk probe</th><th>status</th><th>detail</th></tr>${probeRows}</table>`
       : ""
   }
 </div>`;

@@ -1,43 +1,42 @@
 ---
 name: preview-ui-walk
 description: >
-  Drive an automated, READ-ONLY UI smoke walk of a DevIDE workspace app through
-  the preview stack — reuse the running preview, log in, walk a manifest of pages
-  capturing a screenshot + console/network errors + timing per page, record the
-  session, and publish one Artifact report — handing back its durable, login-gated
-  public URL to paste straight into a PR. Use for superadmin/admin-panel smoke tests
-  or any multi-page visual+error walk of a workspace app. NOT for driving dev_ide's
-  own UI (use `verify`), and NOT for mutating flows.
+  Drive an automated UI smoke walk of a DevIDE workspace app (default read-only;
+  optional gated interactions) — log in, walk a manifest of pages capturing
+  screenshot + console/network errors + timing + Tidewave evidence (logs, probes,
+  SQL, LiveView keys) + optional assert/click steps, and publish one Artifact
+  report with a durable login-gated public URL. Use for superadmin/admin-panel
+  smoke tests. NOT for driving dev_ide's own UI (use `verify`).
 ---
 
 # Preview UI walk
 
-A repeatable, recorded, read-only walk of a workspace app's pages, driven from
-outside the app via the DevIDE preview MCP. The engine is generic; each app
-supplies a **walk manifest**. Output is a single Artifact report (screenshots +
-per-page timings + console/network error counts + pass/fail) with the recording
-embedded.
+A repeatable, recorded walk of a workspace app's pages. Default is **read-only**
+(navigate + assert + screenshot). Product manifests may opt into **gated
+interactions** (`safety.allow_interactions`) when env_check is non-prod. The
+engine is generic; each app supplies a **walk manifest**. Output is a single
+Artifact report (screenshots + timings + browser/server evidence + pass/fail).
 
 ## ⚠️ Safety gate — READ THIS FIRST, every run
 
 A workspace app can be backed by **production upstream APIs even when its local DB
 is throwaway**. The app's own walk manifest documents that risk under `safety`. So:
 
-1. **Default to strictly read-only**: navigate + screenshot + `preview_report_errors`
-   only. Page *loads* fire the app's normal reads — fine. Do **not** click, type,
-   submit, or fire any event in the manifest's `deny_events` list.
-2. Only relax to interactions if you have **confirmed the app's write path is
-   non-prod** for this instance (check the env keys listed in `safety.env_check`,
-   or an explicit non-prod flag the app documents). If unconfirmed, stay read-only.
+1. **Default to strictly read-only**: navigate + screenshot + error collection +
+   optional **assert** steps (`assert_text`, `assert_selector`, …). Page *loads*
+   fire the app's normal reads — fine.
+2. **Mutating steps** (`click` / `fill` / `type` / …) require
+   `safety.allow_interactions: true` **and** a clean non-prod `env_check` strip.
+   Drivers fail closed if either is missing. Still honor `deny_events` (matched
+   against `step.event`).
+3. The manifest carries the app's `safety` block. Honor it. Log what you skipped.
    When in doubt, screenshot; never click.
-3. The manifest carries the app's `safety` block (denylist, the env keys to
-   check). Honor it. Log what you skipped.
 
 ## What it produces
 
-- **One Artifact report** (HTML), the single conclusion window: an embedded
-  `<video>` of the walk at the top, then a row per page — thumbnail screenshot,
-  load time (ms), console-error count, network-error count, PASS/FAIL.
+- **One Artifact report** (HTML): per-page thumbnail, load ms, browser
+  actionable/raw errors, Tidewave column (logs / probes / SQL / LiveView keys),
+  steps column, PASS/FAIL — plus a top strip for env_check + walk probes.
 - **A durable, login-gated `public_url`** for that report (from publishing it as an
   artifact project — step 4). This is the actual deliverable you hand back: a link
   that survives workspace restarts and is safe to paste in a PR, where a teammate
@@ -194,16 +193,18 @@ the page-sharding, not a redesign.
   images, nested-iframe CSP, nonce inline style/script) does not fail the page by
   default; wrong `lands_on` / main-document 4xx still do. See
   `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
-- **Runtime evidence (Tidewave, priority-1 wired in `playwright_walk.mjs`)** —
-  when the manifest sets `runtime.tidewave: true`, the driver:
+- **Runtime evidence (Tidewave, wired in `playwright_walk.mjs`)** — when the
+  manifest sets `runtime.tidewave: true`, the driver:
   1. Probes `<base>/tidewave/mcp` (or `DEVIDE_TIDEWAVE_MCP_URL` / `--tidewave-url`)
   2. Surfaces an **env_check** strip via `project_eval` (app env, not agent host)
-  3. After each page, pulls `get_logs` for `runtime.log_levels` (default `error`)
-  4. Fails a page if browser PASS but server **error** log tail is non-empty
+  3. Runs walk-level **`probes`** (`project_eval` + optional `expect`)
+  4. After each page: `get_logs` **delta**, page probes, SELECT-only **sql**,
+     LiveView assign **keys** (optional `fields`)
+  5. Fails a page on server error-log deltas, failed probes/SQL, or failed steps
   If Tidewave is down, the browser walk still finishes and runtime is
   `skipped: tidewave_unavailable` (unless `require_tidewave: true`).
-  See `references/runtime_evidence.mjs` + schema `runtime`. Probes/SQL/LiveView
-  fields are declared for later layers; not collected yet.
+  See `references/runtime_evidence.mjs`, `page_steps.mjs`, and schema `runtime` /
+  `pages[].steps`.
 - Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
   prior run's screenshots for visual-diff regression once a baseline exists (only
   meaningful for pages with stable content).

@@ -2,7 +2,7 @@
   "version": 1,
   "$schema": "./preview-walk.schema.json",
   "_driver": "playwright_walk.mjs when login.kind=redirect_cookie (preview MCP cannot follow 302s)",
-  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json. This example shows browser baseline + optional Tidewave runtime evidence.",
+  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json. Shows browser baseline + Tidewave evidence + assert steps + gated interaction shape.",
   "login": {
     "kind": "redirect_cookie",
     "path": "/dev/login",
@@ -16,14 +16,21 @@
       "path": "/admin",
       "lands_on": "/admin",
       "budget_ms": 8000,
-      "note": "landing"
+      "note": "landing",
+      "steps": [
+        { "action": "assert_url", "path": "/admin" },
+        { "action": "assert_selector", "selector": "main", "name": "has-main" }
+      ]
     },
     {
       "name": "Users",
       "path": "/admin/users",
       "lands_on": "/admin/users",
       "budget_ms": 10000,
-      "note": "paginated list; empty allowed"
+      "note": "paginated list; empty allowed",
+      "steps": [
+        { "action": "assert_text", "text": "Users" }
+      ]
     },
     {
       "name": "Settings",
@@ -31,18 +38,38 @@
       "lands_on": "/admin/settings",
       "budget_ms": 8000,
       "role_gated": true,
-      "note": "role-gated form (read-only view)"
+      "note": "role-gated form (read-only view by default)",
+      "steps": [
+        {
+          "action": "click",
+          "selector": "button[phx-click=save]",
+          "event": "save",
+          "name": "would-save",
+          "required": false,
+          "note": "blocked unless allow_interactions + non-prod; deny_events still wins"
+        }
+      ]
     },
     {
       "name": "Themes",
       "path": "/admin/themes",
       "lands_on": "/admin/themes",
       "budget_ms": 8000,
-      "note": "example of per-page SQL probe (empty UI can still be green without it)"
+      "note": "example of per-page SQL probe (empty UI can still be green without it)",
+      "runtime": {
+        "sql": "SELECT count(*) FROM themes",
+        "expect_min": 1,
+        "liveview": {
+          "enabled": true,
+          "assign_keys": true,
+          "fields": ["live_action", "page_title"]
+        }
+      }
     }
   ],
   "safety": {
     "read_only": true,
+    "allow_interactions": false,
     "env_check": ["APP_API_URL", "AUTH_API_URL"],
     "deny_events": [
       "delete",
@@ -52,7 +79,7 @@
       "reset_token",
       "send_email"
     ],
-    "note": "Confirm APP_API_URL / AUTH_API_URL are non-prod before any interaction. Default: navigate + screenshot only."
+    "note": "Confirm APP_API_URL / AUTH_API_URL are non-prod before allow_interactions:true. Default: navigate + assert + screenshot only."
   },
   "runtime": {
     "tidewave": true,
