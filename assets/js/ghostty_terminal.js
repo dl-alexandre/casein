@@ -15,9 +15,29 @@ import {
   readableTerminalColor,
   remapColor,
   terminalBackgroundRgb,
+  terminalForegroundRgb,
   termVar
 } from "./terminal_themes"
-import {BOLD, ITALIC, OVERLINE, effectiveCellFlags} from "./terminal_cell_flags.mjs"
+import {
+  BOLD,
+  ITALIC,
+  OVERLINE,
+  effectiveCellFlags,
+  resolveInverseColors
+} from "./terminal_cell_flags.mjs"
+import {mouseTrackingActive, sgrWheelSequence} from "./terminal_mouse_sgr.mjs"
+import {
+  BACKEND_KEYS_PAGE,
+  POLICY_AGENT,
+  allowPlainDragSelect,
+  pageKeySteps,
+  readFocusedPaneScrollAttrs,
+  resolveScrollBackend,
+  resolveScrollPolicy,
+  scrollDebugEnabled,
+  touchUsesWheelPipeline,
+  wheelGoesToPty
+} from "./terminal_scroll_policy.mjs"
 import {
   copyOnSelectText,
   normalizeCellSelection,
@@ -203,8 +223,18 @@ function cellStyle(fg, bg, flags) {
   const styles = []
   const decorations = []
 
-  const mappedBg = remapColor(bg)
-  const mappedFg = readableTerminalColor(remapColor(fg), mappedBg || terminalBackgroundRgb())
+  // Ghostty keeps reverse-video as the INVERSE flag rather than pre-swapping
+  // colors. Canvas already applied this; the DOM path must too or Grok/Claude
+  // selection + focus highlights paint as unstyled text.
+  const inverted = resolveInverseColors(
+    remapColor(fg),
+    remapColor(bg),
+    flags || 0,
+    terminalForegroundRgb(),
+    terminalBackgroundRgb()
+  )
+  const mappedBg = inverted.bg
+  const mappedFg = readableTerminalColor(inverted.fg, mappedBg || terminalBackgroundRgb())
 
   if (mappedFg) styles.push(`color:rgb(${mappedFg[0]}, ${mappedFg[1]}, ${mappedFg[2]})`)
 
@@ -548,9 +578,10 @@ function patchPreLayout(hook) {
   // Native browser text selection on the pre — desktop and touch alike. The
   // vendor disables it (user-select: none) and relies on its own cell-selection,
   // but that's suppressed whenever the program requests mouse tracking (tmux
-  // `mouse on` does this globally), leaving no way to select. We instead let the
-  // browser select and stop the drag from reaching tmux (see the pushEventTo
-  // filter in mounted), so selection works regardless of tmux's mouse mode.
+  // `mouse on` does this globally), leaving no way to select. With tracking on
+  // we use Shift+drag for local select (see mounted); plain gestures reach the
+  // PTY so multi-pane TUIs can focus/scroll. Without tracking, plain drag still
+  // selects and mouse events stay filtered.
   hook.pre.style.userSelect = "text"
   hook.pre.style.webkitUserSelect = "text"
   if (TOUCH_DEVICE) {
@@ -716,6 +747,10 @@ function feedTouchScroll(hook, dyPx) {
     new WheelEvent("wheel", {
       deltaY: notches * TOUCH_SCROLL_WHEEL_PX,
       deltaMode: 0,
+      // Preserve the finger cell so alt-screen multi-pane scroll hits the
+      // pane under the touch, not a synthetic (0,0) origin.
+      clientX: hook.__scrollLastX ?? hook.__touchXY?.x ?? 0,
+      clientY: hook.__scrollLastY ?? hook.__touchXY?.y ?? 0,
       bubbles: true,
       cancelable: true
     })
@@ -758,13 +793,83 @@ function hasEmulatorScrollback(hook) {
 
 // SGR mouse-wheel sequences for programs in the alternate screen (Grok,
 // Claude Code, etc.) and for tmux copy-mode scroll. Written as PTY text so
-// they bypass the mouse-drag filter above.
-function pushWheelToPty(hook, deltaY) {
-  const steps = Math.max(1, Math.min(8, Math.ceil(Math.abs(deltaY) / 40)))
-  const btn = deltaY < 0 ? 64 : 65
-  let seq = ""
-  for (let i = 0; i < steps; i += 1) seq += `\x1b[<${btn};1;1M`
-  pushText(hook, seq)
+// they bypass the mouse-drag filter above. Coordinates must be the cell under
+// the pointer — multi-pane TUIs (Grok chat + side panel) route scroll by hit
+// test, so a hard-coded (1,1) only ever scrolls the top-left pane.
+function pushWheelToPty(hook, deltaY, point) {
+  const seq = sgrWheelSequence(deltaY, point?.col ?? 0, point?.row ?? 0)
+  if (seq) pushText(hook, seq)
+}
+
+function mouseModeActive(hook) {
+  return mouseTrackingActive(hook.mouse)
+}
+
+function currentScrollContext(hook) {
+  const pane = readFocusedPaneScrollAttrs(document)
+  const hasHistory = hasEmulatorScrollback(hook)
+  const tracking = mouseModeActive(hook)
+  const policy = resolveScrollPolicy({
+    serverPolicy: pane.serverPolicy,
+    paneCommand: pane.paneCommand,
+    paneRole: pane.paneRole,
+    mouseTracking: tracking,
+    hasEmulatorScrollback: hasHistory
+  })
+  const backend = resolveScrollBackend(policy, pane.serverBackend)
+  return {
+    policy,
+    backend,
+    hasHistory,
+    tracking,
+    paneId: pane.paneId
+  }
+}
+
+function logScrollDebug(hook, label, extra = {}) {
+  if (!scrollDebugEnabled()) return
+  const ctx = currentScrollContext(hook)
+  // eslint-disable-next-line no-console
+  console.debug("[devide:termscroll]", label, {...ctx, ...extra})
+}
+
+function pushAgentWheel(hook, deltaY, point) {
+  const {backend} = currentScrollContext(hook)
+  if (backend === BACKEND_KEYS_PAGE) {
+    const {key, count} = pageKeySteps(deltaY)
+    if (!key || count === 0) return
+    for (let i = 0; i < count; i += 1) pushKey(hook, key)
+    return
+  }
+  pushWheelToPty(hook, deltaY, point)
+}
+
+function openPaneHistory(hook) {
+  const {paneId, policy} = currentScrollContext(hook)
+  if (!paneId) return false
+  // Dual-layer history: agent alt-screen has no usable emulator scrollback.
+  // Alt+wheel opens the tmux capture history drawer for the focused pane.
+  if (policy !== POLICY_AGENT) return false
+  if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("pane:history_open", {"pane-id": paneId})
+    return true
+  }
+  return false
+}
+
+// Coalesce trackpad wheel bursts into one PTY write per animation frame.
+function schedulePtyWheel(hook, deltaY, point) {
+  hook.__ptyWheelAccum = (hook.__ptyWheelAccum || 0) + deltaY
+  hook.__ptyWheelPoint = point || hook.__ptyWheelPoint || null
+  if (hook.__ptyWheelRaf != null) return
+  hook.__ptyWheelRaf = requestAnimationFrame(() => {
+    const delta = hook.__ptyWheelAccum
+    const pt = hook.__ptyWheelPoint
+    hook.__ptyWheelAccum = 0
+    hook.__ptyWheelPoint = null
+    hook.__ptyWheelRaf = null
+    if (delta) pushAgentWheel(hook, delta, pt)
+  })
 }
 
 function afterSelectionSettles(callback) {
@@ -1925,7 +2030,14 @@ function activeTerminal(hook) {
 function detectPathFormat(hook) {
   const text = hook.pre?.textContent || ""
 
-  if (/Grok Build|Claude Code|OpenCode|Codex|Composer/i.test(text)) return "agent"
+  // Match agent TUIs even when the product title has scrolled off-screen
+  // (Grok two-pane views often leave only conversation text in the viewport).
+  // Without this, image paste falls back to a shell-quoted absolute path and
+  // shows up as a raw `/…/clipboard-image.png` prompt line instead of an
+  // `@path` file reference the agent can attach.
+  if (/Grok(?:\s+Build)?|Claude(?:\s+Code)?|OpenCode|Codex|Composer/i.test(text)) {
+    return "agent"
+  }
   if (/markdown|chat/i.test(text)) return "markdown"
 
   return "shell"
@@ -2158,8 +2270,19 @@ const GhosttyTerminal = {
     // <pre>, and the vendor disables its own cell selection when tmux enables
     // mouse tracking. Drawing our own overlay gives visible feedback and copy
     // text without forwarding the drag to tmux.
+    //
+    // Agent TUI / mouse-tracking: plain clicks/drags reach the PTY (pane focus,
+    // multi-pane scroll hit-test). Local select requires Shift (iTerm convention).
+    // Shell without tracking: plain primary drag still selects.
     this.__onNativeSelectionMouseDown = (e) => {
-      if (TOUCH_DEVICE || !plainPrimaryMouseDown(e) || !terminalPreTarget(this, e.target)) return
+      if (TOUCH_DEVICE || !terminalPreTarget(this, e.target)) return
+
+      const {policy, tracking} = currentScrollContext(this)
+      const allowSelect = allowPlainDragSelect(policy, tracking, e.shiftKey)
+
+      if (!allowSelect) return
+      if (!plainPrimaryMouseDown(e) && !(e.shiftKey && e.button === 0)) return
+      if (e.ctrlKey || e.altKey || e.metaKey) return
 
       const point = terminalCellPointFromEvent(this, e)
       if (!point) return
@@ -2261,23 +2384,25 @@ const GhosttyTerminal = {
     this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     document.addEventListener("copy", this.__onNativeSelectionCopy, true)
 
-    // Drag = select, not tmux. The vendor forwards mouse press/motion/release
-    // to the program (tmux, in mouse mode), which both eats the drag and would
-    // start a tmux-side selection. Drop those so the browser's native text
-    // selection wins. We keep every other event (keys, text, wheel-as-text,
-    // focus, refresh). Single clicks no longer reach tmux either — an
-    // acceptable trade for reliable copy-out; focus for typing still works
-    // because the vendor focuses the hidden input directly.
+    // Mouse press/motion/release: while we own a local cell-selection drag,
+    // drop them so tmux/Grok don't start a competing selection. When mouse
+    // tracking is active and we are not selecting, forward them so multi-pane
+    // TUIs receive clicks (pane focus) and drags. When tracking is off, drop
+    // them — Ghostty.input_mouse returns :none anyway, and this keeps the
+    // legacy select-first shell UX.
+    const shouldDropMouseEvent = (payload) =>
+      Boolean(
+        payload &&
+          (payload.action === "press" ||
+            payload.action === "motion" ||
+            payload.action === "release") &&
+          (this.__nativeSelecting || !mouseModeActive(this))
+      )
+
     const pushEventTo = this.pushEventTo && this.pushEventTo.bind(this)
     if (pushEventTo) {
       this.pushEventTo = (target, event, payload, onReply) => {
-        if (
-          event === "mouse" &&
-          payload &&
-          (payload.action === "press" ||
-            payload.action === "motion" ||
-            payload.action === "release")
-        ) {
+        if (event === "mouse" && shouldDropMouseEvent(payload)) {
           return
         }
         if (event === "key" || event === "text") {
@@ -2292,13 +2417,7 @@ const GhosttyTerminal = {
     const pushEvent = this.pushEvent && this.pushEvent.bind(this)
     if (pushEvent) {
       this.pushEvent = (event, payload, onReply) => {
-        if (
-          event === "mouse" &&
-          payload &&
-          (payload.action === "press" ||
-            payload.action === "motion" ||
-            payload.action === "release")
-        ) {
+        if (event === "mouse" && shouldDropMouseEvent(payload)) {
           return
         }
         if (event === "key" || event === "text") {
@@ -2310,12 +2429,15 @@ const GhosttyTerminal = {
       }
     }
 
-    // Wheel: scroll Ghostty emulator scrollback when available; otherwise
-    // forward SGR mouse-wheel bytes to the PTY so fullscreen TUIs (Grok in the
-    // alternate screen) and tmux copy-mode can scroll. Accumulate emulator
-    // scroll per-frame so trackpads don't spam the LiveView.
+    // Wheel routing (see terminal_scroll_policy.mjs):
+    //  - Ctrl/Meta: display zoom
+    //  - Alt+wheel in agent mode: open pane history drawer (dual-layer history)
+    //  - agent / no emulator scrollback: SGR (or keys_page) at pointer cell
+    //  - shell with scrollback: Ghostty scroll/2, rAF-coalesced
     this.__wheelAccum = 0
     this.__wheelRaf = null
+    this.__ptyWheelAccum = 0
+    this.__ptyWheelRaf = null
     this.__onWheel = (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault()
@@ -2327,8 +2449,16 @@ const GhosttyTerminal = {
 
       e.preventDefault()
 
-      if (!hasEmulatorScrollback(this)) {
-        pushWheelToPty(this, e.deltaY)
+      const point = terminalCellPointFromEvent(this, e)
+      const ctx = currentScrollContext(this)
+      logScrollDebug(this, "wheel", {deltaY: e.deltaY, alt: e.altKey, point})
+
+      if (e.altKey && openPaneHistory(this)) {
+        return
+      }
+
+      if (wheelGoesToPty(ctx.policy, ctx.hasHistory)) {
+        schedulePtyWheel(this, e.deltaY, point)
         return
       }
 
@@ -2376,6 +2506,7 @@ const GhosttyTerminal = {
           this.__scrollbackGesture = true
           clearTimeout(this.__lpTimer)
           this.__longPress = false
+          this.__scrollLastX = t.clientX
           this.__scrollLastY = t.clientY
           this.__scrollLastT = performance.now()
           return
@@ -2388,6 +2519,7 @@ const GhosttyTerminal = {
         this.__scrollbackGesture = false
         this.__touchWheelAccum = 0
         this.__arrowAccum = 0
+        this.__scrollLastX = t.clientX
         this.__scrollLastY = t.clientY
         this.__scrollLastT = performance.now()
         this.__scrollVel = 0
@@ -2425,17 +2557,23 @@ const GhosttyTerminal = {
         if (!this.__scrollActive) {
           if (dy > dx && dy > TOUCH_SCROLL_START_PX) {
             this.__scrollActive = true
-            // Latch how this vertical gesture behaves for its lifetime. A
-            // one-finger drag scrolls the scrollback (the native mobile
-            // expectation) whenever the emulator actually has history to
-            // scroll; with no scrollback — an alt-screen TUI like Grok or
-            // Claude Code — it stays the arrow d-pad so menu/cursor navigation
-            // still works. Two fingers is always a scroll. Latching at commit
-            // (not per-move) keeps the gesture from flipping modes as content
-            // scrolls past the fold mid-drag.
-            this.__scrollbackGesture = this.__touchFingers >= 2 || hasEmulatorScrollback(this)
+            // Latch gesture mode for its lifetime. Agent TUIs always use the
+            // wheel→PTY pipeline (never arrow-key spam). Shell: one-finger
+            // scrolls history when present; two fingers always scroll; otherwise
+            // arrow d-pad for menus.
+            const {policy} = currentScrollContext(this)
+            this.__scrollbackGesture = touchUsesWheelPipeline(
+              policy,
+              this.__touchFingers,
+              hasEmulatorScrollback(this)
+            )
+            this.__scrollLastX = t.clientX
             this.__scrollLastY = t.clientY
             this.__scrollLastT = performance.now()
+            logScrollDebug(this, "touch-commit", {
+              fingers: this.__touchFingers,
+              wheelPipeline: this.__scrollbackGesture
+            })
           } else {
             return
           }
@@ -2449,15 +2587,14 @@ const GhosttyTerminal = {
           const inst = stepDy / dt
           this.__scrollVel = 0.7 * this.__scrollVel + 0.3 * inst
         }
+        this.__scrollLastX = t.clientX
         this.__scrollLastY = t.clientY
         this.__scrollLastT = now
         if (this.__scrollbackGesture) {
-          // Scroll history (or PTY wheel bytes) via the wheel pipeline. Covers
-          // two fingers and the one-finger-with-scrollback case latched above.
+          // Scroll history (or PTY wheel bytes) via the wheel pipeline.
           feedTouchScroll(this, stepDy)
         } else {
-          // One finger, no scrollback: virtual d-pad — a notch of travel sends
-          // one arrow key.
+          // Shell, one finger, no scrollback: virtual d-pad.
           this.__arrowAccum = (this.__arrowAccum || 0) + stepDy
           const steps = Math.trunc(this.__arrowAccum / TOUCH_ARROW_STEP_PX)
           if (steps !== 0) {
@@ -2477,6 +2614,7 @@ const GhosttyTerminal = {
         const remaining = e.touches && e.touches.length
         if (remaining > 0) {
           const t = e.touches[0]
+          this.__scrollLastX = t.clientX
           this.__scrollLastY = t.clientY
           this.__scrollLastT = performance.now()
           return
@@ -2685,6 +2823,14 @@ const GhosttyTerminal = {
     }
 
     this.__wheelAccum = 0
+
+    if (this.__ptyWheelRaf != null) {
+      cancelAnimationFrame(this.__ptyWheelRaf)
+      this.__ptyWheelRaf = null
+    }
+
+    this.__ptyWheelAccum = 0
+    this.__ptyWheelPoint = null
 
     if (this.__onWheel) {
       this.el.removeEventListener("wheel", this.__onWheel)

@@ -142,6 +142,30 @@ defmodule DevIDE.Terminals.ClipboardPasteTest do
              })
   end
 
+  test "path_format is agent for Grok/Claude/Codex pane commands" do
+    assert ClipboardPaste.path_format("grok") == "agent"
+    assert ClipboardPaste.path_format("node") == "shell"
+    assert ClipboardPaste.path_format("Grok") == "agent"
+    assert ClipboardPaste.path_format("claude") == "agent"
+    assert ClipboardPaste.path_format("codex") == "agent"
+    assert ClipboardPaste.path_format("opencode") == "agent"
+  end
+
+  test "path_format is agent for role-marked agent panes even when cmd is node" do
+    assert ClipboardPaste.path_format(%{role: "agent", current_command: "node"}) == "agent"
+
+    assert ClipboardPaste.path_format(%{"role" => "agent", "current_command" => "bash"}) ==
+             "agent"
+  end
+
+  test "path_format is shell for ordinary shells and nil" do
+    assert ClipboardPaste.path_format("bash") == "shell"
+    assert ClipboardPaste.path_format("zsh") == "shell"
+    assert ClipboardPaste.path_format(nil) == "shell"
+    assert ClipboardPaste.path_format("") == "shell"
+    assert ClipboardPaste.path_format(%{role: "operator", current_command: "bash"}) == "shell"
+  end
+
   defp init_git!(root) do
     {_, 0} =
       System.cmd("git", ["-C", root, "init", "--initial-branch=main"], stderr_to_stdout: true)

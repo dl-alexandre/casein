@@ -67,6 +67,15 @@ defmodule DevIDE.Terminals.ClipboardPaste do
   @spec max_file_bytes() :: pos_integer()
   def max_file_bytes, do: @max_file_bytes
 
+  @doc """
+  Choose how the browser should type a saved clipboard path into the PTY.
+
+  Delegates to `DevIDE.Terminals.PaneInteraction.path_format/1` so paste and
+  scroll share one agent-pane detector.
+  """
+  @spec path_format(term()) :: String.t()
+  defdelegate path_format(pane_or_command), to: DevIDE.Terminals.PaneInteraction
+
   defp default_name(type) when is_binary(type) do
     case extension_for(type) do
       {:ok, ext} -> "clipboard-file#{ext}"

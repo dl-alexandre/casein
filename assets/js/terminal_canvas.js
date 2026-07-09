@@ -24,16 +24,22 @@
  * for quick in-browser checks, `localStorage["devide:terminal-renderer"] =
  * "canvas"`. Falls back to the DOM renderer if a 2D context isn't available.
  */
-import {readableTerminalColor, remapColor, terminalBackgroundRgb, termVar} from "./terminal_themes"
+import {
+  readableTerminalColor,
+  remapColor,
+  terminalBackgroundRgb,
+  terminalForegroundRgb,
+  termVar
+} from "./terminal_themes"
 import {
   BOLD,
   FAINT,
-  INVERSE,
   ITALIC,
   OVERLINE,
   STRIKE,
   UNDERLINE,
-  effectiveCellFlags
+  effectiveCellFlags,
+  resolveInverseColors
 } from "./terminal_cell_flags.mjs"
 
 export function canvasRendererEnabled(hook) {
@@ -244,14 +250,19 @@ function paintRow(ctx, row, r, opts) {
     while (end < row.length && styleKey(row[end]) === key) end += 1
 
     const flags = effectiveCellFlags(char0, flags0 || 0)
-    const inverse = flags & INVERSE
-    let cellFg = readableColorString(row[col][1], row[col][2], fg)
-    let cellBg = row[col][2] ? colorString(row[col][2], bg) : null
-    if (inverse) {
-      const tmp = cellBg || bg
-      cellBg = cellFg
-      cellFg = tmp
-    }
+    // Resolve reverse video on RGB tuples before stringifying so DOM and canvas
+    // share one inverse policy. Defaults are RGB (not the CSS strings in opts).
+    const inverted = resolveInverseColors(
+      row[col][1],
+      row[col][2],
+      flags,
+      terminalForegroundRgb(),
+      terminalBackgroundRgb()
+    )
+    const cellFg = readableColorString(inverted.fg, inverted.bg, fg)
+    // Inverse always produces a bg (from cell fg or the terminal default), so
+    // reverse-video highlights stay opaque even when the source cell had none.
+    const cellBg = inverted.bg ? colorString(inverted.bg, bg) : null
 
     const x = padL + col * cw
     const runW = (end - col) * cw
