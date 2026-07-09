@@ -35,16 +35,44 @@ agent_worktree_branch_name() {
   printf 'agent/%s/%s-%s\n' "$runtime" "$task" "$stamp"
 }
 
+agent_worktree_default_base_ref() {
+  local primary="$1"
+  local configured="${DEVIDE_AGENT_WORKTREE_BASE:-}"
+  local remote_head
+
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+    return 0
+  fi
+
+  remote_head="$(git -C "$primary" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+  if [[ -n "$remote_head" ]]; then
+    printf '%s\n' "$remote_head"
+    return 0
+  fi
+
+  if git -C "$primary" show-ref --verify --quiet refs/remotes/origin/master; then
+    printf '%s\n' "origin/master"
+  elif git -C "$primary" show-ref --verify --quiet refs/remotes/origin/main; then
+    printf '%s\n' "origin/main"
+  else
+    printf '%s\n' "HEAD"
+  fi
+}
+
 agent_worktree_create() {
   local runtime="$1"
   local task="${2:-adhoc}"
-  local base_ref="${DEVIDE_AGENT_WORKTREE_BASE:-origin/master}"
+  local base_ref
   local primary wt_root branch path
 
   primary="$(agent_worktree_primary_repo)" || {
     echo "error: DEVIDE_CHECKOUT is not a git repository" >&2
     return 1
   }
+
+  env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" fetch --quiet origin 2>/dev/null || true
+  base_ref="$(agent_worktree_default_base_ref "$primary")"
 
   wt_root="$(agent_worktree_root)"
   mkdir -p "$wt_root"
@@ -53,8 +81,6 @@ agent_worktree_create() {
   # Flatten only the branch's slashes; the leading wt_root must stay a real
   # absolute path or git treats the dash-leading result as an option.
   path="${wt_root}/${branch//\//-}"
-
-  env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" fetch --quiet origin 2>/dev/null || true
 
   # Keep git's stdout ("HEAD is now at ...") out of this function's stdout —
   # callers capture it as the worktree path.
