@@ -10,6 +10,11 @@ defmodule DevIDE.Previews.FileServer do
 
   Reaped when the workspace's tmux session terminates (topology
   `:session_terminated`) and by an idle timeout so listeners do not leak.
+
+  Idle is measured from the last **useful** activity: `ensure_started/2`
+  (port lookup) **or** an HTTP hit on the plug. A preview pane left open and
+  reloaded keeps the server alive; a silent abandon still reaps after the
+  idle window. Full pane-registration coupling remains a possible follow-up.
   """
 
   use GenServer
@@ -21,8 +26,8 @@ defmodule DevIDE.Previews.FileServer do
   alias DevIDE.Workspaces
 
   @topology_tag DevIDE.Terminals.TmuxTopology
-  # Belt-and-suspenders: stop after this long with no activity even if the
-  # topology signal is missed.
+  # Belt-and-suspenders: stop after this long with no ensure_started / HTTP
+  # activity even if the topology signal is missed.
   @idle_ms 15 * 60 * 1000
 
   ## Public API
@@ -90,6 +95,28 @@ defmodule DevIDE.Previews.FileServer do
     end
   end
 
+  @doc """
+  Reset the idle timer for a running file server.
+
+  Called from the plug on every HTTP request so an open preview that keeps
+  loading assets does not get reaped while the pane is still in use.
+  Accepts a server pid (preferred — no Registry hop) or a workspace id.
+  """
+  @spec touch(pid() | String.t()) :: :ok
+  def touch(pid) when is_pid(pid) do
+    if Process.alive?(pid), do: GenServer.cast(pid, :touch)
+    :ok
+  end
+
+  def touch(workspace_id) when is_binary(workspace_id) do
+    case whereis(workspace_id) do
+      {:ok, pid} -> touch(pid)
+      :error -> :ok
+    end
+  end
+
+  def touch(_), do: :ok
+
   ## Callbacks
 
   @impl true
@@ -97,7 +124,10 @@ defmodule DevIDE.Previews.FileServer do
     id = workspace_id(workspace)
 
     with {:ok, loc} <- resolve_loc(workspace),
-         {:ok, bandit_pid, port} <- start_listener(loc) do
+         # Pass self() so the plug can cast :touch without a Registry lookup
+         # (the GenServer name is registered, but pid is the reliable handle
+         # for request-path activity while the listener is live).
+         {:ok, bandit_pid, port} <- start_listener(loc, self()) do
       Process.flag(:trap_exit, true)
       Process.monitor(bandit_pid)
 
@@ -127,6 +157,11 @@ defmodule DevIDE.Previews.FileServer do
   end
 
   @impl true
+  def handle_cast(:touch, state) do
+    {:noreply, touch_idle(state)}
+  end
+
+  @impl true
   def handle_info({@topology_tag, {:session_terminated, %{session: session}}}, state) do
     if state.tmux_session == session do
       {:stop, :normal, state}
@@ -137,7 +172,10 @@ defmodule DevIDE.Previews.FileServer do
 
   def handle_info({@topology_tag, _other}, state), do: {:noreply, state}
 
-  def handle_info(:idle_timeout, state), do: {:stop, :normal, state}
+  # Match the current idle generation so a cancelled timer that already
+  # delivered its message cannot reap a server that was touched afterward.
+  def handle_info({:idle_timeout, ref}, %{idle_ref: ref} = state), do: {:stop, :normal, state}
+  def handle_info({:idle_timeout, _stale}, state), do: {:noreply, state}
 
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{bandit_pid: pid} = state) do
     Logger.warning(
@@ -169,9 +207,9 @@ defmodule DevIDE.Previews.FileServer do
 
   ## Internals
 
-  defp start_listener(loc) do
+  defp start_listener(loc, server_pid) when is_pid(server_pid) do
     case Bandit.start_link(
-           plug: {FileServerPlug, loc: loc},
+           plug: {FileServerPlug, loc: loc, server: server_pid},
            scheme: :http,
            ip: {127, 0, 0, 1},
            port: 0,
@@ -220,7 +258,9 @@ defmodule DevIDE.Previews.FileServer do
   defp default_tmux_session(_), do: nil
 
   defp schedule_idle do
-    Process.send_after(self(), :idle_timeout, idle_ms())
+    ref = make_ref()
+    Process.send_after(self(), {:idle_timeout, ref}, idle_ms())
+    ref
   end
 
   defp touch_idle(%{idle_ref: ref} = state) do

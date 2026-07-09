@@ -13,6 +13,7 @@ defmodule DevIDE.Previews.FileServer.Plug do
   import Plug.Conn
 
   alias DevIDE.Files.BrowserViewable
+  alias DevIDE.Previews.FileServer
   alias DevIDE.Workspaces.FileAccess
 
   @impl true
@@ -21,6 +22,9 @@ defmodule DevIDE.Previews.FileServer.Plug do
   @impl true
   def call(conn, opts) do
     loc = Keyword.fetch!(opts, :loc)
+    # Any hit (200 or 404) counts as activity so a live preview iframe/proxy
+    # keeps the listener from idling out while the pane is still open.
+    _ = FileServer.touch(Keyword.get(opts, :server))
     rel = request_rel(conn)
 
     with true <- is_binary(rel) and rel != "",

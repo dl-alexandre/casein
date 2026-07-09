@@ -138,6 +138,33 @@ defmodule DevIDE.Previews.FileServerTest do
              :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 500)
   end
 
+  test "HTTP hits reset the idle timer so an open preview is not reaped mid-use" do
+    {ws_root, workspace} = seed_workspace!()
+    File.write!(Path.join(ws_root, "keep.png"), <<137, 80, 78, 71>>)
+    # Short idle so the test stays fast, but wide enough that a single request
+    # round-trip cannot race the timer.
+    Application.put_env(:dev_ide, :file_server_idle_ms, 150)
+
+    assert {:ok, port} = FileServer.ensure_started(workspace)
+    assert {:ok, pid} = FileServer.whereis(workspace.id)
+    ref = Process.monitor(pid)
+
+    # Without HTTP activity the server would die by ~150ms. Hitting it every
+    # ~60ms across several cycles proves the plug's touch cast resets the timer.
+    for _ <- 1..5 do
+      Process.sleep(60)
+      assert get!(port, "keep.png").status == 200
+      # Drain the :touch cast so the idle ref is definitely renewed before the
+      # next sleep window.
+      _ = :sys.get_state(pid)
+      assert Process.alive?(pid)
+    end
+
+    # After the last hit, silence reaps the original process.
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 500
+    refute Process.alive?(pid)
+  end
+
   defp header(%Req.Response{headers: headers}, name) do
     name = String.downcase(name)
 
