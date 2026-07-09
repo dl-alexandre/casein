@@ -31,6 +31,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             {tab.label}
           </button>
         </div>
+        <p class="mb-3 text-[10px] text-base-content/50">
+          <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Esc</kbd>
+          closes · <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Tab</kbd>
+          / <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Shift+Tab</kbd>
+          next section · <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Ctrl+B ?</kbd>
+          again also cycles tabs
+        </p>
         <div
           id="cheat-panel-shortcuts"
           data-cheat-panel
@@ -38,12 +45,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
           aria-labelledby="cheat-tab-shortcuts"
         >
           <p class="mb-1 text-[11px] text-base-content/60">
-            Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
+            Press <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono">Ctrl + B</kbd>, then the key
+            shown below. Works from anywhere, even inside the terminal. Use <strong>Ctrl</strong>, not Cmd — Cmd+B and Cmd+P stay with the browser/OS.
           </p>
           <p class="mb-3 text-[11px] text-base-content/60">
-            No need to memorize these — a paired agent can do all of it for you in plain
-            English: "merge windows 5 and 6 side by side", "rename this pane",
-            "move this pane to its own window". See the <em>Agents</em> tab.
+            No need to memorize these — a paired agent can handle most window and pane chores in
+            plain English ("split this side by side", "rename this window"). See the <em>Agents</em>
+            tab.
           </p>
           <div class="grid grid-cols-2 gap-x-6 gap-y-1">
             <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
@@ -54,7 +62,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             <.cheat_row keys="C" desc="new window in a new browser tab" />
             <.cheat_row keys="n / p" desc="next or previous window" />
             <.cheat_row keys="l" desc="jump back to your last window" />
-            <.cheat_row keys="1–9" desc="jump to window 1–9" />
+            <.cheat_row keys="0–9" desc="jump to window 0–9" />
             <.cheat_row keys="," desc="rename this window" />
             <.cheat_row keys="$" desc="rename this session" />
             <.cheat_row keys="&" desc="close this window" />
@@ -88,12 +96,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             <div class="font-semibold text-base-content/60 col-span-2 mt-2">
               From anywhere (no Ctrl + B)
             </div>
-            <.cheat_row keys="Ctrl+P" desc="open the command palette" />
+            <.cheat_row keys="Ctrl+P" desc="open the command palette (not Cmd+P)" />
             <.cheat_row keys="Ctrl+Space" desc="open the command palette" />
-            <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
-            <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
-            <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
-            <.cheat_row keys="Space" desc="focus the terminal" />
+            <.cheat_row keys="Ctrl/Cmd+Shift+F" desc="hide the header for more terminal space" />
+            <.cheat_row keys="Ctrl+← → ↑ ↓" desc="move focus to the pane in that direction" />
+            <.cheat_row keys="Space" desc="focus the terminal (when nothing interactive is focused)" />
             <div class="font-semibold text-base-content/60 col-span-2 mt-2">
               Inside the command palette
             </div>
@@ -101,6 +108,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             <.cheat_row keys="Shift+Tab" desc="previous category" />
             <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
             <.cheat_row keys="Esc" desc="close the palette" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">On touch</div>
+            <.cheat_row keys="swipe ← →" desc="previous or next window" />
+            <.cheat_row keys="two-finger tap" desc="show or hide the soft keyboard" />
+            <.cheat_row keys="on-screen C-b" desc="arm leader mode, then type the second key" />
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">
             More detail in <code>docs/leader_keys.md</code>
@@ -119,8 +130,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
           </p>
           <div class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
             <.tip_row term="Open one">
-              Palette → <em>Preview: Open Current Dev Server</em>
-              (auto-detects your port),
+              Palette → search <em>Preview: Open …</em>
+              for a discovered surface (manager app, Tidewave, or a localhost port),
               or run <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000</code>
               in a terminal.
             </.tip_row>
@@ -130,12 +141,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             </.tip_row>
             <.tip_row term="Framed apps">
               Apps that block embedding fall back to a built-in proxy automatically.
-              Live-reload over WebSocket (HMR) won't tunnel through the proxy yet.
+              Live-reload over WebSocket (HMR) through the proxy is off by default
+              (<code class="rounded bg-base-200 px-1 py-0.5">:preview_proxy_hmr</code>).
             </.tip_row>
             <.tip_row term="Stay logged in">
-              Previews start fresh each session, so logins reset. Add
-              <code class="rounded bg-base-200 px-1 py-0.5">--storage workspace</code>
-              to keep auth across restarts.
+              Previews start fresh each session, so logins reset. Keep auth across restarts with
+              <code class="rounded bg-base-200 px-1 py-0.5">
+                DEVIDE_PREVIEW_STORAGE_PROFILE=workspace
+              </code>
+              (or <code class="rounded bg-base-200 px-1 py-0.5">profile</code>
+              plus <code class="rounded bg-base-200 px-1 py-0.5">DEVIDE_PREVIEW_STORAGE_PROFILE_NAME</code>).
             </.tip_row>
             <.tip_row term="Responsive">
               <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000 --viewport 375x812</code>
@@ -167,35 +182,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
         >
           <p class="mb-3 text-[11px] text-base-content/60">
             DevIDE wires external coding agents into your workspace over MCP, giving them
-            narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive its pane.
+            narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive the
+            <strong>agent</strong>
+            pane (not the operator pane). Watch live tool calls under <em>Agents → Live MCP activity</em>.
           </p>
           <div class="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-2">
             <.tip_row term="Claude">
               A bare <code class="rounded bg-base-200 px-1 py-0.5">claude</code>
-              in a paired
-              pane auto-loads DevIDE's terminal + preview MCP servers. It reads
+              in a paired pane auto-loads DevIDE's terminal + preview MCP servers. It reads
               <code class="rounded bg-base-200 px-1 py-0.5">AGENTS.md</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">CLAUDE.md</code>
-              first — keep your
-              workspace notes and the push/deploy rules there. Strongest on long, multi-step
-              changes and large context.
+              first — keep your workspace notes and the push/deploy rules there. Strongest on
+              long, multi-step changes and large context.
             </.tip_row>
             <.tip_row term="Grok">
               A bare <code class="rounded bg-base-200 px-1 py-0.5">grok</code>
-              reads the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
-              DevIDE materializes,
-              so it picks up the same MCP tools automatically. If the tools don't show up,
-              refresh pairing to rewrite <code class="rounded bg-base-200 px-1 py-0.5">grok/config.toml</code>.
+              (or <code class="rounded bg-base-200 px-1 py-0.5">
+                bash scripts/launch-devide-agent.sh grok
+              </code>)
+              picks up the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
+              DevIDE materializes. If tools are missing, refresh pairing and relaunch from the
+              checkout so project MCP is rewritten — not global <code class="rounded bg-base-200 px-1 py-0.5">~/.grok/config.toml</code>.
             </.tip_row>
             <.tip_row term="Codex">
               Codex gets DevIDE MCP through launch-time flags, not a project file — start
               <code class="rounded bg-base-200 px-1 py-0.5">codex</code>
-              from the paired pane so
-              the args apply, then confirm it lists the
+              from the paired pane (or <code class="rounded bg-base-200 px-1 py-0.5">
+                bash scripts/launch-devide-agent.sh codex
+              </code>)
+              so the args apply, then confirm it lists the
               <code class="rounded bg-base-200 px-1 py-0.5">terminal</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">preview</code>
-              servers before
-              sending commands.
+              servers before sending commands.
+            </.tip_row>
+            <.tip_row term="OpenCode">
+              Launch with
+              <code class="rounded bg-base-200 px-1 py-0.5">
+                bash scripts/launch-devide-agent.sh opencode
+              </code>
+              so DevIDE injects project <code class="rounded bg-base-200 px-1 py-0.5">.opencode/opencode.json</code>.
+              A bare start outside that path may miss workspace MCP.
             </.tip_row>
             <.tip_row term="Sign in">
               By default, agents use the host's global Claude/Codex login. For an
@@ -207,19 +233,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
               to check sign-in state.
             </.tip_row>
-            <.tip_row term="All three">
+            <.tip_row term="Pairing">
               Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>
-              first,
-              and use <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent-prompt.txt</code>
+              first, and use
+              <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent-prompt.txt</code>
               as a starter prompt. Drive an agent's pane with MCP
               <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_command</code>
-              / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>.
+              / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>
+              — always target the agent pane from topology, never the focused operator pane.
             </.tip_row>
             <.tip_row term="Tmux chores">
-              Agents can manage your windows and panes for you — ask in plain English to
-              merge two windows into side-by-side panes, break a pane out into its own
-              window, rename or renumber windows, or rebalance a layout. Every leader-key
-              action on the <em>Shortcuts</em> tab is something an agent can run.
+              Agents can manage windows and panes for you — ask in plain English to split,
+              focus, rename, or rebalance layouts via terminal MCP. That covers most
+              day-to-day chores; it is not a 1:1 map of every UI leader key (for example
+              copy-link and detach still live in the cockpit).
+            </.tip_row>
+            <.tip_row term="Artifacts">
+              Agents can also publish HTML/static artifact projects over Artifact MCP
+              (create, serve, snapshot) — useful for UI walk reports and shareable previews.
             </.tip_row>
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">

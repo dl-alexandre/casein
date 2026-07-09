@@ -21,3 +21,23 @@ export function effectiveCellFlags(char, flags) {
   if (visibleCellChar(char)) return flags
   return flags & ~TEXT_DECORATION_FLAGS
 }
+
+/**
+ * Resolve painted fg/bg for a cell, applying the inverse (reverse video) flag.
+ * Defaults fill missing sides so reverse on unstyled cells still paints.
+ *
+ * @param {number[]|null|undefined} fg
+ * @param {number[]|null|undefined} bg
+ * @param {number} flags
+ * @param {number[]|null|undefined} defaultFg
+ * @param {number[]|null|undefined} defaultBg
+ * @returns {{fg: number[]|null|undefined, bg: number[]|null|undefined}}
+ */
+export function resolveInverseColors(fg, bg, flags, defaultFg = null, defaultBg = null) {
+  if (!(flags & INVERSE)) return {fg, bg}
+
+  return {
+    fg: bg || defaultBg || null,
+    bg: fg || defaultFg || null
+  }
+}

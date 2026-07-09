@@ -249,6 +249,17 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   after a real drag) writes the selection to the browser clipboard immediately
   while keeping the highlight. Cmd/Ctrl+C, the context-menu Copy action, and
   OSC52 still work. Touch keeps the system long-press callout (no auto-copy).
+- **Agent TUI scroll is pointer-local SGR, not emulator history.** Focused-pane
+  `role` / `current_command` (via `DevIDE.Terminals.PaneInteraction`) sets
+  `data-scroll-policy` on pane tiles. Agent mode: wheel/touch → SGR mouse at the
+  cell under the pointer (multi-pane hit-test); plain click reaches the PTY;
+  Shift-drag selects; Alt+wheel opens the pane history drawer (tmux capture —
+  dual-layer history). Shell mode keeps Ghostty scrollback + plain drag-select.
+  Debug with `?termscroll=1` or `localStorage["devide:termscroll"]="1"`.
+- **Clipboard image paste into agents uses `@path`.** The paste reply includes
+  `path_format` from the same pane interaction detector so Grok/Claude attach
+  files instead of printing a shell-quoted absolute path line.
+
 - **Terminal shims are scoped, lazy, and self-healing for known tools.**
   `DevIDE.Terminals.Shims` materializes wrappers under
   `~/.devide/terminal-shims/`, installer backends under

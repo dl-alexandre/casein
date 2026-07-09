@@ -3150,7 +3150,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          path: result.path,
          relative_path: result.relative_path,
          bytes: result.bytes,
-         content_type: result.content_type
+         content_type: result.content_type,
+         # Server-side format (focused pane role/command). Client treats
+         # "agent" as an upgrade-only hint — see PaneInteraction.
+         path_format: clipboard_path_format(socket)
        }, socket}
     else
       {:error, reason} ->
@@ -3158,6 +3161,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       _ ->
         {:reply, %{ok: false, reason: "workspace path is not available"}, socket}
+    end
+  end
+
+  defp clipboard_path_format(socket) do
+    socket
+    |> focused_tmux_pane()
+    |> DevIDE.Terminals.PaneInteraction.path_format()
+  end
+
+  defp focused_tmux_pane(socket) do
+    panes =
+      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.active_tmux_window_panes(
+        socket.assigns[:tmux_windows] || []
+      )
+
+    active_id = socket.assigns[:tmux_active_pane_id]
+
+    cond do
+      is_binary(active_id) ->
+        Enum.find(panes, &(Map.get(&1, :id) == active_id || Map.get(&1, "id") == active_id))
+
+      true ->
+        Enum.find(panes, &(Map.get(&1, :active) == true || Map.get(&1, "active") == true))
     end
   end
 

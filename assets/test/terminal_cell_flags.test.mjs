@@ -9,6 +9,7 @@ import {
   TEXT_DECORATION_FLAGS,
   UNDERLINE,
   effectiveCellFlags,
+  resolveInverseColors,
   visibleCellChar
 } from "../js/terminal_cell_flags.mjs"
 
@@ -27,4 +28,11 @@ test("visible cells keep text decoration flags", () => {
   assert.equal(effectiveCellFlags("x", flags), flags)
   assert.equal(effectiveCellFlags("─", flags), flags)
   assert.equal(visibleCellChar("─"), true)
+})
+
+test("resolveInverseColors swaps with defaults when sides are missing", () => {
+  assert.deepEqual(
+    resolveInverseColors(null, [1, 2, 3], INVERSE, [9, 9, 9], [0, 0, 0]),
+    {fg: [1, 2, 3], bg: [9, 9, 9]}
+  )
 })
