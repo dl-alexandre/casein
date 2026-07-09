@@ -96,6 +96,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 url={
                   SessionBar.share_url(@workspace.id, @terminal_sid, nil, path_base: @workspace_route)
                 }
+                agent_url={SessionBar.agent_mcp_url(@workspace.id, @tmux_session)}
                 label={terminal_session_label(@tmux_session, @terminal_sid)}
                 kind="session"
                 visible?={true}
