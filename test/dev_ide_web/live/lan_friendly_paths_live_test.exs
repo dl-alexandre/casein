@@ -116,7 +116,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
       assert socket_assign(view, :workspace_route) == "/aws"
     end
 
-    test "the workspace header renders breadcrumbs back to home", %{
+    test "the workspace header renders the parent-directory breadcrumb trail", %{
       conn: conn,
       root: root
     } do
@@ -125,7 +125,11 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
 
       {:ok, view, html} = live(conn, "/team/repo")
 
-      assert has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/']")
+      # The breadcrumb trail surfaces the parent directory ("team"); the home
+      # ← link was retired in favour of the header session-picker toggle (home
+      # is reachable via the Scratch node in the summoned SESSIONS rail).
+      assert has_element?(view, "nav[aria-label='Breadcrumb']")
+      refute has_element?(view, "nav[aria-label='Breadcrumb'] a[href='/']")
       assert html =~ "team"
     end
 
