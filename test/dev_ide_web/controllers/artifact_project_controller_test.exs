@@ -40,6 +40,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
 
     MemoryAdapter.clear()
     Runtimes.clear()
+    DevIDE.Audit.MemoryAdapter.clear()
     init_repo!(repo)
     seed_workspace!(@workspace_id, repo)
 
@@ -48,6 +49,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
+      DevIDE.Audit.MemoryAdapter.clear()
       File.rm_rf!(base)
       Enum.each(prev, fn {k, v} -> restore(env_key(k), v) end)
     end)
@@ -107,6 +109,64 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
   test "401 without a forwarded identity", ctx do
     conn = get(ctx.conn, artifact_path(ctx.project_id))
     assert conn.status == 401
+  end
+
+  test "a served artifact carries share-metadata headers", ctx do
+    conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
+
+    assert response(conn, 200)
+    assert get_resp_header(conn, "x-artifact-title") == ["Smoke Report"]
+    # branch/commit/status are present (generated), we assert non-empty shape.
+    assert [branch] = get_resp_header(conn, "x-artifact-branch")
+    assert branch != ""
+    assert [commit] = get_resp_header(conn, "x-artifact-commit")
+    assert commit =~ ~r/^[0-9a-f]{7,40}$/
+    assert [_status] = get_resp_header(conn, "x-artifact-status")
+  end
+
+  test "an authorized serve is audited", ctx do
+    ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
+
+    assert [event] =
+             DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
+               @workspace_id,
+               "artifact_project.served",
+               10
+             )
+
+    assert event.action == "artifact_project.served"
+    assert event.actor_id == "owner@example.com"
+    assert event.target_type == "artifact_project"
+    assert event.target_ref == ctx.project_id
+    assert event.decision == :allow
+  end
+
+  test "a retired artifact shows the owner a 410 landing page (not a 404)", ctx do
+    # Simulate cleanup: the worktree files are gone but the id stays valid.
+    File.rm_rf!(ctx.worktree)
+
+    conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
+
+    body = response(conn, 410)
+    assert body =~ "retired"
+    assert body =~ "Smoke Report"
+    assert get_resp_header(conn, "content-type") |> hd() =~ "text/html"
+    assert [csp] = get_resp_header(conn, "content-security-policy")
+    assert csp =~ "default-src 'none'"
+
+    assert [_retired] =
+             DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
+               @workspace_id,
+               "artifact_project.retired",
+               10
+             )
+  end
+
+  test "a retired artifact still 404s opaquely for a non-owner", ctx do
+    File.rm_rf!(ctx.worktree)
+
+    conn = ctx.conn |> as("intruder@example.com") |> get(artifact_path(ctx.project_id))
+    assert text_response(conn, 404) == "not found"
   end
 
   # --- helpers ---

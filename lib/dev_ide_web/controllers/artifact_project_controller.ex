@@ -21,6 +21,7 @@ defmodule DevIdeWeb.ArtifactProjectController do
   use DevIdeWeb, :controller
 
   alias DevIDE.ArtifactProjects
+  alias DevIDE.Audit
   alias DevIDE.Files.PathSafety
   alias DevIDE.Workspaces
 
@@ -34,22 +35,54 @@ defmodule DevIdeWeb.ArtifactProjectController do
                   "connect-src 'self'; object-src 'none'; base-uri 'none'; " <>
                   "frame-ancestors 'self'"
 
+  # The retired-artifact landing page is OUR trusted HTML (not workspace content),
+  # so it locks down to just its own inline styles — no scripts, no network.
+  @landing_csp "default-src 'none'; style-src 'unsafe-inline'; img-src data:; " <>
+                 "base-uri 'none'; frame-ancestors 'self'"
+
   def show(conn, %{"workspace_id" => workspace_id, "artifact_project_id" => project_id} = params) do
     segments = Map.get(params, "path", [])
 
     with {:ok, _workspace} <- authorize(conn, workspace_id),
-         {:ok, project} <- fetch_project(project_id, workspace_id),
-         {:ok, file} <- resolve_file(project.worktree_path, segments) do
-      conn
-      |> put_resp_header("content-security-policy", @artifact_csp)
-      |> put_resp_header("x-content-type-options", "nosniff")
-      |> put_resp_content_type(MIME.from_path(file))
-      |> send_file(200, file)
+         {:ok, project} <- fetch_project(project_id, workspace_id) do
+      serve_or_landing(conn, project, segments)
     else
       _ -> not_found(conn)
     end
   rescue
     _ -> not_found(conn)
+  end
+
+  # The viewer owns the workspace AND the artifact belongs to it, so a 404 here
+  # would leak nothing new — we can tell the owner *why* a file is missing. A
+  # retired artifact (worktree cleaned/expired/gone) gets a friendly landing
+  # page; a live artifact with a merely-missing sub-path still 404s opaquely.
+  #
+  # `file` is PathSafety-resolved (traversal + symlink-escape guarded) with a
+  # dotfile denylist, and we set nosniff — the served path and its derived
+  # content-type are not attacker-steered, so the traversal/content-type findings
+  # below are mitigated at resolve_file/2.
+  # sobelow_skip ["Traversal.SendFile", "XSS.ContentType"]
+  defp serve_or_landing(conn, project, segments) do
+    case resolve_file(project.worktree_path, segments) do
+      {:ok, file} ->
+        audit(conn, project, :served, %{"path" => Enum.join(segments, "/")})
+
+        conn
+        |> put_resp_header("content-security-policy", @artifact_csp)
+        |> put_resp_header("x-content-type-options", "nosniff")
+        |> put_share_headers(project)
+        |> put_resp_content_type(MIME.from_path(file))
+        |> send_file(200, file)
+
+      :error ->
+        if ArtifactProjects.retired?(project) do
+          audit(conn, project, :retired, %{})
+          render_retired(conn, project)
+        else
+          not_found(conn)
+        end
+    end
   end
 
   # Mirrors PreviewArtifactController.authorize/2. 404 (via :forbidden at the call
@@ -120,4 +153,115 @@ defmodule DevIdeWeb.ArtifactProjectController do
   defp dotfile?(segment), do: String.starts_with?(segment, ".")
 
   defp not_found(conn), do: conn |> put_status(404) |> text("not found")
+
+  # Share metadata as response headers so a teammate (or tooling) hitting the
+  # durable link learns what it is without parsing the body. Title is
+  # workspace-authored, so every value is sanitized against header injection.
+  defp put_share_headers(conn, project) do
+    meta = ArtifactProjects.share_metadata(project)
+
+    conn
+    |> maybe_put_header("x-artifact-title", meta.title)
+    |> maybe_put_header("x-artifact-branch", meta.branch)
+    |> maybe_put_header("x-artifact-commit", meta.commit)
+    |> maybe_put_header("x-artifact-status", meta.status)
+  end
+
+  defp maybe_put_header(conn, _name, nil), do: conn
+
+  defp maybe_put_header(conn, name, value) do
+    case sanitize_header(value) do
+      "" -> conn
+      clean -> put_resp_header(conn, name, clean)
+    end
+  end
+
+  # Strip control chars (incl. CR/LF) so an artifact title can never split the
+  # response or inject a second header; cap length to keep headers bounded.
+  defp sanitize_header(value) do
+    value
+    |> to_string()
+    |> String.replace(~r/[[:cntrl:]]/u, "")
+    |> String.slice(0, 200)
+    |> String.trim()
+  end
+
+  # 410 Gone: the id was valid and owned by the viewer, but the artifact's files
+  # are no longer on disk. Owner-only (we already authorized), so it's safe to
+  # echo the title/branch/commit back. retired_html/1 interpolates ONLY
+  # html-escaped values (see esc/1), so the dynamically-built body is not
+  # attacker-controlled — the send_resp XSS finding is mitigated there.
+  # sobelow_skip ["XSS.SendResp"]
+  defp render_retired(conn, project) do
+    meta = ArtifactProjects.share_metadata(project)
+
+    conn
+    |> put_resp_header("content-security-policy", @landing_csp)
+    |> put_resp_header("x-content-type-options", "nosniff")
+    |> put_resp_content_type("text/html")
+    |> send_resp(410, retired_html(meta))
+  end
+
+  defp retired_html(meta) do
+    title = esc(meta.title)
+    branch = esc(meta.branch || "—")
+    commit = esc(short_sha(meta.commit))
+    changed = esc(meta.updated_at || meta.created_at || "—")
+
+    """
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Artifact retired · #{title}</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 15px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; }
+      h1 { font-size: 1.35rem; margin: 0 0 .5rem; }
+      p { color: #6b7280; margin: 0 0 1.5rem; }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: 0; }
+      dt { color: #9ca3af; }
+      dd { margin: 0; font-variant-numeric: tabular-nums; }
+    </style>
+    </head>
+    <body>
+      <main>
+        <h1>This artifact has been retired</h1>
+        <p>“#{title}” is no longer available — its files were cleaned up after the workspace stopped. The link stays valid, so you can re-generate the artifact and it will reappear here.</p>
+        <dl>
+          <dt>Branch</dt><dd>#{branch}</dd>
+          <dt>Last commit</dt><dd>#{commit}</dd>
+          <dt>Last updated</dt><dd>#{changed}</dd>
+        </dl>
+      </main>
+    </body>
+    </html>
+    """
+  end
+
+  # Fire-and-forget audit of every authorized serve/retired hit on the durable
+  # public URL — the login-gated read path that isn't otherwise visible in MCP
+  # activity. Never blocks or fails the response.
+  defp audit(conn, project, event, extra) do
+    viewer = conn.assigns[:current_user]
+
+    Audit.emit!(%{
+      action: "artifact_project.#{event}",
+      workspace_id: project.workspace_id,
+      actor_id: viewer && Map.get(viewer, :email),
+      target_type: "artifact_project",
+      target_ref: project.id,
+      decision: :allow,
+      metadata: Map.merge(%{"status" => project.status}, extra)
+    })
+
+    :ok
+  end
+
+  defp esc(nil), do: ""
+  defp esc(value), do: value |> to_string() |> Plug.HTML.html_escape()
+
+  defp short_sha(nil), do: "—"
+  defp short_sha(sha) when is_binary(sha), do: String.slice(sha, 0, 12)
 end
