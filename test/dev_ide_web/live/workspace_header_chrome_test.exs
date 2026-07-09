@@ -104,7 +104,15 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # The ⋯ menu renders unconditionally — it is the canonical home for
     # secondary window/pane actions, not a responsive spillover bucket.
     assert html =~ "header-overflow"
+    assert html =~ ~s(id="header-overflow-#{workspace_id}")
+    assert html =~ ~s(phx-hook="HeaderOverflow")
     assert has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
+    # Desktop sizing lives in the ⋯ menu (font + display zoom).
+    assert has_element?(view, ~s(.header-overflow button[data-keybar-key="FontUp"]))
+    assert has_element?(view, ~s(.header-overflow button[data-keybar-key="FontDown"]))
+    assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomUp"]))
+    assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomDown"]))
+    assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomReset"]))
     assert has_element?(view, "#notifications-bell-#{workspace_id}")
 
     # Template palette/library ids are canonical in the ⋯ menu and must render

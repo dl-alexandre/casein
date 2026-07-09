@@ -131,9 +131,16 @@ export const WorkspaceLeader = {
         window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
       }
     }
+    // Close open <details> menus on outside click. Defer one frame so a
+    // summary's activation can toggle `open` first (otherwise the click that
+    // opens a menu can race this handler while `open` is still false, then a
+    // follow-up patch/path re-runs and the menu never sticks).
     this._onDocClick = (e) => {
-      document.querySelectorAll("details[open]").forEach((el) => {
-        if (!el.contains(e.target)) el.removeAttribute("open")
+      const target = e.target
+      requestAnimationFrame(() => {
+        document.querySelectorAll("details[open]").forEach((el) => {
+          if (!el.contains(target)) el.removeAttribute("open")
+        })
       })
     }
     this._onTouchStart = (e) => {

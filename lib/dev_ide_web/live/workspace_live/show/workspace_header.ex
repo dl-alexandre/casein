@@ -7,7 +7,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   def header_overflow_menu(assigns) do
     ~H"""
-    <details class="header-overflow relative shrink-0">
+    <details
+      id={"header-overflow-" <> @workspace.id}
+      phx-hook="HeaderOverflow"
+      class="header-overflow relative shrink-0"
+    >
       <summary
         class="flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
         title="More workspace and terminal controls"
@@ -129,6 +133,57 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
               Reset pane layout ({@active_window_pane_count} panes)
             </button>
           <% end %>
+        <% end %>
+        <%= if @tab == "terminal" do %>
+          <div class="my-0.5 border-t border-base-300/70"></div>
+          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+            Sizing
+          </div>
+          <button
+            type="button"
+            data-keybar-key="FontDown"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Decrease terminal font size"
+            aria-label="Decrease font size"
+          >
+            A− Smaller text
+          </button>
+          <button
+            type="button"
+            data-keybar-key="FontUp"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Increase terminal font size"
+            aria-label="Increase font size"
+          >
+            A+ Larger text
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ZoomDown"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Decrease display zoom (Ctrl + scroll)"
+            aria-label="Decrease display zoom"
+          >
+            − Zoom out
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ZoomReset"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Reset display zoom to 100%"
+            aria-label="Reset display zoom"
+          >
+            1× Reset zoom
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ZoomUp"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Increase display zoom (Ctrl + scroll)"
+            aria-label="Increase display zoom"
+          >
+            + Zoom in
+          </button>
         <% end %>
       </div>
     </details>
