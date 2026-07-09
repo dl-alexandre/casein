@@ -98,6 +98,32 @@ defmodule DevIDE.ArtifactProjectsTest do
     assert runtime.worktree_path == project.worktree_path
   end
 
+  test "sequential html creates each land a runtime row and public payload" do
+    # Regression for create-then-update NoResultsError: many creates in a row
+    # must never leave a worktree without a matching runtime id.
+    projects =
+      for i <- 1..5 do
+        assert {:ok, project} =
+                 ArtifactProjects.create("ws-artifacts", %{
+                   name: "Batch #{i}",
+                   kind: "html",
+                   files: %{"index.html" => "<h1>Batch #{i}</h1>\n"}
+                 })
+
+        assert {:ok, runtime} = Runtimes.get_runtime(project.id)
+        assert runtime.id == project.id
+        assert runtime.status in ["provisioned", "requested", "running"]
+
+        payload = ArtifactProjects.payload(project)
+        assert payload.id == project.id
+        assert is_binary(payload.worktree_path)
+        project
+      end
+
+    assert length(projects) == 5
+    assert length(Enum.uniq(Enum.map(projects, & &1.id))) == 5
+  end
+
   test "update writes generated files, appends prompt history, and keeps preview metadata" do
     assert {:ok, project} =
              ArtifactProjects.create("ws-artifacts", %{

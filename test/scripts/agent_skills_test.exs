@@ -29,8 +29,8 @@ defmodule Scripts.AgentSkillsTest do
     dir
   end
 
-  # A source .claude/skills tree with both an infra skill (delegate-to-grok) and
-  # a project-only skill (verify) so exclusion is observable.
+  # A source .claude/skills tree with infra skills (default allowlist) and a
+  # project-only skill (verify) so exclusion is observable.
   defp seed_source do
     src = tmp("src")
     File.mkdir_p!(Path.join([src, "delegate-to-grok", "references"]))
@@ -40,6 +40,9 @@ defmodule Scripts.AgentSkillsTest do
       Path.join([src, "delegate-to-grok", "references", "prompt-template.md"]),
       "tmpl\n"
     )
+
+    File.mkdir_p!(Path.join([src, "preview-ui-walk", "references"]))
+    File.write!(Path.join([src, "preview-ui-walk", "SKILL.md"]), "# walk\nv1\n")
 
     File.mkdir_p!(Path.join(src, "verify"))
     File.write!(Path.join([src, "verify", "SKILL.md"]), "# verify\n")
@@ -58,6 +61,10 @@ defmodule Scripts.AgentSkillsTest do
     assert File.exists?(
              Path.join([config, "skills", "delegate-to-grok", "references", "prompt-template.md"])
            )
+
+    # preview-ui-walk is host infra for product-repo agents (default allowlist).
+    assert File.read!(Path.join([config, "skills", "preview-ui-walk", "SKILL.md"])) ==
+             "# walk\nv1\n"
 
     # `verify` is not in the default allowlist — must not leak into other repos' agents.
     refute File.exists?(Path.join([config, "skills", "verify"]))
