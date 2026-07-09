@@ -161,6 +161,8 @@
             "assert_selector",
             "assert_text",
             "assert_url",
+            "assert_iframe",
+            "assert_http",
             "settle",
             "screenshot",
             "click",
@@ -172,7 +174,7 @@
             "uncheck",
             "hover"
           ],
-          "description": "Step kind. assert_*/wait_for/settle are always allowed; click/fill/type/press/select/check/uncheck/hover are mutating."
+          "description": "Step kind. assert_*/wait_for/settle/assert_iframe/assert_http are always allowed; click/fill/type/press/select/check/uncheck/hover are mutating."
         },
         "name": {
           "type": "string",
@@ -180,11 +182,25 @@
         },
         "selector": {
           "type": "string",
-          "description": "CSS selector (wait_for, assert_selector, click, fill, …)."
+          "description": "CSS selector (wait_for, assert_selector, click, fill, assert_iframe, …)."
+        },
+        "frame": {
+          "description": "Scope assert_selector/assert_text/wait_for into an iframe. true = first iframe; or a CSS selector.",
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "minLength": 1 }
+          ]
+        },
+        "iframe": {
+          "description": "Alias for frame (and default selector for assert_iframe).",
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "minLength": 1 }
+          ]
         },
         "text": {
           "type": "string",
-          "description": "Text to assert, fill, or type."
+          "description": "Text to assert, fill, or type. For assert_iframe, required content inside the frame."
         },
         "value": {
           "type": ["string", "number", "boolean"],
@@ -192,11 +208,51 @@
         },
         "path": {
           "type": "string",
-          "description": "Expected path fragment for assert_url."
+          "description": "Expected path fragment for assert_url, or URL path for assert_http."
+        },
+        "url": {
+          "type": "string",
+          "description": "Alias for assert_http path (absolute or app-relative)."
         },
         "lands_on": {
           "type": "string",
           "description": "Alias for assert_url path."
+        },
+        "min_chars": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_iframe: minimum body text length (default 40)."
+        },
+        "min_html": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "assert_iframe: minimum HTML length if body text is short (default 800)."
+        },
+        "url_includes": {
+          "type": "string",
+          "description": "assert_iframe: frame URL must include this substring."
+        },
+        "expect_text": {
+          "type": "string",
+          "description": "assert_http: response body must include this."
+        },
+        "min_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599,
+          "description": "assert_http: inclusive min status (default 200)."
+        },
+        "max_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599,
+          "description": "assert_http: inclusive max status (default 399)."
+        },
+        "max_redirects": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "description": "assert_http: follow redirects (default 5)."
         },
         "key": {
           "type": "string",
@@ -217,6 +273,12 @@
           "minimum": 0,
           "maximum": 60000,
           "description": "settle duration."
+        },
+        "settle_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "assert_iframe post-load settle."
         },
         "wait_ms": {
           "type": "integer",

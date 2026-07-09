@@ -19,7 +19,8 @@
       "note": "landing",
       "steps": [
         { "action": "assert_url", "path": "/admin" },
-        { "action": "assert_selector", "selector": "main", "name": "has-main" }
+        { "action": "assert_text", "text": "Dashboard", "name": "h1-text" },
+        { "action": "assert_selector", "selector": "h1", "name": "has-h1" }
       ]
     },
     {

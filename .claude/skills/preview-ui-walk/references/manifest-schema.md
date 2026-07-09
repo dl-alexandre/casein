@@ -105,10 +105,15 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as
 
 | Action | Mutating? | Notes |
 |--------|-----------|--------|
-| `wait_for` / `wait_for_selector` | no | CSS selector |
-| `assert_selector` / `assert_text` / `assert_url` | no | always allowed |
+| `wait_for` / `wait_for_selector` | no | CSS selector; optional `frame` |
+| `assert_selector` / `assert_text` / `assert_url` | no | always allowed; `frame`/`iframe` scopes into embeds |
+| `assert_iframe` | no | **embed loaded** — body length / text / URL (kills shell-only false greens) |
+| `assert_http` | no | session cookie GET (path status + optional body text) |
 | `settle` | no | fixed sleep |
 | `click` / `fill` / `type` / `press` / `select` / `check` / `hover` | **yes** | needs `safety.allow_interactions: true` + non-prod `env_check` |
+
+**Anti false-green:** pages that wrap an iframe (LiveDashboard, HexDocs) must use
+`assert_iframe` (and usually `assert_http` on the raw embed path). Shell title alone is not enough.
 
 Mutating steps also check `step.event` against `safety.deny_events`. If interactions
 are blocked, a required mutating step **FAIL**s (so the walk does not greenwash
