@@ -4,10 +4,10 @@ description: >
   Drive an automated, READ-ONLY UI smoke walk of a DevIDE workspace app through
   the preview stack — reuse the running preview, log in, walk a manifest of pages
   capturing a screenshot + console/network errors + timing per page, record the
-  session, and emit one Artifact report with the playback video embedded. Use for
-  superadmin/admin-panel smoke tests or any multi-page visual+error walk of a
-  workspace app. NOT for driving dev_ide's own UI (use `verify`), and NOT for
-  mutating flows.
+  session, and publish one Artifact report — handing back its durable, login-gated
+  public URL to paste straight into a PR. Use for superadmin/admin-panel smoke tests
+  or any multi-page visual+error walk of a workspace app. NOT for driving dev_ide's
+  own UI (use `verify`), and NOT for mutating flows.
 ---
 
 # Preview UI walk
@@ -39,8 +39,11 @@ see [[onebackend-v3-superadmin-uitest]]). So:
 - **One Artifact report** (HTML), the single conclusion window: an embedded
   `<video>` of the walk at the top, then a row per page — thumbnail screenshot,
   load time (ms), console-error count, network-error count, PASS/FAIL.
-- The report is the deliverable; **close the live walk pane** afterward — it was
-  just the execution surface.
+- **A durable, login-gated `public_url`** for that report (from publishing it as an
+  artifact project — step 4). This is the actual deliverable you hand back: a link
+  that survives workspace restarts and is safe to paste in a PR, where a teammate
+  clicks through devbox Google login to see the report. **Close the live walk pane**
+  afterward — it was just the execution surface.
 
 ## Prerequisites
 
@@ -141,16 +144,36 @@ Get the live app surface and its session, don't spin a new one:
    - record elapsed ms; mark PASS/FAIL against the manifest's per-page budget
 4. `preview_record_stop(session_id)` → webm artifact path.
 
-## 4. Build the report + present as one window
+## 4. Publish the report → hand back a durable, PR-shareable link
 
-- Assemble an HTML report: embedded `<video src=<webm-path>>` (same-origin under
-  `devide.devbox.milcgroup.com`, so it should play inline) + a row per page.
-- Publish it via the artifact MCP (`artifact_create`/`update`, then `artifact_serve`)
-  and open it with `preview_open` using the returned `preview_open_arguments`.
-- **Fallback** if CSP blocks the inline video: put a "▶ Open playback" link in the
-  report that the operator uses to fire `preview_playback_open(artifact_path)` into
-  its own looping pane.
-- Close the live walk pane. The report is the single conclusion surface.
+Both drivers write a **self-contained** `report.html` (screenshots are inlined as
+`data:` URIs). Publish it as an **artifact project** so it gets a durable,
+login-gated URL a teammate can open straight from a PR — this is the deliverable,
+not the ephemeral walk pane.
+
+1. **Publish** via the artifact MCP — one file map, the report is self-contained:
+   ```
+   artifact_create(name: "<report.name>", kind: "html",
+                   files: { "index.html": <report.html contents> })
+   # iterate with artifact_update(artifact_id, files: {...}) on re-runs
+   ```
+2. **Read `public_url` from the response** — the artifact tools return the full
+   payload, so `public_url` (durable, login-gated; e.g.
+   `https://devide.devbox…/artifact-projects/<ws>/<id>/`) is right there, alongside
+   `commit` (the report's git sha) and `retired` (false while live). **That URL is
+   what you hand back** — paste it in the PR. The viewer hits devbox oauth2-proxy →
+   Google login → the report. It survives workspace restarts and port churn.
+   - `public_url` is **nil** only when `preview_app_url` isn't configured (local
+     dev). Then fall back to `preview_open` with the returned `preview_open_arguments`
+     for a live look, and say the durable link isn't available in this environment.
+3. **Video** — the walk's webm lives in a separate recording artifact, so for the
+   durable report either (a) co-locate it: include the webm in the `files` map as
+   `walk.webm` and rewrite the report's `<video src>` to the relative `walk.webm`
+   (it then plays same-origin under the artifact URL), or (b) keep the screenshot
+   grid as the durable record and add a "▶ Open playback" link that fires
+   `preview_playback_open(<webm-artifact>)` into a looping pane for a live viewing.
+4. Close the live walk pane. The published artifact (its `public_url`) is the single
+   conclusion surface.
 
 ## 5. Parallelization (optional; default sequential)
 
