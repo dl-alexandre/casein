@@ -50,16 +50,21 @@ defmodule DevIDE.Deployment.TerminalSmoke do
   # ── pure, testable helpers ──────────────────────────────────────────────────
 
   @doc """
-  True when process `pid`'s working directory resolves to a live directory.
+  True when process `pid`'s working directory is a live directory.
 
-  Fails open (returns true) when `/proc/<pid>` itself is unavailable — non-Linux
-  dev hosts or a process that already exited — so only a *present* process with a
-  *deleted* cwd (the incident) reads as unhealthy. `stat_fn` is injectable.
+  Detected via the `/proc/<pid>/cwd` symlink target: the Linux kernel appends
+  `" (deleted)"` when the process's cwd has been unlinked (the incident — the dir
+  is gone but its inode is held open, so `File.stat`/`File.dir?` still succeed;
+  only `getcwd(3)` in a real shell fails). Fails open (returns true) when the
+  link can't be read — non-Linux dev hosts or a process that already exited — so
+  only a present process with a deleted cwd reads as unhealthy. `read_link_fn` is
+  injectable for tests.
   """
-  @spec proc_cwd_alive?(integer(), (Path.t() -> {:ok, term()} | {:error, term()})) :: boolean()
-  def proc_cwd_alive?(pid, stat_fn \\ &File.stat/1) when is_integer(pid) do
-    case stat_fn.("/proc/#{pid}") do
-      {:ok, _} -> match?({:ok, _}, stat_fn.("/proc/#{pid}/cwd"))
+  @spec proc_cwd_alive?(integer(), (Path.t() -> {:ok, String.t()} | {:error, term()})) ::
+          boolean()
+  def proc_cwd_alive?(pid, read_link_fn \\ &File.read_link/1) when is_integer(pid) do
+    case read_link_fn.("/proc/#{pid}/cwd") do
+      {:ok, target} -> not String.ends_with?(target, " (deleted)")
       _ -> true
     end
   end
