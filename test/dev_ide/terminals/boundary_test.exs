@@ -63,8 +63,11 @@ defmodule DevIDE.Terminals.BoundaryTest do
   test "command examples include interactive launchers when raw shell is available" do
     examples = Boundary.command_examples(raw_available?: true)
 
-    for command <- Boundary.interactive_command_ids() do
-      assert command in examples
+    # Examples are joined argv strings (not palette ids). clauded → ["claude"], so
+    # both claude and clauded assert the same shell example is present.
+    for id <- Boundary.interactive_command_ids() do
+      assert {:ok, argv} = ExecCtl.Allowlist.argv_for(id)
+      assert Enum.join(argv, " ") in examples
     end
   end
 
