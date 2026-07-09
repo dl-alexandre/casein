@@ -26,6 +26,7 @@ import os
 import sys
 import time
 import urllib.request
+from urllib.parse import urlparse
 
 URL = os.environ.get("DEVIDE_PREVIEW_MCP_URL")
 TOKEN = os.environ.get("DEV_IDE_API_TOKEN")
@@ -98,6 +99,28 @@ def capture(sid):
     return art, ce, ne
 
 
+def landed_url(sid, nav):
+    """Where the browser actually ended up. A 200 + a screenshot is NOT proof the
+    intended page rendered — a gated page can bounce to /login and still shoot a
+    clean PNG (the false green). Read the real current URL to catch it."""
+    url = (nav.get("current_url") if isinstance(nav, dict) else None) or ""
+    if not url:
+        obs = mcp("preview_observe", {"session_id": sid})
+        if isinstance(obs, dict):
+            url = obs.get("url") or obs.get("current_url") or ""
+    return url
+
+
+def url_ok(landed, expected):
+    """True/False if we could read the landed URL, else None (unverifiable).
+    Passes when the expected path is a prefix/substring of the landed path, so
+    query strings and trailing segments don't false-fail."""
+    if not landed:
+        return None
+    path = urlparse(landed).path or landed
+    return expected.split("?", 1)[0].rstrip("/") in path or expected == path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest", required=True)
@@ -133,7 +156,11 @@ def main():
         elapsed = int((time.monotonic() - t0) * 1000)
         ok_load = "_error" not in nav and art.startswith("data:image/png;base64,")
         within = elapsed <= p.get("budget_ms", 15000)
-        status = "PASS" if (ok_load and within and ce == 0) else "FAIL"
+        # Landed-URL check: a gated page that bounced to /login must FAIL even
+        # with a 200 + a clean screenshot. `lands_on` overrides the expected path.
+        landed = landed_url(sid, nav)
+        uok = url_ok(landed, p.get("lands_on", p["path"]))
+        status = "PASS" if (ok_load and within and ce == 0 and uok is not False) else "FAIL"
         shot_file = None
         if art.startswith("data:image/png;base64,"):
             shot_file = f"shot-{len(results):02d}.png"
@@ -142,9 +169,10 @@ def main():
         row = {"name": p["name"], "path": p["path"], "ms": elapsed,
                "budget_ms": p.get("budget_ms"), "console_errors": ce,
                "network_errors": ne, "status": status, "shot": art if art else None,
-               "shot_file": shot_file}
+               "shot_file": shot_file, "landed": landed, "url_ok": uok}
         results.append(row)
-        print(f"[preview-ui-walk] {status:4} {p['name']:16} {elapsed:6}ms  ce={ce} ne={ne}")
+        flag = "" if uok is not False else f"  ⚠ landed={landed}"
+        print(f"[preview-ui-walk] {status:4} {p['name']:16} {elapsed:6}ms  ce={ce} ne={ne}{flag}")
 
     stop = mcp("preview_record_stop", {"session_id": sid})
     webm = stop.get("url") or stop.get("artifact_path") if isinstance(stop, dict) else None
@@ -164,9 +192,13 @@ def write_report(out, m, webm, results):
     for r in results:
         img = f'<img src="{r["shot"]}" width="240">' if r.get("shot") else "—"
         color = "#2ea043" if r["status"] == "PASS" else "#f85149"
+        redirect = ""
+        if r.get("url_ok") is False:
+            redirect = (f'<br><small style="color:#f85149">↳ redirected to '
+                        f'{html.escape(str(r.get("landed") or "?"))}</small>')
         rows.append(
             f'<tr><td>{img}</td><td><b>{html.escape(r["name"])}</b><br>'
-            f'<code>{html.escape(r["path"])}</code></td>'
+            f'<code>{html.escape(r["path"])}</code>{redirect}</td>'
             f'<td>{r["ms"]}ms<br><small>budget {r["budget_ms"]}</small></td>'
             f'<td>console {r["console_errors"]}<br>network {r["network_errors"]}</td>'
             f'<td style="color:{color}"><b>{r["status"]}</b></td></tr>')
