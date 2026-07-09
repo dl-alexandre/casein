@@ -1,0 +1,25 @@
+{
+  "workspace": "example-admin",
+  "app_surface": "app",
+  "_driver": "references/playwright_walk.mjs (cookie login — the preview MCP cannot follow the 302; see SKILL.md 'Auth reality')",
+  "_note": "Illustrative shape for a cookie/redirect-authenticated admin app. Derive the real login route + page list from the app's router, not these placeholders. Every gated page sets `lands_on` so a lost-session bounce to /login FAILS instead of shipping a false green.",
+  "login": {
+    "type": "cookie",
+    "path": "/dev/login",
+    "params": { "email": "admin@example.com", "role": "admin" },
+    "lands_on": "/admin"
+  },
+  "pages": [
+    { "name": "Dashboard", "path": "/admin",          "lands_on": "/admin",          "budget_ms": 8000,  "note": "landing" },
+    { "name": "Users",     "path": "/admin/users",     "lands_on": "/admin/users",     "budget_ms": 10000, "note": "paginated list; empty allowed" },
+    { "name": "Settings",  "path": "/admin/settings",  "lands_on": "/admin/settings",  "budget_ms": 8000,  "note": "role-gated form (read-only view)" },
+    { "name": "Audit",     "path": "/admin/audit",     "lands_on": "/admin/audit",     "budget_ms": 12000, "note": "role-gated; verifies auth held past the first page" }
+  ],
+  "safety": {
+    "read_only": true,
+    "env_check": ["APP_API_URL", "AUTH_API_URL"],
+    "deny_events": ["delete", "confirm_delete", "save", "deactivate", "reset_token", "send_email"],
+    "note": "Confirm APP_API_URL / AUTH_API_URL are non-prod before relaxing to any interaction. Default: navigate + screenshot only."
+  },
+  "report": { "name": "example-admin-smoke", "baseline": false }
+}

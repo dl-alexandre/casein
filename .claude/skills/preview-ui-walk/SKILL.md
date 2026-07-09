@@ -51,7 +51,9 @@ see [[onebackend-v3-superadmin-uitest]]). So:
   `:{ports.http}/health` → 200). See [[reports-preview-readiness]].
 - **The walk manifest** (see `references/manifest-schema.md`). It lives in the
   TARGET repo at `.devide/preview-walk.json` (the app owns its own page list +
-  safety); `references/onebackend-v3-superadmin.json` is a worked example.
+  safety). Worked examples: `references/onebackend-v3-superadmin.json` (session-inject
+  login via the MCP) and `references/authed-admin-example.json` (cookie login via
+  `playwright_walk.mjs`).
 
 ## 1. Resolve the target's scoped preview MCP
 
@@ -78,7 +80,8 @@ curl -sS "$DEVIDE_PREVIEW_MCP_URL" \
 The result JSON is in `result.content[0].text`. (When this skill runs *inside* the
 target workspace's own agent, use the native `preview_*` MCP tools directly and
 skip the token plumbing.) `references/walk.py` is a ready driver that wraps this —
-but it only works for **unauthenticated / no-redirect** targets (see Auth reality).
+but it only works for **unauthenticated / no-redirect** targets; for a cookie/redirect
+login use `references/playwright_walk.mjs` instead (see Auth reality).
 
 ## Auth reality — the preview MCP cannot do redirect/cookie logins
 
@@ -94,15 +97,18 @@ per-click visible-ack timeout (clicks serialize seconds apart, need <500ms).
 **So pick the driver by auth model:**
 - **No auth / no login redirect** → `references/walk.py` (preview MCP: navigate +
   screenshot + report_errors). Fine for public pages.
-- **Cookie/redirect login (most admin panels)** → **drive the cached Chromium via
-  Playwright directly** with a server-minted cookie. Mint it with `curl` (which
-  follows redirects and keeps the Set-Cookie): `curl -c jar -L
-  "http://127.0.0.1:<port><login_path>?…"`, extract the session cookie, launch
-  Chromium (`playwright-core` + a cached `chromium` build are on the box), set the
-  cookie, then navigate/screenshot/collect-console+network per page. This is the
-  only path that actually authenticates today.
-- **ALWAYS verify the landed URL per page** (final url matches the requested path,
-  not `/login`) — do not trust HTTP 200 alone, or you ship the false green.
+- **Cookie/redirect login (most admin panels)** → **`references/playwright_walk.mjs`**,
+  which drives the box's cached Chromium directly via `playwright-core` with a
+  server-minted cookie. It mints the cookie with `curl -c jar -L` (curl follows the
+  login redirects and keeps the Set-Cookie the MCP block drops), auto-discovers
+  `playwright-core` (npx cache) + the cached `chromium` build, injects the cookie,
+  then navigates/screenshots/collects console+network per page. Use `login.type:
+  "cookie"` in the manifest. This is the only path that actually authenticates today.
+  Run it with `--base http://127.0.0.1:<port>` (the app's loopback), not the MCP.
+- **Both drivers verify the landed URL per page** (`playwright_walk.mjs` reads
+  `page.url()`, `walk.py` reads the observed current URL) and FAIL when it doesn't
+  match the page's `lands_on`/`path` — a gated page bounced to `/login` never PASSes
+  on a 200 + screenshot alone. Do not weaken this; it is what kills the false green.
 
 A durable follow-up would be teaching DevIDE preview to carry an injected
 cookie/storage-state so the MCP path works for authed apps too.
@@ -120,10 +126,12 @@ Get the live app surface and its session, don't spin a new one:
 
 1. `preview_record_start(session_id)`.
 2. **Login** per the manifest's `login` step — but heed *Auth reality* above: for a
-   redirect/cookie login you must mint the cookie server-side and drive Playwright
-   directly (the `preview_navigate` session-inject will silently fail). Only for a
-   no-redirect target does navigating the login path work. The "enter via the logo"
-   gesture maps to hitting the login route, but the redirect-block still applies.
+   redirect/cookie login (`login.type: "cookie"`) hand off to
+   `references/playwright_walk.mjs`, which mints the cookie server-side and drives
+   Chromium directly (the `preview_navigate` session-inject will silently fail).
+   Only for a no-redirect target does navigating the login path work via the MCP
+   (`references/walk.py`). The "enter via the logo" gesture maps to hitting the login
+   route, but the redirect-block still applies.
 3. For each manifest page, in order:
    - `preview_navigate(session_id, path)`
    - wait for render (these apps often have **no `assign_async`** → budget generous

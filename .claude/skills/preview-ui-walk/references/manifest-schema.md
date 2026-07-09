@@ -10,7 +10,7 @@ reads it and drives the preview accordingly.
   "app_surface": "app",                // preview_surfaces name to reuse (usually "app")
 
   "login": {
-    "type": "session_inject",          // session_inject | click | none
+    "type": "session_inject",          // session_inject | cookie | click | none
     "path": "/auth/superadmin/mock",   // dev bypass route that sets the session
     "params": { "email": "you@example.com", "role": "superadmin" },
     "lands_on": "/superadmin"          // expected post-login path (sanity check)
@@ -20,6 +20,7 @@ reads it and drives the preview accordingly.
     {
       "name": "Dashboard",
       "path": "/superadmin",
+      "lands_on": "/superadmin",       // expected landed path — a bounce to /login FAILS
       "budget_ms": 8000,               // PASS if loaded+rendered under this
       "role_gated": false,             // informational
       "note": "landing"
@@ -48,8 +49,15 @@ reads it and drives the preview accordingly.
 Field notes:
 - **workspace** — used to `source ~/.devide/agent-mcp/<workspace>/env.sh` for the
   scoped `DEVIDE_PREVIEW_MCP_URL` + `DEV_IDE_API_TOKEN`.
-- **login.type** — `session_inject` (navigate a dev bypass route, preferred),
-  `click` (drive the real logo/login UI — only if no bypass), or `none`.
+- **login.type** — `session_inject` (navigate a dev bypass route via the preview
+  MCP, preferred when there's no redirect); `cookie` (a redirect/cookie login the
+  MCP can't follow — mint the cookie server-side and drive Chromium directly with
+  `references/playwright_walk.mjs`; see SKILL.md "Auth reality"); `click` (drive the
+  real logo/login UI — only if no bypass); or `none`.
+- **pages[].lands_on** — expected landed path (defaults to `path`). Both drivers
+  read the browser's *actual* final URL and FAIL the page if it doesn't match — a
+  gated page that bounced to `/login` must never PASS on a 200 + screenshot alone
+  (the "false green"). See `references/authed-admin-example.json` for the cookie shape.
 - **pages[].budget_ms** — generous; these apps often lack `assign_async`, so first
   render can be slow and a blank dead-render precedes the WS connect.
 - **safety.deny_events** — the skill must never trigger these; they mutate and may
