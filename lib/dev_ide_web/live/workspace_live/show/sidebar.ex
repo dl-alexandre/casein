@@ -35,7 +35,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   end
 
   @spec open(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
-  def open(socket, mode) when mode in ["windows", "both"] do
+  @spec open(Phoenix.LiveView.Socket.t(), String.t(), keyword()) :: Phoenix.LiveView.Socket.t()
+  def open(socket, mode, opts \\ []) when mode in ["windows", "both"] do
     sidebar_mode =
       case mode do
         "both" -> :both
@@ -52,6 +53,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
 
     expanded_windows = expanded_windows_on_open(socket)
 
+    focus =
+      case Keyword.get(opts, :focus) do
+        :sessions -> :sessions
+        :windows -> :windows
+        "sessions" -> :sessions
+        "windows" -> :windows
+        _ -> if(sidebar_mode == :both, do: :sessions, else: nil)
+      end
+
     socket =
       socket
       |> assign_sidebar_mode(sidebar_mode)
@@ -60,10 +70,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       |> assign_sessions_sidebar_tree()
       |> assign_windows_sidebar_tree()
 
-    if sidebar_mode == :both do
-      push_event(socket, "sidebar:focus_sessions", %{})
-    else
-      socket
+    case focus do
+      :sessions -> push_event(socket, "sidebar:focus_sessions", %{})
+      :windows -> push_event(socket, "sidebar:focus_windows", %{})
+      _ -> socket
     end
   end
 

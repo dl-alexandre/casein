@@ -40,11 +40,19 @@ export const SessionsPickerSidebar = {
         e.preventDefault()
         this.moveFocus(e.key === "ArrowDown" ? 1 : -1)
         break
+      case "ArrowLeft": {
+        e.preventDefault()
+        // Collapse the current branch when expanded; otherwise stay put.
+        this._collapseIfExpanded(this.currentItem())
+        break
+      }
       case "ArrowRight": {
         e.preventDefault()
         const row = this.currentItem()
-        const wsId = row?.getAttribute("phx-value-workspace-id")
-        if (wsId) this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+        // Miller-column: expand a collapsed branch first; once expanded (or on a
+        // leaf session), Right drops focus into the Windows rail.
+        if (this._expandIfCollapsed(row)) break
+        this._focusWindowsRail()
         break
       }
       case "Enter":
@@ -145,6 +153,65 @@ export const SessionsPickerSidebar = {
   _closeSidebar() {
     this.pushEvent("sidebar:close", {})
     window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+  },
+
+  // Expand a collapsed workspace/browse branch under the focused row.
+  // Returns true when an expand was issued (caller should not hop columns).
+  _expandIfCollapsed(row) {
+    if (!row) return false
+    const branch = row.closest?.("[data-picker-tree-branch]")
+    if (!branch || !this.el.contains(branch)) return false
+    const children = branch.querySelector("[data-picker-branch-children]")
+    if (!children) return false
+    const collapsed =
+      children.hasAttribute("data-picker-collapsed") || children.classList.contains("hidden")
+    if (!collapsed) return false
+
+    const wsId = row.getAttribute("phx-value-workspace-id")
+    if (wsId) {
+      this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+      return true
+    }
+    const rel = row.getAttribute("phx-value-rel")
+    if (rel !== null && rel !== undefined) {
+      this.pushEvent("sidebar:toggle_browse", {rel})
+      return true
+    }
+    return false
+  },
+
+  _collapseIfExpanded(row) {
+    if (!row) return false
+    const branch = row.closest?.("[data-picker-tree-branch]")
+    if (!branch || !this.el.contains(branch)) return false
+    const children = branch.querySelector("[data-picker-branch-children]")
+    if (!children) return false
+    const collapsed =
+      children.hasAttribute("data-picker-collapsed") || children.classList.contains("hidden")
+    if (collapsed) return false
+
+    const wsId = row.getAttribute("phx-value-workspace-id")
+    if (wsId) {
+      this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+      return true
+    }
+    const rel = row.getAttribute("phx-value-rel")
+    if (rel !== null && rel !== undefined) {
+      this.pushEvent("sidebar:toggle_browse", {rel})
+      return true
+    }
+    return false
+  },
+
+  // Drop focus into the Windows column (Miller-style Right).
+  _focusWindowsRail() {
+    const rail = document.querySelector("[data-window-picker-sidebar]")
+    if (rail) {
+      rail.dispatchEvent(new CustomEvent("devide:window-sidebar:focus"))
+      return
+    }
+    // Windows rail not mounted — open both columns and ask the server to focus it.
+    this.pushEvent("sidebar:open", {mode: "both", focus: "windows"})
   },
 }
 

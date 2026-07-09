@@ -713,10 +713,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Escape or window selection.
   def handle_event("sidebar:open", params, socket) do
     mode = Map.get(params, "mode", "windows")
+    focus = Map.get(params, "focus")
+
+    opts =
+      case focus do
+        f when f in ["sessions", "windows"] -> [focus: f]
+        _ -> []
+      end
 
     socket =
       socket
-      |> Sidebar.open(mode)
+      |> Sidebar.open(mode, opts)
       |> TerminalState.refresh_session_tabs()
       |> assign_workspace_summaries()
       |> TerminalState.refresh_tmux_topology()
