@@ -299,7 +299,8 @@ async function main() {
       actionableNetwork: neForVerdict,
     });
 
-    // Server log delta (Tidewave). Silent BEAM errors should fail a "green" shell.
+    // Server log *delta* for this page only (Tidewave ring buffer is cumulative).
+    // Silent BEAM errors during the page load fail a "green" shell.
     const runtimePage = await pageRuntimeLogs(runtimeBag, pg.name);
     const serverErrors = runtimePage.error_log_count || 0;
     if (status === "PASS" && runtimePage.status === "ok" && serverErrors > 0) {
@@ -338,12 +339,11 @@ async function main() {
 
   await browser.close();
 
+  // Do not serialize internal cursors into the artifact payload.
+  const { _log_cursors: _drop, ...runtimePublic } = runtimeBag;
   const payload = {
     base: a.base,
-    runtime: {
-      ...runtimeBag,
-      // drop circular/huge fields if any
-    },
+    runtime: runtimePublic,
     pages: results.map((r) => {
       const { shot, ...rest } = r;
       return rest; // keep results.json smaller; shots are on disk

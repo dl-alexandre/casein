@@ -95,7 +95,8 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as `sk
 Collection status in `playwright_walk.mjs` + `runtime_evidence.mjs`:
 
 1. **Tidewave availability** + env safety strip — **wired**  
-2. **Per-page `get_logs`** for `log_levels` (default `error`) — **wired** (page FAILs if error log tail &gt; 0)  
+2. **Per-page `get_logs` delta** for `log_levels` (default `error`) — **wired**  
+   (page FAILs if *new* error lines since previous page &gt; 0; not the cumulative tail size)  
 3. Walk-level **`probes`** (`project_eval`, allowlisted only) — schema only  
 4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys — schema only  
 

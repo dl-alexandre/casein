@@ -10,8 +10,12 @@ import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
 
+// Host/path patterns that look like production write targets.
+// Stage/sandbox/dev are intentionally NOT prod_like (still surfaced in preview).
 const PROD_HINT =
-  /onemilc\.com|amazonaws\.com\/prod|\.prod\.|production|prod-api|api\.prod/i;
+  /(?:^|[./-])prod(?:uction)?(?:[./-]|$)|prod-api|api\.prod|amazonaws\.com\/prod/i;
+const NONPROD_HINT =
+  /stage|staging|sandbox|localhost|127\.0\.0\.1|\.dev\.|devbox|preview/i;
 
 /**
  * Resolve Tidewave MCP URL.
@@ -190,9 +194,13 @@ export async function probeTidewave(mcpUrl) {
 
 /**
  * Fetch recent logs for one or more levels.
- * Returns { levels: { error: { count, samples }, ... }, raw_count }
+ * Returns { levels: { error: { count, samples, lines }, ... }, raw_count }
+ *
+ * IMPORTANT: Tidewave get_logs returns a *cumulative* ring buffer tail, not a
+ * per-request delta. Callers must use `deltaLines` + a cursor so one sticky
+ * error does not fail every subsequent page.
  */
-export async function fetchLogs(mcpUrl, levels = ["error"], tail = 40) {
+export async function fetchLogs(mcpUrl, levels = ["error"], tail = 80) {
   const out = { levels: {}, raw_count: 0 };
   for (const level of levels) {
     try {
@@ -204,6 +212,7 @@ export async function fetchLogs(mcpUrl, levels = ["error"], tail = 40) {
       out.levels[level] = {
         count: lines.length,
         samples: lines.slice(-5),
+        lines,
       };
       out.raw_count += lines.length;
     } catch (e) {
@@ -211,10 +220,26 @@ export async function fetchLogs(mcpUrl, levels = ["error"], tail = 40) {
         count: null,
         error: String(e.message || e),
         samples: [],
+        lines: [],
       };
     }
   }
   return out;
+}
+
+/**
+ * Lines that appeared after the previous tail snapshot.
+ * Uses the last line of `prev` as a cursor inside `next` (lastIndexOf).
+ */
+export function deltaLines(prev, next) {
+  const a = Array.isArray(prev) ? prev : [];
+  const b = Array.isArray(next) ? next : [];
+  if (!b.length) return [];
+  if (!a.length) return b.slice();
+  const marker = a[a.length - 1];
+  const idx = b.lastIndexOf(marker);
+  if (idx === -1) return b.slice(); // rotated or first sample
+  return b.slice(idx + 1);
 }
 
 /** Redact secrets in env values for the report. */
@@ -234,9 +259,14 @@ export function redactEnvValue(v) {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
-function classifyRisk(value) {
+export function classifyRisk(value) {
   if (value == null || value === "") return "unset";
-  if (PROD_HINT.test(String(value))) return "prod_like";
+  const s = String(value);
+  // Explicit non-prod hostnames win (stage-one-api.onemilc.com is not prod).
+  if (NONPROD_HINT.test(s)) return "ok";
+  if (PROD_HINT.test(s)) return "prod_like";
+  // Bare onemilc.com without stage/dev still treated as prod-like.
+  if (/\.onemilc\.com\b/i.test(s)) return "prod_like";
   return "ok";
 }
 
@@ -339,6 +369,8 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     env_check: { source: "none", items: [] },
     app: null,
     error_log_total: 0,
+    // Per-level cursor: last seen log line text (for deltaLines).
+    _log_cursors: {},
   };
 
   if (!want) return bag;
@@ -373,10 +405,22 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     tidewaveOk: true,
   });
   bag.app = await appIdentity(probe.url);
+
+  // Baseline cursors so pre-walk noise does not fail page 1.
+  try {
+    const baseline = await fetchLogs(probe.url, logLevels, 80);
+    for (const [level, entry] of Object.entries(baseline.levels || {})) {
+      const lines = entry.lines || [];
+      bag._log_cursors[level] = lines.length ? lines[lines.length - 1] : null;
+    }
+  } catch {
+    /* empty cursors → first page treats full tail as delta (acceptable) */
+  }
+
   return bag;
 }
 
-/** Per-page log snapshot after navigate. */
+/** Per-page log *delta* after navigate (not cumulative ring-buffer size). */
 export async function pageRuntimeLogs(runtimeBag, pageName) {
   if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
     return {
@@ -385,13 +429,39 @@ export async function pageRuntimeLogs(runtimeBag, pageName) {
     };
   }
   const levels = runtimeBag.log_levels || ["error"];
-  const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 40);
-  const errorCount = logs.levels.error?.count || 0;
-  runtimeBag.error_log_total = (runtimeBag.error_log_total || 0) + (errorCount || 0);
+  const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 80);
+  const delta = { levels: {}, raw_count: 0 };
+  let errorCount = 0;
+
+  for (const level of levels) {
+    const entry = logs.levels[level] || { lines: [], samples: [] };
+    const prevMarker = runtimeBag._log_cursors?.[level];
+    const prev = prevMarker != null ? [prevMarker] : [];
+    const newLines = deltaLines(prev, entry.lines || []);
+    // Advance cursor to end of current tail
+    const all = entry.lines || [];
+    if (all.length) {
+      runtimeBag._log_cursors = runtimeBag._log_cursors || {};
+      runtimeBag._log_cursors[level] = all[all.length - 1];
+    }
+    delta.levels[level] = {
+      count: newLines.length,
+      samples: newLines.slice(-5),
+      // omit full lines from report payload — samples only
+    };
+    delta.raw_count += newLines.length;
+    if (level === "error") errorCount = newLines.length;
+  }
+
+  runtimeBag.error_log_total = (runtimeBag.error_log_total || 0) + errorCount;
   return {
     status: "ok",
     page: pageName,
-    logs,
+    logs: delta,
     error_log_count: errorCount,
+    // cumulative tail sizes kept for debugging only
+    tail_sizes: Object.fromEntries(
+      Object.entries(logs.levels || {}).map(([k, v]) => [k, v.count]),
+    ),
   };
 }
