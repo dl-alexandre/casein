@@ -49,10 +49,11 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
 - **Target app running + preview reachable.** A stopped manager workspace often
   404s through the preview-router. Ensure it's `running` (manager
   `POST /api/workspaces/:id/start`, wait for loopback `:{ports.http}/health` → 200).
-- **The walk manifest** (see `references/manifest-schema.md`). **It lives in the
-  TARGET product repo** at `.devide/preview-walk.json` — page list, login route,
-  safety denylist, and prod-write notes are app-owned. DevIDE only ships the
-  generic engine (`walk.py` / `playwright_walk.mjs`) plus a shape example
+- **The walk manifest** (see `references/manifest-schema.md` and the machine
+  schema `references/preview-walk.schema.json`). **It lives in the TARGET product
+  repo** at `.devide/preview-walk.json` — page list, login, safety, and optional
+  Tidewave `runtime` probes are app-owned. DevIDE only ships the generic engine
+  (`walk.py` / `playwright_walk.mjs`) plus a fictional example
   (`references/authed-admin-example.json`). Do **not** add product-specific
   manifests under this skill.
 
@@ -193,8 +194,12 @@ the page-sharding, not a redesign.
   images, nested-iframe CSP, nonce inline style/script) does not fail the page by
   default; wrong `lands_on` / main-document 4xx still do. See
   `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
+- **Runtime evidence (Tidewave)** — when the manifest sets `runtime.tidewave: true`,
+  prefer per-page server logs + allowlisted probes + env safety strip in the report
+  (see schema `runtime`). If Tidewave is down, still finish the browser walk and
+  mark runtime `skipped: tidewave_unavailable`. Never prod Tidewave; SQL SELECT-only.
 - Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
   prior run's screenshots for visual-diff regression once a baseline exists (only
   meaningful for pages with stable content).
-- **Boundary:** product routes, login params, and prod-write safety stay in the
+- **Boundary:** product routes, login, safety, and runtime probes stay in the
   target repo's `.devide/preview-walk.json`. This skill must stay app-agnostic.

@@ -1,75 +1,136 @@
 # Walk manifest schema
 
-A walk manifest describes ONE app's read-only smoke walk. **It lives in the
-target product repo** at `.devide/preview-walk.json` (the app owns page list,
-login, and safety). DevIDE only ships the drivers + this schema + a fictional
-shape example (`authed-admin-example.json`). Do not check product-specific
-manifests into the DevIDE skill tree.
+A walk manifest is the **app-owned contract** for a read-only UI smoke walk.
+
+| Layer | Owns | Lives in |
+|-------|------|----------|
+| **Product** | paths, login, safety, runtime probes | target repo `.devide/preview-walk.json` |
+| **DevIDE** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
+
+Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).  
+Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.json).
+
+**Do not** check product-specific manifests into the DevIDE skill tree.
+
+## Layers in one file
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│ login + pages + report     MACHINE (drivers enforce)     │
+│ safety.*                   AGENT POLICY (preflight/report)│
+│ runtime.*                  SERVER EVIDENCE (Tidewave)    │
+│ workspace / app_surface    HOST HINTS (prefer env)       │
+│ _note / note / role_gated  ANNOTATIONS (ignored)         │
+└──────────────────────────────────────────────────────────┘
+```
+
+Browser baseline (today): screenshot, load ms, console/network counts, `lands_on`, recording.  
+Server slice (declared now; drivers collect when Tidewave is up): logs, allowlisted `project_eval` probes, optional SELECT-only SQL, LiveView assign **keys** (not full assigns).
+
+If Tidewave is unreachable: **still walk the browser path**, mark runtime as `skipped: tidewave_unavailable` — never pretend the evidence packet is complete.
+
+## Minimal product shape
 
 ```jsonc
 {
-  "workspace": "my-workspace",         // agent-mcp env.sh dir name → scoped MCP + token
-  "app_surface": "app",                // preview_surfaces name to reuse (usually "app")
-
+  "version": 1,
   "login": {
-    "type": "cookie",                  // cookie | session_inject | click | none
-                                       // cookie = redirect login (most admin apps) → playwright_walk.mjs
-                                       // session_inject = no-redirect bypass only → walk.py / preview MCP
-    "path": "/dev/login",              // app-owned auth bypass / login route
-    "params": { "email": "you@example.com", "role": "admin" },
-    "lands_on": "/admin"               // expected post-login path (sanity check)
+    "kind": "redirect_cookie",         // preferred; or legacy type: "cookie"
+    "path": "/dev/login",
+    "params": { "role": "admin" },
+    "params_from_env": ["WALK_LOGIN_EMAIL"],
+    "lands_on": "/admin"
   },
-
   "pages": [
     {
       "name": "Dashboard",
       "path": "/admin",
-      "lands_on": "/admin",            // expected landed path — a bounce to /login FAILS
-      "budget_ms": 8000,               // PASS if loaded+rendered under this
-      "role_gated": false,             // informational
-      "note": "landing"
+      "lands_on": "/admin",
+      "budget_ms": 8000
     }
-    // …one per screen, in nav order — derive from the app's router
   ],
-
   "safety": {
-    "read_only": true,                 // v1 is always true
+    "read_only": true,
     "env_check": ["APP_API_URL", "AUTH_API_URL"],
-    // ↑ app-owned: if any points at prod, stay read-only.
-    "deny_events": [                   // NEVER fire these phx events / clicks
-      "delete", "confirm_delete", "save", "deactivate", "send_email"
-    ]
+    "deny_events": ["delete", "confirm_delete", "save"]
   },
-
-  "report": {
-    "name": "admin-smoke",             // artifact slug
-    "baseline": false                  // true → compare_snapshots vs prior run
-  }
+  "runtime": {
+    "tidewave": true,
+    "log_levels": ["error", "warning"],
+    "probes": [
+      { "name": "admin_role", "eval": "… small read-only Elixir …", "expect": "ok" }
+    ],
+    "per_page": {
+      "Themes": {
+        "sql": "SELECT count(*) FROM themes",
+        "expect_min": 1
+      }
+    }
+  },
+  "report": { "name": "admin-smoke" }
 }
 ```
 
-Field notes:
-- **workspace** — used to `source ~/.devide/agent-mcp/<workspace>/env.sh` for the
-  scoped `DEVIDE_PREVIEW_MCP_URL` + `DEV_IDE_API_TOKEN`.
-- **login.type** — `session_inject` (navigate a dev bypass route via the preview
-  MCP, preferred when there's no redirect); `cookie` (a redirect/cookie login the
-  MCP can't follow — mint the cookie server-side and drive Chromium directly with
-  `references/playwright_walk.mjs`; see SKILL.md "Auth reality"); `click` (drive the
-  real logo/login UI — only if no bypass); or `none`.
-- **pages[].lands_on** — expected landed path (defaults to `path`). Both drivers
-  read the browser's *actual* final URL and FAIL the page if it doesn't match — a
-  gated page that bounced to `/login` must never PASS on a 200 + screenshot alone
-  (the "false green"). See `references/authed-admin-example.json` for the cookie shape.
-- **pages[].budget_ms** — generous; these apps often lack `assign_async`, so first
-  render can be slow and a blank dead-render precedes the WS connect.
-- **Error noise (playwright_walk.mjs)** — by default CSP blocks of third-party
-  badges (`shields.io`, GitHub badge SVGs), nested-iframe CSP
-  (`ERR_BLOCKED_BY_CSP`), and nonce inline style/script noise do **not** fail a
-  page. They still appear as raw counts; the report shows `actionable/raw`.
-  Override with `strict_errors: true` (page or manifest) to fail on any
-  console/network error, or extend filters via `noise_patterns: ["regex", …]`.
-  Main-document HTTP ≥400 always fails.
-- **safety.deny_events** — the skill must never trigger these; they mutate and may
-  route to prod APIs. Read-only nav/screenshot only.
-- Keep the manifest app-truth: derive it from the app's router + existing smoke
-  harness, not guesses — and keep it in the **product** repo, not DevIDE.
+## Field notes
+
+### Machine (drivers)
+
+- **`login.kind`** (preferred) / **`login.type`** (legacy)  
+  - `redirect_cookie` / `cookie` → `playwright_walk.mjs` (MCP blocks 302s; see SKILL “Auth reality”)  
+  - `session` / `session_inject` → `walk.py` only when login has **no** redirect  
+  - `none` → public pages  
+- **`pages[].path` / `lands_on`** — navigate + anti false-green (bounce to `/login` fails).  
+- **`pages[].budget_ms`** — load budget.  
+- **`report.name`** — artifact slug.  
+- **`strict_errors` / `noise_patterns`** — CSP noise filter controls (Playwright).
+
+### Agent policy
+
+- **`safety.read_only`** — always `true` in v1.  
+- **`safety.env_check`** — keys for prod-write risk; surface in the report strip; agents must not click if prod.  
+- **`safety.deny_events`** — never fire these (drivers currently never click; skill must honor).
+
+### Runtime / Tidewave (evidence packet)
+
+Priority order when implementing collection:
+
+1. **Tidewave availability** + env safety strip in the HTML report  
+2. **Per-page `get_logs`** for `log_levels` (default `error`)  
+3. Walk-level **`probes`** (`project_eval`, allowlisted only)  
+4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys  
+
+Safety for runtime:
+
+- Dev / preview-env only — never prod Tidewave  
+- SQL: `SELECT` only (schema enforces prefix)  
+- No free-form eval outside `probes`  
+- Artifact: assign **keys** + small derived facts — not full socket assigns (PII)
+
+### Host hints (prefer launch env)
+
+- **`workspace`** — `~/.devide/agent-mcp/<name>/env.sh`; omit from product files when the agent already has workspace context.  
+- **`app_surface`** — preview surface name for `walk.py` only.
+
+## Report shape (target)
+
+Per page:
+
+```text
+Dashboard  PASS  3120ms
+  browser:  console=0/0 network=0/0 lands_on=/admin  HTTP 200
+  tidewave: error_logs=0  assign_keys=[current_user, cards, …]
+  probes:   admin_role=ok
+```
+
+Top strip: Tidewave yes/no + MCP URL, app cwd/SHA, `env_check` results, walk-level server log delta.  
+`actionable/raw` console counts remain for CSP noise transparency.
+
+## Validation
+
+```bash
+# example with check-jsonschema if installed
+check-jsonschema --schemafile references/preview-walk.schema.json \
+  /path/to/app/.devide/preview-walk.json
+```
+
+Or any draft-07 validator. Drivers should fail closed on schema-invalid manifests once validation is wired into the skill entrypoint.
