@@ -194,10 +194,16 @@ the page-sharding, not a redesign.
   images, nested-iframe CSP, nonce inline style/script) does not fail the page by
   default; wrong `lands_on` / main-document 4xx still do. See
   `references/manifest-schema.md` (`strict_errors`, `noise_patterns`).
-- **Runtime evidence (Tidewave)** — when the manifest sets `runtime.tidewave: true`,
-  prefer per-page server logs + allowlisted probes + env safety strip in the report
-  (see schema `runtime`). If Tidewave is down, still finish the browser walk and
-  mark runtime `skipped: tidewave_unavailable`. Never prod Tidewave; SQL SELECT-only.
+- **Runtime evidence (Tidewave, priority-1 wired in `playwright_walk.mjs`)** —
+  when the manifest sets `runtime.tidewave: true`, the driver:
+  1. Probes `<base>/tidewave/mcp` (or `DEVIDE_TIDEWAVE_MCP_URL` / `--tidewave-url`)
+  2. Surfaces an **env_check** strip via `project_eval` (app env, not agent host)
+  3. After each page, pulls `get_logs` for `runtime.log_levels` (default `error`)
+  4. Fails a page if browser PASS but server **error** log tail is non-empty  
+  If Tidewave is down, the browser walk still finishes and runtime is
+  `skipped: tidewave_unavailable` (unless `require_tidewave: true`).  
+  See `references/runtime_evidence.mjs` + schema `runtime`. Probes/SQL/LiveView
+  fields are declared for later layers; not collected yet.
 - Re-runnable: same manifest → same walk. Use `preview_compare_snapshots` against a
   prior run's screenshots for visual-diff regression once a baseline exists (only
   meaningful for pages with stable content).

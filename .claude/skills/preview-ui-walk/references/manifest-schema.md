@@ -92,12 +92,14 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as `sk
 
 ### Runtime / Tidewave (evidence packet)
 
-Priority order when implementing collection:
+Collection status in `playwright_walk.mjs` + `runtime_evidence.mjs`:
 
-1. **Tidewave availability** + env safety strip in the HTML report  
-2. **Per-page `get_logs`** for `log_levels` (default `error`)  
-3. Walk-level **`probes`** (`project_eval`, allowlisted only)  
-4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys  
+1. **Tidewave availability** + env safety strip — **wired**  
+2. **Per-page `get_logs`** for `log_levels` (default `error`) — **wired** (page FAILs if error log tail &gt; 0)  
+3. Walk-level **`probes`** (`project_eval`, allowlisted only) — schema only  
+4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys — schema only  
+
+Override Tidewave URL with `DEVIDE_TIDEWAVE_MCP_URL` or `--tidewave-url`.
 
 Safety for runtime:
 
