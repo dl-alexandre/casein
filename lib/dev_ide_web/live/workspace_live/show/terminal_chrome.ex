@@ -789,8 +789,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-pane-height={tmux_dimension(pane.height)}
           data-pane-index={pane.index}
           data-window-id={pane.window_id}
-          data-pane-command={pane.current_command}
-          data-pane-role={pane.role}
+          data-pane-command={Map.get(pane, :current_command)}
+          data-pane-role={Map.get(pane, :role)}
           data-scroll-policy={PaneInteraction.scroll_policy(pane)}
           data-scroll-backend={PaneInteraction.scroll_backend(pane)}
           data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
