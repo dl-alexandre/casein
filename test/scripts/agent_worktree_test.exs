@@ -470,7 +470,21 @@ defmodule Scripts.AgentWorktreeTest do
   end
 
   defp bash_agent_worktree(script, opts) do
-    env = Keyword.get(opts, :env, [])
+    # Clear ambient agent-session worktree knobs so a human running the suite
+    # from an already-linked agent worktree does not make ensure() adopt *that*
+    # path instead of the fixture worktree under test.
+    env =
+      opts
+      |> Keyword.get(:env, [])
+      |> then(fn env ->
+        [
+          {"DEVIDE_AGENT_WORKTREE_PATH", ""},
+          {"DEVIDE_AGENT_FORCE_FRESH_WORKTREE", "0"},
+          {"DEVIDE_AGENT_SKIP_WORKTREE", "0"}
+          | env
+        ]
+      end)
+
     stderr_to_stdout = Keyword.get(opts, :stderr_to_stdout, false)
 
     System.cmd(
