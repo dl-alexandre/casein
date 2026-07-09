@@ -304,6 +304,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
+        |> assign(:file_symbols, [])
         |> assign(:file_render_mode, nil)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
@@ -1114,7 +1115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # here and push it down for navigator.clipboard.writeText. Best-effort:
         # writeText needs a focused secure context (works on Chrome; Safari may
         # gate it on a gesture).
-        socket = push_osc52_clipboard(socket, data)
+        socket = push_osc52_clipboard(socket, pane_id, data)
 
         {{:noreply, socket}, %{}}
       end
@@ -1584,25 +1585,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # than the old single-regex 48 KB ceiling. Keep a bounded partial buffer so
   # `/copy` commands from Claude/Codex/etc. survive chunk boundaries without
   # allowing unbounded terminal output to become clipboard state.
+  # Buffer is keyed by pane_id so concurrent panes don't merge partial sequences.
+  # Cap is 256 KB of base64 (~192 KB decoded) — real clipboard text is far smaller;
+  # the previous 4 MB ceiling inflated socket assign diffs for no practical gain.
   @osc52_prefix "\x1b]52;"
-  @osc52_max_base64_bytes 4 * 1024 * 1024
+  @osc52_max_base64_bytes 256 * 1024
   @osc52_max_buffer_bytes @osc52_max_base64_bytes + 256
   @osc52_max_matches 4
 
-  defp push_osc52_clipboard(socket, data) do
-    buffer = socket.assigns[:osc52_clipboard_buffer] || ""
+  defp push_osc52_clipboard(socket, pane_id, data) when is_binary(pane_id) do
+    buffers = socket.assigns[:osc52_clipboard_buffers] || %{}
+    buffer = Map.get(buffers, pane_id, "")
 
     if buffer == "" and :binary.match(data, @osc52_prefix) == :nomatch do
-      maybe_store_osc52_prefix_tail(socket, data)
+      maybe_store_osc52_prefix_tail(socket, pane_id, buffers, data)
     else
-      do_push_osc52_clipboard(socket, buffer <> data)
+      do_push_osc52_clipboard(socket, pane_id, buffers, buffer <> data)
     end
   end
 
-  defp do_push_osc52_clipboard(socket, data) do
+  defp do_push_osc52_clipboard(socket, pane_id, buffers, data) do
     {payloads, rest} = extract_osc52_payloads(data, [], @osc52_max_matches)
+    rest = bounded_osc52_buffer(rest)
 
-    socket = assign(socket, :osc52_clipboard_buffer, bounded_osc52_buffer(rest))
+    buffers =
+      if rest == "" do
+        Map.delete(buffers, pane_id)
+      else
+        Map.put(buffers, pane_id, rest)
+      end
+
+    socket = assign(socket, :osc52_clipboard_buffers, buffers)
 
     Enum.reduce(payloads, socket, fn b64, s ->
       case Base.decode64(b64) do
@@ -1652,10 +1665,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp maybe_store_osc52_prefix_tail(socket, data) do
+  defp maybe_store_osc52_prefix_tail(socket, pane_id, buffers, data) do
     case osc52_prefix_tail(data) do
-      "" -> socket
-      tail -> assign(socket, :osc52_clipboard_buffer, tail)
+      "" ->
+        socket
+
+      tail ->
+        assign(socket, :osc52_clipboard_buffers, Map.put(buffers, pane_id, tail))
     end
   end
 
@@ -2076,7 +2092,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket
         |> assign(:tab, "files")
-        |> assign(:open_file, file)
+        |> assign_open_file(file)
         |> assign(:file_render_mode, mode)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
@@ -2086,6 +2102,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         assign(socket, :file_error, format_file_error(reason))
     end
+  end
+
+  @doc false
+  # Compute Elixir symbols once when a file opens/refreshes/saves so the Files
+  # panel does not re-parse the whole buffer on every unrelated tree interaction.
+  def assign_open_file(socket, nil) do
+    socket
+    |> assign(:open_file, nil)
+    |> assign(:file_symbols, [])
+  end
+
+  def assign_open_file(socket, %{path: path, content: content} = file)
+      when is_binary(path) and is_binary(content) do
+    socket
+    |> assign(:open_file, file)
+    |> assign(:file_symbols, ElixirNav.symbols(content, path))
+  end
+
+  def assign_open_file(socket, file) when is_map(file) do
+    socket
+    |> assign(:open_file, file)
+    |> assign(:file_symbols, [])
   end
 
   defp annotation_file_payload(socket, loc, file, mode) do

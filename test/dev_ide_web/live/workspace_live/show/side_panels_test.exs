@@ -27,6 +27,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       tree_error: nil,
       tree: %{},
       open_file: nil,
+      file_symbols: [],
       file_render_mode: nil,
       rename_input: nil,
       delete_confirm: nil,
@@ -148,7 +149,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
         content: "defmodule Foo do\n  def bar, do: 1\nend\n"
       }
 
-      assigns = base_files_assigns(open_file: open_file)
+      # Symbols are precomputed by Show.assign_open_file/2 — the panel only
+      # renders the memoized list and must not re-parse open_file.content.
+      file_symbols = [
+        %{name: "Foo", kind: :module, line: 1, visibility: :public},
+        %{name: "bar", kind: :function, line: 2, visibility: :public}
+      ]
+
+      assigns = base_files_assigns(open_file: open_file, file_symbols: file_symbols)
 
       html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 

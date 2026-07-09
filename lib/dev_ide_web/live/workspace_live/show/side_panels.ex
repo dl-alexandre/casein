@@ -10,7 +10,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   use DevIdeWeb, :html
 
-  alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Links.Markdown
   alias DevIDE.Search
 
@@ -22,6 +21,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   attr :project_meta, :any, default: nil
   attr :tooling, :any, default: nil
   attr :open_file, :any, required: true, doc: "%{path:, size:, content: ...} | nil"
+  attr :file_symbols, :list, default: [], doc: "precomputed ElixirNav.symbols/2 for open_file"
   attr :rename_input, :string, default: nil
   attr :delete_confirm, :string, default: nil
   attr :save_error, :string, default: nil
@@ -110,9 +110,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
             <%= if @tree_error do %>
               <p class="text-xs text-red-700">{@tree_error}</p>
             <% end %>
-            {render_tree_node(assigns, "")}
-            {render_project_card(assigns)}
-            {render_symbols_panel(assigns)}
+            <.tree_node tree={@tree} selected_dir={@selected_dir} path="" />
+            <.project_card project_meta={@project_meta} tooling={@tooling} />
+            <.symbols_panel open_file={@open_file} file_symbols={@file_symbols} />
           <% _ -> %>
             <p class="text-xs text-red-700">No host path; cannot list files.</p>
         <% end %>
@@ -228,9 +228,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
     """
   end
 
-  defp render_tree_node(assigns, path) do
-    state = Map.get(assigns.tree, path, {:collapsed, []})
-    assigns = Map.put(assigns, :node, %{path: path, state: state})
+  attr :tree, :map, required: true, doc: "rel_path => {:expanded, entries} | {:collapsed, []}"
+  attr :selected_dir, :string, required: true
+  attr :path, :string, required: true, doc: "tree node path; root is \"\""
+
+  # Recursive file-tree node. Attr-contracted so a selected_dir-only change
+  # does not force the symbols panel (or project card) to re-render.
+  defp tree_node(assigns) do
+    state = Map.get(assigns.tree, assigns.path, {:collapsed, []})
+    assigns = assign(assigns, :node, %{path: assigns.path, state: state})
 
     ~H"""
     <%= case @node.state do %>
@@ -263,7 +269,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                     </button>
                   </div>
                   <%= if match?({:expanded, _}, Map.get(@tree, e.rel_path)) do %>
-                    {render_tree_node(assigns, e.rel_path)}
+                    <.tree_node tree={@tree} selected_dir={@selected_dir} path={e.rel_path} />
                   <% end %>
                 <% _ -> %>
                   <button
@@ -854,75 +860,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   defp blank_to_nil(_), do: nil
 
-  defp render_project_card(assigns) do
+  attr :project_meta, :any, default: nil
+  attr :tooling, :any, default: nil
+
+  defp project_card(assigns) do
     ~H"""
-    <%= if @project_meta do %>
-      <details class="border-t pt-1 mt-2 text-[11px]">
-        <summary class="cursor-pointer text-zinc-700">Project</summary>
-        <ul class="mt-1 space-y-0.5">
-          <li>Mix: {yes_no(@project_meta.mix?)}</li>
-          <li>Umbrella: {yes_no(@project_meta.umbrella?)}</li>
-          <li>Phoenix: {yes_no(@project_meta.phoenix?)}</li>
-          <li>LiveView: {yes_no(@project_meta.live_view?)}</li>
-          <li>Ecto: {yes_no(@project_meta.ecto?)}</li>
-          <li>Formatter: {yes_no(@project_meta.formatter?)}</li>
-          <%= if @tooling do %>
-            <li>
-              Lexical: {detected_or_missing(@tooling.lexical? or @tooling.mix_lock_lexical?)}
-            </li>
-            <li>
-              ElixirLS: {detected_or_missing(@tooling.elixir_ls? or @tooling.mix_lock_elixir_ls?)}
-            </li>
-          <% end %>
-        </ul>
-      </details>
-    <% end %>
+    <details :if={@project_meta} class="border-t pt-1 mt-2 text-[11px]">
+      <summary class="cursor-pointer text-zinc-700">Project</summary>
+      <ul class="mt-1 space-y-0.5">
+        <li>Mix: {yes_no(@project_meta.mix?)}</li>
+        <li>Umbrella: {yes_no(@project_meta.umbrella?)}</li>
+        <li>Phoenix: {yes_no(@project_meta.phoenix?)}</li>
+        <li>LiveView: {yes_no(@project_meta.live_view?)}</li>
+        <li>Ecto: {yes_no(@project_meta.ecto?)}</li>
+        <li>Formatter: {yes_no(@project_meta.formatter?)}</li>
+        <%= if @tooling do %>
+          <li>
+            Lexical: {detected_or_missing(@tooling.lexical? or @tooling.mix_lock_lexical?)}
+          </li>
+          <li>
+            ElixirLS: {detected_or_missing(@tooling.elixir_ls? or @tooling.mix_lock_elixir_ls?)}
+          </li>
+        <% end %>
+      </ul>
+    </details>
     """
   end
 
-  defp render_symbols_panel(assigns) do
-    case assigns.open_file do
-      %{path: path, content: content} ->
-        symbols = ElixirNav.symbols(content, path)
-        assigns = Map.put(assigns, :file_symbols, symbols) |> Map.put(:file_path, path)
+  attr :open_file, :any, required: true, doc: "%{path:, size:, content: ...} | nil"
+  attr :file_symbols, :list, default: [], doc: "precomputed ElixirNav.symbols/2 for open_file"
 
-        ~H"""
-        <details class="border-t pt-1 mt-2 text-[11px]" open>
-          <summary class="cursor-pointer text-zinc-700">
-            Symbols ({length(@file_symbols)})
-          </summary>
-          <%= cond do %>
-            <% String.ends_with?(@file_path, ".heex") -> %>
-              <p class="text-zinc-500">HEEx symbols not supported yet.</p>
-            <% @file_symbols == [] -> %>
-              <p class="text-zinc-500">No symbols.</p>
-            <% true -> %>
-              <ul class="font-mono space-y-0.5 mt-1">
-                <%= for s <- @file_symbols do %>
-                  <li>
-                    <button
-                      phx-click="annotation:open"
-                      phx-value-path={@file_path}
-                      phx-value-line={s.line}
-                      class={"hover:underline text-left " <> symbol_color(s)}
-                    >
-                      <span class="text-zinc-400">{symbol_glyph(s.kind)}</span>
-                      {s.name}
-                      <%= if s.visibility == :private do %>
-                        <span class="text-zinc-400">priv</span>
-                      <% end %>
-                      <span class="text-zinc-400">:{s.line}</span>
-                    </button>
-                  </li>
-                <% end %>
-              </ul>
-          <% end %>
-        </details>
-        """
-
-      _ ->
-        ~H""
-    end
+  # Reads memoized :file_symbols from the LiveView — never re-parses content.
+  defp symbols_panel(assigns) do
+    ~H"""
+    <details :if={@open_file} class="border-t pt-1 mt-2 text-[11px]" open>
+      <summary class="cursor-pointer text-zinc-700">
+        Symbols ({length(@file_symbols)})
+      </summary>
+      <%= cond do %>
+        <% String.ends_with?(@open_file.path, ".heex") -> %>
+          <p class="text-zinc-500">HEEx symbols not supported yet.</p>
+        <% @file_symbols == [] -> %>
+          <p class="text-zinc-500">No symbols.</p>
+        <% true -> %>
+          <ul class="font-mono space-y-0.5 mt-1">
+            <%= for s <- @file_symbols do %>
+              <li>
+                <button
+                  phx-click="annotation:open"
+                  phx-value-path={@open_file.path}
+                  phx-value-line={s.line}
+                  class={"hover:underline text-left " <> symbol_color(s)}
+                >
+                  <span class="text-zinc-400">{symbol_glyph(s.kind)}</span>
+                  {s.name}
+                  <%= if s.visibility == :private do %>
+                    <span class="text-zinc-400">priv</span>
+                  <% end %>
+                  <span class="text-zinc-400">:{s.line}</span>
+                </button>
+              </li>
+            <% end %>
+          </ul>
+      <% end %>
+    </details>
+    """
   end
 
   defp yes_no(true), do: "yes"

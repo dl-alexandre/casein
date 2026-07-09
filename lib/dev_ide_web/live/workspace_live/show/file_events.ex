@@ -213,7 +213,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
           {:noreply,
            socket
-           |> assign(:open_file, file)
+           |> Show.assign_open_file(file)
            |> assign(:file_render_mode, mode)
            |> assign(:rename_input, nil)
            |> Show.refresh_tree()
@@ -223,7 +223,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         _ ->
           {:noreply,
            socket
-           |> assign(:open_file, nil)
+           |> Show.assign_open_file(nil)
            |> assign(:file_render_mode, nil)
            |> assign(:rename_input, nil)
            |> Show.refresh_tree()
@@ -262,7 +262,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
          :ok <- Files.delete(root, rel) do
       {:noreply,
        socket
-       |> assign(:open_file, nil)
+       |> Show.assign_open_file(nil)
        |> assign(:file_render_mode, nil)
        |> assign(:delete_confirm, nil)
        |> assign(:file_diff, nil)
@@ -290,14 +290,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
             {:noreply,
              socket
-             |> assign(:open_file, file)
+             |> Show.assign_open_file(file)
              |> assign(:file_render_mode, mode)
              |> push_event("file:loaded", file_loaded_payload(socket, file, mode))}
 
           {:error, reason} ->
             {:noreply,
              socket
-             |> assign(:open_file, nil)
+             |> Show.assign_open_file(nil)
              |> assign(:file_render_mode, nil)
              |> assign(:file_error, format_file_error(reason))
              |> push_event("file:cleared", %{})}
@@ -317,7 +317,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
             {:noreply,
              socket
-             |> assign(:open_file, file)
+             |> Show.assign_open_file(file)
              |> assign(:file_render_mode, mode)
              |> assign(:file_error, nil)
              |> assign(:save_error, nil)
@@ -327,7 +327,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
           {:error, reason} ->
             {:noreply,
              socket
-             |> assign(:open_file, nil)
+             |> Show.assign_open_file(nil)
              |> assign(:file_render_mode, nil)
              |> assign(:file_error, format_file_error(reason))
              |> assign(:file_diff, nil)
@@ -360,7 +360,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
       {:noreply,
        socket
-       |> assign(:open_file, updated)
+       |> Show.assign_open_file(updated)
        |> assign(:save_error, nil)
        |> Show.refresh_git_status()
        |> Show.load_diff(path)
@@ -513,13 +513,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         mode = render_mode_for_file(socket, file)
 
         socket
-        |> assign(:open_file, file)
+        |> Show.assign_open_file(file)
         |> assign(:file_render_mode, mode)
         |> push_event("file:loaded", file_loaded_payload(socket, file, mode))
 
       _ ->
         socket
-        |> assign(:open_file, nil)
+        |> Show.assign_open_file(nil)
         |> assign(:file_render_mode, nil)
         |> push_event("file:cleared", %{})
     end
@@ -533,7 +533,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         %{path: p} ->
           if under?.(p) do
             socket
-            |> assign(:open_file, nil)
+            |> Show.assign_open_file(nil)
             |> assign(:file_render_mode, nil)
             |> assign(:file_diff, nil)
             |> push_event("file:cleared", %{})

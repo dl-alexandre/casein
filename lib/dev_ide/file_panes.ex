@@ -355,10 +355,13 @@ defmodule DevIDE.FilePanes do
         match?(%{tmux_session: ^session}, get_by_pane(pane_id))
       end)
 
+    # One UPDATE for all vanished panes — avoid N+1 close_persisted/1 in the reduce.
+    _ = close_persisted_many(stale)
+
     state =
       Enum.reduce(stale, state, fn pane_id, acc ->
         {reg, acc} =
-          case do_deregister(pane_id, acc) do
+          case do_deregister(pane_id, acc, persist?: false) do
             {:ok, reg, next} -> {reg, next}
             {:error, _, next} -> {nil, next}
           end
@@ -423,14 +426,18 @@ defmodule DevIDE.FilePanes do
     end
   end
 
-  defp do_deregister(pane_id, state) do
+  defp do_deregister(pane_id, state, opts \\ []) do
     case get_by_pane(pane_id) do
       nil ->
         {:error, :not_found, state}
 
       reg ->
         :ets.delete(@table, pane_id)
-        close_persisted(pane_id)
+
+        if Keyword.get(opts, :persist?, true) do
+          close_persisted(pane_id)
+        end
+
         _ = kill_pane(reg)
 
         state =
@@ -801,12 +808,27 @@ defmodule DevIDE.FilePanes do
         status: :open
       }
 
-      existing =
-        Repo.one(from r in FilePaneRegistration, where: r.pane_id == ^reg.pane_id, limit: 1)
-
-      changeset = FilePaneRegistration.changeset(existing || %FilePaneRegistration{}, attrs)
-
-      case Repo.insert_or_update(changeset) do
+      # Partial unique index file_pane_registrations_open_pane_id_index
+      # (pane_id WHERE status = 'open') — single round-trip upsert.
+      case %FilePaneRegistration{}
+           |> FilePaneRegistration.changeset(attrs)
+           |> Repo.insert(
+             on_conflict:
+               {:replace,
+                [
+                  :workspace_id,
+                  :tmux_session,
+                  :pane_window_id,
+                  :placement,
+                  :anchor_pane_id,
+                  :anchor_window_id,
+                  :open_files,
+                  :active_path,
+                  :status,
+                  :updated_at
+                ]},
+             conflict_target: {:unsafe_fragment, "(pane_id) WHERE (status = 'open')"}
+           ) do
         {:ok, row} -> {:ok, row}
         {:error, _} = err -> err
       end
@@ -818,8 +840,17 @@ defmodule DevIDE.FilePanes do
   end
 
   defp close_persisted(pane_id) when is_binary(pane_id) do
-    if persistence_enabled?() do
-      from(r in FilePaneRegistration, where: r.pane_id == ^pane_id and r.status == :open)
+    close_persisted_many([pane_id])
+  end
+
+  defp close_persisted_many(pane_ids) when is_list(pane_ids) do
+    pane_ids =
+      pane_ids
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.uniq()
+
+    if pane_ids != [] and persistence_enabled?() do
+      from(r in FilePaneRegistration, where: r.pane_id in ^pane_ids and r.status == :open)
       |> Repo.update_all(set: [status: :closed])
     end
 
