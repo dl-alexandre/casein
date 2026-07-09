@@ -829,8 +829,9 @@ function currentScrollContext(hook) {
 function logScrollDebug(hook, label, extra = {}) {
   if (!scrollDebugEnabled()) return
   const ctx = currentScrollContext(hook)
-  // eslint-disable-next-line no-console
-  console.debug("[devide:termscroll]", label, {...ctx, ...extra})
+  if (typeof console !== "undefined" && typeof console.debug === "function") {
+    console.debug("[devide:termscroll]", label, {...ctx, ...extra})
+  }
 }
 
 function pushAgentWheel(hook, deltaY, point) {

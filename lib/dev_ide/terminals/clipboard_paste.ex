@@ -133,6 +133,8 @@ defmodule DevIDE.Terminals.ClipboardPaste do
     end
   end
 
+  # path is from git rev-parse under the workspace root only.
+  # sobelow_skip ["Traversal.FileModule"]
   defp ensure_clipboard_excluded(root) do
     with {:ok, path, pattern} <- git_exclude(root),
          :ok <- File.mkdir_p(Path.dirname(path)),
@@ -160,6 +162,8 @@ defmodule DevIDE.Terminals.ClipboardPaste do
     end
   end
 
+  # git is System.find_executable("git"); args are fixed git-path queries.
+  # sobelow_skip ["CI.System"]
   defp git_output(git, root, args) do
     case System.cmd(git, ["-C", root | args], stderr_to_stdout: true) do
       {out, 0} -> {:ok, String.trim(out)}
@@ -171,6 +175,8 @@ defmodule DevIDE.Terminals.ClipboardPaste do
     if Path.type(path) == :absolute, do: path, else: Path.expand(path, root)
   end
 
+  # path is the git exclude file under the workspace root.
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_or_empty(path) do
     case File.read(path) do
       {:ok, body} -> {:ok, body}
@@ -186,6 +192,8 @@ defmodule DevIDE.Terminals.ClipboardPaste do
     |> Enum.any?(&(&1 in [pattern, "/" <> pattern]))
   end
 
+  # path is the git exclude file under the workspace root.
+  # sobelow_skip ["Traversal.FileModule"]
   defp append_exclude(path, existing, pattern) do
     prefix = if existing == "" or String.ends_with?(existing, "\n"), do: "", else: "\n"
     File.write(path, prefix <> pattern <> "\n", [:append])
