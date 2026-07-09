@@ -2,7 +2,13 @@
 #
 # Install DevIDE agent shims on PATH (~/.local/bin).
 # Typing grok/claude/codex/opencode/agent anywhere on the devbox automatically
-# injects Terminal + Preview MCP.  clauded stays a shell alias (see ~/.bashrc).
+# injects Terminal + Preview MCP.  clauded stays a shell alias (see ~/.bashrc);
+# palette/MCP launches map clauded → claude (see PaneEnv.launch_command/3).
+#
+# Usage:
+#   bash scripts/install-agent-shims.sh           # install + verify
+#   bash scripts/install-agent-shims.sh --check   # exit 0 only if complete
+#   bash scripts/install-agent-shims.sh --ensure  # install only when incomplete
 #
 set -euo pipefail
 
@@ -17,6 +23,69 @@ NPM_PREFIX="${DEV_IDE_NPM_PREFIX}"
 DEVIDE_CLI="${ROOT}/scripts/devide"
 # clauded is a bash alias → claude --dangerously-skip-permissions; do not shim it.
 RUNTIMES=(grok claude codex opencode agent)
+MODE="install"
+
+usage() {
+  cat <<'EOF'
+Usage: install-agent-shims.sh [--check | --ensure | --install]
+
+  --install  (default) rewrite shims, record real bins, verify PATH precedence
+  --check    exit 0 if every runtime shim is present and executable; else 1
+  --ensure   run --install only when --check would fail
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --check) MODE="check"; shift ;;
+    --ensure) MODE="ensure"; shift ;;
+    --install) MODE="install"; shift ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+shims_complete() {
+  local name
+  for name in "${RUNTIMES[@]}" devide; do
+    if [[ ! -x "${BIN_DIR}/${name}" ]]; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+missing_shims() {
+  local name
+  for name in "${RUNTIMES[@]}" devide; do
+    if [[ ! -x "${BIN_DIR}/${name}" ]]; then
+      printf '%s\n' "$name"
+    fi
+  done
+}
+
+if [[ "$MODE" == "check" ]]; then
+  if shims_complete; then
+    echo "OK: agent shims complete in ${BIN_DIR}: ${RUNTIMES[*]} devide"
+    exit 0
+  fi
+  echo "error: incomplete agent shims in ${BIN_DIR}:" >&2
+  missing_shims | sed 's/^/  - /' >&2
+  echo "error: run: bash scripts/install-agent-shims.sh" >&2
+  exit 1
+fi
+
+if [[ "$MODE" == "ensure" ]] && shims_complete; then
+  echo "OK: agent shims already complete in ${BIN_DIR}"
+  exit 0
+fi
 
 mkdir -p "$BIN_DIR" "$REAL_DIR" "${NPM_PREFIX}/bin"
 
@@ -147,6 +216,14 @@ done
 
 # clauded must remain a shell alias — remove a stale shim if a prior run added one.
 rm -f "${BIN_DIR}/clauded"
+
+# Partial installs (interrupted deploys, npm clobbering a single name) used to
+# leave e.g. grok present but claude missing. Fail closed if any shim is gone.
+if ! shims_complete; then
+  echo "error: install finished but shims are incomplete in ${BIN_DIR}:" >&2
+  missing_shims | sed 's/^/  - /' >&2
+  exit 1
+fi
 
 verify_shim_precedence
 

@@ -200,6 +200,46 @@ echo \"real-opencode \$*\""
   assert_eq "opencode --help passthrough" "real-opencode --help" "$out"
 )
 
+run_check_and_ensure_modes() (
+  echo "== install-agent-shims --check / --ensure detect and heal partial loss =="
+
+  local home status
+  home="$(mktemp -d)"
+  trap 'rm -rf "$home"' EXIT
+
+  export HOME="$home"
+  unset DEV_IDE_NPM_PREFIX
+
+  PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
+    bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
+
+  status=0
+  bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null || status=$?
+  assert_eq "check after full install" "0" "$status"
+
+  # Simulate the production failure mode: one runtime shim deleted, siblings ok.
+  rm -f "${HOME}/.local/bin/claude"
+  status=0
+  bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null 2>&1 || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    echo "FAIL: --check should fail when claude shim is missing" >&2
+    exit 1
+  fi
+
+  status=0
+  PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
+    bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
+  assert_eq "ensure heals missing claude" "0" "$status"
+  if [[ ! -x "${HOME}/.local/bin/claude" ]]; then
+    echo "FAIL: --ensure did not restore claude shim" >&2
+    exit 1
+  fi
+
+  status=0
+  bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
+  assert_eq "ensure is no-op when complete" "0" "$status"
+)
+
 main() {
   run_installer_rejects_bin_dir_candidate
   run_resolver_rejects_recorded_devide_shim
@@ -207,6 +247,7 @@ main() {
   run_installer_fails_when_shims_shadowed
   run_installer_verifies_precedence_when_bin_dir_off_path
   run_launch_version_passthrough_skips_launcher
+  run_check_and_ensure_modes
   echo "OK: agent shim checks passed"
 }
 

@@ -213,6 +213,7 @@ ensure_live_instance() {
 
 ensure_agent_shims() {
   local expected_rev="$1"
+  local name missing=""
 
   if [ ! -x "${WORKTREE}/scripts/install-agent-shims.sh" ]; then
     log "agent shims: ${WORKTREE}/scripts/install-agent-shims.sh missing — skipping"
@@ -228,8 +229,25 @@ ensure_agent_shims() {
 
   log "agent shims: installing from clean deploy worktree"
   if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh >/dev/null); then
-    log "agent shims: install failed — leaving existing shims in place"
+    log "agent shims: install FAILED — leaving existing shims in place"
   fi
+
+  # Fail-loud completeness check even when install exited 0 but a later
+  # clobber removed a single runtime (historically: claude missing, siblings ok).
+  if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh --check >/dev/null 2>&1); then
+    missing=""
+    for name in grok claude codex opencode agent devide; do
+      if [ ! -x "${HOME}/.local/bin/${name}" ]; then
+        missing="${missing} ${name}"
+      fi
+    done
+    log "agent shims: INCOMPLETE after ensure — missing:${missing:- unknown}"
+    log "agent shims: run: bash ${WORKTREE}/scripts/install-agent-shims.sh"
+    return 1
+  fi
+
+  log "agent shims: complete (grok claude codex opencode agent devide)"
+  return 0
 }
 
 # --- single-flight -----------------------------------------------------------
@@ -273,6 +291,7 @@ fi
 if [ "$deployed_full" = "$target" ]; then
   log "origin/${BRANCH} (${target_short}) already deployed — checking liveness"
   ensure_live_instance "${deployed:-$target}"
+  # Incomplete shims are worth a non-zero tick so journal/timer health shows red.
   ensure_agent_shims "$target"
   exit 0
 fi
@@ -353,7 +372,10 @@ if ! "$WORKTREE/scripts/deploy-devbox-release.sh" "$tarball" "$target"; then
   exit 1
 fi
 
-ensure_agent_shims "$target"
+# Release is already live; do not roll back success status if only shims fail.
+if ! ensure_agent_shims "$target"; then
+  log "agent shims incomplete after successful activation — release is live; re-run install-agent-shims.sh"
+fi
 
 write_deploy_status success "$target" "" "" "$deployed_full"
 trap - EXIT

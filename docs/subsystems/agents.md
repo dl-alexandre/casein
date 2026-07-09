@@ -74,14 +74,18 @@ agent runs with compile-time-fixed argv.
    optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Codex staging is
    intentionally free of DevIDE MCP entries; the launcher injects them at
    runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
-3. `PaneEnv` builds the `DEVIDE_*` env map (`DEV_IDE_API_TOKEN`,
-   `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`, `DEVIDE_PREVIEW_MCP_URL`,
-   `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional `DEVIDE_TIDEWAVE_MCP_URL`)
-   and pushes it into the session with `Tmux.set_environments/2`. `PaneEnv`
-   also injects `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
-   `~/.devide/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
-   signed in (`.credentials.json` / `auth.json` present); otherwise the runtime
-   keeps the host global provider login.
+3. `PaneEnv.ensure_for_session/3` self-heals missing agent launcher shims via
+   `DevIDE.Agents.AgentShims.ensure/0` (partial loss of e.g. only `claude` has
+   bitten after deploys/npm updates), then builds the `DEVIDE_*` env map
+   (`DEV_IDE_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
+   `DEVIDE_PREVIEW_MCP_URL`, `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional
+   `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
+   `Tmux.set_environments/2`. `PATH` always includes `~/.local/bin` and the npm
+   global bin dir (also embedded in `Terminals.Shims.path_with_shims/1` so session
+   create is not bashrc-dependent). `PaneEnv` also injects `CLAUDE_CONFIG_DIR`
+   and `CODEX_HOME` under `~/.devide/agent-auth/profiles/<owner>/<runtime>` when
+   that owner profile is signed in (`.credentials.json` / `auth.json` present);
+   otherwise the runtime keeps the host global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    Grok reads project `.mcp.json`, OpenCode reads project
@@ -90,16 +94,18 @@ agent runs with compile-time-fixed argv.
    (`--dangerously-bypass-approvals-and-sandbox`) and Claude to
    `--dangerously-skip-permissions`, unless the operator passes an explicit
    sandbox/approval or permission option, or sets `DEVIDE_CODEX_DEFAULT_YOLO=0` /
-   `DEVIDE_CLAUDE_DEFAULT_YOLO=0`. Plain agent starts do not depend on
-   `DEV_IDE_API_TOKEN` because DevIDE MCP is not persisted in global agent
-   configs. (See `PaneEnv.launch_command/3`.) Version/help probes
+   `DEVIDE_CLAUDE_DEFAULT_YOLO=0`. Palette id `clauded` maps to bare `claude`
+   (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
+   Plain agent starts do not depend on `DEV_IDE_API_TOKEN` because DevIDE MCP is
+   not persisted in global agent configs. Version/help probes
    (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
    `claude update`) bypass the launcher entirely and exec the real binary —
    they never resolve env, create a worktree, or inject MCP
    (`agent_runtime_passthrough` in `scripts/devide`). `install-agent-shims.sh`
-   and `devide agent doctor` both verify that the shims actually win PATH
-   resolution; a shadowed shim is a hard failure because agents would launch
-   without MCP and nothing else reports it.
+   (`--check` / `--ensure`), the deploy poller, and `devide agent doctor` all
+   verify shim completeness and PATH precedence; a shadowed or partial shim set
+   is a hard failure because agents would launch without MCP or with
+   `command not found`.
 
 **An agent calling a tool (request lifecycle):**
 
@@ -132,6 +138,8 @@ available. The list is surfaced through agent UI and `GET
 
 - `DevIDE.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
   capability queries (delegate to the configured adapter).
+- `DevIDE.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
+  DevIDE launcher shims under `~/.local/bin`.
 - `DevIDE.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
   `launch_command/3` — build/install the agent env for a tmux session.
 - `DevIDE.Agents.MCPMaterializer.materialize/2` — write agent client config

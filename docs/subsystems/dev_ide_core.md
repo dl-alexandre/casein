@@ -41,7 +41,7 @@ for a host-configurable vocabulary scrub before that generic 1.0.
 | Module | File | Role |
 |--------|------|------|
 | `ExecCtl` | `dev_ide_core/lib/exec_ctl.ex` | Boundary root (`deps: []`). erlexec streaming + static allowlists live here; DevIDE audit/policy/argv-building stays in `DevIDE.Commands.*`. |
-| `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | **Authoritative** static `id → argv` map (`compile`, `test`, `format`, `precommit`, `assets.build`, `agent`, `claude`, `clauded`, `codex`, `grok`, `opencode`, `dogfood.fail`). `all/0`, `allowed?/1`, `argv_for/1`. No shell interpolation. |
+| `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | **Authoritative** static `id → argv` map (`compile`, `test`, `format`, `precommit`, `assets.build`, `agent`, `claude`, `clauded`→`claude`, `codex`, `grok`, `opencode`, `dogfood.fail`). `all/0`, `allowed?/1`, `argv_for/1`. No shell interpolation. |
 | `ExecCtl.Port` | `dev_ide_core/lib/exec_ctl/port.ex` | erlexec port plumbing: spawn an OS process via `:exec.run/2` under a linked proxy + `:monitor`, stream `{:cmd_data, ref, :stdout\|:stderr, binary}` to a subscriber, deliver exactly one `{:cmd_exit, ref, exit_code \| {:error, reason}}`. 30s spawn timeout, 24h watchdog, `kill/1` via `:exec.kill(ospid, 15)`. |
 
 ### GitCtl — git worktree inspection + cache

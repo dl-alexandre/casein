@@ -30,6 +30,11 @@ defmodule ExecCtl.AllowlistTest do
     assert :error = Allowlist.argv_for("unknown")
   end
 
+  test "clauded maps to claude argv (no bare clauded binary)" do
+    assert {:ok, ["claude"]} = Allowlist.argv_for("clauded")
+    assert {:ok, ["claude"]} = Allowlist.argv_for("claude")
+  end
+
   test "dogfood.fail argv exits with a non-zero status when run" do
     assert {:ok, argv} = Allowlist.argv_for("dogfood.fail")
     assert ["mix", "run", "-e", _] = argv
