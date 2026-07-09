@@ -660,14 +660,18 @@ defmodule DevIDE.PreviewPanes do
              registration.workspace_id,
              display_url,
              source_url
+           ),
+         :ok <-
+           bulk_update_registration_urls(
+             registration.control_session_id,
+             display_url,
+             source_url
            ) do
       updated =
         Enum.map(registrations, fn reg ->
           updated =
             %{reg | url: display_url, display_url: display_url}
             |> Map.put(:source_url, source_url)
-
-          {:ok, _persisted} = persist_registration(updated)
 
           :ets.insert(@table, {updated.pane_id, updated})
           broadcast_registered(updated, :updated)
@@ -683,6 +687,30 @@ defmodule DevIDE.PreviewPanes do
 
       {:ok, Enum.find(updated, &(&1.pane_id == registration.pane_id)) || List.first(updated)}
     end
+  end
+
+  # One UPDATE for every open registration sharing a control_session_id —
+  # avoids N+1 get_by+update when multiple panes share a browser session.
+  defp bulk_update_registration_urls(control_session_id, display_url, source_url)
+       when is_integer(control_session_id) do
+    if preview_pane_persistence_enabled?() do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      {_count, _} =
+        from(r in PreviewPaneRegistration,
+          where: r.control_session_id == ^control_session_id and r.status == :open
+        )
+        |> Repo.update_all(
+          set: [
+            url: display_url,
+            display_url: display_url,
+            source_url: source_url,
+            updated_at: now
+          ]
+        )
+    end
+
+    :ok
   end
 
   # A source URL is only meaningful while it differs from the URL we display
