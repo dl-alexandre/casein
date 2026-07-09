@@ -7,7 +7,7 @@ A walk manifest is the **app-owned contract** for a read-only UI smoke walk.
 | **Product** | paths, login, safety, runtime probes | target repo `.devide/preview-walk.json` |
 | **DevIDE** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
 
-Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).  
+Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).
 Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.json).
 
 **Do not** check product-specific manifests into the DevIDE skill tree.
@@ -24,7 +24,7 @@ Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.
 └──────────────────────────────────────────────────────────┘
 ```
 
-Browser baseline (today): screenshot, load ms, console/network counts, `lands_on`, recording.  
+Browser baseline (today): screenshot, load ms, console/network counts, `lands_on`, recording.
 Server slice (declared now; drivers collect when Tidewave is up): logs, allowlisted `project_eval` probes, optional SELECT-only SQL, LiveView assign **keys** (not full assigns).
 
 If Tidewave is unreachable: **still walk the browser path**, mark runtime as `skipped: tidewave_unavailable` — never pretend the evidence packet is complete.
@@ -75,43 +75,43 @@ If Tidewave is unreachable: **still walk the browser path**, mark runtime as `sk
 
 ### Machine (drivers)
 
-- **`login.kind`** (preferred) / **`login.type`** (legacy)  
-  - `redirect_cookie` / `cookie` → `playwright_walk.mjs` (MCP blocks 302s; see SKILL “Auth reality”)  
-  - `session` / `session_inject` → `walk.py` only when login has **no** redirect  
-  - `none` → public pages  
-- **`pages[].path` / `lands_on`** — navigate + anti false-green (bounce to `/login` fails).  
-- **`pages[].budget_ms`** — load budget.  
-- **`report.name`** — artifact slug.  
+- **`login.kind`** (preferred) / **`login.type`** (legacy)
+  - `redirect_cookie` / `cookie` → `playwright_walk.mjs` (MCP blocks 302s; see SKILL “Auth reality”)
+  - `session` / `session_inject` → `walk.py` only when login has **no** redirect
+  - `none` → public pages
+- **`pages[].path` / `lands_on`** — navigate + anti false-green (bounce to `/login` fails).
+- **`pages[].budget_ms`** — load budget.
+- **`report.name`** — artifact slug.
 - **`strict_errors` / `noise_patterns`** — CSP noise filter controls (Playwright).
 
 ### Agent policy
 
-- **`safety.read_only`** — always `true` in v1.  
-- **`safety.env_check`** — keys for prod-write risk; surface in the report strip; agents must not click if prod.  
+- **`safety.read_only`** — always `true` in v1.
+- **`safety.env_check`** — keys for prod-write risk; surface in the report strip; agents must not click if prod.
 - **`safety.deny_events`** — never fire these (drivers currently never click; skill must honor).
 
 ### Runtime / Tidewave (evidence packet)
 
 Collection status in `playwright_walk.mjs` + `runtime_evidence.mjs`:
 
-1. **Tidewave availability** + env safety strip — **wired**  
-2. **Per-page `get_logs` delta** for `log_levels` (default `error`) — **wired**  
-   (page FAILs if *new* error lines since previous page &gt; 0; not the cumulative tail size)  
-3. Walk-level **`probes`** (`project_eval`, allowlisted only) — schema only  
-4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys — schema only  
+1. **Tidewave availability** + env safety strip — **wired**
+2. **Per-page `get_logs` delta** for `log_levels` (default `error`) — **wired**
+   (page FAILs if *new* error lines since previous page &gt; 0; not the cumulative tail size)
+3. Walk-level **`probes`** (`project_eval`, allowlisted only) — schema only
+4. **`per_page` SQL** (SELECT-only, capped rows) + LiveView assign keys — schema only
 
 Override Tidewave URL with `DEVIDE_TIDEWAVE_MCP_URL` or `--tidewave-url`.
 
 Safety for runtime:
 
-- Dev / preview-env only — never prod Tidewave  
-- SQL: `SELECT` only (schema enforces prefix)  
-- No free-form eval outside `probes`  
+- Dev / preview-env only — never prod Tidewave
+- SQL: `SELECT` only (schema enforces prefix)
+- No free-form eval outside `probes`
 - Artifact: assign **keys** + small derived facts — not full socket assigns (PII)
 
 ### Host hints (prefer launch env)
 
-- **`workspace`** — `~/.devide/agent-mcp/<name>/env.sh`; omit from product files when the agent already has workspace context.  
+- **`workspace`** — `~/.devide/agent-mcp/<name>/env.sh`; omit from product files when the agent already has workspace context.
 - **`app_surface`** — preview surface name for `walk.py` only.
 
 ## Report shape (target)
@@ -125,7 +125,7 @@ Dashboard  PASS  3120ms
   probes:   admin_role=ok
 ```
 
-Top strip: Tidewave yes/no + MCP URL, app cwd/SHA, `env_check` results, walk-level server log delta.  
+Top strip: Tidewave yes/no + MCP URL, app cwd/SHA, `env_check` results, walk-level server log delta.
 `actionable/raw` console counts remain for CSP noise transparency.
 
 ## Validation
