@@ -117,7 +117,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
-    sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_workspace sidebar:toggle_window
+    sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_sessions
+    sidebar:toggle_workspace sidebar:toggle_window
     sidebar:cycle_sessions_sort sidebar:cycle_windows_sort
     sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
@@ -725,6 +726,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:close", _params, socket) do
     {:noreply, Sidebar.close(socket)}
+  end
+
+  # Header session-name chip (left of the window tabs): toggle the sessions
+  # rail open/closed. Open path matches C-b s / palette "Open sessions sidebar".
+  def handle_event("sidebar:toggle_sessions", _params, socket) do
+    if socket.assigns.sessions_sidebar_open? do
+      {:noreply, Sidebar.close(socket)}
+    else
+      socket =
+        socket
+        |> Sidebar.open("both")
+        |> TerminalState.refresh_session_tabs()
+        |> assign_workspace_summaries()
+        |> TerminalState.refresh_tmux_topology()
+
+      {:noreply, socket}
+    end
   end
 
   def handle_event("sidebar:reveal_sessions", _params, socket) do
