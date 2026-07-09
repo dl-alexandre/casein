@@ -68,6 +68,8 @@ config :dev_ide, DevIdeWeb.Endpoint,
 # :4000 dev server (`devide_dev`) also run here. Each env gets its own label so
 # the servers stay isolated; resolved by DevIDE.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_test"
+# Never spawn the host tmux keepalive anchor during the test suite.
+config :dev_ide, :tmux_host_anchor, false
 
 # Keep test-boot deployment heartbeats out of the real /run/devide/instances.
 # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
