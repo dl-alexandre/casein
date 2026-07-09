@@ -257,8 +257,11 @@ defmodule DevIDE.ArtifactProjects do
 
   defp public_url(_), do: nil
 
+  # Prefer a dedicated artifacts origin (stronger isolation) when configured,
+  # falling back to the cockpit origin. nil when neither is set (local dev).
   defp artifact_public_origin do
-    case Application.get_env(:dev_ide, :preview_app_url) do
+    case Application.get_env(:dev_ide, :artifact_public_url) ||
+           Application.get_env(:dev_ide, :preview_app_url) do
       url when is_binary(url) and url != "" -> DevIDE.Previews.Url.origin_of(url)
       _ -> nil
     end

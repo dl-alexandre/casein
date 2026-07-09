@@ -25,15 +25,14 @@ defmodule DevIdeWeb.ArtifactProjectController do
   alias DevIDE.Files.PathSafety
   alias DevIDE.Workspaces
 
-  # Workspace-authored (untrusted) content served on the cockpit origin: allow it
-  # to render itself (inline styles/scripts, same-origin + data/blob media) but
-  # not exfiltrate to third parties or frame the cockpit. A dedicated artifact
-  # origin would be stronger isolation (deferred).
-  @artifact_csp "default-src 'self'; img-src 'self' data: blob:; " <>
-                  "media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " <>
-                  "script-src 'self' 'unsafe-inline'; font-src 'self' data:; " <>
-                  "connect-src 'self'; object-src 'none'; base-uri 'none'; " <>
-                  "frame-ancestors 'self'"
+  # Workspace-authored (untrusted) content: allow it to render itself (inline
+  # styles/scripts, same-origin + data/blob media) but not exfiltrate to third
+  # parties. `frame-ancestors` is computed per request (see artifact_csp/0) so a
+  # dedicated artifacts origin still lets the cockpit viewer embed it.
+  @artifact_csp_base "default-src 'self'; img-src 'self' data: blob:; " <>
+                       "media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; " <>
+                       "script-src 'self' 'unsafe-inline'; font-src 'self' data:; " <>
+                       "connect-src 'self'; object-src 'none'; base-uri 'none'"
 
   # The retired-artifact landing page is OUR trusted HTML (not workspace content),
   # so it locks down to just its own inline styles — no scripts, no network.
@@ -69,7 +68,7 @@ defmodule DevIdeWeb.ArtifactProjectController do
         audit(conn, project, :served, %{"path" => Enum.join(segments, "/")})
 
         conn
-        |> put_resp_header("content-security-policy", @artifact_csp)
+        |> put_resp_header("content-security-policy", artifact_csp())
         |> put_resp_header("x-content-type-options", "nosniff")
         |> put_share_headers(project)
         |> put_resp_content_type(MIME.from_path(file))
@@ -153,6 +152,23 @@ defmodule DevIdeWeb.ArtifactProjectController do
   defp dotfile?(segment), do: String.starts_with?(segment, ".")
 
   defp not_found(conn), do: conn |> put_status(404) |> text("not found")
+
+  defp artifact_csp, do: @artifact_csp_base <> "; frame-ancestors " <> frame_ancestors()
+
+  # On a dedicated artifacts origin, the cockpit (a different origin) must still
+  # embed the artifact in the workspace viewer iframe — so allow it alongside
+  # 'self'. When artifacts are served on the cockpit origin itself, 'self' already
+  # covers it and nothing extra is added.
+  defp frame_ancestors do
+    cockpit = Application.get_env(:dev_ide, :preview_app_url)
+    artifacts = Application.get_env(:dev_ide, :artifact_public_url)
+
+    if is_binary(artifacts) and artifacts != "" and is_binary(cockpit) and cockpit != "" do
+      "'self' " <> DevIDE.Previews.Url.origin_of(cockpit)
+    else
+      "'self'"
+    end
+  end
 
   # Share metadata as response headers so a teammate (or tooling) hitting the
   # durable link learns what it is without parsing the body. Title is

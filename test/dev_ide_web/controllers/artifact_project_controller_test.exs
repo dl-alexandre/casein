@@ -124,6 +124,23 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     assert [_status] = get_resp_header(conn, "x-artifact-status")
   end
 
+  test "a dedicated artifacts origin still lets the cockpit embed the artifact", ctx do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:dev_ide, :artifact_public_url, "https://artifacts.example.com")
+
+    on_exit(fn ->
+      Application.delete_env(:dev_ide, :preview_app_url)
+      Application.delete_env(:dev_ide, :artifact_public_url)
+    end)
+
+    conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
+
+    assert response(conn, 200)
+    assert [csp] = get_resp_header(conn, "content-security-policy")
+    # Cockpit (a different origin) must be allowed to frame the artifact viewer.
+    assert csp =~ "frame-ancestors 'self' https://devide.example.com"
+  end
+
   test "an authorized serve is audited", ctx do
     ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
 
