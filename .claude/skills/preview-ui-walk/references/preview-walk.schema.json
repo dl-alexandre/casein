@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://devide.devbox.milcgroup.com/schemas/preview-walk/v1.json",
+  "title": "DevIDE preview-ui-walk manifest",
+  "description": "App-owned contract for a read-only UI smoke walk (.devide/preview-walk.json). DevIDE ships drivers + this schema; product repos own instances. Browser signals (path/lands_on/budget/console/network) are the v1 baseline. The runtime object declares Tidewave/server-side evidence (logs, probes, optional SQL) for a richer evidence packet — drivers may skip runtime when Tidewave is unavailable and MUST mark that skip explicitly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["login", "pages", "report"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema (or a copy) for editor validation."
+    },
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Omit or set 1 for this revision."
+    },
+    "login": { "$ref": "#/definitions/login" },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/page" },
+      "description": "Screens to visit in order. Derive from the app router, not guesses."
+    },
+    "safety": { "$ref": "#/definitions/safety" },
+    "runtime": { "$ref": "#/definitions/runtime" },
+    "report": { "$ref": "#/definitions/report" },
+    "strict_errors": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, any raw console/network error fails the page (disables CSP noise filter)."
+    },
+    "noise_patterns": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Extra case-insensitive regex sources treated as noise (merged with driver defaults)."
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "description": "OPTIONAL host hint: DevIDE agent-mcp env dir name (~/.devide/agent-mcp/<workspace>/env.sh). Prefer resolving workspace from launch env; product manifests should omit this when possible."
+    },
+    "app_surface": {
+      "type": "string",
+      "minLength": 1,
+      "default": "app",
+      "description": "OPTIONAL host hint for preview MCP walk.py (preview_surfaces name). Not used by playwright_walk.mjs."
+    },
+    "_note": { "type": "string", "description": "Human annotation; ignored by drivers." },
+    "_driver": { "type": "string", "description": "Human annotation for which driver to prefer; ignored by drivers (login.kind/type selects the path)." }
+  },
+  "definitions": {
+    "login": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "lands_on"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["redirect_cookie", "session", "click", "none"],
+          "description": "Preferred product-facing auth model. Skill maps: redirect_cookie → playwright_walk.mjs; session → walk.py session inject; click → UI login; none → public pages."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["cookie", "session_inject", "click", "none"],
+          "description": "Legacy driver field. cookie ≡ redirect_cookie; session_inject ≡ session. Prefer kind; drivers accept either."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "App-owned login or mock-auth path (e.g. /dev/login, /auth/.../mock)."
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean"]
+          },
+          "description": "Query/body params for the login route. Avoid hardcoding operator identity long-term; prefer env overrides at run time."
+        },
+        "params_from_env": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "description": "Env var names whose values are merged into login.params at run time (e.g. WALK_LOGIN_EMAIL)."
+        },
+        "lands_on": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Expected post-login path prefix. Bounce to /login must fail the walk."
+        }
+      },
+      "anyOf": [
+        { "required": ["kind"] },
+        { "required": ["type"] }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable label used in the report and as key for runtime.per_page."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to navigate (app-relative)."
+        },
+        "lands_on": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Expected landed path (defaults to path). Anti false-green for auth redirects."
+        },
+        "budget_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000,
+          "default": 15000,
+          "description": "Max load+settle time for PASS."
+        },
+        "strict_errors": {
+          "type": "boolean",
+          "description": "Per-page override of manifest strict_errors."
+        },
+        "noise_patterns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "role_gated": {
+          "type": "boolean",
+          "description": "Annotation only: page requires elevated role."
+        },
+        "note": {
+          "type": "string",
+          "description": "Annotation only: why this page is in the walk."
+        },
+        "runtime": {
+          "$ref": "#/definitions/page_runtime",
+          "description": "Optional per-page Tidewave/SQL probes (merged over runtime.per_page[name])."
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent/operator policy. Drivers are structurally read-only today; env_check is for preflight + report strip (not a hard gate until a preflight is wired).",
+      "properties": {
+        "read_only": {
+          "type": "boolean",
+          "const": true,
+          "description": "v1 walks are always read-only (navigate + screenshot + report only)."
+        },
+        "env_check": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Env keys whose values should be inspected for prod write risk (e.g. APP_API_URL). Report should surface results; agents must not relax to clicks if prod."
+        },
+        "deny_events": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "phx-click / event names the walk must never fire."
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Server-side evidence via Tidewave (and optional SQL). When Tidewave is unreachable, the walk still runs; runtime evidence MUST be reported as skipped: tidewave_unavailable.",
+      "properties": {
+        "tidewave": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, collect Tidewave evidence (logs + optional probes). Dev/preview-env only — never prod."
+        },
+        "log_levels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["error", "warning", "info", "debug"]
+          },
+          "default": ["error"],
+          "description": "Server log levels to pull after each page (priority: error, then warning)."
+        },
+        "probes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/eval_probe" },
+          "description": "Allowlisted project_eval checks (walk-level). No free-form eval during a smoke walk."
+        },
+        "liveview": {
+          "$ref": "#/definitions/liveview_probe",
+          "description": "Default LiveView state capture policy for every page when Tidewave is on."
+        },
+        "per_page": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/page_runtime" },
+          "description": "Map of page name → extra probes/SQL/LiveView for that screen."
+        },
+        "require_tidewave": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, fail the whole walk if Tidewave is unavailable (default: skip runtime evidence)."
+        }
+      }
+    },
+    "page_runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "probes": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/eval_probe" }
+        },
+        "sql": {
+          "type": "string",
+          "pattern": "^\\s*[Ss][Ee][Ll][Ee][Cc][Tt]\\b",
+          "description": "SELECT-only probe. Drivers must reject non-SELECT and cap rows."
+        },
+        "expect_min": {
+          "type": "number",
+          "description": "Minimum numeric result for sql (e.g. count(*))."
+        },
+        "expect": {
+          "description": "Exact expected value for a single-cell sql or probe result.",
+          "type": ["string", "number", "boolean", "null"]
+        },
+        "liveview": { "$ref": "#/definitions/liveview_probe" },
+        "log_levels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["error", "warning", "info", "debug"]
+          }
+        }
+      }
+    },
+    "eval_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "eval"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable probe id in the report (e.g. superadmin_role)."
+        },
+        "eval": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Small Elixir expression for Tidewave project_eval. Keep pure/read-only; no mutations."
+        },
+        "expect": {
+          "description": "If set, probe PASS requires stringified result equality (or boolean/number match).",
+          "type": ["string", "number", "boolean", "null"]
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "liveview_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Capture LiveView process evidence without dumping PII-heavy full assigns into the artifact.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "assign_keys": {
+          "type": "boolean",
+          "default": true,
+          "description": "Record assign key names only (not values) for hydration proof."
+        },
+        "fields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Optional small derived facts (e.g. current_user.role) — keep non-PII."
+        }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "description": "Artifact / report slug (e.g. admin-smoke)."
+        },
+        "baseline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Reserved for visual-diff against a prior run (not wired in v1 drivers)."
+        }
+      }
+    }
+  }
+}

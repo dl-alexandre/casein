@@ -58,7 +58,10 @@ jobs:
           echo "Changed files:"; echo "$changed"
           # Conservative: docs-only means EVERY changed path matches docs/** or
           # *.md. An empty/failed diff or any other path => full gate.
-          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md)$'; then
+          # docs-only OR skill-only (DevIDE agent skills under .claude/skills — not
+          # part of the mix/npm app surface; full suite is wasted queue time).
+          # pr-gate.yml itself is allowed so this detector can land with skill PRs.
+          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md|\.claude/skills/.*|\.github/workflows/pr-gate\.yml)$'; then
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
@@ -80,7 +83,7 @@ jobs:
           # The job still SUCCEEDS so the required check reports green — we do
           # NOT use a workflow `paths:` filter, which would leave the required
           # check pending forever on docs-only PRs.
-          echo "Docs-only PR (only docs/** and *.md changed) — skipping the heavy gate and reporting success."
+          echo "Docs/skill-only PR — skipping the heavy gate and reporting success."
 
   gate-hosted:
     name: Gate (hosted, advisory)
@@ -125,7 +128,9 @@ jobs:
           base_sha="$(git rev-parse FETCH_HEAD)"
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
-          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md)$'; then
+          # docs-only OR skill-only (DevIDE agent skills under .claude/skills — not
+          # part of the mix/npm app surface; full suite is wasted queue time).
+          if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md|\.claude/skills/.*)$'; then
             echo "docs_only=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
