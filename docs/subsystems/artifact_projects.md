@@ -143,6 +143,45 @@ Successful project payloads also include:
 - The cockpit gallery is a runtime/worktree browser. It does not yet provide
   file-level editing or generated LiveView artifact sandboxes.
 
+## Public sharing & the dedicated artifacts origin
+
+An artifact is PR-shareable via a durable, login-gated route served straight from
+its worktree:
+
+```
+GET /artifact-projects/:workspace_id/:artifact_project_id/*path
+```
+
+It runs under the devbox oauth2-proxy `forward_auth` and additionally gates on
+workspace ownership (404, not 403, on any authz failure). `ArtifactProjects.payload/1`
+exposes this as `public_url` (plus `commit` and `retired`), so `artifact_create/
+serve/get` responses carry the shareable link directly. The link references stable
+ids — not the ephemeral loopback preview port — so it survives restarts and deploys.
+
+**Origin selection.** `public_url` is built from the first configured of:
+
+1. `:artifact_public_url` (env `DEVIDE_ARTIFACT_URL`) — a **dedicated, isolated
+   origin** for artifacts.
+2. `:preview_app_url` (env `DEVIDE_URL`) — the cockpit origin (default).
+
+Serving workspace-authored (untrusted) HTML from its own origin is stronger
+isolation: a compromised artifact can't reach cockpit cookies or its same-origin
+surface. The controller's CSP `frame-ancestors` is computed per request — when a
+dedicated origin is configured it also allows the cockpit origin, so the workspace
+viewer can still embed the artifact iframe.
+
+**Enabling the dedicated origin (infra, outside this repo).** The DevIDE side is a
+no-op until the manager routes a subdomain here:
+
+1. DNS: point `artifacts.devbox.milcgroup.com` at the devbox.
+2. TLS: a cert for that host (Caddy auto-cert or the existing wildcard).
+3. Manager/Caddy: route that host through the **same** oauth2-proxy `forward_auth`
+   block as `devide.devbox…`, upstreaming to the DevIDE port. A single shared
+   origin — **not** per-workspace subdomains (rejected: collide with legacy/v3
+   wildcard routing, which is intentionally non-OAuth).
+4. Set `DEVIDE_ARTIFACT_URL=https://artifacts.devbox.milcgroup.com` in the release
+   env. `public_url`s then resolve to the dedicated origin automatically.
+
 ## Next Steps
 
 - Add file watch plus preview refresh events for tighter edit loops.

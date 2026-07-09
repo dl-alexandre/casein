@@ -672,6 +672,21 @@ if config_env() == :prod and not release_cli? do
       end
 
     config :dev_ide, :preview_app_url, preview_app_url
+
+    # Optional dedicated, isolated origin for PR-shareable artifacts. Serving
+    # workspace-authored (untrusted) HTML from its own origin — rather than the
+    # cockpit's — means a compromised artifact can't reach cockpit cookies or its
+    # same-origin surface. When DEVIDE_ARTIFACT_URL is set AND the manager routes
+    # that subdomain through the same oauth2-proxy forward_auth to this host,
+    # artifact public_urls are built from it; unset → artifacts stay on the
+    # cockpit origin (current behavior). Safe no-op until the infra route exists.
+    case System.get_env("DEVIDE_ARTIFACT_URL") do
+      url when is_binary(url) and url != "" ->
+        config :dev_ide, :artifact_public_url, url
+
+      _ ->
+        :ok
+    end
   end
 
   # ## SSL Support

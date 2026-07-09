@@ -247,6 +247,30 @@ defmodule DevIDE.ArtifactProjectsTest do
            }
   end
 
+  test "public_url prefers the dedicated artifacts origin over the cockpit origin" do
+    {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Shareable"})
+
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    on_exit(fn ->
+      Application.delete_env(:dev_ide, :preview_app_url)
+      Application.delete_env(:dev_ide, :artifact_public_url)
+    end)
+
+    # Falls back to the cockpit origin when no dedicated origin is configured.
+    cockpit_url = ArtifactProjects.payload(project).public_url
+    assert cockpit_url =~ "devide.example.com"
+    assert String.ends_with?(cockpit_url, "/artifact-projects/ws-artifacts/#{project.id}/")
+
+    # The dedicated artifacts origin wins when set.
+    Application.put_env(:dev_ide, :artifact_public_url, "https://artifacts.example.com")
+
+    dedicated_url = ArtifactProjects.payload(project).public_url
+    assert dedicated_url =~ "artifacts.example.com"
+    refute dedicated_url =~ "devide.example.com"
+    assert String.ends_with?(dedicated_url, "/artifact-projects/ws-artifacts/#{project.id}/")
+  end
+
   defp seed_workspace!(id, path) do
     {:ok, _record} =
       State.sync(%Workspace{
