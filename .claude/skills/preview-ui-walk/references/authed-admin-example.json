@@ -1,25 +1,84 @@
 {
-  "workspace": "example-admin",
-  "app_surface": "app",
-  "_driver": "references/playwright_walk.mjs (cookie login — the preview MCP cannot follow the 302; see SKILL.md 'Auth reality')",
-  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json (app owns routes, login, safety). Derive paths from that app's router. Every gated page sets lands_on so a lost-session bounce to /login FAILS instead of shipping a false green.",
+  "version": 1,
+  "$schema": "./preview-walk.schema.json",
+  "_driver": "playwright_walk.mjs when login.kind=redirect_cookie (preview MCP cannot follow 302s)",
+  "_note": "FICTIONAL shape only — not a real product. Real manifests live in the target repo at .devide/preview-walk.json. This example shows browser baseline + optional Tidewave runtime evidence.",
   "login": {
-    "type": "cookie",
+    "kind": "redirect_cookie",
     "path": "/dev/login",
-    "params": { "email": "admin@example.com", "role": "admin" },
+    "params": { "role": "admin" },
+    "params_from_env": ["WALK_LOGIN_EMAIL"],
     "lands_on": "/admin"
   },
   "pages": [
-    { "name": "Dashboard", "path": "/admin",          "lands_on": "/admin",          "budget_ms": 8000,  "note": "landing" },
-    { "name": "Users",     "path": "/admin/users",     "lands_on": "/admin/users",     "budget_ms": 10000, "note": "paginated list; empty allowed" },
-    { "name": "Settings",  "path": "/admin/settings",  "lands_on": "/admin/settings",  "budget_ms": 8000,  "note": "role-gated form (read-only view)" },
-    { "name": "Audit",     "path": "/admin/audit",     "lands_on": "/admin/audit",     "budget_ms": 12000, "note": "role-gated; verifies auth held past the first page" }
+    {
+      "name": "Dashboard",
+      "path": "/admin",
+      "lands_on": "/admin",
+      "budget_ms": 8000,
+      "note": "landing"
+    },
+    {
+      "name": "Users",
+      "path": "/admin/users",
+      "lands_on": "/admin/users",
+      "budget_ms": 10000,
+      "note": "paginated list; empty allowed"
+    },
+    {
+      "name": "Settings",
+      "path": "/admin/settings",
+      "lands_on": "/admin/settings",
+      "budget_ms": 8000,
+      "role_gated": true,
+      "note": "role-gated form (read-only view)"
+    },
+    {
+      "name": "Themes",
+      "path": "/admin/themes",
+      "lands_on": "/admin/themes",
+      "budget_ms": 8000,
+      "note": "example of per-page SQL probe (empty UI can still be green without it)"
+    }
   ],
   "safety": {
     "read_only": true,
     "env_check": ["APP_API_URL", "AUTH_API_URL"],
-    "deny_events": ["delete", "confirm_delete", "save", "deactivate", "reset_token", "send_email"],
-    "note": "Confirm APP_API_URL / AUTH_API_URL are non-prod before relaxing to any interaction. Default: navigate + screenshot only."
+    "deny_events": [
+      "delete",
+      "confirm_delete",
+      "save",
+      "deactivate",
+      "reset_token",
+      "send_email"
+    ],
+    "note": "Confirm APP_API_URL / AUTH_API_URL are non-prod before any interaction. Default: navigate + screenshot only."
   },
-  "report": { "name": "example-admin-smoke", "baseline": false }
+  "runtime": {
+    "tidewave": true,
+    "log_levels": ["error", "warning"],
+    "require_tidewave": false,
+    "liveview": {
+      "enabled": true,
+      "assign_keys": true
+    },
+    "probes": [
+      {
+        "name": "admin_role",
+        "eval": ":ok",
+        "expect": "ok",
+        "note": "placeholder — replace with a real read-only project_eval in the product repo"
+      }
+    ],
+    "per_page": {
+      "Themes": {
+        "sql": "SELECT count(*) FROM themes",
+        "expect_min": 1
+      }
+    }
+  },
+  "report": {
+    "name": "example-admin-smoke",
+    "baseline": false
+  }
 }
