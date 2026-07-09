@@ -74,7 +74,7 @@ defmodule DevIDE.PreviewPanesTest do
     {root, path}
   end
 
-  defp seed_session!(session, pane_id \\ "%1") do
+  defp seed_session!(session, pane_id) do
     FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
     })
