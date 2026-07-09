@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://devide.devbox.milcgroup.com/schemas/preview-walk/v1.json",
   "title": "DevIDE preview-ui-walk manifest",
-  "description": "App-owned contract for a read-only UI smoke walk (.devide/preview-walk.json). DevIDE ships drivers + this schema; product repos own instances. Browser signals (path/lands_on/budget/console/network) are the v1 baseline. The runtime object declares Tidewave/server-side evidence (logs, probes, optional SQL) for a richer evidence packet — drivers may skip runtime when Tidewave is unavailable and MUST mark that skip explicitly.",
+  "description": "App-owned contract for a UI smoke walk (.devide/preview-walk.json). DevIDE ships drivers + this schema; product repos own instances. Browser baseline: path/lands_on/budget/console/network/screenshot. Runtime (Tidewave): logs, project_eval probes, SELECT-only SQL, LiveView assign keys. Optional pages[].steps for assertions and (gated) interactions. Drivers skip runtime when Tidewave is unavailable and MUST mark that skip explicitly.",
   "type": "object",
   "additionalProperties": false,
   "required": ["login", "pages", "report"],
@@ -140,28 +140,135 @@
         "runtime": {
           "$ref": "#/definitions/page_runtime",
           "description": "Optional per-page Tidewave/SQL probes (merged over runtime.per_page[name])."
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/step" },
+          "description": "Ordered interactions/assertions after navigate+settle. Read-only actions always run; click/fill/type/press require safety.allow_interactions and non-prod env_check."
         }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "wait_for",
+            "wait_for_selector",
+            "assert_selector",
+            "assert_text",
+            "assert_url",
+            "settle",
+            "screenshot",
+            "click",
+            "fill",
+            "type",
+            "press",
+            "select",
+            "check",
+            "uncheck",
+            "hover"
+          ],
+          "description": "Step kind. assert_*/wait_for/settle are always allowed; click/fill/type/press/select/check/uncheck/hover are mutating."
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional label in the report."
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector (wait_for, assert_selector, click, fill, …)."
+        },
+        "text": {
+          "type": "string",
+          "description": "Text to assert, fill, or type."
+        },
+        "value": {
+          "type": ["string", "number", "boolean"],
+          "description": "Alias for fill/select value."
+        },
+        "path": {
+          "type": "string",
+          "description": "Expected path fragment for assert_url."
+        },
+        "lands_on": {
+          "type": "string",
+          "description": "Alias for assert_url path."
+        },
+        "key": {
+          "type": "string",
+          "description": "Key name for press (e.g. Enter)."
+        },
+        "state": {
+          "type": "string",
+          "enum": ["visible", "attached", "hidden"],
+          "description": "wait_for / assert_selector visibility state."
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 120000
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "settle duration."
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 60000,
+          "description": "Post-click settle."
+        },
+        "event": {
+          "type": "string",
+          "description": "Optional phx-click / event name for deny_events matching."
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "When false, a blocked mutating step is SKIPPED instead of FAIL."
+        },
+        "continue_on_fail": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, keep running remaining steps after a failure."
+        },
+        "require_visible": {
+          "type": "boolean",
+          "default": true
+        },
+        "note": { "type": "string" }
       }
     },
     "safety": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Agent/operator policy. Drivers are structurally read-only today; env_check is for preflight + report strip (not a hard gate until a preflight is wired).",
+      "description": "Agent/operator policy. Default is read-only navigate+screenshot. Mutating pages[].steps require allow_interactions:true and a non-prod env_check strip.",
       "properties": {
         "read_only": {
           "type": "boolean",
-          "const": true,
-          "description": "v1 walks are always read-only (navigate + screenshot + report only)."
+          "default": true,
+          "description": "When true (default), mutating steps are blocked unless allow_interactions is also true. Prefer keeping this true and only opting interactions in deliberately."
+        },
+        "allow_interactions": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt-in for pages[].steps that click/fill/type/press. Still blocked when env_check finds prod_like values, and still respects deny_events."
         },
         "env_check": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
-          "description": "Env keys whose values should be inspected for prod write risk (e.g. APP_API_URL). Report should surface results; agents must not relax to clicks if prod."
+          "description": "Env keys whose values should be inspected for prod write risk (e.g. APP_API_URL). Report surfaces results; mutating steps fail closed if any are prod_like."
         },
         "deny_events": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
-          "description": "phx-click / event names the walk must never fire."
+          "description": "phx-click / event names the walk must never fire (matched against step.event)."
         },
         "note": { "type": "string" }
       }
@@ -234,7 +341,8 @@
             "type": "string",
             "enum": ["error", "warning", "info", "debug"]
           }
-        }
+        },
+        "note": { "type": "string" }
       }
     },
     "eval_probe": {

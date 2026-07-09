@@ -1,10 +1,12 @@
-// Priority-1 runtime evidence for preview-ui-walk:
-//   - Tidewave availability
-//   - per-page get_logs (error/warning)
-//   - safety.env_check strip (prefer app env via project_eval)
+// Runtime evidence for preview-ui-walk (Tidewave MCP):
+//   - availability + env_check strip + app identity
+//   - per-page get_logs deltas (error/warning/…)
+//   - walk/page project_eval probes (allowlisted in the manifest)
+//   - per-page SELECT-only SQL (via execute_sql_query)
+//   - LiveView assign *keys* (+ optional small non-PII fields)
 //
-// Never mutates. SQL/probes beyond env + logs are out of scope for v1 collector.
-// When Tidewave is unreachable, callers mark skipped: tidewave_unavailable.
+// Never mutates. When Tidewave is unreachable, callers mark
+// skipped: tidewave_unavailable and keep the browser walk green/red on its own.
 
 import http from "node:http";
 import https from "node:https";
@@ -16,6 +18,10 @@ const PROD_HINT =
   /(?:^|[./-])prod(?:uction)?(?:[./-]|$)|prod-api|api\.prod|amazonaws\.com\/prod/i;
 const NONPROD_HINT =
   /stage|staging|sandbox|localhost|127\.0\.0\.1|\.dev\.|devbox|preview/i;
+
+const SQL_SELECT_RE = /^\s*select\b/i;
+const MAX_SQL_ROWS = 50;
+const MAX_PROBE_CODE = 2000;
 
 /**
  * Resolve Tidewave MCP URL.
@@ -108,14 +114,18 @@ function httpJson(url, body, timeoutMs = 8000) {
 let _rpcId = 1;
 
 /** Call a Tidewave MCP tool; returns parsed text content or throws. */
-export async function tidewaveCall(mcpUrl, name, args = {}) {
+export async function tidewaveCall(mcpUrl, name, args = {}, timeoutMs = 15000) {
   const id = _rpcId++;
-  const { body } = await httpJson(mcpUrl, {
-    jsonrpc: "2.0",
-    id,
-    method: "tools/call",
-    params: { name, arguments: args },
-  });
+  const { body } = await httpJson(
+    mcpUrl,
+    {
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name, arguments: args },
+    },
+    timeoutMs,
+  );
   if (body.error) {
     const msg = body.error.message || JSON.stringify(body.error);
     throw new Error(`tidewave ${name}: ${msg}`);
@@ -136,11 +146,18 @@ export async function tidewaveCall(mcpUrl, name, args = {}) {
 /**
  * project_eval returns Elixir values as text — often a JSON-encoded string
  * wrapped once more by the tool. Peel JSON layers until we get an object/array
- * or a bare scalar.
+ * or a bare scalar. Also strips Tidewave's "IO:\n…\nResult:\n…" envelope.
  */
 export function parseEvalJson(text) {
   let v = String(text ?? "").trim();
   if (!v) return null;
+
+  // Tidewave often wraps as: IO:\n...\n\nResult:\n"<json>"
+  const resultIdx = v.search(/\nResult:\s*\n/i);
+  if (resultIdx >= 0) {
+    v = v.slice(resultIdx).replace(/^\n?Result:\s*\n/i, "").trim();
+  }
+
   for (let i = 0; i < 4; i++) {
     try {
       const p = JSON.parse(v);
@@ -153,6 +170,48 @@ export function parseEvalJson(text) {
     } catch {
       break;
     }
+  }
+  // bare atom-ish tokens
+  if (v === "nil" || v === ":nil") return null;
+  if (v === "true" || v === ":true") return true;
+  if (v === "false" || v === ":false") return false;
+  if (/^:\w+$/.test(v)) return v.slice(1);
+  if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
+  return v;
+}
+
+/** Normalize probe/SQL expect comparisons (atoms, strings, numbers). */
+export function valuesMatch(actual, expect) {
+  if (expect === undefined) return true;
+  if (actual === expect) return true;
+  if (actual == null && expect == null) return true;
+  // stringified equality after peeling atoms
+  const a = normalizeScalar(actual);
+  const e = normalizeScalar(expect);
+  if (a === e) return true;
+  if (typeof a === "number" && typeof e === "number" && Number.isFinite(a) && Number.isFinite(e)) {
+    return a === e;
+  }
+  return String(a) === String(e);
+}
+
+function normalizeScalar(v) {
+  if (v == null) return null;
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (t.startsWith(":") && t.length > 1) return t.slice(1);
+    if (t === "nil") return null;
+    if (t === "true") return true;
+    if (t === "false") return false;
+    if (/^-?\d+$/.test(t)) return Number(t);
+    // quoted elixir/json string
+    if (
+      (t.startsWith('"') && t.endsWith('"')) ||
+      (t.startsWith("'") && t.endsWith("'"))
+    ) {
+      return t.slice(1, -1);
+    }
+    return t;
   }
   return v;
 }
@@ -349,8 +408,384 @@ export async function appIdentity(mcpUrl) {
   }
 }
 
+// ─── Probes / SQL / LiveView ────────────────────────────────────────────────
+
+/** Guard: reject free-form eval that looks mutating. Soft heuristics only. */
+export function probeLooksUnsafe(code) {
+  const s = String(code || "");
+  if (s.length > MAX_PROBE_CODE) return "probe_code_too_long";
+  // Common mutation verbs — walk is read-only.
+  if (
+    /\b(Repo\.(insert|update|delete|insert!|update!|delete!)|File\.(write|rm|rm_rf)|System\.(cmd|shell)|:os\.cmd|Mix\.Task\.run)\b/.test(
+      s,
+    )
+  ) {
+    return "probe_looks_mutating";
+  }
+  return null;
+}
+
+export function assertSelectOnly(sql) {
+  const q = String(sql || "").trim();
+  if (!q) return { ok: false, error: "empty_sql" };
+  if (!SQL_SELECT_RE.test(q)) return { ok: false, error: "sql_must_be_select" };
+  // Block multi-statement / sneaky writes
+  if (/;\s*\S/.test(q)) return { ok: false, error: "sql_multi_statement" };
+  if (/\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i.test(q)) {
+    return { ok: false, error: "sql_non_select_keyword" };
+  }
+  return { ok: true, query: q };
+}
+
 /**
- * Run priority-1 runtime setup for a walk.
+ * Parse Tidewave execute_sql_query text (usually inspect(%Postgrex.Result{})).
+ * Good enough for expect / expect_min on single-cell aggregates.
+ */
+export function parseSqlResult(text) {
+  const s = String(text ?? "");
+  if (!s.trim()) return { error: "empty_sql_result" };
+  if (/\b(error|exception|\*\*)\b/i.test(s) && !/Postgrex\.Result|num_rows/.test(s)) {
+    return { error: s.slice(0, 400) };
+  }
+  const numRows = Number(s.match(/num_rows:\s*(\d+)/)?.[1] ?? NaN);
+  const colsMatch = s.match(/columns:\s*\[([^\]]*)\]/);
+  const columns = colsMatch
+    ? colsMatch[1]
+        .split(",")
+        .map((c) => c.trim().replace(/^"|"$/g, "").replace(/^'|'$/g, ""))
+        .filter(Boolean)
+    : [];
+
+  // rows: [[1], [2]] or [[nil]] — take first cell of first row as scalar
+  let scalar = null;
+  const rowsBlock = s.match(/rows:\s*(\[[\s\S]*?\])\s*,\s*num_rows/);
+  if (rowsBlock) {
+    const firstCell = rowsBlock[1].match(/\[\s*\[\s*([^,\]]+?)\s*(?:,|\])/);
+    if (firstCell) scalar = normalizeScalar(firstCell[1].trim());
+  }
+
+  return {
+    num_rows: Number.isFinite(numRows) ? numRows : null,
+    columns,
+    scalar,
+    raw: s.slice(0, 600),
+  };
+}
+
+/** Run one allowlisted project_eval probe. */
+export async function runProbe(mcpUrl, probe) {
+  const name = probe?.name || "unnamed";
+  const code = probe?.eval;
+  if (!code) {
+    return { name, status: "FAIL", error: "missing_eval" };
+  }
+  const unsafe = probeLooksUnsafe(code);
+  if (unsafe) {
+    return { name, status: "FAIL", error: unsafe };
+  }
+  try {
+    const text = await tidewaveCall(
+      mcpUrl,
+      "project_eval",
+      { code, timeout: 15000 },
+      20000,
+    );
+    const value = parseEvalJson(text);
+    const hasExpect = Object.prototype.hasOwnProperty.call(probe, "expect");
+    const ok = !hasExpect || valuesMatch(value, probe.expect);
+    return {
+      name,
+      status: ok ? "PASS" : "FAIL",
+      value: summarizeValue(value),
+      expect: hasExpect ? probe.expect : undefined,
+      error: ok ? undefined : "expect_mismatch",
+      note: probe.note,
+    };
+  } catch (e) {
+    return { name, status: "FAIL", error: String(e.message || e) };
+  }
+}
+
+function summarizeValue(v) {
+  if (v == null) return null;
+  if (typeof v === "string") return v.length > 200 ? `${v.slice(0, 200)}…` : v;
+  if (typeof v === "number" || typeof v === "boolean") return v;
+  try {
+    const s = JSON.stringify(v);
+    return s.length > 240 ? `${s.slice(0, 240)}…` : JSON.parse(s);
+  } catch {
+    return String(v).slice(0, 200);
+  }
+}
+
+/** Run SELECT-only SQL for a page runtime block. */
+export async function runSql(mcpUrl, pageRt = {}) {
+  if (!pageRt.sql) return null;
+  const gate = assertSelectOnly(pageRt.sql);
+  if (!gate.ok) {
+    return { status: "FAIL", error: gate.error, query: String(pageRt.sql).slice(0, 120) };
+  }
+  try {
+    const text = await tidewaveCall(
+      mcpUrl,
+      "execute_sql_query",
+      { query: gate.query },
+      20000,
+    );
+    const parsed = parseSqlResult(text);
+    if (parsed.error && parsed.num_rows == null && parsed.scalar == null) {
+      return {
+        status: "FAIL",
+        error: parsed.error,
+        query: gate.query.slice(0, 120),
+      };
+    }
+
+    let status = "PASS";
+    let error;
+    if (Object.prototype.hasOwnProperty.call(pageRt, "expect")) {
+      if (!valuesMatch(parsed.scalar, pageRt.expect)) {
+        status = "FAIL";
+        error = `expect ${JSON.stringify(pageRt.expect)} got ${JSON.stringify(parsed.scalar)}`;
+      }
+    }
+    if (status === "PASS" && pageRt.expect_min != null) {
+      const n = Number(parsed.scalar);
+      if (!Number.isFinite(n) || n < Number(pageRt.expect_min)) {
+        status = "FAIL";
+        error = `expect_min ${pageRt.expect_min} got ${JSON.stringify(parsed.scalar)}`;
+      }
+    }
+    // Cap what we surface
+    return {
+      status,
+      error,
+      query: gate.query.slice(0, 160),
+      num_rows: parsed.num_rows,
+      columns: (parsed.columns || []).slice(0, 12),
+      scalar: parsed.scalar,
+    };
+  } catch (e) {
+    return {
+      status: "FAIL",
+      error: String(e.message || e),
+      query: gate.query.slice(0, 120),
+    };
+  }
+}
+
+/**
+ * Capture LiveView evidence: view modules + assign *keys* only.
+ * Optional `fields` pull small non-PII facts via a safe path walker.
+ */
+export async function captureLiveViews(mcpUrl, policy = {}, { pathHint } = {}) {
+  if (policy && policy.enabled === false) {
+    return { status: "disabled" };
+  }
+  const wantKeys = policy?.assign_keys !== false;
+  const fields = Array.isArray(policy?.fields) ? policy.fields.slice(0, 12) : [];
+  const fieldsJson = JSON.stringify(fields);
+  const pathJson = JSON.stringify(pathHint || null);
+
+  // :sys.get_state is more reliable than Debug.socket across LV versions.
+  // Never encode PIDs or full assign maps — keys + optional allowlisted fields only.
+  const code = `
+    path_hint = ${pathJson}
+    fields = ${fieldsJson}
+    want_keys = ${wantKeys}
+
+    get_in_assign = fn assigns, path ->
+      parts = path |> to_string() |> String.split(".", trim: true)
+      Enum.reduce_while(parts, assigns, fn part, acc ->
+        atom_key =
+          try do
+            String.to_existing_atom(part)
+          rescue
+            ArgumentError -> nil
+          end
+
+        key =
+          cond do
+            is_map(acc) and Map.has_key?(acc, part) -> part
+            atom_key != nil and is_map(acc) and Map.has_key?(acc, atom_key) -> atom_key
+            true -> :__missing__
+          end
+
+        cond do
+          key == :__missing__ -> {:halt, :__missing__}
+          is_map(acc) -> {:cont, Map.get(acc, key)}
+          is_struct(acc) ->
+            try do
+              {:cont, Map.get(acc, key)}
+            rescue
+              _ -> {:halt, :__missing__}
+            end
+          true -> {:halt, :__missing__}
+        end
+      end)
+    end
+
+    redact = fn v ->
+      cond do
+        is_nil(v) -> nil
+        is_boolean(v) or is_number(v) or is_atom(v) -> v
+        is_binary(v) ->
+          cond do
+            String.contains?(v, "@") and String.length(v) < 120 -> "[redacted-email]"
+            String.length(v) > 80 -> String.slice(v, 0, 40) <> "…"
+            true -> v
+          end
+        true ->
+          s = inspect(v, limit: 3)
+          if String.length(s) > 80, do: String.slice(s, 0, 80) <> "…", else: s
+      end
+    end
+
+    liveviews =
+      try do
+        if Code.ensure_loaded?(Phoenix.LiveView.Debug) and
+             function_exported?(Phoenix.LiveView.Debug, :list_liveviews, 0) do
+          Phoenix.LiveView.Debug.list_liveviews()
+        else
+          []
+        end
+      rescue
+        _ -> []
+      end
+
+    rows =
+      Enum.map(liveviews, fn meta ->
+        pid = Map.get(meta, :pid)
+        view = Map.get(meta, :view) || Map.get(meta, :module)
+        topic = Map.get(meta, :topic)
+
+        assigns =
+          try do
+            case :sys.get_state(pid) do
+              %{socket: %Phoenix.LiveView.Socket{assigns: a}} -> a
+              %Phoenix.LiveView.Socket{assigns: a} -> a
+              _ -> %{}
+            end
+          rescue
+            _ -> %{}
+          catch
+            _, _ -> %{}
+          end
+
+        keys =
+          if want_keys do
+            assigns
+            |> Map.delete(:__changed__)
+            |> Map.keys()
+            |> Enum.map(&to_string/1)
+            |> Enum.sort()
+          else
+            []
+          end
+
+        field_map =
+          for f <- fields, into: %{} do
+            val = get_in_assign.(assigns, f)
+            {to_string(f), if(val == :__missing__, do: nil, else: redact.(val))}
+          end
+
+        current_path =
+          case get_in_assign.(assigns, "current_path") do
+            :__missing__ -> nil
+            p -> to_string(p)
+          end
+
+        %{
+          "view" => inspect(view),
+          "topic" => to_string(topic || ""),
+          "assign_keys" => keys,
+          "fields" => field_map,
+          "current_path" => current_path
+        }
+      end)
+
+    # Prefer LiveViews whose current_path matches the page we just opened.
+    ranked =
+      case path_hint do
+        nil -> rows
+        hint when is_binary(hint) ->
+          {match, rest} =
+            Enum.split_with(rows, fn r ->
+              cp = r["current_path"]
+              is_binary(cp) and (String.contains?(cp, hint) or String.contains?(hint, cp))
+            end)
+          match ++ rest
+        _ -> rows
+      end
+
+    Jason.encode!(%{
+      "status" => "ok",
+      "count" => length(ranked),
+      "liveviews" => Enum.take(ranked, 8)
+    })
+  `;
+
+  try {
+    const text = await tidewaveCall(
+      mcpUrl,
+      "project_eval",
+      { code, timeout: 15000 },
+      20000,
+    );
+    const parsed = parseEvalJson(text);
+    if (parsed && typeof parsed === "object") {
+      return {
+        status: parsed.status || "ok",
+        count: parsed.count ?? (parsed.liveviews || []).length,
+        liveviews: Array.isArray(parsed.liveviews) ? parsed.liveviews : [],
+      };
+    }
+    return { status: "error", error: "unparseable_liveview_snapshot", raw: String(text).slice(0, 200) };
+  } catch (e) {
+    return { status: "error", error: String(e.message || e) };
+  }
+}
+
+/** Merge walk-level runtime.per_page[name] with page.runtime. */
+export function mergePageRuntime(manifest, page) {
+  const walk = manifest?.runtime || {};
+  const fromMap = (walk.per_page && walk.per_page[page.name]) || {};
+  const fromPage = page.runtime || {};
+  return {
+    probes: []
+      .concat(fromMap.probes || [])
+      .concat(fromPage.probes || []),
+    sql: fromPage.sql ?? fromMap.sql,
+    expect: fromPage.expect ?? fromMap.expect,
+    expect_min: fromPage.expect_min ?? fromMap.expect_min,
+    liveview: fromPage.liveview ?? fromMap.liveview,
+    log_levels: fromPage.log_levels || fromMap.log_levels,
+  };
+}
+
+function defaultLiveviewPolicy(manifest, pageRt) {
+  const walk = manifest?.runtime?.liveview;
+  const page = pageRt?.liveview;
+  if (page && typeof page === "object") {
+    return {
+      enabled: page.enabled !== false,
+      assign_keys: page.assign_keys !== false,
+      fields: page.fields || walk?.fields || [],
+    };
+  }
+  if (walk && typeof walk === "object") {
+    return {
+      enabled: walk.enabled !== false,
+      assign_keys: walk.assign_keys !== false,
+      fields: walk.fields || [],
+    };
+  }
+  // If runtime.tidewave is on but liveview omitted, still capture keys (cheap, useful).
+  return { enabled: true, assign_keys: true, fields: [] };
+}
+
+/**
+ * Run priority-1+ runtime setup for a walk.
  * Returns a runtime bag attached to results.json / report.
  */
 export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
@@ -369,8 +804,11 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
     env_check: { source: "none", items: [] },
     app: null,
     error_log_total: 0,
+    probes: [],
+    probes_failed: 0,
     // Per-level cursor: last seen log line text (for deltaLines).
     _log_cursors: {},
+    _manifest: manifest,
   };
 
   if (!want) return bag;
@@ -406,6 +844,18 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
   });
   bag.app = await appIdentity(probe.url);
 
+  // Walk-level probes once at start (auth role, feature flags, …).
+  const walkProbes = Array.isArray(rt.probes) ? rt.probes : [];
+  if (walkProbes.length) {
+    bag.probes = [];
+    for (const p of walkProbes) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await runProbe(probe.url, p);
+      bag.probes.push(result);
+    }
+    bag.probes_failed = bag.probes.filter((p) => p.status !== "PASS").length;
+  }
+
   // Baseline cursors so pre-walk noise does not fail page 1.
   try {
     const baseline = await fetchLogs(probe.url, logLevels, 80);
@@ -421,14 +871,14 @@ export async function beginRuntime(manifest, { base, tidewaveUrl } = {}) {
 }
 
 /** Per-page log *delta* after navigate (not cumulative ring-buffer size). */
-export async function pageRuntimeLogs(runtimeBag, pageName) {
+export async function pageRuntimeLogs(runtimeBag, pageName, logLevels) {
   if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
     return {
       status: runtimeBag?.tidewave?.status || "disabled",
       reason: runtimeBag?.tidewave?.reason || null,
     };
   }
-  const levels = runtimeBag.log_levels || ["error"];
+  const levels = logLevels || runtimeBag.log_levels || ["error"];
   const logs = await fetchLogs(runtimeBag.tidewave.url, levels, 80);
   const delta = { levels: {}, raw_count: 0 };
   let errorCount = 0;
@@ -464,4 +914,58 @@ export async function pageRuntimeLogs(runtimeBag, pageName) {
       Object.entries(logs.levels || {}).map(([k, v]) => [k, v.count]),
     ),
   };
+}
+
+/**
+ * Full per-page runtime packet: logs + page probes + sql + liveview.
+ * Safe to call when Tidewave is down — returns skipped status.
+ */
+export async function pageRuntimeEvidence(runtimeBag, page, manifest) {
+  const pageRt = mergePageRuntime(manifest || runtimeBag?._manifest || {}, page);
+  const levels = pageRt.log_levels || runtimeBag?.log_levels || ["error"];
+
+  if (!runtimeBag || runtimeBag.tidewave?.status !== "ok") {
+    return {
+      status: runtimeBag?.tidewave?.status || "disabled",
+      reason: runtimeBag?.tidewave?.reason || null,
+      page: page.name,
+    };
+  }
+
+  const logsPart = await pageRuntimeLogs(runtimeBag, page.name, levels);
+  const mcpUrl = runtimeBag.tidewave.url;
+
+  // Page-level probes
+  const probes = [];
+  for (const p of pageRt.probes || []) {
+    // eslint-disable-next-line no-await-in-loop
+    probes.push(await runProbe(mcpUrl, p));
+  }
+
+  const sql = await runSql(mcpUrl, pageRt);
+
+  const lvPolicy = defaultLiveviewPolicy(manifest || runtimeBag._manifest, pageRt);
+  let liveview = { status: "disabled" };
+  if (lvPolicy.enabled) {
+    liveview = await captureLiveViews(mcpUrl, lvPolicy, {
+      pathHint: page.lands_on || page.path,
+    });
+  }
+
+  const probesFailed = probes.filter((p) => p.status !== "PASS").length;
+  const sqlFailed = sql && sql.status === "FAIL" ? 1 : 0;
+
+  return {
+    ...logsPart,
+    probes,
+    probes_failed: probesFailed,
+    sql,
+    liveview,
+    evidence_failed: probesFailed + sqlFailed,
+  };
+}
+
+/** True when env_check found any prod_like key. */
+export function hasProdLikeEnv(runtimeBag) {
+  return (runtimeBag?.env_check?.items || []).some((i) => i.risk === "prod_like");
 }
