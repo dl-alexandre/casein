@@ -512,7 +512,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   phx-value-workspace-id={node.workspace_id}
                   class={[
                     sidebar_row_class(node.current?),
-                    "w-full min-w-0 flex-row items-center gap-2"
+                    "flex-row items-center gap-2"
                   ]}
                   title={node.title}
                   aria-label={
@@ -575,10 +575,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 data-picker-sessions-id={node.dom_id}
                 phx-click="sidebar:toggle_workspace"
                 phx-value-workspace-id={node.workspace_id}
-                class={[
-                  sidebar_row_class(false),
-                  "w-full min-w-0 flex-row items-center gap-2"
-                ]}
+                class={[sidebar_row_class(false), "flex-row items-center gap-2"]}
                 title={node.title}
                 aria-label={"Expand " <> node.label}
               >
@@ -647,20 +644,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           data-picker-section="browse"
           phx-click="sidebar:toggle_browse"
           phx-value-rel={@node.rel}
-          class={[sidebar_row_class(false), "min-w-max flex-1"]}
+          class={[sidebar_row_class(false), "w-max min-w-full flex-row items-center gap-2"]}
           title={@node.title}
         >
-          <span class="flex items-center gap-1.5 whitespace-nowrap">
-            <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
-              <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
-            </span>
-            <span data-picker-label class="font-medium">{@node.label}</span>
-            <span
-              :if={@node.detail != ""}
-              class="font-mono text-[10px] text-base-content/50"
-            >
-              {@node.detail}
-            </span>
+          <span class={["flex shrink-0 transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3 text-base-content/45" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col items-start gap-0 text-left">
+            <span data-picker-label class="whitespace-nowrap font-medium">{@node.label}</span>
           </span>
         </button>
         <button

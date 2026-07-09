@@ -347,6 +347,13 @@ body[data-leader-command-active]
   right: 0.35rem;
 }
 
+/* Contain paint/layout so free-expand rails never draw into each other. */
+.sessions-picker-sidebar,
+.window-picker-sidebar {
+  contain: layout paint;
+  isolation: isolate;
+}
+
 /* Window tab strip: soft amber wash while leader is armed (C-b 1–9 / n p c). */
 body[data-leader-active] .header-terminal-pickers,
 body[data-leader-command-active] .header-terminal-pickers {
