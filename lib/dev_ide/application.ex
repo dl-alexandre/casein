@@ -101,9 +101,14 @@ defmodule DevIde.Application do
       Application.put_env(:tmux_ctl, key, value)
     end
 
-    # Heal agent shims + publish PATH (incl. ~/.local/bin) before any pane is
-    # created, so the first window does not race LiveView PaneEnv setup.
-    _ = DevIDE.Terminals.Shims.sync_tmux_terminal_env!()
+    # Publish PATH (incl. ~/.local/bin + shim dirs) synchronously so the first
+    # window sees the shim dirs on PATH, then heal the shim FILES off the boot
+    # path: ensure_best_effort/0 may shell out to install-agent-shims.sh, and a
+    # stalled install must not block start/2 before the Endpoint/Repo come up.
+    # Per-pane shell integration and PaneEnv re-heal, so async is a head start,
+    # not a correctness dependency.
+    Application.put_env(:tmux_ctl, :terminal_env, DevIDE.Terminals.Shims.env())
+    Task.start(fn -> DevIDE.Terminals.Shims.sync_tmux_terminal_env!() end)
 
     if Application.get_env(:tmux_ctl, :default_command, :unset) == :unset do
       Application.put_env(:tmux_ctl, :default_command, terminal_shell_command())
