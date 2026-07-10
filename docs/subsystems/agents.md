@@ -187,27 +187,26 @@ available. The list is surfaced through agent UI and `GET
   Cursor's `mcp.json` is copied — to avoid a shared checkout accumulating every
   workspace's servers. `env.sh` is chmod `0600`.
 - **Provider auth profiles are opt-in and require a completed sign-in.** Do not
-  persist provider secrets in `workspace_records` or manager metadata. A missing
-  profile dir — or one without provider credentials (`.credentials.json` for
-  Claude, `auth.json` for Codex), e.g. after an aborted sign-in — keeps a
-  workspace on the host global provider login. To replace that default for the
-  current owner, run `devide agent auth signin <runtime>` from a DevIDE
-  workspace once per provider. Outside a workspace, use `devide agent auth
-  signin <owner> <runtime>`. Workspaces named `<owner>-...` automatically share
-  that owner profile after sign-in. Delete the relevant profile directory to
-  return that owner to the global fallback. Use `devide agent auth status
-  [workspace] [runtime]` or `devide agent auth list` to audit profile and
-  sign-in state.
+  persist provider secrets in `workspace_records` or manager metadata. The
+  current compatibility behavior uses the host global provider login when a
+  profile directory or its provider credentials (`.credentials.json` for
+  Claude, `auth.json` for Codex) are missing. This fallback is intended only for
+  trusted single-operator environments; multi-user deployments should set
+  `DEVIDE_AGENT_AUTH_FALLBACK=none` so a workspace fails closed until its owner
+  signs in. Run `devide agent auth signin <runtime>` from a DevIDE workspace
+  once per provider, or `devide agent auth signin <owner> <runtime>` outside a
+  workspace. Workspaces named `<owner>-...` use that owner's profile after
+  sign-in. Use `devide agent auth status [workspace] [runtime]` or `devide agent
+  auth list` to audit profile and sign-in state.
 - **Registered owners never fall back to the host global login.**
   `~/.devide/agent-auth/owners` lists owner slugs (one per line, `#` comments)
   managed with `devide agent auth register <owner>` / `unregister <owner>`.
   For a registered owner the profile dir applies even before sign-in, so
   Claude/Codex prompt for their own login inside the profile instead of using
   the host global account. `DEVIDE_AGENT_AUTH_FALLBACK=none` treats every
-  owner as registered. Registration is strictly opt-in: the default policy is
-  that owners share the host global login until they choose their own profile
-  (via `devide agent auth signin`), so only register an owner who has asked
-  for enforced isolation.
+  owner as registered. Per-owner registration remains opt-in for compatibility;
+  fail-closed authentication for every owner is the recommended policy for
+  multi-user deployments.
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected
   `Capability.kind`s before a `Run` starts.
