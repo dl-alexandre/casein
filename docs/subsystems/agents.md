@@ -74,18 +74,24 @@ agent runs with compile-time-fixed argv.
    optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Codex staging is
    intentionally free of DevIDE MCP entries; the launcher injects them at
    runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
-3. `PaneEnv.ensure_for_session/3` self-heals missing agent launcher shims via
-   `DevIDE.Agents.AgentShims.ensure/0` (partial loss of e.g. only `claude` has
-   bitten after deploys/npm updates), then builds the `DEVIDE_*` env map
+3. `PaneEnv.ensure_for_session/3` (and app boot via
+   `Terminals.Shims.sync_tmux_terminal_env!/0`) self-heals missing agent
+   launcher shims via `DevIDE.Agents.AgentShims.ensure/0` (partial loss of e.g.
+   only `claude` has bitten after deploys/npm updates), refreshes
+   `:tmux_ctl` `:terminal_env` so the next `new-window`/`split-window` gets
+   `-e PATH=…` with agent bins, then builds the `DEVIDE_*` env map
    (`DEV_IDE_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
    `DEVIDE_PREVIEW_MCP_URL`, `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional
    `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
-   `Tmux.set_environments/2`. `PATH` always includes `~/.local/bin` and the npm
-   global bin dir (also embedded in `Terminals.Shims.path_with_shims/1` so session
-   create is not bashrc-dependent). `PaneEnv` also injects `CLAUDE_CONFIG_DIR`
-   and `CODEX_HOME` under `~/.devide/agent-auth/profiles/<owner>/<runtime>` when
-   that owner profile is signed in (`.credentials.json` / `auth.json` present);
-   otherwise the runtime keeps the host global provider login.
+   `Tmux.set_environments/2`. Template apply calls this **before** creating
+   panes so the first window is not racy. `PATH` always includes
+   `~/.local/bin` and the npm global bin dir (also embedded in
+   `Terminals.Shims.path_with_shims/1` and shell-integration prepends, so
+   session create is not bashrc-dependent). `PaneEnv` also injects
+   `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
+   `~/.devide/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
+   signed in (`.credentials.json` / `auth.json` present); otherwise the
+   runtime keeps the host global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    Grok reads project `.mcp.json`, OpenCode reads project

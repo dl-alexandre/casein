@@ -351,6 +351,24 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert Shims.env()["PATH"] =~ DevIDE.Agents.AgentShims.npm_bin_dir()
   end
 
+  test "sync_tmux_terminal_env! publishes agent PATH for new-window -e flags" do
+    prev = Application.get_env(:tmux_ctl, :terminal_env)
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:tmux_ctl, :terminal_env, prev),
+        else: Application.delete_env(:tmux_ctl, :terminal_env)
+    end)
+
+    env = Shims.sync_tmux_terminal_env!()
+    published = Application.get_env(:tmux_ctl, :terminal_env)
+
+    assert published == env
+    assert published["PATH"] =~ DevIDE.Agents.AgentShims.bin_dir()
+    assert published["PATH"] =~ DevIDE.Agents.AgentShims.npm_bin_dir()
+    assert published["PATH"] =~ Shims.dir()
+  end
+
   test "materializes bash shell integration with OSC 133 and tmux passthrough marks" do
     Shims.materialize!()
 
@@ -366,8 +384,41 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert script =~ "tmux;"
     assert script =~ "PROMPT_COMMAND=__devide_prompt_command"
     assert script =~ "trap '__devide_preexec' DEBUG"
+    # Fresh panes that inherited a thin release PATH still find agent shims.
+    assert script =~ "__devide_prepend_path"
+    assert script =~ ".local/bin"
+    assert script =~ "npm-global/bin"
 
     assert {_, 0} = System.cmd(bash!(), ["-n", path])
+  end
+
+  test "shell integration prepends agent bins even when inherited PATH is thin", %{tmp: tmp} do
+    Shims.materialize!()
+    script = Shims.shell_integration_path()
+    home = Path.join(tmp, "home")
+    agent_bin = Path.join(home, ".local/bin")
+    File.mkdir_p!(agent_bin)
+    shim = Path.join(agent_bin, "claude")
+    File.write!(shim, "#!/bin/sh\necho ok\n")
+    File.chmod!(shim, 0o755)
+
+    {out, 0} =
+      System.cmd(
+        bash!(),
+        [
+          "-c",
+          """
+          export HOME=#{shell_quote(home)}
+          export PATH=/usr/bin:/bin
+          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          source #{shell_quote(script)}
+          command -v claude
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert String.trim(out) == shim
   end
 
   test "prompt-end marker in PS1 expands to escape bytes without a stray bracket" do

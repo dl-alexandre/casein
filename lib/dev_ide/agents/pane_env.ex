@@ -74,11 +74,17 @@ defmodule DevIDE.Agents.PaneEnv do
 
   Self-heals missing agent launcher shims before pushing PATH so template
   apply / interactive launch do not leave `claude: command not found`.
+
+  Also refreshes `:tmux_ctl` `:terminal_env` so the next `new-window` /
+  `split-window` inherits agent bins via `-e PATH=…` even before this
+  session map is applied.
   """
   @spec ensure_for_session(String.t(), map(), keyword()) :: :ok | {:error, term()}
   def ensure_for_session(tmux_session, workspace, opts \\ [])
       when is_binary(tmux_session) and is_map(workspace) do
-    _ = AgentShims.ensure_best_effort()
+    # Publish host PATH with agent bins first — covers panes created in the
+    # same tick as this call (template apply, after_mount race).
+    _ = Shims.sync_tmux_terminal_env!()
 
     case vars_for_workspace(workspace, Keyword.put_new(opts, :tmux_session, tmux_session)) do
       {:ok, vars} ->

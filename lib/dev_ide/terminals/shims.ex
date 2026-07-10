@@ -187,6 +187,10 @@ defmodule DevIDE.Terminals.Shims do
 
   `include_path?: false` is useful for execution contexts where the host shim
   directory may not be mounted, such as container-owned tmux servers.
+
+  When PATH is included, missing agent launcher shims are self-healed first so
+  a fresh pane never starts with `claude: command not found` because the shim
+  file was partially lost after deploy/npm update.
   """
   @spec env(keyword()) :: %{String.t() => String.t()}
   def env(opts \\ []) do
@@ -206,10 +210,26 @@ defmodule DevIDE.Terminals.Shims do
       end)
 
     if Keyword.get(opts, :include_path?, true) do
+      _ = DevIDE.Agents.AgentShims.ensure_best_effort()
       Map.put(base, "PATH", path_with_shims())
     else
       base
     end
+  end
+
+  @doc """
+  Heal agent launcher shims and publish the current pane env to `:tmux_ctl`.
+
+  `TmuxCtl.Client` reads `:terminal_env` for every `new-session` / `new-window` /
+  `split-window` (`-e KEY=value`) and for `apply_defaults/1` session
+  `set-environment`. Refreshing here closes the race where a fresh pane is
+  created before LiveView `PaneEnv.ensure_for_session/3` runs.
+  """
+  @spec sync_tmux_terminal_env!(keyword()) :: %{String.t() => String.t()}
+  def sync_tmux_terminal_env!(opts \\ []) do
+    terminal_env = env(opts)
+    Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
+    terminal_env
   end
 
   @doc "Environment list for erlexec."
@@ -559,6 +579,28 @@ defmodule DevIDE.Terminals.Shims do
 
       unset DEV_IDE_SHELL_INTEGRATION_RC_SOURCED
     fi
+
+    # Belt-and-suspenders: even if the pane inherited a thin release/tmux PATH
+    # (no ~/.local/bin), keep agent launchers findable for the first keystroke.
+    # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
+    # then npm package bins (so DevIDE shims win over bare package symlinks).
+    __devide_prepend_path() {
+      local d
+      for d in "$@"; do
+        [[ -n "${d}" && -d "${d}" ]] || continue
+        case ":${PATH}:" in
+          *":${d}:"*) ;;
+          *) PATH="${d}${PATH:+:${PATH}}" ;;
+        esac
+      done
+      export PATH
+    }
+    __devide_prepend_path \\
+      "${HOME:-}/.devide/terminal-shims" \\
+      "${HOME:-}/.devide/tools/bin" \\
+      "${HOME:-}/.local/bin" \\
+      "${HOME:-}/.local/share/npm-global/bin"
+    unset -f __devide_prepend_path
 
     case "$-" in
       *i*) ;;

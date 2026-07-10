@@ -2660,6 +2660,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_library_open, false)
         |> TerminalState.ensure_primary_tmux_session()
 
+      # Heal shims + push agent PATH *before* the template creates windows so
+      # the first pane never races "claude: command not found".
+      if is_binary(socket.assigns.tmux_session) do
+        _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
+      end
+
       case execute_session_template(socket, template_id, opts) do
         {:ok, result} ->
           {:noreply, applied_session_template(socket, template_id, result)}
@@ -2715,6 +2721,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         do: schedule_preview_demo_open(socket),
         else: socket
 
+    # Re-push after template apply (MCP URLs / tokens may depend on session
+    # topology); cheap when shims are already complete.
     if is_binary(socket.assigns.tmux_session) do
       _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
     end
