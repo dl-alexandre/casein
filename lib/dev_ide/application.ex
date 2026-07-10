@@ -97,13 +97,13 @@ defmodule DevIde.Application do
   end
 
   defp configure_tmux_ctl! do
-    terminal_env = DevIDE.Terminals.Shims.env()
-
     for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
       Application.put_env(:tmux_ctl, key, value)
     end
 
-    Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
+    # Heal agent shims + publish PATH (incl. ~/.local/bin) before any pane is
+    # created, so the first window does not race LiveView PaneEnv setup.
+    _ = DevIDE.Terminals.Shims.sync_tmux_terminal_env!()
 
     if Application.get_env(:tmux_ctl, :default_command, :unset) == :unset do
       Application.put_env(:tmux_ctl, :default_command, terminal_shell_command())
