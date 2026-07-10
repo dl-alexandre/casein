@@ -534,6 +534,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "ex-1"
     end
 
+    test "groups the tree into This workspace / Other workspaces with a live count" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []},
+            %{id: "ws-2", name: "beta", session_count: 2, live?: false, sessions: []}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")]),
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil
+        )
+
+      # Section headers present when there are both current and other workspaces.
+      assert html =~ "This workspace"
+      assert html =~ "Other workspaces"
+      # Header live/total badge: scratch + ws-1 live, ws-2 not => 2/3.
+      assert html =~ "2/3 live"
+      # The non-live "other" workspace row is dimmed.
+      assert html =~ "opacity-60"
+    end
+
     test "renders the scratch row with attach_terminal_session kind=scratch" do
       tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
 

@@ -453,6 +453,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <span class="text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
             Sessions
           </span>
+          <% liveness = SessionBarVM.tree_liveness_summary(@tree) %>
+          <span
+            :if={liveness.total > 0}
+            class="shrink-0 rounded-full bg-base-200 px-1.5 py-0.5 font-mono text-[9px] leading-none text-base-content/55"
+            title={"#{liveness.live} of #{liveness.total} workspaces have a live session"}
+            aria-label={"#{liveness.live} of #{liveness.total} workspaces live"}
+          >
+            {liveness.live}/{liveness.total} live
+          </span>
           <span
             :if={quiet_window_count(@session_tabs) > 0}
             id={"session-quiet-badge-" <> @workspace_id}
@@ -507,133 +516,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       >
       </div>
       <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
-        <%= for node <- @tree do %>
-          <%= cond do %>
-            <% Map.get(node, :kind) in [:browse_root, :browse_dir] -> %>
-              <.sessions_sidebar_browse_node node={node} depth={0} />
-            <% node.flat_session? -> %>
-              <.sessions_sidebar_session_row
-                session={node.session}
-                workspace_id={node.workspace_id}
-                current_workspace_id={@workspace_id}
-                active_id={@active_id}
-                default_sid={@default_sid}
-                preview_panes={@preview_panes}
-                path_base={@path_base}
-                parent_dom_id={nil}
-                mutations_allowed?={@mutations_allowed?}
-                rename_session_id={@rename_session_id}
-              />
-            <% is_list(node.sessions) -> %>
-              <div
-                data-picker-tree-branch
-                data-picker-branch-id={node.dom_id}
-                class="flex flex-col gap-0.5"
-              >
-                <button
-                  type="button"
-                  data-picker-item
-                  data-picker-section="workspaces"
-                  data-picker-sessions-id={node.dom_id}
-                  phx-click="sidebar:toggle_workspace"
-                  phx-value-workspace-id={node.workspace_id}
-                  class={[
-                    sidebar_row_class(node.current?),
-                    "flex-row items-center gap-2"
-                  ]}
-                  title={node.title}
-                  aria-label={
-                    if(node.expanded?,
-                      do: "Collapse " <> node.label,
-                      else: "Expand " <> node.label
-                    )
-                  }
-                >
-                  <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
-                    <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-                      <span data-picker-label class="truncate font-medium">{node.label}</span>
-                      <span
-                        :if={not node.live?}
-                        class="size-1.5 shrink-0 rounded-full bg-base-content/25"
-                        title="No live tmux sessions"
-                      />
-                    </span>
-                    <span
-                      :if={node.detail != ""}
-                      class="max-w-full truncate font-mono text-[10px] text-base-content/50"
-                    >
-                      {node.detail}
-                    </span>
-                  </span>
-                  <span class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45">
-                    {node.session_count}
-                    <span class={["flex transition-transform", node.expanded? && "rotate-90"]}>
-                      <.icon name="hero-chevron-right" class="size-3" />
-                    </span>
-                  </span>
-                </button>
-                <div
-                  id={"sidebar-ws-sessions-" <> node.workspace_id}
-                  data-picker-branch-children
-                  data-picker-collapsed={(!node.expanded? && "") || nil}
-                  class={["space-y-0.5 pl-3", !node.expanded? && "hidden"]}
-                >
-                  <%= for session <- node.sessions do %>
-                    <.sessions_sidebar_session_row
-                      session={session}
-                      workspace_id={Map.get(session, :workspace_id, node.workspace_id)}
-                      current_workspace_id={@workspace_id}
-                      active_id={@active_id}
-                      default_sid={@default_sid}
-                      preview_panes={@preview_panes}
-                      path_base={@path_base}
-                      parent_dom_id={node.dom_id}
-                      mutations_allowed?={@mutations_allowed?}
-                      rename_session_id={@rename_session_id}
-                    />
-                  <% end %>
-                </div>
-              </div>
-            <% true -> %>
-              <button
-                type="button"
-                data-picker-item
-                data-picker-section="workspaces"
-                data-picker-sessions-id={node.dom_id}
-                phx-click="sidebar:toggle_workspace"
-                phx-value-workspace-id={node.workspace_id}
-                class={[sidebar_row_class(false), "flex-row items-center gap-2"]}
-                title={node.title}
-                aria-label={"Expand " <> node.label}
-              >
-                <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
-                  <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-                    <span data-picker-label class="truncate font-medium">{node.label}</span>
-                    <span
-                      :if={not node.live?}
-                      class="size-1.5 shrink-0 rounded-full bg-base-content/25"
-                      title="No live tmux sessions"
-                    />
-                  </span>
-                  <span
-                    :if={node.detail != ""}
-                    class="max-w-full truncate font-mono text-[10px] text-base-content/50"
-                  >
-                    {node.detail}
-                  </span>
-                </span>
-                <span
-                  :if={node.session_count > 0}
-                  class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
-                >
-                  {node.session_count}
-                  <span class="flex">
-                    <.icon name="hero-chevron-right" class="size-3" />
-                  </span>
-                </span>
-              </button>
-          <% end %>
-        <% end %>
+        <% {ws_nodes, browse_nodes} =
+          Enum.split_with(@tree, &(Map.get(&1, :kind) not in [:browse_root, :browse_dir])) %>
+        <% {this_nodes, other_nodes} =
+          Enum.split_with(ws_nodes, &(Map.get(&1, :group, :other) == :this)) %>
+        <div :if={this_nodes != []} class="flex flex-col gap-0.5">
+          <.sessions_sidebar_section_header :if={other_nodes != []} label="This workspace" />
+          <.sessions_sidebar_node
+            :for={node <- this_nodes}
+            node={node}
+            workspace_id={@workspace_id}
+            active_id={@active_id}
+            default_sid={@default_sid}
+            preview_panes={@preview_panes}
+            path_base={@path_base}
+            mutations_allowed?={@mutations_allowed?}
+            rename_session_id={@rename_session_id}
+          />
+        </div>
+        <div :if={other_nodes != []} class="mt-1.5 flex flex-col gap-0.5">
+          <.sessions_sidebar_section_header label="Other workspaces" />
+          <.sessions_sidebar_node
+            :for={node <- other_nodes}
+            node={node}
+            workspace_id={@workspace_id}
+            active_id={@active_id}
+            default_sid={@default_sid}
+            preview_panes={@preview_panes}
+            path_base={@path_base}
+            mutations_allowed?={@mutations_allowed?}
+            rename_session_id={@rename_session_id}
+          />
+        </div>
+        <.sessions_sidebar_browse_node :for={node <- browse_nodes} node={node} depth={0} />
       </div>
       <button
         type="button"
@@ -647,6 +562,161 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         </span>
       </button>
     </nav>
+    """
+  end
+
+  attr :label, :string, required: true
+
+  defp sessions_sidebar_section_header(assigns) do
+    ~H"""
+    <p class="px-2 pb-0.5 pt-1 text-[9px] font-semibold uppercase tracking-wide text-base-content/40">
+      {@label}
+    </p>
+    """
+  end
+
+  attr :node, :map, required: true
+  attr :workspace_id, :string, required: true
+  attr :active_id, :string, default: nil
+  attr :default_sid, :string, default: nil
+  attr :preview_panes, :map, default: %{}
+  attr :path_base, :string, default: nil
+  attr :mutations_allowed?, :boolean, default: false
+  attr :rename_session_id, :string, default: nil
+
+  # One workspace-tier row in the sessions sidebar: a flat single-session row, an
+  # expandable workspace with its session children, or a collapsed workspace
+  # summary. Non-live (stale worktree) rows are dimmed so live work stands out.
+  defp sessions_sidebar_node(assigns) do
+    ~H"""
+    <%= cond do %>
+      <% @node.flat_session? -> %>
+        <.sessions_sidebar_session_row
+          session={@node.session}
+          workspace_id={@node.workspace_id}
+          current_workspace_id={@workspace_id}
+          active_id={@active_id}
+          default_sid={@default_sid}
+          preview_panes={@preview_panes}
+          path_base={@path_base}
+          parent_dom_id={nil}
+          mutations_allowed?={@mutations_allowed?}
+          rename_session_id={@rename_session_id}
+        />
+      <% is_list(@node.sessions) -> %>
+        <div
+          data-picker-tree-branch
+          data-picker-branch-id={@node.dom_id}
+          class="flex flex-col gap-0.5"
+        >
+          <button
+            type="button"
+            data-picker-item
+            data-picker-section="workspaces"
+            data-picker-sessions-id={@node.dom_id}
+            phx-click="sidebar:toggle_workspace"
+            phx-value-workspace-id={@node.workspace_id}
+            class={[
+              sidebar_row_class(@node.current?),
+              "flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={@node.title}
+            aria-label={
+              if(@node.expanded?,
+                do: "Collapse " <> @node.label,
+                else: "Expand " <> @node.label
+              )
+            }
+          >
+            <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+              <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+                <span data-picker-label class="truncate font-medium">{@node.label}</span>
+                <span
+                  :if={not @node.live?}
+                  class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+                  title="No live tmux sessions"
+                />
+              </span>
+              <span
+                :if={@node.detail != ""}
+                class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+              >
+                {@node.detail}
+              </span>
+            </span>
+            <span class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45">
+              {@node.session_count}
+              <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+                <.icon name="hero-chevron-right" class="size-3" />
+              </span>
+            </span>
+          </button>
+          <div
+            id={"sidebar-ws-sessions-" <> @node.workspace_id}
+            data-picker-branch-children
+            data-picker-collapsed={(!@node.expanded? && "") || nil}
+            class={["space-y-0.5 pl-3", !@node.expanded? && "hidden"]}
+          >
+            <%= for session <- @node.sessions do %>
+              <.sessions_sidebar_session_row
+                session={session}
+                workspace_id={Map.get(session, :workspace_id, @node.workspace_id)}
+                current_workspace_id={@workspace_id}
+                active_id={@active_id}
+                default_sid={@default_sid}
+                preview_panes={@preview_panes}
+                path_base={@path_base}
+                parent_dom_id={@node.dom_id}
+                mutations_allowed?={@mutations_allowed?}
+                rename_session_id={@rename_session_id}
+              />
+            <% end %>
+          </div>
+        </div>
+      <% true -> %>
+        <button
+          type="button"
+          data-picker-item
+          data-picker-section="workspaces"
+          data-picker-sessions-id={@node.dom_id}
+          phx-click="sidebar:toggle_workspace"
+          phx-value-workspace-id={@node.workspace_id}
+          class={[
+            sidebar_row_class(false),
+            "flex-row items-center gap-2",
+            not @node.live? && "opacity-60"
+          ]}
+          title={@node.title}
+          aria-label={"Expand " <> @node.label}
+        >
+          <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+            <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+              <span data-picker-label class="truncate font-medium">{@node.label}</span>
+              <span
+                :if={not @node.live?}
+                class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+                title="No live tmux sessions"
+              />
+            </span>
+            <span
+              :if={@node.detail != ""}
+              class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+            >
+              {@node.detail}
+            </span>
+          </span>
+          <span
+            :if={@node.session_count > 0}
+            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+          >
+            {@node.session_count}
+            <span class="flex">
+              <.icon name="hero-chevron-right" class="size-3" />
+            </span>
+          </span>
+        </button>
+    <% end %>
     """
   end
 

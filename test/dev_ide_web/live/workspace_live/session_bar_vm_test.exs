@@ -139,6 +139,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert other.flat_session?
       assert other.session.id == "remote-shell"
     end
+
+    test "tags the current workspace (and scratch) :this and the rest :other" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{id: "ws-b", name: "beta", session_count: 1, live?: true, sessions: []}
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      by_id = Map.new(tree, &{&1.workspace_id, &1.group})
+
+      assert by_id["__scratch__"] == :this
+      assert by_id["ws-a"] == :this
+      assert by_id["ws-b"] == :other
+    end
+  end
+
+  describe "tree_liveness_summary/1" do
+    test "counts live workspace-tier nodes and ignores the Browse tier" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{id: "ws-b", name: "beta", session_count: 1, live?: false, sessions: []}
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      # scratch (live) + ws-a (live) + ws-b (not live) = 3 total, 2 live
+      assert %{live: 2, total: 3} = SessionBarVM.tree_liveness_summary(tree)
+
+      # Browse-tier nodes must not inflate the counts.
+      browse = [%{kind: :browse_root, live?: true}, %{kind: :browse_dir, live?: true}]
+      assert %{live: 2, total: 3} = SessionBarVM.tree_liveness_summary(tree ++ browse)
+    end
   end
 
   describe "scratch_tab/0 and scratch_tree_node/1" do
