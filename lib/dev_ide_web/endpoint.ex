@@ -119,7 +119,8 @@ defmodule DevIdeWeb.Endpoint do
 
   @doc false
   def reject_global_mcp_tool_calls(conn, _opts) do
-    if mcp_post?(conn) and global_api_token?(conn) and mcp_tool_call?(conn.body_params) do
+    if not allow_global_mcp_tool_calls?() and mcp_post?(conn) and global_api_token?(conn) and
+         mcp_tool_call?(conn.body_params) do
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.send_resp(
@@ -136,6 +137,16 @@ defmodule DevIdeWeb.Endpoint do
     else
       conn
     end
+  end
+
+  # SECURITY: default false. When false, MCP `tools/call` requires a
+  # workspace-scoped token (see reject_global_mcp_tool_calls/2) so a leaked
+  # global admin token cannot execute tools box-wide (effectively RCE across
+  # every workspace). Set DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS=1 ONLY on a
+  # single-tenant box you fully trust, to let a :global orchestrator token make
+  # box-wide tool calls (omit workspace_id to traverse; pass it to confine).
+  defp allow_global_mcp_tool_calls? do
+    Application.get_env(:dev_ide, :allow_global_mcp_tool_calls, false)
   end
 
   defp maybe_mcp_read_opts(conn, opts) do

@@ -9,6 +9,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
   setup do
     prev = Application.get_env(:dev_ide, :api_token)
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_allow_global = Application.get_env(:dev_ide, :allow_global_mcp_tool_calls)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -19,6 +20,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     on_exit(fn ->
       restore(:api_token, prev)
       restore(:workspace_api_tokens, prev_workspace_tokens)
+      restore(:allow_global_mcp_tool_calls, prev_allow_global)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
@@ -118,6 +120,55 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
              "error_version" => "mcp-auth-v1",
              "tool" => "terminal_list_sessions"
            } = json_response(conn, 403)
+  end
+
+  test "global token CAN call tools box-wide when allow_global_mcp_tool_calls is enabled",
+       %{conn: conn} do
+    Application.put_env(:dev_ide, :allow_global_mcp_tool_calls, true)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws_agent" => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "devide_ws_agent",
+              command: "echo orchestrator"
+            }
+          }
+        },
+        @token
+      )
+
+    assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
+             json_response(conn, 200)
+
+    refute conn.resp_body =~ "workspace_scoped_token_required"
   end
 
   test "global token cannot call Terminal MCP command tools", %{conn: conn} do

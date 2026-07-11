@@ -32,6 +32,14 @@ lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
 release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 
+# SECURITY: allow a :global orchestrator token to make MCP `tools/call`
+# requests box-wide. Default off — tool execution normally requires a
+# workspace-scoped token so a leaked global token can't become box-wide RCE
+# via MCP. Enable only on a single-tenant box you fully trust.
+config :dev_ide,
+       :allow_global_mcp_tool_calls,
+       truthy_env?.("DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS")
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->
