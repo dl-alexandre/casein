@@ -1,6 +1,30 @@
 // Shared filter text for window-picker sidebar rows (index + label).
 // Kept separate from the LiveView hook so node:test can cover it.
 
+// Client-side persistence of each rail's sort mode (recency/name/liveness), so
+// a chosen order survives page reloads. The server holds the mode in-session;
+// these bridge it to localStorage. Guarded so a disabled/again-throwing Storage
+// (private mode, quota) never breaks the picker.
+const SORT_KEY = (col) => `devide:sidebar-sort:${col}`
+
+export function persistSidebarSort(col, mode) {
+  try {
+    localStorage.setItem(SORT_KEY(col), mode)
+  } catch (_) {
+    // ignore
+  }
+}
+
+export function restoreSidebarSort(hook, col) {
+  let mode = null
+  try {
+    mode = localStorage.getItem(SORT_KEY(col))
+  } catch (_) {
+    // storage unavailable (private mode / disabled) — leave mode null
+  }
+  if (mode) hook.pushEvent("sidebar:restore_sort", {col, mode})
+}
+
 export function itemFilterText(el) {
   const label = el.querySelector("[data-picker-label]")?.textContent || ""
   const index = el.querySelector(".font-mono")?.textContent || ""
