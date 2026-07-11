@@ -2,7 +2,11 @@
 // Mirrors WindowPickerSidebar choose-tree semantics: ↑/↓, type-filter, Enter.
 
 import {copyPickerLink} from "./picker_link_copy"
-import {applyTreePickerFilter} from "./window_picker_sidebar_utils.mjs"
+import {
+  applyTreePickerFilter,
+  persistSidebarSort,
+  restoreSidebarSort,
+} from "./window_picker_sidebar_utils.mjs"
 
 export const SessionsPickerSidebar = {
   mounted() {
@@ -15,6 +19,8 @@ export const SessionsPickerSidebar = {
     this.el.addEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
 
     this.handleEvent("sidebar:focus_sessions", () => this.focusInitial())
+    this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
+    restoreSidebarSort(this, "sessions")
   },
 
   destroyed() {

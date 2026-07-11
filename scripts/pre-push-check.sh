@@ -65,6 +65,20 @@ else
   log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
 fi
 
+log "test hygiene: reject fixed-port :gen_tcp.listen in test/"
+# The required gate runs on the shared devbox, where a hard-coded TCP port is
+# often already held by a live workload — a fixed-port listener :eaddrinuse's
+# and reds the whole 20-min gate (isolated hosted runner has the port free, so
+# it silently passes there). Bind ephemerally with :gen_tcp.listen(0, ...) and
+# read the assigned port via :inet.sockname/1. (Bandit/ThousandIsland listeners
+# that must use an allow-listed port should probe with :gen_tcp first, as
+# preview_proxy_controller_test's start_ws_echo_upstream! does.)
+if fixed_ports="$(grep -rnE ':gen_tcp\.listen\(\s*[1-9][0-9]*' test/ 2>/dev/null)"; then
+  echo "ERROR: test/ binds a fixed TCP port; use :gen_tcp.listen(0, ...) + :inet.sockname/1:" >&2
+  echo "${fixed_ports}" >&2
+  exit 1
+fi
+
 log "linting JS hooks"
 (
   cd assets

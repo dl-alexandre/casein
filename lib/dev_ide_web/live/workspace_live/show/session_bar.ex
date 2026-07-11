@@ -163,7 +163,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-copy-link-kind="window"
       role="button"
       tabindex="-1"
-      class="shrink-0 cursor-pointer rounded px-0.5 font-mono text-[10px] text-base-content/45 transition-colors hover:bg-base-300/60 hover:text-base-content"
+      class="shrink-0 cursor-copy rounded px-0.5 font-mono text-[10px] text-base-content/45 underline decoration-dotted decoration-base-content/25 underline-offset-2 transition-colors hover:bg-base-300/60 hover:text-base-content hover:decoration-base-content/60"
       title="Copy link to this session + window"
       aria-label="Copy link to this session and window"
     >{@window.index}</span>

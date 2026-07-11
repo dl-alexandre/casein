@@ -119,7 +119,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     sidebar:open sidebar:close sidebar:reveal_sessions sidebar:toggle_sessions
     sidebar:toggle_workspace sidebar:toggle_window
-    sidebar:cycle_sessions_sort sidebar:cycle_windows_sort
+    sidebar:cycle_sessions_sort sidebar:cycle_windows_sort sidebar:restore_sort
     sidebar:toggle_browse sidebar:open_folder
     mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
@@ -771,6 +771,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("sidebar:cycle_windows_sort", _params, socket) do
     {:noreply, Sidebar.cycle_windows_sort(socket)}
+  end
+
+  # Client restores the persisted sort mode when a rail hook mounts (localStorage).
+  def handle_event("sidebar:restore_sort", %{"col" => col, "mode" => mode}, socket)
+      when is_binary(col) and is_binary(mode) do
+    {:noreply, Sidebar.restore_sort(socket, col, mode)}
   end
 
   def handle_event("sidebar:toggle_browse", %{"rel" => rel}, socket) when is_binary(rel) do

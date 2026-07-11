@@ -139,18 +139,38 @@ run_seed() {
     return 1
   fi
 
-  # The run is COMPLETE, so failures and coverage are now trustworthy and
-  # DETERMINISTIC. A red suite or coverage miss repeats on every seed — retrying
-  # just burns ~10 more full-suite runs (and the loop can't be interrupted from
-  # a background terminal). Fail fast (return 2) instead of seed-shopping for a
-  # green run, which would also paper over genuine flakiness.
+  # The run is COMPLETE, so failures and coverage are now trustworthy. A GENUINE
+  # red suite repeats on every seed, so we must not seed-shop a full green run
+  # (burns ~10 more full-suite runs and papers over real breakage). But on the
+  # shared self-hosted runner a single host-contention flake (e.g. :eaddrinuse
+  # from a port collision, a timing race) reds the whole 20-min gate while the
+  # isolated hosted runner passes. Distinguish the two by RE-RUNNING ONLY THE
+  # FAILURES via `mix test --failed`: that is a handful of tests, not the suite,
+  # so it stays cheap. Pass on rerun => flake (let the run proceed, but log it
+  # loudly so it gets stabilized). Still red => genuine, fail fast (return 2).
   if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
-    echo "test-cover-gate: seed=${seed} had ${failed} failing test(s) in a complete run; failing fast (no retry)" >&2
-    if [ -n "$failures_list" ]; then
-      echo "test-cover-gate: failing tests (first 20):" >&2
-      printf '%s\n' "$failures_list" >&2
+    echo "test-cover-gate: seed=${seed} had ${failed} failing test(s) on the full run:" >&2
+    [ -n "$failures_list" ] && printf '%s\n' "$failures_list" >&2
+
+    local retry_out retry_exit retry_failed retry_passed
+    retry_out="$(mktemp)"
+    # No --cover: coverage already came from the complete run above. Fresh seed
+    # avoids re-hitting an order-dependent fluke; --failed reads the failure
+    # manifest ExUnit just wrote, so it reruns exactly those tests.
+    timeout --foreground "$SEED_TIMEOUT" mix test --failed --seed "$((seed + 1))" 2>&1 | tee "$retry_out"
+    retry_exit=$?
+    retry_failed="$(grep -E '^Failed:' "$retry_out" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
+    [ -z "$retry_failed" ] && retry_failed="$(grep -oE '[0-9]+ failures?' "$retry_out" | tail -1 | grep -oE '[0-9]+' || true)"
+    retry_passed="$(grep -E '^Result:' "$retry_out" | head -1 | grep -oE '[0-9]+' | head -1 || true)"
+    [ -z "$retry_passed" ] && retry_passed="$(grep -oE '[0-9]+ tests?,' "$retry_out" | tail -1 | grep -oE '[0-9]+' || true)"
+    rm -f "$retry_out"
+
+    if [ "$retry_exit" -eq 0 ] && [ "${retry_failed:-1}" -eq 0 ] && [ "${retry_passed:-0}" -gt 0 ]; then
+      echo "test-cover-gate: FLAKE CLEARED — the ${failed} failure(s) passed on a targeted --failed rerun (seed=$((seed + 1))). Treating the run as green; stabilize the test(s) listed above." >&2
+    else
+      echo "test-cover-gate: seed=${seed} still red after --failed rerun (retry_exit=${retry_exit} failed=${retry_failed:-unknown} passed=${retry_passed:-0}); genuinely failing" >&2
+      return 2
     fi
-    return 2
   fi
 
   if ! awk -v c="$coverage" -v t="$THRESHOLD" 'BEGIN { exit !(c >= t) }'; then

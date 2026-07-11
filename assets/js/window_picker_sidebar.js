@@ -4,7 +4,11 @@
 // Escape (empty filter) or window selection so the tab bar stays canonical.
 
 import {copyPickerLink} from "./picker_link_copy"
-import {applyTreePickerFilter} from "./window_picker_sidebar_utils.mjs"
+import {
+  applyTreePickerFilter,
+  persistSidebarSort,
+  restoreSidebarSort,
+} from "./window_picker_sidebar_utils.mjs"
 
 export const WindowPickerSidebar = {
   mounted() {
@@ -16,6 +20,8 @@ export const WindowPickerSidebar = {
     this.el.addEventListener("click", this._onClick, true)
     this.el.addEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
     this.handleEvent("sidebar:focus_windows", () => this.focusInitial())
+    this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
+    restoreSidebarSort(this, "windows")
   },
 
   destroyed() {

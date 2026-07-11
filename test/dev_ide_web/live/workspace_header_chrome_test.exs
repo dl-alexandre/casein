@@ -180,6 +180,35 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert MapSet.member?(state.sidebar_expanded_workspaces, workspace_id)
   end
 
+  test "restore_sort applies a client-persisted sort mode per column", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+    render_hook(view, "sidebar:open", %{"mode" => "both"})
+
+    assigns = fn -> :sys.get_state(view.pid).socket.assigns end
+    assert assigns.().sessions_sidebar_sort == :recency
+    assert assigns.().windows_sidebar_sort == :recency
+
+    render_hook(view, "sidebar:restore_sort", %{"col" => "sessions", "mode" => "name"})
+    assert assigns.().sessions_sidebar_sort == :name
+
+    render_hook(view, "sidebar:restore_sort", %{"col" => "windows", "mode" => "liveness"})
+    assert assigns.().windows_sidebar_sort == :liveness
+
+    # Unknown mode falls back to :recency; unknown column is a no-op.
+    render_hook(view, "sidebar:restore_sort", %{"col" => "sessions", "mode" => "bogus"})
+    assert assigns.().sessions_sidebar_sort == :recency
+
+    render_hook(view, "sidebar:restore_sort", %{"col" => "nope", "mode" => "name"})
+    assert assigns.().windows_sidebar_sort == :liveness
+
+    # The chosen order survives a close (persisted, not reset).
+    render_hook(view, "sidebar:close", %{})
+    assert assigns.().windows_sidebar_sort == :liveness
+  end
+
   test "header session chip toggles the sessions sidebar", %{
     conn: conn,
     workspace_id: workspace_id

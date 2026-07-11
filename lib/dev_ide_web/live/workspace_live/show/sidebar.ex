@@ -89,8 +89,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     |> assign(:sidebar_ws_subscriptions, MapSet.new())
     |> assign(:sessions_sidebar_tree, [])
     |> assign(:windows_sidebar_tree, [])
-    |> assign(:sessions_sidebar_sort, :recency)
-    |> assign(:windows_sidebar_sort, :recency)
+
+    # NB: the sort modes intentionally survive a close — reopening the rail keeps
+    # the user's chosen order (persisted across page loads via the client, see
+    # set_sessions_sort/3 + restore_sort/3).
   end
 
   @spec reveal_sessions(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
@@ -140,23 +142,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     assign(socket, :windows_sidebar_tree, tree)
   end
 
-  @spec cycle_sessions_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def cycle_sessions_sort(socket) do
-    mode = SessionBarVM.cycle_sort_mode(socket.assigns.sessions_sidebar_sort)
+  @sort_modes [:recency, :name, :liveness]
 
+  @spec cycle_sessions_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def cycle_sessions_sort(socket),
+    do:
+      set_sessions_sort(
+        socket,
+        SessionBarVM.cycle_sort_mode(socket.assigns.sessions_sidebar_sort)
+      )
+
+  @spec cycle_windows_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def cycle_windows_sort(socket),
+    do:
+      set_windows_sort(socket, SessionBarVM.cycle_sort_mode(socket.assigns.windows_sidebar_sort))
+
+  @doc "Set the SESSIONS sort mode, rebuild the tree, and (by default) persist it client-side."
+  @spec set_sessions_sort(Phoenix.LiveView.Socket.t(), atom(), keyword()) ::
+          Phoenix.LiveView.Socket.t()
+  def set_sessions_sort(socket, mode, opts \\ [])
+
+  def set_sessions_sort(socket, mode, opts) when mode in @sort_modes do
     socket
     |> assign(:sessions_sidebar_sort, mode)
     |> assign_sessions_sidebar_tree()
+    |> maybe_persist_sort("sessions", mode, opts)
   end
 
-  @spec cycle_windows_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def cycle_windows_sort(socket) do
-    mode = SessionBarVM.cycle_sort_mode(socket.assigns.windows_sidebar_sort)
+  def set_sessions_sort(socket, _mode, _opts), do: socket
 
+  @doc "Set the WINDOWS sort mode, rebuild the tree, and (by default) persist it client-side."
+  @spec set_windows_sort(Phoenix.LiveView.Socket.t(), atom(), keyword()) ::
+          Phoenix.LiveView.Socket.t()
+  def set_windows_sort(socket, mode, opts \\ [])
+
+  def set_windows_sort(socket, mode, opts) when mode in @sort_modes do
     socket
     |> assign(:windows_sidebar_sort, mode)
     |> assign_windows_sidebar_tree()
+    |> maybe_persist_sort("windows", mode, opts)
   end
+
+  def set_windows_sort(socket, _mode, _opts), do: socket
+
+  @doc "Apply a client-restored sort mode without echoing it back to the client."
+  @spec restore_sort(Phoenix.LiveView.Socket.t(), String.t(), String.t()) ::
+          Phoenix.LiveView.Socket.t()
+  def restore_sort(socket, "sessions", mode),
+    do: set_sessions_sort(socket, parse_sort_mode(mode), persist: false)
+
+  def restore_sort(socket, "windows", mode),
+    do: set_windows_sort(socket, parse_sort_mode(mode), persist: false)
+
+  def restore_sort(socket, _col, _mode), do: socket
+
+  defp maybe_persist_sort(socket, col, mode, opts) do
+    if Keyword.get(opts, :persist, true) do
+      push_event(socket, "sidebar:persist_sort", %{col: col, mode: Atom.to_string(mode)})
+    else
+      socket
+    end
+  end
+
+  defp parse_sort_mode("name"), do: :name
+  defp parse_sort_mode("liveness"), do: :liveness
+  defp parse_sort_mode(_), do: :recency
 
   @spec toggle_workspace(Phoenix.LiveView.Socket.t(), String.t()) :: Phoenix.LiveView.Socket.t()
   def toggle_workspace(socket, workspace_id) when is_binary(workspace_id) do
