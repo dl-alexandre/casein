@@ -400,6 +400,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           title: String.t(),
           current?: boolean(),
           live?: boolean(),
+          group: :this | :other,
           session_count: non_neg_integer(),
           expanded?: boolean(),
           flat_session?: boolean(),
@@ -446,6 +447,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   @doc """
+  Live/total workspace counts for the sessions sidebar header summary.
+
+  Counts only real workspace-tier nodes (the scratch node and each workspace);
+  the Browse tier (`:browse_root` / `:browse_dir`) is excluded. `live` is the
+  subset with a live tmux session — lets the header show "N live" at a glance.
+  """
+  @spec tree_liveness_summary([map()]) :: %{live: non_neg_integer(), total: non_neg_integer()}
+  def tree_liveness_summary(tree) when is_list(tree) do
+    workspace_nodes =
+      Enum.reject(tree, &(Map.get(&1, :kind) in [:browse_root, :browse_dir]))
+
+    %{live: Enum.count(workspace_nodes, & &1.live?), total: length(workspace_nodes)}
+  end
+
+  @doc """
   Top-of-tree SESSIONS node for the workspaceless scratch terminal.
 
   Modeled as a single flat session row so the existing
@@ -467,6 +483,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: "Scratch terminal ($HOME)",
       current?: current?,
       live?: true,
+      group: :this,
       session_count: 1,
       expanded?: false,
       flat_session?: true,
@@ -548,6 +565,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: summary_workspace_title(summary),
       current?: current?,
       live?: live?,
+      group: node_group(current?),
       session_count: session_count,
       expanded?: expanded? and not flat_session?,
       flat_session?: flat_session?,
@@ -555,6 +573,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       sessions: if(flat_session?, do: nil, else: sessions)
     }
   end
+
+  # Sidebar section grouping: the current workspace (and the synthetic scratch
+  # node) sit under "This workspace"; every other workspace under "Other workspaces".
+  defp node_group(true), do: :this
+  defp node_group(false), do: :other
 
   defp summary_workspace_label(summary) do
     Map.get(summary, :name) || Map.get(summary, "name") || summary_id(summary) || "workspace"
