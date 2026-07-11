@@ -6,6 +6,9 @@ defmodule DevIDE.Agents.WorkspaceTokens do
   requests made with the global admin token, so every path that hands a token
   to an agent (materialized `env.sh`, tmux session env) must resolve a
   workspace-scoped token here — never `:api_token` / `DEV_IDE_API_TOKEN`.
+  (An operator may opt a trusted single-tenant box out of that rejection with
+  `DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS=1` for a full-box orchestrator token;
+  agents materialized here should still use workspace-scoped tokens regardless.)
 
   Tokens live in the `:workspace_api_tokens` registry (token → workspace_id or
   list of ids), seeded at boot from `DEV_IDE_WORKSPACE_API_TOKENS` and the
