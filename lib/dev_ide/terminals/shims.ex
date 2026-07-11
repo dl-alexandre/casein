@@ -188,9 +188,9 @@ defmodule DevIDE.Terminals.Shims do
   `include_path?: false` is useful for execution contexts where the host shim
   directory may not be mounted, such as container-owned tmux servers.
 
-  When PATH is included, missing agent launcher shims are self-healed first so
-  a fresh pane never starts with `claude: command not found` because the shim
-  file was partially lost after deploy/npm update.
+  This is a pure accessor: it does no filesystem work. Shim self-healing lives
+  in `sync_tmux_terminal_env!/1` (the heal+publish entry point) so hot callers
+  like `exec_env/1` do not pay a shim-heal on every read.
   """
   @spec env(keyword()) :: %{String.t() => String.t()}
   def env(opts \\ []) do
@@ -210,7 +210,6 @@ defmodule DevIDE.Terminals.Shims do
       end)
 
     if Keyword.get(opts, :include_path?, true) do
-      _ = DevIDE.Agents.AgentShims.ensure_best_effort()
       Map.put(base, "PATH", path_with_shims())
     else
       base
@@ -227,6 +226,7 @@ defmodule DevIDE.Terminals.Shims do
   """
   @spec sync_tmux_terminal_env!(keyword()) :: %{String.t() => String.t()}
   def sync_tmux_terminal_env!(opts \\ []) do
+    _ = DevIDE.Agents.AgentShims.ensure_best_effort()
     terminal_env = env(opts)
     Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
     terminal_env
@@ -585,14 +585,19 @@ defmodule DevIDE.Terminals.Shims do
     # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
     # then npm package bins (so DevIDE shims win over bare package symlinks).
     __devide_prepend_path() {
-      local d
+      # Build the new prefix in ARGUMENT order, then prepend it once, so the
+      # first arg ends up at the FRONT of PATH (terminal-shims win over bare
+      # npm package symlinks). Prepending each arg individually would reverse
+      # them. Kept POSIX-ish (no indirect expansion) for bash + zsh.
+      local d prefix=""
       for d in "$@"; do
         [[ -n "${d}" && -d "${d}" ]] || continue
-        case ":${PATH}:" in
+        case ":${PATH}:${prefix}:" in
           *":${d}:"*) ;;
-          *) PATH="${d}${PATH:+:${PATH}}" ;;
+          *) prefix="${prefix:+${prefix}:}${d}" ;;
         esac
       done
+      [[ -n "${prefix}" ]] && PATH="${prefix}${PATH:+:${PATH}}"
       export PATH
     }
     __devide_prepend_path \\

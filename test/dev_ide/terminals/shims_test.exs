@@ -421,6 +421,47 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert String.trim(out) == shim
   end
 
+  test "shell integration keeps ~/.local/bin shims ahead of bare npm package bins",
+       %{tmp: tmp} do
+    Shims.materialize!()
+    script = Shims.shell_integration_path()
+    home = Path.join(tmp, "home")
+
+    local_bin = Path.join(home, ".local/bin")
+    npm_bin = Path.join(home, ".local/share/npm-global/bin")
+    File.mkdir_p!(local_bin)
+    File.mkdir_p!(npm_bin)
+
+    # A DevIDE agent-launcher shim and a bare npm package binary of the SAME
+    # name: PATH order decides which `claude` a fresh pane launches, and the
+    # ~/.local/bin shim (skip-permissions + MCP env) must win. Prepending each
+    # dir individually used to reverse the order and let the npm bin shadow it.
+    devide_shim = Path.join(local_bin, "claude")
+    npm_bare = Path.join(npm_bin, "claude")
+    File.write!(devide_shim, "#!/bin/sh\necho ok\n")
+    File.write!(npm_bare, "#!/bin/sh\necho ok\n")
+    File.chmod!(devide_shim, 0o755)
+    File.chmod!(npm_bare, 0o755)
+
+    {out, 0} =
+      System.cmd(
+        bash!(),
+        [
+          "-c",
+          """
+          export HOME=#{shell_quote(home)}
+          export PATH=/usr/bin:/bin
+          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          source #{shell_quote(script)}
+          command -v claude
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert String.trim(out) == devide_shim
+  end
+
   test "prompt-end marker in PS1 expands to escape bytes without a stray bracket" do
     Shims.materialize!()
 
