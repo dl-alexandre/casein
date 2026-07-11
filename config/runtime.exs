@@ -40,6 +40,12 @@ config :dev_ide,
        :allow_global_mcp_tool_calls,
        truthy_env?.("DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS")
 
+# When on, MCP `tools/list` advertises only a small core set + the search_tools
+# / invoke_tool meta-tools instead of every tool, to cut context and improve
+# tool selection on large surfaces. Off by default (full tool list). The
+# meta-tools are always callable; this only changes what tools/list advertises.
+config :dev_ide, :mcp_tool_search, truthy_env?.("DEV_IDE_MCP_TOOL_SEARCH")
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->

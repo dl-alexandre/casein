@@ -10,6 +10,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     prev = Application.get_env(:dev_ide, :api_token)
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_allow_global = Application.get_env(:dev_ide, :allow_global_mcp_tool_calls)
+    prev_tool_search = Application.get_env(:dev_ide, :mcp_tool_search)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -21,6 +22,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       restore(:api_token, prev)
       restore(:workspace_api_tokens, prev_workspace_tokens)
       restore(:allow_global_mcp_tool_calls, prev_allow_global)
+      restore(:mcp_tool_search, prev_tool_search)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
@@ -251,6 +253,132 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
     assert_receive {:fake_tmux_send_command, "devide_ws-scoped_agent", "devide_ws-scoped_agent",
                     "echo scoped", []}
+  end
+
+  describe "tool search (DEV_IDE_MCP_TOOL_SEARCH)" do
+    test "tools/list returns the full surface when disabled (default)", %{conn: conn} do
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+      names = Enum.map(tools, & &1["name"])
+
+      assert "terminal_set_agent_label" in names
+      refute "search_tools" in names
+      assert length(tools) > 8
+    end
+
+    test "tools/list returns only core + meta tools when enabled", %{conn: conn} do
+      Application.put_env(:dev_ide, :mcp_tool_search, true)
+
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+      names = Enum.map(tools, & &1["name"])
+
+      # core stays native
+      assert "terminal_list_sessions" in names
+      assert "terminal_send_agent_command" in names
+      assert "terminal_wait_agent_state" in names
+      # meta-tools advertised
+      assert "search_tools" in names
+      assert "invoke_tool" in names
+      # long tail hidden from the advertised list
+      refute "terminal_set_agent_label" in names
+      refute "terminal_report_worktree" in names
+      assert length(tools) == 8
+    end
+
+    test "search_tools finds a long-tail tool by natural-language intent", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{
+              name: "search_tools",
+              arguments: %{query: "set a label on an agent pane"}
+            }
+          },
+          "ws-token"
+        )
+
+      %{"result" => %{"structuredContent" => %{"matches" => matches}}} =
+        json_response(conn, 200)
+
+      assert "terminal_set_agent_label" in Enum.map(matches, & &1["name"])
+    end
+
+    test "invoke_tool runs a discovered tool through normal scope + audit", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        "devide_ws-scoped_agent" => [
+          %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        "devide_ws-scoped_agent" => [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: true,
+            current_command: "bash",
+            current_path: "/workspace"
+          }
+        ]
+      })
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{
+              name: "invoke_tool",
+              arguments: %{
+                name: "terminal_send_command",
+                arguments: %{session: "devide_ws-scoped_agent", command: "echo via-invoke"}
+              }
+            }
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
+               json_response(conn, 200)
+
+      assert_receive {:fake_tmux_send_command, "devide_ws-scoped_agent", "devide_ws-scoped_agent",
+                      "echo via-invoke", []}
+    end
+
+    test "invoke_tool refuses to call a meta-tool", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{
+              name: "invoke_tool",
+              arguments: %{name: "search_tools", arguments: %{query: "x"}}
+            }
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"isError" => true}} = json_response(conn, 200)
+    end
   end
 
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do
