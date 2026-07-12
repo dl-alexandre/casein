@@ -51,7 +51,8 @@ async def smoke(url: str, token: str, workspace: str, timeout: float) -> int:
     qs = urlencode({"token": token, "vsn": PROTOCOL_VSN})
     full_url = f"{url}?{qs}"
 
-    print(f"connecting {full_url}", flush=True)
+    # Never print the signed user token carried in the query string.
+    print(f"connecting {url}", flush=True)
     print(f"topic {topic}", flush=True)
     print(f"marker {marker}", flush=True)
 

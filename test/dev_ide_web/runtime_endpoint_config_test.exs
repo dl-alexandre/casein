@@ -92,6 +92,16 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
     assert Plug.Conn.get_resp_header(conn, "location") == ["https://example.com/workspaces"]
   end
 
+  test "runtime SSL permits plain HTTP readiness probes on non-loopback hosts" do
+    Application.put_env(:dev_ide, :runtime_force_ssl, true)
+    Application.delete_env(:dev_ide, :lan_insecure_http)
+
+    conn = RuntimeSSLPlug.call(conn(:get, "http://10.0.0.8/healthz"), [])
+
+    refute conn.halted
+    assert Plug.Conn.get_resp_header(conn, "location") == []
+  end
+
   test "runtime SSL plug stays off for insecure LAN HTTP" do
     Application.put_env(:dev_ide, :runtime_force_ssl, true)
     Application.put_env(:dev_ide, :lan_insecure_http, true)
