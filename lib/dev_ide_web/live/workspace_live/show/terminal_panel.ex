@@ -483,9 +483,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         --%>
         <div
           :if={@mnav_view == "sessions"}
-          class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+          class="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
         >
-          {if @mnav_other_nodes == [], do: "Sessions & windows", else: "This workspace"}
+          <.icon name="hero-folder" class="size-3 shrink-0" />
+          <span class="min-w-0 truncate normal-case text-zinc-300">
+            {@workspace.name || @workspace.id}
+          </span>
+          <span class="lowercase text-zinc-600">· this workspace</span>
         </div>
         <div :if={@mnav_view == "sessions"} class="space-y-0.5">
           <div :if={@session_tabs == []} class="flex items-center gap-1">
@@ -542,18 +546,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                   )
                   |> JS.push("mobile_nav:close")
                 }
-                class={[mobile_nav_row_class(session_active?), "min-w-0 flex-1"]}
+                class={[
+                  mobile_nav_row_class(session_active?),
+                  "min-w-0 flex-1 flex-row items-center gap-1.5"
+                ]}
               >
-                <span class="flex min-w-0 items-center gap-1">
-                  <.icon
-                    :if={tab.id == @default_terminal_sid}
-                    name="hero-home"
-                    class="size-3 shrink-0 text-zinc-500"
-                  />
-                  <span data-picker-label class="truncate font-medium">{tab.label}</span>
-                </span>
-                <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
-                  {tab.detail}
+                <.icon
+                  :if={tab.id == @default_terminal_sid}
+                  name="hero-home"
+                  class="size-3 shrink-0 text-zinc-500"
+                />
+                <span data-picker-label class="min-w-0 truncate font-medium">{tab.label}</span>
+                <.mnav_session_anchor tab={tab} />
+                <span
+                  :if={tab.detail_secondary != ""}
+                  class="ml-auto max-w-[38%] shrink-0 truncate font-mono text-[10px] text-zinc-500"
+                >
+                  {tab.detail_secondary}
                 </span>
               </button>
               <button
@@ -648,9 +657,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         --%>
         <div
           :if={@mnav_view == "sessions" and @mnav_other_nodes != []}
-          class="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+          class="mb-1 mt-3 flex items-center gap-1.5 border-t border-zinc-800 pt-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
         >
-          Other workspaces
+          <.icon name="hero-squares-2x2" class="size-3 shrink-0" /> Other workspaces
         </div>
         <div :if={@mnav_view == "sessions" and @mnav_other_nodes != []} class="space-y-0.5">
           <.mobile_other_workspace_node
@@ -761,6 +770,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         Map.get(node, :group, :other) == :other
     end)
   end
+
+  # Repo/branch anchor chip for a mobile session row — interesting-only (a
+  # worktree or a non-default branch) via the shared SessionBar predicate, so
+  # plain master/main stays out of the way. For a worktree it reads
+  # "repo⑂branch", surfacing the repo a worktree cwd otherwise hides.
+  attr :tab, :map, required: true
+
+  defp mnav_session_anchor(assigns) do
+    ~H"""
+    <span
+      :if={SessionBar.session_anchor_interesting?(@tab)}
+      class="inline-flex min-w-0 shrink items-center gap-0.5 rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-400"
+      title={mnav_anchor_title(@tab)}
+    >
+      <.icon name="hero-arrows-right-left" class="size-2.5 shrink-0" /><span
+        :if={Map.get(@tab, :worktree?) and Map.get(@tab, :repo, "") != ""}
+        class="shrink-0 text-zinc-500"
+      >{@tab.repo}⑂</span><span class="max-w-28 truncate">{SessionBar.branch_short(@tab.branch)}</span>
+    </span>
+    """
+  end
+
+  defp mnav_anchor_title(%{worktree?: true, repo: repo, branch: branch})
+       when is_binary(repo) and repo != "" do
+    "Worktree of " <> repo <> " · branch " <> branch
+  end
+
+  defp mnav_anchor_title(%{branch: branch}) when is_binary(branch), do: "Branch " <> branch
+  defp mnav_anchor_title(_), do: nil
 
   defp mobile_nav_row_class(true),
     do:
