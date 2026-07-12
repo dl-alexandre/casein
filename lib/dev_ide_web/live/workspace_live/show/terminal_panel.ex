@@ -386,6 +386,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
       assigns
       |> Phoenix.Component.assign(:mnav_active_tab, active_tab)
       |> Phoenix.Component.assign(:mnav_view, view)
+      |> Phoenix.Component.assign(:mnav_other_nodes, mobile_other_workspace_nodes(assigns))
 
     ~H"""
     <div
@@ -484,7 +485,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           :if={@mnav_view == "sessions"}
           class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
         >
-          Sessions &amp; windows
+          {if @mnav_other_nodes == [], do: "Sessions & windows", else: "This workspace"}
         </div>
         <div :if={@mnav_view == "sessions"} class="space-y-0.5">
           <div :if={@session_tabs == []} class="flex items-center gap-1">
@@ -638,9 +639,127 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             </div>
           <% end %>
         </div>
+        <%!--
+          Cross-workspace reach: the desktop rail's "Other workspaces" half,
+          brought to the mobile sheet. Nodes come from @sessions_sidebar_tree
+          (built as the sheet opens); tapping a collapsed workspace fires the
+          shared `sidebar:toggle_workspace` (lazy-loads its sessions), and a
+          session row navigates into that workspace.
+        --%>
+        <div
+          :if={@mnav_view == "sessions" and @mnav_other_nodes != []}
+          class="mb-1 mt-3 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+        >
+          Other workspaces
+        </div>
+        <div :if={@mnav_view == "sessions" and @mnav_other_nodes != []} class="space-y-0.5">
+          <.mobile_other_workspace_node
+            :for={node <- @mnav_other_nodes}
+            node={node}
+            workspace_route={@workspace_route}
+          />
+        </div>
       </div>
     </div>
     """
+  end
+
+  # One "Other workspaces" row in the mobile sheet. Mirrors the desktop
+  # `SessionBar.sessions_sidebar_node` :other branch: a flat single-session row,
+  # or an expandable workspace whose session children navigate cross-workspace.
+  attr :node, :map, required: true
+  attr :workspace_route, :string, default: nil
+
+  defp mobile_other_workspace_node(assigns) do
+    ~H"""
+    <%= cond do %>
+      <% @node.flat_session? -> %>
+        <.link
+          navigate={SessionBar.cross_workspace_session_path(@node.workspace_id, @node.session)}
+          data-picker-item
+          data-picker-section="sessions"
+          class={[mobile_nav_row_class(false), "min-w-0", not @node.live? && "opacity-60"]}
+          title={@node.title}
+        >
+          <span data-picker-label class="truncate font-medium">{@node.label}</span>
+        </.link>
+      <% is_list(@node.sessions) -> %>
+        <div class="flex flex-col gap-0.5">
+          <button
+            type="button"
+            data-picker-item
+            data-picker-section="workspaces"
+            phx-click="sidebar:toggle_workspace"
+            phx-value-workspace-id={@node.workspace_id}
+            class={[
+              mobile_nav_row_class(false),
+              "min-w-0 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={@node.title}
+            aria-label={
+              if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
+            }
+          >
+            <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
+            <span class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-zinc-500">
+              {@node.session_count}
+              <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+                <.icon name="hero-chevron-right" class="size-3" />
+              </span>
+            </span>
+          </button>
+          <div class="space-y-0.5 pl-3">
+            <%= for session <- @node.sessions do %>
+              <.link
+                navigate={SessionBar.cross_workspace_session_path(@node.workspace_id, session)}
+                data-picker-item
+                data-picker-section="sessions"
+                class={[mobile_nav_row_class(false), "min-w-0"]}
+                title={session.title}
+              >
+                <span data-picker-label class="truncate font-medium">{session.label}</span>
+              </.link>
+            <% end %>
+          </div>
+        </div>
+      <% true -> %>
+        <button
+          type="button"
+          data-picker-item
+          data-picker-section="workspaces"
+          phx-click="sidebar:toggle_workspace"
+          phx-value-workspace-id={@node.workspace_id}
+          class={[
+            mobile_nav_row_class(false),
+            "min-w-0 flex-row items-center gap-2",
+            not @node.live? && "opacity-60"
+          ]}
+          title={@node.title}
+          aria-label={"Expand " <> @node.label}
+        >
+          <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
+          <span
+            :if={@node.session_count > 0}
+            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-zinc-500"
+          >
+            {@node.session_count}
+            <span class="flex"><.icon name="hero-chevron-right" class="size-3" /></span>
+          </span>
+        </button>
+    <% end %>
+    """
+  end
+
+  # Workspace-tier nodes (skip the Browse tier) from the sessions tree that
+  # belong to OTHER workspaces — the half the mobile sheet previously dropped.
+  defp mobile_other_workspace_nodes(assigns) do
+    assigns
+    |> Map.get(:sessions_sidebar_tree, [])
+    |> Enum.filter(fn node ->
+      Map.get(node, :kind) not in [:browse_root, :browse_dir] and
+        Map.get(node, :group, :other) == :other
+    end)
   end
 
   defp mobile_nav_row_class(true),

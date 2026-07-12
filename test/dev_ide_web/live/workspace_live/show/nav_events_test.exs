@@ -14,7 +14,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.NavEventsTest do
             mobile_nav_view: "sessions",
             mobile_nav_focus: "sessions",
             session_tabs: [],
-            terminal_sid: nil
+            terminal_sid: nil,
+            # Opening the sheet now builds the sessions tree (for the "Other
+            # workspaces" section), so the fixture carries the same sidebar
+            # assigns a mounted workspace socket has.
+            workspace: %{id: "ws-test", name: "Test WS"},
+            workspace_summaries: [],
+            sessions_sidebar_sort: :recency,
+            sidebar_expanded_workspaces: MapSet.new(),
+            sidebar_expanded_dirs: MapSet.new(),
+            sidebar_ws_sessions: %{},
+            current_user: nil
           },
           assigns
         )
