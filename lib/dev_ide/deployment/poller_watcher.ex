@@ -38,7 +38,8 @@ defmodule DevIDE.Deployment.PollerWatcher do
   end
 
   defp watcher_enabled? do
-    System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH") not in ["0", "false", "no"]
+    DevIDE.Deployment.Capabilities.enabled?(:poller) and
+      System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH") not in ["0", "false", "no"]
   end
 
   defp config(key, default) do

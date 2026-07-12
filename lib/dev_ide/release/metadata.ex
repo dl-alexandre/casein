@@ -199,6 +199,7 @@ defmodule DevIDE.Release.Metadata do
     case :os.type() do
       {:unix, :linux} -> "linux-" <> normalize_arch(:erlang.system_info(:system_architecture))
       {:unix, :darwin} -> "darwin-" <> normalize_arch(:erlang.system_info(:system_architecture))
+      {:win32, _} -> "windows-" <> normalize_arch(:erlang.system_info(:system_architecture))
       _ -> "unknown"
     end
   end

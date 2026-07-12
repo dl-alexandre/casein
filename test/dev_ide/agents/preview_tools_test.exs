@@ -1462,7 +1462,12 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       restore_env(:workspaces_root, previous_root)
     end)
 
-    ws = %{id: "ws-loopback", path: workspace_dir, metadata: %{attached_folder: true}}
+    ws = %{
+      id: "ws-loopback",
+      path: workspace_dir,
+      metadata: %{attached_folder: true, terminal_output: "unavailable", detected_ports: []}
+    }
+
     seed_workspace_tmux!("ws-loopback")
 
     assert {:ok, %{navigated_to: navigated_to, current_url: current_url, pane_id: pane_id}} =
@@ -1514,7 +1519,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     ws = %{
       id: "ws-nav-fail",
       path: workspace_dir,
-      metadata: %{attached_folder: true, detected_ports: [port]}
+      metadata: %{
+        attached_folder: true,
+        terminal_output: "unavailable",
+        detected_ports: [port]
+      }
     }
 
     seed_workspace_tmux!("ws-nav-fail")

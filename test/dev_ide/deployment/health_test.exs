@@ -3,6 +3,23 @@ defmodule DevIDE.Deployment.HealthTest do
 
   alias DevIDE.Deployment.Health
 
+  test "portable deployments report optional operator checks as not configured" do
+    status =
+      Health.status(
+        capabilities: [],
+        version: "portable",
+        socket_path: nil,
+        host: "localhost"
+      )
+
+    assert status.ok
+    assert status.last_deploy.status == :not_configured
+
+    assert Enum.all?(status.checks, fn {_name, check} ->
+             check.status == :not_configured and check.ok
+           end)
+  end
+
   @host "devide.devbox.example.com"
   @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
 

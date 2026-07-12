@@ -14,7 +14,7 @@ defmodule DevIde.Application do
   @impl true
   def start(_type, _args) do
     DevIdeWeb.Plugs.ForwardAuth.assert_safe_listener_bind!()
-    configure_tmux_ctl!()
+    unless desktop_mode?() or native_windows?(), do: configure_tmux_ctl!()
     configure_preview_ctl!()
     configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
@@ -120,6 +120,10 @@ defmodule DevIde.Application do
       {DevIDE.Deployment.Drain, :guard_shared_write}
     )
   end
+
+  defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
+
+  defp native_windows?, do: match?({:win32, _}, :os.type())
 
   defp terminal_shell_command do
     Application.get_env(:dev_ide, :tmux_login_shell_command) ||

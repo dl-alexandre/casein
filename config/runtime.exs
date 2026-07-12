@@ -31,6 +31,7 @@ end
 lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
 release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
+desktop_mode? = System.get_env("DEV_IDE_PROFILE") == "desktop"
 
 # SECURITY: allow a :global orchestrator token to make MCP `tools/call`
 # requests box-wide. Default off — tool execution normally requires a
@@ -84,6 +85,15 @@ if config_env() != :test do
       config :dev_ide, :lan_insecure_http, true
       config :dev_ide, :session_same_site, nil
     end
+  end
+
+  if desktop_mode? do
+    config :dev_ide,
+      desktop_mode: true,
+      deployment_capabilities: [],
+      tmux_host_anchor: false,
+      secure_session_cookie: false,
+      session_cookie_key: "_dev_ide_desktop_key"
   end
 
   if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
@@ -189,13 +199,18 @@ if config_env() == :prod and not release_cli? do
     database_path =
       System.get_env("DATABASE_PATH") ||
         System.get_env("SQLITE_DATABASE_PATH") ||
-        if lan_mode? do
-          "/var/lib/devide/lan/devide.sqlite3"
-        else
-          raise """
-          environment variable DATABASE_PATH is missing for SQLite releases.
-          For local LAN mode, devide lan up writes DATABASE_PATH automatically.
-          """
+        cond do
+          desktop_mode? ->
+            DevIDE.Desktop.Runtime.database_path()
+
+          lan_mode? ->
+            "/var/lib/devide/lan/devide.sqlite3"
+
+          true ->
+            raise """
+            environment variable DATABASE_PATH is missing for SQLite releases.
+            For local LAN mode, devide lan up writes DATABASE_PATH automatically.
+            """
         end
 
     config :dev_ide, DevIde.Repo,
@@ -204,6 +219,13 @@ if config_env() == :prod and not release_cli? do
       pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
       busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000")
   else
+    if desktop_mode? do
+      raise """
+      DEV_IDE_PROFILE=desktop requires a SQLite-compiled release.
+      Rebuild with DEV_IDE_REPO_ADAPTER=sqlite and DEVIDE_RELEASE_PROFILE=desktop.
+      """
+    end
+
     database_url =
       System.get_env("DATABASE_URL") ||
         raise """
@@ -260,13 +282,25 @@ if config_env() == :prod and not release_cli? do
   end
 
   bind_ip =
-    case System.get_env("PHX_IP") do
-      nil ->
+    case {desktop_mode?, System.get_env("PHX_IP")} do
+      {true, nil} ->
+        {127, 0, 0, 1}
+
+      {true, str} when str not in ["127.0.0.1", "::1"] ->
+        raise "DEV_IDE_PROFILE=desktop requires PHX_IP to be loopback"
+
+      {true, str} ->
+        case str |> String.to_charlist() |> :inet.parse_address() do
+          {:ok, addr} -> addr
+          {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
+        end
+
+      {false, nil} ->
         if forward_auth? or lan_insecure_http?,
           do: {127, 0, 0, 1},
           else: {0, 0, 0, 0, 0, 0, 0, 0}
 
-      str ->
+      {false, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
           {:ok, addr} -> addr
           {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
@@ -294,6 +328,9 @@ if config_env() == :prod and not release_cli? do
   # are selected at install time.
   check_origin =
     cond do
+      desktop_mode? ->
+        :conn
+
       lan_mode? ->
         DevIdeWeb.OriginOptions.lan(lan_http_host.(),
           scheme: if(lan_insecure_http?, do: "http", else: "https"),
@@ -318,23 +355,30 @@ if config_env() == :prod and not release_cli? do
 
   http_opts =
     case http_socket do
+      nil when desktop_mode? -> [ip: bind_ip, port: DevIDE.Desktop.Runtime.requested_port()]
       nil -> [ip: bind_ip]
       sock -> [ip: {:local, sock}, port: 0]
     end
 
   endpoint_url =
-    if lan_insecure_http? do
-      [
-        host: lan_http_host.(),
-        port: String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80"),
-        scheme: "http"
-      ]
-    else
-      [host: host, port: 443, scheme: "https"]
+    cond do
+      desktop_mode? ->
+        [host: "localhost", scheme: "http"]
+
+      lan_insecure_http? ->
+        [
+          host: lan_http_host.(),
+          port: String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80"),
+          scheme: "http"
+        ]
+
+      true ->
+        [host: host, port: 443, scheme: "https"]
     end
 
   runtime_force_ssl? =
     cond do
+      desktop_mode? -> false
       lan_insecure_http? -> false
       falsey_env?.("DEV_IDE_FORCE_SSL") -> false
       true -> true

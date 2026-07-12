@@ -23,7 +23,7 @@ defmodule DevIde.MixProject do
       test_coverage: [summary: [threshold: 66]],
       releases: [
         dev_ide: [
-          include_executables_for: [:unix],
+          include_executables_for: [:unix, :windows],
           applications: [runtime_tools: :permanent],
           steps: [
             &ensure_static_assets/1,
@@ -42,7 +42,8 @@ defmodule DevIde.MixProject do
   def application do
     [
       mod: {DevIde.Application, []},
-      extra_applications: [:logger, :runtime_tools, :erlexec]
+      extra_applications:
+        [:logger, :runtime_tools] ++ if(native_windows?(), do: [], else: [:erlexec])
     ]
   end
 
@@ -101,10 +102,10 @@ defmodule DevIde.MixProject do
       {:eqrcode, "~> 0.2"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
-      {:erlexec, "~> 2.3"},
+      {:erlexec, "~> 2.3", runtime: not native_windows?()},
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
-      {:ghostty, "~> 0.4"},
+      ghostty_dependency(),
       {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev, :test]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
@@ -127,6 +128,18 @@ defmodule DevIde.MixProject do
       {:reach, "~> 2.7", only: [:dev, :test], runtime: false}
       # Code-intelligence / deploy-planning tools — dev/test only:
     ]
+  end
+
+  defp ghostty_dependency do
+    if native_windows?() do
+      {:ghostty, path: "dev_ide_ghostty_windows", override: true}
+    else
+      {:ghostty, "~> 0.4"}
+    end
+  end
+
+  defp native_windows? do
+    match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true)
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

@@ -279,7 +279,7 @@ defmodule DevIDE.Policy do
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
 
-  defp workspace_operator?(ctx), do: workspace_role(ctx) in [:operator, :owner]
+  defp workspace_operator?(ctx), do: workspace_role(ctx) == :operator
 
   defp authenticated_actor?(ctx) do
     [

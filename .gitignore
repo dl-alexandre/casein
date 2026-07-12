@@ -1,5 +1,12 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
+/_build_windows_release/
+/_build_windows_test/
+/_build_codex_windows/
+/_build_windows_update/
+/_build_windows_update_test/
+/.desktop-runtime/
+/dev_ide_ghostty_windows/_build/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/

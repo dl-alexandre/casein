@@ -1,0 +1,62 @@
+defmodule DevIDE.Desktop.RuntimeTest do
+  use ExUnit.Case, async: false
+
+  alias DevIDE.Desktop.Runtime
+
+  @env_vars ~w(DEV_IDE_PROFILE DEV_IDE_DESKTOP_DATA_DIR DEV_IDE_DESKTOP_STATUS_PATH XDG_DATA_HOME LOCALAPPDATA APPDATA DATABASE_PATH SQLITE_DATABASE_PATH PORT)
+
+  setup do
+    saved = Map.new(@env_vars, &{&1, System.get_env(&1)})
+    Enum.each(@env_vars, &System.delete_env/1)
+
+    on_exit(fn ->
+      Enum.each(saved, fn
+        {name, nil} -> System.delete_env(name)
+        {name, value} -> System.put_env(name, value)
+      end)
+    end)
+  end
+
+  test "recognizes only the desktop profile" do
+    refute Runtime.desktop_profile?()
+    System.put_env("DEV_IDE_PROFILE", "desktop")
+    assert Runtime.desktop_profile?()
+  end
+
+  test "uses the explicit desktop data directory for local state" do
+    System.put_env("DEV_IDE_DESKTOP_DATA_DIR", "/tmp/devide-desktop")
+
+    assert Runtime.data_dir() == "/tmp/devide-desktop"
+    assert Runtime.database_path() == "/tmp/devide-desktop/devide.sqlite3"
+    assert Runtime.status_path() == "/tmp/devide-desktop/runtime.json"
+  end
+
+  test "uses native per-user data directories" do
+    System.put_env("LOCALAPPDATA", "C:/Users/test/AppData/Local")
+    System.put_env("XDG_DATA_HOME", "/home/test/.local/share")
+
+    assert Runtime.data_dir({:win32, :nt}) == "C:/Users/test/AppData/Local/DevIDE"
+    assert Runtime.data_dir({:unix, :linux}) == "/home/test/.local/share/devide"
+
+    assert Runtime.data_dir({:unix, :darwin}) ==
+             Path.join(System.user_home!(), "Library/Application Support/DevIDE")
+  end
+
+  test "honors database and status path overrides" do
+    System.put_env("DATABASE_PATH", "/tmp/custom.sqlite3")
+    System.put_env("DEV_IDE_DESKTOP_STATUS_PATH", "/tmp/status.json")
+
+    assert Runtime.database_path() == "/tmp/custom.sqlite3"
+    assert Runtime.status_path() == "/tmp/status.json"
+  end
+
+  test "defaults to an ephemeral port and validates explicit ports" do
+    assert Runtime.requested_port() == 0
+
+    System.put_env("PORT", "4242")
+    assert Runtime.requested_port() == 4242
+
+    System.put_env("PORT", "invalid")
+    assert_raise RuntimeError, ~r/PORT must be an integer/, &Runtime.requested_port/0
+  end
+end

@@ -7,6 +7,12 @@
 # General application configuration
 import Config
 
+if match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true) do
+  config :phoenix_live_view, :colocated_assets,
+    target_directory: Path.expand("../assets/node_modules/phoenix-colocated", __DIR__),
+    disable_symlink_warning: true
+end
+
 # Compile-time env, readable at runtime (e.g. boot-time safety assertions).
 config :dev_ide, :env, config_env()
 

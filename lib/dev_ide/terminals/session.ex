@@ -15,6 +15,8 @@ defmodule DevIDE.Terminals.Session do
   use GenServer
   require Logger
 
+  alias DevIDE.Terminals.Backend
+  alias DevIDE.Terminals.Backend.SpawnSpec
   alias DevIDE.Terminals.ScrollbackArchive
   alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.Shims
@@ -106,6 +108,8 @@ defmodule DevIDE.Terminals.Session do
 
   @impl true
   def init({workspace, sid, loc}) do
+    backend = Backend.module()
+
     # Defer the blocking PTY bring-up (tmux scrollback capture + :exec.run, each
     # a subprocess round-trip) to handle_continue so init returns immediately
     # and DynamicSupervisor.start_child isn't serialized on it. handle_continue
@@ -117,7 +121,8 @@ defmodule DevIDE.Terminals.Session do
        workspace: workspace,
        sid: sid,
        loc: loc,
-       tmux: Tmux.session_name(workspace, sid),
+       backend: backend,
+       tmux: backend.session_name(workspace, sid),
        exec_pid: nil,
        ospid: nil,
        # Multi-subscriber fan-out (B1 fix): map of monitor_ref => pid.
@@ -137,11 +142,17 @@ defmodule DevIDE.Terminals.Session do
   @impl true
   def handle_continue(
         :spawn,
-        %{workspace: workspace, sid: sid, loc: loc, tmux: tmux_session} = state
+        %{
+          workspace: workspace,
+          sid: sid,
+          loc: loc,
+          tmux: tmux_session,
+          backend: backend
+        } = state
       ) do
     # A resume reattaches a tmux session that already exists; a fresh open
     # creates it. The two differ in bring-up width (below) and scrollback seed.
-    resumed? = match?({:local, _cwd}, loc) and Tmux.session_exists?(tmux_session)
+    resumed? = match?({:local, _cwd}, loc) and backend.session_exists?(tmux_session)
 
     # Seed scrollback only in local mode; over ssh the round-trip to capture
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
@@ -150,7 +161,7 @@ defmodule DevIDE.Terminals.Session do
     {seeded_buffer, _history_restored?} =
       cond do
         resumed? ->
-          {Tmux.capture_scrollback(tmux_session) |> trim_to(@buffer_bytes), false}
+          {backend.capture_scrollback(tmux_session, []) |> trim_to(@buffer_bytes), false}
 
         match?({:local, _}, loc) ->
           SessionRecovery.seed_from_archive(tmux_session)
@@ -173,13 +184,14 @@ defmodule DevIDE.Terminals.Session do
     # window-size manual does not collapse to the bootstrap default.
     {cols, rows} =
       with true <- resumed?,
-           {:ok, {w, h}} <- Tmux.window_size(tmux_session) do
+           {:ok, {w, h}} <- backend.window_size(tmux_session) do
         {w, h}
       else
         _ -> {@default_cols, @default_rows}
       end
 
-    {cmd, cwd_opt} = build_cmd(loc, tmux_session)
+    {:ok, %SpawnSpec{command: cmd, exec_opts: backend_exec_opts}} =
+      backend.spawn_spec(loc, tmux_session)
 
     # In PTY mode, erlexec routes all child output through the :stderr channel.
     # Capture both so this code is robust to either routing.
@@ -193,7 +205,7 @@ defmodule DevIDE.Terminals.Session do
            Shims.exec_env()},
         {:stdout, self()},
         {:stderr, self()}
-      ] ++ cwd_opt
+      ] ++ backend_exec_opts
 
     case :exec.run(cmd, opts) do
       {:ok, exec_pid, ospid} ->
@@ -202,7 +214,7 @@ defmodule DevIDE.Terminals.Session do
         # For a brand-new session, push an explicit resize-window once so
         # window-size manual has a stable size without baking -x/-y into create.
         if not resumed? and match?({:local, _}, loc) do
-          _ = Tmux.resize_window(tmux_session, cols, rows)
+          _ = backend.resize_window(tmux_session, cols, rows)
         end
 
         Logger.debug("terminal session started",
@@ -366,7 +378,8 @@ defmodule DevIDE.Terminals.Session do
   # "host tmux wrapping docker exec bash" pattern had. Remote mode still
   # wraps in `ssh -tt` so the cockpit talks to a remote tmux over an
   # ssh-allocated pty.
-  defp build_cmd({:local, cwd}, tmux_session) do
+  @doc false
+  def legacy_tmux_spawn_command({:local, cwd}, tmux_session) do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
     # Host tmux runs on the host, where the manager's container exec workdir
     # (`exec_cwd`, e.g. `/app`) does not exist. Creating a host session with
@@ -451,7 +464,7 @@ defmodule DevIDE.Terminals.Session do
     {cmd, [{:cd, to_charlist(host_cwd)}]}
   end
 
-  defp build_cmd({:remote, host, path}, tmux_session) do
+  def legacy_tmux_spawn_command({:remote, host, path}, tmux_session) do
     # Quote path for the remote shell. `cd` first so the tmux session inherits
     # the workspace as cwd; `-A` reattaches if the session already exists.
     remote =

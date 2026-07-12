@@ -40,10 +40,17 @@ end
 # config/test.exs) when the run finishes, so leaked test sessions don't pile up.
 # Best-effort and scoped to the sandbox server — it can never touch the default
 # server's live workspace sessions.
-if label = DevIDE.Terminals.TmuxServer.label() do
-  System.at_exit(fn _ ->
-    _ = System.cmd("tmux", ["-L", label, "kill-server"], stderr_to_stdout: true)
-  end)
+case {:os.type(), DevIDE.Terminals.TmuxServer.label()} do
+  {{:win32, _}, _label} ->
+    :ok
+
+  {_os, label} when is_binary(label) ->
+    System.at_exit(fn _ ->
+      _ = System.cmd("tmux", ["-L", label, "kill-server"], stderr_to_stdout: true)
+    end)
+
+  _other ->
+    :ok
 end
 
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
@@ -64,7 +71,7 @@ ExUnit.after_suite(fn _result ->
     ) or session == "devide_ws-adapter_sid-adapter"
   end
 
-  if tmux = System.find_executable("tmux") do
+  if tmux = not match?({:win32, _}, :os.type()) && System.find_executable("tmux") do
     with {sessions, 0} <- System.cmd(tmux, ["list-sessions", "-F", "\#{session_name}"]) do
       sessions
       |> String.split("\n", trim: true)

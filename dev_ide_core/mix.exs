@@ -23,15 +23,19 @@ defmodule DevIdeCore.MixProject do
 
   def application do
     # erlexec must be started; `git` is an external binary, not an OTP app.
-    [extra_applications: [:logger, :erlexec]]
+    [extra_applications: [:logger] ++ if(native_windows?(), do: [], else: [:erlexec])]
   end
 
   defp deps do
     [
-      {:erlexec, "~> 2.3"},
+      {:erlexec, "~> 2.3", runtime: not native_windows?()},
       {:boundary, "~> 0.10", runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
+  end
+
+  defp native_windows? do
+    match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true)
   end
 
   defp package do

@@ -30,6 +30,20 @@ tmux server (host or container)
 Tests swap `Application.get_env(:dev_ide, :tmux_adapter)` for
 `TmuxCtl.Test.FakeAdapter` (aliased as `DevIDE.Test.FakeTmuxAdapter`).
 
+`DevIDE.Terminals.backend/0` is the product-level selection boundary. It reads
+`:terminal_backend`, then uses the historical `:tmux_adapter` key as a migration
+fallback, and finally defaults to `DevIDE.Terminals.Backends.Tmux`. Existing
+deployments and tests therefore keep their current behavior. The wrapper implements
+`DevIDE.Terminals.Backend`; the existing facade continues implementing
+`TmuxCtl.Adapter`. New cross-platform code should depend on the product-level
+behaviour, while tmux-only call sites are migrated incrementally.
+
+Durable `Session` startup resolves one backend for the session lifetime and
+requests a `DevIDE.Terminals.Backend.SpawnSpec`. The tmux backend owns the
+host/container/SSH attach argv; `Session` owns the current erlexec PTY transport
+and byte fan-out. A future ConPTY transport can therefore change process
+creation without putting Windows command construction into LiveView code.
+
 ## Adapter configuration (two keys)
 
 DevIDE and `TmuxCtl` read adapter config from **different** application

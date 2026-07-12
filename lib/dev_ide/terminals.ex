@@ -349,7 +349,11 @@ defmodule DevIDE.Terminals do
     to: AgentPromptSender,
     as: :send_to_agent_pane
 
-  @doc "Configured tmux adapter."
+  @doc "Configured platform terminal backend."
+  @spec backend() :: module()
+  def backend, do: DevIDE.Terminals.Backend.module()
+
+  @doc "Configured tmux-compatible adapter during the platform migration."
   @spec tmux_adapter() :: module()
   def tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)

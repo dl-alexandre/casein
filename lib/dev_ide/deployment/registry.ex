@@ -100,8 +100,12 @@ defmodule DevIDE.Deployment.Registry do
         write_atomic(file_path, data)
 
         if socket_path, do: maybe_init_current_symlink(socket_path)
-        DevIDE.Deployment.Drift.check_async()
-        DevIDE.Deployment.LastDeploy.check_async()
+
+        if DevIDE.Deployment.Capabilities.enabled?(:deploy_drift),
+          do: DevIDE.Deployment.Drift.check_async()
+
+        if DevIDE.Deployment.Capabilities.enabled?(:deploy_status),
+          do: DevIDE.Deployment.LastDeploy.check_async()
 
         {:ok, %{id: id, file_path: file_path, data: data}}
     end
