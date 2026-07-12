@@ -12,7 +12,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
 
   alias DevIDE.Agents.{ArtifactTools, MCPAudit, MCPError}
   alias DevIDE.MCP.Scope
-  alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
+  alias DevIdeWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
   @server_name "DevIDE Artifact MCP Server"
@@ -41,7 +41,12 @@ defmodule DevIdeWeb.API.ArtifactMCP do
 
   @impl true
   def list_tools(opts) do
-    MCPWorkspaceScope.tool_specs(tool_specs(), MCPWorkspaceScope.default_workspace_id(opts))
+    # Artifact has no MCPToolSearch core (only ~6 tools — core+meta would be
+    # larger than the full list), so this returns the full set unchanged; the
+    # routing is here so artifact adopts tool-search for free if it ever grows.
+    tool_specs()
+    |> MCPToolSearch.list_tools(:artifact)
+    |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
   end
 
   @doc "MCP tool specifications, mapped from ArtifactTools definitions."

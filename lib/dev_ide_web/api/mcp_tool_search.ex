@@ -38,7 +38,53 @@ defmodule DevIdeWeb.API.MCPToolSearch do
       terminal_capture
       terminal_send_agent_command
       terminal_wait_agent_state
+    ),
+    preview: ~w(
+      preview_surfaces
+      preview_open_app
+      preview_navigate
+      preview_observe_live
+      preview_elements
+      preview_click
+      preview_type
+      preview_screenshot
     )
+  }
+
+  # Generic intent synonyms expand a query before lexical matching, so
+  # paraphrased asks still hit ("take a picture" -> screenshot, "kill the pane"
+  # -> close). Deliberately domain-generic and small; a neural embedding backend
+  # is the natural upgrade if this catalog ever outgrows hand-tuned synonyms.
+  @synonyms %{
+    "picture" => ~w(screenshot image),
+    "screenshot" => ~w(image capture),
+    "image" => ~w(screenshot),
+    "kill" => ~w(close stop terminate),
+    "close" => ~w(kill stop),
+    "stop" => ~w(close kill),
+    "logs" => ~w(log output scrollback capture),
+    "log" => ~w(logs output scrollback),
+    "output" => ~w(capture logs scrollback),
+    "scrollback" => ~w(capture output),
+    "label" => ~w(name rename tag),
+    "rename" => ~w(label name),
+    "click" => ~w(press tap select),
+    "press" => ~w(click key),
+    "tap" => ~w(click),
+    "type" => ~w(input fill enter text),
+    "input" => ~w(type fill text),
+    "fill" => ~w(type input),
+    "list" => ~w(show enumerate),
+    "show" => ~w(list),
+    "state" => ~w(status ready done),
+    "status" => ~w(state),
+    "worktree" => ~w(branch checkout),
+    "annotate" => ~w(annotation note comment),
+    "note" => ~w(annotation annotate),
+    "record" => ~w(capture video),
+    "storage" => ~w(cookies localstorage),
+    "navigate" => ~w(goto url visit),
+    "open" => ~w(launch start)
   }
 
   @default_search_limit 5
@@ -58,11 +104,15 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   """
   @spec list_tools([map()], atom()) :: [map()]
   def list_tools(specs, surface) do
-    if enabled?() do
-      core = Map.get(@core_tools, surface, [])
-      Enum.filter(specs, &(spec_name(&1) in core)) ++ [search_tool_spec(), invoke_tool_spec()]
-    else
-      specs
+    # Only reduce a surface that has a defined CORE set; a surface with no core
+    # (e.g. artifact, which is small enough that flat-listing beats core+meta)
+    # is returned unchanged even when the flag is on.
+    case enabled?() and Map.get(@core_tools, surface) do
+      core when is_list(core) ->
+        Enum.filter(specs, &(spec_name(&1) in core)) ++ [search_tool_spec(), invoke_tool_spec()]
+
+      _ ->
+        specs
     end
   end
 
@@ -74,7 +124,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   @spec search([map()], String.t(), keyword()) :: map()
   def search(specs, query, opts \\ []) when is_binary(query) do
     limit = opts |> Keyword.get(:limit, @default_search_limit) |> clamp_limit()
-    q_tokens = tokenize(query)
+    q_tokens = query |> tokenize() |> expand_tokens()
     ql = String.downcase(query)
 
     matches =
@@ -184,6 +234,10 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     |> String.split(~r/[^a-z0-9_]+/, trim: true)
     |> Enum.reject(&(String.length(&1) < 2))
     |> Enum.uniq()
+  end
+
+  defp expand_tokens(tokens) do
+    (tokens ++ Enum.flat_map(tokens, &Map.get(@synonyms, &1, []))) |> Enum.uniq()
   end
 
   defp clamp_limit(n) when is_integer(n) and n > 0, do: min(n, @max_search_limit)

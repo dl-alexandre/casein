@@ -22,7 +22,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
   alias DevIDE.Agents.{MCPAudit, MCPError, PreviewTools}
   alias DevIDE.MCP.Scope
-  alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
+  alias DevIdeWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
   @server_name "DevIDE Preview MCP Server"
@@ -84,6 +84,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   @impl true
   def list_tools(opts) do
     tool_specs()
+    |> MCPToolSearch.list_tools(:preview)
     |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
     |> optional_tmux_session(default_tmux_session(opts))
   end
@@ -110,6 +111,42 @@ defmodule DevIdeWeb.API.PreviewMCP do
   end
 
   @impl true
+  # Meta-tool: return long-tail tool schemas matching a natural-language query.
+  def call_tool(id, %{"name" => "search_tools"} = params, _opts) do
+    args = Map.get(params, "arguments", %{}) || %{}
+    query = to_string(Map.get(args, "query") || Map.get(args, :query) || "")
+
+    limit_opts =
+      case Map.get(args, "limit") || Map.get(args, :limit) do
+        n when is_integer(n) -> [limit: n]
+        _ -> []
+      end
+
+    payload = MCPToolSearch.search(tool_specs(), query, limit_opts)
+
+    MCPEnvelope.result(id, %{
+      content: [MCPEnvelope.text(payload)],
+      structuredContent: MCPEnvelope.jsonable(payload)
+    })
+  end
+
+  # Meta-tool: run a tool discovered via search_tools, reusing the normal
+  # scope + audit dispatch (recurses into the general call_tool clause).
+  def call_tool(id, %{"name" => "invoke_tool"} = params, opts) do
+    args = Map.get(params, "arguments", %{}) || %{}
+
+    case MCPToolSearch.invoke_target(args) do
+      {nil, _inner} ->
+        meta_error(id, :invoke_tool_requires_name)
+
+      {inner_name, _inner} when inner_name == "search_tools" or inner_name == "invoke_tool" ->
+        meta_error(id, :invoke_tool_cannot_call_meta_tool)
+
+      {inner_name, inner_args} ->
+        call_tool(id, %{"name" => inner_name, "arguments" => inner_args}, opts)
+    end
+  end
+
   def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     default_tmux_session = default_tmux_session(opts)
@@ -157,6 +194,15 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
   def call_tool(id, _params, _opts) do
     MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
+  end
+
+  defp meta_error(id, reason) do
+    err = MCPError.tool_result(reason)
+
+    MCPEnvelope.result(id, %{
+      err
+      | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
+    })
   end
 
   defp default_tmux_session(opts) do
