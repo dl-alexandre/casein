@@ -71,6 +71,35 @@ defmodule DevIDE.Previews.FileServerTest do
     FileServer.stop(workspace)
   end
 
+  test "serves identity even when the client offers gzip (proxy forwards bytes verbatim)" do
+    {ws_root, workspace} = seed_workspace!()
+    svg = ~s(<svg xmlns="http://www.w3.org/2000/svg"><text>#219</text></svg>)
+    File.write!(Path.join(ws_root, "pic.svg"), svg)
+
+    assert {:ok, port} = FileServer.ensure_started(workspace)
+
+    # A browser sends `Accept-Encoding: gzip`. If Bandit compressed, the preview
+    # proxy (decode_body: false) would relay gzip bytes the iframe parses as
+    # text — rendering the SVG as an "Encoding error" / binary garbage. `raw:
+    # true` keeps Req from decompressing, so we see exactly what the proxy would.
+    resp =
+      Req.get!("http://127.0.0.1:#{port}/pic.svg",
+        retry: false,
+        receive_timeout: 2_000,
+        raw: true,
+        headers: [{"accept-encoding", "gzip, deflate, br"}]
+      )
+
+    assert resp.status == 200
+    assert header(resp, "content-encoding") in [nil, "identity"]
+    # Not a gzip stream (magic 0x1f 0x8b) — the real file bytes travel through.
+    refute match?(<<0x1F, 0x8B, _::binary>>, resp.body)
+    assert resp.body == svg
+    assert header(resp, "content-type") == "image/svg+xml"
+
+    FileServer.stop(workspace)
+  end
+
   test "path traversal and symlink escape are refused with 404" do
     {ws_root, workspace} = seed_workspace!()
     File.write!(Path.join(ws_root, "ok.txt"), "inside")

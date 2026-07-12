@@ -213,7 +213,14 @@ defmodule DevIDE.Previews.FileServer do
            scheme: :http,
            ip: {127, 0, 0, 1},
            port: 0,
-           startup_log: false
+           startup_log: false,
+           # Serve identity, never gzip/deflate. The preview proxy fetches with
+           # `decode_body: false` and forwards the body verbatim; if Bandit
+           # compressed under the browser's `Accept-Encoding`, the proxy would
+           # relay gzip bytes that the iframe then parses as text — rendering an
+           # SVG/HTML file as an "Encoding error" / binary garbage. These files
+           # are small and travel one loopback hop, so compression buys nothing.
+           http_options: [compress: false]
          ) do
       {:ok, pid} ->
         case ThousandIsland.listener_info(pid) do
