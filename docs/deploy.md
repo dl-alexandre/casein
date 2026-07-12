@@ -118,7 +118,8 @@ docker build -t dev_ide:latest .
 
 The build is a two-stage Dockerfile:
 
-- **builder** (`hexpm/elixir:1.18.4-erlang-27.2-debian-bookworm-...-slim`)
+- **builder** (`hexpm/elixir:1.20.0-erlang-28.5-debian-bookworm-...-slim`;
+  versions are `ARG`s at the top of the Dockerfile)
   pulls deps, compiles assets and Elixir code, builds the erlexec port
   driver, and runs `mix release dev_ide`.
 - **runtime** (`debian:bookworm-...-slim`) installs `tmux`, `openssl`,
@@ -224,6 +225,33 @@ non-prod. Production observability — Prometheus exporter, structured
 log shipping, error-tracking — is a separate work item and not part
 of this campaign. Use the audit log (`/api/workspaces/:id/audit`) as
 the operational ground truth in the meantime.
+
+## macOS (Darwin) native builds
+
+A release can be built and run natively on macOS with
+`MIX_ENV=prod DEV_IDE_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
+(toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
+handled by the build itself:
+
+- **Case-insensitive APFS beam collisions.** `DevIde`/`DevIDE` and
+  `Mix.Tasks.DevIde`/`Mix.Tasks.Devide` are compile-time-only Boundary
+  roots whose `.beam` filenames collide on APFS/NTFS; the
+  `prune_case_colliding_modules` release step (mix.exs) drops them from
+  every release and fails the build if any *other* case collision
+  appears. Without the prune, embedded-mode boot dies with
+  `:load_failed`.
+- **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
+  (`Code Signature Invalid`) unless it is ad-hoc re-signed after
+  download; the `dev_ide.release.lan` alias does this automatically
+  (`resign_bun_binaries` in mix.exs).
+
+Run the release directly (`bin/migrate`, `bin/dev_ide daemon`) with an
+env file — `bin/devide lan install` manages systemd units and is
+Linux-only. After `bin/dev_ide stop`, wait for epmd to drop the
+`dev_ide` name before starting again or the new node fails with "name
+in use". Note the same collision still makes the Boundary compiler
+flaky in *dev* on macOS (occasional spurious `unknown boundary`
+warnings); the durable fix is renaming one module of each pair.
 
 ## What this deploy doc deliberately does not address
 

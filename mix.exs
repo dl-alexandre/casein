@@ -27,6 +27,7 @@ defmodule DevIde.MixProject do
           applications: [runtime_tools: :permanent],
           steps: [
             &ensure_static_assets/1,
+            &prune_case_colliding_modules/1,
             :assemble,
             &write_release_metadata/1,
             &copy_release_docs/1
@@ -169,6 +170,8 @@ defmodule DevIde.MixProject do
         "compile",
         "assets.npm",
         "preview.npm",
+        "tailwind.install --if-missing",
+        &resign_bun_binaries/1,
         "assets.deploy",
         "release dev_ide --overwrite"
       ],
@@ -219,6 +222,110 @@ defmodule DevIde.MixProject do
     end
 
     release
+  end
+
+  # APFS/NTFS are case-insensitive: two modules whose names differ only by
+  # case compile to `.beam` filenames that overwrite each other, so a release
+  # unpacked (or built) there loses one module of each pair and embedded-mode
+  # boot dies with :load_failed. Our four known pairs are pure compile-time
+  # Boundary roots with no runtime role, so they are dropped from the release;
+  # any other collision — ours or a dep's — fails the build loudly.
+  @release_prunable_modules [DevIde, DevIDE, Mix.Tasks.DevIde, Mix.Tasks.Devide]
+
+  defp prune_case_colliding_modules(release) do
+    prunable = MapSet.new(@release_prunable_modules)
+    app_file = Path.join(Mix.Project.build_path(), "lib/dev_ide/ebin/dev_ide.app")
+    {:ok, [{:application, :dev_ide, props}]} = :file.consult(String.to_charlist(app_file))
+
+    modules = Keyword.get(props, :modules, [])
+    pruned_props = Keyword.put(props, :modules, Enum.reject(modules, &(&1 in prunable)))
+    File.write!(app_file, :io_lib.format("~p.~n", [{:application, :dev_ide, pruned_props}]))
+
+    Enum.each(prunable, fn mod ->
+      # On a case-insensitive filesystem both variants resolve to the one
+      # surviving file, so removal is total no matter which casing won.
+      File.rm(Path.join(Path.dirname(app_file), "#{mod}.beam"))
+    end)
+
+    leftover =
+      Mix.Project.build_path()
+      |> Path.join("lib/*/ebin")
+      |> Path.wildcard()
+      |> Enum.flat_map(&case_colliding_beams/1)
+
+    if leftover != [] do
+      Mix.raise("""
+      modules whose names differ only by case cannot ship in a release:
+      their .beam files overwrite each other on case-insensitive filesystems
+      (macOS APFS, Windows NTFS) and boot fails with :load_failed.
+
+      #{Enum.map_join(leftover, "\n", &"  - #{&1}")}
+
+      Rename one module of each pair, or — if a module is compile-time-only —
+      add it to @release_prunable_modules in mix.exs.
+      """)
+    end
+
+    release
+  end
+
+  # Two detection modes, because the failure looks different per filesystem:
+  # on case-sensitive filesystems both beams exist (duplicate downcased
+  # filenames); on case-insensitive ones a single file survives whose embedded
+  # module name may differ from its filename.
+  defp case_colliding_beams(ebin_dir) do
+    beams = Path.wildcard(Path.join(ebin_dir, "*.beam"))
+
+    duplicates =
+      beams
+      |> Enum.group_by(&String.downcase(Path.basename(&1)))
+      |> Enum.filter(fn {_key, files} -> length(files) > 1 end)
+      |> Enum.map(fn {_key, files} ->
+        "colliding filenames: #{Enum.map_join(files, ", ", &Path.basename/1)}"
+      end)
+
+    mismatches =
+      Enum.flat_map(beams, fn beam ->
+        expected = Path.basename(beam, ".beam")
+
+        case :beam_lib.info(String.to_charlist(beam)) do
+          info when is_list(info) ->
+            actual = info |> Keyword.fetch!(:module) |> Atom.to_string()
+
+            if actual == expected do
+              []
+            else
+              ["#{Path.basename(beam)} contains module #{actual} (case collision)"]
+            end
+
+          _ ->
+            []
+        end
+      end)
+
+    duplicates ++ mismatches
+  end
+
+  # Tailwind v4's standalone CLI is a Bun-compiled binary; Darwin 27+ kills it
+  # with SIGKILL (Code Signature Invalid) when the embedded __BUN segment fails
+  # strict page validation. An ad-hoc re-sign after download makes it loadable.
+  defp resign_bun_binaries(_args) do
+    with {:unix, :darwin} <- :os.type() do
+      Mix.Project.build_path()
+      |> Path.dirname()
+      |> Path.join("tailwind-*")
+      |> Path.wildcard()
+      |> Enum.each(fn bin ->
+        {output, status} =
+          System.cmd("codesign", ["--force", "--sign", "-", bin], stderr_to_stdout: true)
+
+        if status != 0 do
+          Mix.raise("codesign of #{bin} failed (#{status}):\n#{output}")
+        end
+      end)
+    end
+
+    :ok
   end
 
   defp write_release_metadata(release) do
