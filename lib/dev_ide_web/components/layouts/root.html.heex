@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html
+  lang="en"
+  data-theme={if Application.get_env(:dev_ide, :desktop_mode, false), do: "dark"}
+  data-default-theme={if Application.get_env(:dev_ide, :desktop_mode, false), do: "dark", else: "system"}
+>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -34,7 +38,7 @@
           }
         };
         if (!document.documentElement.hasAttribute("data-theme")) {
-          setTheme(localStorage.getItem("phx:theme") || "system");
+          setTheme(localStorage.getItem("phx:theme") || document.documentElement.dataset.defaultTheme || "system");
         }
         window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
         

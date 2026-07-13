@@ -1939,12 +1939,68 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp maybe_subscribe_terminal_infrastructure(socket) do
     if socket.assigns[:desktop_terminal?] do
-      assign(socket, :tmux_mutations_enabled?, false)
+      seed_desktop_cockpit_state(socket)
     else
       socket
       |> TerminalState.subscribe_tmux_topology()
       |> TerminalState.subscribe_session_tabs()
     end
+  end
+
+  defp seed_desktop_cockpit_state(socket) do
+    cwd = workspace_cwd(socket)
+    pane_id = "%desktop"
+    window_id = "@desktop"
+
+    pane = %{
+      id: pane_id,
+      window_id: window_id,
+      index: 0,
+      active: true,
+      left: 0,
+      top: 0,
+      width: 120,
+      height: 40,
+      current_command: "powershell",
+      current_path: cwd,
+      role: "operator",
+      activity: 0,
+      activity_flag: false,
+      bell: false,
+      unseen_changes: false
+    }
+
+    window = %{
+      id: window_id,
+      index: 0,
+      name: "PowerShell",
+      manual_name: true,
+      active: true,
+      panes: 1,
+      current_command: "powershell",
+      activity: 0,
+      pane_list: [pane]
+    }
+
+    session_info =
+      socket.assigns.workspace.id
+      |> Terminals.new_shell(socket.assigns.terminal_sid,
+        metadata: %{cwd: cwd, platform: "windows", shell: "PowerShell"}
+      )
+      |> Map.put(:tmux_session, socket.assigns.tmux_session)
+
+    socket
+    |> assign(:tmux_mutations_enabled?, false)
+    |> assign(:tmux_windows, [window])
+    |> assign(:tmux_panes, [pane])
+    |> assign(:tmux_active_window_id, window_id)
+    |> assign(:tmux_active_pane_id, pane_id)
+    |> assign(:terminal_surface_pane_id, pane_id)
+    |> assign(:ui_highlight_pane_id, pane_id)
+    |> assign(:tmux_topology_version, 1)
+    |> assign(:tmux_topology_structure_version, 1)
+    |> TerminalState.assign_tmux_window_tabs()
+    |> TerminalState.assign_session_tabs([session_info])
   end
 
   defp attach_desktop_terminal(socket) do
