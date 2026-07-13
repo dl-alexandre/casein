@@ -152,6 +152,12 @@ defmodule DevIdeWeb.Router do
     get "/pair/:workspace_id", PairingController, :show
   end
 
+  scope "/", DevIdeWeb do
+    # Deliberately unauthenticated, Accept-header agnostic, and independent of
+    # devbox deploy checks. Platforms need a status code, not infra details.
+    get "/healthz", HealthController, :show
+  end
+
   scope "/preview-proxy", DevIdeWeb do
     pipe_through :preview_proxy
 
