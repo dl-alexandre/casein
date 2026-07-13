@@ -29,6 +29,7 @@ defmodule DevIde.MixProject do
             &ensure_static_assets/1,
             &prune_case_colliding_modules/1,
             :assemble,
+            &prune_duplicate_exec_ports/1,
             &write_release_metadata/1,
             &copy_release_docs/1
           ]
@@ -326,6 +327,27 @@ defmodule DevIde.MixProject do
     end
 
     :ok
+  end
+
+  # erlexec resolves its port binary by SUBSTRING-matching priv/*/exec-port
+  # paths against :erlang.system_info(:system_architecture). When both a bare
+  # arch dir (aarch64-apple-darwin) and a uname-versioned sibling
+  # (aarch64-apple-darwin25.4.0) ship — deps carrying one, a local rebuild
+  # adding the other — both contain the bare arch as a substring, erlexec's
+  # exactly-one-match check fails, and boot dies with
+  # {application_start_failure, :erlexec, ...}. Ship only the newest port.
+  defp prune_duplicate_exec_ports(release) do
+    ports =
+      release.path
+      |> Path.join("lib/erlexec-*/priv/*/exec-port")
+      |> Path.wildcard()
+
+    with [_, _ | _] <- ports do
+      keep = Enum.max_by(ports, &File.stat!(&1).mtime)
+      for port <- ports, port != keep, do: File.rm_rf!(Path.dirname(port))
+    end
+
+    release
   end
 
   defp write_release_metadata(release) do

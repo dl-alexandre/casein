@@ -44,7 +44,7 @@ defmodule DevIde.Application do
         PreviewCtl.Playwright.Bridge,
         DevIde.Supervision.Deployment,
         DevIdeWeb.Endpoint
-      ] ++ preview_tidewave_listener()
+      ] ++ preview_tidewave_listener() ++ desktop_status()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -119,6 +119,19 @@ defmodule DevIde.Application do
       :shared_write_guard,
       {DevIDE.Deployment.Drain, :guard_shared_write}
     )
+  end
+
+  # Publishes runtime.json for the desktop host once the endpoint is bound
+  # (docs/desktop/platform_architecture.md, "Status contract"). Ordered after
+  # DevIdeWeb.Endpoint so server_info/1 reports the real port — desktop
+  # requests PORT=0. The resolver is injected here because the DevIDE domain
+  # boundary cannot reference DevIdeWeb.
+  defp desktop_status do
+    if desktop_mode?() do
+      [{DevIDE.Desktop.Status, port_resolver: fn -> DevIdeWeb.Endpoint.server_info(:http) end}]
+    else
+      []
+    end
   end
 
   defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)

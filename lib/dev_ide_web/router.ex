@@ -152,6 +152,20 @@ defmodule DevIdeWeb.Router do
     get "/pair/:workspace_id", PairingController, :show
   end
 
+  # Loopback readiness probe for the desktop host. Deliberately
+  # unauthenticated: the desktop profile binds loopback-only and the host
+  # polls before any session exists; outside the desktop profile the
+  # controller answers 404.
+  pipeline :desktop_health do
+    plug :accepts, ["json"]
+  end
+
+  scope "/desktop", DevIdeWeb do
+    pipe_through :desktop_health
+
+    get "/health", DesktopHealthController, :show
+  end
+
   scope "/preview-proxy", DevIdeWeb do
     pipe_through :preview_proxy
 
