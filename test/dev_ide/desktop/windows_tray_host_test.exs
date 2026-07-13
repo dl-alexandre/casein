@@ -10,6 +10,7 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "System.Windows.Forms"
     assert script =~ "Windows.Forms.NotifyIcon"
     assert script =~ "http://127.0.0.1:$Port/healthz"
+    assert script =~ "http://127.0.0.1:$script:Port/desktop-terminal"
     assert script =~ "'DEV_IDE_PROFILE' = 'desktop'"
     assert script =~ "'DEV_IDE_REPO_ADAPTER' = 'sqlite'"
     assert script =~ "'DEV_IDE_API_TOKEN' = $apiToken"

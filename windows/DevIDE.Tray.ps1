@@ -295,7 +295,7 @@ function Start-DevIDETray {
 
     $open = {
         if (Test-DevIDEReady $script:Port) {
-            Start-Process "http://127.0.0.1:$script:Port/"
+            Start-Process "http://127.0.0.1:$script:Port/desktop-terminal"
         } else {
             $tray.ShowBalloonTip(3000, 'DevIDE', 'DevIDE is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
         }

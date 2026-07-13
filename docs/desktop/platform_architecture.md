@@ -250,6 +250,9 @@ Windows Forms `NotifyIcon` API, starts the packaged OTP release without a consol
 window, and keeps the Phoenix cockpit on a loopback-only port. Its menu exposes
 open, restart, logs, launch-at-sign-in, and quit actions. Double-clicking the icon
 opens the cockpit in the user's default browser.
+For the first Windows vertical slice, the launch target is `/desktop-terminal`;
+the normal `/` workspace cockpit still depends on terminal seams that are being
+ported away from tmux.
 
 The host persists only local runtime state under `%LOCALAPPDATA%\DevIDE`:
 
