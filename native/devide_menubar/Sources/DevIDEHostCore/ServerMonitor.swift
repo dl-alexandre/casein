@@ -22,12 +22,15 @@ public final class ServerMonitor {
         case unhealthy
         case stopping
 
+        /// Brand glyph is `greaterthanorequalto.square` — filled while the
+        /// server is running, outline while stopped. Transitions and error
+        /// states keep distinct shapes so they read at menubar size.
         public var symbolName: String {
             switch self {
-            case .noRelease: "questionmark.circle"
-            case .stopped: "stop.circle"
-            case .starting, .stopping: "hourglass.circle"
-            case .ready: "terminal.fill"
+            case .noRelease: "questionmark.square"
+            case .stopped: "greaterthanorequalto.square"
+            case .starting, .stopping: "hourglass"
+            case .ready: "greaterthanorequalto.square.fill"
             case .unhealthy: "exclamationmark.triangle"
             }
         }
