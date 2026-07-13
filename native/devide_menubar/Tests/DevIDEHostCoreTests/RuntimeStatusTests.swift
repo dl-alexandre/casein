@@ -106,6 +106,51 @@ private func temporaryFile(contents: String?) throws -> URL {
     }
 }
 
+@Suite struct RestartBackoffTests {
+    @Test func escalatesAndCaps() {
+        var backoff = RestartBackoff()
+        let clock = ContinuousClock()
+        let t0 = clock.now
+
+        #expect(backoff.nextDelay(now: t0) == .seconds(5))
+        #expect(backoff.nextDelay(now: t0 + .seconds(6)) == .seconds(10))
+        #expect(backoff.nextDelay(now: t0 + .seconds(20)) == .seconds(30))
+        #expect(backoff.nextDelay(now: t0 + .seconds(60)) == .seconds(60))
+        // Capped: further crashes stay at the ceiling.
+        #expect(backoff.nextDelay(now: t0 + .seconds(110)) == .seconds(60))
+    }
+
+    @Test func quietPeriodResetsTheLadder() {
+        var backoff = RestartBackoff()
+        let clock = ContinuousClock()
+        let t0 = clock.now
+
+        _ = backoff.nextDelay(now: t0)
+        _ = backoff.nextDelay(now: t0 + .seconds(10))
+        #expect(backoff.consecutiveCrashes == 2)
+
+        // 2+ minutes of stability -> next crash starts over at 5s.
+        #expect(backoff.nextDelay(now: t0 + .seconds(200)) == .seconds(5))
+    }
+
+    @Test func manualResetStartsOver() {
+        var backoff = RestartBackoff()
+        _ = backoff.nextDelay()
+        _ = backoff.nextDelay()
+        backoff.reset()
+        #expect(backoff.consecutiveCrashes == 0)
+        #expect(backoff.nextDelay() == .seconds(5))
+    }
+}
+
+@Suite struct LoginItemTests {
+    @Test func notBundledUnderTheTestRunner() {
+        // The xctest bundle is not an .app; the toggle must stay hidden in
+        // this context rather than offering a register() that throws.
+        #expect(!LoginItem.isBundled)
+    }
+}
+
 @Suite struct HostPathsTests {
     private func freshDefaults() throws -> UserDefaults {
         let suite = "devide-menubar-tests-\(UUID().uuidString)"

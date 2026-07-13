@@ -13,12 +13,17 @@ public actor ReleaseController {
 
     /// Distinct from the default `dev_ide` so a stray dev node or an older
     /// daemon on this machine can't collide with the hosted one.
-    public static let releaseNode = "devide_desktop"
+    public static let defaultReleaseNode = "devide_desktop"
 
     private let paths: HostPaths
+    private let releaseNode: String
 
-    public init(paths: HostPaths) {
+    /// `releaseNode` is injectable so parallel test suites (or a second
+    /// host instance) can boot isolated nodes; the app always uses the
+    /// default.
+    public init(paths: HostPaths, releaseNode: String = ReleaseController.defaultReleaseNode) {
         self.paths = paths
+        self.releaseNode = releaseNode
     }
 
     public struct CommandError: Error, CustomStringConvertible {
@@ -78,7 +83,7 @@ public actor ReleaseController {
         guard let output = try? await run(epmd, ["-names"], environment: [:]) else {
             return false
         }
-        return output.contains("name \(Self.releaseNode) ")
+        return output.contains("name \(releaseNode) ")
     }
 
     private func epmdBinary() -> URL? {
@@ -114,7 +119,7 @@ public actor ReleaseController {
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
         environment["DEV_IDE_API_TOKEN"] = secrets.apiToken
         environment["PHX_SERVER"] = "true"
-        environment["RELEASE_NODE"] = Self.releaseNode
+        environment["RELEASE_NODE"] = releaseNode
         return environment
     }
 

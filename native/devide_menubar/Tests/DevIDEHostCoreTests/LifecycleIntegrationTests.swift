@@ -71,7 +71,11 @@ struct LifecycleIntegrationTests {
     @Test func fullStartStopRestartLoop() async throws {
         let paths = try makePaths()
         defer { try? FileManager.default.removeItem(at: paths.dataDir) }
-        let controller = ReleaseController(paths: paths)
+        // Unique node name: the crash-recovery suite may be booting its own
+        // release concurrently.
+        let controller = ReleaseController(
+            paths: paths,
+            releaseNode: "devide_lifecycle_e2e_\(UInt32.random(in: 0..<UInt32.max))")
 
         // Start: migrate + daemon; the contract file appears once the
         // endpoint is bound (~4s in the phase-1 smoke).
