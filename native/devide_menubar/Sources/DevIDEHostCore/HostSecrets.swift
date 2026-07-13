@@ -25,8 +25,8 @@ public struct HostSecrets: Sendable, Equatable, Codable {
         }
 
         let fresh = HostSecrets(
-            secretKeyBase: randomToken(length: 64),
-            apiToken: randomToken(length: 40)
+            secretKeyBase: randomToken(bytes: 48),
+            apiToken: randomToken(bytes: 32)
         )
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -40,11 +40,14 @@ public struct HostSecrets: Sendable, Equatable, Codable {
         return fresh
     }
 
-    static func randomToken(length: Int) -> String {
-        let alphabet = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-        var bytes = [UInt8](repeating: 0, count: length)
-        let status = SecRandomCopyBytes(kSecRandomDefault, length, &bytes)
+    /// base64url keeps full entropy (no modulo bias) and stays env-var safe.
+    static func randomToken(bytes count: Int) -> String {
+        var bytes = [UInt8](repeating: 0, count: count)
+        let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
         precondition(status == errSecSuccess, "SecRandomCopyBytes failed: \(status)")
-        return String(bytes.map { alphabet[Int($0) % alphabet.count] })
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }

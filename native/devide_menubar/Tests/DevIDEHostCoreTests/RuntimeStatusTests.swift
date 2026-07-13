@@ -92,8 +92,10 @@ private func temporaryFile(contents: String?) throws -> URL {
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
         let first = try HostSecrets.loadOrCreate(at: url)
+        // base64url: 48 bytes -> 64 chars, 32 bytes -> 43 chars (padding stripped)
         #expect(first.secretKeyBase.count == 64)
-        #expect(first.apiToken.count == 40)
+        #expect(first.apiToken.count == 43)
+        #expect(!first.apiToken.contains("+") && !first.apiToken.contains("/"))
 
         let permissions = try FileManager.default.attributesOfItem(atPath: url.path)[
             .posixPermissions] as? Int
@@ -105,16 +107,25 @@ private func temporaryFile(contents: String?) throws -> URL {
 }
 
 @Suite struct HostPathsTests {
-    @Test func requiresAReleaseRoot() {
-        #expect(HostPaths.detect(environment: [:]) == nil)
+    private func freshDefaults() throws -> UserDefaults {
+        let suite = "devide-menubar-tests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        return defaults
+    }
+
+    @Test func requiresAReleaseRoot() throws {
+        #expect(HostPaths.detect(environment: [:], defaults: try freshDefaults()) == nil)
     }
 
     @Test func derivesContractPathsFromEnvironment() throws {
         let paths = try #require(
-            HostPaths.detect(environment: [
-                "DEVIDE_RELEASE_ROOT": "/opt/devide/release",
-                "DEV_IDE_DESKTOP_DATA_DIR": "/tmp/devide-data",
-            ]))
+            HostPaths.detect(
+                environment: [
+                    "DEVIDE_RELEASE_ROOT": "/opt/devide/release",
+                    "DEV_IDE_DESKTOP_DATA_DIR": "/tmp/devide-data",
+                ],
+                defaults: try freshDefaults()))
 
         #expect(paths.statusFile.path == "/tmp/devide-data/runtime.json")
         #expect(paths.devIdeBinary.path == "/opt/devide/release/bin/dev_ide")
@@ -124,8 +135,51 @@ private func temporaryFile(contents: String?) throws -> URL {
 
     @Test func defaultsDataDirToApplicationSupport() throws {
         let paths = try #require(
-            HostPaths.detect(environment: ["DEVIDE_RELEASE_ROOT": "/opt/devide/release"]))
+            HostPaths.detect(
+                environment: ["DEVIDE_RELEASE_ROOT": "/opt/devide/release"],
+                defaults: try freshDefaults()))
 
         #expect(paths.dataDir.path.hasSuffix("Library/Application Support/DevIDE"))
+    }
+
+    @Test func environmentOutranksPersistedChoice() throws {
+        let defaults = try freshDefaults()
+        defaults.set("/persisted/release", forKey: HostPaths.releaseRootDefaultsKey)
+
+        let persisted = try #require(HostPaths.detect(environment: [:], defaults: defaults))
+        #expect(persisted.releaseRoot.path == "/persisted/release")
+
+        let overridden = try #require(
+            HostPaths.detect(
+                environment: ["DEVIDE_RELEASE_ROOT": "/env/release"], defaults: defaults))
+        #expect(overridden.releaseRoot.path == "/env/release")
+    }
+
+    @Test func chooseRejectsDirectoriesWithoutARelease() throws {
+        let defaults = try freshDefaults()
+        let dir = FileManager.default.temporaryDirectory
+            .appending(path: "not-a-release-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        #expect(HostPaths.choose(releaseRoot: dir, defaults: defaults) == nil)
+        #expect(defaults.string(forKey: HostPaths.releaseRootDefaultsKey) == nil)
+    }
+
+    @Test func choosePersistsAUsableRelease() throws {
+        let defaults = try freshDefaults()
+        let dir = FileManager.default.temporaryDirectory
+            .appending(path: "fake-release-\(UUID().uuidString)")
+        let bin = dir.appending(path: "bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let devIde = bin.appending(path: "dev_ide")
+        try "#!/bin/sh\n".write(to: devIde, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: devIde.path)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let paths = try #require(HostPaths.choose(releaseRoot: dir, defaults: defaults))
+        #expect(paths.releaseRoot.path == dir.standardizedFileURL.path)
+        #expect(defaults.string(forKey: HostPaths.releaseRootDefaultsKey) != nil)
     }
 }

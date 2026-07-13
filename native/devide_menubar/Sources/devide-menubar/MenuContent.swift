@@ -59,7 +59,18 @@ struct MenuContent: View {
         case .starting, .stopping:
             Text(monitor.state.label)
         case .noRelease:
-            Text("Set DEVIDE_RELEASE_ROOT and relaunch")
+            Button("Choose Release…") { chooseRelease() }
+        }
+    }
+
+    private func chooseRelease() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.message = "Select a DevIDE release directory (contains bin/dev_ide)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let paths = HostPaths.choose(releaseRoot: url) {
+            monitor.reconfigure(paths: paths)
         }
     }
 

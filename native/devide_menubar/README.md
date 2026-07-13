@@ -21,18 +21,29 @@ product state.
 ## Run
 
 Needs a desktop-capable release (SQLite-compiled; see docs/deploy.md macOS
-section) and Swift 6+:
+section). Use `/usr/bin/swift` — it dispatches through xcrun to the
+xcode-select'd toolchain, sidestepping broken package-manager Swift shims
+earlier on PATH:
 
 ```sh
 cd native/devide_menubar
-DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide swift run
+DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide /usr/bin/swift run
 ```
 
-Optional: `DEV_IDE_DESKTOP_DATA_DIR` overrides the default
-`~/Library/Application Support/DevIDE`. The host generates and persists boot
-secrets on first start (`host-secrets.json` in the data dir) and runs the
-release under `RELEASE_NODE=devide_desktop` so it cannot collide with stray
-`dev_ide` nodes.
+Or bundle a real `.app` (LSUIElement, ATS local-networking exception, ad-hoc
+signed — unsigned binaries get SIGKILLed on Apple silicon):
+
+```sh
+./scripts/bundle.sh          # -> build/DevIDE MenuBar.app
+open "build/DevIDE MenuBar.app"
+```
+
+Release discovery: `DEVIDE_RELEASE_ROOT` wins; otherwise the persisted
+"Choose Release…" pick (UserDefaults). `DEV_IDE_DESKTOP_DATA_DIR` overrides
+the default `~/Library/Application Support/DevIDE`. The host generates and
+persists boot secrets on first start (`host-secrets.json` in the data dir)
+and runs the release under `RELEASE_NODE=devide_desktop` so it cannot
+collide with stray `dev_ide` nodes.
 
 ## Test
 
@@ -49,8 +60,8 @@ Server Running.
 
 ## Not in the spike (phase 3+)
 
-- `.app` packaging with `LSUIElement`, codesigning, notarization
-- Bundled/installed release instead of `DEVIDE_RELEASE_ROOT`
+- Real signing identity + notarization (`bundle.sh` signs ad-hoc)
+- Bundled/installed release instead of `DEVIDE_RELEASE_ROOT`/chooser
 - Start at Login (`SMAppService`), updater (Sparkle or Tauri parity)
 - Recent-workspace deep links, MCP/pairing helpers
 - Keychain-backed secrets

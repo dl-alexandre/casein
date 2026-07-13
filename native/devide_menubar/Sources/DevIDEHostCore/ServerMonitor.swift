@@ -49,14 +49,27 @@ public final class ServerMonitor {
     public private(set) var health: HealthReport?
     public private(set) var lastError: String?
 
-    public let paths: HostPaths?
-    private let controller: ReleaseController?
+    public private(set) var paths: HostPaths?
+    private var controller: ReleaseController?
     private var pollTask: Task<Void, Never>?
 
     public init(paths: HostPaths? = HostPaths.detect()) {
         self.paths = paths
         self.controller = paths.map { ReleaseController(paths: $0) }
         self.state = paths == nil ? .noRelease : .stopped
+    }
+
+    /// Adopt an operator-chosen release ("Choose Release…") without a
+    /// relaunch. No-op while a lifecycle transition is in flight.
+    public func reconfigure(paths newPaths: HostPaths) {
+        guard state != .starting, state != .stopping else { return }
+        paths = newPaths
+        controller = ReleaseController(paths: newPaths)
+        status = nil
+        health = nil
+        lastError = nil
+        state = .stopped
+        startPolling()
     }
 
     public func startPolling(every interval: Duration = .seconds(2)) {
