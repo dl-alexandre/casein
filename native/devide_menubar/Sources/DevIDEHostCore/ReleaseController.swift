@@ -94,6 +94,16 @@ public actor ReleaseController {
     private func releaseEnvironment() throws -> [String: String] {
         let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile)
         var environment = ProcessInfo.processInfo.environment
+        // The host's own environment must not reconfigure the release: an
+        // inherited PORT would defeat the ephemeral-port design, a stray
+        // PHX_IP would fail the loopback guard, and DATABASE_PATH or a
+        // status-path override would detach the contract from the data dir.
+        for key in [
+            "PORT", "PHX_IP", "PHX_HOST", "DATABASE_PATH", "SQLITE_DATABASE_PATH",
+            "DEV_IDE_DESKTOP_STATUS_PATH", "RELEASE_COOKIE",
+        ] {
+            environment.removeValue(forKey: key)
+        }
         environment["DEV_IDE_PROFILE"] = "desktop"
         environment["DEV_IDE_DESKTOP_DATA_DIR"] = paths.dataDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
