@@ -110,6 +110,28 @@ docker compose down              # stop + remove containers
 docker compose down --volumes    # also drop the Postgres volume
 ```
 
+### Automated portable-release contract
+
+Run the isolated production-image smoke before changing release, runtime
+configuration, database, terminal, or MCP wiring:
+
+```bash
+bash scripts/portable-release-smoke.sh
+```
+
+The script ignores any checkout-local `.env`, builds the `portable` release
+profile, migrates a disposable PostgreSQL database, and waits on the neutral
+database-aware `/healthz` endpoint. It then exercises the cockpit HTTP surface,
+terminal MCP initialization, an in-image terminal acceptance check, a real
+Phoenix Channel keystroke round-trip, and bearer-gated workspace discovery.
+Everything runs in a uniquely named Compose project and is removed on exit.
+
+The host needs Docker, the Docker Compose plugin, and `curl`; no local
+Elixir/Erlang, Node, or Python installation is used. Set
+`DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS` to extend the default 120-second boot
+wait on slow builders. Set `DEVIDE_PORTABLE_SMOKE_KEEP_IMAGES=1` to retain the
+two built images for debugging.
+
 ## Building the image (without compose)
 
 ```bash

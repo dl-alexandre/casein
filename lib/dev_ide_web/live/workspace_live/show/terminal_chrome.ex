@@ -1670,11 +1670,58 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp session_cwd(_), do: nil
 
-  defp session_branch(%{metadata: metadata}) when is_map(metadata) do
+  @doc "The session's git branch, or `nil` when it has no git context."
+  def session_branch(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :git_branch) || Map.get(metadata, "git_branch")
   end
 
-  defp session_branch(_), do: nil
+  def session_branch(_), do: nil
+
+  @doc "True when the session's cwd lives in a linked git worktree."
+  def session_worktree?(%{metadata: metadata}) when is_map(metadata) do
+    (Map.get(metadata, :git_worktree?) || Map.get(metadata, "git_worktree?")) == true
+  end
+
+  def session_worktree?(_), do: false
+
+  @doc """
+  The anchor repository name for a session. For a linked worktree this is the
+  *main* repo (derived from `git_common_dir`, which points at the primary
+  checkout's `.git`) — the "where you came from" a worktree cwd otherwise
+  hides. For a normal checkout it is the toplevel basename.
+  """
+  def session_repo_label(info) when is_map(info) do
+    worktree_repo_label(info) || toplevel_repo_label(info)
+  end
+
+  def session_repo_label(_), do: nil
+
+  defp worktree_repo_label(info) do
+    common_dir = session_git_common_dir(info)
+
+    if session_worktree?(info) and is_binary(common_dir) and common_dir != "" do
+      # `.../mainrepo/.git` → dirname `.../mainrepo` → basename `mainrepo`.
+      common_dir |> Path.dirname() |> Path.basename() |> blank_repo_to_nil()
+    end
+  end
+
+  defp toplevel_repo_label(info) do
+    case session_git_toplevel(info) do
+      toplevel when is_binary(toplevel) and toplevel != "" -> Path.basename(toplevel)
+      _ -> nil
+    end
+  end
+
+  defp session_git_common_dir(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :git_common_dir) || Map.get(metadata, "git_common_dir")
+  end
+
+  defp session_git_common_dir(_), do: nil
+
+  # A degenerate common-dir (root, ".", or a bare ".git") yields no useful repo
+  # anchor — fall through to the toplevel basename instead of showing junk.
+  defp blank_repo_to_nil(name) when name in ["", ".", "/", ".git"], do: nil
+  defp blank_repo_to_nil(name), do: name
 
   defp session_agent(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :agent) || Map.get(metadata, "agent")

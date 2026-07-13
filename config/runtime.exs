@@ -32,6 +32,7 @@ lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
 release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 desktop_mode? = System.get_env("DEV_IDE_PROFILE") == "desktop"
+portable_mode? = System.get_env("DEV_IDE_PROFILE") == "portable"
 
 # SECURITY: allow a :global orchestrator token to make MCP `tools/call`
 # requests box-wide. Default off — tool execution normally requires a
@@ -85,6 +86,10 @@ if config_env() != :test do
       config :dev_ide, :lan_insecure_http, true
       config :dev_ide, :session_same_site, nil
     end
+  end
+
+  if portable_mode? or lan_mode? do
+    config :dev_ide, deployment_capabilities: []
   end
 
   if desktop_mode? do

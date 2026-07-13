@@ -7,6 +7,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.NavEvents do
   import Phoenix.Component
 
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
 
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     {:noreply, Show.select_tab(socket, tab)}
@@ -22,13 +23,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.NavEvents do
   # session's window list (with a back arrow to the sessions list), falling
   # back to the sessions list when the attached session has no tmux windows.
   def handle_event("mobile_nav:toggle", _params, socket) do
+    opening? = not socket.assigns.mobile_nav_open
     view = mobile_nav_resolved_view(socket, "windows")
 
     {:noreply,
      socket
-     |> update(:mobile_nav_open, &(!&1))
+     |> assign(:mobile_nav_open, opening?)
      |> assign(:mobile_nav_view, view)
-     |> assign(:mobile_nav_focus, view)}
+     |> assign(:mobile_nav_focus, view)
+     |> maybe_prepare_mobile_sessions(opening?)}
   end
 
   # Opened by the Ctrl+B leader shortcut on touch/narrow layouts (see
@@ -41,7 +44,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.NavEvents do
      socket
      |> assign(:mobile_nav_open, true)
      |> assign(:mobile_nav_view, mobile_nav_resolved_view(socket, focus))
-     |> assign(:mobile_nav_focus, focus)}
+     |> assign(:mobile_nav_focus, focus)
+     |> maybe_prepare_mobile_sessions(true)}
   end
 
   # Back arrow (windows → sessions) and the hook's ← hop use this to flip the
@@ -59,6 +63,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.NavEvents do
   def handle_event("mobile_nav:close", _params, socket) do
     {:noreply, assign(socket, :mobile_nav_open, false)}
   end
+
+  # The mobile sheet's "Other workspaces" section reads @sessions_sidebar_tree,
+  # which is otherwise only built when the desktop rail opens. Build it as the
+  # sheet opens so cross-workspace nodes are present; expanding one lazy-loads
+  # its sessions through the shared `sidebar:toggle_workspace` path.
+  defp maybe_prepare_mobile_sessions(socket, true),
+    do: Sidebar.assign_sessions_sidebar_tree(socket)
+
+  defp maybe_prepare_mobile_sessions(socket, false), do: socket
 
   defp mobile_nav_active_tab(assigns) do
     Enum.find(assigns[:session_tabs] || [], &(&1.id == assigns[:terminal_sid]))

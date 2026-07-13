@@ -165,7 +165,14 @@ run_seed() {
     [ -z "$retry_passed" ] && retry_passed="$(grep -oE '[0-9]+ tests?,' "$retry_out" | tail -1 | grep -oE '[0-9]+' || true)"
     rm -f "$retry_out"
 
-    if [ "$retry_exit" -eq 0 ] && [ "${retry_failed:-1}" -eq 0 ] && [ "${retry_passed:-0}" -gt 0 ]; then
+    # `mix test --failed` exits 0 IFF every reran test passed, so retry_exit is
+    # the authoritative flake-cleared signal. Do NOT also require a parsed
+    # retry_failed==0: the compressed "Result: N passed" output (rtk mix filter)
+    # carries no "failures" line, so retry_failed comes back empty and a
+    # `${retry_failed:-1}` default of 1 would red a genuinely-cleared flake
+    # (exactly what stranded #252's known-flaky WorkspaceControllerTest). Keep
+    # retry_passed>0 only to reject a vacuous exit-0 that ran no tests.
+    if [ "$retry_exit" -eq 0 ] && [ "${retry_passed:-0}" -gt 0 ]; then
       echo "test-cover-gate: FLAKE CLEARED — the ${failed} failure(s) passed on a targeted --failed rerun (seed=$((seed + 1))). Treating the run as green; stabilize the test(s) listed above." >&2
     else
       echo "test-cover-gate: seed=${seed} still red after --failed rerun (retry_exit=${retry_exit} failed=${retry_failed:-unknown} passed=${retry_passed:-0}); genuinely failing" >&2

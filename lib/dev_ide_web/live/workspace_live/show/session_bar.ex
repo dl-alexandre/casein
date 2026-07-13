@@ -177,7 +177,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :window, :map, required: true
   attr :preview_id, :string, default: nil
   attr :activity_id, :string, default: nil
-  attr :show_command?, :boolean, default: false
   attr :preview_aria_hidden?, :boolean, default: false
 
   defp window_row_indicators(assigns) do
@@ -203,9 +202,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       title={@window.activity_label}
       aria-label={@window.activity_label}
     ></span>
-    <span :if={@show_command?} class="shrink-0 font-mono text-[10px] text-base-content/45">
-      {@window.command}
-    </span>
     """
   end
 
@@ -307,14 +303,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
             data-active-window={window.active? || nil}
             data-window-leader-key={window_leader_key(@windows, window, tab_idx)}
-            class={[
-              "group relative flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
-              if(window.active?,
-                do: "border-primary bg-base-100 text-base-content shadow-sm",
-                else:
-                  "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
-              )
-            ]}
+            class={
+              [
+                "group relative flex min-w-24 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+                # A lone window has nothing to pick between — cap it so it doesn't
+                # stretch across the whole strip. With 2+, flex-1 fills the row.
+                length(@windows) == 1 && "max-w-64",
+                if(window.active?,
+                  do: "border-primary bg-base-100 text-base-content shadow-sm",
+                  else:
+                    "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
+                )
+              ]
+            }
           >
             <.window_index_badge
               window={window}
@@ -334,7 +335,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 window={window}
                 preview_id={"tmux-window-preview-" <> window.dom_frag}
                 activity_id={"tmux-window-activity-" <> window.dom_frag}
-                show_command?
               />
             </a>
             <%= if @mutations_allowed? do %>
@@ -927,6 +927,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <.icon name="hero-home" class="size-3" />
       </span>
       <span data-picker-label class="truncate font-medium">{@session.label}</span>
+      <.session_anchor_chip tab={@session} />
       <.preview_badge
         count={preview_pane_count(@session.pane_ids, @preview_panes)}
         id={"sidebar-session-preview-" <> @session.dom_id}
@@ -1308,6 +1309,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     "Preview pane running in this #{scope} (#{count})"
   end
 
+  @doc """
+  Branch/worktree anchor chip for a session row. For a worktree it reads
+  "repo⑂branch" — the repo a worktree cwd descends from is otherwise invisible;
+  a plain checkout on a feature branch shows the branch alone. Renders nothing
+  for an uninteresting branch (default branch on the primary checkout).
+  """
+  attr :tab, :map, required: true
+
+  def session_anchor_chip(assigns) do
+    ~H"""
+    <span
+      :if={session_anchor_interesting?(@tab)}
+      class="inline-flex min-w-0 shrink items-center gap-0.5 rounded bg-base-200 px-1 font-mono text-[10px] text-base-content/55"
+      title={session_anchor_title(@tab)}
+    >
+      <.icon name="hero-arrows-right-left" class="size-2.5 shrink-0" />
+      <span
+        :if={Map.get(@tab, :worktree?) and Map.get(@tab, :repo, "") != ""}
+        class="shrink-0 text-base-content/40"
+      >
+        {@tab.repo}⑂
+      </span>
+      <span class="max-w-32 truncate">{branch_short(@tab.branch)}</span>
+    </span>
+    """
+  end
+
+  @doc """
+  Whether a session's branch is worth surfacing as an anchor chip: always for a
+  worktree, otherwise only when the branch isn't the repo's default. Keeps
+  `master`/`main` on a primary checkout from becoming per-row noise.
+  """
+  def session_anchor_interesting?(tab) when is_map(tab) do
+    branch = Map.get(tab, :branch, "")
+
+    is_binary(branch) and branch != "" and
+      (Map.get(tab, :worktree?, false) or not default_branch?(branch))
+  end
+
+  def session_anchor_interesting?(_), do: false
+
+  @doc """
+  The distinguishing tail of a branch name — `agent/grok/fix-thing` → `fix-thing`.
+  The shared `agent/grok/` prefix repeats across worktrees and only steals width;
+  the full name still reaches the hover title via `session_anchor_title/1`.
+  """
+  def branch_short(branch) when is_binary(branch) do
+    case String.split(branch, "/", trim: true) do
+      [] -> branch
+      parts -> List.last(parts)
+    end
+  end
+
+  def branch_short(_), do: ""
+
+  defp default_branch?(branch), do: branch in ~w(main master trunk)
+
+  defp session_anchor_title(%{worktree?: true, repo: repo, branch: branch})
+       when is_binary(repo) and repo != "" do
+    "Worktree of " <> repo <> " · branch " <> branch
+  end
+
+  defp session_anchor_title(%{branch: branch}) when is_binary(branch) and branch != "" do
+    "Branch " <> branch
+  end
+
+  defp session_anchor_title(_), do: nil
+
   # Counts how many of a session/window's panes currently host a live preview
   # by joining its pane ids against the workspace preview registry.
   defp preview_pane_count(pane_ids, preview_panes)
@@ -1336,6 +1405,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp sidebar_session_href(workspace_id, session_id)
        when is_binary(workspace_id) and is_binary(session_id) do
     "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
+  end
+
+  @doc """
+  Relative navigate path for a cross-workspace session row.
+
+  Prefers the session's precomputed `:href` (set for other-workspace summary
+  tabs) and falls back to the `?session=` deep-link. Public so the mobile nav
+  sheet can reuse the exact same target the desktop sidebar navigates to.
+  """
+  @spec cross_workspace_session_path(String.t(), map()) :: String.t()
+  def cross_workspace_session_path(workspace_id, session) when is_map(session) do
+    Map.get(session, :href) || sidebar_session_href(workspace_id, Map.get(session, :id))
   end
 
   defp session_picker_short_label(label) when is_binary(label) do

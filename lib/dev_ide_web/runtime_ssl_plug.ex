@@ -10,6 +10,8 @@ defmodule DevIdeWeb.RuntimeSSLPlug do
 
   def init(opts), do: opts
 
+  def call(%{request_path: "/healthz"} = conn, _opts), do: conn
+
   def call(conn, _opts) do
     if enabled?() do
       @default_options

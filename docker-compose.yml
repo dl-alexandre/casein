@@ -32,8 +32,13 @@ services:
     #   - "5432:5432"
 
   dev_ide:
-    build: .
-    image: dev_ide:latest
+    build:
+      context: .
+      args:
+        # The generic Compose stack is the portable product profile. The
+        # devbox release builder keeps its separate Dockerfile default.
+        DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}
+    image: ${DEV_IDE_IMAGE:-dev_ide:latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,16 +46,17 @@ services:
       PHX_SERVER: "true"
       PHX_HOST: ${PHX_HOST:-localhost}
       PORT: ${PORT:-4000}
+      DEV_IDE_PROFILE: ${DEV_IDE_PROFILE:-portable}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?SECRET_KEY_BASE is required (see .env.example)}
       DEV_IDE_API_TOKEN: ${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN is required (see .env.example)}
       DEV_IDE_WORKSPACES_ROOT: ${DEV_IDE_WORKSPACES_ROOT:-/workspaces}
       DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
     ports:
-      - "${PORT:-4000}:4000"
+      - "127.0.0.1:${DEV_IDE_HOST_PORT:-4000}:${PORT:-4000}"
     volumes:
       # Bind-mount a host directory under which workspaces live.
       # Adjust the host path if your workspaces live elsewhere.
-      - ./workspaces-local:/workspaces
+      - "${DEV_IDE_WORKSPACES_HOST:-./workspaces-local}:${DEV_IDE_WORKSPACES_ROOT:-/workspaces}"
 
 volumes:
   dev_ide_pgdata:
