@@ -1297,6 +1297,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, update(socket, :desktop_terminal_refresh, &(&1 + 1))}
   end
 
+  def handle_info({:terminal_input_refresh, "desktop-workspace-powershell"}, socket) do
+    {:noreply, update(socket, :desktop_terminal_refresh, &(&1 + 1))}
+  end
+
   def handle_info({:desktop_terminal_exit, reason}, socket) do
     {:noreply, assign(socket, :desktop_terminal_status, {:exited, reason})}
   end

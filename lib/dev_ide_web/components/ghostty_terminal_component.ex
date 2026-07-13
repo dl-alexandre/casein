@@ -12,6 +12,8 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   def update(assigns, socket) do
     first_mount? = not Map.has_key?(socket.assigns, :term)
     themes_changed? = Map.get(assigns, :terminal_themes) != socket.assigns[:terminal_themes]
+    force_full_refresh? =
+      Map.get(assigns, :force_full_refresh, socket.assigns[:force_full_refresh]) == true
 
     # A swapped term process (e.g. the pane-history modal reopened on the same
     # pane before its previous worker fully wound down) invalidates every cell
@@ -34,16 +36,22 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       |> assign_new(:terminal_themes, fn -> nil end)
       |> assign_new(:render_authority, fn -> :component end)
       |> assign_new(:read_only, fn -> false end)
+      |> assign_new(:input_refresh_delay, fn -> nil end)
+      |> assign_new(:force_full_refresh, fn -> false end)
 
     socket =
       cond do
         first_mount? or term_changed? or assigns[:refresh] ->
-          socket = if term_changed?, do: assign(socket, :last_render_cells, nil), else: socket
+          socket =
+            if term_changed? or force_full_refresh?,
+              do: assign(socket, :last_render_cells, nil),
+              else: socket
 
           socket
           |> push_terminal_theme()
           |> maybe_push_component_render(
-            force_full?: first_mount? or term_changed? or worker_render_authority?(socket),
+            force_full?:
+              first_mount? or term_changed? or force_full_refresh? or worker_render_authority?(socket),
             reason:
               cond do
                 first_mount? -> :mount
@@ -106,7 +114,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   def handle_event("text", %{"data" => data}, socket) when is_binary(data) do
     if data != "" do
       if socket.assigns.pty do
-        Ghostty.PTY.write(socket.assigns.pty, data)
+        write_data(socket, data)
       else
         Ghostty.LiveTerminal.handle_text(socket.assigns.term, data)
       end
@@ -238,10 +246,19 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   defp write_data(socket, data) do
     if socket.assigns.pty do
       Ghostty.PTY.write(socket.assigns.pty, data)
+      maybe_schedule_input_refresh(socket)
     else
       Ghostty.Terminal.write(socket.assigns.term, data)
     end
   end
+
+  defp maybe_schedule_input_refresh(%{assigns: %{input_refresh_delay: delay, id: id}})
+       when is_integer(delay) and delay >= 0 do
+    Process.send_after(self(), {:terminal_input_refresh, id}, delay)
+    :ok
+  end
+
+  defp maybe_schedule_input_refresh(_socket), do: :ok
 
   # Builds and pushes a frame for input-driven refreshes (key/text/resize/
   # ready/refresh). These are low-frequency, human-paced events, so building

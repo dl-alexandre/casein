@@ -6,8 +6,13 @@ defmodule Ghostty.WindowsPTYTest do
 
     {:ok, pty} = Ghostty.PTY.start_link()
 
+    assert_receive {:data, prompt}, 10_000
+    assert prompt =~ "PS "
+    assert prompt =~ "> "
+
     assert :ok = Ghostty.PTY.write(pty, "Write-Output DEVIDE_WINDOWS_PTY_OK\r\n")
-    assert_receive {:data, output}, 10_000
+    output = receive_until_prompt("")
+    assert output =~ "Write-Output DEVIDE_WINDOWS_PTY_OK"
     assert output =~ "DEVIDE_WINDOWS_PTY_OK"
     assert Process.alive?(pty)
 
@@ -21,5 +26,17 @@ defmodule Ghostty.WindowsPTYTest do
     state = Ghostty.Terminal.render_state(term)
     assert length(state.cells) == 3
     assert state.cells |> Enum.at(1) |> Enum.take(5) |> Enum.map(&elem(&1, 0)) == ~w(w o r l d)
+  end
+
+  defp receive_until_prompt(output) do
+    if String.ends_with?(output, "> ") do
+      output
+    else
+      receive do
+        {:data, data} -> receive_until_prompt(output <> data)
+      after
+        10_000 -> flunk("timed out waiting for the next PowerShell prompt in #{inspect(output)}")
+      end
+    end
   end
 end

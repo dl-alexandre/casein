@@ -128,6 +128,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           fit={true}
           autofocus={true}
           refresh={@refresh}
+          input_refresh_delay={75}
+          force_full_refresh={true}
           terminal_themes={@terminal_themes}
           class="h-full w-full font-mono text-sm"
         />
