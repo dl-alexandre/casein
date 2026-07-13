@@ -51,14 +51,20 @@ collide with stray `dev_ide` nodes.
 swift test
 ```
 
-The self-asserting end-to-end suite (start → ready → health identity →
-graceful stop → epmd drain → restart with a fresh pid, in a throwaway data
-dir) is gated on a real release being available:
+Two self-asserting end-to-end suites (throwaway data dirs, unique
+RELEASE_NODE each so they can boot releases concurrently) are gated on a
+real release being available:
 
 ```sh
 DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
-  /usr/bin/swift test --filter LifecycleIntegration
+  /usr/bin/swift test --filter "LifecycleIntegration|CrashRecovery"
 ```
+
+`LifecycleIntegration`: start → ready → health identity → graceful stop →
+epmd drain → restart with a fresh pid. `CrashRecovery`: SIGKILL the BEAM →
+crash detected → backoff countdown → auto-restart to ready without manual
+action; plus the no-intent case (stale contract found at launch stays
+stopped).
 
 ## Menu (v1)
 
@@ -73,6 +79,9 @@ bundled `.app` only — the registration binds to the bundle's path) · Quit
 - Real signing identity + notarization (`bundle.sh` signs ad-hoc)
 - Bundled/installed release instead of `DEVIDE_RELEASE_ROOT`/chooser
 - Updater (Sparkle or Tauri parity)
+- Auto-restart on sustained `unhealthy` (deliberately manual-only for now:
+  a slow-but-alive node must not be restart-looped; crash auto-restart
+  covers `stale` with 5→10→30→60s backoff and a 2-minute quiet reset)
 - Recent-workspace deep links, MCP/pairing helpers
 - Keychain-backed secrets
 - Crash-restart backoff supervision

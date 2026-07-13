@@ -58,6 +58,12 @@ struct MenuContent: View {
             Button("Stop Server") { monitor.stop() }
         case .starting, .stopping:
             Text(monitor.state.label)
+        case .crashed:
+            if let seconds = monitor.pendingRestartSeconds {
+                Text("Crashed — restarting in \(seconds)s")
+            }
+            Button("Restart Now") { monitor.restart() }
+            Button("Cancel Auto-Restart") { monitor.cancelAutoRestart() }
         case .noRelease:
             Button("Choose Release…") { chooseRelease() }
         }
