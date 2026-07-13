@@ -45,10 +45,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                       (@window_sidebar_open? and @windows_sidebar_tree != []) do %>
                 <%!-- Keep summoned pickers out of the terminal's flex sizing.
                      Changing the terminal viewport retriggers its fit observer and
-                     tmux grid resize; an overlay leaves the grid untouched. --%>
+                     tmux grid resize; an overlay leaves the grid untouched.
+
+                     Both summoned rails share this one click-away scope: clicking
+                     inside either rail is contained (so two-column mode survives a
+                     click between them), while a click in the terminal or header
+                     dismisses the whole picker via sidebar:close. --%>
                 <div
                   id={"terminal-picker-overlay-" <> @workspace.id}
                   data-terminal-picker-overlay="true"
+                  phx-click-away="sidebar:close"
                   class="pointer-coarse:hidden absolute inset-y-0 left-0 z-20 flex max-w-full overflow-hidden shadow-2xl"
                 >
                   <%= if @sessions_sidebar_open? and @sessions_sidebar_tree != [] do %>

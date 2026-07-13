@@ -503,9 +503,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
 
     render_hook(view, "sidebar:close", %{})
     refute has_element?(view, "button[data-shortcut='Ctrl/Cmd + Shift + F']")
+    # No summoned rails → no click-away scope lingering in the DOM.
+    refute has_element?(view, "#terminal-picker-overlay-ws-1")
 
     render_hook(view, "sidebar:open", %{"mode" => "both"})
     assert has_element?(view, "#sessions-focus-mode-ws-1[data-shortcut='Ctrl/Cmd + Shift + F']")
+    # Both rails share one click-away scope so a click outside both dismisses the
+    # whole picker (sidebar:close), while clicks between the two rails are contained.
+    assert has_element?(view, "#terminal-picker-overlay-ws-1[phx-click-away='sidebar:close']")
 
     cheatsheet_html = render(view)
     assert cheatsheet_html =~ "Ctrl+P"
