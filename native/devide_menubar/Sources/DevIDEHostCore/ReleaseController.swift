@@ -93,17 +93,22 @@ public actor ReleaseController {
 
     private func releaseEnvironment() throws -> [String: String] {
         let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile)
-        var environment = ProcessInfo.processInfo.environment
         // The host's own environment must not reconfigure the release: an
         // inherited PORT would defeat the ephemeral-port design, a stray
         // PHX_IP would fail the loopback guard, and DATABASE_PATH or a
         // status-path override would detach the contract from the data dir.
-        for key in [
-            "PORT", "PHX_IP", "PHX_HOST", "DATABASE_PATH", "SQLITE_DATABASE_PATH",
-            "DEV_IDE_DESKTOP_STATUS_PATH", "RELEASE_COOKIE",
-        ] {
-            environment.removeValue(forKey: key)
+        // Allowlist rather than denylist so the next release-reconfiguring
+        // var (MIX_ENV, DEV_IDE_LAN, …) is excluded by default instead of
+        // needing a new scrub entry. PATH passes through for tmux/git.
+        let inherited = ProcessInfo.processInfo.environment
+        var environment: [String: String] = [:]
+        for key in ["HOME", "USER", "TMPDIR", "SHELL"] {
+            environment[key] = inherited[key]
         }
+        environment["PATH"] =
+            inherited["PATH"] ?? "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["LANG"] = inherited["LANG"] ?? "en_US.UTF-8"
+        environment["LC_ALL"] = inherited["LC_ALL"] ?? "en_US.UTF-8"
         environment["DEV_IDE_PROFILE"] = "desktop"
         environment["DEV_IDE_DESKTOP_DATA_DIR"] = paths.dataDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase

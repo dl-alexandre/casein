@@ -51,6 +51,15 @@ collide with stray `dev_ide` nodes.
 swift test
 ```
 
+The self-asserting end-to-end suite (start → ready → health identity →
+graceful stop → epmd drain → restart with a fresh pid, in a throwaway data
+dir) is gated on a real release being available:
+
+```sh
+DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
+  /usr/bin/swift test --filter LifecycleIntegration
+```
+
 ## Menu (v1)
 
 Status header (state, port, version/revision) · Open DevIDE / Copy URL ·
