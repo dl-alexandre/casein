@@ -37,6 +37,7 @@ operations through behaviours whose implementations are selected for the host.
 | Shell discovery | user shell/bash | user shell/zsh | PowerShell/cmd |
 | Data directory | XDG data home | Application Support | LocalAppData |
 | Path model | POSIX | POSIX | drive, UNC, and extended paths |
+| Status/readiness publication | `runtime.json` in data dir + loopback health route | `runtime.json` in data dir + loopback health route | `runtime.json` in data dir + loopback health route |
 
 tmux remains a supported Linux implementation. It must not be required by the
 LiveView, MCP, agent, preview, or persistence contracts.
@@ -104,6 +105,131 @@ The first Windows milestone is intentionally narrow:
 
 Agent runtimes, preview automation, multi-pane parity, service installation, and
 auto-update follow only after this slice is reliable.
+
+## macOS desktop host: menu bar extra first
+
+The first native macOS surface is a menu bar extra (status item), not a
+windowed application. DevIDE's desktop shape — a long-running loopback daemon
+with a browser cockpit — matches the Docker Desktop/OrbStack model, and the
+status item directly fixes the release's current UX gaps: manual
+`bin/migrate && bin/dev_ide daemon` startup, an undiscoverable ephemeral port
+(`PORT=0`), the epmd "name in use" restart race, no autostart, and no visible
+health. The app's main menu (File/Edit/Window) only becomes relevant once an
+embedded webview window exists; see "Later: windowed cockpit" below.
+
+The host obeys the platform boundary above: it execs the release, reads the
+status file, probes a health endpoint, and opens URLs. It holds no product
+state and speaks no BEAM protocol. Holding that contract keeps the host
+framework choice cheap to change.
+
+### Status contract
+
+`DevIDE.Desktop.Runtime.status_path/0` already names the file
+(`<data_dir>/runtime.json`); nothing writes it yet. The desktop profile must:
+
+- Write `runtime.json` when the endpoint is bound, atomically
+  (write to a temp file in the same directory, then rename).
+- Remove it on graceful shutdown. Hosts must treat a file whose `pid` is not
+  alive as stale, since crashes leave it behind.
+- Serve an unauthenticated loopback readiness route (`GET /desktop/health`)
+  the host can poll. Outside the desktop profile the route returns 404 so no
+  version metadata leaks from networked deployments.
+
+Schema (versioned so hosts can reject what they don't understand):
+
+```json
+{
+  "schema": 1,
+  "status": "ready",
+  "port": 54321,
+  "base_url": "http://127.0.0.1:54321",
+  "pid": 12345,
+  "version": "0.9.0",
+  "revision": "abc1234",
+  "started_at": "2026-07-12T18:00:00Z"
+}
+```
+
+`status` is one of `starting | ready | stopping | unhealthy | stopped`; v1
+only ever writes `ready` (the file appears when the endpoint is bound and
+disappears on shutdown), but hosts must tolerate the full set. `version` and
+`revision` come from `DevIDE.Release.Metadata`, not a second source. Live
+uptime deliberately does not live in the file — a file written once at boot
+would carry a permanently stale value — the health route reports `uptime_ms`
+and the host can derive it from `started_at` otherwise.
+
+`GET /desktop/health` mirrors the published identity plus live uptime, and
+deliberately omits `pid`:
+
+```json
+{
+  "status": "ready",
+  "port": 54321,
+  "base_url": "http://127.0.0.1:54321",
+  "version": "0.9.0",
+  "revision": "abc1234",
+  "uptime_ms": 123456
+}
+```
+
+Implementation: `DevIDE.Desktop.Status` (writer, reader, `runtime.json`
+lifecycle) and `DevIdeWeb.DesktopHealthController`; the supervision wiring
+lives in `DevIde.Application.desktop_status/0`.
+
+The host must provide the release's environment (learned from the first
+desktop-profile boot): `DEV_IDE_PROFILE=desktop`, a generated-and-persisted
+`SECRET_KEY_BASE` and `DEV_IDE_API_TOKEN` (boot refuses to start without the
+token), and optionally `DEV_IDE_DESKTOP_DATA_DIR`. It should also set a
+distinct `RELEASE_NODE` if anything else on the machine may register a
+`dev_ide` node with epmd — a stale node holds the default name and start
+fails with "name in use".
+
+### Host responsibilities (v1 menu)
+
+- Status header: running/starting/stopped/unhealthy, version, bound port.
+  Icon state mirrors it (template image so it renders in light/dark menubars).
+- Open DevIDE: opens `base_url` in the default browser. A recent-workspaces
+  submenu reuses the existing deep-link scheme (`docs/deep_links.md`).
+- Start / Stop / Restart: the host owns the release process tree. Restart is
+  explicitly: graceful stop, wait for the process tree to exit, wait for epmd
+  to drop the `dev_ide` name (poll with timeout — this is the documented
+  "name in use" failure), run `bin/migrate`, start fresh. Crash restarts use
+  bounded backoff.
+- Copy MCP endpoint / agent pairing info.
+- Open logs, open data folder.
+- Start at Login (SMAppService on macOS).
+- Quit stops the server by default; an option-key variant quits the host and
+  leaves the server running.
+
+The host app is `LSUIElement` (no Dock icon), bundled and signed as a proper
+`.app`. The Bun/tailwind codesign lesson applies to every executable the
+bundle carries.
+
+### Host framework
+
+Tauri v2 (tray, autostart, updater plugins) is preferred because macOS and
+Windows then share one lifecycle host, consistent with the packaging rule
+below. A thin SwiftUI `MenuBarExtra` implementation of the same contract is an
+acceptable macOS-first spike if native polish is needed before the Tauri host
+exists. Either implementation consumes only the status contract.
+
+### Sequencing
+
+1. Status contract in the release itself: `runtime.json` writer, removal on
+   shutdown, reliable graceful stop, readiness route. Pure Elixir, testable
+   now, host-agnostic.
+2. Minimal host: launch, supervise, tray with status + Open + lifecycle +
+   Quit.
+3. Quality of life: login item, recent workspaces, pairing helpers, updater
+   (Tauri updater or Sparkle).
+4. Later: windowed cockpit. An embedded WKWebView window requires a real app
+   main menu — at minimum a standard Edit menu for clipboard shortcuts, Window
+   management, and Settings — and app-level shortcuts must not shadow the
+   IDE's leader keys (`docs/leader_keys.md`). WKWebView configuration also
+   needs deliberate choices at that point: developer extras, download and
+   clipboard permissions, and whether any non-loopback navigation is allowed. Native notifications for action
+   center cards can slot into the host's status-polling loop at this stage;
+   they are not v1.
 
 ## Packaging rule
 

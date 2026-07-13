@@ -93,3 +93,6 @@ npm-debug.log
 
 # Local mkcert output for LAN HTTPS. Contains private keys.
 /priv/cert/
+
+# SwiftPM build output (native/devide_menubar)
+native/devide_menubar/.build/
