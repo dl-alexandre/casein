@@ -234,7 +234,7 @@ repair_session() {
   tools_bin="${DEV_IDE_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}/bin"
   # Match PaneEnv / Shims.path_with_shims order: terminal shims → tools →
   # agent launchers → npm package bins → existing PATH (deduped below).
-  repaired_path="${terminal_shims}:${tools_bin}:${HOME}/.local/bin:${npm_prefix}/bin:${PATH}"
+  repaired_path="${terminal_shims}:${tools_bin}:${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${npm_prefix}/bin:${PATH}"
   repaired_path="$(
     PATH="$repaired_path" python3 - <<'PY'
 import os

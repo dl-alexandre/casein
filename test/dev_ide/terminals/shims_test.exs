@@ -386,6 +386,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert script =~ "trap '__devide_preexec' DEBUG"
     # Fresh panes that inherited a thin release PATH still find agent shims.
     assert script =~ "__devide_prepend_path"
+    assert script =~ ".devide/agent-shims"
     assert script =~ ".local/bin"
     assert script =~ "npm-global/bin"
 
@@ -396,7 +397,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     Shims.materialize!()
     script = Shims.shell_integration_path()
     home = Path.join(tmp, "home")
-    agent_bin = Path.join(home, ".local/bin")
+    agent_bin = Path.join(home, ".devide/agent-shims")
     File.mkdir_p!(agent_bin)
     shim = Path.join(agent_bin, "claude")
     File.write!(shim, "#!/bin/sh\necho ok\n")
@@ -421,21 +422,22 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert String.trim(out) == shim
   end
 
-  test "shell integration keeps ~/.local/bin shims ahead of bare npm package bins",
+  test "shell integration keeps agent launcher shims ahead of bare npm package bins",
        %{tmp: tmp} do
     Shims.materialize!()
     script = Shims.shell_integration_path()
     home = Path.join(tmp, "home")
 
-    local_bin = Path.join(home, ".local/bin")
+    local_bin = Path.join(home, ".devide/agent-shims")
     npm_bin = Path.join(home, ".local/share/npm-global/bin")
     File.mkdir_p!(local_bin)
     File.mkdir_p!(npm_bin)
 
     # A DevIDE agent-launcher shim and a bare npm package binary of the SAME
     # name: PATH order decides which `claude` a fresh pane launches, and the
-    # ~/.local/bin shim (skip-permissions + MCP env) must win. Prepending each
-    # dir individually used to reverse the order and let the npm bin shadow it.
+    # agent-shims launcher (skip-permissions + MCP env) must win. Prepending
+    # each dir individually used to reverse the order and let the npm bin
+    # shadow it.
     devide_shim = Path.join(local_bin, "claude")
     npm_bare = Path.join(npm_bin, "claude")
     File.write!(devide_shim, "#!/bin/sh\necho ok\n")
@@ -454,6 +456,47 @@ defmodule DevIDE.Terminals.ShimsTest do
           export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
           source #{shell_quote(script)}
           command -v claude
+          """
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert String.trim(out) == devide_shim
+  end
+
+  test "shell integration forces agent shims back ahead of rc-prepended installer dirs",
+       %{tmp: tmp} do
+    Shims.materialize!()
+    script = Shims.shell_integration_path()
+    home = Path.join(tmp, "home")
+
+    agent_shims = Path.join(home, ".devide/agent-shims")
+    installer_bin = Path.join(home, ".grok/bin")
+    File.mkdir_p!(agent_shims)
+    File.mkdir_p!(installer_bin)
+
+    devide_shim = Path.join(agent_shims, "grok")
+    real_grok = Path.join(installer_bin, "grok")
+    File.write!(devide_shim, "#!/bin/sh\necho shim\n")
+    File.write!(real_grok, "#!/bin/sh\necho real\n")
+    File.chmod!(devide_shim, 0o755)
+    File.chmod!(real_grok, 0o755)
+
+    # The pane env put agent-shims first, then a user rc file prepended the
+    # grok installer dir on top. Presence-only dedupe would leave the real
+    # binary winning (silent unpaired launch) — sourcing shell integration
+    # must move the DevIDE launcher back to the front.
+    {out, 0} =
+      System.cmd(
+        bash!(),
+        [
+          "-c",
+          """
+          export HOME=#{shell_quote(home)}
+          export PATH=#{shell_quote(installer_bin)}:#{shell_quote(agent_shims)}:/usr/bin:/bin
+          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          source #{shell_quote(script)}
+          command -v grok
           """
         ],
         stderr_to_stdout: true

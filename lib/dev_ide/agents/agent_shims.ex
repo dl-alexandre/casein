@@ -1,17 +1,20 @@
 defmodule DevIDE.Agents.AgentShims do
   @moduledoc """
-  Ensures DevIDE agent launcher shims exist under `~/.local/bin`.
+  Ensures DevIDE agent launcher shims exist under `~/.devide/agent-shims`.
 
-  Bare names (`claude`, `grok`, …) must resolve to the DevIDE launcher so MCP
-  injection runs. npm package updates and partial installs have left individual
-  shims missing while siblings remained — this module self-heals on session
-  env setup and can be called from deploy/doctor scripts.
+  Inside DevIDE contexts (pane env, shell integration, agent env files) the
+  shim dir is injected at the front of PATH so bare names (`claude`, `grok`,
+  …) resolve to the DevIDE launcher and MCP injection runs. The dir is never
+  on PATH in plain terminals, so DevIDE leaves the host's commands untouched.
+  npm package updates and partial installs have left individual shims missing
+  while siblings remained — this module self-heals on session env setup and
+  can be called from deploy/doctor scripts.
   """
 
   require Logger
 
   @runtimes ~w(grok claude codex opencode agent)
-  @default_bin_dir "~/.local/bin"
+  @default_bin_dir "~/.devide/agent-shims"
   @default_npm_prefix "~/.local/share/npm-global"
 
   @doc "Agent runtime names that get a DevIDE launcher shim (not `clauded`)."

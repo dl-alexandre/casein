@@ -342,7 +342,7 @@ export DEVIDE_AGENT_MCP_HOME='${STAGING}'
 export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'
 export DEVIDE_AGENT_ENV_FILE='${ENV_SH}'
 export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export PATH="\${HOME}/.local/bin:\${DEV_IDE_NPM_PREFIX}/bin:\${PATH}"
+export PATH="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}:\${DEV_IDE_NPM_PREFIX}/bin:\${PATH}"
 EOF
 chmod 600 "${ENV_SH_TMP}"
 mv -f "${ENV_SH_TMP}" "${ENV_SH}"

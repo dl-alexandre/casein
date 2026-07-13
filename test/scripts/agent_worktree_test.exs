@@ -273,6 +273,7 @@ defmodule Scripts.AgentWorktreeTest do
           {"HOME", home},
           {"DEV_IDE_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
+          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"}
         ],
         stderr_to_stdout: true
@@ -281,7 +282,7 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
     assert File.read_link!(Path.join(home, ".devide/real-bins/codex")) == user_codex
-    assert File.read!(Path.join(home, ".local/bin/codex")) =~ "devide\" agent launch codex"
+    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~ "devide\" agent launch codex"
   end
 
   test "devide shim passes codex update directly to the real CLI" do
@@ -337,6 +338,7 @@ defmodule Scripts.AgentWorktreeTest do
           {"HOME", home},
           {"DEV_IDE_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
+          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:/usr/bin:/bin"}
         ],
         stderr_to_stdout: true
@@ -345,7 +347,7 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "fake codex <update>\n"
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
-    assert File.read!(Path.join(home, ".local/bin/codex")) =~ "devide\" agent launch codex"
+    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~ "devide\" agent launch codex"
   end
 
   defp git_fixture! do

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
-# Install DevIDE agent shims on PATH (~/.local/bin).
-# Typing grok/claude/codex/opencode/agent anywhere on the devbox automatically
-# injects Terminal + Preview MCP.  clauded stays a shell alias (see ~/.bashrc);
-# palette/MCP launches map clauded → claude (see PaneEnv.launch_command/3).
+# Install DevIDE agent launcher shims into ~/.devide/agent-shims.
+# The dir is only put on PATH inside DevIDE contexts (pane env, shell
+# integration, agent env files) — plain terminals resolve grok/claude/codex/
+# opencode/agent straight to the real binaries with zero DevIDE footprint.
+# Inside DevIDE, typing an agent name injects Terminal + Preview MCP.
+# clauded stays a shell alias (see ~/.bashrc); palette/MCP launches map
+# clauded → claude (see PaneEnv.launch_command/3).
 #
 # Usage:
 #   bash scripts/install-agent-shims.sh           # install + verify
@@ -16,7 +19,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/real-agent-bin.sh
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
-BIN_DIR="${HOME}/.local/bin"
+BIN_DIR="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+# Pre-migration shim home; runtime shims found here get cleaned up so plain
+# terminals stop resolving agent names to DevIDE launchers.
+LEGACY_BIN_DIR="${HOME}/.local/bin"
 REAL_DIR="${HOME}/.devide/real-bins"
 export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
 NPM_PREFIX="${DEV_IDE_NPM_PREFIX}"
@@ -95,9 +101,31 @@ if [[ ! -x "$DEVIDE_CLI" ]]; then
 fi
 
 ln -sf "$DEVIDE_CLI" "${BIN_DIR}/devide"
+# The devide CLI itself is a plain command, not an interceptor — keep a
+# convenience symlink in ~/.local/bin so `devide agent doctor` etc. work from
+# any terminal. This is the only thing DevIDE still places there.
+if [[ -d "$LEGACY_BIN_DIR" ]]; then
+  ln -sf "$DEVIDE_CLI" "${LEGACY_BIN_DIR}/devide"
+fi
+
+# Repointing the npm global prefix redirects ALL of the user's `npm -g`
+# installs — a boundary violation on personal machines. Auto-on only for
+# DevIDE-managed hosts (marked by /etc/devide/devide.env);
+# DEV_IDE_MANAGE_NPM_PREFIX=1/0 overrides in either direction.
+manage_npm_prefix() {
+  case "${DEV_IDE_MANAGE_NPM_PREFIX:-}" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
+  [[ -f /etc/devide/devide.env ]]
+}
 
 ensure_npm_prefix() {
   local current
+
+  if ! manage_npm_prefix; then
+    return 0
+  fi
 
   if ! command -v npm >/dev/null 2>&1; then
     return 0
@@ -149,32 +177,16 @@ record_real_bin() {
   return 1
 }
 
-path_contains_bin_dir() {
-  local IFS=':'
-  local part resolved bin_dir_resolved
-  bin_dir_resolved="$(readlink -f "$BIN_DIR" 2>/dev/null || printf '%s' "$BIN_DIR")"
-  for part in ${PATH:-}; do
-    [[ -z "$part" ]] && continue
-    resolved="$(readlink -f "$part" 2>/dev/null || printf '%s' "$part")"
-    [[ "$resolved" == "$bin_dir_resolved" ]] && return 0
-  done
-  return 1
-}
-
-# The whole design depends on BIN_DIR preceding any directory that carries a
-# real agent binary. If PATH order defeats the shims, agents launch without
-# MCP injection and nothing else ever reports it — so make it loud here.
-# Non-interactive callers (systemd units, deploy poller) run with a minimal
-# PATH that omits BIN_DIR; prepend it for this check so deploy logs still
-# catch shadowing without requiring the caller's environment to match tmux.
+# DevIDE contexts (pane env, shell integration, agent env files) put BIN_DIR
+# at the FRONT of PATH. Verify resolution with that layout so a broken shim
+# (unreadable, wrong target, PATH parse surprise) fails loudly at install time
+# rather than as a silent unpaired launch later.
 verify_shim_precedence() {
   local name resolved resolved_target shim_target shadowed=0
 
-  if ! path_contains_bin_dir; then
-    PATH="${BIN_DIR}:${PATH:-}"
-    export PATH
-    hash -r
-  fi
+  PATH="${BIN_DIR}:${PATH:-}"
+  export PATH
+  hash -r
   for name in "${RUNTIMES[@]}"; do
     resolved="$(command -v "$name" 2>/dev/null || true)"
     resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
@@ -186,9 +198,26 @@ verify_shim_precedence() {
   done
 
   if [[ "$shadowed" == "1" ]]; then
-    echo "error: PATH order defeats the DevIDE shims — agents launched by name will skip MCP injection." >&2
-    echo "error: move ${BIN_DIR} ahead of the shadowing directory on PATH, then re-run this installer." >&2
+    echo "error: shim resolution broken — agents launched by name inside DevIDE will skip MCP injection." >&2
+    echo "error: inspect ${BIN_DIR}, then re-run this installer." >&2
     return 1
+  fi
+}
+
+# Migration: earlier installs put runtime shims directly in ~/.local/bin,
+# which made agent names resolve to DevIDE launchers in every terminal on the
+# box. Remove ours (marker-checked — never a user's real binary) so plain
+# terminals go back to the real agents.
+cleanup_legacy_shims() {
+  local name removed=""
+  for name in "${RUNTIMES[@]}" clauded; do
+    if is_devide_shim "${LEGACY_BIN_DIR}/${name}"; then
+      rm -f "${LEGACY_BIN_DIR}/${name}"
+      removed="${removed} ${name}"
+    fi
+  done
+  if [[ -n "$removed" ]]; then
+    echo "Removed legacy DevIDE shims from ${LEGACY_BIN_DIR}:${removed}"
   fi
 }
 
@@ -216,6 +245,8 @@ done
 
 # clauded must remain a shell alias — remove a stale shim if a prior run added one.
 rm -f "${BIN_DIR}/clauded"
+
+cleanup_legacy_shims
 
 # Partial installs (interrupted deploys, npm clobbering a single name) used to
 # leave e.g. grok present but claude missing. Fail closed if any shim is gone.

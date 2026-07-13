@@ -65,6 +65,20 @@ else
   log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
 fi
 
+log "boundary: agent launcher shims must never target ~/.local/bin again"
+# The shims moved to ~/.devide/agent-shims so plain terminals stay untouched
+# by DevIDE (operator call, 2026-07-13). Pin the installer's target dir and
+# the Elixir default; a regression here silently re-hijacks agent names
+# machine-wide.
+if ! grep -q 'BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' scripts/install-agent-shims.sh; then
+  echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.devide/agent-shims" >&2
+  exit 1
+fi
+if ! grep -q '@default_bin_dir "~/.devide/agent-shims"' lib/dev_ide/agents/agent_shims.ex; then
+  echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.devide/agent-shims" >&2
+  exit 1
+fi
+
 log "test hygiene: reject fixed-port :gen_tcp.listen in test/"
 # The required gate runs on the shared devbox, where a hard-coded TCP port is
 # often already held by a live workload — a fixed-port listener :eaddrinuse's

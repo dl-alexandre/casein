@@ -6,7 +6,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   token.
   """
 
-  alias DevIDE.Agents.{AuthProfile, MCPUrls, TidewaveMCP, WorkspaceTokens}
+  alias DevIDE.Agents.{AgentShims, AuthProfile, MCPUrls, TidewaveMCP, WorkspaceTokens}
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -366,7 +366,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
     export DEVIDE_SCRIPTS=#{quote_env_sh(scripts)}
     export DEVIDE_AGENT_ENV_FILE=#{quote_env_sh(env_sh)}
     export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-    export PATH="${HOME}/.local/bin:${DEV_IDE_NPM_PREFIX}/bin:${PATH}"
+    export PATH="#{AgentShims.bin_dir()}:${DEV_IDE_NPM_PREFIX}/bin:${PATH}"
     """
 
     write_file(env_sh, content)

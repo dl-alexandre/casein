@@ -207,9 +207,9 @@ agent_env_resolve() {
 
 agent_env_export_runtime_paths() {
   # Deliberately not requiring DEVIDE_AGENT_MCP_HOME: a degraded launch (MCP
-  # materialization failed) must still put ~/.local/bin on PATH so the real
-  # agent binary is reachable. The npm prefix rides along so `codex update`
-  # installs stay reachable without ever owning ~/.local/bin.
+  # materialization failed) must still put the launcher shims and the real
+  # agent binaries on PATH. The npm prefix rides along so `codex update`
+  # installs stay reachable; ~/.local/bin covers user-installed real bins.
   export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-  export PATH="${HOME}/.local/bin:${DEV_IDE_NPM_PREFIX}/bin:${PATH:-/usr/bin:/bin}"
+  export PATH="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${DEV_IDE_NPM_PREFIX}/bin:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
 }

@@ -85,9 +85,12 @@ agent runs with compile-time-fixed argv.
    `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
    `Tmux.set_environments/2`. Template apply calls this **before** creating
    panes so the first window is not racy. `PATH` always includes
-   `~/.local/bin` and the npm global bin dir (also embedded in
-   `Terminals.Shims.path_with_shims/1` and shell-integration prepends, so
-   session create is not bashrc-dependent). `PaneEnv` also injects
+   `~/.devide/agent-shims` and the npm global bin dir (also embedded in
+   `Terminals.Shims.path_with_shims/1`; shell-integration force-fronts them
+   after user rc files run, so session create is not bashrc-dependent and
+   installer-prepended dirs cannot shadow the launchers). The shim dir is
+   never on PATH outside DevIDE contexts — plain terminals resolve agent
+   names to the real binaries. `PaneEnv` also injects
    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
    `~/.devide/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
    signed in (`.credentials.json` / `auth.json` present); otherwise the
@@ -111,7 +114,12 @@ agent runs with compile-time-fixed argv.
    (`--check` / `--ensure`), the deploy poller, and `devide agent doctor` all
    verify shim completeness and PATH precedence; a shadowed or partial shim set
    is a hard failure because agents would launch without MCP or with
-   `command not found`.
+   `command not found`. When no agent env resolves, `devide agent launch`
+   silently falls back to the real binary (`DEVIDE_AGENT_LAUNCH_VERBOSE=1`
+   explains the fallback on stderr; `DEVIDE_AGENT_LAUNCH_STRICT=1` restores
+   the hard failure), and the installer's migration cleanup removes legacy
+   launcher shims from `~/.local/bin` so plain terminals are untouched by
+   DevIDE.
 
 **An agent calling a tool (request lifecycle):**
 
@@ -145,7 +153,7 @@ available. The list is surfaced through agent UI and `GET
 - `DevIDE.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
   capability queries (delegate to the configured adapter).
 - `DevIDE.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
-  DevIDE launcher shims under `~/.local/bin`.
+  DevIDE launcher shims under `~/.devide/agent-shims`.
 - `DevIDE.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
   `launch_command/3` — build/install the agent env for a tmux session.
 - `DevIDE.Agents.MCPMaterializer.materialize/2` — write agent client config

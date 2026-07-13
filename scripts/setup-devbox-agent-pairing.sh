@@ -139,8 +139,12 @@ export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
 export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
+export DEV_IDE_AGENT_BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
 case ":\${PATH:-}:" in *":\${DEV_IDE_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${DEV_IDE_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
+# Launcher shims last so they land frontmost: bare agent names in this shell
+# must hit DevIDE MCP injection once this file is sourced.
+case ":\${PATH:-}:" in *":\${DEV_IDE_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${DEV_IDE_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
 EOF
 chmod 600 "$AGENT_ENV"
 
