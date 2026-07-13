@@ -24,6 +24,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
     only: [
       session_attach_id: 1,
+      session_branch: 1,
+      session_repo_label: 1,
+      session_worktree?: 1,
       session_tab_detail: 1,
       session_tab_label: 1,
       session_tab_title: 1,
@@ -62,7 +65,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           kind: atom(),
           label: String.t(),
           detail: String.t(),
+          detail_secondary: String.t(),
           title: String.t(),
+          branch: String.t(),
+          repo: String.t(),
+          worktree?: boolean(),
           tmux_session: String.t() | nil,
           windows: [session_window()],
           window_count: non_neg_integer(),
@@ -116,14 +123,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     activity_state = session_activity_state(windows)
     quiet_count = Enum.count(windows, & &1.quiet?)
     unseen_quiet_count = Enum.count(windows, & &1.unseen_quiet?)
+    detail = session_tab_detail(info, ordinal)
+    branch = session_branch(info) || ""
 
     %{
       id: id,
       dom_id: "active_sessions-" <> id,
       kind: info.kind,
       label: session_tab_label(info),
-      detail: session_tab_detail(info, ordinal),
+      detail: detail,
+      # Same detail with the branch elided — for surfaces that already render
+      # the branch via the anchor chip, so it isn't shown twice.
+      detail_secondary: detail_without_branch(detail, branch),
       title: session_tab_title(info),
+      branch: branch,
+      repo: session_repo_label(info) || "",
+      worktree?: session_worktree?(info),
       cwd: session_cwd(info),
       tmux_session: info.tmux_session,
       windows: windows,
@@ -510,6 +525,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       kind: :scratch,
       label: "Scratch",
       detail: "home",
+      detail_secondary: "home",
+      branch: "",
+      repo: "",
+      worktree?: false,
       title: "Scratch terminal ($HOME)",
       cwd: Scratch.home_path(),
       href: WorkspaceRoutes.workspace_path(id, "local"),
@@ -704,6 +723,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     |> put_metadata_field(session, "cwd")
     |> put_metadata_field(session, :git_toplevel)
     |> put_metadata_field(session, "git_toplevel")
+    |> put_metadata_field(session, :git_common_dir)
+    |> put_metadata_field(session, "git_common_dir")
+    |> put_metadata_field(session, :git_worktree?)
+    |> put_metadata_field(session, "git_worktree?")
     |> put_metadata_field(session, :git_branch, :branch)
     |> put_metadata_field(session, "git_branch", "branch")
     |> put_metadata_field(session, :agent)
@@ -838,6 +861,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       kind: Map.get(session, :kind) || Map.get(session, "kind") || :shell,
       label: Map.get(session, :label) || Map.get(session, "label") || "tmux",
       detail: Map.get(session, :detail) || Map.get(session, "detail") || "",
+      detail_secondary: Map.get(session, :detail) || Map.get(session, "detail") || "",
+      branch: "",
+      repo: "",
+      worktree?: false,
       title: Map.get(session, :title) || Map.get(session, "title") || id,
       href: nil,
       tmux_session: nil,
@@ -879,6 +906,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     do: runner
 
   defp session_tab_detail(_session, _ordinal), do: ""
+
+  # Drops the branch token from a `" · "`-joined detail string. Branch names
+  # never contain the separator, so a whole-token match is exact.
+  defp detail_without_branch(detail, branch)
+       when is_binary(detail) and is_binary(branch) and branch != "" do
+    detail
+    |> String.split(" · ")
+    |> Enum.reject(&(&1 == branch))
+    |> Enum.join(" · ")
+  end
+
+  defp detail_without_branch(detail, _branch), do: detail
 
   defp blank?(nil), do: true
   defp blank?(""), do: true

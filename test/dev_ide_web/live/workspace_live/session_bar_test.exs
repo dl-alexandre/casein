@@ -1005,4 +1005,97 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     }
     |> Map.merge(attrs)
   end
+
+  defp shell_tab(metadata) do
+    SessionBarVM.session_tab(SessionInfo.new_shell("ws-1", "shell-aaaa1111", metadata: metadata))
+  end
+
+  describe "window_tabs/1 space efficiency" do
+    test "omits the running command and caps a lone window; 2+ fill the strip" do
+      one = SessionBarVM.window_tabs([window(%{current_command: "claude_exe"})])
+
+      one_html =
+        render_component(&SessionBar.window_tabs/1,
+          workspace_id: "ws-1",
+          windows: one,
+          mutations_allowed?: false
+        )
+
+      refute one_html =~ "claude_exe", "the current command must not steal tab width"
+      refute one_html =~ "max-w-80", "the old width cap that left empty space is gone"
+      assert one_html =~ "max-w-64", "a lone window is capped, not stretched"
+
+      two =
+        SessionBarVM.window_tabs([
+          window(%{current_command: "claude_exe"}),
+          window(%{id: "@2", index: 1, active: false})
+        ])
+
+      two_html =
+        render_component(&SessionBar.window_tabs/1,
+          workspace_id: "ws-1",
+          windows: two,
+          mutations_allowed?: false
+        )
+
+      refute two_html =~ "max-w-64", "with 2+ windows the tabs flex-fill (no cap)"
+      assert two_html =~ "flex-1"
+    end
+  end
+
+  describe "session_anchor_chip/1" do
+    test "worktree shows repo anchor + branch tail; full branch only in the title" do
+      tab =
+        shell_tab(%{
+          cwd: "/wt/fx",
+          git_toplevel: "/wt/fx",
+          git_common_dir: "/home/dev_ide/.git",
+          git_branch: "agent/grok/fix-nav",
+          git_worktree?: true
+        })
+
+      html = render_component(&SessionBar.session_anchor_chip/1, tab: tab)
+
+      assert html =~ "dev_ide⑂", "surfaces the parent repo a worktree cwd hides"
+      assert html =~ ~s(max-w-32 truncate">fix-nav<), "visible text is the branch tail"
+      assert html =~ "Worktree of dev_ide · branch agent/grok/fix-nav", "full branch in title"
+    end
+
+    test "non-default branch on a primary checkout shows the branch" do
+      html =
+        render_component(&SessionBar.session_anchor_chip/1,
+          tab: shell_tab(%{cwd: "/r", git_toplevel: "/r", git_branch: "feature-x"})
+        )
+
+      assert html =~ "feature-x"
+    end
+
+    test "the default branch on a primary checkout renders nothing (noise-free)" do
+      html =
+        render_component(&SessionBar.session_anchor_chip/1,
+          tab: shell_tab(%{cwd: "/r", git_toplevel: "/r", git_branch: "master"})
+        )
+
+      refute html =~ "master"
+    end
+  end
+
+  describe "session_tab/1 branch/worktree fields" do
+    test "derives branch, worktree parent repo, and a branch-free secondary detail" do
+      tab =
+        shell_tab(%{
+          cwd: "/wt/fx",
+          git_toplevel: "/wt/fx",
+          git_common_dir: "/home/dev_ide/.git",
+          git_branch: "feature-x",
+          git_worktree?: true
+        })
+
+      assert tab.worktree?
+      assert tab.repo == "dev_ide"
+      assert tab.branch == "feature-x"
+      assert tab.detail =~ "feature-x"
+      refute tab.detail_secondary =~ "feature-x"
+    end
+  end
 end

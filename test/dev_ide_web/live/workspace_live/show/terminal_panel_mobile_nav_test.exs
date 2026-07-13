@@ -31,7 +31,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
 
   defp render_sheet(tree) do
     render_component(&TerminalPanel.mobile_nav_sheet/1, %{
-      workspace: %{id: "ws-current"},
+      workspace: %{id: "ws-current", name: "current"},
       workspace_route: "/workspaces/ws-current",
       mobile_nav_open: true,
       mobile_nav_view: "sessions",
@@ -49,7 +49,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
     html = render_sheet([other_node(%{})])
 
     assert html =~ "Other workspaces"
-    assert html =~ "This workspace"
+    # The sessions header names the current workspace ("<name> · this workspace").
+    assert html =~ "this workspace"
     assert html =~ "Reports"
     # Collapsed workspace toggles via the shared sidebar event (lazy-loads).
     assert html =~ ~s(phx-click="sidebar:toggle_workspace")
@@ -82,6 +83,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
     html = render_sheet(tree)
 
     refute html =~ "Other workspaces"
-    assert html =~ "Sessions &amp; windows"
+    # The sessions header still names the current workspace even with no others.
+    assert html =~ "this workspace"
   end
 end
