@@ -258,6 +258,46 @@ echo \"real-grok \$*\""
   fi
 )
 
+run_launch_stamps_pane_pairing_state() (
+  echo "== agent launch stamps @devide_paired on the tmux pane =="
+
+  local home tmux_log out
+  home="$(cd "$(mktemp -d)" && pwd -P)"
+  trap 'rm -rf "$home"' EXIT
+
+  export HOME="$home"
+  unset DEV_IDE_NPM_PREFIX
+  tmux_log="${home}/tmux-calls.log"
+
+  write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
+echo real-grok"
+  mkdir -p "${HOME}/.devide/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+
+  # Fake tmux: answers env probes with nothing (so resolution still fails)
+  # and records set-option calls — pairing state must reach the pane option
+  # without any terminal output.
+  write_executable "${HOME}/fake-bin/tmux" "#!/usr/bin/env bash
+printf '%s\\n' \"\$*\" >>\"${tmux_log}\"
+exit 0"
+
+  out="$(cd "$home" && env -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+    TMUX="${home}/fake-socket,1,0" TMUX_PANE="%7" PATH="${HOME}/fake-bin:${PATH:-/usr/bin:/bin}" \
+    bash "${ROOT}/scripts/devide" agent launch grok chat 2>&1)"
+  assert_eq "stamped fallback still execs real grok" "real-grok" "$out"
+
+  if ! grep -q '^set-option -p -t %7 @devide_paired 0$' "$tmux_log"; then
+    echo "FAIL: expected @devide_paired 0 stamp on pane %7, tmux calls were:" >&2
+    cat "$tmux_log" >&2
+    exit 1
+  fi
+  if ! grep -q '^set-option -p -t %7 @devide_paired_reason no agent env$' "$tmux_log"; then
+    echo "FAIL: expected @devide_paired_reason stamp, tmux calls were:" >&2
+    cat "$tmux_log" >&2
+    exit 1
+  fi
+)
+
 run_check_and_ensure_modes() (
   echo "== install-agent-shims --check / --ensure detect and heal partial loss =="
 
@@ -304,6 +344,7 @@ main() {
   run_installer_verifies_precedence_when_bin_dir_off_path
   run_launch_version_passthrough_skips_launcher
   run_launch_falls_back_unpaired_without_env
+  run_launch_stamps_pane_pairing_state
   run_check_and_ensure_modes
   echo "OK: agent shim checks passed"
 }

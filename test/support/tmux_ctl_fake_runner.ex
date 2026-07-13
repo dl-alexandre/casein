@@ -139,9 +139,14 @@ defmodule TmuxCtl.Test.FakeRunner do
     |> panes_for()
     |> Enum.map_join("\n", fn p ->
       prefix <>
-        "#{p.window_id}|#{p.id}|#{p.index}|#{active(p.active)}|#{p.left}|#{p.top}|#{p.width}|#{p.height}|#{p.current_command}|#{p.activity}|#{bell(p.bell)}|#{p.activity}|#{active(p.activity_flag)}|#{bell(p.bell)}|#{active(p.unseen_changes)}|#{p.current_path}|#{active(Map.get(p, :zoomed?, false))}|#{Map.get(p, :role, "")}"
+        "#{p.window_id}|#{p.id}|#{p.index}|#{active(p.active)}|#{p.left}|#{p.top}|#{p.width}|#{p.height}|#{p.current_command}|#{p.activity}|#{bell(p.bell)}|#{p.activity}|#{active(p.activity_flag)}|#{bell(p.bell)}|#{active(p.unseen_changes)}|#{p.current_path}|#{active(Map.get(p, :zoomed?, false))}|#{Map.get(p, :role, "")}|#{paired(Map.get(p, :paired))}|#{Map.get(p, :paired_reason, "")}|#{Map.get(p, :pane_title, "")}"
     end)
   end
+
+  # Mirrors the @devide_paired pane option: "1"/"0" once stamped, "" otherwise.
+  defp paired(true), do: "1"
+  defp paired(false), do: "0"
+  defp paired(_), do: ""
 
   defp windows_for(session) do
     FakeState.get(:fake_tmux_windows, %{}) |> Map.get(session, [])

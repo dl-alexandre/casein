@@ -119,7 +119,11 @@ agent runs with compile-time-fixed argv.
    explains the fallback on stderr; `DEVIDE_AGENT_LAUNCH_STRICT=1` restores
    the hard failure), and the installer's migration cleanup removes legacy
    launcher shims from `~/.local/bin` so plain terminals are untouched by
-   DevIDE.
+   DevIDE. Every launch also stamps the tmux pane options `@devide_paired`
+   (`1`/`0`) and `@devide_paired_reason`; topology reads them
+   (`TmuxCtl.Client` `list-panes` formats → pane `paired`/`paired_reason`)
+   and the viewer badges unpaired panes in the terminal chrome — pairing
+   failures are visible in the UI, never as terminal output.
 
 **An agent calling a tool (request lifecycle):**
 

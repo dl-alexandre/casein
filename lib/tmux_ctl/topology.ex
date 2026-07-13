@@ -31,6 +31,8 @@ defmodule TmuxCtl.Topology do
           current_path: String.t(),
           pane_title: String.t() | nil,
           role: String.t() | nil,
+          paired: boolean() | nil,
+          paired_reason: String.t() | nil,
           activity: non_neg_integer(),
           activity_flag: boolean(),
           bell: boolean(),
@@ -84,7 +86,10 @@ defmodule TmuxCtl.Topology do
         windows,
         &{&1.id, &1.index, &1.name, Map.get(&1, :manual_name), &1.active, &1.panes}
       ),
-      Enum.map(panes, &{&1.id, &1.window_id, &1.index, &1.active, Map.get(&1, :role)})
+      Enum.map(
+        panes,
+        &{&1.id, &1.window_id, &1.index, &1.active, Map.get(&1, :role), Map.get(&1, :paired)}
+      )
     })
   end
 
