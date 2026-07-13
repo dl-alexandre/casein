@@ -149,10 +149,26 @@ defmodule DevIDE.Deployment.Health do
   end
 
   defp fetch_caddy_config do
-    case Req.get("http://localhost:2019/config/", receive_timeout: 1_000) do
-      {:ok, %{status: status, body: body}} when status in 200..299 and is_map(body) -> {:ok, body}
-      {:ok, %{status: status}} -> {:error, {:http_status, status}}
-      {:error, reason} -> {:error, reason}
+    if Application.get_env(:dev_ide, :caddy_admin_probe, true) do
+      # retry: false so a slow/unreachable Caddy admin fails fast (≤1s) instead
+      # of Req's default exponential retry (~7s). Disabled entirely in test
+      # (config/test.exs) so status calls never make a real network request.
+      case Req.get("http://localhost:2019/config/",
+             retry: false,
+             connect_options: [timeout: 1_000],
+             receive_timeout: 1_000
+           ) do
+        {:ok, %{status: status, body: body}} when status in 200..299 and is_map(body) ->
+          {:ok, body}
+
+        {:ok, %{status: status}} ->
+          {:error, {:http_status, status}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, :probe_disabled}
     end
   rescue
     error -> {:error, error}

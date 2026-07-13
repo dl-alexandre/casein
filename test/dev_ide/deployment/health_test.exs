@@ -20,6 +20,16 @@ defmodule DevIDE.Deployment.HealthTest do
            end)
   end
 
+  test "does not probe the Caddy admin API when the probe is disabled (test default)" do
+    # config/test.exs sets caddy_admin_probe: false, so the un-injected
+    # controller path (status/pane/export) never makes a real HTTP request —
+    # the caddy check reflects :probe_disabled instead of hitting the network.
+    status = Health.status(capabilities: [:reverse_proxy], host: "example.com")
+
+    assert %{ok: false, error: ":probe_disabled"} =
+             status.checks.caddy_devide_upstream
+  end
+
   @host "devide.devbox.example.com"
   @revision "1fb643af2c58da2c9b10019cc3de1b06555e3732"
 
