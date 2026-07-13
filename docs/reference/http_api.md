@@ -30,6 +30,7 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 | `DevIdeWeb.API.WorkspaceWindowController` | `lib/dev_ide_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
 | `DevIdeWeb.API.WorkspacePaneController` | `lib/dev_ide_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
 | `DevIdeWeb.API.WorkspaceTemplateController` | `lib/dev_ide_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
+| `DevIdeWeb.API.ArtifactProjectController` | `lib/dev_ide_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
 | `DevIdeWeb.API.WorkspaceAPI` | `lib/dev_ide_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
 | `DevIdeWeb.API.PreviewPaneController` | `lib/dev_ide_web/controllers/api/preview_pane_controller.ex` | Register/deregister `devide-preview` CLI panes |
 | `DevIdeWeb.API.DeployStatusController` | `lib/dev_ide_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
@@ -160,6 +161,12 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 | POST | `/api/workspaces/:id/panes/:pane_id/split` | `…` · `:split_pane` | Split pane (`direction` `h`/`v`) |
 | POST | `/api/workspaces/:id/panes/:pane_id/resize` | `…` · `:resize_pane` | Resize (`direction` left/right/up/down, `amount`) |
 | DELETE | `/api/workspaces/:id/panes/:pane_id` | `…` · `:kill_pane` | Kill pane |
+
+### Artifact lifecycle mutation API — pipeline `:api`
+
+| Method | Path | Controller · action | Purpose |
+|---|---|---|---|
+| POST | `/api/workspaces/:workspace_id/artifacts/:artifact_id/restore` | `ArtifactProjectController` · `:restore` | Restore an expired artifact in place or recreate a cleaned worktree from its retained local branch; 404 for unknown/cross-workspace ids, 409 for non-restorable retained state |
 
 ### Preview-pane registry — pipeline `:api`
 

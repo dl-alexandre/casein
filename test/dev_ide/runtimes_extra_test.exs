@@ -241,6 +241,119 @@ defmodule DevIDE.RuntimesExtraTest do
     assert {:error, :invalid_runtime_transition} = Runtimes.cleanup_runtime(runtime.id)
   end
 
+  test "restore_runtime revives an expired runtime and clears retirement fields" do
+    {:ok, runtime} =
+      RuntimeSeed.seed_runtime("ws-runtime",
+        runtime_id: "rt-restore-expired",
+        status: "expired",
+        expired_at: ~U[2026-01-02 03:04:05Z],
+        failure_reason: "stale_runtime",
+        active_assignments: 2
+      )
+
+    assert {:ok, restored} = Runtimes.restore_runtime(runtime.id)
+    assert restored.status == "provisioned"
+    assert restored.expired_at == nil
+    assert restored.cleaned_at == nil
+    assert restored.failure_reason == nil
+    assert restored.active_assignments == 0
+    assert %DateTime{} = restored.heartbeat_at
+    assert List.last(Runtimes.events_for(runtime.id)).event == "runtime_restored"
+  end
+
+  test "restore_runtime revives a cleaned runtime and remains idempotent" do
+    {:ok, runtime} =
+      RuntimeSeed.seed_runtime("ws-runtime",
+        runtime_id: "rt-restore-cleaned",
+        status: "cleaned",
+        expired_at: ~U[2026-01-02 03:04:05Z],
+        cleaned_at: ~U[2026-01-02 04:05:06Z],
+        failure_reason: "stale_runtime"
+      )
+
+    assert {:ok, restored} = Runtimes.restore_runtime(runtime.id)
+    event_count = length(Runtimes.events_for(runtime.id))
+    assert {:ok, ^restored} = Runtimes.restore_runtime(runtime.id)
+    assert length(Runtimes.events_for(runtime.id)) == event_count
+  end
+
+  test "nested runtime locks retain exclusivity until the outer call returns" do
+    parent = self()
+
+    holder =
+      Task.async(fn ->
+        Runtimes.with_runtime_lock("rt-nested-lock", fn ->
+          Runtimes.with_runtime_lock("rt-nested-lock", fn ->
+            send(parent, :nested_lock_entered)
+          end)
+
+          send(parent, :outer_lock_ready)
+
+          receive do
+            :release_outer_lock -> :ok
+          after
+            2_000 -> raise "outer runtime lock was not released by the test"
+          end
+        end)
+      end)
+
+    assert_receive :nested_lock_entered
+    assert_receive :outer_lock_ready
+
+    waiter =
+      Task.async(fn ->
+        send(parent, :runtime_lock_waiter_started)
+
+        Runtimes.with_runtime_lock("rt-nested-lock", fn ->
+          send(parent, :runtime_lock_waiter_entered)
+        end)
+      end)
+
+    assert_receive :runtime_lock_waiter_started
+    refute_receive :runtime_lock_waiter_entered, 100
+
+    send(holder.pid, :release_outer_lock)
+    assert :ok = Task.await(holder)
+    assert_receive :runtime_lock_waiter_entered
+    assert :runtime_lock_waiter_entered = Task.await(waiter)
+  end
+
+  test "preview port lock serializes selection across runtime ids" do
+    parent = self()
+
+    holder =
+      Task.async(fn ->
+        Runtimes.with_preview_port_lock(fn ->
+          send(parent, :preview_lock_ready)
+
+          receive do
+            :release_preview_lock -> :ok
+          after
+            2_000 -> raise "preview port lock was not released by the test"
+          end
+        end)
+      end)
+
+    assert_receive :preview_lock_ready
+
+    waiter =
+      Task.async(fn ->
+        send(parent, :preview_lock_waiter_started)
+
+        Runtimes.with_preview_port_lock(fn ->
+          send(parent, :preview_lock_waiter_entered)
+        end)
+      end)
+
+    assert_receive :preview_lock_waiter_started
+    refute_receive :preview_lock_waiter_entered, 100
+
+    send(holder.pid, :release_preview_lock)
+    assert :ok = Task.await(holder)
+    assert_receive :preview_lock_waiter_entered
+    assert :preview_lock_waiter_entered = Task.await(waiter)
+  end
+
   # ---- expire_stale / cleanup_expired ----
 
   test "expire_stale expires runtimes older than the ttl and skips terminal ones" do

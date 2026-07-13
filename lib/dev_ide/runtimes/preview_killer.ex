@@ -33,9 +33,16 @@ defmodule DevIDE.Runtimes.PreviewKiller do
     defp kill_registry_pids(server) do
       runtime_id = Map.get(server, "runtime_id")
       cwd = Map.get(server, "cwd")
+      env = Map.get(server, "env") || %{}
 
-      if is_binary(runtime_id) and runtime_id != "" and is_binary(cwd) and cwd != "" do
-        registry = Path.join([cwd, ".devide-preview", "instances", "#{runtime_id}.json"])
+      preview_home =
+        Map.get(env, "DEVIDE_PREVIEW_HOME") || Map.get(env, :DEVIDE_PREVIEW_HOME) ||
+          (is_binary(cwd) && Path.join(cwd, ".devide-preview"))
+
+      if is_binary(runtime_id) and
+           Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,255}\z/, runtime_id) and
+           is_binary(preview_home) and preview_home != "" do
+        registry = Path.join([preview_home, "instances", "#{runtime_id}.json"])
 
         case File.read(registry) do
           {:ok, body} ->

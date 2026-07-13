@@ -21,7 +21,8 @@ Its live jobs are:
 - **Status export** — `list_runtimes/1` / `get_runtime/1` snapshot runtimes for the
   read API and `Export.WorkspaceStatus`.
 - **Maintenance** — `heartbeat/2`, `expire_runtime/2` (plus a stale sweep),
-  `cleanup_runtime/2` for TTL eviction. These are plain context functions; an
+  `cleanup_runtime/2` for TTL eviction, and `restore_runtime/2` for explicitly
+  reviving retained work. These are plain context functions; an
   operator drives them over a remote console
   (`bin/dev_ide rpc 'DevIDE.Runtimes.list_runtimes(%{})'`), there is no dedicated
   CLI wrapper.
@@ -69,8 +70,10 @@ sets `EctoAdapter`; `config/test.exs` sets `MemoryAdapter`. Both satisfy the
 **Status projection.** Status lives on the `Runtime` row but is *also* derivable
 from the event stream: `StateMachine.reduce/1` folds `LifecycleEvent`s through
 `transition_event/2`. Valid statuses are `requested → provisioned → expired →
-cleaned` (with `requested`/`provisioned → cleaned` shortcuts); `cleaned` is
-terminal. `runtime_heartbeat` events do not change status.
+cleaned` (with `requested`/`provisioned → cleaned` shortcuts). `cleaned` is
+normally terminal; the explicit restore transition is the exception and moves
+either `expired` or `cleaned` back to `provisioned`. `runtime_heartbeat` events
+do not change status, while `runtime_restored` records that revival.
 
 **Maintenance.** `expire_stale/2` lists all runtimes, filters by TTL
 (`@default_ttl_seconds = 3600`, against heartbeat-or-creation time), and expires
@@ -88,8 +91,9 @@ Called by API / LiveView / MCP / export code:
 - `list_runtimes/1`, `get_runtime/1` — snapshots (filters normalized to string keys:
   `workspace_id`, `host_id`/`host`, `status`, `repo`, `branch`,
   `isolation_mode`/`branch_isolation`, `runtime_id`/`id`).
-- `heartbeat/2`, `expire_runtime/2`, `cleanup_runtime/2` — lifecycle mutations
-  (each appends a `LifecycleEvent`).
+- `heartbeat/2`, `expire_runtime/2`, `cleanup_runtime/2`, `restore_runtime/2` —
+  lifecycle mutations (each state-changing call appends a `LifecycleEvent`;
+  restoring an already-provisioned runtime is an event-free idempotent no-op).
 - `expire_stale/2`, `cleanup_expired/2` — TTL sweeps.
 - `payload/1`, `event_payload/1` — read-API JSON shapes; `payload/1` inlines
   `runtime_profile` and `preview_surfaces` via `Profile`.

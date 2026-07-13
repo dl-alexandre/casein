@@ -16,11 +16,14 @@ defmodule DevIDE.Runtimes.StateMachine do
   def terminal?(status), do: status in @terminal
 
   def transition(nil, :request), do: {:ok, "requested"}
+  def transition(nil, :provision), do: {:ok, "provisioned"}
   def transition("requested", :provision), do: {:ok, "provisioned"}
   def transition("requested", :expire), do: {:ok, "expired"}
   def transition("provisioned", :expire), do: {:ok, "expired"}
   def transition("expired", :cleanup), do: {:ok, "cleaned"}
   def transition("provisioned", :cleanup), do: {:ok, "cleaned"}
+  def transition("expired", :restore), do: {:ok, "provisioned"}
+  def transition("cleaned", :restore), do: {:ok, "provisioned"}
   def transition(status, _event) when status in @terminal, do: {:error, :runtime_terminal}
   def transition(_status, _event), do: {:error, :invalid_runtime_transition}
 
@@ -28,7 +31,9 @@ defmodule DevIDE.Runtimes.StateMachine do
   def event_transition("runtime_provisioned"), do: :provision
   def event_transition("runtime_expired"), do: :expire
   def event_transition("runtime_cleaned"), do: :cleanup
+  def event_transition("runtime_restored"), do: :restore
   def event_transition("runtime_heartbeat"), do: :heartbeat
+  def event_transition("runtime_preview_" <> _status), do: :heartbeat
   def event_transition(_), do: :unknown
 
   @doc "Reduce a lifecycle event stream into the projected status."

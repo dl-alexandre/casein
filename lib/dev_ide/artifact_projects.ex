@@ -161,6 +161,47 @@ defmodule DevIDE.ArtifactProjects do
 
   def snapshot(_project_id, _attrs), do: {:error, :invalid_project_id}
 
+  @doc """
+  Restore a retired artifact project from its retained local Git branch.
+
+  The workspace-scoped form is intended for HTTP and agent boundaries: it
+  rejects an artifact id owned by a different workspace before touching disk.
+  Restoration is idempotent when the runtime is already provisioned and its
+  recorded worktree is still valid.
+  """
+  @spec restore(String.t()) :: {:ok, Project.t()} | {:error, term()}
+  def restore(project_id) when is_binary(project_id) do
+    with {:ok, %Runtime{} = runtime} <- runtime_project(project_id) do
+      restore(runtime.workspace_id, project_id)
+    end
+  end
+
+  def restore(_project_id), do: {:error, :invalid_project_id}
+
+  @spec restore(String.t(), String.t()) :: {:ok, Project.t()} | {:error, term()}
+  def restore(workspace_id, project_id)
+      when is_binary(workspace_id) and is_binary(project_id) do
+    Runtimes.with_runtime_lock(project_id, fn ->
+      do_restore(workspace_id, project_id)
+    end)
+  end
+
+  def restore(_workspace_id, _project_id), do: {:error, :invalid_project_id}
+
+  defp do_restore(workspace_id, project_id) do
+    with {:ok, %Runtime{} = runtime} <- runtime_project(project_id),
+         :ok <- ensure_project_workspace(runtime, workspace_id),
+         {:ok, %WorkspaceRecord{} = record} <- workspace_record(workspace_id),
+         :ok <- ensure_workspace_git_checkout(record),
+         :ok <- ensure_restorable_runtime(runtime),
+         {:ok, worktree_path} <- restore_worktree_path(record, runtime),
+         {:ok, worktree_state} <- ensure_restored_worktree(record, runtime, worktree_path) do
+      Runtimes.with_preview_port_lock(fn ->
+        restore_observed_runtime(record, runtime, worktree_path, worktree_state)
+      end)
+    end
+  end
+
   @doc "Filesystem root that holds generated artifact project worktrees."
   @spec root() :: Path.t()
   def root, do: artifact_root_base()
@@ -312,6 +353,221 @@ defmodule DevIDE.ArtifactProjects do
 
       :error ->
         {:error, :artifact_not_found}
+    end
+  end
+
+  defp ensure_project_workspace(%Runtime{workspace_id: workspace_id}, workspace_id), do: :ok
+  defp ensure_project_workspace(_runtime, _workspace_id), do: {:error, :artifact_not_found}
+
+  defp workspace_record(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, %WorkspaceRecord{} = record} -> {:ok, record}
+      _ -> {:error, :workspace_not_found}
+    end
+  end
+
+  defp ensure_restorable_runtime(%Runtime{status: status})
+       when status in ["expired", "cleaned", "provisioned"],
+       do: :ok
+
+  defp ensure_restorable_runtime(%Runtime{status: status}),
+    do: {:error, {:artifact_not_restorable, status}}
+
+  defp restore_worktree_path(%WorkspaceRecord{} = record, %Runtime{worktree_path: path})
+       when is_binary(path) and path != "" do
+    root = artifact_root(record) |> Path.expand()
+    path = Path.expand(path)
+    relative = Path.relative_to(path, root)
+
+    with true <- Path.dirname(path) == root,
+         relative when relative not in ["", "."] <- relative,
+         {:ok, ^path} <- PathSafety.resolve(root, relative) do
+      {:ok, path}
+    else
+      _ -> {:error, :invalid_artifact_worktree_path}
+    end
+  end
+
+  defp restore_worktree_path(_record, _runtime),
+    do: {:error, :invalid_artifact_worktree_path}
+
+  defp ensure_restored_worktree(record, runtime, worktree_path) do
+    case File.lstat(worktree_path) do
+      {:ok, %File.Stat{type: :directory}} ->
+        with :ok <- validate_restored_worktree(record, runtime, worktree_path) do
+          {:ok, :existing}
+        end
+
+      {:ok, _stat} ->
+        {:error, :artifact_worktree_path_occupied}
+
+      {:error, :enoent} ->
+        create_restored_worktree(record, runtime, worktree_path)
+
+      {:error, reason} ->
+        {:error, {:artifact_worktree_stat_failed, reason}}
+    end
+  end
+
+  # restore_worktree_path/2 constrains path to exactly one artifact directory
+  # beneath this workspace's segment under the configured artifact root.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp create_restored_worktree(%WorkspaceRecord{} = record, %Runtime{} = runtime, path) do
+    with {:ok, branch} <- retained_branch_ref(record, runtime),
+         :ok <- File.mkdir_p(Path.dirname(path)) do
+      add_restored_worktree(record, runtime, path, branch, true)
+    end
+  end
+
+  defp add_restored_worktree(record, runtime, path, branch, retry_stale?) do
+    case git(record.host_path, ["worktree", "add", path, branch]) do
+      {:ok, _output} ->
+        case validate_restored_worktree(record, runtime, path) do
+          :ok ->
+            {:ok, :created}
+
+          {:error, _reason} = error ->
+            _ = rollback_created_worktree(record, path)
+            error
+        end
+
+      {:error, _reason} = error ->
+        recover_failed_worktree_add(record, runtime, path, branch, retry_stale?, error)
+    end
+  end
+
+  defp recover_failed_worktree_add(record, runtime, path, branch, retry_stale?, error) do
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory}} ->
+        case validate_restored_worktree(record, runtime, path) do
+          :ok -> {:ok, :existing}
+          {:error, _reason} -> error
+        end
+
+      {:error, :enoent} when retry_stale? ->
+        # `git worktree remove --force` succeeds for an exact registered
+        # worktree even when its directory is already gone. It cannot remove a
+        # different worktree because path is the validated, recorded path.
+        case git(record.host_path, ["worktree", "remove", "--force", path]) do
+          {:ok, _output} -> add_restored_worktree(record, runtime, path, branch, false)
+          {:error, _reason} -> error
+        end
+
+      _ ->
+        error
+    end
+  end
+
+  defp retained_branch_ref(%WorkspaceRecord{} = record, %Runtime{} = runtime) do
+    branch = runtime.branch || (artifact_metadata(runtime) || %{})["branch"]
+
+    if is_binary(branch) and String.trim(branch) != "" do
+      branch = String.trim(branch)
+      ref = "refs/heads/" <> branch
+
+      case git(record.host_path, ["show-ref", "--verify", "--quiet", ref]) do
+        # `git worktree add PATH refs/heads/branch` checks out detached HEAD.
+        # Verify against the unambiguous full ref, then pass the short local
+        # branch name so the restored worktree remains attached to it.
+        {:ok, _output} -> {:ok, branch}
+        {:error, {:git_exit, 1, _output}} -> {:error, :artifact_branch_not_found}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:error, :artifact_branch_not_found}
+    end
+  end
+
+  defp validate_restored_worktree(%WorkspaceRecord{} = record, %Runtime{} = runtime, path) do
+    branch = runtime.branch || (artifact_metadata(runtime) || %{})["branch"]
+
+    with {:ok, parent_common} <- git_common_dir(record.host_path),
+         {:ok, worktree_common} <- git_common_dir(path),
+         true <- same_path?(parent_common, worktree_common),
+         {:ok, toplevel} <- git(path, ["rev-parse", "--show-toplevel"]),
+         true <- same_path?(toplevel, path),
+         {:ok, checked_out_branch} <- git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"]),
+         true <- checked_out_branch == branch do
+      :ok
+    else
+      _ -> {:error, :artifact_worktree_mismatch}
+    end
+  end
+
+  defp git_common_dir(path) do
+    with {:ok, common_dir} <- git(path, ["rev-parse", "--git-common-dir"]) do
+      {:ok, Path.expand(common_dir, path)}
+    end
+  end
+
+  defp same_path?(left, right) when is_binary(left) and is_binary(right),
+    do: Path.expand(left) == Path.expand(right)
+
+  defp same_path?(_left, _right), do: false
+
+  defp restore_observed_runtime(record, runtime, worktree_path, worktree_state) do
+    result =
+      if runtime.status == "provisioned" and worktree_state == :existing do
+        {:ok, runtime}
+      else
+        do_restore_observed_runtime(record, runtime, worktree_path)
+      end
+
+    case result do
+      {:ok, %Runtime{} = restored} ->
+        _ = PreviewLauncher.ensure_started(restored)
+
+        case Runtimes.get_runtime(restored.id) do
+          {:ok, %Runtime{} = current} -> {:ok, project_from_runtime(current)}
+          :error -> {:ok, project_from_runtime(restored)}
+        end
+
+      {:error, _reason} = error ->
+        if worktree_state == :created, do: rollback_created_worktree(record, worktree_path)
+        error
+
+      :error ->
+        if worktree_state == :created, do: rollback_created_worktree(record, worktree_path)
+        {:error, :artifact_not_found}
+    end
+  end
+
+  defp do_restore_observed_runtime(_record, runtime, worktree_path) do
+    metadata = artifact_metadata(runtime)
+
+    with {:ok, _observed} <-
+           Runtimes.observe_worktree(runtime.workspace_id, %{
+             "runtime_id" => runtime.id,
+             "worktree_path" => worktree_path,
+             "tmux_session_id" => runtime.tmux_session_id,
+             "branch" => runtime.branch,
+             "agent" => "artifact_project",
+             "source" => "artifact_project",
+             "capabilities" => ["artifact_project", "preview"],
+             "tools" => ["artifact_create", "artifact_update", "artifact_serve"],
+             "runtime_profile" => runtime_profile(metadata["kind"] || @default_kind),
+             "preview_status" => "provisioned",
+             "ensure_preview_started" => false,
+             "metadata" => %{"artifact_project" => metadata}
+           }),
+         {:ok, %Runtime{} = restored} <-
+           Runtimes.restore_runtime(runtime.id, %{"reason" => "artifact_restore"}) do
+      {:ok, restored}
+    end
+  end
+
+  # The path has already been constrained to the workspace's artifact root.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp rollback_created_worktree(%WorkspaceRecord{} = record, path) do
+    case git(record.host_path, ["worktree", "remove", "--force", path]) do
+      {:ok, _output} ->
+        :ok
+
+      {:error, _reason} ->
+        case File.rm_rf(path) do
+          {:ok, _removed} -> :ok
+          {:error, reason, _file} -> {:error, {:artifact_worktree_rollback_failed, reason}}
+        end
     end
   end
 

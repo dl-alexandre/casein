@@ -4,12 +4,10 @@ defmodule DevIDE.Runtimes.PreviewServerTest do
   alias DevIDE.Runtimes.PreviewServer
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
-  # All of these tests exercise the PURE derivation/construction logic of
-  # PreviewServer. The only IO touch-points are:
-  #   * allocate_port/2 -> port_available?/1 (gen_tcp.listen) — avoided by always
-  #     supplying an explicit port through attrs.
-  #   * default_launcher_path/0 (File/System/Application) — made deterministic by
-  #     setting DEV_IDE_RUNTIME_PREVIEW_LAUNCHER for the default-command branch.
+  # These tests exercise PreviewServer derivation/construction. Port selection
+  # briefly probes loopback availability even for explicit ports; no listener is
+  # retained. default_launcher_path/0 is made deterministic where needed with
+  # DEV_IDE_RUNTIME_PREVIEW_LAUNCHER.
 
   defp record(attrs \\ %{}) do
     %WorkspaceRecord{
@@ -141,6 +139,82 @@ defmodule DevIDE.Runtimes.PreviewServerTest do
       assert server["command"] == ["run"]
     end
 
+    test "reallocates an existing preview port reserved by another runtime" do
+      {:ok, initial} =
+        PreviewServer.build_for_worktree(
+          record(),
+          "rt-restored",
+          "tmux",
+          "/wt",
+          %{"preview_port" => 5800},
+          []
+        )
+
+      attrs = %{"metadata" => %{"preview_server" => initial}}
+
+      {:ok, server} =
+        PreviewServer.build_for_worktree(record(), "rt-restored", "tmux", "/wt", attrs, [5800])
+
+      refute server["port"] == 5800
+      assert server["port"] in 41_050..41_079
+      assert server["env"]["PORT"] == Integer.to_string(server["port"])
+      assert List.last(server["command"]) == Integer.to_string(server["port"])
+      refute server["command"] == initial["command"]
+    end
+
+    test "reallocates an occupied retained port unless the active runtime owns it" do
+      {:ok, probe} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+      {:ok, {{127, 0, 0, 1}, occupied_port}} = :inet.sockname(probe)
+      :ok = :gen_tcp.close(probe)
+
+      {:ok, initial} =
+        PreviewServer.build_for_worktree(
+          record(),
+          "rt-retained",
+          "tmux",
+          "/wt",
+          %{"preview_port" => occupied_port},
+          []
+        )
+
+      {:ok, listener} =
+        :gen_tcp.listen(occupied_port, [
+          :binary,
+          active: false,
+          reuseaddr: true,
+          ip: {127, 0, 0, 1}
+        ])
+
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      attrs = %{"metadata" => %{"preview_server" => initial}}
+
+      {:ok, reallocated} =
+        PreviewServer.build_for_worktree(
+          record(),
+          "rt-retained",
+          "tmux",
+          "/wt",
+          attrs,
+          []
+        )
+
+      refute reallocated["port"] == occupied_port
+
+      {:ok, retained} =
+        PreviewServer.build_for_worktree(
+          record(),
+          "rt-retained",
+          "tmux",
+          "/wt",
+          Map.put(attrs, "_allow_occupied_preview_port", true),
+          []
+        )
+
+      assert retained["port"] == occupied_port
+      assert retained["command"] == initial["command"]
+    end
+
     test "allocated ports come from the runtime preview range" do
       {:ok, server} =
         PreviewServer.build_for_worktree(record(), "rt-auto", "tmux", "/wt", %{}, [])
@@ -153,6 +227,61 @@ defmodule DevIDE.Runtimes.PreviewServerTest do
 
       assert PreviewServer.build_for_worktree(record(), "rt-full", "tmux", "/wt", %{}, used_ports) ==
                {:error, :no_runtime_preview_port_available}
+    end
+  end
+
+  describe "owns_live_port?/1" do
+    test "requires a matching live launcher registry and reachable port" do
+      base =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-preview-owner-#{System.unique_integer([:positive])}"
+        )
+
+      cwd = Path.join(base, "worktree")
+      preview_home = Path.join(base, "preview-home")
+      registry_dir = Path.join(preview_home, "instances")
+      File.mkdir_p!(cwd)
+      File.mkdir_p!(registry_dir)
+      on_exit(fn -> File.rm_rf!(base) end)
+
+      {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+      {:ok, {{127, 0, 0, 1}, port}} = :inet.sockname(listener)
+      on_exit(fn -> :gen_tcp.close(listener) end)
+
+      registry = %{
+        "runtime_id" => "rt-owned",
+        "workspace_id" => "ws-ext-1",
+        "checkout" => cwd,
+        "port" => Integer.to_string(port),
+        "pid" => System.pid(),
+        "status" => "running"
+      }
+
+      File.write!(
+        Path.join(registry_dir, "rt-owned.json"),
+        Jason.encode!(registry)
+      )
+
+      server = %{
+        "runtime_id" => "rt-owned",
+        "workspace_id" => "ws-ext-1",
+        "cwd" => cwd,
+        "port" => port,
+        "env" => %{"DEVIDE_PREVIEW_HOME" => preview_home}
+      }
+
+      assert PreviewServer.owns_live_port?(server)
+      refute PreviewServer.owns_live_port?(%{server | "runtime_id" => "rt-other"})
+      refute PreviewServer.owns_live_port?(%{server | "workspace_id" => "ws-other"})
+      refute PreviewServer.owns_live_port?(%{server | "port" => port + 1})
+
+      File.write!(
+        Path.join(registry_dir, "rt-owned.json"),
+        Jason.encode!(%{registry | "status" => "failed"})
+      )
+
+      refute PreviewServer.owns_live_port?(server)
     end
   end
 

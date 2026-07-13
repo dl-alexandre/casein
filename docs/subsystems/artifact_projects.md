@@ -48,6 +48,31 @@ use the runtime preview launcher with `DEVIDE_RUNTIME_PREVIEW_COMMAND` set to:
 python3 -m http.server "$PORT" --bind 127.0.0.1
 ```
 
+## Retirement and restoration
+
+The runtime reaper may expire an idle artifact and later remove its worktree,
+but it retains the artifact's local Git branch. `ArtifactProjects.restore/2`
+brings either state back: an expired artifact reuses its validated worktree,
+while a cleaned artifact recreates the recorded worktree from that branch. A
+successful restore clears the runtime retirement fields, appends a
+`runtime_restored` lifecycle event, refreshes preview metadata, and either
+reuses a live preview verified through its launcher registry or starts one on
+an available port. Repeating the operation on an already restored artifact is
+safe and does not append another lifecycle event.
+
+The bearer-authenticated frontend boundary is:
+
+```text
+POST /api/workspaces/:workspace_id/artifacts/:artifact_id/restore
+```
+
+The route accepts the global API token or a token scoped to the workspace in
+the path. It returns `404` when the artifact does not belong to that workspace
+and `409` when retained state cannot be restored (for example, when its local
+branch is missing). Restoration never guesses a branch or path: the stored path
+must remain under the configured artifact root and the branch must still be a
+local branch of the workspace repository.
+
 ## Configuration
 
 Artifact worktrees live under `:dev_ide, :artifact_projects_root`. Releases can

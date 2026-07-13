@@ -72,6 +72,54 @@ defmodule DevIDE.Runtimes do
     end)
   end
 
+  @doc "Run a function while holding the shared lock for one runtime id."
+  @spec with_runtime_lock(String.t(), (-> result)) :: result when result: term()
+  def with_runtime_lock(runtime_id, fun)
+      when is_binary(runtime_id) and is_function(fun, 0) do
+    with_reentrant_global_lock({__MODULE__, :runtime, runtime_id}, fun)
+  end
+
+  @doc "Serialize preview-port selection and persistence across runtimes."
+  @spec with_preview_port_lock((-> result)) :: result when result: term()
+  def with_preview_port_lock(fun) when is_function(fun, 0) do
+    with_reentrant_global_lock({__MODULE__, :preview_ports}, fun)
+  end
+
+  @doc "Restore an expired or cleaned runtime and append a lifecycle event."
+  @spec restore_runtime(String.t(), map()) :: {:ok, Runtime.t()} | :error | {:error, term()}
+  def restore_runtime(runtime_id, attrs \\ %{})
+
+  def restore_runtime(runtime_id, attrs) when is_binary(runtime_id) and is_map(attrs) do
+    with_runtime_lock(runtime_id, fn -> do_restore_runtime(runtime_id, attrs) end)
+  end
+
+  def restore_runtime(_runtime_id, _attrs), do: :error
+
+  defp do_restore_runtime(runtime_id, attrs) do
+    case get_runtime(runtime_id) do
+      {:ok, %Runtime{status: "provisioned"} = runtime} ->
+        {:ok, runtime}
+
+      {:ok, %Runtime{}} ->
+        transition_runtime(runtime_id, :restore, "runtime_restored", attrs, fn runtime ->
+          now = datetime_value(attrs, "restored_at") || DateTime.utc_now()
+
+          %{
+            runtime
+            | status: "provisioned",
+              expired_at: nil,
+              cleaned_at: nil,
+              failure_reason: nil,
+              active_assignments: 0,
+              heartbeat_at: now
+          }
+        end)
+
+      :error ->
+        :error
+    end
+  end
+
   @doc "List active agent worktree runtimes for a workspace."
   @spec list_agent_worktrees(String.t()) :: [map()]
   def list_agent_worktrees(workspace_id) when is_binary(workspace_id) do
@@ -98,7 +146,9 @@ defmodule DevIDE.Runtimes do
          {:ok, worktree_path} <- observed_worktree_path(record, attrs),
          {:ok, %GitInspector{} = git_info} <- inspect_worktree(worktree_path),
          :ok <- validate_agent_worktree(record, worktree_path, git_info) do
-      upsert_agent_worktree_runtime(record, attrs, worktree_path, git_info)
+      with_preview_port_lock(fn ->
+        upsert_agent_worktree_runtime(record, attrs, worktree_path, git_info)
+      end)
     end
   end
 
@@ -197,10 +247,18 @@ defmodule DevIDE.Runtimes do
       is_nil(only_ids) or MapSet.member?(only_ids, runtime.id)
     end)
     |> Enum.flat_map(fn runtime ->
-      case cleanup_runtime(runtime.id) do
-        {:ok, cleaned} -> [cleaned]
-        _ -> []
-      end
+      with_runtime_lock(runtime.id, fn ->
+        case get_runtime(runtime.id) do
+          {:ok, %Runtime{status: "expired"}} ->
+            case cleanup_runtime(runtime.id) do
+              {:ok, cleaned} -> [cleaned]
+              _ -> []
+            end
+
+          _ ->
+            []
+        end
+      end)
     end)
   end
 
@@ -450,7 +508,8 @@ defmodule DevIDE.Runtimes do
              tmux_session_id,
              worktree_path,
              attrs,
-             metadata
+             metadata,
+             existing
            ) do
       runtime = %Runtime{
         id: runtime_id,
@@ -516,7 +575,7 @@ defmodule DevIDE.Runtimes do
         end
 
       with {:ok, %Runtime{} = runtime} <- result do
-        _ = PreviewLauncher.ensure_started(runtime)
+        if preview_start_requested?(attrs), do: PreviewLauncher.ensure_started(runtime)
         {:ok, runtime}
       end
     end
@@ -528,14 +587,27 @@ defmodule DevIDE.Runtimes do
          tmux_session_id,
          worktree_path,
          attrs,
-         metadata
+         metadata,
+         existing
        ) do
+    existing_server = existing && PreviewServer.for_metadata(existing.metadata || %{})
+
+    allow_occupied_port? =
+      match?(%Runtime{status: "provisioned"}, existing) or
+        (match?(%Runtime{status: "expired"}, existing) and
+           PreviewServer.owns_live_port?(existing_server))
+
+    preview_attrs =
+      attrs
+      |> Map.put("metadata", metadata)
+      |> Map.put("_allow_occupied_preview_port", allow_occupied_port?)
+
     case PreviewServer.build_for_worktree(
            record,
            runtime_id,
            tmux_session_id,
            worktree_path,
-           Map.put(attrs, "metadata", metadata),
+           preview_attrs,
            used_preview_ports(runtime_id)
          ) do
       {:ok, preview_server} ->
@@ -789,6 +861,45 @@ defmodule DevIDE.Runtimes do
   end
 
   defp worktree_runtime_id, do: "wt-" <> Ecto.UUID.generate()
+
+  defp preview_start_requested?(attrs) do
+    value =
+      case Map.fetch(attrs, "ensure_preview_started") do
+        {:ok, value} -> value
+        :error -> Map.get(attrs, :ensure_preview_started)
+      end
+
+    value not in [false, "false", 0, "0"]
+  end
+
+  # :global's requester id makes nested acquisitions by the same process look
+  # reentrant, but the inner release also drops the outer lock. Track depth in
+  # the process dictionary so only the outermost call touches :global.
+  defp with_reentrant_global_lock(resource, fun) do
+    depth_key = {__MODULE__, :global_lock_depth, resource}
+
+    case Process.get(depth_key, 0) do
+      0 ->
+        :global.trans({resource, self()}, fn ->
+          Process.put(depth_key, 1)
+
+          try do
+            fun.()
+          after
+            Process.delete(depth_key)
+          end
+        end)
+
+      depth ->
+        Process.put(depth_key, depth + 1)
+
+        try do
+          fun.()
+        after
+          Process.put(depth_key, depth)
+        end
+    end
+  end
 
   defp under_agent_worktree_root?(path) do
     roots =

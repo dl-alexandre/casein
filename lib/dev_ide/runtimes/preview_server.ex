@@ -13,6 +13,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   @app_surface "app"
   @default_launcher "runtime-preview-launch.sh"
+  @safe_runtime_id ~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,255}\z/
 
   @type t :: map()
 
@@ -36,7 +37,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
       command =
         usable_command(command_from_attrs(attrs)) ||
-          usable_command(value(existing, "command")) ||
+          existing_command_for_port(existing, port) ||
           default_command(port)
 
       status =
@@ -176,6 +177,47 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   def metadata_ports(_), do: []
 
+  @doc "Verify that a reachable preview port belongs to this runtime's launcher registry."
+  @spec owns_live_port?(t() | nil) :: boolean()
+  def owns_live_port?(server) when is_map(server) do
+    runtime_id = value(server, "runtime_id")
+    workspace_id = value(server, "workspace_id")
+    cwd = non_empty_string(value(server, "cwd"))
+    port = port_value(value(server, "port"))
+    env = env_map(value(server, "env"))
+
+    preview_home =
+      non_empty_string(value(env, "DEVIDE_PREVIEW_HOME")) ||
+        (cwd && Path.join(cwd, ".devide-preview"))
+
+    with true <- is_binary(runtime_id) and Regex.match?(@safe_runtime_id, runtime_id),
+         true <- is_binary(cwd) and Path.type(cwd) == :absolute,
+         true <- is_binary(preview_home) and Path.type(preview_home) == :absolute,
+         true <- is_integer(port),
+         registry_path <-
+           Path.join([preview_home, "instances", runtime_id <> ".json"]),
+         # registry_path ends in a regex-constrained runtime id beneath the
+         # launcher-owned absolute preview home.
+         # sobelow_skip ["Traversal.FileModule"]
+         {:ok, body} <- File.read(registry_path),
+         {:ok, registry} when is_map(registry) <- Jason.decode(body),
+         true <- value(registry, "runtime_id") == runtime_id,
+         true <- value(registry, "workspace_id") == workspace_id,
+         true <- port_value(value(registry, "port")) == port,
+         true <- value(registry, "status") == "running",
+         true <- same_path?(value(registry, "checkout"), cwd),
+         true <- live_os_pid?(value(registry, "pid")),
+         true <- port_reachable?(port) do
+      true
+    else
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  def owns_live_port?(_server), do: false
+
   defp profile_with_server(profile, server) do
     base =
       case Profile.normalize(profile) do
@@ -236,10 +278,81 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   defp maybe_put_failure_reason(server, _failure_reason), do: Map.delete(server, "failure_reason")
 
+  defp existing_command_for_port(existing, port) do
+    command = usable_command(value(existing, "command"))
+    existing_port = port_value(value(existing, "port"))
+
+    if command && existing_port && existing_port != port &&
+         command == default_command(existing_port) do
+      default_command(port)
+    else
+      command
+    end
+  end
+
   defp resolve_port(attrs, existing, runtime_id, used_ports) do
     case port_value(requested_port(attrs)) || port_value(value(existing, "port")) do
-      nil -> allocate_port(runtime_id, used_ports)
-      port -> {:ok, port}
+      nil ->
+        allocate_port(runtime_id, used_ports)
+
+      port ->
+        cond do
+          port in used_ports ->
+            allocate_port(runtime_id, used_ports)
+
+          port_available?(port) ->
+            {:ok, port}
+
+          occupied_port_owned?(attrs, existing, runtime_id, port) ->
+            {:ok, port}
+
+          true ->
+            allocate_port(runtime_id, [port | used_ports])
+        end
+    end
+  end
+
+  defp occupied_port_owned?(attrs, existing, runtime_id, port) do
+    value(attrs, "_allow_occupied_preview_port") == true and
+      value(existing, "runtime_id") == runtime_id and
+      port_value(value(existing, "port")) == port
+  end
+
+  defp same_path?(left, right) when is_binary(left) and is_binary(right),
+    do: Path.expand(left) == Path.expand(right)
+
+  defp same_path?(_left, _right), do: false
+
+  # PID is digits-only from a validated launcher registry; no shell is used.
+  # sobelow_skip ["CI.System"]
+  defp live_os_pid?(pid) when is_integer(pid), do: live_os_pid?(Integer.to_string(pid))
+
+  defp live_os_pid?(pid) when is_binary(pid) do
+    if Regex.match?(~r/\A[1-9][0-9]*\z/, pid) do
+      case System.find_executable("kill") do
+        nil ->
+          false
+
+        kill ->
+          # kill is resolved by System.find_executable/1 and pid is digits-only.
+          # sobelow_skip ["CI.System"]
+          match?({_, 0}, System.cmd(kill, ["-0", pid], stderr_to_stdout: true))
+      end
+    else
+      false
+    end
+  end
+
+  defp live_os_pid?(_pid), do: false
+
+  defp port_reachable?(port) do
+    case :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 250) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
     end
   end
 

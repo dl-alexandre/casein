@@ -203,6 +203,51 @@ defmodule DevIDE.Runtimes.ReaperTest do
              "[runtime-reaper] invoking Runtimes.cleanup_expired/2 only_ids=[\"rt-reaper-live\"]"
   end
 
+  test "teardown waits for preview-port allocation lock before removing a worktree" do
+    root = tmp_repo!("reaper-port-lock")
+    worktree = Path.join(root, "agent-port-lock-wt")
+    git!(root, ["worktree", "add", "-b", "agent-port-lock", worktree, "main"])
+    seed_workspace!("ws-reaper-port-lock", root)
+
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime("ws-reaper-port-lock",
+        runtime_id: "rt-reaper-port-lock",
+        status: "expired",
+        worktree_path: worktree,
+        metadata: %{
+          "kind" => "agent_worktree",
+          "worktree_status" => "clean",
+          "worktree_path" => worktree
+        }
+      )
+
+    parent = self()
+
+    lock_holder =
+      Task.async(fn ->
+        Runtimes.with_preview_port_lock(fn ->
+          send(parent, :reaper_preview_lock_held)
+
+          receive do
+            :release_reaper_preview_lock -> :ok
+          after
+            2_000 -> raise "preview lock was not released by the test"
+          end
+        end)
+      end)
+
+    assert_receive :reaper_preview_lock_held
+    sweep = Task.async(fn -> Reaper.sweep_now(dry_run: false) end)
+
+    assert Task.yield(sweep, 100) == nil
+    assert File.dir?(worktree)
+
+    send(lock_holder.pid, :release_reaper_preview_lock)
+    assert :ok = Task.await(lock_holder)
+    assert %{cleaned_ids: ["rt-reaper-port-lock"]} = Task.await(sweep, 5_000)
+    refute File.exists?(worktree)
+  end
+
   test "teardown kills orphaned preview registry pids" do
     root = tmp_repo!("reaper-kill")
     worktree = Path.join(root, "agent-kill-wt")

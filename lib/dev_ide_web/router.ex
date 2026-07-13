@@ -215,6 +215,10 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/audit", WorkspaceController, :audit
     get "/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions
 
+    post "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
+         ArtifactProjectController,
+         :restore
+
     get "/workspaces/:id/templates", WorkspaceTemplateController, :templates
     get "/workspaces/:id/templates/export", WorkspaceTemplateController, :export_template
     post "/workspaces/:id/templates/export", WorkspaceTemplateController, :save_template

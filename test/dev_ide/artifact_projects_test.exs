@@ -5,14 +5,31 @@ defmodule DevIDE.ArtifactProjectsTest do
 
   alias DevIDE.ArtifactProjects
   alias DevIDE.Runtimes
+  alias DevIDE.Runtimes.MemoryAdapter, as: RuntimeAdapter
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
+
+  defmodule PreviewRunner do
+    @behaviour DevIDE.Runtimes.PreviewLauncher
+
+    @impl true
+    def start(spec) do
+      send(
+        Application.fetch_env!(:dev_ide, :artifact_restore_preview_test_pid),
+        {:artifact_preview_start, spec["runtime_id"]}
+      )
+
+      :ok
+    end
+  end
 
   setup do
     prev_artifact_root = Application.get_env(:dev_ide, :artifact_projects_root)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
     prev_launcher_enabled = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
+    prev_runner = Application.get_env(:dev_ide, :runtime_preview_runner)
+    prev_runner_pid = Application.get_env(:dev_ide, :artifact_restore_preview_test_pid)
     prev_runtimes_adapter = Application.get_env(:dev_ide, :runtimes_adapter)
     prev_workspace_state_adapter = Application.get_env(:dev_ide, :workspace_state_adapter)
 
@@ -40,6 +57,8 @@ defmodule DevIDE.ArtifactProjectsTest do
       restore_env(:artifact_projects_root, prev_artifact_root)
       restore_env(:agent_worktree_roots, prev_agent_roots)
       restore_env(:runtime_preview_launcher_enabled, prev_launcher_enabled)
+      restore_env(:runtime_preview_runner, prev_runner)
+      restore_env(:artifact_restore_preview_test_pid, prev_runner_pid)
       restore_env(:runtimes_adapter, prev_runtimes_adapter)
       restore_env(:workspace_state_adapter, prev_workspace_state_adapter)
     end)
@@ -226,6 +245,211 @@ defmodule DevIDE.ArtifactProjectsTest do
     assert {:ok, served} = ArtifactProjects.serve(project.id)
     assert served.id == project.id
     assert served.preview_url == project.preview_url
+  end
+
+  test "restore revives an expired artifact whose worktree still exists" do
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Expired Artifact",
+               files: %{"index.html" => "<h1>Still here</h1>\n"}
+             })
+
+    assert {:ok, expired} =
+             Runtimes.expire_runtime(project.id, %{"reason" => "artifact_ttl_expired"})
+
+    assert expired.status == "expired"
+    assert File.dir?(project.worktree_path)
+
+    assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert restored.id == project.id
+    assert restored.worktree_path == project.worktree_path
+    assert restored.status == "provisioned"
+    refute ArtifactProjects.retired?(restored)
+    assert File.read!(Path.join(restored.worktree_path, "index.html")) =~ "Still here"
+
+    assert {:ok, runtime} = Runtimes.get_runtime(project.id)
+    assert runtime.status == "provisioned"
+    assert runtime.expired_at == nil
+    assert runtime.failure_reason == nil
+    assert List.last(Runtimes.events_for(project.id)).event == "runtime_restored"
+
+    event_count = length(Runtimes.events_for(project.id))
+    assert {:ok, idempotent} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert idempotent.id == project.id
+    assert length(Runtimes.events_for(project.id)) == event_count
+  end
+
+  test "restore recreates a cleaned artifact worktree from its retained branch", %{repo: repo} do
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Cleaned Artifact",
+               files: %{"index.html" => "<h1>Recover me</h1>\n"}
+             })
+
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+    git!(repo, ["worktree", "remove", "--force", project.worktree_path])
+    assert {:ok, cleaned} = Runtimes.cleanup_runtime(project.id)
+    assert cleaned.status == "cleaned"
+    refute File.exists?(project.worktree_path)
+
+    assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert File.dir?(restored.worktree_path)
+    assert File.read!(Path.join(restored.worktree_path, "index.html")) =~ "Recover me"
+    assert git!(restored.worktree_path, ["branch", "--show-current"]) == project.branch
+
+    assert {:ok, runtime} = Runtimes.get_runtime(project.id)
+    assert runtime.status == "provisioned"
+    assert runtime.expired_at == nil
+    assert runtime.cleaned_at == nil
+    assert runtime.failure_reason == nil
+
+    assert {:ok, "provisioned"} =
+             project.id |> Runtimes.events_for() |> Runtimes.project_lifecycle()
+
+    assert {:ok, _previewing} = Runtimes.mark_preview_server(runtime, "starting")
+
+    assert {:ok, "provisioned"} =
+             project.id |> Runtimes.events_for() |> Runtimes.project_lifecycle()
+  end
+
+  test "restore repairs an exact stale Git worktree registration", %{repo: repo} do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Stale Entry"})
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+
+    File.rm_rf!(project.worktree_path)
+    assert git!(repo, ["worktree", "list", "--porcelain"]) =~ project.worktree_path
+    assert {:ok, _cleaned} = Runtimes.cleanup_runtime(project.id)
+
+    assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert File.dir?(restored.worktree_path)
+    assert git!(restored.worktree_path, ["branch", "--show-current"]) == project.branch
+  end
+
+  test "concurrent restores append only one restored lifecycle event" do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Concurrent"})
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+
+    results =
+      1..4
+      |> Task.async_stream(
+        fn _ -> ArtifactProjects.restore("ws-artifacts", project.id) end,
+        max_concurrency: 4,
+        ordered: false,
+        timeout: 5_000
+      )
+      |> Enum.to_list()
+
+    assert Enum.all?(results, &match?({:ok, {:ok, _project}}, &1))
+
+    assert 1 ==
+             project.id
+             |> Runtimes.events_for()
+             |> Enum.count(&(&1.event == "runtime_restored"))
+  end
+
+  test "concurrent restores launch the preview only once" do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "One Launch"})
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:dev_ide, :runtime_preview_runner, PreviewRunner)
+    Application.put_env(:dev_ide, :artifact_restore_preview_test_pid, self())
+
+    results =
+      1..4
+      |> Task.async_stream(
+        fn _ -> ArtifactProjects.restore("ws-artifacts", project.id) end,
+        max_concurrency: 4,
+        ordered: false,
+        timeout: 5_000
+      )
+      |> Enum.to_list()
+
+    assert Enum.all?(results, &match?({:ok, {:ok, _project}}, &1))
+    assert_receive {:artifact_preview_start, artifact_id}, 1_000
+    assert artifact_id == project.id
+    refute_receive {:artifact_preview_start, ^artifact_id}, 300
+  end
+
+  test "restore reuses a verified live preview owned by the expired artifact" do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Live Preview"})
+    server = project.preview_server
+
+    {:ok, listener} =
+      :gen_tcp.listen(server["port"], [
+        :binary,
+        active: false,
+        reuseaddr: true,
+        ip: {127, 0, 0, 1}
+      ])
+
+    on_exit(fn -> :gen_tcp.close(listener) end)
+
+    preview_home = server["env"]["DEVIDE_PREVIEW_HOME"]
+    registry_dir = Path.join(preview_home, "instances")
+    File.mkdir_p!(registry_dir)
+
+    File.write!(
+      Path.join(registry_dir, project.id <> ".json"),
+      Jason.encode!(%{
+        "runtime_id" => project.id,
+        "workspace_id" => project.workspace_id,
+        "checkout" => project.worktree_path,
+        "port" => Integer.to_string(server["port"]),
+        "pid" => System.pid(),
+        "status" => "running"
+      })
+    )
+
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:dev_ide, :runtime_preview_runner, PreviewRunner)
+    Application.put_env(:dev_ide, :artifact_restore_preview_test_pid, self())
+
+    assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert restored.preview_server["port"] == server["port"]
+    assert restored.preview_server["status"] == "running"
+    refute_receive {:artifact_preview_start, _artifact_id}, 200
+  end
+
+  test "restore rejects a stored path under another workspace segment", %{
+    artifact_root: artifact_root
+  } do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Wrong Root"})
+    assert {:ok, expired} = Runtimes.expire_runtime(project.id)
+
+    foreign_path =
+      Path.join([artifact_root, "another-workspace", Path.basename(project.worktree_path)])
+
+    assert {:ok, _runtime} =
+             RuntimeAdapter.update_runtime(%{expired | worktree_path: foreign_path}, nil)
+
+    assert {:error, :invalid_artifact_worktree_path} =
+             ArtifactProjects.restore("ws-artifacts", project.id)
+  end
+
+  test "restore reports a missing retained branch without leaving a worktree", %{repo: repo} do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Lost Branch"})
+
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+    git!(repo, ["worktree", "remove", "--force", project.worktree_path])
+    assert {:ok, _cleaned} = Runtimes.cleanup_runtime(project.id)
+    git!(repo, ["branch", "-D", project.branch])
+
+    assert {:error, :artifact_branch_not_found} =
+             ArtifactProjects.restore("ws-artifacts", project.id)
+
+    refute File.exists?(project.worktree_path)
+    assert {:ok, %{status: "cleaned"}} = Runtimes.get_runtime(project.id)
+  end
+
+  test "restore rejects an artifact owned by another workspace" do
+    assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Scoped Artifact"})
+    assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
+
+    assert {:error, :artifact_not_found} = ArtifactProjects.restore("ws-other", project.id)
+    assert {:ok, %{status: "expired"}} = Runtimes.get_runtime(project.id)
   end
 
   test "smoke mix task creates an artifact and prints preview_open arguments" do

@@ -112,9 +112,12 @@ defmodule DevIDE.Runtimes.Reaper do
         {[], Enum.map(candidates, &%{runtime_id: &1.id, reason: :dry_run})}
       else
         Enum.reduce(candidates, {[], []}, fn runtime, {ids_acc, skipped_acc} ->
-          case teardown_runtime(runtime) do
+          case teardown_expired_runtime(runtime.id) do
             :ok ->
               {[runtime.id | ids_acc], skipped_acc}
+
+            {:skip, reason} ->
+              {ids_acc, [%{runtime_id: runtime.id, reason: reason} | skipped_acc]}
 
             {:error, reason} ->
               Logger.warning("[runtime-reaper] failed to reap #{runtime.id}: #{inspect(reason)}")
@@ -149,6 +152,25 @@ defmodule DevIDE.Runtimes.Reaper do
       skipped: Enum.reverse(skipped),
       dry_run: dry_run?
     }
+  end
+
+  defp teardown_expired_runtime(runtime_id) do
+    Runtimes.with_runtime_lock(runtime_id, fn ->
+      Runtimes.with_preview_port_lock(fn ->
+        case Runtimes.get_runtime(runtime_id) do
+          {:ok, %Runtime{status: "expired"} = runtime} ->
+            if reapable?(runtime),
+              do: teardown_runtime(runtime),
+              else: {:skip, :no_longer_reapable}
+
+          {:ok, %Runtime{}} ->
+            {:skip, :no_longer_expired}
+
+          :error ->
+            {:skip, :runtime_missing}
+        end
+      end)
+    end)
   end
 
   defp teardown_runtime(%Runtime{} = runtime) do
