@@ -442,6 +442,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
           needs_you_count: non_neg_integer(),
           expanded?: boolean(),
           flat_session?: boolean(),
+          loading?: boolean(),
+          nav_href: String.t() | nil,
           session: tab() | workspace_tab() | nil,
           sessions: [tab() | workspace_tab()] | nil
         }
@@ -697,6 +699,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       needs_you_count: 0,
       expanded?: false,
       flat_session?: true,
+      loading?: false,
+      nav_href: nil,
       session: session,
       sessions: nil
     }
@@ -761,22 +765,53 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
        ) do
     workspace_id = summary_id(summary) || "workspace"
     current? = workspace_id == current_workspace_id
-    expanded? = MapSet.member?(expanded, workspace_id)
+    explicitly_expanded? = MapSet.member?(expanded, workspace_id)
     session_count = summary_session_count(summary)
     live? = workspace_summary_live?(summary)
+    openable? = workspace_openable?(summary, viewer, current?)
 
-    sessions =
+    # The summary already carries this workspace's session list, so the picker
+    # can paint rows the moment a workspace is clicked — no empty gap waiting on
+    # the async `SessionDirectory.read`, which only refreshes with live state.
+    # Gated on `openable?`: a teammate's workspace must not leak session rows
+    # (or the deep links built from them) into this viewer's rail.
+    summary_tabs =
+      if current? or not openable?,
+        do: [],
+        else: tag_workspace_id(workspace_summary_tabs(summary), workspace_id)
+
+    # A workspace with a single attachable session navigates on click instead of
+    # expanding to a one-item list. The row keeps its workspace label; the click
+    # deep-links straight in. This is the common "Other workspaces" case and the
+    # one that felt broken: a lone "1"-count row that only expanded to itself.
+    nav_href =
+      case summary_tabs do
+        [%{href: href}] when is_binary(href) and href != "" -> href
+        _ -> nil
+      end
+
+    loaded_async = Map.get(sidebar_ws, workspace_id)
+
+    {sessions, loading?} =
       cond do
         current? and is_list(current_tabs) ->
-          Enum.map(current_tabs, &Map.put(&1, :workspace_id, workspace_id))
+          {tag_workspace_id(current_tabs, workspace_id), false}
 
-        expanded? ->
-          sidebar_ws
-          |> Map.get(workspace_id, [])
-          |> Enum.map(&Map.put(&1, :workspace_id, workspace_id))
+        # Direct-nav workspaces never expand into a redundant single child.
+        is_binary(nav_href) ->
+          {nil, false}
+
+        explicitly_expanded? and is_list(loaded_async) ->
+          {tag_workspace_id(loaded_async, workspace_id), false}
+
+        # Expanded but the fresh read hasn't landed: seed from the summary so
+        # children appear instantly. `loading?` drives a spinner only when even
+        # the summary has nothing yet, so expansion is never a silent no-op.
+        explicitly_expanded? ->
+          {summary_tabs, true}
 
         true ->
-          nil
+          {nil, false}
       end
 
     flat_session? = is_list(sessions) and length(sessions) == 1
@@ -798,16 +833,21 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
       title: summary_workspace_title(summary),
       current?: current?,
       live?: live?,
-      openable?: workspace_openable?(summary, viewer, current?),
+      openable?: openable?,
       group: node_group(current?),
       session_count: session_count,
       needs_you_count: needs_you_count,
-      expanded?: expanded? and not flat_session?,
+      expanded?: explicitly_expanded? and not flat_session?,
       flat_session?: flat_session?,
+      loading?: loading? and sessions == [],
+      nav_href: nav_href,
       session: if(flat_session?, do: List.first(sessions), else: nil),
       sessions: if(flat_session?, do: nil, else: sessions)
     }
   end
+
+  defp tag_workspace_id(tabs, workspace_id) when is_list(tabs),
+    do: Enum.map(tabs, &Map.put(&1, :workspace_id, workspace_id))
 
   # A workspace row may offer navigation unless it positively belongs to
   # someone else: a viewer with identity tokens that match none of the

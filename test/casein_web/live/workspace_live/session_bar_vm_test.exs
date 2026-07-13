@@ -140,6 +140,102 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert other.session.id == "remote-shell"
     end
 
+    test "a single-session other workspace becomes a direct one-click nav row" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{
+          id: "ws-b",
+          name: "beta",
+          session_count: 1,
+          live?: true,
+          sessions: [%{id: "s0", href: "/workspaces/ws-b?session=s0"}]
+        }
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      # Row keeps its workspace label but navigates straight into the lone
+      # session — no expand gesture, no async round-trip, no dead-end.
+      assert other.nav_href == "/workspaces/ws-b?session=s0"
+      assert other.sessions == nil
+      refute other.flat_session?
+      refute other.expanded?
+    end
+
+    test "expanding a multi-session workspace paints summary sessions before the async lands" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{
+          id: "ws-b",
+          name: "beta",
+          session_count: 2,
+          live?: true,
+          sessions: [
+            %{id: "s0", href: "/workspaces/ws-b?session=s0"},
+            %{id: "s1", href: "/workspaces/ws-b?session=s1"}
+          ]
+        }
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(["ws-b"]),
+          current_session_tabs: [],
+          # async cache still empty — summary is the instant-paint source
+          sidebar_ws_sessions: %{}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      assert other.expanded?
+      assert length(other.sessions) == 2
+      # Sessions are present, so no spinner even though the async is pending.
+      refute other.loading?
+    end
+
+    test "an expanded workspace with nothing to show yet is loading, not silently empty" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{id: "ws-b", name: "beta", session_count: 3, live?: true, sessions: []}
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(["ws-b"]),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      assert other.sessions == []
+      assert other.loading?
+    end
+
+    test "an expanded workspace whose async read returned empty shows an empty state" do
+      summaries = [
+        %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+        %{id: "ws-b", name: "beta", session_count: 3, live?: true, sessions: []}
+      ]
+
+      tree =
+        SessionBarVM.workspace_session_tree(summaries, "ws-a",
+          expanded_workspaces: MapSet.new(["ws-b"]),
+          current_session_tabs: [],
+          # async completed with an empty list (stale worktree, no live sessions)
+          sidebar_ws_sessions: %{"ws-b" => []}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      assert other.sessions == []
+      # Done loading → the row renders "No live sessions", not a perpetual gap.
+      refute other.loading?
+    end
+
     test "tags the current workspace (and scratch) :this and the rest :other" do
       summaries = [
         %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},

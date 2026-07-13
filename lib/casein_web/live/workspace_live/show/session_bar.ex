@@ -895,8 +895,57 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
                 />
               </div>
             <% end %>
+            <p
+              :if={@node.sessions == []}
+              class="flex items-center gap-1.5 px-2 py-1 font-mono text-[10px] italic text-base-content/40"
+            >
+              <.icon
+                :if={@node.loading?}
+                name="hero-arrow-path"
+                class="size-3 animate-spin"
+              />
+              {if @node.loading?, do: "Loading sessions…", else: "No live sessions"}
+            </p>
           </div>
         </div>
+      <% @node.nav_href -> %>
+        <.link
+          navigate={@node.nav_href}
+          data-picker-item
+          data-picker-section="workspaces"
+          data-picker-sessions-id={@node.dom_id}
+          class={[
+            sidebar_row_class(false),
+            "flex-row items-center gap-2",
+            not @node.live? && "opacity-60"
+          ]}
+          title={@node.title}
+          aria-label={"Open " <> @node.label}
+        >
+          <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+            <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+              <span data-picker-label class="truncate font-medium">{@node.label}</span>
+              <span
+                :if={not @node.live?}
+                class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+                title="No live tmux sessions"
+              />
+            </span>
+            <span
+              :if={@node.detail != ""}
+              class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+            >
+              {@node.detail}
+            </span>
+          </span>
+          <span
+            :if={@node.session_count > 0}
+            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+          >
+            {@node.session_count}
+            <.icon name="hero-arrow-right" class="size-3" />
+          </span>
+        </.link>
       <% true -> %>
         <div
           data-picker-tree-branch
