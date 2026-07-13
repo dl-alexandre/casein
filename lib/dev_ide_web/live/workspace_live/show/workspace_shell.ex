@@ -155,7 +155,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                  / mobile keybar; focus mode lives on the sessions rail + palette.
                  Leader mode (keyboard C-b) highlights these controls in place. --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+              <%= if @tmux_mutations_enabled? and @terminal_mode in [:raw, :raw_ghostty] do %>
                 <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                 <.leader_key_button
                   key="%"
@@ -568,6 +568,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :terminal_themes,
       :focused_pane_id,
       :pane_data,
+      :desktop_terminal?,
+      :desktop_terminal_term,
+      :desktop_terminal_pty,
+      :desktop_terminal_status,
+      :desktop_terminal_refresh,
       :workspace_start_error,
       :mobile_nav_open,
       :mobile_nav_view,

@@ -25,6 +25,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Links.Open
   alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
+  alias DevIDE.Desktop.PowerShellSession
   alias DevIDE.Terminals
   alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.TemplatePreference
@@ -191,7 +192,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # session. An explicit ?session= deep link still pins a specific session,
       # and the picker / "new tab" affordances remain the escape hatch for an
       # intentionally independent fork.
-      existing_sid = if connected?(socket), do: SessionSummary.newest_shell_sid(id, ws.name)
+      existing_sid =
+        if connected?(socket) and not desktop_mode?(),
+          do: SessionSummary.newest_shell_sid(id, ws.name)
 
       sid =
         case existing_sid do
@@ -250,6 +253,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_rename_session_id, nil)
         |> assign(:active_session_kind, :shell)
         |> assign(:tmux_mutations_enabled?, true)
+        |> assign(:desktop_terminal?, desktop_mode?())
+        |> assign(:desktop_terminal_term, nil)
+        |> assign(:desktop_terminal_pty, nil)
+        |> assign(:desktop_terminal_status, :connecting)
+        |> assign(:desktop_terminal_refresh, 0)
         |> assign(:preview_panes, %{})
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
@@ -392,8 +400,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_write_unlock, %{status: :inactive, until: nil, by: nil})
         |> assign(:deployment_panel, deployment_panel())
         |> assign_policy_permissions()
-        |> TerminalState.subscribe_tmux_topology()
-        |> TerminalState.subscribe_session_tabs()
+        |> maybe_subscribe_terminal_infrastructure()
         |> subscribe_workspace_mode()
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
@@ -635,7 +642,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket = NotificationsDrawerEvents.apply_drawer_param(socket, params)
 
     socket =
-      if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
+      if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) and
+           not socket.assigns[:desktop_terminal?] do
         {socket, session_changed?} = maybe_select_requested_terminal_session(socket, params)
         socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.stash_url_view(socket, params)
 
@@ -1261,17 +1269,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:after_mount, socket) do
     if connected?(socket) do
-      if is_binary(socket.assigns.tmux_session) do
-        _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
-      end
-
       socket =
-        socket
-        |> maybe_start_raw_ghostty_and_request_restore(
-          socket.assigns.terminal_mode,
-          socket.assigns.workspace.id
-        )
-        |> start_after_mount_hydration()
+        if socket.assigns[:desktop_terminal?] do
+          attach_desktop_terminal(socket)
+        else
+          if is_binary(socket.assigns.tmux_session) do
+            _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
+          end
+
+          socket
+          |> maybe_start_raw_ghostty_and_request_restore(
+            socket.assigns.terminal_mode,
+            socket.assigns.workspace.id
+          )
+          |> start_after_mount_hydration()
+        end
 
       send(self(), :after_mount_side_panels)
 
@@ -1279,6 +1291,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       {:noreply, socket}
     end
+  end
+
+  def handle_info({:desktop_terminal_output, _data}, socket) do
+    {:noreply, update(socket, :desktop_terminal_refresh, &(&1 + 1))}
+  end
+
+  def handle_info({:desktop_terminal_exit, reason}, socket) do
+    {:noreply, assign(socket, :desktop_terminal_status, {:exited, reason})}
   end
 
   def handle_info(:after_mount_side_panels, socket) do
@@ -1916,6 +1936,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       }
     end)
   end
+
+  defp maybe_subscribe_terminal_infrastructure(socket) do
+    if socket.assigns[:desktop_terminal?] do
+      assign(socket, :tmux_mutations_enabled?, false)
+    else
+      socket
+      |> TerminalState.subscribe_tmux_topology()
+      |> TerminalState.subscribe_session_tabs()
+    end
+  end
+
+  defp attach_desktop_terminal(socket) do
+    with :ok <- PowerShellSession.ensure_started(),
+         {:ok, term, pty, status} <- PowerShellSession.subscribe() do
+      assign(socket,
+        desktop_terminal_term: term,
+        desktop_terminal_pty: pty,
+        desktop_terminal_status: status,
+        tmux_mutations_enabled?: false
+      )
+    else
+      {:error, reason} -> assign(socket, :desktop_terminal_status, {:error, reason})
+    end
+  end
+
+  defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
 
   defp maybe_assign_hydrated_tmux_topology(socket, data) do
     hydrated = data[:tmux_topology]

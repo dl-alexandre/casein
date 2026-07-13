@@ -44,37 +44,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                 />
               <% end %>
               <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
-                        (@terminal_mode not in [:raw, :raw_ghostty] and
-                           tmux_multi_pane_geometry?(assigns)) do %>
-                  <.tmux_pane_geometry
-                    workspace={@workspace}
-                    active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
-                    preview_panes={@preview_panes}
-                    feature_panes={@feature_panes}
-                    tmux_session={@tmux_session}
-                    ui_highlight_pane_id={@ui_highlight_pane_id}
-                    tmux_active_pane_id={@tmux_active_pane_id}
-                    window_zoomed?={@window_zoomed?}
-                    tmux_mutations_enabled?={@tmux_mutations_enabled?}
-                    entered_preview_pane_id={@entered_preview_pane_id}
-                    terminal_surface_pane_id={@terminal_surface_pane_id}
-                    pane_history={@pane_history}
+                <%= if @desktop_terminal? do %>
+                  <.desktop_terminal_surface
+                    term={@desktop_terminal_term}
+                    pty={@desktop_terminal_pty}
+                    status={@desktop_terminal_status}
+                    refresh={@desktop_terminal_refresh}
                     terminal_themes={@terminal_themes}
-                    focused_pane_id={@focused_pane_id}
-                    pane_data={@pane_data}
-                    workspace_start_error={@workspace_start_error}
                   />
                 <% else %>
-                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-                    <.raw_terminal_surface
+                  <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
+                          (@terminal_mode not in [:raw, :raw_ghostty] and
+                             tmux_multi_pane_geometry?(assigns)) do %>
+                    <.tmux_pane_geometry
                       workspace={@workspace}
-                      workspace_start_error={@workspace_start_error}
+                      active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
+                      preview_panes={@preview_panes}
+                      feature_panes={@feature_panes}
+                      tmux_session={@tmux_session}
+                      ui_highlight_pane_id={@ui_highlight_pane_id}
+                      tmux_active_pane_id={@tmux_active_pane_id}
+                      window_zoomed?={@window_zoomed?}
+                      tmux_mutations_enabled?={@tmux_mutations_enabled?}
+                      entered_preview_pane_id={@entered_preview_pane_id}
+                      terminal_surface_pane_id={@terminal_surface_pane_id}
+                      pane_history={@pane_history}
+                      terminal_themes={@terminal_themes}
                       focused_pane_id={@focused_pane_id}
                       pane_data={@pane_data}
-                      terminal_themes={@terminal_themes}
+                      workspace_start_error={@workspace_start_error}
                     />
-                  </div>
+                  <% else %>
+                    <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
+                      <.raw_terminal_surface
+                        workspace={@workspace}
+                        workspace_start_error={@workspace_start_error}
+                        focused_pane_id={@focused_pane_id}
+                        pane_data={@pane_data}
+                        terminal_themes={@terminal_themes}
+                      />
+                    </div>
+                  <% end %>
                 <% end %>
               </div>
             </div>
@@ -95,6 +105,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
     </section>
     """
   end
+
+  attr :term, :any, default: nil
+  attr :pty, :any, default: nil
+  attr :status, :any, default: :connecting
+  attr :refresh, :integer, default: 0
+  attr :terminal_themes, :any, default: nil
+
+  def desktop_terminal_surface(assigns) do
+    ~H"""
+    <div
+      id="desktop-native-terminal-surface"
+      class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950"
+      data-status={desktop_status_label(@status)}
+    >
+      <%= if is_pid(@term) do %>
+        <.live_component
+          module={DevIdeWeb.GhosttyTerminalComponent}
+          id="desktop-workspace-powershell"
+          term={@term}
+          pty={@pty}
+          fit={true}
+          autofocus={true}
+          refresh={@refresh}
+          terminal_themes={@terminal_themes}
+          class="h-full w-full font-mono text-sm"
+        />
+      <% else %>
+        <div class="flex h-full items-center justify-center text-xs text-zinc-500">
+          {desktop_status_label(@status)}
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp desktop_status_label(:running), do: "Connected"
+  defp desktop_status_label(:connecting), do: "Starting native PowerShell…"
+  defp desktop_status_label({:exited, _reason}), do: "PowerShell exited"
+  defp desktop_status_label({:error, _reason}), do: "PowerShell unavailable"
 
   def mobile_key_bar(assigns) do
     ~H"""
