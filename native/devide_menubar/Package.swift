@@ -13,6 +13,12 @@ let package = Package(
             name: "devide-menubar",
             dependencies: ["DevIDEHostCore"]
         ),
+        // Headless harness over the same core the menu buttons call:
+        // start/stop/restart/status with timings. Doubles as the CI smoke.
+        .executableTarget(
+            name: "devide-host-cli",
+            dependencies: ["DevIDEHostCore"]
+        ),
         .testTarget(
             name: "DevIDEHostCoreTests",
             dependencies: ["DevIDEHostCore"]
