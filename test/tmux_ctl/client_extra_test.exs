@@ -245,16 +245,17 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- list_session_panes/1 ---------------------------------------------------
 
-  # 19-field @topology_pane_fmt:
+  # 21-field @topology_pane_fmt:
   # window_id|pane_id|index|active|left|top|width|height|current_command|
   # pane_activity|pane_bell|window_activity|window_activity_flag|
-  # window_bell_flag|pane_unseen_changes|current_path|pane_zoomed|role|pane_title
-  test "list_session_panes parses full 19-field pane lines with titles" do
+  # window_bell_flag|pane_unseen_changes|current_path|pane_zoomed|role|
+  # paired|paired_reason|pane_title (title last: pipes in it must not shift fields)
+  test "list_session_panes parses full 21-field pane lines with titles" do
     out =
       Enum.join(
         [
-          "@1|%1|0|1|0|0|120|40|node|1500|0|10|0|0|1|/workspace|1|agent|Claude ready",
-          "@1|%2|1|0|60|0|60|40|nvim|0|0|9|1|0|0|/proj|0||Task title | with pipe"
+          "@1|%1|0|1|0|0|120|40|node|1500|0|10|0|0|1|/workspace|1|agent|1||Claude ready",
+          "@1|%2|1|0|60|0|60|40|nvim|0|0|9|1|0|0|/proj|0||0|no agent env|Task title | with pipe"
         ],
         "\n"
       )
@@ -266,6 +267,8 @@ defmodule TmuxCtl.ClientExtraTest do
                id: "%1",
                current_command: "node",
                role: "agent",
+               paired: true,
+               paired_reason: nil,
                pane_title: "Claude ready",
                activity: 1500,
                unseen_changes: true,
@@ -274,6 +277,8 @@ defmodule TmuxCtl.ClientExtraTest do
              %{
                id: "%2",
                role: nil,
+               paired: false,
+               paired_reason: "no agent env",
                pane_title: "Task title | with pipe",
                activity: 9,
                activity_flag: true
