@@ -83,6 +83,14 @@ config :dev_ide,
        :deployment_instance_dir,
        Path.join(System.tmp_dir!(), "devide-test-instances-#{System.pid()}")
 
+# Never probe the Caddy admin API (http://localhost:2019) from tests.
+# DevIDE.Deployment.Health.status/1 is reached by /api/workspaces/:id/status,
+# pane mutations, and template export (all call Export.status first). On the
+# contended devbox that real HTTP GET times out and retries (~7s), making those
+# endpoint tests flaky. Health tests inject :caddy_config explicitly, so this
+# only neutralizes the un-injected controller path.
+config :dev_ide, :caddy_admin_probe, false
+
 # Neutralize SessionOwner.superseded?/0 in tests. It compares the inherited
 # DEVIDE_HTTP_SOCKET against whatever /run/devide/current.sock resolves to;
 # devbox test VMs inherit a real DEVIDE_HTTP_SOCKET from the spawning canary, so
