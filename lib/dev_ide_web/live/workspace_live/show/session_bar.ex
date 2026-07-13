@@ -1338,6 +1338,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
   end
 
+  @doc """
+  Relative navigate path for a cross-workspace session row.
+
+  Prefers the session's precomputed `:href` (set for other-workspace summary
+  tabs) and falls back to the `?session=` deep-link. Public so the mobile nav
+  sheet can reuse the exact same target the desktop sidebar navigates to.
+  """
+  @spec cross_workspace_session_path(String.t(), map()) :: String.t()
+  def cross_workspace_session_path(workspace_id, session) when is_map(session) do
+    Map.get(session, :href) || sidebar_session_href(workspace_id, Map.get(session, :id))
+  end
+
   defp session_picker_short_label(label) when is_binary(label) do
     label
     |> String.split(~r/\s+/, trim: true)
