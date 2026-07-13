@@ -242,3 +242,30 @@ the source tree, and the reviewed core must be published from fresh history.
 Licensing, provenance, dependency/asset inventories, and the public/private
 feature boundary remain explicit release gates rather than assumptions of the
 desktop spike.
+
+## Windows notification-area host
+
+The first host implementation lives in `windows/DevIDE.Tray.ps1`. It uses the
+Windows Forms `NotifyIcon` API, starts the packaged OTP release without a console
+window, and keeps the Phoenix cockpit on a loopback-only port. Its menu exposes
+open, restart, logs, launch-at-sign-in, and quit actions. Double-clicking the icon
+opens the cockpit in the user's default browser.
+
+The host persists only local runtime state under `%LOCALAPPDATA%\DevIDE`:
+
+- `devide.sqlite3` — desktop SQLite database;
+- `desktop-host.json` — retained port and launch-at-sign-in preference;
+- `secret-key-base.txt` — per-install Phoenix secret;
+- `api-token.txt` — per-install local API bearer token;
+- `desktop-host.log` — lifecycle and startup errors.
+
+Create a Windows payload from a native Windows checkout with:
+
+```powershell
+powershell -File scripts/package-windows-desktop.ps1
+```
+
+Then launch `dist\DevIDE-windows-x64\windows\Start-DevIDE.cmd`. The packaging
+script deliberately produces an installer-ready directory rather than choosing
+an installer technology. Code signing, an MSI/MSIX wrapper, branded icon assets,
+and auto-update remain release-engineering follow-ups.
