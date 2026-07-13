@@ -358,6 +358,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def pane_bell?(pane), do: Map.get(pane, :bell, false) == true
 
+  # Agent-launch pairing stamp (@devide_paired pane option): true/false once a
+  # launcher ran in the pane, nil (attr omitted) when no agent ever launched.
+  def pane_paired_attr(pane) do
+    case Map.get(pane, :paired) do
+      true -> "true"
+      false -> "false"
+      _ -> nil
+    end
+  end
+
+  def pane_unpaired_title(pane) do
+    case Map.get(pane, :paired_reason) do
+      reason when is_binary(reason) and reason != "" ->
+        "Agent launched without DevIDE MCP — #{reason}"
+
+      _ ->
+        "Agent launched without DevIDE MCP"
+    end
+  end
+
   def pane_display_title(pane) do
     "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
   end
@@ -791,6 +811,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-window-id={pane.window_id}
           data-pane-command={Map.get(pane, :current_command)}
           data-pane-role={Map.get(pane, :role)}
+          data-pane-paired={pane_paired_attr(pane)}
           data-scroll-policy={PaneInteraction.scroll_policy(pane)}
           data-scroll-backend={PaneInteraction.scroll_backend(pane)}
           data-mobile-pane-active={to_string(pane.id == @mobile_focus_pane_id)}
@@ -819,6 +840,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <%= if @tmux_mutations_enabled? and
                     not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
             <.pane_resize_handles pane_id={pane.id} />
+          <% end %>
+          <%= if Map.get(pane, :paired) == false do %>
+            <div
+              class="pointer-events-none absolute right-1 top-1 z-30 rounded-sm border border-amber-500/40 bg-amber-500/15 px-1 font-mono text-[10px] leading-4 text-amber-300"
+              title={pane_unpaired_title(pane)}
+              data-role="pane-unpaired-badge"
+            >
+              unpaired
+            </div>
           <% end %>
           <%= if pane.feature_pane? do %>
             <div class="absolute inset-0 z-0 bg-zinc-950" aria-hidden="true"></div>

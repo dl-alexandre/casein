@@ -131,6 +131,21 @@ defmodule TmuxCtl.TopologyTest do
              Topology.structure_version(windows, renamed)
   end
 
+  test "structure_version changes when pane pairing flips" do
+    windows = [
+      %{id: "@1", index: 0, name: "shell", active: true, panes: 1}
+    ]
+
+    panes = [
+      %{id: "%1", window_id: "@1", index: 0, active: true, role: "agent", paired: true}
+    ]
+
+    flipped = [%{hd(panes) | paired: false}]
+
+    refute Topology.structure_version(windows, panes) ==
+             Topology.structure_version(windows, flipped)
+  end
+
   test "structure_version changes when active selection changes" do
     windows = [
       %{id: "@1", index: 0, name: "shell", active: true, panes: 1},

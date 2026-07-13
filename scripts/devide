@@ -339,8 +339,10 @@ launch_agent() {
     if [[ "${DEVIDE_AGENT_LAUNCH_VERBOSE:-0}" == "1" ]]; then
       echo "devide: no agent env — launching ${runtime} unpaired (no DevIDE MCP)." >&2
     fi
+    agent_env_stamp_pane_pairing 0 "no agent env"
     exec_real_runtime "$runtime" "$@"
   fi
+  agent_env_stamp_pane_pairing 1 ""
   agent_env_export_runtime_paths
 
   local launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"

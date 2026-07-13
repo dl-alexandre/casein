@@ -641,6 +641,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
       active: truthy?(Map.get(pane, :active) || Map.get(pane, "active")),
       current_command: Map.get(pane, :current_command) || Map.get(pane, "current_command"),
       role: Map.get(pane, :role) || Map.get(pane, "role"),
+      paired: Map.get(pane, :paired, Map.get(pane, "paired")),
       pane_title: Map.get(pane, :pane_title) || Map.get(pane, "pane_title"),
       pane_state: Map.get(pane, :pane_state) || Map.get(pane, "pane_state"),
       task_summary: Map.get(pane, :task_summary) || Map.get(pane, "task_summary")

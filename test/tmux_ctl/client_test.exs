@@ -67,7 +67,9 @@ defmodule TmuxCtl.ClientTest do
                width: 120,
                height: 40,
                current_path: "/workspace",
-               role: "operator"
+               role: "operator",
+               paired: false,
+               paired_reason: "no agent env"
              }
            ] = Client.list_session_panes(@session)
   end
@@ -440,7 +442,9 @@ defmodule TmuxCtl.ClientTest do
           activity_flag: true,
           bell: false,
           unseen_changes: true,
-          zoomed?: true
+          zoomed?: true,
+          paired: false,
+          paired_reason: "no agent env"
         }
       ]
     })

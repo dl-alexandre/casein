@@ -316,6 +316,49 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
     end
   end
 
+  describe "tmux_pane_geometry/1 pairing badge" do
+    test "renders unpaired badge only for panes stamped @devide_paired=0" do
+      unpaired = Map.merge(pane("%1"), %{paired: false, paired_reason: "no agent env"})
+
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [unpaired],
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%1",
+          tmux_active_pane_id: "%1",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil
+        )
+
+      assert html =~ ~s(data-pane-paired="false")
+      assert html =~ ~s(data-role="pane-unpaired-badge")
+      assert html =~ "Agent launched without DevIDE MCP — no agent env"
+    end
+
+    test "renders no badge for paired or never-launched panes" do
+      paired = Map.put(pane("%1"), :paired, true)
+
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [paired, Map.put(pane("%2"), :id, "%2")],
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%1",
+          tmux_active_pane_id: "%1",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil
+        )
+
+      assert html =~ ~s(data-pane-paired="true")
+      refute html =~ ~s(data-role="pane-unpaired-badge")
+    end
+  end
+
   defp pane(id) do
     %{
       id: id,

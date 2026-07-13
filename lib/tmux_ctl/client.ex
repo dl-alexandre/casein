@@ -149,7 +149,7 @@ defmodule TmuxCtl.Client do
   # command. The underscored spelling is NOT a tmux format variable and
   # silently expands to "".
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{automatic-rename}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role}|#{pane_title})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role}|#{@devide_paired}|#{@devide_paired_reason}|#{pane_title})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -251,7 +251,7 @@ defmodule TmuxCtl.Client do
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
   @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{automatic-rename}|#{window_name})
-  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@devide_pane_role}|#{pane_title})
+  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@devide_pane_role}|#{@devide_paired}|#{pane_title})
 
   @doc """
   Windows and pane paths for every session on the server, in one tmux
@@ -317,7 +317,35 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_directory_pane_line(line) do
-    case String.split(line, "|", parts: 10) do
+    case String.split(line, "|", parts: 11) do
+      [
+        session,
+        window_id,
+        pane_id,
+        active,
+        current_command,
+        pane_activity,
+        window_activity,
+        current_path,
+        role,
+        paired,
+        pane_title
+      ] ->
+        [
+          %{
+            session: session,
+            window_id: window_id,
+            id: pane_id,
+            active: active == "1",
+            current_command: current_command,
+            activity: pane_activity_timestamp(pane_activity, window_activity),
+            current_path: current_path,
+            role: blank_to_nil(role),
+            paired: parse_paired(paired),
+            pane_title: blank_to_nil(pane_title)
+          }
+        ]
+
       [
         session,
         window_id,
@@ -374,7 +402,56 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_topology_pane_line(line) do
-    case String.split(line, "|", parts: 19) do
+    case String.split(line, "|", parts: 21) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        pane_activity,
+        pane_bell,
+        window_activity,
+        window_activity_flag,
+        window_bell_flag,
+        pane_unseen_changes,
+        current_path,
+        pane_zoomed,
+        role,
+        paired,
+        paired_reason,
+        pane_title
+      ] ->
+        [
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            pane_activity,
+            pane_bell,
+            window_activity,
+            window_activity_flag,
+            window_bell_flag,
+            pane_unseen_changes,
+            current_path,
+            pane_zoomed,
+            role,
+            pane_title,
+            paired,
+            paired_reason
+          )
+        ]
+
       [
         window_id,
         pane_id,
@@ -609,7 +686,9 @@ defmodule TmuxCtl.Client do
          current_path,
          pane_zoomed,
          role,
-         pane_title
+         pane_title,
+         paired \\ nil,
+         paired_reason \\ nil
        ) do
     %{
       id: pane_id,
@@ -624,6 +703,8 @@ defmodule TmuxCtl.Client do
       current_path: current_path,
       role: blank_to_nil(role),
       pane_title: blank_to_nil(pane_title),
+      paired: parse_paired(paired),
+      paired_reason: blank_to_nil(paired_reason),
       activity: pane_activity_timestamp(pane_activity, window_activity),
       activity_flag: truthy?(window_activity_flag) or truthy?(pane_activity),
       bell: truthy?(pane_bell) or truthy?(window_bell_flag),
@@ -631,6 +712,12 @@ defmodule TmuxCtl.Client do
       zoomed?: truthy?(pane_zoomed)
     }
   end
+
+  # Agent-launch pairing stamp (@devide_paired): "1"/"0" once a launcher ran
+  # in the pane, "" (nil — unknown) for panes that never launched an agent.
+  defp parse_paired("1"), do: true
+  defp parse_paired("0"), do: false
+  defp parse_paired(_), do: nil
 
   defp pane_activity_timestamp(pane_activity, window_activity) do
     case parse_int(pane_activity, 0) do
