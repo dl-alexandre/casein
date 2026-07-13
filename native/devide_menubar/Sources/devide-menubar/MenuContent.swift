@@ -92,6 +92,34 @@ struct MenuContent: View {
                 NSWorkspace.shared.open(paths.dataDir)
             }
         }
+        loginItemSection
+    }
+
+    @ViewBuilder
+    private var loginItemSection: some View {
+        // Hidden under `swift run`: a bare executable has no main-app
+        // service to register.
+        if LoginItem.isBundled {
+            Toggle("Start at Login", isOn: startAtLoginBinding)
+        }
+    }
+
+    private var startAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { LoginItem.isEnabled },
+            set: { enabled in
+                do {
+                    try LoginItem.setEnabled(enabled)
+                } catch {
+                    NSLog("Start at Login toggle failed: \(error)")
+                }
+                // register() can land in requiresApproval (user disabled it
+                // in System Settings earlier); only they can flip it back.
+                if LoginItem.requiresApproval {
+                    LoginItem.openSystemSettings()
+                }
+            }
+        )
     }
 
     @ViewBuilder

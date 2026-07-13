@@ -106,6 +106,14 @@ private func temporaryFile(contents: String?) throws -> URL {
     }
 }
 
+@Suite struct LoginItemTests {
+    @Test func notBundledUnderTheTestRunner() {
+        // The xctest bundle is not an .app; the toggle must stay hidden in
+        // this context rather than offering a register() that throws.
+        #expect(!LoginItem.isBundled)
+    }
+}
+
 @Suite struct HostPathsTests {
     private func freshDefaults() throws -> UserDefaults {
         let suite = "devide-menubar-tests-\(UUID().uuidString)"

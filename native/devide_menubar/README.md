@@ -64,14 +64,15 @@ DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
 
 Status header (state, port, version/revision) · Open DevIDE / Copy URL ·
 Start / Stop / Restart (restart waits for process exit and the epmd name
-drop) · Open Logs / Open Data Folder · Quit (stops the server) / Quit, Leave
-Server Running.
+drop) · Open Logs / Open Data Folder · Start at Login (`SMAppService`,
+bundled `.app` only — the registration binds to the bundle's path) · Quit
+(stops the server) / Quit, Leave Server Running.
 
 ## Not in the spike (phase 3+)
 
 - Real signing identity + notarization (`bundle.sh` signs ad-hoc)
 - Bundled/installed release instead of `DEVIDE_RELEASE_ROOT`/chooser
-- Start at Login (`SMAppService`), updater (Sparkle or Tauri parity)
+- Updater (Sparkle or Tauri parity)
 - Recent-workspace deep links, MCP/pairing helpers
 - Keychain-backed secrets
 - Crash-restart backoff supervision
