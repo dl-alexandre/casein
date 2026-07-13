@@ -101,7 +101,7 @@ defmodule DevIde.Application do
       Application.put_env(:tmux_ctl, key, value)
     end
 
-    # Publish PATH (incl. ~/.local/bin + shim dirs) synchronously so the first
+    # Publish PATH (incl. the DevIDE shim dirs) synchronously so the first
     # window sees the shim dirs on PATH, then heal the shim FILES off the boot
     # path: ensure_best_effort/0 may shell out to install-agent-shims.sh, and a
     # stalled install must not block start/2 before the Endpoint/Repo come up.

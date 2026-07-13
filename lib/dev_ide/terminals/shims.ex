@@ -36,7 +36,7 @@ defmodule DevIDE.Terminals.Shims do
         template: "tool_themes/elio/theme.toml"
       }
     },
-    # grok is an agent launcher shimmed into ~/.local/bin by
+    # grok is an agent launcher shimmed into ~/.devide/agent-shims by
     # install-agent-shims.sh. The terminal-shims dir is FIRST on
     # path_with_shims/1, so a materialized grok shim here would shadow that
     # launcher — this entry must stay `shim: false` and exists only so
@@ -580,31 +580,38 @@ defmodule DevIDE.Terminals.Shims do
       unset DEV_IDE_SHELL_INTEGRATION_RC_SOURCED
     fi
 
-    # Belt-and-suspenders: even if the pane inherited a thin release/tmux PATH
-    # (no ~/.local/bin), keep agent launchers findable for the first keystroke.
+    # DevIDE dirs must be at the FRONT of PATH, not merely present: the user
+    # rc files sourced above prepend agent-installer dirs (~/.grok/bin,
+    # ~/.opencode/bin, …) over the pane env, and an agent name resolving past
+    # ~/.devide/agent-shims silently skips MCP injection. So strip existing
+    # occurrences and re-prepend, instead of skipping dirs already on PATH.
     # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
-    # then npm package bins (so DevIDE shims win over bare package symlinks).
+    # then npm package bins (so DevIDE shims win over bare package symlinks);
+    # ~/.local/bin rides along for user tools on thin release PATHs.
     __devide_prepend_path() {
-      # Build the new prefix in ARGUMENT order, then prepend it once, so the
-      # first arg ends up at the FRONT of PATH (terminal-shims win over bare
-      # npm package symlinks). Prepending each arg individually would reverse
-      # them. Kept POSIX-ish (no indirect expansion) for bash + zsh.
-      local d prefix=""
+      # Build the new prefix in ARGUMENT order so the first arg ends up at
+      # the FRONT of PATH. Kept POSIX-ish (no indirect expansion) for
+      # bash + zsh.
+      local d prefix="" rest=":${PATH}:"
       for d in "$@"; do
         [[ -n "${d}" && -d "${d}" ]] || continue
-        case ":${PATH}:${prefix}:" in
-          *":${d}:"*) ;;
-          *) prefix="${prefix:+${prefix}:}${d}" ;;
+        case ":${prefix}:" in
+          *":${d}:"*) continue ;;
         esac
+        while [[ "${rest}" == *":${d}:"* ]]; do rest="${rest/:${d}:/:}"; done
+        prefix="${prefix:+${prefix}:}${d}"
       done
-      [[ -n "${prefix}" ]] && PATH="${prefix}${PATH:+:${PATH}}"
+      rest="${rest#:}"
+      rest="${rest%:}"
+      [[ -n "${prefix}" ]] && PATH="${prefix}${rest:+:${rest}}"
       export PATH
     }
     __devide_prepend_path \\
       "${HOME:-}/.devide/terminal-shims" \\
       "${HOME:-}/.devide/tools/bin" \\
-      "${HOME:-}/.local/bin" \\
-      "${HOME:-}/.local/share/npm-global/bin"
+      "${DEV_IDE_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${HOME:-}/.local/share/npm-global/bin" \\
+      "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path
 
     case "$-" in

@@ -325,7 +325,22 @@ launch_agent() {
     exec_real_runtime "$runtime" "$@"
   fi
 
-  agent_env_resolve
+  if ! agent_env_resolve 2>/dev/null; then
+    # No agent env (plain terminal, or a DevIDE pane whose pairing is
+    # missing): launch the real binary unpaired, silently — operator call:
+    # the shim must never add noise to the command it wraps.
+    # DEVIDE_AGENT_LAUNCH_VERBOSE=1 explains the fallback on stderr;
+    # DEVIDE_AGENT_LAUNCH_STRICT=1 restores the hard failure for callers
+    # that would rather abort than run without MCP.
+    if [[ "${DEVIDE_AGENT_LAUNCH_STRICT:-0}" == "1" ]]; then
+      agent_env_resolve
+      exit 1
+    fi
+    if [[ "${DEVIDE_AGENT_LAUNCH_VERBOSE:-0}" == "1" ]]; then
+      echo "devide: no agent env — launching ${runtime} unpaired (no DevIDE MCP)." >&2
+    fi
+    exec_real_runtime "$runtime" "$@"
+  fi
   agent_env_export_runtime_paths
 
   local launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"

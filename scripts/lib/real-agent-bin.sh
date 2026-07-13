@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# Resolve the real agent binary, skipping DevIDE shims in ~/.local/bin.
+# Resolve the real agent binary, skipping DevIDE launcher shims.
 
 devide_npm_prefix() {
   printf '%s\n' "${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
 }
 
+devide_agent_shim_dir() {
+  printf '%s\n' "${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+}
+
 real_agent_bin_path_without_shims() {
   local IFS=':'
-  local part out=()
+  local part out=() shim_dir
+  shim_dir="$(devide_agent_shim_dir)"
   for part in ${PATH:-/usr/bin:/bin}; do
+    [[ "$part" == "$shim_dir" ]] && continue
+    # Legacy shim home — stale launcher shims may linger there until the
+    # installer's migration cleanup has run on this box.
     [[ "$part" == "${HOME}/.local/bin" ]] && continue
     out+=("$part")
   done

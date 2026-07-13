@@ -19,10 +19,11 @@ warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
 check_shims() {
+  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
 
   for runtime in grok claude codex opencode agent devide; do
-    bin="${HOME}/.local/bin/${runtime}"
+    bin="${shim_dir}/${runtime}"
     if [[ ! -x "$bin" ]]; then
       missing_runtimes+=("$runtime")
     fi
@@ -40,7 +41,7 @@ check_shims() {
   fi
 
   for runtime in grok claude codex opencode agent devide; do
-    bin="${HOME}/.local/bin/${runtime}"
+    bin="${shim_dir}/${runtime}"
     if [[ ! -x "$bin" ]]; then
       fail "shim missing: ${runtime} (run scripts/install-agent-shims.sh)"
       continue
@@ -48,10 +49,12 @@ check_shims() {
     pass "shim installed: ${runtime}"
 
     # An installed shim that loses PATH resolution is worse than a missing
-    # one: agents launch fine but silently skip MCP injection.
+    # one: agents launch fine but silently skip MCP injection. The shim dir
+    # is only injected inside DevIDE contexts — outside them, real binaries
+    # winning is the intended zero-footprint behavior.
     resolved="$(command -v "$runtime" 2>/dev/null || true)"
     if [[ -z "$resolved" ]]; then
-      fail "shim unreachable: ${runtime} not on PATH (add ${HOME}/.local/bin to PATH)"
+      fail "shim unreachable: ${runtime} not on PATH (run repair-tmux-env.sh or open a fresh DevIDE pane)"
       continue
     fi
     bin_target="$(readlink -f "$bin" 2>/dev/null || printf '%s' "$bin")"
@@ -59,7 +62,7 @@ check_shims() {
     if [[ "$resolved_target" == "$bin_target" ]]; then
       pass "shim wins PATH resolution: ${runtime}"
     else
-      fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${HOME}/.local/bin first on PATH)"
+      fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${shim_dir} first on PATH; repair-tmux-env.sh does this)"
     fi
   done
 
@@ -70,8 +73,8 @@ check_shims() {
   npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
   npm_bin="${npm_prefix}/bin"
   case ":${PATH:-}:" in
-    *":${HOME}/.local/bin:"*) pass "PATH includes ${HOME}/.local/bin" ;;
-    *) warn "PATH missing ${HOME}/.local/bin — new non-login panes may not find agent shims" ;;
+    *":${shim_dir}:"*) pass "PATH includes ${shim_dir}" ;;
+    *) warn "PATH missing ${shim_dir} — new non-login panes may not find agent shims" ;;
   esac
   case ":${PATH:-}:" in
     *":${npm_bin}:"*) pass "PATH includes npm agent bin (${npm_bin})" ;;
@@ -84,9 +87,10 @@ check_shims() {
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
 check_shim_targets() {
+  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
   local runtime shim cli target_missing=0 checked=0
   for runtime in grok claude codex opencode agent; do
-    shim="${HOME}/.local/bin/${runtime}"
+    shim="${shim_dir}/${runtime}"
     [[ -f "$shim" ]] || continue
     cli="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "$shim" | head -n 1)"
     [[ -n "$cli" ]] || continue

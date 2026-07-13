@@ -237,7 +237,7 @@ ensure_agent_shims() {
   if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh --check >/dev/null 2>&1); then
     missing=""
     for name in grok claude codex opencode agent devide; do
-      if [ ! -x "${HOME}/.local/bin/${name}" ]; then
+      if [ ! -x "${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}/${name}" ]; then
         missing="${missing} ${name}"
       fi
     done

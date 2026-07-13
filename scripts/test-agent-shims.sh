@@ -36,7 +36,7 @@ run_installer_rejects_bin_dir_candidate() (
   echo "== install-agent-shims rejects candidates under ~/.local/bin =="
 
   local home bin_dir package_claude target
-  home="$(mktemp -d)"
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
@@ -62,7 +62,7 @@ run_resolver_rejects_recorded_devide_shim() (
   echo "== real-agent-bin rejects recorded DevIDE shims =="
 
   local home real_dir real_codex resolved
-  home="$(mktemp -d)"
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
@@ -87,14 +87,13 @@ run_installer_generated_shims_carry_marker() (
   echo "== installer-generated shims are detected by is_devide_shim =="
 
   local home name
-  home="$(mktemp -d)"
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
   unset DEV_IDE_NPM_PREFIX
 
-  PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
-    bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
+  bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
   # shellcheck source=scripts/lib/real-agent-bin.sh
   source "${ROOT}/scripts/lib/real-agent-bin.sh"
@@ -102,7 +101,7 @@ run_installer_generated_shims_carry_marker() (
   # The shim template (installer) and the marker grep (real-agent-bin.sh)
   # live in different files; this pins their coupling.
   for name in grok claude codex opencode agent; do
-    if ! is_devide_shim "${HOME}/.local/bin/${name}"; then
+    if ! is_devide_shim "${HOME}/.devide/agent-shims/${name}"; then
       echo "FAIL: installed shim not detected as a DevIDE shim: ${name}" >&2
       exit 1
     fi
@@ -111,57 +110,63 @@ run_installer_generated_shims_carry_marker() (
   # agent-doctor.sh extracts the embedded devide CLI path with this sed
   # pattern; pin it against the installer's shim template.
   local embedded
-  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.local/bin/claude" | head -n 1)"
+  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.devide/agent-shims/claude" | head -n 1)"
   assert_eq "embedded devide CLI path" "${ROOT}/scripts/devide" "$embedded"
 )
 
-run_installer_fails_when_shims_shadowed() (
-  echo "== installer fails when an earlier PATH entry shadows the shims =="
+run_installer_cleans_legacy_shims() (
+  echo "== installer removes legacy DevIDE shims from ~/.local/bin, keeps user files =="
 
-  local home shadow status
-  home="$(mktemp -d)"
+  local home
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
   unset DEV_IDE_NPM_PREFIX
-  shadow="${HOME}/shadow-bin"
 
-  write_executable "${shadow}/claude" "#!/usr/bin/env bash
-echo shadow-claude"
+  # A legacy marker-carrying launcher shim and a user's own script side by
+  # side in ~/.local/bin: migration must remove exactly the former.
+  write_executable "${HOME}/.local/bin/grok" "#!/usr/bin/env bash
+exec \"${ROOT}/scripts/devide\" agent launch grok \"\$@\""
+  write_executable "${HOME}/.local/bin/my-tool" "#!/usr/bin/env bash
+echo mine"
 
-  status=0
-  PATH="${shadow}:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
-    bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null 2>&1 || status=$?
+  bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
-  if [[ "$status" -eq 0 ]]; then
-    echo "FAIL: installer should exit nonzero when a PATH entry shadows the shims" >&2
+  if [[ -e "${HOME}/.local/bin/grok" ]]; then
+    echo "FAIL: legacy grok shim should be removed from ~/.local/bin" >&2
+    exit 1
+  fi
+  if [[ ! -x "${HOME}/.local/bin/my-tool" ]]; then
+    echo "FAIL: user file in ~/.local/bin must be untouched" >&2
+    exit 1
+  fi
+  if [[ ! -x "${HOME}/.devide/agent-shims/grok" ]]; then
+    echo "FAIL: grok shim missing from ~/.devide/agent-shims" >&2
     exit 1
   fi
 )
 
 run_installer_verifies_precedence_when_bin_dir_off_path() (
-  echo "== installer verifies precedence when ~/.local/bin is not on caller PATH =="
+  echo "== installer verifies resolution with a minimal caller PATH =="
 
   local home err status
-  home="$(mktemp -d)"
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
   unset DEV_IDE_NPM_PREFIX
   err="${home}/stderr.log"
 
+  # Non-interactive callers (systemd units, deploy poller) run without the
+  # shim dir on PATH; the installer must self-prepend it for the check.
   status=0
   PATH="/usr/bin:/bin" \
     bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null 2>"$err" || status=$?
 
-  assert_eq "installer exit status without bin dir on PATH" "0" "$status"
-  if grep -q 'cannot verify shim precedence' "$err"; then
-    echo "FAIL: installer should verify precedence by prepending ~/.local/bin, got:" >&2
-    cat "$err" >&2
-    exit 1
-  fi
-  if grep -q 'PATH order defeats the DevIDE shims' "$err"; then
-    echo "FAIL: precedence check failed unexpectedly:" >&2
+  assert_eq "installer exit status without shim dir on PATH" "0" "$status"
+  if grep -q 'shim resolution broken' "$err"; then
+    echo "FAIL: resolution check failed unexpectedly:" >&2
     cat "$err" >&2
     exit 1
   fi
@@ -171,7 +176,7 @@ run_launch_version_passthrough_skips_launcher() (
   echo "== agent launch passthrough execs the real binary for version/help probes =="
 
   local home out
-  home="$(mktemp -d)"
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
@@ -200,25 +205,77 @@ echo \"real-opencode \$*\""
   assert_eq "opencode --help passthrough" "real-opencode --help" "$out"
 )
 
-run_check_and_ensure_modes() (
-  echo "== install-agent-shims --check / --ensure detect and heal partial loss =="
+run_launch_falls_back_unpaired_without_env() (
+  echo "== agent launch falls back to the real binary when no DevIDE env resolves =="
 
-  local home status
-  home="$(mktemp -d)"
+  local home out err status
+  home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
   unset DEV_IDE_NPM_PREFIX
 
-  PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
-    bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
+  write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
+echo \"real-grok \$*\""
+  mkdir -p "${HOME}/.devide/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+
+  # A plain terminal outside DevIDE: no pane env, no .devbox-agent.env in
+  # cwd ancestry. The shimmed name must launch the real binary with ZERO
+  # added output — the shim never adds noise to the command it wraps.
+  err="${home}/stderr.log"
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+    bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
+  assert_eq "unpaired fallback execs real grok" "real-grok chat" "$out"
+  if [[ -s "$err" ]]; then
+    echo "FAIL: unpaired fallback must be silent by default, got stderr:" >&2
+    cat "$err" >&2
+    exit 1
+  fi
+
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+    DEVIDE_AGENT_LAUNCH_VERBOSE=1 \
+    bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
+  assert_eq "verbose unpaired fallback execs real grok" "real-grok chat" "$out"
+  if ! grep -q 'launching grok unpaired' "$err"; then
+    echo "FAIL: DEVIDE_AGENT_LAUNCH_VERBOSE=1 should explain the fallback, got:" >&2
+    cat "$err" >&2
+    exit 1
+  fi
+
+  status=0
+  (cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+    DEVIDE_AGENT_LAUNCH_STRICT=1 \
+    bash "${ROOT}/scripts/devide" agent launch grok chat >/dev/null 2>"$err") || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    echo "FAIL: DEVIDE_AGENT_LAUNCH_STRICT=1 should hard-fail without env" >&2
+    exit 1
+  fi
+  if ! grep -q 'could not resolve DevIDE agent env' "$err"; then
+    echo "FAIL: strict mode should surface the resolver error, got:" >&2
+    cat "$err" >&2
+    exit 1
+  fi
+)
+
+run_check_and_ensure_modes() (
+  echo "== install-agent-shims --check / --ensure detect and heal partial loss =="
+
+  local home status
+  home="$(cd "$(mktemp -d)" && pwd -P)"
+  trap 'rm -rf "$home"' EXIT
+
+  export HOME="$home"
+  unset DEV_IDE_NPM_PREFIX
+
+  bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null || status=$?
   assert_eq "check after full install" "0" "$status"
 
   # Simulate the production failure mode: one runtime shim deleted, siblings ok.
-  rm -f "${HOME}/.local/bin/claude"
+  rm -f "${HOME}/.devide/agent-shims/claude"
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null 2>&1 || status=$?
   if [[ "$status" -eq 0 ]]; then
@@ -227,10 +284,9 @@ run_check_and_ensure_modes() (
   fi
 
   status=0
-  PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}" \
-    bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
+  bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
   assert_eq "ensure heals missing claude" "0" "$status"
-  if [[ ! -x "${HOME}/.local/bin/claude" ]]; then
+  if [[ ! -x "${HOME}/.devide/agent-shims/claude" ]]; then
     echo "FAIL: --ensure did not restore claude shim" >&2
     exit 1
   fi
@@ -244,9 +300,10 @@ main() {
   run_installer_rejects_bin_dir_candidate
   run_resolver_rejects_recorded_devide_shim
   run_installer_generated_shims_carry_marker
-  run_installer_fails_when_shims_shadowed
+  run_installer_cleans_legacy_shims
   run_installer_verifies_precedence_when_bin_dir_off_path
   run_launch_version_passthrough_skips_launcher
+  run_launch_falls_back_unpaired_without_env
   run_check_and_ensure_modes
   echo "OK: agent shim checks passed"
 }
