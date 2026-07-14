@@ -139,7 +139,7 @@ namespace DevIDE
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool CloseHandle(IntPtr hObject);
 
-        public static int Run(int dataPort, int controlPort, string commandLine, string workingDirectory, short cols, short rows)
+        public static int Run(int dataPort, int controlPort, string bridgeToken, string commandLine, string workingDirectory, short cols, short rows)
         {
             SafeFileHandle inputRead = null;
             SafeFileHandle inputWrite = null;
@@ -215,6 +215,8 @@ namespace DevIDE
                     using (FileStream input = new FileStream(inputWrite, FileAccess.Write))
                     using (FileStream output = new FileStream(outputRead, FileAccess.Read))
                     {
+                        Authenticate(network, bridgeToken);
+                        Authenticate(control, bridgeToken);
                         CancellationTokenSource cancellation = new CancellationTokenSource();
                         Task inputPump = Pump(network, input, cancellation.Token);
                         Task outputPump = Pump(output, network, cancellation.Token);
@@ -257,6 +259,14 @@ namespace DevIDE
                 if (outputRead != null) outputRead.Dispose();
                 if (outputWrite != null) outputWrite.Dispose();
             }
+        }
+
+        private static void Authenticate(NetworkStream stream, string token)
+        {
+            byte[] bytes = Encoding.ASCII.GetBytes(token ?? String.Empty);
+            if (bytes.Length == 0) throw new InvalidOperationException("Missing bridge authentication token");
+            stream.Write(bytes, 0, bytes.Length);
+            stream.Flush();
         }
 
         private static async Task RunControlLoop(NetworkStream stream, IntPtr pseudoConsole, CancellationToken cancellation)

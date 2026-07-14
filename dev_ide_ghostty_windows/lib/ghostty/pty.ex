@@ -29,6 +29,7 @@ defmodule Ghostty.PTY do
     {:ok, control_listener} = listen()
     {:ok, {_address, data_port}} = :inet.sockname(data_listener)
     {:ok, {_address, control_port}} = :inet.sockname(control_listener)
+    bridge_token = :crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false)
 
     bridge_shell = default_shell()
     bridge = Application.app_dir(:ghostty, "priv/powershell_bridge.ps1")
@@ -43,6 +44,7 @@ defmodule Ghostty.PTY do
         bridge,
         Integer.to_string(data_port),
         Integer.to_string(control_port),
+        bridge_token,
         Integer.to_string(cols),
         Integer.to_string(rows),
         cwd,
@@ -58,8 +60,8 @@ defmodule Ghostty.PTY do
         {:args, Enum.map(args, &to_charlist/1)}
       ])
 
-    with {:ok, data_socket} <- :gen_tcp.accept(data_listener, 15_000),
-         {:ok, control_socket} <- :gen_tcp.accept(control_listener, 15_000) do
+    with {:ok, data_socket} <- accept_authenticated(data_listener, bridge_token),
+         {:ok, control_socket} <- accept_authenticated(control_listener, bridge_token) do
       :ok = :gen_tcp.close(data_listener)
       :ok = :gen_tcp.close(control_listener)
       :ok = :inet.setopts(data_socket, active: true)
@@ -161,5 +163,29 @@ defmodule Ghostty.PTY do
 
   defp listen do
     :gen_tcp.listen(0, [:binary, active: false, packet: :raw, ip: {127, 0, 0, 1}])
+  end
+
+  # Loopback is an address boundary, not an authorization boundary. A fresh,
+  # per-bridge capability prevents another local process from claiming either
+  # transport socket before the PowerShell bridge does.
+  defp accept_authenticated(listener, token, deadline \\ System.monotonic_time(:millisecond) + 15_000) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining <= 0 do
+      {:error, :auth_timeout}
+    else
+      with {:ok, socket} <- :gen_tcp.accept(listener, remaining),
+           {:ok, supplied} <- :gen_tcp.recv(socket, byte_size(token), remaining) do
+        if :crypto.hash_equals(supplied, token) do
+          {:ok, socket}
+        else
+          :gen_tcp.close(socket)
+          accept_authenticated(listener, token, deadline)
+        end
+      else
+        {:error, :closed} -> accept_authenticated(listener, token, deadline)
+        other -> other
+      end
+    end
   end
 end
