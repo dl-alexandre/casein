@@ -9,7 +9,7 @@ defmodule Ghostty.WindowsPTYTest do
     prompt = receive_until_prompt("")
     assert prompt =~ "PS C:\\>"
 
-    assert :ok = Ghostty.PTY.write(pty, "Write-Output DEVIDE_WINDOWS_PTY_OK\r\n")
+    assert :ok = Ghostty.PTY.write(pty, "Write-Output DEVIDE_WINDOWS_PTY_OK\r")
     output = receive_until_prompt("")
     assert output =~ "Write-Output"
     assert output =~ "DEVIDE_WINDOWS_PTY_OK"
@@ -25,6 +25,44 @@ defmodule Ghostty.WindowsPTYTest do
     state = Ghostty.Terminal.render_state(term)
     assert length(state.cells) == 3
     assert state.cells |> Enum.at(1) |> Enum.take(5) |> Enum.map(&elem(&1, 0)) == ~w(w o r l d)
+  end
+
+  test "applies VT cursor movement, erasure, and split control sequences" do
+    {:ok, term} = Ghostty.Terminal.start_link(cols: 12, rows: 3)
+
+    assert :ok = Ghostty.Terminal.write(term, "old text\rnew")
+    assert :ok = Ghostty.Terminal.write(term, "\e[2")
+    assert :ok = Ghostty.Terminal.write(term, "J\e[Hnormal")
+
+    state = Ghostty.Terminal.render_state(term)
+    first_row = state.cells |> hd() |> Enum.map_join(&elem(&1, 0))
+
+    assert first_row == "normal"
+    assert state.cursor == %{x: 6, y: 0, visible: true, shape: :block, color: nil}
+  end
+
+  test "encodes Windows console Enter as one carriage return" do
+    assert Ghostty.LiveTerminal.handle_key(self(), %{"key" => "Enter"}) == {:ok, "\r"}
+  end
+
+  test "delays right-margin wrapping until the next printable character" do
+    {:ok, term} = Ghostty.Terminal.start_link(cols: 5, rows: 2)
+
+    assert :ok = Ghostty.Terminal.write(term, "abcde")
+    assert Ghostty.Terminal.render_state(term).cursor.x == 4
+    assert Ghostty.Terminal.render_state(term).cursor.y == 0
+
+    assert :ok = Ghostty.Terminal.write(term, "f")
+    state = Ghostty.Terminal.render_state(term)
+    assert state.cursor.x == 1
+    assert state.cursor.y == 1
+  end
+
+  test "answers cursor-position queries for interactive line editors" do
+    {:ok, term} = Ghostty.Terminal.start_link(cols: 20, rows: 4, owner: self())
+
+    assert :ok = Ghostty.Terminal.write(term, "prompt> \e[6n")
+    assert_receive {:pty_write, "\e[1;9R"}
   end
 
   defp receive_until_prompt(output) do

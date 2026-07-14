@@ -151,7 +151,8 @@ defmodule Ghostty.PTY do
   defp child_command_and_args(opts) do
     case Keyword.get(opts, :cmd) do
       nil ->
-        {default_shell(), ["-NoLogo", "-NoProfile"]}
+        {default_shell(),
+         ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "Remove-Module PSReadLine"]}
 
       command ->
         {command, Keyword.get(opts, :args, [])}

@@ -5,7 +5,7 @@ defmodule Ghostty.LiveTerminal do
 
   def handle_key(_term, %{"key" => key}) do
     case key do
-      "Enter" -> {:ok, "\r\n"}
+      "Enter" -> {:ok, "\r"}
       "Backspace" -> {:ok, "\b"}
       "Tab" -> {:ok, "\t"}
       "Escape" -> {:ok, "\e"}

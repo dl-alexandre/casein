@@ -65,6 +65,11 @@ defmodule DevIDE.Desktop.PowerShellSession do
     {:noreply, state}
   end
 
+  def handle_info({:pty_write, data}, state) when is_binary(data) do
+    :ok = Ghostty.PTY.write(state.pty, data)
+    {:noreply, state}
+  end
+
   def handle_info({:exit, reason}, state) do
     notify(state, {:desktop_terminal_exit, reason})
     {:noreply, %{state | status: {:exited, reason}}}
