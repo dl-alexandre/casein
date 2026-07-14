@@ -69,6 +69,7 @@ Copy-Item -Recurse -Force -Path (Join-Path $releasePath '*') -Destination $outpu
 New-Item -ItemType Directory -Force -Path (Join-Path $outputPath 'windows') | Out-Null
 Copy-Item -Force -LiteralPath (Join-Path $root 'windows\DevIDE.Tray.ps1') -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'windows\Start-DevIDE.cmd') -Destination (Join-Path $outputPath 'windows')
+Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
 
 Write-Host "Packaged DevIDE Windows desktop runtime: $outputPath"
 Write-Host "Launch: $outputPath\windows\Start-DevIDE.cmd"

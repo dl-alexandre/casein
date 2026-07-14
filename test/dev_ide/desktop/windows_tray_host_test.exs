@@ -44,5 +44,16 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "@('compile', '--force')"
     assert script =~ "@('release', 'dev_ide', '--overwrite')"
     assert script =~ "windows\\DevIDE.Tray.ps1"
+    assert script =~ "pwa-icon-192.png"
+    assert script =~ "windows\\DevIDE.png"
+  end
+
+  test "tray uses the DevIDE code mark with status badges" do
+    script = File.read!(@tray_script)
+
+    assert script =~ "Join-Path $PSScriptRoot 'DevIDE.png'"
+    assert script =~ "$graphics.DrawImage($source"
+    assert script =~ "$graphics.FillEllipse($statusBrush"
+    refute script =~ "$graphics.DrawString('D'"
   end
 end

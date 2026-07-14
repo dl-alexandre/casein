@@ -231,26 +231,35 @@ function Set-DevIDEStartup {
 }
 
 function New-DevIDEIcon {
-    param([Drawing.Color]$Background)
+    param([Drawing.Color]$StatusColor)
 
-    $bitmap = [Drawing.Bitmap]::new(32, 32)
+    $sourcePath = Join-Path $PSScriptRoot 'DevIDE.png'
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        $sourcePath = Join-Path $PSScriptRoot '..\priv\static\images\pwa-icon-192.png'
+    }
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        throw "DevIDE tray icon asset is missing"
+    }
+
+    $source = [Drawing.Image]::FromFile($sourcePath)
+    $bitmap = [Drawing.Bitmap]::new(32, 32, [Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $graphics = [Drawing.Graphics]::FromImage($bitmap)
     $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $graphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $graphics.PixelOffsetMode = [Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $graphics.Clear([Drawing.Color]::Transparent)
-    $brush = [Drawing.SolidBrush]::new($Background)
-    $font = [Drawing.Font]::new('Segoe UI', 18, [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
-    $textBrush = [Drawing.Brushes]::White
+    $statusBrush = [Drawing.SolidBrush]::new($StatusColor)
+    $badgeOutline = [Drawing.Pen]::new([Drawing.Color]::FromArgb(235, 16, 17, 20), 2)
     try {
-        $graphics.FillEllipse($brush, 1, 1, 30, 30)
-        $format = [Drawing.StringFormat]::new()
-        $format.Alignment = [Drawing.StringAlignment]::Center
-        $format.LineAlignment = [Drawing.StringAlignment]::Center
-        $graphics.DrawString('D', $font, $textBrush, [Drawing.RectangleF]::new(0, -1, 32, 32), $format)
+        $graphics.DrawImage($source, [Drawing.Rectangle]::new(0, 0, 32, 32))
+        $graphics.FillEllipse($statusBrush, 23, 23, 8, 8)
+        $graphics.DrawEllipse($badgeOutline, 23, 23, 8, 8)
         return [Drawing.Icon]::FromHandle($bitmap.GetHicon())
     } finally {
-        $font.Dispose()
-        $brush.Dispose()
+        $badgeOutline.Dispose()
+        $statusBrush.Dispose()
         $graphics.Dispose()
+        $source.Dispose()
         # Keep the bitmap alive because the icon owns its native handle for the tray lifetime.
         $script:IconBitmaps.Add($bitmap)
     }
@@ -274,9 +283,9 @@ function Start-DevIDETray {
     $script:LaunchAtSignIn = [bool]$settings.launchAtSignIn
     Save-DevIDESettings $script:Port $script:LaunchAtSignIn
 
-    $runningIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(37, 99, 235))
+    $runningIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(34, 197, 94))
     $stoppedIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(107, 114, 128))
-    $errorIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(220, 38, 38))
+    $errorIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(239, 68, 68))
 
     $tray = [Windows.Forms.NotifyIcon]::new()
     $tray.Text = 'DevIDE is starting'
