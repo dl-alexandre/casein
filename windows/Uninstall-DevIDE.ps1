@@ -17,6 +17,7 @@ if (Test-Path -LiteralPath $pidPath) {
 }
 
 Remove-Item -LiteralPath $installRoot -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE' -Recurse -Force -ErrorAction SilentlyContinue
 if ($RemoveUserData) { Remove-Item -LiteralPath $dataRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 Write-Host 'DevIDE was uninstalled.'

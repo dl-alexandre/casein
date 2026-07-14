@@ -79,7 +79,19 @@ try {
 
     $launcher = Join-Path $installRoot 'DevIDE.Launcher.ps1'
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\DevIDE.Launcher.ps1') -Destination $launcher -Force
+    $installedUninstaller = Join-Path $installRoot 'Uninstall-DevIDE.ps1'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Uninstall-DevIDE.ps1') -Destination $installedUninstaller -Force
     Set-Content -LiteralPath (Join-Path $installRoot 'DevIDE.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0DevIDE.Launcher.ps1`""
+
+    $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE'
+    New-Item -Path $uninstallKey -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'DevIDE' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $metadata.version -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name Publisher -Value 'DevIDE' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installRoot -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$installedUninstaller`"" -PropertyType String -Force | Out-Null
 
     if ($Launch) { & $launcher }
     Write-Host "Installed DevIDE $releaseId for $env:USERNAME"

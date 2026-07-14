@@ -39,6 +39,7 @@ try {
     $currentPath = Join-Path $installRoot 'current.json'
     Assert-Condition (Test-Path -LiteralPath $currentPath) 'Installer did not write current.json'
     Assert-Condition (Test-Path -LiteralPath (Join-Path $installRoot 'DevIDE.cmd')) 'Installer did not write the stable launcher'
+    Assert-Condition (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE') 'Installer did not register Apps & Features metadata'
 
     $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
     Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\dev_ide.bat')) 'Installed release is missing dev_ide.bat'
@@ -61,6 +62,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Uninstaller exited with $LASTEXITCODE" }
     Assert-Condition (-not (Test-Path -LiteralPath $installRoot)) 'Uninstaller left the installation root behind'
     Assert-Condition (-not (Test-Path -LiteralPath $dataRoot)) 'Uninstaller left user data behind after -RemoveUserData'
+    Assert-Condition (-not (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE')) 'Uninstaller left Apps & Features metadata behind'
 
     Write-Host "Windows desktop package smoke passed: $packageRoot"
 } finally {
