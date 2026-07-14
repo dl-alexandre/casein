@@ -3,6 +3,9 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
 
   @tray_script Path.expand("../../../windows/DevIDE.Tray.ps1", __DIR__)
   @package_script Path.expand("../../../scripts/package-windows-desktop.ps1", __DIR__)
+  @installer Path.expand("../../../windows/Install-DevIDE.ps1", __DIR__)
+  @launcher Path.expand("../../../windows/DevIDE.Launcher.ps1", __DIR__)
+  @uninstaller Path.expand("../../../windows/Uninstall-DevIDE.ps1", __DIR__)
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -48,9 +51,11 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "DEVIDE_GIT_REVISION = $sourceRevision"
     assert script =~ "Read-DesktopReleaseMetadata"
     assert script =~ "Refusing to package a dirty source tree"
-    assert script =~ "Compress-Archive"
+    assert script =~ "New-DesktopArchive"
+    assert script =~ "tar.exe"
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "windows\\DevIDE.Tray.ps1"
+    assert script =~ "windows\\Install-DevIDE.ps1"
     assert script =~ "pwa-icon-192.png"
     assert script =~ "windows\\DevIDE.png"
   end
@@ -62,5 +67,19 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "$graphics.DrawImage($source"
     assert script =~ "$graphics.FillEllipse($statusBrush"
     refute script =~ "$graphics.DrawString('D'"
+  end
+
+  test "per-user installer stages an update with a user-data backup" do
+    installer = File.read!(@installer)
+    launcher = File.read!(@launcher)
+    uninstaller = File.read!(@uninstaller)
+
+    assert installer =~ "Programs\\DevIDE"
+    assert installer =~ "before-update-"
+    assert installer =~ "previous_data_backup"
+    assert installer =~ "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"
+    assert launcher =~ "current.json"
+    assert launcher =~ "DevIDE.Tray.ps1"
+    assert uninstaller =~ "RemoveUserData"
   end
 end

@@ -815,7 +815,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _params,
         %{assigns: %{desktop_terminal?: true}} = socket
       ) do
-    {:noreply, Sidebar.assign_windows_sidebar_tree(socket)}
+    case PowerShellSession.restart(workspace_cwd(socket)) do
+      :ok -> {:noreply, attach_desktop_terminal(socket)}
+      {:error, reason} -> {:noreply, assign(socket, :desktop_terminal_status, {:error, reason})}
+    end
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -1337,6 +1340,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:desktop_terminal_exit, reason}, socket) do
     {:noreply, assign(socket, :desktop_terminal_status, {:exited, reason})}
+  end
+
+  def handle_info({:desktop_terminal_restarted, term, pty}, socket) do
+    {:noreply,
+     assign(socket,
+       desktop_terminal_term: term,
+       desktop_terminal_pty: pty,
+       desktop_terminal_status: :running,
+       desktop_terminal_refresh: socket.assigns.desktop_terminal_refresh + 1
+     )}
   end
 
   def handle_info(:after_mount_side_panels, socket) do
@@ -2055,7 +2068,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp attach_desktop_terminal(socket) do
-    with :ok <- PowerShellSession.ensure_started(),
+    with :ok <- PowerShellSession.ensure_started(workspace_cwd(socket)),
          {:ok, term, pty, status} <- PowerShellSession.subscribe() do
       assign(socket,
         desktop_terminal_term: term,

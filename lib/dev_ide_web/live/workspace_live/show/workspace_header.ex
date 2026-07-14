@@ -89,7 +89,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             phx-click="tmux:refresh_windows"
             class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
           >
-            {if @desktop_terminal?, do: "Refresh terminal", else: "Refresh windows"}
+            {if @desktop_terminal?, do: "Restart terminal", else: "Refresh windows"}
           </button>
           <button
             :if={@tmux_mutations_enabled?}

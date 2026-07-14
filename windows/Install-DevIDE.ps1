@@ -1,0 +1,90 @@
+[CmdletBinding()]
+param(
+    [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot),
+    [switch]$Launch
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Read-ReleaseMetadata {
+    param([string]$Root)
+
+    $path = Join-Path $Root 'releases\dev_ide.relmeta.json'
+    if (-not (Test-Path -LiteralPath $path)) { throw "Release metadata is missing at $path" }
+    $metadata = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+    if ($metadata.profile -ne 'desktop' -or $metadata.repo_adapter -ne 'sqlite' -or $metadata.target -ne 'windows-x86_64') {
+        throw 'This package is not a Windows desktop SQLite release.'
+    }
+    $metadata
+}
+
+function Stop-InstalledRuntime {
+    param([string]$DataRoot)
+
+    $pidPath = Join-Path $DataRoot 'runtime.pid'
+    if (-not (Test-Path -LiteralPath $pidPath)) { return }
+    $pid = 0
+    [void][int]::TryParse((Get-Content -Raw -LiteralPath $pidPath).Trim(), [ref]$pid)
+    if ($pid -gt 0) { & taskkill.exe /PID $pid /T /F *> $null }
+    Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+}
+
+function Backup-UserData {
+    param([string]$DataRoot, [string]$BackupRoot)
+
+    if (-not (Test-Path -LiteralPath $DataRoot)) { return $null }
+    $stamp = [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
+    $backup = Join-Path $BackupRoot "before-update-$stamp"
+    New-Item -ItemType Directory -Force -Path $backup | Out-Null
+    foreach ($name in @('devide.sqlite3', 'desktop-host.json', 'secret-key-base.txt', 'api-token.txt', 'desktop-launch-token.txt')) {
+        $source = Join-Path $DataRoot $name
+        if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backup -Force }
+    }
+    $backup
+}
+
+$packageRoot = [IO.Path]::GetFullPath($PackageRoot)
+$metadata = Read-ReleaseMetadata $packageRoot
+$installRoot = Join-Path $env:LOCALAPPDATA 'Programs\DevIDE'
+$releasesRoot = Join-Path $installRoot 'releases'
+$dataRoot = Join-Path $env:LOCALAPPDATA 'DevIDE'
+$backupRoot = Join-Path $dataRoot 'backups'
+$releaseId = "$($metadata.version)-$($metadata.revision.Substring(0, 7))"
+$destination = Join-Path $releasesRoot $releaseId
+$stage = "$destination.staging-$PID"
+$currentPath = Join-Path $installRoot 'current.json'
+
+New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
+Stop-InstalledRuntime $dataRoot
+$backup = Backup-UserData $dataRoot $backupRoot
+
+try {
+    if (-not (Test-Path -LiteralPath $destination)) {
+        Copy-Item -Recurse -Force -LiteralPath $packageRoot -Destination $stage
+        Move-Item -LiteralPath $stage -Destination $destination
+    }
+
+    $current = [ordered]@{
+        schema = 1
+        version = $metadata.version
+        revision = $metadata.revision
+        release_root = $destination
+        previous_data_backup = $backup
+        installed_at_utc = [DateTime]::UtcNow.ToString('o')
+    } | ConvertTo-Json
+    $temporaryCurrent = "$currentPath.$PID.tmp"
+    Set-Content -LiteralPath $temporaryCurrent -Value $current -Encoding UTF8
+    Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force
+
+    $launcher = Join-Path $installRoot 'DevIDE.Launcher.ps1'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\DevIDE.Launcher.ps1') -Destination $launcher -Force
+    Set-Content -LiteralPath (Join-Path $installRoot 'DevIDE.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0DevIDE.Launcher.ps1`""
+
+    if ($Launch) { & $launcher }
+    Write-Host "Installed DevIDE $releaseId for $env:USERNAME"
+    Write-Host "Launcher: $(Join-Path $installRoot 'DevIDE.cmd')"
+} catch {
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    throw
+}

@@ -141,8 +141,13 @@ if (Test-Path -LiteralPath $outputPath) {
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
 Copy-Item -Recurse -Force -Path (Join-Path $releasePath '*') -Destination $outputPath
 New-Item -ItemType Directory -Force -Path (Join-Path $outputPath 'windows') | Out-Null
-Copy-Item -Force -LiteralPath (Join-Path $root 'windows\DevIDE.Tray.ps1') -Destination (Join-Path $outputPath 'windows')
-Copy-Item -Force -LiteralPath (Join-Path $root 'windows\Start-DevIDE.cmd') -Destination (Join-Path $outputPath 'windows')
+Copy-Item -Force -LiteralPath @(
+    (Join-Path $root 'windows\DevIDE.Tray.ps1'),
+    (Join-Path $root 'windows\DevIDE.Launcher.ps1'),
+    (Join-Path $root 'windows\Install-DevIDE.ps1'),
+    (Join-Path $root 'windows\Uninstall-DevIDE.ps1'),
+    (Join-Path $root 'windows\Start-DevIDE.cmd')
+) -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
 
 $docsPath = Join-Path $outputPath 'docs'

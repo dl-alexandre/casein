@@ -15,19 +15,21 @@ defmodule DevIDE.Desktop.PowerShellSession do
     GenServer.start_link(__MODULE__, opts, name: @name)
   end
 
-  @doc "Ensures the one desktop shell is supervised by the application."
-  def ensure_started do
+  @doc "Ensures the desktop shell is supervised in the selected workspace."
+  def ensure_started(cwd \\ nil) do
+    cwd = normalize_cwd(cwd)
+
     case Process.whereis(@name) do
       nil ->
-        case Supervisor.start_child(DevIde.Supervisor, {__MODULE__, []}) do
+        case Supervisor.start_child(DevIde.Supervisor, {__MODULE__, cwd: cwd}) do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
           {:error, :already_present} -> :ok
           {:error, reason} -> {:error, reason}
         end
 
-      _pid ->
-        :ok
+      pid ->
+        GenServer.call(pid, {:ensure_cwd, cwd})
     end
   end
 
@@ -38,15 +40,26 @@ defmodule DevIDE.Desktop.PowerShellSession do
 
   def status, do: GenServer.call(@name, :status)
 
+  @doc "Restarts the native shell in the given workspace directory."
+  def restart(cwd \\ nil), do: GenServer.call(@name, {:restart, normalize_cwd(cwd)})
+
   @impl true
-  def init(_opts) do
+  def init(opts) do
     Process.flag(:trap_exit, true)
 
-    with {:ok, term} <- Ghostty.Terminal.start_link(cols: 100, rows: 30),
-         {:ok, pty} <- Ghostty.PTY.start_link() do
-      {:ok, %{term: term, pty: pty, subscribers: %{}, status: :running}}
-    else
-      {:error, reason} -> {:stop, reason}
+    case start_transport(Keyword.fetch!(opts, :cwd)) do
+      {:ok, term, pty} ->
+        {:ok,
+         %{
+           term: term,
+           pty: pty,
+           cwd: Keyword.fetch!(opts, :cwd),
+           subscribers: %{},
+           status: :running
+         }}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
@@ -57,6 +70,16 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
+
+  def handle_call({:ensure_cwd, cwd}, _from, %{cwd: cwd} = state), do: {:reply, :ok, state}
+
+  def handle_call({:ensure_cwd, cwd}, _from, state) do
+    restart_transport(state, cwd)
+  end
+
+  def handle_call({:restart, cwd}, _from, state) do
+    restart_transport(state, cwd)
+  end
 
   @impl true
   def handle_info({:data, data}, state) do
@@ -71,8 +94,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   def handle_info({:exit, reason}, state) do
-    notify(state, {:desktop_terminal_exit, reason})
-    {:noreply, %{state | status: {:exited, reason}}}
+    recover_transport(state, reason)
   end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
@@ -80,8 +102,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   def handle_info({:EXIT, pid, reason}, %{pty: pid} = state) do
-    notify(state, {:desktop_terminal_exit, reason})
-    {:noreply, %{state | status: {:exited, reason}}}
+    recover_transport(state, reason)
   end
 
   def handle_info({:EXIT, pid, reason}, %{term: pid} = state), do: {:stop, reason, state}
@@ -99,4 +120,57 @@ defmodule DevIDE.Desktop.PowerShellSession do
   defp notify(state, message) do
     Enum.each(state.subscribers, fn {_ref, pid} -> send(pid, message) end)
   end
+
+  defp restart_transport(state, cwd) do
+    _ = close_transport(state)
+
+    case start_transport(cwd) do
+      {:ok, term, pty} ->
+        updated = %{state | term: term, pty: pty, cwd: cwd, status: :running}
+        notify(updated, {:desktop_terminal_restarted, term, pty})
+        {:reply, :ok, updated}
+
+      {:error, reason} ->
+        updated = %{state | status: {:error, reason}}
+        notify(updated, {:desktop_terminal_exit, reason})
+        {:reply, {:error, reason}, updated}
+    end
+  end
+
+  defp recover_transport(state, reason) do
+    case start_transport(state.cwd) do
+      {:ok, term, pty} ->
+        updated = %{state | term: term, pty: pty, status: :running}
+        notify(updated, {:desktop_terminal_restarted, term, pty})
+        {:noreply, updated}
+
+      {:error, restart_reason} ->
+        updated = %{state | status: {:exited, {reason, restart_reason}}}
+        notify(updated, {:desktop_terminal_exit, {reason, restart_reason}})
+        {:noreply, updated}
+    end
+  end
+
+  defp start_transport(cwd) do
+    with {:ok, term} <- Ghostty.Terminal.start_link(cols: 100, rows: 30),
+         {:ok, pty} <- Ghostty.PTY.start_link(cwd: cwd) do
+      {:ok, term, pty}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp close_transport(state) do
+    if is_pid(state.pty) and Process.alive?(state.pty), do: Ghostty.PTY.close(state.pty)
+    if is_pid(state.term) and Process.alive?(state.term), do: GenServer.stop(state.term)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  defp normalize_cwd(cwd) when is_binary(cwd) and cwd != "" do
+    if File.dir?(cwd), do: cwd, else: File.cwd!()
+  end
+
+  defp normalize_cwd(_cwd), do: File.cwd!()
 end
