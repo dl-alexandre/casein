@@ -43,6 +43,96 @@ Both doors work today (verified 2026-07-14).
 
 ---
 
+## Config shape: pinned vs durable
+
+Orthogonal to which door you use, the `.mcp.json` comes in two shapes. The difference is
+whether `workspace_id` is baked into the URL.
+
+| | **Pinned** (one workspace) | **Durable** (workspace-agnostic) |
+|---|---|---|
+| URL | `…/api/terminals/mcp?workspace_id=<uuid>` | `…/api/terminals/mcp` (no query) |
+| Workspace selected | by the URL, fixed | per tool call (`workspace_id` in `arguments`) |
+| New workspace | re-materialize a fresh config | **just target it — no re-wiring** |
+| Abandon a stale one | config points at a dead workspace | **stop passing its id; nothing to tear down** |
+| Token required | workspace-scoped **or** global | **global** (traverse) — see caveat |
+
+**Use durable when** you hop between / spin up / abandon workspaces and don't want to
+regenerate MCP config each time. The endpoint resolves `workspace_id` per-call
+(`DevIDE.MCP.Scope`), so one wiring outlives any individual workspace.
+
+> **Token caveat.** A durable/workspaceless config needs a token that can reach more than
+> one workspace — i.e. the **global** orchestrator token (root-grade). That's fine over
+> **Door 1 (SSH)**, where your SSH access already gates it. Do **not** put the global token
+> on **Door 2 (public)** — there, keep using a pinned, workspace-scoped token. (A
+> multi-workspace *set* token is the middle path, but adding a workspace to a set is not yet
+> a runtime action — it needs an env edit + restart today.)
+
+### Durable `.mcp.json` (Door 1 / global token)
+
+Same for either door — just swap the host. Note: **no `?workspace_id`** in any URL.
+
+```json
+{
+  "mcpServers": {
+    "devide-terminal": {
+      "url": "http://127.0.0.1:4000/api/terminals/mcp",
+      "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
+    },
+    "devide-preview": {
+      "url": "http://127.0.0.1:4000/api/preview/mcp",
+      "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
+    },
+    "devide-artifact": {
+      "url": "http://127.0.0.1:4000/api/artifacts/mcp",
+      "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
+    }
+  }
+}
+```
+
+### Working durably: list live workspaces, then target per-call
+
+With no workspace pinned, **discover first, then confine each call**:
+
+```text
+1. terminal_list_sessions            (no workspace_id) → every live devide_* session, box-wide
+2. GET /api/workspaces               → id / name / host path for each workspace
+3. <any tool> with "workspace_id":"<uuid>" in arguments → confined to that workspace
+```
+
+- **Enumerate what's live / abandonable:** `terminal_list_sessions` with no `workspace_id`
+  returns sessions across all workspaces with `last activity` — stale ones are the
+  low-activity / no-attached-client rows. That's your "what can I abandon?" view.
+- **Abandon a stale workspace:** simply stop targeting its id. The durable config needs no
+  change. Reclaiming the underlying worktree/tmux is a separate concern handled by the
+  reaper / `cleanup-agent-worktrees.sh`; it does not require touching this config.
+- **Pick up a new workspace:** pass its `workspace_id` (from step 2) in `arguments`. Nothing
+  to materialize — a global token sees new `devide_*` sessions the moment they exist.
+
+Curl form of the discover-then-target loop:
+
+```bash
+export DEV_IDE_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # GLOBAL token, chmod 600
+BASE=http://127.0.0.1:4000                                        # or the Door 2 public host
+rpc() { curl -s -X POST "$BASE/api/terminals/mcp" \
+  -H "authorization: Bearer $DEV_IDE_API_TOKEN" -H 'content-type: application/json' -d "$1"; }
+
+# box-wide inventory — which workspaces have live sessions (and which are stale)
+rpc '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"terminal_list_sessions","arguments":{}}}'
+
+# workspace map (id / name / path)
+curl -s -H "authorization: Bearer $DEV_IDE_API_TOKEN" "$BASE/api/workspaces"
+
+# confine a call to one workspace by passing its id in arguments
+rpc '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terminal_topology","arguments":{"session":"<name>","workspace_id":"<uuid>"}}}'
+```
+
+The **pinned** per-workspace configs below are still the right choice for Door 2 / a
+workspace-scoped token / a third party. Everything else in this doc (doors, tokens, prompts)
+applies to both shapes.
+
+---
+
 ## Door 1 — SSH tunnel (works today)
 
 Your SSH key is the transport auth; the bearer authorizes the API. Recommended default and
@@ -151,8 +241,48 @@ URL with an `Authorization: Bearer …` header once the door is open.
 
 ## Copyable prompt for the external agent
 
-Two ready-to-paste variants — identical except the transport line. Pick the one matching the
-door you wired.
+Pick by config shape. The **pinned** variants (Door 1 / Door 2) lock the agent to
+`dalexandre-devide`; the **durable** variant lets it roam every live workspace and abandon
+stale ones with no re-wiring.
+
+### Durable (workspace-agnostic, global token)
+
+```text
+You are connected to a remote DevIDE dev box over MCP with a workspace-agnostic (durable)
+config — no workspace is pinned. Three JSON-RPC 2.0 servers are wired as MCP clients:
+
+  • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
+  • devide-preview   — preview panes + headless browser control
+  • devide-artifact  — artifact projects
+
+How to work here:
+- DISCOVER FIRST. Call terminal_list_sessions with NO workspace_id to see every live
+  devide_* session box-wide, then GET /api/workspaces for the id/name/path of each
+  workspace. Report which workspaces are live and which look stale (low last-activity,
+  no attached client).
+- TARGET PER CALL. To act inside a workspace, pass its "workspace_id" in the tool call's
+  arguments — that confines the call to that workspace. Omit it only for box-wide discovery.
+- ABANDON is free: to drop a stale workspace, just stop targeting its id. Do not tear down
+  or reconfigure anything. Reclaiming its worktree/session is a separate reaper concern.
+- NEW workspaces need nothing — a new devide_* session is reachable the moment it exists;
+  just pass its workspace_id.
+- Tool-search is ON: each big server lists a small CORE set plus search_tools/invoke_tool.
+  For a tool that isn't listed, search_tools (natural language; "picture"→screenshot,
+  "kill"→close) then invoke_tool.
+- To drive an on-box agent in a workspace: terminal_topology → AGENT pane id (not operator)
+  → terminal_send_agent_command → terminal_wait_agent_state → terminal_capture (ansi:false).
+- Never claim a preview is visible just because a pane/server exists — check
+  operator_visible / browser_loaded from preview_surfaces / preview_observe_pane.
+- This transport is rate-limited and every mutating call is audited server-side.
+
+Start by listing live sessions box-wide and giving me the workspace inventory (live vs
+stale). Then wait for me to name which workspace to work in.
+```
+
+---
+
+The two **pinned** variants below are identical except the transport line; both lock to
+`dalexandre-devide`.
 
 ### Door 1 (SSH tunnel)
 
