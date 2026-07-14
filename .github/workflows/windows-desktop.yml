@@ -1,0 +1,73 @@
+name: Windows desktop package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "windows/**"
+      - "dev_ide_ghostty_windows/**"
+      - "lib/dev_ide/desktop/**"
+      - "lib/dev_ide_web/plugs/desktop_auth.ex"
+      - "scripts/package-windows-desktop.ps1"
+      - "scripts/test-windows-desktop-package.ps1"
+      - ".github/workflows/windows-desktop.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package-smoke:
+    name: Build and smoke-test desktop package
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Elixir and Erlang
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.20.0"
+          otp-version: "28.5"
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            assets/package-lock.json
+            priv/scripts/package-lock.json
+
+      - name: Restore Mix dependencies
+        uses: actions/cache@v6
+        with:
+          path: |
+            deps
+            _build
+          key: windows-mix-${{ runner.os }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
+
+      - name: Fetch release dependencies
+        shell: pwsh
+        run: |
+          mix deps.get
+          Push-Location assets; npm ci; Pop-Location
+          Push-Location priv/scripts; npm ci; Pop-Location
+
+      - name: Build deterministic Windows package
+        shell: pwsh
+        run: scripts/package-windows-desktop.ps1 -OutputPath dist/DevIDE-windows-x64-ci
+
+      - name: Smoke-test install, upgrade backup, and uninstall
+        shell: pwsh
+        run: scripts/test-windows-desktop-package.ps1 -PackageRoot dist/DevIDE-windows-x64-ci
+
+      - name: Upload package and integrity metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevIDE-windows-x64
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+            dist/*.manifest.json
