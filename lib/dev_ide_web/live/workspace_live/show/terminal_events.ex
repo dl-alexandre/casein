@@ -164,7 +164,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:ok, window_id} ->
           socket =
             socket
-            |> track_last_window()
             |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
             |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
             |> TerminalState.focus_active_terminal(%{"reason" => "tmux:new_window"})
@@ -192,7 +191,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
           socket =
             socket
-            |> track_last_window()
             |> TerminalState.refresh_tmux_topology()
             |> push_event("devide:open_tab", %{url: url})
 
@@ -217,7 +215,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:noreply,
          socket
          |> Sidebar.close()
-         |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.acknowledge_active_quiet_window()
          |> TerminalState.patch_current_session()
@@ -228,14 +225,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  # tmux `C-b l`: toggle to the window that was active before the last switch.
+  # tmux `C-b l`: use tmux's session-level history so this also works after a
+  # browser reconnect or a window switch made by another client.
   def handle_event("tmux:last_window", _params, socket) do
-    last_id = socket.assigns[:tmux_last_window_id]
+    case TerminalState.tmux_adapter().last_window(socket.assigns.tmux_session) do
+      :ok ->
+        {:noreply,
+         socket
+         |> Sidebar.close()
+         |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+         |> TerminalState.acknowledge_active_quiet_window()
+         |> TerminalState.patch_current_session()
+         |> TerminalState.focus_active_terminal(%{"reason" => "tmux:last_window"})}
 
-    if is_binary(last_id) and last_id != socket.assigns[:tmux_active_window_id] do
-      handle_event("tmux:select_window", %{"window-id" => last_id}, socket)
-    else
-      {:noreply, socket}
+      {:error, :no_last_window} ->
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not select last tmux window: #{inspect(reason)}")}
     end
   end
 
@@ -455,7 +463,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       :ok ->
         {:noreply,
          socket
-         |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.acknowledge_active_quiet_window()
          |> TerminalState.patch_current_session()
@@ -930,15 +937,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   defp kill_session_error(reason), do: "Could not close tmux session: #{inspect(reason)}"
 
-  # Remember the outgoing active window before a switch so `C-b l`
-  # (tmux:last_window) can toggle back to it.
-  defp track_last_window(socket) do
-    case socket.assigns[:tmux_active_window_id] do
-      id when is_binary(id) and id != "" -> assign(socket, :tmux_last_window_id, id)
-      _ -> socket
-    end
-  end
-
   # Switch to the window that owns the selected pane when it differs from the
   # active one. The window id is taken from the picker click when present, else
   # resolved from the topology so palette/chrome callers cross windows too.
@@ -950,7 +948,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
         :ok ->
           socket
-          |> track_last_window()
           |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
 
         {:error, _reason} ->

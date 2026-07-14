@@ -221,6 +221,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
+
+    # The deep-link switch happened during mount, before this LiveView could
+    # remember any socket-local history. C-b l must still use tmux's native
+    # session history and toggle @1 -> @0 -> @1.
+    render_click(view, "tmux:last_window", %{})
+    assert_receive {:fake_tmux_last_window, ^tmux_session}
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%400")
+    assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:last_window"})
+
+    render_click(view, "tmux:last_window", %{})
+    assert_receive {:fake_tmux_last_window, ^tmux_session}
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%251")
+
     assert has_element?(view, "#attention-surface-ws-1")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
@@ -463,13 +476,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert cheatsheet_html =~ "show pane numbers"
     assert cheatsheet_html =~ "Inside the command palette"
 
-    # C-b l: switching @1 -> @0 records @1 as last; last_window toggles back.
+    # C-b l continues to use tmux history after an ordinary tab switch.
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@0"}
     assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%400")
 
     render_click(view, "tmux:last_window", %{})
-    assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
+    assert_receive {:fake_tmux_last_window, ^tmux_session}
     assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%252")
 
     # C-b ; delegates to tmux select-pane -l on the active session.
@@ -626,6 +639,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1")
     await_mount_hydration(view)
+
+    # A session with no previous window still invokes native tmux history, but
+    # tmux's `no last window` response remains a quiet no-op.
+    render_click(view, "tmux:last_window", %{})
+    assert_receive {:fake_tmux_last_window, ^tmux_session}
+    assert socket_assigns(view, :tmux_active_window_id) == "@0"
+    refute render(view) =~ "Could not select last tmux window"
 
     # Every dispatch-only WorkspaceLeader action has a hidden target.
     for action <-

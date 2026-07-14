@@ -243,6 +243,7 @@ defmodule DevIDE.Terminals.TmuxTest do
     test "window and pane mutations delegate to the client" do
       assert {:ok, _} = Tmux.new_window(@session, name: "agent", cwd: "/workspace")
       assert :ok = Tmux.select_window(@session, "@1")
+      assert :ok = Tmux.last_window(@session)
       assert :ok = Tmux.cycle_window(@session, "next")
       assert :ok = Tmux.rename_window(@session, "@1", "shell")
       assert :ok = Tmux.set_session_alias(@session, "main")

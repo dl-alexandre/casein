@@ -598,6 +598,20 @@ defmodule TmuxCtl.ClientExtraTest do
     assert {:error, {5, "nope"}} = Client.select_window(@session, "@2")
   end
 
+  # --- last_window/1 ---------------------------------------------------------
+
+  test "last_window delegates to tmux's native session history" do
+    script("", 0)
+    assert :ok = Client.last_window(@session)
+    assert_receive {:tmux_runner, ["select-window", "-l", "-t", @session]}
+
+    script("no last window\n", 1)
+    assert {:error, :no_last_window} = Client.last_window(@session)
+
+    script("err", 2)
+    assert {:error, {2, "err"}} = Client.last_window(@session)
+  end
+
   # --- cycle_window/2 ---------------------------------------------------------
 
   test "cycle_window uses -n for next and -p for prev" do
