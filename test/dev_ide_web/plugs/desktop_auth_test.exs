@@ -24,8 +24,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
   test "exchanges a valid launch token for a signed browser session" do
     conn =
       :get
-      |> conn("/?desktop_token=#{String.duplicate("a", 48)}")
-      |> init_test_session(%{})
+      |> desktop_conn("/?desktop_token=#{String.duplicate("a", 48)}")
       |> DesktopAuth.call([])
 
     assert conn.halted
@@ -35,17 +34,24 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
   end
 
   test "rejects a request with no launch token or desktop session" do
-    conn = conn(:get, "/") |> init_test_session(%{}) |> DesktopAuth.call([])
+    conn = :get |> desktop_conn("/") |> DesktopAuth.call([])
 
     assert conn.halted
     assert conn.status == 401
   end
 
+  test "allows the loopback health probe without granting cockpit access" do
+    conn = :get |> desktop_conn("/healthz") |> DesktopAuth.call([])
+
+    refute conn.halted
+    refute Map.has_key?(conn.assigns, :current_user)
+  end
+
   test "rejects non-local host headers before checking credentials" do
     conn =
-      conn(:get, "/?desktop_token=#{String.duplicate("a", 48)}")
+      :get
+      |> desktop_conn("/?desktop_token=#{String.duplicate("a", 48)}")
       |> Map.put(:host, "rebinding.invalid")
-      |> init_test_session(%{})
       |> DesktopAuth.call([])
 
     assert conn.halted
@@ -54,8 +60,8 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
 
   test "accepts a previously issued desktop session without a token" do
     conn =
-      conn(:get, "/")
-      |> init_test_session(%{"current_user" => %{id: "desktop"}})
+      :get
+      |> desktop_conn("/", %{"current_user" => %{id: "desktop"}})
       |> DesktopAuth.call([])
 
     refute conn.halted
@@ -64,4 +70,11 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp desktop_conn(method, path, session \\ %{}) do
+    method
+    |> conn(path)
+    |> Map.put(:host, "localhost")
+    |> init_test_session(session)
+  end
 end

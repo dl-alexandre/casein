@@ -31,11 +31,15 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
 
   defp authorize_desktop(conn) do
     if allowed_host?(conn.host) do
-      case get_session(conn, @session_key) do
-        @desktop_user -> assign(conn, :current_user, @desktop_user)
-        %{"id" => "desktop"} -> assign(conn, :current_user, @desktop_user)
-        %{id: "desktop"} -> assign(conn, :current_user, @desktop_user)
-        _ -> exchange_launch_token(conn)
+      if conn.request_path == "/healthz" do
+        conn
+      else
+        case get_session(conn, @session_key) do
+          @desktop_user -> assign(conn, :current_user, @desktop_user)
+          %{"id" => "desktop"} -> assign(conn, :current_user, @desktop_user)
+          %{id: "desktop"} -> assign(conn, :current_user, @desktop_user)
+          _ -> exchange_launch_token(conn)
+        end
       end
     else
       conn
@@ -67,7 +71,8 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
     supplied = conn.query_params[@token_param]
 
     if is_binary(expected) and byte_size(expected) >= 32 and is_binary(supplied) and
-         byte_size(supplied) == byte_size(expected) and Plug.Crypto.secure_compare(supplied, expected) do
+         byte_size(supplied) == byte_size(expected) and
+         Plug.Crypto.secure_compare(supplied, expected) do
       :ok
     else
       :error
@@ -77,7 +82,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
   defp redirect_to_clean_url(conn) do
     conn
     |> put_resp_header("cache-control", "no-store")
-    |> redirect(external: conn.request_path)
+    |> Phoenix.Controller.redirect(to: conn.request_path)
     |> halt()
   end
 

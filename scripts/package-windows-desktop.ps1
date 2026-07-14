@@ -53,6 +53,36 @@ function Read-DesktopReleaseMetadata {
     $metadata
 }
 
+function New-DesktopArchive {
+    param(
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][string]$DestinationPath
+    )
+
+    # Compress-Archive can hang indefinitely while walking a Phoenix release on
+    # current Windows builds. tar.exe ships with supported Windows versions and
+    # uses libarchive's ZIP writer instead. Run it from inside the package so
+    # the archive contains the payload, not its parent directory.
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if ($tar) {
+        Push-Location $SourcePath
+        try {
+            & $tar.Source -a -c -f $DestinationPath .
+            if ($LASTEXITCODE -ne 0) {
+                throw "tar.exe failed while creating $DestinationPath"
+            }
+        } finally {
+            Pop-Location
+        }
+    } else {
+        Compress-Archive -Path (Join-Path $SourcePath '*') -DestinationPath $DestinationPath -CompressionLevel Optimal
+    }
+
+    if (-not (Test-Path -LiteralPath $DestinationPath) -or (Get-Item -LiteralPath $DestinationPath).Length -le 0) {
+        throw "Archive creation produced no artifact at $DestinationPath"
+    }
+}
+
 $sourceRevision = Get-SourceRevision
 
 if ($outputPath -eq $root -or $outputPath -eq [IO.Path]::GetPathRoot($outputPath)) {
@@ -126,7 +156,7 @@ $archivePath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip"
 $manifestPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.manifest.json"
 $shaPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip.sha256"
 Remove-Item -LiteralPath $archivePath, $manifestPath, $shaPath -Force -ErrorAction SilentlyContinue
-Compress-Archive -Path (Join-Path $outputPath '*') -DestinationPath $archivePath -CompressionLevel Optimal
+New-DesktopArchive -SourcePath $outputPath -DestinationPath $archivePath
 $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
 
 [ordered]@{
