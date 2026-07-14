@@ -195,6 +195,8 @@ global admin is `DEV_IDE_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/dev
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 
+For wiring an **off-box** agent end-to-end (both transports, ready-to-paste `.mcp.json` + agent prompts, pinned vs durable/workspace-agnostic config), see **`docs/external-agent-connect.md`** and the host-side `devide-remote` skill.
+
 **Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-devide` the manager UUID is in `.devbox-agent.env` as `DEVIDE_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
 
 Agent workflow:
