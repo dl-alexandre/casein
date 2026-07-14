@@ -9,8 +9,8 @@ workspace_scoped_token_read_json() {
 
   if [[ -r "$env_file" ]]; then
     line="$(awk -F= '/^DEV_IDE_WORKSPACE_API_TOKENS=/{sub(/^DEV_IDE_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
-  elif sudo test -r "$env_file" 2>/dev/null; then
-    line="$(sudo awk -F= '/^DEV_IDE_WORKSPACE_API_TOKENS=/{sub(/^DEV_IDE_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
+  elif sudo -n test -r "$env_file" 2>/dev/null; then
+    line="$(sudo -n awk -F= '/^DEV_IDE_WORKSPACE_API_TOKENS=/{sub(/^DEV_IDE_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
   else
     printf '{}'
     return 0

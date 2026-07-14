@@ -11,7 +11,13 @@ defmodule DevIDE.Terminals.Shims do
   @default_tool_root "~/.devide/tools"
   @default_path "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   @shell_integration_name "shell-integration.bash"
-  @shell_command_body ~s(if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "${SHELL:-}" ] && [ -x "$SHELL" ]; then exec "$SHELL"; fi; exec sh)
+  @zsh_integration_name "shell-integration.zsh"
+  @zdotdir_name "zdotdir"
+  # Panes follow the user's login shell: when $SHELL is zsh (the macOS default)
+  # and the staged ZDOTDIR bootstrap is materialized, enter integrated zsh;
+  # otherwise fall through to the original integrated-bash chain (the devbox
+  # default, where $SHELL is bash or unset under systemd).
+  @shell_command_body ~s(if command -v zsh >/dev/null 2>&1 && [ -r "${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then case "${SHELL:-}" in */zsh\) DEV_IDE_USER_ZDOTDIR="${ZDOTDIR:-}" ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}" exec zsh -il;; esac; fi; if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "${SHELL:-}" ] && [ -x "$SHELL" ]; then exec "$SHELL"; fi; exec sh)
   @capability_env %{
     "DEV_IDE_TERMINAL" => "1",
     "DEV_IDE_CLIPBOARD" => "osc52",
@@ -142,6 +148,20 @@ defmodule DevIDE.Terminals.Shims do
   @spec shell_integration_path() :: String.t()
   def shell_integration_path, do: Path.join(dir(), @shell_integration_name)
 
+  @doc "Absolute path to DevIDE's zsh shell integration file."
+  @spec zsh_integration_path() :: String.t()
+  def zsh_integration_path, do: Path.join(dir(), @zsh_integration_name)
+
+  @doc """
+  Absolute path to the staged ZDOTDIR that bootstraps integrated zsh panes.
+
+  zsh has no `--init-file`; the staged wrapper dotfiles chain to the user's
+  real `~/.zshenv`/`~/.zprofile`/`~/.zshrc`, restore the original `ZDOTDIR`,
+  then load the zsh shell integration last.
+  """
+  @spec zdotdir_path() :: String.t()
+  def zdotdir_path, do: Path.join(dir(), @zdotdir_name)
+
   @doc "Absolute path to a materialized installer backend for a shimmed tool."
   @spec install_script_path(String.t()) :: String.t()
   def install_script_path(name) when is_binary(name), do: Path.join([dir(), "install", name])
@@ -149,15 +169,21 @@ defmodule DevIDE.Terminals.Shims do
   @doc "Generic terminal capability variables safe for every DevIDE pane."
   @spec capability_env() :: %{String.t() => String.t()}
   def capability_env do
-    Map.put(@capability_env, "DEV_IDE_SHELL_INTEGRATION_BASH", shell_integration_path())
+    @capability_env
+    |> Map.put("DEV_IDE_SHELL_INTEGRATION_BASH", shell_integration_path())
+    |> Map.put("DEV_IDE_SHELL_INTEGRATION_ZSH", zsh_integration_path())
+    |> Map.put("DEV_IDE_SHELL_INTEGRATION_ZDOTDIR", zdotdir_path())
   end
 
   @doc """
   Shell command for tmux panes that should enter the DevIDE-integrated shell.
 
-  The command intentionally falls back to a normal login shell when the
-  materialized bash integration is unavailable in the pane's execution context
-  (for example a container-owned tmux server without the host shim directory).
+  Follows the user's login shell: when `$SHELL` is zsh (the macOS default) and
+  the staged ZDOTDIR is materialized, panes get integrated zsh; otherwise the
+  integrated-bash chain applies. The command intentionally falls back to a
+  normal login shell when no materialized integration is available in the
+  pane's execution context (for example a container-owned tmux server without
+  the host shim directory).
   """
   @spec shell_command() :: String.t()
   def shell_command do
@@ -309,16 +335,15 @@ defmodule DevIDE.Terminals.Shims do
   # Shim dir comes from trusted operator/app configuration, not web input.
   # sobelow_skip ["Traversal.FileModule"]
   defp write_shell_integration!(shim_dir) do
-    path = Path.join(shim_dir, @shell_integration_name)
-    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+    write_executable!(Path.join(shim_dir, @shell_integration_name), shell_integration_script())
+    write_executable!(Path.join(shim_dir, @zsh_integration_name), zsh_integration_script())
 
-    try do
-      File.write!(tmp, shell_integration_script())
-      File.chmod!(tmp, 0o755)
-      File.rename!(tmp, path)
-    after
-      if File.exists?(tmp), do: File.rm(tmp)
-    end
+    zdotdir = Path.join(shim_dir, @zdotdir_name)
+    File.mkdir_p!(zdotdir)
+
+    Enum.each(zdotdir_files(), fn {name, content} ->
+      write_executable!(Path.join(zdotdir, name), content)
+    end)
   end
 
   # Command names and install metadata are registry-backed and validated before
@@ -733,6 +758,167 @@ defmodule DevIDE.Terminals.Shims do
     # would be recorded as a junk command in every new shell.
     trap '__devide_preexec' DEBUG
     """
+  end
+
+  # Same OSC 133 prompt marks / OSC 7 cwd contract as the bash integration,
+  # implemented with zsh's native precmd/preexec hooks instead of
+  # PROMPT_COMMAND + a DEBUG trap. Loaded by the staged ZDOTDIR's .zshrc after
+  # the user's real ~/.zshrc, so user prompt customization gets the end mark.
+  defp zsh_integration_script do
+    """
+    #!/usr/bin/env zsh
+
+    [[ -o interactive ]] || return 0
+
+    if [[ "${DEV_IDE_SHELL_INTEGRATION_LOADED:-}" == "1" ]]; then
+      return 0
+    fi
+    export DEV_IDE_SHELL_INTEGRATION_LOADED=1
+
+    # Belt-and-suspenders PATH repair, mirroring the bash integration: keep
+    # DevIDE shims findable even when the pane inherited a thin release PATH.
+    __devide_prepend_path() {
+      local d prefix=""
+      for d in "$@"; do
+        [[ -n "${d}" && -d "${d}" ]] || continue
+        case ":${PATH}:${prefix}:" in
+          *":${d}:"*) ;;
+          *) prefix="${prefix:+${prefix}:}${d}" ;;
+        esac
+      done
+      [[ -n "${prefix}" ]] && PATH="${prefix}${PATH:+:${PATH}}"
+      export PATH
+    }
+    __devide_prepend_path \\
+      "${HOME:-}/.devide/terminal-shims" \\
+      "${HOME:-}/.devide/tools/bin" \\
+      "${HOME:-}/.local/bin" \\
+      "${HOME:-}/.local/share/npm-global/bin"
+    unset -f __devide_prepend_path
+
+    __devide_urlencode() {
+      local value="${1:-}"
+      local encoded=""
+      local i char hex
+      local LC_ALL=C
+
+      for ((i = 0; i < ${#value}; i++)); do
+        char="${value:$i:1}"
+        case "$char" in
+          [a-zA-Z0-9.~_-]) encoded+="$char" ;;
+          /) encoded+="/" ;;
+          *) printf -v hex '%%%02X' "'$char"; encoded+="$hex" ;;
+        esac
+      done
+
+      printf '%s' "$encoded"
+    }
+
+    __devide_emit_osc() {
+      local payload="$1"
+      printf '\\033]%s\\a' "$payload"
+
+      if [[ -n "${TMUX:-}" ]]; then
+        # tmux consumes plain OSC 133 for its own prompt marks. A passthrough
+        # copy reaches DevIDE's attached client/emulator.
+        printf '\\033Ptmux;\\033\\033]%s\\a\\033\\\\' "$payload"
+      fi
+    }
+
+    __devide_emit_cwd() {
+      local host="${HOST:-}"
+      if [[ -z "$host" ]] && command -v hostname >/dev/null 2>&1; then
+        host="$(hostname 2>/dev/null || true)"
+      fi
+      host="${host:-localhost}"
+
+      __devide_emit_osc "7;file://${host}$(__devide_urlencode "${PWD:-/}")"
+    }
+
+    __devide_command_active=0
+
+    __devide_precmd() {
+      local status=$?
+
+      if [[ "${__devide_command_active:-0}" == "1" ]]; then
+        __devide_emit_osc "133;D;${status}"
+        __devide_command_active=0
+      fi
+
+      __devide_emit_osc "133;A"
+      __devide_emit_cwd
+    }
+
+    __devide_preexec() {
+      local command="${1:-}"
+
+      if [[ -z "$command" || "$command" == __devide_* ]]; then
+        return 0
+      fi
+
+      __devide_command_active=1
+      __devide_emit_osc "133;C;cmd=$(__devide_urlencode "$command")"
+    }
+
+    autoload -Uz add-zsh-hook
+    add-zsh-hook precmd __devide_precmd
+    add-zsh-hook preexec __devide_preexec
+
+    # %{...%} marks the sequence zero-width; the payload contains no % or $
+    # characters, so neither prompt expansion nor PROMPT_SUBST can mangle it.
+    __devide_prompt_end="$(__devide_emit_osc "133;B")"
+    PS1="${PS1}%{${__devide_prompt_end}%}"
+    unset __devide_prompt_end
+    """
+  end
+
+  # zsh reads its dotfiles from $ZDOTDIR; the pane command execs
+  # `ZDOTDIR=<staged> zsh -il`, so these wrappers run instead of the user's
+  # files and chain to them. .zshrc restores the original ZDOTDIR before the
+  # user's rc runs, so nested shells and .zlogin resolve normally.
+  defp zdotdir_files do
+    [
+      {".zshenv",
+       """
+       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real ~/.zshenv.
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zshenv" ]]; then
+         source "${HOME}/.zshenv"
+       fi
+       """},
+      {".zprofile",
+       """
+       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real ~/.zprofile.
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zprofile" ]]; then
+         source "${HOME}/.zprofile"
+       fi
+       """},
+      {".zshrc",
+       """
+       # Staged by DevIDE (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
+       # chain to their real ~/.zshrc, then load DevIDE shell integration.
+       if [[ -n "${DEV_IDE_USER_ZDOTDIR:-}" ]]; then
+         export ZDOTDIR="${DEV_IDE_USER_ZDOTDIR}"
+       else
+         unset ZDOTDIR
+       fi
+       unset DEV_IDE_USER_ZDOTDIR
+
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zshrc" ]]; then
+         source "${HOME}/.zshrc"
+       fi
+
+       if [[ -r "${DEV_IDE_SHELL_INTEGRATION_ZSH:-}" ]]; then
+         source "${DEV_IDE_SHELL_INTEGRATION_ZSH}"
+       else
+         # Fall back to the integration file next to this staged directory.
+         __devide_zdotdir="${${(%):-%x}:A:h}"
+         if [[ -r "${__devide_zdotdir}/../shell-integration.zsh" ]]; then
+           source "${__devide_zdotdir}/../shell-integration.zsh"
+         fi
+         unset __devide_zdotdir
+       fi
+       """}
+    ]
   end
 
   defp install_script(name, nil) do

@@ -102,10 +102,12 @@ defmodule DevIDE.Terminals.ShimsTest do
       )
 
     assert out == "Opened docs/readme.md in DevIDE viewer\n"
+    {canonical_workdir, 0} = System.cmd("pwd", [], cd: workdir)
 
     assert File.read!(capture) ==
              "http://devide.test/api/workspaces/ws-open/open\n5\n" <>
-               ~s({"target":"docs/readme.md","base_dir":"#{workdir}"}) <> "\n"
+               ~s({"target":"docs/readme.md","base_dir":"#{String.trim(canonical_workdir)}"}) <>
+               "\n"
   end
 
   test "devide-open rejects targets with control characters before curl", %{
@@ -505,36 +507,147 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert String.trim(out) == devide_shim
   end
 
-  test "prompt-end marker in PS1 expands to escape bytes without a stray bracket" do
+  test "prompt-end marker in PS1 expands to escape bytes without a stray bracket", %{tmp: tmp} do
     Shims.materialize!()
 
-    script =
+    rcfile = Path.join(tmp, "prompt-expansion.bashrc")
+
+    File.write!(
+      rcfile,
       """
       export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
       unset DEV_IDE_SHELL_INTEGRATION_LOADED
       export TMUX=fake,1,0
       PS1='$ '
       source #{Shims.shell_integration_path()}
-      printf %s "${PS1@P}"
       """
+    )
 
-    {expanded, 0} = System.cmd(bash!(), ["-i", "-c", script])
+    # Let readline render PS1 itself. `${PS1@P}` would be simpler, but that
+    # expansion is unavailable in the Bash 3.2 shipped by macOS.
+    {expanded, 0} =
+      System.cmd(
+        "/bin/sh",
+        [
+          "-c",
+          "#{shell_quote(bash!())} --noprofile --rcfile #{shell_quote(rcfile)} -i < /dev/null"
+        ],
+        stderr_to_stdout: true
+      )
 
-    # Prompt expansion renders \[ and \] as \x01/\x02 readline markers. The
-    # suffix must end with an intact ST (ESC backslash) followed by the \x02
-    # from a recognized \] — with an unescaped ST backslash, \] is instead
-    # consumed as \\ and a printable "]" leaks into every prompt.
-    assert String.ends_with?(expanded, "\e\\\x02")
-    refute String.ends_with?(expanded, "]")
+    # An interactive Bash renders the prompt before consuming EOF. The OSC
+    # passthrough must end with an intact ST (ESC backslash); with an unescaped
+    # ST backslash, the following `\]` leaks a printable `]` into the prompt.
+    assert expanded =~ "\e\\exit\n"
+    refute expanded =~ "\e\\]exit\n"
   end
 
   test "shell command enters integration when available and falls back otherwise" do
     command = Shims.shell_command()
 
     assert command =~ "sh -lc"
+    # zsh branch first (gated on $SHELL being zsh — the macOS default), then
+    # the original integrated-bash chain (the devbox default).
+    assert command =~ "DEV_IDE_SHELL_INTEGRATION_ZDOTDIR"
+    assert command =~ "*/zsh)"
+    assert command =~ "exec zsh -il"
     assert command =~ "DEV_IDE_SHELL_INTEGRATION_BASH"
     assert command =~ "bash --init-file"
     assert command =~ "bash -l"
+  end
+
+  if System.find_executable("zsh") do
+    test "staged ZDOTDIR bootstraps integrated zsh and restores user ZDOTDIR", %{tmp: tmp} do
+      Shims.materialize!()
+      home = Path.join(tmp, "home")
+      File.mkdir_p!(home)
+
+      script = """
+      print -r -- "loaded=${DEV_IDE_SHELL_INTEGRATION_LOADED:-0}"
+      print -r -- "zdotdir=${ZDOTDIR:-unset}"
+      print -r -- "precmd=${precmd_functions}"
+      print -r -- "preexec=${preexec_functions}"
+      """
+
+      {out, 0} =
+        System.cmd(
+          System.find_executable("zsh"),
+          ["-il", "-c", script],
+          env: [
+            {"HOME", home},
+            {"PATH", "/usr/bin:/bin"},
+            {"ZDOTDIR", Shims.zdotdir_path()},
+            {"DEV_IDE_USER_ZDOTDIR", ""},
+            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
+            {"DEV_IDE_SHELL_INTEGRATION_LOADED", nil}
+          ],
+          stderr_to_stdout: true
+        )
+
+      assert out =~ "loaded=1"
+      assert out =~ "zdotdir=unset"
+      assert out =~ ~r/precmd=.*__devide_precmd/
+      assert out =~ ~r/preexec=.*__devide_preexec/
+    end
+
+    test "zsh integration appends the prompt-end mark to PS1", %{tmp: tmp} do
+      Shims.materialize!()
+      home = Path.join(tmp, "home")
+      File.mkdir_p!(home)
+
+      {out, 0} =
+        System.cmd(
+          System.find_executable("zsh"),
+          ["-il", "-c", ~s(print -r -- "ps1=${PS1}")],
+          env: [
+            {"HOME", home},
+            {"PATH", "/usr/bin:/bin"},
+            {"ZDOTDIR", Shims.zdotdir_path()},
+            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
+            {"DEV_IDE_SHELL_INTEGRATION_LOADED", nil}
+          ],
+          stderr_to_stdout: true
+        )
+
+      assert out =~ "%{\e]133;B\a%}"
+    end
+
+    test "zsh integration keeps ~/.local/bin shims ahead of bare npm package bins",
+         %{tmp: tmp} do
+      Shims.materialize!()
+      home = Path.join(tmp, "home")
+
+      local_bin = Path.join(home, ".local/bin")
+      npm_bin = Path.join(home, ".local/share/npm-global/bin")
+      File.mkdir_p!(local_bin)
+      File.mkdir_p!(npm_bin)
+
+      devide_shim = Path.join(local_bin, "claude")
+      npm_bare = Path.join(npm_bin, "claude")
+      File.write!(devide_shim, "#!/bin/sh\necho ok\n")
+      File.write!(npm_bare, "#!/bin/sh\necho ok\n")
+      File.chmod!(devide_shim, 0o755)
+      File.chmod!(npm_bare, 0o755)
+
+      {out, 0} =
+        System.cmd(
+          System.find_executable("zsh"),
+          [
+            "-i",
+            "-c",
+            """
+            export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+            unset DEV_IDE_SHELL_INTEGRATION_LOADED
+            source #{shell_quote(Shims.zsh_integration_path())}
+            command -v claude
+            """
+          ],
+          env: [{"HOME", home}, {"PATH", "/usr/bin:/bin"}],
+          stderr_to_stdout: true
+        )
+
+      assert String.trim(out) |> String.ends_with?(devide_shim)
+    end
   end
 
   test "ensure-terminal-tool provisions through a temp cargo root", %{
