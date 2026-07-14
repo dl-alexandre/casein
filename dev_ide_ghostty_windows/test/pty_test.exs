@@ -45,6 +45,16 @@ defmodule Ghostty.WindowsPTYTest do
     assert Ghostty.LiveTerminal.handle_key(self(), %{"key" => "Enter"}) == {:ok, "\r"}
   end
 
+  test "encodes control keys without emitting modifier names" do
+    assert Ghostty.LiveTerminal.handle_key(self(), %{"key" => "c", "ctrlKey" => true}) ==
+             {:ok, <<3>>}
+
+    assert Ghostty.LiveTerminal.handle_key(self(), %{"key" => "Control", "ctrlKey" => true}) ==
+             :none
+
+    assert Ghostty.LiveTerminal.handle_key(self(), %{"key" => "F1"}) == :none
+  end
+
   test "delays right-margin wrapping until the next printable character" do
     {:ok, term} = Ghostty.Terminal.start_link(cols: 5, rows: 2)
 

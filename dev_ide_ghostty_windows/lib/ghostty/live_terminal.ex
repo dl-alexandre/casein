@@ -3,7 +3,25 @@ defmodule Ghostty.LiveTerminal do
 
   def handle_text(_term, data) when is_binary(data), do: {:ok, data}
 
-  def handle_key(_term, %{"key" => key}) do
+  def handle_key(_term, %{"key" => key} = params) do
+    encoded =
+      cond do
+        params["metaKey"] == true -> :none
+        params["ctrlKey"] == true -> encode_control_key(key)
+        true -> encode_key(key)
+      end
+
+    if params["altKey"] == true and match?({:ok, _}, encoded) do
+      {:ok, data} = encoded
+      {:ok, "\e" <> data}
+    else
+      encoded
+    end
+  end
+
+  def handle_key(_term, _params), do: :none
+
+  defp encode_key(key) do
     case key do
       "Enter" -> {:ok, "\r"}
       "Backspace" -> {:ok, "\b"}
@@ -13,12 +31,27 @@ defmodule Ghostty.LiveTerminal do
       "ArrowDown" -> {:ok, "\e[B"}
       "ArrowRight" -> {:ok, "\e[C"}
       "ArrowLeft" -> {:ok, "\e[D"}
-      value when is_binary(value) and byte_size(value) > 0 -> {:ok, value}
+      value when is_binary(value) and byte_size(value) == 1 -> {:ok, value}
       _ -> :none
     end
   end
 
-  def handle_key(_term, _params), do: :none
+  defp encode_control_key(key) when key in ["Control", "Shift", "Alt", "Meta"], do: :none
+  defp encode_control_key(" "), do: {:ok, <<0>>}
+  defp encode_control_key("["), do: {:ok, <<27>>}
+  defp encode_control_key("\\"), do: {:ok, <<28>>}
+  defp encode_control_key("]"), do: {:ok, <<29>>}
+  defp encode_control_key("^"), do: {:ok, <<30>>}
+  defp encode_control_key("_"), do: {:ok, <<31>>}
+
+  defp encode_control_key(<<char>>) when char in ?a..?z,
+    do: {:ok, <<char - ?a + 1>>}
+
+  defp encode_control_key(<<char>>) when char in ?A..?Z,
+    do: {:ok, <<char - ?A + 1>>}
+
+  defp encode_control_key(key), do: encode_key(key)
+
   def handle_mouse(_term, %{"encoded" => data}) when is_binary(data), do: {:ok, data}
   def handle_mouse(_term, _params), do: :none
 
