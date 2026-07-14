@@ -24,6 +24,9 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     refute script =~ "Invoke-DevIDERelease -Arguments @('start') -Port $Port -Wait"
     assert script =~ "taskkill.exe /PID $runtimePid /T /F"
     assert script =~ "Local\\DevIDE.Desktop.Tray"
+    assert script =~ "function Open-DevIDECockpit"
+    assert script =~ "Opened the already-running DevIDE cockpit from a second launch"
+    assert script =~ "$maxBytes = 2MB"
   end
 
   test "tray menu exposes the required lifecycle controls" do
@@ -77,7 +80,10 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert installer =~ "Programs\\DevIDE"
     assert installer =~ "before-update-"
     assert installer =~ "previous_data_backup"
-    assert installer =~ "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"
+
+    assert installer =~
+             "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"
+
     assert launcher =~ "current.json"
     assert launcher =~ "DevIDE.Tray.ps1"
     assert uninstaller =~ "RemoveUserData"

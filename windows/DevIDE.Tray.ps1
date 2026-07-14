@@ -32,8 +32,23 @@ function Get-DevIDEPaths {
 function Write-DevIDELog {
     param([string]$Message)
 
+    $maxBytes = 2MB
+    $rotated = "$($script:Paths.Log).1"
+    if ((Test-Path -LiteralPath $script:Paths.Log) -and (Get-Item -LiteralPath $script:Paths.Log).Length -ge $maxBytes) {
+        Move-Item -LiteralPath $script:Paths.Log -Destination $rotated -Force
+    }
+
     $line = '{0:o} {1}' -f [DateTime]::UtcNow, $Message
     Add-Content -LiteralPath $script:Paths.Log -Value $line -Encoding UTF8
+}
+
+function Open-DevIDECockpit {
+    param([int]$Port)
+
+    if (-not (Test-DevIDEReady $Port)) { return $false }
+    $token = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+    Start-Process "http://127.0.0.1:$Port/?desktop_token=$([Uri]::EscapeDataString($token))"
+    return $true
 }
 
 function Get-FreeLoopbackPort {
@@ -291,6 +306,10 @@ function Start-DevIDETray {
     $script:InstanceMutex = New-Object Threading.Mutex($true, 'Local\DevIDE.Desktop.Tray', [ref]$createdNew)
     if (-not $createdNew) {
         $script:InstanceMutex.Dispose()
+        $settings = Read-DevIDESettings
+        if (Open-DevIDECockpit $settings.port) {
+            Write-DevIDELog 'Opened the already-running DevIDE cockpit from a second launch'
+        }
         return
     }
 
@@ -327,16 +346,19 @@ function Start-DevIDETray {
     $tray.ContextMenuStrip = $menu
 
     $open = {
-        if (Test-DevIDEReady $script:Port) {
-            $token = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
-            Start-Process "http://127.0.0.1:$script:Port/?desktop_token=$([Uri]::EscapeDataString($token))"
-        } else {
+        if (-not (Open-DevIDECockpit $script:Port)) {
             $tray.ShowBalloonTip(3000, 'DevIDE', 'DevIDE is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
         }
     }
     $openItem.Add_Click($open)
     $tray.Add_DoubleClick($open)
-    $logsItem.Add_Click({ Start-Process explorer.exe -ArgumentList @($script:Paths.DataRoot) })
+    $logsItem.Add_Click({
+        if (Test-Path -LiteralPath $script:Paths.Log) {
+            Start-Process notepad.exe -ArgumentList @($script:Paths.Log)
+        } else {
+            Start-Process explorer.exe -ArgumentList @($script:Paths.DataRoot)
+        }
+    })
     $startupItem.Add_Click({
         $script:LaunchAtSignIn = -not $script:LaunchAtSignIn
         Set-DevIDEStartup $script:LaunchAtSignIn
