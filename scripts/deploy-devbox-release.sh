@@ -432,8 +432,14 @@ tools_json="$(
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 )"
 
+# preview_open_app is in the always-on tool-search CORE set, so it is advertised
+# whether DEV_IDE_MCP_TOOL_SEARCH is on or off. preview_close is NOT in core, so
+# when tool-search is armed it moves behind the search_tools/invoke_tool meta-
+# tools and drops out of tools/list — a hard-coded grep for it fails the smoke
+# check and blocks the deploy even though preview MCP is healthy. Accept either
+# the full-list tool (tool-search off) or the meta-tool (tool-search on).
 printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
-printf '%s' "${tools_json}" | grep -q '"preview_close"'
+printf '%s' "${tools_json}" | grep -qE '"preview_close"|"invoke_tool"'
 
 preview_script_dir="$(
   sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-preview' -print -quit 2>/dev/null
