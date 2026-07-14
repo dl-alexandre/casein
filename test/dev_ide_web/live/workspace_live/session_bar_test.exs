@@ -588,6 +588,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(phx-value-kind="scratch")
     end
 
+    test "workspace-header row opens the home session; a separate chevron toggles" do
+      # Current workspace, expanded, with two sessions: the last one is the
+      # home/landing shell (default_sid).
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("ex-agent", "tmux-ex-agent"),
+          agent_info("ex-shell", "tmux-ex-shell")
+        ])
+
+      home = List.last(tabs)
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 2, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: List.first(tabs).id,
+          default_sid: home.id,
+          session_tabs: tabs
+        )
+
+      # The workspace-header PRIMARY row is a picker item that attaches to the
+      # home session — Enter/click opens a shell rather than merely toggling.
+      [_, header] =
+        Regex.run(~r/(<a\b[^>]*data-picker-section="workspaces"[^>]*>)/s, html)
+
+      assert header =~ ~s(phx-click="attach_terminal_session")
+      assert header =~ ~s(phx-value-session-id="#{home.id}")
+      # The header row is NOT the expand toggle any more.
+      refute header =~ ~s(phx-click="sidebar:toggle_workspace")
+
+      # Expansion moved to a dedicated chevron button.
+      assert html =~ ~s(id="sidebar-ws-toggle-)
+      assert html =~ ~s(data-picker-ws-toggle)
+
+      [_, chevron] =
+        Regex.run(~r/(<button\b[^>]*data-picker-ws-toggle[^>]*>)/s, html)
+
+      assert chevron =~ ~s(phx-click="sidebar:toggle_workspace")
+      assert chevron =~ ~s(phx-value-workspace-id="ws-1")
+    end
+
     test "renders the Browse tier with expand toggle and open-terminal action" do
       browse = [
         %{
