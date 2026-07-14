@@ -671,93 +671,107 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   # collapse/expand hooks still resolve which workspace to toggle.
   defp sessions_sidebar_workspace_header(assigns) do
     home = workspace_home_session(assigns.node, assigns.default_sid)
-    current? = assigns.node.workspace_id == assigns.current_workspace_id
 
-    open =
-      cond do
-        current? and is_map(home) ->
-          %{
-            navigate?: false,
-            href: session_href(assigns.node.workspace_id, home.id, assigns.path_base),
-            session: home
-          }
-
-        is_map(home) ->
-          %{
-            navigate?: true,
-            href: cross_workspace_session_path(assigns.node.workspace_id, home),
-            session: home
-          }
-
-        true ->
-          %{
-            navigate?: true,
-            href: workspace_href(assigns.node.workspace_id, assigns.path_base),
-            session: nil
-          }
-      end
-
-    assigns = assign(assigns, :open, open)
+    assigns =
+      assigns
+      |> assign(:home, home)
+      |> assign(:current?, assigns.node.workspace_id == assigns.current_workspace_id)
 
     ~H"""
-    <div class="flex items-stretch gap-0.5">
-      <%= if @open.navigate? do %>
-        <.link
-          navigate={@open.href}
-          data-picker-item
-          data-picker-section="workspaces"
-          data-picker-sessions-id={@node.dom_id}
+    <%= if is_map(@home) do %>
+      <div class="flex items-stretch gap-0.5">
+        <%= if @current? do %>
+          <a
+            href={session_href(@node.workspace_id, @home.id, @path_base)}
+            data-picker-item
+            data-picker-section="workspaces"
+            data-picker-sessions-id={@node.dom_id}
+            phx-value-workspace-id={@node.workspace_id}
+            phx-click="attach_terminal_session"
+            phx-value-session-id={@home.id}
+            phx-value-kind={to_string(@home.kind)}
+            phx-value-tmux-session={@home.tmux_session}
+            class={[
+              sidebar_row_class(@node.current?),
+              "min-w-0 flex-1 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={workspace_home_title(@node, @home)}
+          >
+            <.sessions_sidebar_workspace_labels node={@node} />
+          </a>
+        <% else %>
+          <.link
+            navigate={cross_workspace_session_path(@node.workspace_id, @home)}
+            data-picker-item
+            data-picker-section="workspaces"
+            data-picker-sessions-id={@node.dom_id}
+            phx-value-workspace-id={@node.workspace_id}
+            class={[
+              sidebar_row_class(@node.current?),
+              "min-w-0 flex-1 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={workspace_home_title(@node, @home)}
+          >
+            <.sessions_sidebar_workspace_labels node={@node} />
+          </.link>
+        <% end %>
+        <button
+          :if={@expandable?}
+          type="button"
+          id={"sidebar-ws-toggle-" <> @node.dom_id}
+          data-picker-ws-toggle
+          phx-click="sidebar:toggle_workspace"
           phx-value-workspace-id={@node.workspace_id}
-          class={[
-            sidebar_row_class(@node.current?),
-            "min-w-0 flex-1 flex-row items-center gap-2",
-            not @node.live? && "opacity-60"
-          ]}
-          title={workspace_home_title(@node, @open.session)}
+          class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          aria-label={
+            if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
+          }
+          aria-expanded={to_string(@node.expanded?)}
+          title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
         >
-          <.sessions_sidebar_workspace_labels node={@node} />
-        </.link>
-      <% else %>
-        <a
-          href={@open.href}
-          data-picker-item
-          data-picker-section="workspaces"
-          data-picker-sessions-id={@node.dom_id}
-          phx-value-workspace-id={@node.workspace_id}
-          phx-click="attach_terminal_session"
-          phx-value-session-id={@open.session.id}
-          phx-value-kind={to_string(@open.session.kind)}
-          phx-value-tmux-session={@open.session.tmux_session}
-          class={[
-            sidebar_row_class(@node.current?),
-            "min-w-0 flex-1 flex-row items-center gap-2",
-            not @node.live? && "opacity-60"
-          ]}
-          title={workspace_home_title(@node, @open.session)}
-        >
-          <.sessions_sidebar_workspace_labels node={@node} />
-        </a>
-      <% end %>
+          {@node.session_count}
+          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3" />
+          </span>
+        </button>
+      </div>
+    <% else %>
+      <%!-- No resolvable home session — a collapsed/other/teammate workspace whose
+           sessions aren't loaded or aren't visible to this viewer. Keep the row a
+           NON-navigable expand/collapse toggle (no href) so it never links into a
+           workspace the viewer cannot open. --%>
       <button
-        :if={@expandable?}
         type="button"
-        id={"sidebar-ws-toggle-" <> @node.dom_id}
-        data-picker-ws-toggle
+        data-picker-item
+        data-picker-section="workspaces"
+        data-picker-sessions-id={@node.dom_id}
         phx-click="sidebar:toggle_workspace"
         phx-value-workspace-id={@node.workspace_id}
-        class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+        class={[
+          sidebar_row_class(@node.current?),
+          "flex-row items-center gap-2",
+          not @node.live? && "opacity-60"
+        ]}
+        title={@node.title}
         aria-label={
           if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
         }
         aria-expanded={to_string(@node.expanded?)}
-        title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
       >
-        {@node.session_count}
-        <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
-          <.icon name="hero-chevron-right" class="size-3" />
+        <.sessions_sidebar_workspace_labels node={@node} />
+        <span
+          :if={@node.session_count > 0}
+          class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+        >
+          {@node.session_count}
+          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3" />
+          </span>
         </span>
       </button>
-    </div>
+    <% end %>
     """
   end
 
