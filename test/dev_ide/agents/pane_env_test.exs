@@ -134,7 +134,12 @@ defmodule DevIDE.Agents.PaneEnvTest do
 
     assert vars["DEVIDE_AGENT_ENV_FILE"] == Path.join(staging, "env.sh")
     assert File.exists?(vars["DEVIDE_AGENT_ENV_FILE"])
-    assert vars["PATH"] =~ ".local/bin"
+    # Assert the agent bin dir PaneEnv deterministically prepends, not a literal
+    # ".local/bin": that string only appeared via the ambient $PATH, so the test
+    # passed in an interactive/runner shell but failed under the deploy poller's
+    # systemd env (no ~/.local/bin) — blocking every master deploy. Mirror the
+    # npm_bin_dir assertion below and test the guarantee PaneEnv actually makes.
+    assert vars["PATH"] =~ AgentShims.bin_dir()
     assert vars["PATH"] =~ AgentShims.npm_bin_dir()
   end
 
