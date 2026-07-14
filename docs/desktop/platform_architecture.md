@@ -250,9 +250,11 @@ Windows Forms `NotifyIcon` API, starts the packaged OTP release without a consol
 window, and keeps the Phoenix cockpit on a loopback-only port. Its menu exposes
 open, restart, logs, launch-at-sign-in, and quit actions. Double-clicking the icon
 opens the cockpit in the user's default browser.
-For the first Windows vertical slice, the launch target is `/desktop-terminal`;
-the normal `/` workspace cockpit still depends on terminal seams that are being
-ported away from tmux.
+For the first Windows vertical slice, the launch target is `/`; the Windows host
+uses the same `WorkspaceLive` cockpit as every other DevIDE deployment. Native
+PowerShell is a terminal backend concern and must not introduce a parallel UI.
+The remaining platform work is limited to replacing tmux-dependent terminal
+seams behind that shared cockpit.
 
 The host persists only local runtime state under `%LOCALAPPDATA%\DevIDE`:
 

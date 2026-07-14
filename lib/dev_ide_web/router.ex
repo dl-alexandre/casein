@@ -132,7 +132,6 @@ defmodule DevIdeWeb.Router do
       # Dir browse is the SESSIONS Browse tier (Stage 4b). No separate
       # full-page dashboard or workspace-admin drawer.
       live "/", WorkspaceLive.Show, :root
-      live "/desktop-terminal", DesktopTerminalLive, :index
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
 

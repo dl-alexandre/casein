@@ -34,15 +34,11 @@ defmodule DevIdeWeb.Layouts do
     default: false,
     doc: "allows desktop-style views to use the full viewport"
 
-  attr :navigation, :boolean,
-    default: true,
-    doc: "renders the standard application navigation"
-
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header :if={@navigation} class="navbar px-4 sm:px-6 lg:px-8">
+    <header class="navbar px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <a href="/" class="flex-1 flex w-fit items-center gap-2">
           <img src={~p"/images/logo.svg"} width="36" />
@@ -75,8 +71,7 @@ defmodule DevIdeWeb.Layouts do
     </header>
 
     <main class={[
-      @full_bleed && @navigation && "flex h-[calc(100vh-4rem)] min-h-0 flex-col",
-      @full_bleed && not @navigation && "flex h-dvh min-h-0 flex-col",
+      @full_bleed && "flex h-[calc(100vh-4rem)] min-h-0 flex-col",
       not @full_bleed && "px-4 py-20 sm:px-6 lg:px-8"
     ]}>
       <div class={[
