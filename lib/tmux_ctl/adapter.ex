@@ -35,6 +35,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback select_window(session(), window_id()) :: :ok | {:error, term()}
 
+  @callback last_window(session()) :: :ok | {:error, term()}
+
   @callback cycle_window(session(), String.t()) :: :ok | {:error, term()}
 
   @callback consolidate_sessions(session(), [session()]) :: {:ok, map()} | {:error, term()}

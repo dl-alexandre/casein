@@ -12,7 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
   # tmux:refresh_windows, tmux:refresh_topology, tmux:resize_pane_finish,
   # tmux:new_window(_tab), tmux:select_window, tmux:select_pane, tmux:kill_pane,
   # tmux:split_pane, tmux:resize_pane(_step ok path), tmux:rename_window,
-  # terminal:rename_session, tmux:cycle_window, pane:navigate (ok path),
+  # terminal:rename_session, tmux:last_window, tmux:cycle_window, pane:navigate (ok path),
   # tmux:kill_window, terminal:set_mode (Ghostty restart), attach_terminal_session,
   # terminal:switch_to_shell, terminal:refresh_sessions, terminal:kill_session,
   # terminal:picker_preview (capture_scrollback). These need a tmux adapter +
@@ -173,20 +173,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
              TerminalEvents.handle_event("terminal:rename_session_cancel", %{}, s)
 
     assert s2.assigns.tmux_rename_session_id == nil
-  end
-
-  test "tmux:last_window is a no-op when there is no remembered window" do
-    s = socket(%{tmux_last_window_id: nil, tmux_active_window_id: "@2"})
-
-    assert {:noreply, ^s} =
-             TerminalEvents.handle_event("tmux:last_window", %{}, s)
-  end
-
-  test "tmux:last_window is a no-op when the remembered window is already active" do
-    s = socket(%{tmux_last_window_id: "@2", tmux_active_window_id: "@2"})
-
-    assert {:noreply, ^s} =
-             TerminalEvents.handle_event("tmux:last_window", %{}, s)
   end
 
   test "tmux:resize_pane_step replies with a disabled error when mutations are off" do

@@ -215,13 +215,14 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
     update_fake_windows(session, fn windows ->
       windows =
-        Enum.map(windows, &Map.put(&1, :active, false)) ++
+        remember_active_window(windows) ++
           [
             %{
               id: id,
               index: length(windows),
               name: name,
               active: true,
+              last: false,
               panes: 1,
               activity: 0,
               current_command: "bash"
@@ -262,7 +263,7 @@ defmodule TmuxCtl.Test.FakeAdapter do
     send_to_test({:fake_tmux_select_window, session, window_id})
 
     update_fake_windows(session, fn windows ->
-      Enum.map(windows, &Map.put(&1, :active, &1.id == window_id))
+      switch_active_window(windows, window_id)
     end)
 
     update_fake_panes(session, fn panes ->
@@ -270,6 +271,26 @@ defmodule TmuxCtl.Test.FakeAdapter do
     end)
 
     :ok
+  end
+
+  def last_window(session) do
+    send_to_test({:fake_tmux_last_window, session})
+
+    case Enum.find(list_session_windows(session), &Map.get(&1, :last, false)) do
+      nil ->
+        {:error, :no_last_window}
+
+      %{id: window_id} ->
+        update_fake_windows(session, fn windows ->
+          switch_active_window(windows, window_id)
+        end)
+
+        update_fake_panes(session, fn panes ->
+          activate_first_pane_in_window(panes, window_id)
+        end)
+
+        :ok
+    end
   end
 
   def select_pane(session, pane_id) do
@@ -373,7 +394,10 @@ defmodule TmuxCtl.Test.FakeAdapter do
           do: rem(active_idx + 1, count),
           else: rem(active_idx - 1 + count, count)
 
-      Enum.with_index(windows, fn w, i -> Map.put(w, :active, i == next_idx) end)
+      case Enum.at(windows, next_idx) do
+        %{id: window_id} -> switch_active_window(windows, window_id)
+        nil -> windows
+      end
     end)
 
     :ok
@@ -412,6 +436,7 @@ defmodule TmuxCtl.Test.FakeAdapter do
           window
           |> Map.put(:index, index)
           |> Map.put(:active, false)
+          |> Map.put(:last, false)
         end)
 
       windows
@@ -496,16 +521,22 @@ defmodule TmuxCtl.Test.FakeAdapter do
     send_to_test({:fake_tmux_kill_window, session, window_id})
 
     update_fake_windows(session, fn windows ->
+      killed = Enum.find(windows, &(&1.id == window_id))
       remaining = Enum.reject(windows, &(&1.id == window_id))
 
-      if Enum.any?(remaining, & &1.active) do
-        remaining
-      else
-        case remaining do
-          [first | rest] -> [%{first | active: true} | rest]
-          [] -> []
+      remaining =
+        if Enum.any?(remaining, & &1.active) do
+          remaining
+        else
+          case remaining do
+            [first | rest] -> [%{first | active: true} | rest]
+            [] -> []
+          end
         end
-      end
+
+      if killed && (Map.get(killed, :active, false) or Map.get(killed, :last, false)),
+        do: clear_last_window(remaining),
+        else: remaining
     end)
 
     :ok
@@ -760,6 +791,32 @@ defmodule TmuxCtl.Test.FakeAdapter do
     end
   end
 
+  defp remember_active_window(windows) do
+    Enum.map(windows, fn window ->
+      window
+      |> Map.put(:active, false)
+      |> Map.put(:last, Map.get(window, :active, false))
+    end)
+  end
+
+  defp clear_last_window(windows) do
+    Enum.map(windows, &Map.put(&1, :last, false))
+  end
+
+  defp switch_active_window(windows, window_id) do
+    current_id = Enum.find_value(windows, &if(Map.get(&1, :active, false), do: &1.id))
+
+    if current_id == window_id or not Enum.any?(windows, &(&1.id == window_id)) do
+      windows
+    else
+      Enum.map(windows, fn window ->
+        window
+        |> Map.put(:active, window.id == window_id)
+        |> Map.put(:last, window.id == current_id)
+      end)
+    end
+  end
+
   defp next_pane_id(panes) do
     next =
       panes
@@ -932,6 +989,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate new_window(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate new_window(session, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate select_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate last_window(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate select_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate navigate_pane(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate consolidate_sessions(target_session, source_sessions), to: TmuxCtl.Test.FakeAdapter

@@ -32,6 +32,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate new_window(session), to: TmuxCtl.Client
   defdelegate new_window(session, opts), to: TmuxCtl.Client
   defdelegate select_window(session, window_id), to: TmuxCtl.Client
+  defdelegate last_window(session), to: TmuxCtl.Client
   defdelegate cycle_window(session, dir), to: TmuxCtl.Client
   defdelegate consolidate_sessions(session, source_sessions), to: TmuxCtl.Client
   defdelegate select_pane(session, pane_id), to: TmuxCtl.Client

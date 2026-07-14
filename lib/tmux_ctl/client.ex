@@ -782,6 +782,20 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc "Select the window that was active immediately before the current window."
+  @spec last_window(String.t()) :: :ok | {:error, term()}
+  def last_window(session) when is_binary(session) do
+    case run(["select-window", "-l", "-t", session]) do
+      {_, 0} ->
+        :ok
+
+      {out, code} ->
+        if String.trim(out) == "no last window",
+          do: {:error, :no_last_window},
+          else: {:error, {code, out}}
+    end
+  end
+
   @doc "Cycle to the next or previous tmux window in a session."
   @spec cycle_window(String.t(), String.t()) :: :ok | {:error, term()}
   def cycle_window(session, dir) when dir in ["next", "prev"] do
