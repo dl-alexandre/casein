@@ -741,9 +741,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       socket
       |> Sidebar.open(mode, opts)
-      |> TerminalState.refresh_session_tabs()
-      |> assign_workspace_summaries()
-      |> TerminalState.refresh_tmux_topology()
+      |> refresh_sidebar_sources()
 
     {:noreply, socket}
   end
@@ -761,9 +759,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> Sidebar.open("both")
-        |> TerminalState.refresh_session_tabs()
-        |> assign_workspace_summaries()
-        |> TerminalState.refresh_tmux_topology()
+        |> refresh_sidebar_sources()
 
       {:noreply, socket}
     end
@@ -803,11 +799,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.open_folder(socket, path)}
   end
 
+  # The desktop window row represents the already-active native PowerShell
+  # surface. Selecting it only dismisses the picker; there is no tmux window
+  # to switch.
+  def handle_event(
+        "tmux:select_window",
+        _params,
+        %{assigns: %{desktop_terminal?: true}} = socket
+      ) do
+    {:noreply, Sidebar.close(socket)}
+  end
+
   def handle_event("tmux:" <> _ = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
+  def handle_event(
+        "terminal:refresh_sessions",
+        _params,
+        %{assigns: %{desktop_terminal?: true}} = socket
+      ) do
+    {:noreply, Sidebar.assign_sessions_sidebar_tree(socket)}
+  end
+
   def handle_event("terminal:" <> _ = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
+
+  # Desktop mode owns one long-lived native PowerShell session. Selecting its
+  # already-active row is a UI action (close the picker), not a request to
+  # retarget tmux topology.
+  def handle_event(
+        "attach_terminal_session",
+        %{"session-id" => sid},
+        %{assigns: %{desktop_terminal?: true, terminal_sid: sid}} = socket
+      ) do
+    {:noreply, Sidebar.close(socket)}
+  end
 
   def handle_event("attach_terminal_session" = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
@@ -1951,6 +1977,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # The shared picker normally refreshes from tmux before it opens. Windows
+  # desktop mode has already seeded its native PowerShell session/window model;
+  # asking the tmux adapter to refresh here blocks the LiveView and disconnects
+  # the browser. Sidebar.open/3 has rebuilt both trees from the seeded state.
+  defp refresh_sidebar_sources(%{assigns: %{desktop_terminal?: true}} = socket), do: socket
+
+  defp refresh_sidebar_sources(socket) do
+    socket
+    |> TerminalState.refresh_session_tabs()
+    |> assign_workspace_summaries()
+    |> TerminalState.refresh_tmux_topology()
+  end
+
   defp seed_desktop_cockpit_state(socket) do
     cwd = workspace_cwd(socket)
     pane_id = "%desktop"
@@ -2500,9 +2539,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-warning">
             <span class="size-2 rounded-full bg-warning" aria-hidden="true"></span> LAN path
           </div>
+
           <h1 class="text-2xl font-semibold tracking-normal text-base-content sm:text-3xl">
             {@lan_path_error.title}
           </h1>
+
           <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/70">
             DevIDE could not open this filesystem-addressed workspace:
             <code class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-xs text-base-content">
@@ -2513,24 +2554,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <dl class="mt-6 grid gap-3 text-sm">
             <div class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start">
               <dt class="font-medium text-base-content/55">Reason</dt>
+
               <dd id="lan-path-error-reason" class="text-base-content">
                 {@lan_path_error.message}
               </dd>
             </div>
+
             <div
               :if={@lan_path_error.root_path}
               class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
             >
               <dt class="font-medium text-base-content/55">LAN root</dt>
+
               <dd class="min-w-0 break-all font-mono text-xs text-base-content/75">
                 {@lan_path_error.root_path}
               </dd>
             </div>
+
             <div
               :if={@lan_path_error.target_path}
               class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
             >
               <dt class="font-medium text-base-content/55">Resolved path</dt>
+
               <dd
                 id="lan-path-error-target"
                 class="min-w-0 break-all font-mono text-xs text-base-content/75"
