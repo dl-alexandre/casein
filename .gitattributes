@@ -1,0 +1,7 @@
+# Release gates and deploy helpers execute under Bash on Linux and Windows.
+# Keep their working-tree form LF even when a Windows user has core.autocrlf.
+*.sh text eol=lf
+
+# Windows launcher and packaging scripts remain directly runnable in PowerShell.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
