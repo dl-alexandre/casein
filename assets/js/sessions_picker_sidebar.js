@@ -54,9 +54,11 @@ export const SessionsPickerSidebar = {
       }
       case "ArrowRight": {
         e.preventDefault()
-        // Dual-rail hop: Right always drops into Windows. Expand/collapse is
-        // click (or Left) so arrows reliably move between columns.
-        this._focusWindowsRail()
+        // On a collapsed workspace/browse branch, Right descends (expands it) —
+        // the keyboard counterpart to the chevron, since Enter now opens the
+        // row's home session instead of toggling. On anything already open (or a
+        // leaf), Right does the dual-rail hop into the Windows column.
+        this._expandOrHopWindows(this.currentItem())
         break
       }
       case "Enter":
@@ -184,6 +186,45 @@ export const SessionsPickerSidebar = {
       this.pushEvent("sidebar:toggle_browse", {rel})
       return true
     }
+    return false
+  },
+
+  // Right on a COLLAPSED workspace/browse branch expands it (keyboard descend);
+  // otherwise hop to the Windows rail. A branch counts as already-open when its
+  // children container is rendered and not collapsed — then Right hops instead
+  // of re-toggling, so an expanded row never snaps shut.
+  _expandOrHopWindows(row) {
+    if (row && this._expandCollapsedBranch(row)) return
+    this._focusWindowsRail()
+  },
+
+  _expandCollapsedBranch(row) {
+    const branch = row.closest?.("[data-picker-tree-branch]")
+    if (!branch || !this.el.contains(branch)) return false
+
+    const children = branch.querySelector("[data-picker-branch-children]")
+    const open =
+      children &&
+      !children.hasAttribute("data-picker-collapsed") &&
+      !children.classList.contains("hidden")
+    if (open) return false
+
+    if (row.getAttribute("data-picker-section") === "workspaces") {
+      const wsId = row.getAttribute("phx-value-workspace-id")
+      if (wsId) {
+        this.pushEvent("sidebar:toggle_workspace", {"workspace-id": wsId})
+        return true
+      }
+    }
+
+    if (row.getAttribute("data-picker-section") === "browse") {
+      const rel = row.getAttribute("phx-value-rel")
+      if (rel !== null && rel !== undefined) {
+        this.pushEvent("sidebar:toggle_browse", {rel})
+        return true
+      }
+    }
+
     return false
   },
 

@@ -609,49 +609,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           data-picker-branch-id={@node.dom_id}
           class="flex flex-col gap-0.5"
         >
-          <button
-            type="button"
-            data-picker-item
-            data-picker-section="workspaces"
-            data-picker-sessions-id={@node.dom_id}
-            phx-click="sidebar:toggle_workspace"
-            phx-value-workspace-id={@node.workspace_id}
-            class={[
-              sidebar_row_class(@node.current?),
-              "flex-row items-center gap-2",
-              not @node.live? && "opacity-60"
-            ]}
-            title={@node.title}
-            aria-label={
-              if(@node.expanded?,
-                do: "Collapse " <> @node.label,
-                else: "Expand " <> @node.label
-              )
-            }
-          >
-            <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
-              <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-                <span data-picker-label class="truncate font-medium">{@node.label}</span>
-                <span
-                  :if={not @node.live?}
-                  class="size-1.5 shrink-0 rounded-full bg-base-content/25"
-                  title="No live tmux sessions"
-                />
-              </span>
-              <span
-                :if={@node.detail != ""}
-                class="max-w-full truncate font-mono text-[10px] text-base-content/50"
-              >
-                {@node.detail}
-              </span>
-            </span>
-            <span class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45">
-              {@node.session_count}
-              <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
-                <.icon name="hero-chevron-right" class="size-3" />
-              </span>
-            </span>
-          </button>
+          <.sessions_sidebar_workspace_header
+            node={@node}
+            current_workspace_id={@workspace_id}
+            default_sid={@default_sid}
+            path_base={@path_base}
+            expandable?={true}
+          />
           <div
             id={"sidebar-ws-sessions-" <> @node.workspace_id}
             data-picker-branch-children
@@ -675,50 +639,178 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           </div>
         </div>
       <% true -> %>
-        <button
-          type="button"
-          data-picker-item
-          data-picker-section="workspaces"
-          data-picker-sessions-id={@node.dom_id}
-          phx-click="sidebar:toggle_workspace"
-          phx-value-workspace-id={@node.workspace_id}
-          class={[
-            sidebar_row_class(false),
-            "flex-row items-center gap-2",
-            not @node.live? && "opacity-60"
-          ]}
-          title={@node.title}
-          aria-label={"Expand " <> @node.label}
+        <div
+          data-picker-tree-branch
+          data-picker-branch-id={@node.dom_id}
+          class="flex flex-col gap-0.5"
         >
-          <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
-            <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
-              <span data-picker-label class="truncate font-medium">{@node.label}</span>
-              <span
-                :if={not @node.live?}
-                class="size-1.5 shrink-0 rounded-full bg-base-content/25"
-                title="No live tmux sessions"
-              />
-            </span>
-            <span
-              :if={@node.detail != ""}
-              class="max-w-full truncate font-mono text-[10px] text-base-content/50"
-            >
-              {@node.detail}
-            </span>
-          </span>
-          <span
-            :if={@node.session_count > 0}
-            class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
-          >
-            {@node.session_count}
-            <span class="flex">
-              <.icon name="hero-chevron-right" class="size-3" />
-            </span>
-          </span>
-        </button>
+          <.sessions_sidebar_workspace_header
+            node={@node}
+            current_workspace_id={@workspace_id}
+            default_sid={@default_sid}
+            path_base={@path_base}
+            expandable?={@node.session_count > 0}
+          />
+        </div>
     <% end %>
     """
   end
+
+  attr :node, :map, required: true
+  attr :current_workspace_id, :string, required: true
+  attr :default_sid, :string, default: nil
+  attr :path_base, :string, default: nil
+  attr :expandable?, :boolean, default: false
+
+  # Workspace-tier header row. Its primary action OPENS the workspace's home
+  # (landing) session — attach in place for the current workspace, navigate for
+  # another — so Enter / a plain click lands you in a shell instead of merely
+  # toggling the child list. Expansion moves to the dedicated chevron button
+  # (and to ArrowLeft/ArrowRight in the picker hook). The row keeps
+  # phx-value-workspace-id + data-picker-section="workspaces" so the keyboard
+  # collapse/expand hooks still resolve which workspace to toggle.
+  defp sessions_sidebar_workspace_header(assigns) do
+    home = workspace_home_session(assigns.node, assigns.default_sid)
+
+    assigns =
+      assigns
+      |> assign(:home, home)
+      |> assign(:current?, assigns.node.workspace_id == assigns.current_workspace_id)
+
+    ~H"""
+    <%= if is_map(@home) do %>
+      <div class="flex items-stretch gap-0.5">
+        <%= if @current? do %>
+          <a
+            href={session_href(@node.workspace_id, @home.id, @path_base)}
+            data-picker-item
+            data-picker-section="workspaces"
+            data-picker-sessions-id={@node.dom_id}
+            phx-value-workspace-id={@node.workspace_id}
+            phx-click="attach_terminal_session"
+            phx-value-session-id={@home.id}
+            phx-value-kind={to_string(@home.kind)}
+            phx-value-tmux-session={@home.tmux_session}
+            class={[
+              sidebar_row_class(@node.current?),
+              "min-w-0 flex-1 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={workspace_home_title(@node, @home)}
+          >
+            <.sessions_sidebar_workspace_labels node={@node} />
+          </a>
+        <% else %>
+          <.link
+            navigate={cross_workspace_session_path(@node.workspace_id, @home)}
+            data-picker-item
+            data-picker-section="workspaces"
+            data-picker-sessions-id={@node.dom_id}
+            phx-value-workspace-id={@node.workspace_id}
+            class={[
+              sidebar_row_class(@node.current?),
+              "min-w-0 flex-1 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={workspace_home_title(@node, @home)}
+          >
+            <.sessions_sidebar_workspace_labels node={@node} />
+          </.link>
+        <% end %>
+        <button
+          :if={@expandable?}
+          type="button"
+          id={"sidebar-ws-toggle-" <> @node.dom_id}
+          data-picker-ws-toggle
+          phx-click="sidebar:toggle_workspace"
+          phx-value-workspace-id={@node.workspace_id}
+          class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          aria-label={
+            if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
+          }
+          aria-expanded={to_string(@node.expanded?)}
+          title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
+        >
+          {@node.session_count}
+          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3" />
+          </span>
+        </button>
+      </div>
+    <% else %>
+      <%!-- No resolvable home session — a collapsed/other/teammate workspace whose
+           sessions aren't loaded or aren't visible to this viewer. Keep the row a
+           NON-navigable expand/collapse toggle (no href) so it never links into a
+           workspace the viewer cannot open. --%>
+      <button
+        type="button"
+        data-picker-item
+        data-picker-section="workspaces"
+        data-picker-sessions-id={@node.dom_id}
+        phx-click="sidebar:toggle_workspace"
+        phx-value-workspace-id={@node.workspace_id}
+        class={[
+          sidebar_row_class(@node.current?),
+          "flex-row items-center gap-2",
+          not @node.live? && "opacity-60"
+        ]}
+        title={@node.title}
+        aria-label={
+          if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
+        }
+        aria-expanded={to_string(@node.expanded?)}
+      >
+        <.sessions_sidebar_workspace_labels node={@node} />
+        <span
+          :if={@node.session_count > 0}
+          class="flex shrink-0 items-center gap-0.5 font-mono text-[10px] text-base-content/45"
+        >
+          {@node.session_count}
+          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3" />
+          </span>
+        </span>
+      </button>
+    <% end %>
+    """
+  end
+
+  attr :node, :map, required: true
+
+  defp sessions_sidebar_workspace_labels(assigns) do
+    ~H"""
+    <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
+      <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
+        <span data-picker-label class="truncate font-medium">{@node.label}</span>
+        <span
+          :if={not @node.live?}
+          class="size-1.5 shrink-0 rounded-full bg-base-content/25"
+          title="No live tmux sessions"
+        />
+      </span>
+      <span
+        :if={@node.detail != ""}
+        class="max-w-full truncate font-mono text-[10px] text-base-content/50"
+      >
+        {@node.detail}
+      </span>
+    </span>
+    """
+  end
+
+  # Landing/home session for a workspace node: the default shell when present,
+  # else the first attachable session. nil when the node carries no sessions.
+  defp workspace_home_session(%{sessions: sessions}, default_sid)
+       when is_list(sessions) and sessions != [] do
+    Enum.find(sessions, &(&1.id == default_sid)) || List.first(sessions)
+  end
+
+  defp workspace_home_session(_node, _default_sid), do: nil
+
+  defp workspace_home_title(node, %{label: label}) when is_binary(label) and label != "",
+    do: "Open home session (#{label}) — #{node.title}"
+
+  defp workspace_home_title(node, _session), do: "Open #{node.label}"
 
   attr :node, :map, required: true
   attr :depth, :integer, default: 0
