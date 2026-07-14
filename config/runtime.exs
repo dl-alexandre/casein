@@ -93,8 +93,17 @@ if config_env() != :test do
   end
 
   if desktop_mode? do
+    desktop_launch_token =
+      System.get_env("DEV_IDE_DESKTOP_LAUNCH_TOKEN") ||
+        raise "DEV_IDE_PROFILE=desktop requires DEV_IDE_DESKTOP_LAUNCH_TOKEN"
+
+    if byte_size(desktop_launch_token) < 32 do
+      raise "DEV_IDE_DESKTOP_LAUNCH_TOKEN must contain at least 32 bytes"
+    end
+
     config :dev_ide,
       desktop_mode: true,
+      desktop_launch_token: desktop_launch_token,
       deployment_capabilities: [],
       tmux_host_anchor: false,
       secure_session_cookie: false,
@@ -334,7 +343,7 @@ if config_env() == :prod and not release_cli? do
   check_origin =
     cond do
       desktop_mode? ->
-        :conn
+        DevIdeWeb.OriginOptions.desktop(DevIDE.Desktop.Runtime.requested_port())
 
       lan_mode? ->
         DevIdeWeb.OriginOptions.lan(lan_http_host.(),

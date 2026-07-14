@@ -35,11 +35,11 @@ defmodule DevIDE.Desktop.Runtime do
       Path.join(data_dir(), "runtime.json")
   end
 
-  @spec requested_port() :: 0..65_535
+  @spec requested_port() :: 1024..65_535
   def requested_port do
     case Integer.parse(System.get_env("PORT", "0")) do
-      {port, ""} when port in 0..65_535 -> port
-      _ -> raise "PORT must be an integer between 0 and 65535 for desktop mode"
+      {port, ""} when port in 1024..65_535 -> port
+      _ -> raise "PORT must be an integer between 1024 and 65535 for desktop mode"
     end
   end
 

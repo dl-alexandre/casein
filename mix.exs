@@ -358,8 +358,11 @@ defmodule DevIde.MixProject do
 
   defp copy_release_docs(release) do
     File.cp!("README.md", Path.join(release.path, "README.md"))
+    # The source documentation contains private devbox/operator material. A
+    # distributable desktop artifact must not inherit that tree implicitly.
+    # End-user docs ship with the installer once its public content contract is
+    # established; until then the reviewed root README is the only release doc.
     File.rm_rf!(Path.join(release.path, "docs"))
-    File.cp_r!("docs", Path.join(release.path, "docs"))
     release
   end
 end

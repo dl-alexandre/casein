@@ -44,6 +44,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   import Plug.Conn
 
   alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.Plugs.DesktopAuth
 
   @session_key "current_user"
 
@@ -60,7 +61,11 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   end
 
   def call(conn, _opts) do
-    if enabled?() do
+    cond do
+      DesktopAuth.enabled?() ->
+        DesktopAuth.call(conn, [])
+
+      enabled?() ->
       case get_req_header(conn, "x-auth-request-email") do
         [email | _] when is_binary(email) and email != "" ->
           put_user(conn, user_from_email(email))
@@ -71,10 +76,10 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
           |> send_resp(401, "Not authenticated")
           |> halt()
       end
-    else
-      # Local dev / no proxy: keep the static single-user identity, but still
-      # write it to the session so `from_session/1` has one consistent source.
-      put_user(conn, AssignCurrentUser.current_user())
+      true ->
+        # Local dev / no proxy: keep the static single-user identity, but still
+        # write it to the session so `from_session/1` has one consistent source.
+        put_user(conn, AssignCurrentUser.current_user())
     end
   end
 

@@ -6,4 +6,7 @@
 
 See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
-_No active freezes._
+- `feat/windows-tray-host` — Windows desktop release hardening: loopback/authentication,
+  packaging/install/update safety, terminal lifecycle, and Windows artifact gates. Treat
+  `windows/`, `scripts/package-windows-desktop.ps1`, `dev_ide_ghostty_windows/`, and
+  desktop-profile runtime/UI paths as coordinated until this entry is removed.

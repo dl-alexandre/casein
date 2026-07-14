@@ -2,7 +2,8 @@
 param(
     [string]$ReleasePath,
     [string]$OutputPath,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$AllowDirty
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +13,47 @@ if (-not $ReleasePath) { $ReleasePath = Join-Path $root '_build\prod\rel\dev_ide
 if (-not $OutputPath) { $OutputPath = Join-Path $root 'dist\DevIDE-windows-x64' }
 $releasePath = [IO.Path]::GetFullPath($ReleasePath)
 $outputPath = [IO.Path]::GetFullPath($OutputPath)
+
+function Get-SourceRevision {
+    $git = Get-Command git.exe -ErrorAction Stop
+    $revision = (& $git.Source -C $root rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^[0-9a-f]{40}$') {
+        throw 'Could not resolve the source revision for the Windows package'
+    }
+
+    if (-not $AllowDirty) {
+        $changes = & $git.Source -C $root status --porcelain
+        if ($LASTEXITCODE -ne 0) { throw 'Could not determine whether the source tree is clean' }
+        if ($changes) {
+            throw 'Refusing to package a dirty source tree. Commit the release changes or pass -AllowDirty for an explicitly non-shareable local build.'
+        }
+    }
+
+    $revision
+}
+
+function Read-DesktopReleaseMetadata {
+    param([string]$Path, [string]$Revision)
+
+    $metadataPath = Join-Path $Path 'releases\dev_ide.relmeta.json'
+    if (-not (Test-Path -LiteralPath $metadataPath)) {
+        throw "Release metadata is missing at $metadataPath"
+    }
+
+    $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
+    $mismatches = @()
+    if ($metadata.revision -ne $Revision) { $mismatches += "revision=$($metadata.revision) (expected $Revision)" }
+    if ($metadata.profile -ne 'desktop') { $mismatches += "profile=$($metadata.profile)" }
+    if ($metadata.repo_adapter -ne 'sqlite') { $mismatches += "repo_adapter=$($metadata.repo_adapter)" }
+    if ($metadata.target -ne 'windows-x86_64') { $mismatches += "target=$($metadata.target)" }
+    if ($mismatches.Count -gt 0) {
+        throw "Release metadata does not describe this Windows desktop build: $($mismatches -join '; ')"
+    }
+
+    $metadata
+}
+
+$sourceRevision = Get-SourceRevision
 
 if ($outputPath -eq $root -or $outputPath -eq [IO.Path]::GetPathRoot($outputPath)) {
     throw "Refusing unsafe output path: $outputPath"
@@ -42,6 +84,7 @@ if (-not $SkipBuild) {
         $env:DEV_IDE_NATIVE_WINDOWS = 'true'
         $env:DEV_IDE_REPO_ADAPTER = 'sqlite'
         $env:DEVIDE_RELEASE_PROFILE = 'desktop'
+        $env:DEVIDE_GIT_REVISION = $sourceRevision
         if (-not (Test-Path -LiteralPath (Join-Path $root 'assets\node_modules\@codemirror\view'))) {
             throw 'Asset dependencies are missing; run mix assets.npm before packaging'
         }
@@ -60,6 +103,7 @@ $releaseBat = Join-Path $releasePath 'bin\dev_ide.bat'
 if (-not (Test-Path -LiteralPath $releaseBat)) {
     throw "Windows release not found at $releaseBat"
 }
+$metadata = Read-DesktopReleaseMetadata -Path $releasePath -Revision $sourceRevision
 
 if (Test-Path -LiteralPath $outputPath) {
     Remove-Item -Recurse -Force -LiteralPath $outputPath
@@ -71,5 +115,36 @@ Copy-Item -Force -LiteralPath (Join-Path $root 'windows\DevIDE.Tray.ps1') -Desti
 Copy-Item -Force -LiteralPath (Join-Path $root 'windows\Start-DevIDE.cmd') -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
 
+$docsPath = Join-Path $outputPath 'docs'
+if (Test-Path -LiteralPath $docsPath) {
+    throw "Refusing to package internal documentation at $docsPath"
+}
+
+$shortRevision = $sourceRevision.Substring(0, 7)
+$archiveBase = "DevIDE-windows-x64-$($metadata.version)-$shortRevision"
+$archivePath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip"
+$manifestPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.manifest.json"
+$shaPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip.sha256"
+Remove-Item -LiteralPath $archivePath, $manifestPath, $shaPath -Force -ErrorAction SilentlyContinue
+Compress-Archive -Path (Join-Path $outputPath '*') -DestinationPath $archivePath -CompressionLevel Optimal
+$archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+
+[ordered]@{
+    metadata_version = 1
+    app = 'devide'
+    version = $metadata.version
+    revision = $sourceRevision
+    profile = $metadata.profile
+    repo_adapter = $metadata.repo_adapter
+    target = $metadata.target
+    artifact = [IO.Path]::GetFileName($archivePath)
+    sha256 = $archiveHash
+    bytes = (Get-Item -LiteralPath $archivePath).Length
+    built_at_utc = [DateTime]::UtcNow.ToString('o')
+} | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+Set-Content -LiteralPath $shaPath -Value "$archiveHash *$([IO.Path]::GetFileName($archivePath))" -Encoding ascii
+
 Write-Host "Packaged DevIDE Windows desktop runtime: $outputPath"
 Write-Host "Launch: $outputPath\windows\Start-DevIDE.cmd"
+Write-Host "Artifact: $archivePath"
+Write-Host "SHA-256: $shaPath"

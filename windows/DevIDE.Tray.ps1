@@ -23,6 +23,8 @@ function Get-DevIDEPaths {
         Database    = Join-Path $dataRoot 'devide.sqlite3'
         Settings    = Join-Path $dataRoot 'desktop-host.json'
         Log         = Join-Path $dataRoot 'desktop-host.log'
+        RuntimePid  = Join-Path $dataRoot 'runtime.pid'
+        RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'DevIDE.lnk'
     }
 }
@@ -116,6 +118,8 @@ function Get-DevIDEEnvironment {
 
     $secret = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'secret-key-base.txt') 64
     $apiToken = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'api-token.txt') 48
+    $launchToken = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+    New-Item -ItemType Directory -Force -Path $script:Paths.RuntimeTemp | Out-Null
 
     @{
         'DEV_IDE_PROFILE' = 'desktop'
@@ -127,8 +131,13 @@ function Get-DevIDEEnvironment {
         'PHX_IP' = '127.0.0.1'
         'PORT' = [string]$Port
         'RELEASE_NODE' = 'dev_ide_desktop'
+        # The desktop host owns lifecycle locally. Never publish a BEAM node or
+        # reuse the build-time COOKIE across machines.
+        'RELEASE_DISTRIBUTION' = 'none'
+        'RELEASE_TMP' = $script:Paths.RuntimeTemp
         'SECRET_KEY_BASE' = $secret
         'DEV_IDE_API_TOKEN' = $apiToken
+        'DEV_IDE_DESKTOP_LAUNCH_TOKEN' = $launchToken
     }
 }
 
@@ -194,8 +203,10 @@ function Start-DevIDERuntime {
     # On Windows the release `start` command remains attached to the daemon it
     # launches. Waiting for that command therefore waits until DevIDE stops and
     # then misreports the shutdown exit code as a startup failure.
-    Invoke-DevIDERelease -Arguments @('start') -Port $Port | Out-Null
+    $runtime = Invoke-DevIDERelease -Arguments @('start') -Port $Port
+    Set-Content -LiteralPath $script:Paths.RuntimePid -Value $runtime.Id -Encoding ascii
     $ready = Wait-DevIDEReady $Port
+    if (-not $ready) { Stop-DevIDERuntime $Port }
     Write-DevIDELog "Runtime ready: $ready"
     $ready
 }
@@ -203,12 +214,22 @@ function Start-DevIDERuntime {
 function Stop-DevIDERuntime {
     param([int]$Port)
 
-    if (-not (Test-DevIDEReady $Port)) { return }
-    Write-DevIDELog 'Stopping desktop runtime'
-    try {
-        Invoke-DevIDERelease -Arguments @('stop') -Port $Port -Wait | Out-Null
-    } catch {
-        Write-DevIDELog "Graceful stop failed: $($_.Exception.Message)"
+    if (-not (Test-Path -LiteralPath $script:Paths.RuntimePid)) {
+        if (Test-DevIDEReady $Port) {
+            Write-DevIDELog 'Runtime is healthy but was not started by this tray host; leaving it untouched'
+        }
+        return
+    }
+
+    $runtimePid = 0
+    [void][int]::TryParse((Get-Content -Raw -LiteralPath $script:Paths.RuntimePid).Trim(), [ref]$runtimePid)
+    Remove-Item -LiteralPath $script:Paths.RuntimePid -Force -ErrorAction SilentlyContinue
+    if ($runtimePid -le 0) { return }
+
+    Write-DevIDELog "Stopping desktop runtime process tree $runtimePid"
+    & taskkill.exe /PID $runtimePid /T /F *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-DevIDELog "Runtime process tree $runtimePid was already stopped or could not be terminated"
     }
 }
 
@@ -307,7 +328,8 @@ function Start-DevIDETray {
 
     $open = {
         if (Test-DevIDEReady $script:Port) {
-            Start-Process "http://127.0.0.1:$script:Port/"
+            $token = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+            Start-Process "http://127.0.0.1:$script:Port/?desktop_token=$([Uri]::EscapeDataString($token))"
         } else {
             $tray.ShowBalloonTip(3000, 'DevIDE', 'DevIDE is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
         }

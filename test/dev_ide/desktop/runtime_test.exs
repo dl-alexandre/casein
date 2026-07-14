@@ -31,6 +31,17 @@ defmodule DevIDE.Desktop.RuntimeTest do
     assert Runtime.status_path() == "/tmp/devide-desktop/runtime.json"
   end
 
+  test "requires an explicit non-privileged port for the desktop listener" do
+    System.put_env("PORT", "0")
+
+    assert_raise RuntimeError, ~r/between 1024 and 65535/, fn ->
+      Runtime.requested_port()
+    end
+
+    System.put_env("PORT", "45873")
+    assert Runtime.requested_port() == 45_873
+  end
+
   test "uses native per-user data directories" do
     System.put_env("LOCALAPPDATA", "C:/Users/test/AppData/Local")
     System.put_env("XDG_DATA_HOME", "/home/test/.local/share")
@@ -50,9 +61,7 @@ defmodule DevIDE.Desktop.RuntimeTest do
     assert Runtime.status_path() == "/tmp/status.json"
   end
 
-  test "defaults to an ephemeral port and validates explicit ports" do
-    assert Runtime.requested_port() == 0
-
+  test "accepts explicit desktop listener ports and rejects malformed values" do
     System.put_env("PORT", "4242")
     assert Runtime.requested_port() == 4242
 

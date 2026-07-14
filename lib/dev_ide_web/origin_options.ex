@@ -7,6 +7,10 @@ defmodule DevIdeWeb.OriginOptions do
     ["https://#{host}", "//localhost", "//127.0.0.1"]
   end
 
+  def desktop(port) when is_integer(port) and port in 1024..65_535 do
+    Enum.map(@localhost_hosts, &origin("http", &1, port))
+  end
+
   def lan(host, opts \\ []) when is_binary(host) do
     scheme = Keyword.get(opts, :scheme, "http")
     port = Keyword.get(opts, :port, default_port(scheme))
