@@ -2,9 +2,8 @@ defmodule Ghostty.PTY do
   @moduledoc """
   Windows-compatible persistent process transport implementing Ghostty's PTY API.
 
-  This initial transport uses redirected standard streams. It keeps PowerShell
-  persistent and interactive for command input/output; a ConPTY implementation
-  can replace the internals without changing DevIDE call sites.
+  Uses Windows ConPTY for a real pseudo-console, with raw terminal bytes on one
+  loopback socket and resize/lifecycle messages on a second control socket.
   """
 
   use GenServer
@@ -20,32 +19,64 @@ defmodule Ghostty.PTY do
 
   @impl true
   def init(opts) do
-    {command, args} = command_and_args(opts)
     owner = Keyword.fetch!(opts, :owner)
+    cols = Keyword.get(opts, :cols, 80)
+    rows = Keyword.get(opts, :rows, 24)
+    cwd = Keyword.get(opts, :cwd, File.cwd!())
+    {child_command, child_args} = child_command_and_args(opts)
 
-    {:ok, listener} =
-      :gen_tcp.listen(0, [:binary, active: false, packet: :raw, ip: {127, 0, 0, 1}])
+    {:ok, data_listener} = listen()
+    {:ok, control_listener} = listen()
+    {:ok, {_address, data_port}} = :inet.sockname(data_listener)
+    {:ok, {_address, control_port}} = :inet.sockname(control_listener)
 
-    {:ok, {_address, port_number}} = :inet.sockname(listener)
-    args = args ++ [Integer.to_string(port_number)]
+    bridge_shell = default_shell()
+    bridge = Application.app_dir(:ghostty, "priv/powershell_bridge.ps1")
+
+    args =
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        bridge,
+        Integer.to_string(data_port),
+        Integer.to_string(control_port),
+        Integer.to_string(cols),
+        Integer.to_string(rows),
+        cwd,
+        child_command
+      ] ++ child_args
 
     port =
-      Port.open({:spawn_executable, to_charlist(command)}, [
+      Port.open({:spawn_executable, to_charlist(bridge_shell)}, [
         :binary,
         :exit_status,
+        :stderr_to_stdout,
         :hide,
         {:args, Enum.map(args, &to_charlist/1)}
       ])
 
-    case :gen_tcp.accept(listener, 10_000) do
-      {:ok, socket} ->
-        :ok = :gen_tcp.close(listener)
-        :ok = :inet.setopts(socket, active: true)
-        {:ok, %{port: port, socket: socket, owner: owner}}
+    with {:ok, data_socket} <- :gen_tcp.accept(data_listener, 15_000),
+         {:ok, control_socket} <- :gen_tcp.accept(control_listener, 15_000) do
+      :ok = :gen_tcp.close(data_listener)
+      :ok = :gen_tcp.close(control_listener)
+      :ok = :inet.setopts(data_socket, active: true)
+      :ok = :inet.setopts(control_socket, active: true)
 
+      {:ok,
+       %{
+         port: port,
+         data_socket: data_socket,
+         control_socket: control_socket,
+         owner: owner
+       }}
+    else
       {:error, reason} ->
         Port.close(port)
-        :gen_tcp.close(listener)
+        :gen_tcp.close(data_listener)
+        :gen_tcp.close(control_listener)
         {:stop, {:bridge_connect_failed, reason}}
     end
   rescue
@@ -54,26 +85,39 @@ defmodule Ghostty.PTY do
 
   @impl true
   def handle_call({:write, data}, _from, state) do
-    :ok = :gen_tcp.send(state.socket, data)
+    :ok = :gen_tcp.send(state.data_socket, data)
     {:reply, :ok, state}
   end
 
-  def handle_call({:resize, _cols, _rows}, _from, state), do: {:reply, :ok, state}
+  def handle_call({:resize, cols, rows}, _from, state) do
+    :ok = :gen_tcp.send(state.control_socket, "resize #{cols} #{rows}\n")
+    {:reply, :ok, state}
+  end
 
   @impl true
-  def handle_info({:tcp, socket, data}, %{socket: socket} = state) do
+  def handle_info({:tcp, socket, data}, %{data_socket: socket} = state) do
     send(state.owner, {:data, data})
     {:noreply, state}
   end
 
-  def handle_info({:tcp_closed, socket}, %{socket: socket} = state) do
+  def handle_info({:tcp, socket, _data}, %{control_socket: socket} = state), do: {:noreply, state}
+
+  def handle_info({:tcp_closed, socket}, %{data_socket: socket} = state) do
     send(state.owner, {:exit, 0})
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, socket, reason}, %{socket: socket} = state) do
+  def handle_info({:tcp_closed, socket}, %{control_socket: socket} = state) do
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:tcp_error, socket, reason}, %{data_socket: socket} = state) do
     send(state.owner, {:exit, reason})
     {:stop, {:tcp_error, reason}, state}
+  end
+
+  def handle_info({:tcp_error, socket, reason}, %{control_socket: socket} = state) do
+    {:stop, {:control_tcp_error, reason}, state}
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
@@ -81,9 +125,16 @@ defmodule Ghostty.PTY do
     {:stop, :normal, state}
   end
 
+  def handle_info({port, {:data, data}}, %{port: port} = state) do
+    send(state.owner, {:bridge_error, data})
+    {:noreply, state}
+  end
+
   @impl true
-  def terminate(_reason, %{port: port, socket: socket}) do
-    :gen_tcp.close(socket)
+  def terminate(_reason, %{port: port, data_socket: data_socket, control_socket: control_socket}) do
+    _ = :gen_tcp.send(control_socket, "close\n")
+    :gen_tcp.close(data_socket)
+    :gen_tcp.close(control_socket)
     if Port.info(port), do: Port.close(port)
     :ok
   catch
@@ -97,15 +148,17 @@ defmodule Ghostty.PTY do
       raise "PowerShell or cmd.exe was not found"
   end
 
-  defp command_and_args(opts) do
+  defp child_command_and_args(opts) do
     case Keyword.get(opts, :cmd) do
       nil ->
-        shell = default_shell()
-        bridge = Application.app_dir(:ghostty, "priv/powershell_bridge.ps1")
-        {shell, ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", bridge]}
+        {default_shell(), ["-NoLogo", "-NoProfile"]}
 
       command ->
         {command, Keyword.get(opts, :args, [])}
     end
+  end
+
+  defp listen do
+    :gen_tcp.listen(0, [:binary, active: false, packet: :raw, ip: {127, 0, 0, 1}])
   end
 end

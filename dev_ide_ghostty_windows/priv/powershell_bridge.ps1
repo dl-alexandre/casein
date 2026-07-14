@@ -1,40 +1,26 @@
-$ErrorActionPreference = "Stop"
-$port = [int]$args[0]
-$client = [System.Net.Sockets.TcpClient]::new()
-$client.Connect("127.0.0.1", $port)
-$stream = $client.GetStream()
-$reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8)
-$writer = [System.IO.StreamWriter]::new($stream, [System.Text.UTF8Encoding]::new($false))
-$writer.AutoFlush = $true
+$ErrorActionPreference = 'Stop'
 
-function Write-Prompt {
-    $location = (Get-Location).Path
-    $label = Split-Path -Leaf $location
-    if ([string]::IsNullOrWhiteSpace($label)) {
-        $label = $location
-    }
-    $writer.Write("PS $label> ")
-}
+$dataPort = [int]$args[0]
+$controlPort = [int]$args[1]
+$cols = [int16]$args[2]
+$rows = [int16]$args[3]
+$workingDirectory = $args[4]
+$bridgeSource = Join-Path $PSScriptRoot 'conpty_bridge.cs'
 
-Write-Prompt
+Add-Type -Path $bridgeSource
 
-while ($null -ne ($line = $reader.ReadLine())) {
-    # Redirected stdin does not provide console echo, so mirror the completed
-    # command after the prompt before evaluating it.
-    $writer.WriteLine($line)
+$commandParts = @($args | Select-Object -Skip 5)
+$commandLine = ($commandParts | ForEach-Object {
+    '"{0}"' -f $_.Replace('"', '\"')
+}) -join ' '
 
-    try {
-        $result = Invoke-Expression $line 2>&1 | Out-String
-        $writer.Write($result)
-    }
-    catch {
-        $writer.WriteLine($_.Exception.Message)
-    }
+$exitCode = [DevIDE.ConPtyBridge]::Run(
+    $dataPort,
+    $controlPort,
+    $commandLine,
+    $workingDirectory,
+    $cols,
+    $rows
+)
 
-    Write-Prompt
-}
-
-$reader.Dispose()
-$writer.Dispose()
-$stream.Dispose()
-$client.Dispose()
+exit $exitCode

@@ -4,15 +4,14 @@ defmodule Ghostty.WindowsPTYTest do
   test "keeps a PowerShell process alive for command input and output" do
     assert System.find_executable("powershell.exe") || System.find_executable("pwsh.exe")
 
-    {:ok, pty} = Ghostty.PTY.start_link()
+    {:ok, pty} = Ghostty.PTY.start_link(cwd: "C:\\")
 
-    assert_receive {:data, prompt}, 10_000
-    assert prompt =~ "PS "
-    assert prompt =~ "> "
+    prompt = receive_until_prompt("")
+    assert prompt =~ "PS C:\\>"
 
     assert :ok = Ghostty.PTY.write(pty, "Write-Output DEVIDE_WINDOWS_PTY_OK\r\n")
     output = receive_until_prompt("")
-    assert output =~ "Write-Output DEVIDE_WINDOWS_PTY_OK"
+    assert output =~ "Write-Output"
     assert output =~ "DEVIDE_WINDOWS_PTY_OK"
     assert Process.alive?(pty)
 
@@ -29,11 +28,13 @@ defmodule Ghostty.WindowsPTYTest do
   end
 
   defp receive_until_prompt(output) do
-    if String.ends_with?(output, "> ") do
+    if Regex.match?(~r/PS [^\r\n]*>/, output) do
       output
     else
       receive do
         {:data, data} -> receive_until_prompt(output <> data)
+        {:bridge_error, data} -> flunk("ConPTY bridge failed: #{data}")
+        {:exit, status} -> flunk("ConPTY bridge exited with status #{inspect(status)}")
       after
         10_000 -> flunk("timed out waiting for the next PowerShell prompt in #{inspect(output)}")
       end
