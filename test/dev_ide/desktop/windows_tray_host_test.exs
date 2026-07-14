@@ -15,6 +15,8 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "'DEV_IDE_REPO_ADAPTER' = 'sqlite'"
     assert script =~ "'DEV_IDE_API_TOKEN' = $apiToken"
     assert script =~ "'RELEASE_NODE' = 'dev_ide_desktop'"
+    assert script =~ "Invoke-DevIDERelease -Arguments @('start') -Port $Port | Out-Null"
+    refute script =~ "Invoke-DevIDERelease -Arguments @('start') -Port $Port -Wait"
     assert script =~ "Invoke-DevIDERelease -Arguments @('stop')"
     assert script =~ "Local\\DevIDE.Desktop.Tray"
   end
