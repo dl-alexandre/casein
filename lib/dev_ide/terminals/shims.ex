@@ -838,10 +838,10 @@ defmodule DevIDE.Terminals.Shims do
     __devide_command_active=0
 
     __devide_precmd() {
-      local status=$?
+      local exit_status=$?
 
       if [[ "${__devide_command_active:-0}" == "1" ]]; then
-        __devide_emit_osc "133;D;${status}"
+        __devide_emit_osc "133;D;${exit_status}"
         __devide_command_active=0
       fi
 

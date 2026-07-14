@@ -87,7 +87,7 @@ defmodule TmuxCtl.Topology.Watcher do
   @doc "Subscribe the caller to topology updates for a tmux session."
   @spec subscribe(String.t(), keyword()) :: :ok | {:error, term()}
   def subscribe(session, opts \\ []) when is_binary(session) do
-    pubsub = Keyword.get(opts, :pubsub, pubsub())
+    pubsub = Keyword.get_lazy(opts, :pubsub, &pubsub/0)
     Phoenix.PubSub.subscribe(pubsub, topic(session, opts))
   end
 
@@ -127,7 +127,7 @@ defmodule TmuxCtl.Topology.Watcher do
           {:ok, %{session: String.t(), generation: pos_integer() | nil, topology: Topology.t()}}
   def switch_subscription(old_session, new_session, opts \\ []) when is_binary(new_session) do
     {read, opts} = Keyword.pop(opts, :read, :refresh)
-    pubsub = Keyword.get(opts, :pubsub, pubsub())
+    pubsub = Keyword.get_lazy(opts, :pubsub, &pubsub/0)
 
     if is_binary(old_session) and old_session != new_session do
       Phoenix.PubSub.unsubscribe(pubsub, topic(old_session, opts))

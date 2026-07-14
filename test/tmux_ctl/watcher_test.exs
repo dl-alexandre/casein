@@ -138,6 +138,25 @@ defmodule TmuxCtl.Topology.WatcherTest do
     assert_receive {@tag, {:updated, %{session: ^s2}}}, 500
   end
 
+  test "explicit PubSub option works when application config is absent" do
+    previous = Application.get_env(:tmux_ctl, :pubsub)
+    Application.delete_env(:tmux_ctl, :pubsub)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:tmux_ctl, :pubsub, previous),
+        else: Application.delete_env(:tmux_ctl, :pubsub)
+    end)
+
+    session = "watcher-explicit-pubsub-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    assert :ok = Watcher.subscribe(session, watcher_opts())
+
+    assert {:ok, %{session: ^session}} =
+             Watcher.switch_subscription(nil, session, watcher_opts(enabled: false))
+  end
+
   test "stops after idle grace when nobody watches" do
     session = "watcher-idle-#{System.unique_integer([:positive])}"
     put_fake_window(session, "shell")

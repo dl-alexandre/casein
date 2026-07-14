@@ -567,6 +567,7 @@ defmodule DevIDE.Terminals.ShimsTest do
       print -r -- "zdotdir=${ZDOTDIR:-unset}"
       print -r -- "precmd=${precmd_functions}"
       print -r -- "preexec=${preexec_functions}"
+      __devide_precmd
       """
 
       {out, 0} =
@@ -588,6 +589,7 @@ defmodule DevIDE.Terminals.ShimsTest do
       assert out =~ "zdotdir=unset"
       assert out =~ ~r/precmd=.*__devide_precmd/
       assert out =~ ~r/preexec=.*__devide_preexec/
+      refute out =~ "read-only variable"
     end
 
     test "zsh integration appends the prompt-end mark to PS1", %{tmp: tmp} do
