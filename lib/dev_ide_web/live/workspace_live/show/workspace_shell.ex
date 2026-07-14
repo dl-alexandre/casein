@@ -24,6 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
+  alias DevIdeWeb.ConnectAgentDrawer
   alias DevIdeWeb.NotificationsDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -204,6 +205,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               deploy_drift={@deploy_drift}
               update_commits_behind={@update_commits_behind}
             />
+            <ConnectAgentDrawer.connect_button id={"connect-agent-button-" <> @workspace.id} />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
           </div>
         </header>
@@ -519,6 +521,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       update_available={@update_available}
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
+    />
+    <ConnectAgentDrawer.connect_agent_drawer
+      open={@connect_drawer_open}
+      new_token={@connect_new_token}
+      mcp_json={@connect_mcp_json}
+      tokens={@connect_tokens}
+      error={@connect_error}
+      info={@connect_info}
     />
     <.leader_help_overlay />
     """

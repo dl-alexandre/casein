@@ -9,6 +9,8 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
 
   import Plug.Conn
 
+  alias DevIDE.Agents.OrchestratorTokens
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
@@ -17,25 +19,47 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   end
 
   defp authorize(conn, token, tokens) do
-    case Enum.reject(tokens, fn {_scope, token} -> is_nil(token) end) do
-      [] ->
-        conn
-        |> put_resp_content_type("application/json")
-        |> send_resp(503, ~s({"error":"api_token_not_configured"}))
-        |> halt()
+    configured = Enum.reject(tokens, fn {_scope, expected} -> is_nil(expected) end)
 
-      configured_tokens ->
-        case Enum.find(configured_tokens, fn {_scope, expected} ->
-               secure_match?(token, expected)
-             end) do
-          nil ->
-            deny(conn)
+    case Enum.find(configured, fn {_scope, expected} -> secure_match?(token, expected) end) do
+      {scope, _expected} ->
+        authorize_scope(conn, scope)
 
-          {scope, _expected} ->
-            authorize_scope(conn, scope)
-        end
+      nil ->
+        # Fall through to the DB-backed, hash-at-rest orchestrator tokens
+        # (self-serve, subject-attributed). Only reached when no env/workspace
+        # token matched, so the extra lookup is off the hot path.
+        authorize_orchestrator_token(conn, token) || fail_closed_or_deny(conn, configured)
     end
   end
+
+  # An orchestrator token traverses every workspace like the global token but is
+  # NOT the env global secret, so `:api_token_scope` is a distinct non-global
+  # value and `:api_workspace_id` is left unassigned (per-call confinement stays
+  # in the MCP controllers). This keeps it out of the global-token tool-call
+  # rejection (DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2).
+  defp authorize_orchestrator_token(_conn, nil), do: nil
+
+  defp authorize_orchestrator_token(conn, token) do
+    case OrchestratorTokens.verify(token) do
+      {:ok, claims} ->
+        conn
+        |> assign(:api_token_scope, {:orchestrator, claims.subject_id})
+        |> assign(:api_token_subject, claims.subject_id)
+
+      {:error, _reason} ->
+        nil
+    end
+  end
+
+  defp fail_closed_or_deny(conn, []) do
+    conn
+    |> put_resp_content_type("application/json")
+    |> send_resp(503, ~s({"error":"api_token_not_configured"}))
+    |> halt()
+  end
+
+  defp fail_closed_or_deny(conn, _configured), do: deny(conn)
 
   defp api_tokens do
     global_tokens =

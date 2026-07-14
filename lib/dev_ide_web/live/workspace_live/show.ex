@@ -42,6 +42,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Panes
   alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.ArtifactEvents
+  alias DevIdeWeb.WorkspaceLive.Show.ConnectEvents
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
@@ -136,6 +137,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
+    connect:toggle connect:close connect:mint connect:revoke
     search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
     history:search history:clear history:refresh
     preview:open preview-pane:enter preview-pane:exit
@@ -338,6 +340,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_summaries, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
+        |> assign(:connect_drawer_open, false)
+        |> assign(:connect_new_token, nil)
+        |> assign(:connect_mcp_json, nil)
+        |> assign(:connect_tokens, [])
+        |> assign(:connect_error, nil)
+        |> assign(:connect_info, nil)
         |> assign(:previews_count, 0)
         |> assign(:window_zoomed?, false)
         |> stream(:previews, [], reset: true)
@@ -851,6 +859,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("audit_drawer:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("connect:" <> _ = event, params, socket),
+    do: ConnectEvents.handle_event(event, params, socket)
 
   def handle_event("annotation:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
