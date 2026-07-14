@@ -5,6 +5,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
+  attr :desktop_terminal?, :boolean, default: false
+
   def header_overflow_menu(assigns) do
     ~H"""
     <details
@@ -19,6 +21,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
       >
         ⋯
       </summary>
+
       <div class="header-overflow-menu">
         <div class="px-3 py-1 text-[11px] text-base-content/70">
           <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
@@ -26,8 +29,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             {@workspace.branch}
           </span>
         </div>
+
         <button
-          :if={workspace_startable?(@workspace, @workspace_start_error)}
+          :if={not @desktop_terminal? and workspace_startable?(@workspace, @workspace_start_error)}
           id="workspace-start-menu-button"
           type="button"
           phx-click="workspace:start"
@@ -35,25 +39,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
         >
           Start workspace
         </button>
+
         <div
           :if={workspace_start_blocked?(@workspace_start_error)}
           class="px-3 py-1 text-[11px] text-amber-600 dark:text-amber-300"
         >
           Start unavailable
         </div>
+
         <button
-          :if={workspace_stoppable?(@workspace)}
+          :if={not @desktop_terminal? and workspace_stoppable?(@workspace)}
           type="button"
           phx-click="workspace:stop"
           class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
         >
           Stop workspace
         </button>
+
         <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
+
           <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
-            Windows
+            {if @desktop_terminal?, do: "Terminal", else: "Windows"}
           </div>
+
           <button
             :if={@tmux_mutations_enabled?}
             type="button"
@@ -64,6 +73,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             New window
           </button>
+
           <button
             :if={length(@tmux_window_tabs) > 1}
             type="button"
@@ -73,12 +83,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             Last window
           </button>
+
           <button
             type="button"
             phx-click="tmux:refresh_windows"
             class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
           >
-            Refresh windows
+            {if @desktop_terminal?, do: "Refresh terminal", else: "Refresh windows"}
           </button>
           <button
             :if={@tmux_mutations_enabled?}
@@ -89,6 +100,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             Apply session template
           </button>
+
           <button
             :if={@tmux_mutations_enabled?}
             id={"tmux-template-library-" <> @workspace.id}
@@ -99,14 +111,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             Template library
           </button>
         <% end %>
-        <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+
+        <%= if not @desktop_terminal? and @tab == "terminal" and
+                @terminal_mode in [:raw, :raw_ghostty] do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
+
           <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
             Panes
             <span class="ml-1 font-mono normal-case text-base-content/50">
               tmux {terminal_session_label(@tmux_session, @terminal_sid)}
             </span>
           </div>
+
           <%= if @active_window_pane_count > 1 do %>
             <button
               type="button"
@@ -117,6 +133,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             >
               Cycle to next pane
             </button>
+
             <button
               type="button"
               phx-click="pane:close_focused"
@@ -125,6 +142,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             >
               Close focused pane
             </button>
+
             <button
               type="button"
               phx-click="equalize_layout"
@@ -134,11 +152,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             </button>
           <% end %>
         <% end %>
+
         <%= if @tab == "terminal" do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
+
           <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
             Sizing
           </div>
+
           <button
             type="button"
             data-keybar-key="FontDown"
@@ -148,6 +169,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             A− Smaller text
           </button>
+
           <button
             type="button"
             data-keybar-key="FontUp"
@@ -157,6 +179,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             A+ Larger text
           </button>
+
           <button
             type="button"
             data-keybar-key="ZoomDown"
@@ -166,6 +189,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             − Zoom out
           </button>
+
           <button
             type="button"
             data-keybar-key="ZoomReset"
@@ -175,6 +199,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
           >
             1× Reset zoom
           </button>
+
           <button
             type="button"
             data-keybar-key="ZoomUp"

@@ -34,14 +34,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   def workspace_shell(assigns) do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
+
     <.palette_overlay
       palette_open={@palette_open}
       palette_query={@palette_query}
       palette_category={@palette_category}
       palette_items={@palette_items}
       palette_selected_idx={@palette_selected_idx}
-    />
-    {ContextMenu.render_context_menu(assigns)}
+    /> {ContextMenu.render_context_menu(assigns)}
     <.template_preview_modal template_preview={@template_preview} />
     <.template_library_drawer
       template_library_open={@template_library_open}
@@ -54,9 +54,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       template_edit_form={@template_edit_form}
       template_duplicate_id={@template_duplicate_id}
       template_duplicate_form={@template_duplicate_form}
-    />
-    <Layouts.flash_group flash={@flash} />
+    /> <Layouts.flash_group flash={@flash} />
     <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
+
     <%!-- Attention surface must stay mounted even when session chrome is gone:
          it reports focused/visible/hidden for quiet-window badge priority. --%>
     <div
@@ -66,6 +66,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       aria-hidden="true"
     >
     </div>
+
     <div
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
@@ -103,19 +104,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 visible?={true}
               />
             </div>
+
             <h1
               class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
               title={workspace_path}
             >
               {workspace_short_name(@workspace.name)}
             </h1>
+
             <button
               type="button"
-              phx-click={header_status_action(@workspace, @workspace_start_error)}
-              disabled={is_nil(header_status_action(@workspace, @workspace_start_error))}
+              phx-click={
+                if(not @desktop_terminal?,
+                  do: header_status_action(@workspace, @workspace_start_error)
+                )
+              }
+              disabled={
+                @desktop_terminal? or
+                  is_nil(header_status_action(@workspace, @workspace_start_error))
+              }
               class="header-p-touch-show header-p-as-flex shrink-0 items-center justify-center rounded disabled:cursor-default pointer-coarse:size-8"
-              title={header_status_action_label(@workspace, @workspace_start_error)}
-              aria-label={header_status_action_label(@workspace, @workspace_start_error)}
+              title={
+                if(@desktop_terminal?,
+                  do: "Local desktop runtime",
+                  else: header_status_action_label(@workspace, @workspace_start_error)
+                )
+              }
+              aria-label={
+                if(@desktop_terminal?,
+                  do: "Local desktop runtime",
+                  else: header_status_action_label(@workspace, @workspace_start_error)
+                )
+              }
             >
               <span
                 class={[
@@ -125,6 +145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 aria-hidden="true"
               ></span>
             </button>
+
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
@@ -133,6 +154,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               Start unavailable
             </span>
           </div>
+
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div
               id={"header-terminal-pickers-" <> @workspace.id}
@@ -149,6 +171,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 class="min-w-0 flex-1"
               />
             </div>
+
             <%!-- Window/pane actions — inline only for what has no
                  direct-manipulation equivalent (splits, zoom). Window cycling
                  uses the tab bar and C-b n/p. Display zoom lives on Ctrl+scroll
@@ -165,6 +188,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 >
                   <.split_icon direction={:right} class="size-3.5" />
                 </.leader_key_button>
+
                 <.leader_key_button
                   key={"\""}
                   phx_click="split_down"
@@ -173,6 +197,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 >
                   <.split_icon direction={:down} class="size-3.5" />
                 </.leader_key_button>
+
                 <.leader_key_button
                   key="z"
                   phx_click="pane:zoom_focused"
@@ -195,6 +220,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <% end %>
             </div>
           <% end %>
+
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
             <NotificationsDrawer.notifications_bell
               id={"notifications-bell-" <> @workspace.id}
@@ -230,12 +256,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               <span class="truncate font-medium text-base-content/80">
                 {mobile_active_session_label(assigns)}
               </span>
+
               <%= if is_binary(win) and win != "" do %>
                 <span class="shrink-0 text-base-content/40">·</span>
                 <span class="truncate text-base-content/55">{win}</span>
               <% end %>
             </span>
           <% end %>
+
           <span
             class="hidden pointer-coarse:block shrink-0 leading-none text-base-content/40"
             aria-hidden="true"
@@ -355,7 +383,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               phx-click="tmux:new_window_tab"
             ></button>
           <% end %>
-          <%!-- Pane focus arrows work across all tmux pane tiles. --%>
+           <%!-- Pane focus arrows work across all tmux pane tiles. --%>
           <%= if is_binary(@tmux_session) do %>
             <button
               type="button"
@@ -393,6 +421,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               phx-value-dir="next"
             ></button>
           <% end %>
+
           <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
             <button
               type="button"
@@ -496,6 +525,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
         />
       </div>
     </div>
+
     <.live_component
       module={DevIdeWeb.WorkspaceLive.AuditDrawerComponent}
       id="audit-drawer"
@@ -538,6 +568,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
     Map.take(assigns, [
       :workspace,
       :workspace_start_error,
+      :desktop_terminal?,
       :tab,
       :host_loc,
       :tmux_mutations_enabled?,

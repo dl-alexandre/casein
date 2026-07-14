@@ -810,6 +810,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.close(socket)}
   end
 
+  def handle_event(
+        "tmux:refresh_windows",
+        _params,
+        %{assigns: %{desktop_terminal?: true}} = socket
+      ) do
+    {:noreply, Sidebar.assign_windows_sidebar_tree(socket)}
+  end
+
   def handle_event("tmux:" <> _ = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 

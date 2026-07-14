@@ -2,11 +2,13 @@ defmodule DevIdeWeb.DesktopSessionPickerTest do
   use ExUnit.Case, async: true
 
   import Phoenix.Component, only: [assign: 3]
+  import Phoenix.LiveViewTest, only: [render_component: 2]
 
   alias DevIDE.Workspaces.Scratch
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.Sidebar
+  alias DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader
 
   test "desktop picker opens from seeded state and closes without touching tmux" do
     socket = desktop_socket()
@@ -51,6 +53,37 @@ defmodule DevIdeWeb.DesktopSessionPickerTest do
 
     refute selected.assigns.sessions_sidebar_open?
     refute selected.assigns.window_sidebar_open?
+  end
+
+  test "refreshing synthetic desktop windows does not invoke tmux" do
+    socket = desktop_socket()
+
+    assert {:noreply, refreshed} =
+             Show.handle_event("tmux:refresh_windows", %{}, socket)
+
+    assert refreshed.assigns.windows_sidebar_tree == []
+  end
+
+  test "desktop overflow exposes native-safe controls only" do
+    html =
+      render_component(&WorkspaceHeader.header_overflow_menu/1,
+        desktop_terminal?: true,
+        workspace: %{id: Scratch.id(), status: :running, branch: nil},
+        workspace_start_error: nil,
+        tab: "terminal",
+        host_loc: {:ok, {:local, System.user_home!()}},
+        tmux_mutations_enabled?: false,
+        tmux_window_tabs: [],
+        terminal_mode: :raw_ghostty,
+        tmux_session: "desktop",
+        terminal_sid: Scratch.id(),
+        active_window_pane_count: 1
+      )
+
+    assert html =~ "Refresh terminal"
+    refute html =~ "Stop workspace"
+    refute html =~ "Refresh windows"
+    refute html =~ "Panes"
   end
 
   defp desktop_socket do
