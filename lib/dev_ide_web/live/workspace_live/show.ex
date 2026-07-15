@@ -33,6 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
+  alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceStateAdapter
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.NotificationsDrawerEvents
@@ -2147,7 +2148,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_summaries_for(workspace) do
-    Workspaces.list_records()
+    WorkspaceStateAdapter.list(exclude_status: "stale", limit: 200)
     |> ensure_current_workspace_record(workspace)
     |> SessionSummary.build_many()
   end
