@@ -44,7 +44,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
-    with {:ok, url} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
+    with {:ok, url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
          :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
@@ -59,6 +59,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
       payload =
         session_payload(result.session, navigation)
         |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:preview_source, preview_source)
         |> put_shared_registration(result.registration)
         |> Map.put(:health, health)
         |> Map.put(:visibility, operator_visibility.visibility)
@@ -85,7 +86,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
         |> Map.put("tmux_session", session)
         |> Map.put("runtime_required", true)
 
-      with {:ok, url} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
+      with {:ok, url, preview_source} <- SurfaceDiscovery.resolve_url(workspace, surface, params),
            :ok <- ensure_unambiguous_tmux_session(workspace, params),
            {:ok, placement} <- PreviewTmuxTopology.resolve_preview_placement(session, params),
            opts <-
@@ -107,6 +108,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
         payload =
           session_payload(result.session, navigation)
           |> Map.put(:pane_id, result.pane_id)
+          |> Map.put(:preview_source, preview_source)
           |> put_shared_registration(result.registration)
           |> Map.put(:health, health)
           |> Map.put(:visibility, operator_visibility.visibility)
