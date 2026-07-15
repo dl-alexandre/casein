@@ -162,6 +162,9 @@ config :dev_ide,
   preview_proxy_enabled: false,
   preview_open_preflight: false,
   preview_surface_probe: false,
+  # Off by default in the suite so preview-open tests are not perturbed by real
+  # port probes; ScopedLocalServerTest opts in per-test via Application.put_env.
+  preview_prefer_scoped_local_server: false,
   preview_pane_persistence_enabled: false,
   terminal_desktop_integration_enabled: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running

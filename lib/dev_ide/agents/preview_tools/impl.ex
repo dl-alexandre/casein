@@ -6,7 +6,7 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews
-  alias DevIDE.Previews.{PortProbe, Surface, SurfaceResolver, Url, WorkspaceContext}
+  alias DevIDE.Previews.{EnvPorts, PortProbe, Surface, SurfaceResolver, Url, WorkspaceContext}
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.{PreviewLauncher, Runtime}
   alias DevIDE.Terminals.{Tmux, TmuxTopology}
@@ -1831,16 +1831,138 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
   end
 
   defp surface_url(workspace, surface, params) do
+    prepared = WorkspaceContext.prepare(workspace)
+
     opts =
       params
       |> surface_resolver_opts(runtime_required: truthy_param?(params, :runtime_required))
 
-    case SurfaceResolver.resolve_open_surface(WorkspaceContext.prepare(workspace), surface, opts) do
-      {:ok, %Surface{url: url}} when is_binary(url) -> {:ok, url}
-      {:error, reason} -> {:error, reason}
-      _ -> {:error, :surface_not_found}
+    case SurfaceResolver.resolve_open_surface(prepared, surface, opts) do
+      {:ok, %Surface{url: url} = resolved} when is_binary(url) ->
+        {:ok, prefer_scoped_local_server(prepared, surface, resolved).url}
+
+      {:error, reason} ->
+        {:error, reason}
+
+      _ ->
+        {:error, :surface_not_found}
     end
   end
+
+  # A worktree that boots its own `mix phx.server` on an ephemeral port shows up
+  # only as a low-priority terminal `localhost:PORT` surface, so a default "app"
+  # open resolves to the shared, workspace-wide manager URL instead of the
+  # worktree's server. When exactly one live localhost server is detected that
+  # is NOT one of the workspace's advertised service ports, prefer it so the
+  # preview reflects the caller's worktree work. Runtime-provisioned surfaces
+  # already win in `resolve_open_surface/3` and are left untouched here; an
+  # ambiguous match (two or more live candidates) keeps the shared URL.
+  @doc false
+  @spec prefer_scoped_local_server(map(), String.t() | atom() | nil, Surface.t()) :: Surface.t()
+  def prefer_scoped_local_server(workspace, requested, %Surface{} = resolved) do
+    if scoped_local_server_preference_enabled?() and
+         default_app_surface_request?(requested) and
+         shared_app_surface?(resolved) do
+      case scoped_local_app_surface(workspace) do
+        %Surface{} = local -> local
+        nil -> resolved
+      end
+    else
+      resolved
+    end
+  end
+
+  defp scoped_local_server_preference_enabled? do
+    Application.get_env(:dev_ide, :preview_prefer_scoped_local_server, true)
+  end
+
+  # Only the implicit/explicit "app" open is eligible; a caller asking for a
+  # named surface (tidewave, api, a specific localhost:PORT, base:app, …) means
+  # exactly what they typed.
+  defp default_app_surface_request?(requested) do
+    to_string(requested || "app") in ["", "app"]
+  end
+
+  # A shared surface is a non-loopback manager/host "app" URL — the public
+  # workspace-wide server we want to override. Loopback, runtime, and detected
+  # surfaces are already worktree/local-scoped.
+  defp shared_app_surface?(%Surface{name: "app", url: url, source: source})
+       when source in [:manager, :host] do
+    not Url.localhost_url?(url)
+  end
+
+  defp shared_app_surface?(_surface), do: false
+
+  defp scoped_local_app_surface(workspace) do
+    case live_scoped_local_ports(workspace) do
+      [port] ->
+        %Surface{
+          name: "app",
+          url: WorkspaceContext.localhost_url(port),
+          title: "App (worktree :#{port})",
+          port: port,
+          source: :detected
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  # Detected localhost ports minus the workspace's advertised service ports and
+  # preview-router infrastructure ports, filtered to those actually accepting
+  # connections. What remains is an ad-hoc dev server booted inside a worktree.
+  defp live_scoped_local_ports(workspace) do
+    candidates =
+      workspace
+      |> detected_ports()
+      |> Enum.reject(&(&1 in reserved_local_ports(workspace)))
+      |> Enum.uniq()
+
+    case candidates do
+      [] ->
+        []
+
+      ports ->
+        liveness = surface_prober().(ports)
+        Enum.filter(ports, &(Map.get(liveness, &1) == true))
+    end
+  end
+
+  defp detected_ports(workspace) do
+    workspace
+    |> metadata_map()
+    |> metadata_value(:detected_ports)
+    |> List.wrap()
+    |> Enum.filter(&is_integer/1)
+  end
+
+  defp reserved_local_ports(workspace) do
+    advertised =
+      workspace
+      |> metadata_map()
+      |> metadata_value(:ports)
+      |> case do
+        ports when is_map(ports) -> ports |> Map.values() |> Enum.filter(&is_integer/1)
+        _ -> []
+      end
+
+    [EnvPorts.router_port(), EnvPorts.router_admin_port(), EnvPorts.current_port() | advertised]
+    |> Enum.uniq()
+  end
+
+  defp metadata_map(workspace) do
+    case Map.get(workspace, :metadata) || Map.get(workspace, "metadata") do
+      m when is_map(m) -> m
+      _ -> %{}
+    end
+  end
+
+  defp metadata_value(metadata, key) when is_map(metadata) and is_atom(key) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp metadata_value(_metadata, _key), do: nil
 
   defp maybe_kill_preview_pane(session_id) do
     case PreviewPanes.get_by_session(session_id) do
