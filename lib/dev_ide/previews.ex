@@ -188,6 +188,18 @@ defmodule DevIDE.Previews do
 
   def port_allowed?(_, _), do: false
 
+  @doc """
+  True when a localhost port is declared or detected for this workspace.
+
+  This strict policy is for cross-tenant proxy authorization and intentionally
+  excludes the common-dev-port fallback used by trusted agent preview control.
+  """
+  @spec workspace_owned_port?(integer(), map()) :: boolean()
+  def workspace_owned_port?(port, workspace) when is_integer(port) and is_map(workspace),
+    do: Url.workspace_owned_port?(port, workspace)
+
+  def workspace_owned_port?(_, _), do: false
+
   @doc "Fetch a single preview by id (scoped to workspace for safety)."
   def get_for_workspace(id, workspace_id) do
     Repo.one(

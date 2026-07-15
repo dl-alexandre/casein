@@ -32,18 +32,33 @@ defmodule DevIDE.Previews.Url do
   @doc """
   True when a localhost port may be opened for agent preview control.
 
-  Allowed when the port is declared in workspace metadata or detected from
-  recent terminal output (after `WorkspaceContext.prepare/1`). Explicitly
-  registered preview ports are authorized separately by the proxy controller.
+  Allowed when the port is a common dev port, declared in workspace metadata,
+  or detected from recent terminal output (after `WorkspaceContext.prepare/1`).
   """
   @spec port_allowed?(integer(), map()) :: boolean()
   def port_allowed?(port, workspace) when is_integer(port) and is_map(workspace) do
+    valid_port?(port) and
+      (port in Origin.common_dev_ports() or
+         port in metadata_port_values(workspace) or
+         port in detected_port_values(workspace))
+  end
+
+  def port_allowed?(_, _), do: false
+
+  @doc """
+  True when a localhost port belongs to the workspace itself.
+
+  Unlike `port_allowed?/2`, this strict policy does not allow common dev ports
+  unless workspace metadata declares or detects them.
+  """
+  @spec workspace_owned_port?(integer(), map()) :: boolean()
+  def workspace_owned_port?(port, workspace) when is_integer(port) and is_map(workspace) do
     valid_port?(port) and
       (port in metadata_port_values(workspace) or
          port in detected_port_values(workspace))
   end
 
-  def port_allowed?(_, _), do: false
+  def workspace_owned_port?(_, _), do: false
 
   @doc "Allowed localhost ports for a workspace, including common, metadata, and detected ports."
   @spec allowed_ports(map() | nil) :: [integer()]
