@@ -517,31 +517,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           Enum.split_with(ws_nodes, &(Map.get(&1, :group, :other) == :this)) %>
         <div :if={this_nodes != []} class="flex flex-col gap-0.5">
           <.sessions_sidebar_section_header :if={other_nodes != []} label="This workspace" />
-          <.sessions_sidebar_node
-            :for={node <- this_nodes}
-            node={node}
-            workspace_id={@workspace_id}
-            active_id={@active_id}
-            default_sid={@default_sid}
-            preview_panes={@preview_panes}
-            path_base={@path_base}
-            mutations_allowed?={@mutations_allowed?}
-            rename_session_id={@rename_session_id}
-          />
+          <div
+            :for={{section, nodes} <- SessionBarVM.node_attention_groups(this_nodes)}
+            data-picker-group={section}
+            class="flex flex-col gap-0.5"
+          >
+            <.sessions_sidebar_section_header
+              label={attention_section_label(section)}
+              count={length(nodes)}
+              attention?={section == :needs_you}
+            />
+            <.sessions_sidebar_node
+              :for={node <- nodes}
+              node={node}
+              workspace_id={@workspace_id}
+              active_id={@active_id}
+              default_sid={@default_sid}
+              preview_panes={@preview_panes}
+              path_base={@path_base}
+              mutations_allowed?={@mutations_allowed?}
+              rename_session_id={@rename_session_id}
+            />
+          </div>
         </div>
         <div :if={other_nodes != []} class="mt-1.5 flex flex-col gap-0.5">
           <.sessions_sidebar_section_header label="Other workspaces" />
-          <.sessions_sidebar_node
-            :for={node <- other_nodes}
-            node={node}
-            workspace_id={@workspace_id}
-            active_id={@active_id}
-            default_sid={@default_sid}
-            preview_panes={@preview_panes}
-            path_base={@path_base}
-            mutations_allowed?={@mutations_allowed?}
-            rename_session_id={@rename_session_id}
-          />
+          <div
+            :for={{section, nodes} <- SessionBarVM.node_attention_groups(other_nodes)}
+            data-picker-group={section}
+            class="flex flex-col gap-0.5"
+          >
+            <.sessions_sidebar_section_header
+              label={attention_section_label(section)}
+              count={length(nodes)}
+              attention?={section == :needs_you}
+            />
+            <.sessions_sidebar_node
+              :for={node <- nodes}
+              node={node}
+              workspace_id={@workspace_id}
+              active_id={@active_id}
+              default_sid={@default_sid}
+              preview_panes={@preview_panes}
+              path_base={@path_base}
+              mutations_allowed?={@mutations_allowed?}
+              rename_session_id={@rename_session_id}
+            />
+          </div>
         </div>
         <.sessions_sidebar_browse_node :for={node <- browse_nodes} node={node} depth={0} />
       </div>
@@ -561,14 +583,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   attr :label, :string, required: true
+  attr :count, :integer, default: nil
+  attr :attention?, :boolean, default: false
 
   defp sessions_sidebar_section_header(assigns) do
     ~H"""
-    <p class="px-2 pb-0.5 pt-1 text-[9px] font-semibold uppercase tracking-wide text-base-content/40">
-      {@label}
+    <p class={[
+      "flex items-center justify-between px-2 pb-0.5 pt-1 text-[9px] font-semibold uppercase tracking-wide",
+      @attention? && "text-rose-500 dark:text-rose-300",
+      !@attention? && "text-base-content/40"
+    ]}>
+      <span>{@label}</span>
+      <span :if={is_integer(@count)} class="font-mono opacity-70">{@count}</span>
     </p>
     """
   end
+
+  defp attention_section_label(:needs_you), do: "Needs you"
+  defp attention_section_label(:working), do: "Working"
+  defp attention_section_label(:recent), do: "Recent"
 
   attr :node, :map, required: true
   attr :workspace_id, :string, required: true
@@ -617,19 +650,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             data-picker-collapsed={(!@node.expanded? && "") || nil}
             class={["space-y-0.5 pl-3", !@node.expanded? && "hidden"]}
           >
-            <%= for session <- @node.sessions do %>
-              <.sessions_sidebar_session_row
-                session={session}
-                workspace_id={Map.get(session, :workspace_id, @node.workspace_id)}
-                current_workspace_id={@workspace_id}
-                active_id={@active_id}
-                default_sid={@default_sid}
-                preview_panes={@preview_panes}
-                path_base={@path_base}
-                parent_dom_id={@node.dom_id}
-                mutations_allowed?={@mutations_allowed?}
-                rename_session_id={@rename_session_id}
-              />
+            <%= for {section, sessions} <- SessionBarVM.session_attention_groups(@node.sessions) do %>
+              <div data-picker-group={section} class="space-y-0.5">
+                <.sessions_sidebar_section_header
+                  label={attention_section_label(section)}
+                  count={length(sessions)}
+                  attention?={section == :needs_you}
+                />
+                <.sessions_sidebar_session_row
+                  :for={session <- sessions}
+                  session={session}
+                  workspace_id={Map.get(session, :workspace_id, @node.workspace_id)}
+                  current_workspace_id={@workspace_id}
+                  active_id={@active_id}
+                  default_sid={@default_sid}
+                  preview_panes={@preview_panes}
+                  path_base={@path_base}
+                  parent_dom_id={@node.dom_id}
+                  mutations_allowed?={@mutations_allowed?}
+                  rename_session_id={@rename_session_id}
+                />
+              </div>
             <% end %>
           </div>
         </div>
