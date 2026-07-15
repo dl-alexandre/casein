@@ -6,7 +6,7 @@
 
 See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
-- `feat/windows-tray-host` — Windows desktop release hardening: loopback/authentication,
-  packaging/install/update safety, terminal lifecycle, and Windows artifact gates. Treat
+- `feat/windows-desktop-agent-mcp` — Windows desktop agent/MCP parity: workspace-scoped
+  credentials, project discovery, terminal inheritance, and native verification. Treat
   `windows/`, `scripts/package-windows-desktop.ps1`, `dev_ide_ghostty_windows/`, and
   desktop-profile runtime/UI paths as coordinated until this entry is removed.

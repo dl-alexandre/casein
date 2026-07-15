@@ -9,6 +9,8 @@ defmodule DevIDE.Desktop.PowerShellSession do
 
   use GenServer
 
+  alias DevIDE.Desktop.AgentEnvironment
+
   @name __MODULE__
 
   def start_link(opts \\ []) do
@@ -16,12 +18,15 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   @doc "Ensures the desktop shell is supervised in the selected workspace."
-  def ensure_started(cwd \\ nil) do
+  def ensure_started(cwd \\ nil, workspace \\ nil) do
     cwd = normalize_cwd(cwd)
 
     case Process.whereis(@name) do
       nil ->
-        case Supervisor.start_child(DevIde.Supervisor, {__MODULE__, cwd: cwd}) do
+        case Supervisor.start_child(
+               DevIde.Supervisor,
+               {__MODULE__, cwd: cwd, workspace: workspace}
+             ) do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
           {:error, :already_present} -> :ok
@@ -29,7 +34,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
         end
 
       pid ->
-        GenServer.call(pid, {:ensure_cwd, cwd})
+        GenServer.call(pid, {:ensure_workspace, cwd, workspace})
     end
   end
 
@@ -41,19 +46,24 @@ defmodule DevIDE.Desktop.PowerShellSession do
   def status, do: GenServer.call(@name, :status)
 
   @doc "Restarts the native shell in the given workspace directory."
-  def restart(cwd \\ nil), do: GenServer.call(@name, {:restart, normalize_cwd(cwd)})
+  def restart(cwd \\ nil, workspace \\ nil),
+    do: GenServer.call(@name, {:restart, normalize_cwd(cwd), workspace})
 
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
 
-    case start_transport(Keyword.fetch!(opts, :cwd)) do
+    cwd = Keyword.fetch!(opts, :cwd)
+    workspace = Keyword.get(opts, :workspace)
+
+    case start_transport(cwd, workspace) do
       {:ok, term, pty} ->
         {:ok,
          %{
            term: term,
            pty: pty,
-           cwd: Keyword.fetch!(opts, :cwd),
+           cwd: cwd,
+           workspace: workspace,
            subscribers: %{},
            status: :running
          }}
@@ -71,14 +81,16 @@ defmodule DevIDE.Desktop.PowerShellSession do
 
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
 
-  def handle_call({:ensure_cwd, cwd}, _from, %{cwd: cwd} = state), do: {:reply, :ok, state}
+  def handle_call({:ensure_workspace, cwd, workspace}, _from, state)
+      when state.cwd == cwd and state.workspace == workspace,
+      do: {:reply, :ok, state}
 
-  def handle_call({:ensure_cwd, cwd}, _from, state) do
-    restart_transport(state, cwd)
+  def handle_call({:ensure_workspace, cwd, workspace}, _from, state) do
+    restart_transport(state, cwd, workspace)
   end
 
-  def handle_call({:restart, cwd}, _from, state) do
-    restart_transport(state, cwd)
+  def handle_call({:restart, cwd, workspace}, _from, state) do
+    restart_transport(state, cwd, workspace)
   end
 
   @impl true
@@ -121,12 +133,20 @@ defmodule DevIDE.Desktop.PowerShellSession do
     Enum.each(state.subscribers, fn {_ref, pid} -> send(pid, message) end)
   end
 
-  defp restart_transport(state, cwd) do
+  defp restart_transport(state, cwd, workspace) do
     _ = close_transport(state)
 
-    case start_transport(cwd) do
+    case start_transport(cwd, workspace) do
       {:ok, term, pty} ->
-        updated = %{state | term: term, pty: pty, cwd: cwd, status: :running}
+        updated = %{
+          state
+          | term: term,
+            pty: pty,
+            cwd: cwd,
+            workspace: workspace,
+            status: :running
+        }
+
         notify(updated, {:desktop_terminal_restarted, term, pty})
         {:reply, :ok, updated}
 
@@ -138,7 +158,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   defp recover_transport(state, reason) do
-    case start_transport(state.cwd) do
+    case start_transport(state.cwd, state.workspace) do
       {:ok, term, pty} ->
         updated = %{state | term: term, pty: pty, status: :running}
         notify(updated, {:desktop_terminal_restarted, term, pty})
@@ -151,14 +171,18 @@ defmodule DevIDE.Desktop.PowerShellSession do
     end
   end
 
-  defp start_transport(cwd) do
-    with {:ok, term} <- Ghostty.Terminal.start_link(cols: 100, rows: 30),
-         {:ok, pty} <- Ghostty.PTY.start_link(cwd: cwd) do
+  defp start_transport(cwd, workspace) do
+    with {:ok, env} <- agent_environment(workspace, cwd),
+         {:ok, term} <- Ghostty.Terminal.start_link(cols: 100, rows: 30),
+         {:ok, pty} <- Ghostty.PTY.start_link(cwd: cwd, env: env) do
       {:ok, term, pty}
     else
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp agent_environment(nil, _cwd), do: {:ok, %{}}
+  defp agent_environment(workspace, cwd), do: AgentEnvironment.build(workspace, cwd)
 
   defp close_transport(state) do
     if is_pid(state.pty) and Process.alive?(state.pty), do: Ghostty.PTY.close(state.pty)

@@ -103,8 +103,10 @@ The first Windows milestone is intentionally narrow:
 6. Persist the selected workspace and runtime state under LocalAppData.
 7. Start, use, reconnect to, and stop DevIDE with WSL disabled.
 
-Agent runtimes, preview automation, multi-pane parity, service installation, and
-auto-update follow only after this slice is reliable.
+That foundation is now reliable. The next parity slices are tracked in
+[`windows_prod_parity.md`](windows_prod_parity.md), beginning with intrinsic
+workspace-scoped agent MCP injection, then preview automation, native multi-pane
+sessions, agent lifecycle, and signed updates.
 
 ## macOS desktop host: menu bar extra first
 

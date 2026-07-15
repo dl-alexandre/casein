@@ -173,5 +173,6 @@ defmodule DevIDE.Agents.WorkspaceTokens do
     end
   end
 
-  defp home_dir, do: System.get_env("HOME") || "/home/devbox"
+  defp home_dir,
+    do: System.get_env("HOME") || System.get_env("USERPROFILE") || "/home/devbox"
 end

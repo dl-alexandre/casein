@@ -253,6 +253,39 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert mcp_json =~ "devide-artifact-test-ws"
   end
 
+  test "desktop Grok materialization merges project MCP servers without writing the token", %{
+    staging: staging
+  } do
+    checkout = Path.join(staging, "checkout")
+    File.mkdir_p!(checkout)
+
+    File.write!(
+      Path.join(checkout, ".mcp.json"),
+      Jason.encode!(%{
+        "projectSetting" => true,
+        "mcpServers" => %{"user-server" => %{"url" => "http://example.test/mcp"}}
+      })
+    )
+
+    assert {:ok, ^staging} =
+             MCPMaterializer.materialize(@workspace,
+               staging_home: staging,
+               checkout: checkout,
+               copy_grok_to_checkout: true
+             )
+
+    merged = Jason.decode!(File.read!(Path.join(checkout, ".mcp.json")))
+    assert merged["projectSetting"]
+    assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
+    assert merged["mcpServers"]["devide-terminal-test-ws"]
+    assert merged["mcpServers"]["devide-preview-test-ws"]
+    assert merged["mcpServers"]["devide-artifact-test-ws"]
+
+    contents = File.read!(Path.join(checkout, ".mcp.json"))
+    assert contents =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute contents =~ "scoped-ws-abc-token"
+  end
+
   defp restore_workspace_tokens(nil), do: Application.delete_env(:dev_ide, :workspace_api_tokens)
 
   defp restore_workspace_tokens(value),

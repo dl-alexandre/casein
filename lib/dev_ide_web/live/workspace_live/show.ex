@@ -815,7 +815,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _params,
         %{assigns: %{desktop_terminal?: true}} = socket
       ) do
-    case PowerShellSession.restart(workspace_cwd(socket)) do
+    case PowerShellSession.restart(workspace_cwd(socket), socket.assigns.workspace) do
       :ok -> {:noreply, attach_desktop_terminal(socket)}
       {:error, reason} -> {:noreply, assign(socket, :desktop_terminal_status, {:error, reason})}
     end
@@ -2068,7 +2068,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp attach_desktop_terminal(socket) do
-    with :ok <- PowerShellSession.ensure_started(workspace_cwd(socket)),
+    with :ok <-
+           PowerShellSession.ensure_started(workspace_cwd(socket), socket.assigns.workspace),
          {:ok, term, pty, status} <- PowerShellSession.subscribe() do
       assign(socket,
         desktop_terminal_term: term,

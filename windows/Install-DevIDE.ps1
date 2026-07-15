@@ -24,9 +24,9 @@ function Stop-InstalledRuntime {
 
     $pidPath = Join-Path $DataRoot 'runtime.pid'
     if (-not (Test-Path -LiteralPath $pidPath)) { return }
-    $pid = 0
-    [void][int]::TryParse((Get-Content -Raw -LiteralPath $pidPath).Trim(), [ref]$pid)
-    if ($pid -gt 0) { & taskkill.exe /PID $pid /T /F *> $null }
+    $runtimePid = 0
+    [void][int]::TryParse((Get-Content -Raw -LiteralPath $pidPath).Trim(), [ref]$runtimePid)
+    if ($runtimePid -gt 0) { & taskkill.exe /PID $runtimePid /T /F *> $null }
     Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 }
 

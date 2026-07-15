@@ -18,6 +18,17 @@ defmodule Ghostty.WindowsPTYTest do
     assert :ok = Ghostty.PTY.close(pty)
   end
 
+  test "passes a scoped environment into the child console" do
+    {:ok, pty} =
+      Ghostty.PTY.start_link(cwd: "C:\\", env: %{"DEVIDE_PTY_ENV_TEST" => "workspace-scoped"})
+
+    _prompt = receive_until_prompt("")
+    assert :ok = Ghostty.PTY.write(pty, "Write-Output $env:DEVIDE_PTY_ENV_TEST\r")
+    output = receive_until_prompt("")
+    assert output =~ "workspace-scoped"
+    assert :ok = Ghostty.PTY.close(pty)
+  end
+
   test "renders PowerShell output into terminal cells" do
     {:ok, term} = Ghostty.Terminal.start_link(cols: 20, rows: 3)
     assert :ok = Ghostty.Terminal.write(term, "hello\r\nworld")

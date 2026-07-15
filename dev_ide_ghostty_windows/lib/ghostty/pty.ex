@@ -51,14 +51,16 @@ defmodule Ghostty.PTY do
         child_command
       ] ++ child_args
 
-    port =
-      Port.open({:spawn_executable, to_charlist(bridge_shell)}, [
+    port_options =
+      [
         :binary,
         :exit_status,
         :stderr_to_stdout,
         :hide,
         {:args, Enum.map(args, &to_charlist/1)}
-      ])
+      ] ++ port_env_options(Keyword.get(opts, :env, %{}))
+
+    port = Port.open({:spawn_executable, to_charlist(bridge_shell)}, port_options)
 
     with {:ok, data_socket} <- accept_authenticated(data_listener, bridge_token),
          {:ok, control_socket} <- accept_authenticated(control_listener, bridge_token) do
@@ -160,6 +162,23 @@ defmodule Ghostty.PTY do
         {command, Keyword.get(opts, :args, [])}
     end
   end
+
+  defp port_env_options(env) when is_map(env), do: port_env_options(Map.to_list(env))
+
+  defp port_env_options(env) when is_list(env) do
+    values =
+      Enum.map(env, fn
+        {key, value} when is_binary(key) and is_binary(value) ->
+          {to_charlist(key), to_charlist(value)}
+
+        _ ->
+          raise ArgumentError, "PTY environment keys and values must be strings"
+      end)
+
+    if values == [], do: [], else: [{:env, values}]
+  end
+
+  defp port_env_options(_), do: raise(ArgumentError, "PTY environment must be a map or list")
 
   defp listen do
     :gen_tcp.listen(0, [:binary, active: false, packet: :raw, ip: {127, 0, 0, 1}])

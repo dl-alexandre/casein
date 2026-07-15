@@ -30,7 +30,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
       :ok = write_claude_hooks_settings(staging)
       :ok = write_env_sh(staging, workspace, urls, token, checkout, opts)
 
-      maybe_copy_to_checkout(staging, checkout)
+      maybe_copy_to_checkout(staging, checkout, opts)
 
       {:ok, staging}
     end
@@ -83,8 +83,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
   end
 
   defp home_dir do
-    System.get_env("HOME") ||
-      raise ArgumentError, "HOME is required to materialize agent MCP configs"
+    System.get_env("HOME") || System.get_env("USERPROFILE") ||
+      raise ArgumentError, "HOME or USERPROFILE is required to materialize agent MCP configs"
   end
 
   defp workspace_name(workspace) do
@@ -381,7 +381,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
   defp tmux_session_env_export(_), do: ""
 
   # sobelow_skip ["Traversal.FileModule"]
-  defp maybe_copy_to_checkout(staging, checkout) when is_binary(checkout) and checkout != "" do
+  defp maybe_copy_to_checkout(staging, checkout, opts)
+       when is_binary(checkout) and checkout != "" do
     if File.dir?(checkout) do
       # Claude reads its workspace-isolated staging `.mcp.json` via
       # `claude --mcp-config` (see scripts/launch-devide-agent.sh); only Cursor
@@ -393,12 +394,46 @@ defmodule DevIDE.Agents.MCPMaterializer do
       :ok = File.mkdir_p(checkout_cursor_dir)
       :ok = File.cp(Path.join(staging, "cursor/mcp.json"), checkout_cursor_mcp)
       File.chmod(checkout_cursor_mcp, 0o600)
+
+      if Keyword.get(opts, :copy_grok_to_checkout, false) do
+        merge_mcp_json(Path.join(staging, ".mcp.json"), Path.join(checkout, ".mcp.json"))
+      end
     end
 
     :ok
   end
 
-  defp maybe_copy_to_checkout(_staging, _checkout), do: :ok
+  defp maybe_copy_to_checkout(_staging, _checkout, _opts), do: :ok
+
+  # Grok discovers MCP servers from the project root. Preserve user-owned
+  # servers and replace only the workspace-scoped DevIDE entries generated for
+  # this launch. The generated file contains an environment placeholder, never
+  # the bearer token itself.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp merge_mcp_json(generated_path, checkout_path) do
+    generated = generated_path |> File.read!() |> Jason.decode!()
+    existing = read_json_map(checkout_path)
+
+    merged =
+      Map.update(existing, "mcpServers", generated["mcpServers"], fn servers ->
+        Map.merge(if(is_map(servers), do: servers, else: %{}), generated["mcpServers"])
+      end)
+
+    write_file(checkout_path, Jason.encode!(merged, pretty: true) <> "\n")
+    File.chmod(checkout_path, 0o600)
+    :ok
+  end
+
+  defp read_json_map(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, value} when is_map(value) <- Jason.decode(content) do
+      value
+    else
+      {:error, :enoent} -> %{}
+      {:error, reason} -> raise File.Error, reason: reason, action: "read", path: path
+      _ -> raise ArgumentError, "existing #{path} must contain a JSON object"
+    end
+  end
 
   # sobelow_skip ["Traversal.FileModule"]
   defp write_file(path, content) do
