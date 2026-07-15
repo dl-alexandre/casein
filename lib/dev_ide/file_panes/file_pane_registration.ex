@@ -1,8 +1,8 @@
-defmodule DevIDE.Files.FilePaneRegistration do
+defmodule DevIDE.FilePanes.FilePaneRegistration do
   @moduledoc """
   Persisted binding of a file pane to a tmux pane id.
 
-  Mirrors `DevIDE.Previews.PreviewPaneRegistration` in spirit: it survives
+  Mirrors `DevIDE.PreviewPanes.PreviewPaneRegistration` in spirit: it survives
   LiveView reconnect and server restart so a file pane (and its open tabs)
   rehydrate. Deliberately stores **only** the tab list + active path — never
   file content or version tokens, which are always derived fresh from disk on

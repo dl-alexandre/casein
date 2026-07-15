@@ -37,14 +37,14 @@ defmodule DevIDE.Audit do
   """
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   @spec topic(String.t()) :: String.t()
   def topic(workspace_id) when is_binary(workspace_id), do: @topic_prefix <> workspace_id
 
   defp broadcast(%Event{workspace_id: workspace_id} = event) when is_binary(workspace_id) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, topic(workspace_id), {:audit_event, event})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:audit_event, event})
     DevIDE.Signals.Publish.audit_event(event)
   end
 

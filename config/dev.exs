@@ -16,7 +16,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, DevIde.Repo,
+  config :dev_ide, DevIDE.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
@@ -27,9 +27,9 @@ if sqlite_repo? do
     show_sensitive_data_on_connection_error: true
 else
   if System.get_env("DATABASE_URL") do
-    config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
+    config :dev_ide, DevIDE.Repo, url: System.get_env("DATABASE_URL")
   else
-    config :dev_ide, DevIde.Repo,
+    config :dev_ide, DevIDE.Repo,
       username: "postgres",
       password: "postgres",
       hostname: "localhost",

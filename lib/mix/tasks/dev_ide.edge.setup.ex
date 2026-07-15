@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Edge.Setup do
+defmodule Mix.Tasks.DevIDE.Edge.Setup do
   @moduledoc """
   Prepares or installs the optional DevIDE LAN HTTPS edge.
 

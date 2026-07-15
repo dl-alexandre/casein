@@ -1,4 +1,4 @@
-defmodule DevIde.Supervision.StateStores do
+defmodule DevIDE.Supervision.StateStores do
   @moduledoc false
 
   use Supervisor

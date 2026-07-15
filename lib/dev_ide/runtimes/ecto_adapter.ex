@@ -13,7 +13,7 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     RuntimeRow
   }
 
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @impl true
   def create_runtime(%Runtime{} = runtime, %LifecycleEvent{} = event) do
@@ -70,8 +70,23 @@ defmodule DevIDE.Runtimes.EctoAdapter do
 
   @impl true
   def list_runtimes(filters) do
+    filters = filters || %{}
+    limit = filters |> Map.get("limit", 500) |> clamp_limit()
+
     RuntimeRow
-    |> filter(filters || %{})
+    |> filter(Map.delete(filters, "limit"))
+    |> order_by([r], asc: r.created_at)
+    |> limit(^limit)
+    |> Repo.all()
+    |> Enum.map(&to_runtime/1)
+  end
+
+  @impl true
+  def list_runtimes_by_workspace_ids([]), do: []
+
+  def list_runtimes_by_workspace_ids(workspace_ids) when is_list(workspace_ids) do
+    RuntimeRow
+    |> where([r], r.workspace_id in ^workspace_ids)
     |> order_by([r], asc: r.created_at)
     |> Repo.all()
     |> Enum.map(&to_runtime/1)
@@ -120,6 +135,9 @@ defmodule DevIDE.Runtimes.EctoAdapter do
       _, query -> query
     end)
   end
+
+  defp clamp_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(1_000)
+  defp clamp_limit(_limit), do: 500
 
   defp runtime_attrs(%Runtime{} = runtime) do
     %{

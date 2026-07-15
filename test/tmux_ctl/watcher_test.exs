@@ -156,7 +156,7 @@ defmodule TmuxCtl.Topology.WatcherTest do
     [
       registry: @registry,
       supervisor: @supervisor,
-      pubsub: DevIde.PubSub,
+      pubsub: DevIDE.PubSub,
       tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
       broadcast_tag: @tag,
       refresh_ms: 60_000

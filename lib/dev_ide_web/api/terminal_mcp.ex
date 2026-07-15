@@ -85,41 +85,13 @@ defmodule DevIdeWeb.API.TerminalMCP do
   end
 
   @impl true
-  # Meta-tool: return long-tail tool schemas matching a natural-language query.
-  def call_tool(id, %{"name" => "search_tools"} = params, _opts) do
-    args = Map.get(params, "arguments", %{}) || %{}
-    query = to_string(Map.get(args, "query") || Map.get(args, :query) || "")
+  # Meta-tools: cross-server discovery/routing lives in MCPToolSearch so an agent
+  # on this endpoint can find and run tools on any DevIDE server.
+  def call_tool(id, %{"name" => "search_tools"} = params, _opts),
+    do: MCPToolSearch.search_result(id, Map.get(params, "arguments", %{}) || %{})
 
-    limit_opts =
-      case Map.get(args, "limit") || Map.get(args, :limit) do
-        n when is_integer(n) -> [limit: n]
-        _ -> []
-      end
-
-    payload = MCPToolSearch.search(tool_specs(), query, limit_opts)
-
-    MCPEnvelope.result(id, %{
-      content: [MCPEnvelope.text(payload)],
-      structuredContent: MCPEnvelope.jsonable(payload)
-    })
-  end
-
-  # Meta-tool: run a tool discovered via search_tools, reusing the normal
-  # scope + audit dispatch (recurses into the general call_tool clause).
-  def call_tool(id, %{"name" => "invoke_tool"} = params, opts) do
-    args = Map.get(params, "arguments", %{}) || %{}
-
-    case MCPToolSearch.invoke_target(args) do
-      {nil, _inner} ->
-        meta_error(id, :invoke_tool_requires_name)
-
-      {inner_name, _inner} when inner_name == "search_tools" or inner_name == "invoke_tool" ->
-        meta_error(id, :invoke_tool_cannot_call_meta_tool)
-
-      {inner_name, inner_args} ->
-        call_tool(id, %{"name" => inner_name, "arguments" => inner_args}, opts)
-    end
-  end
+  def call_tool(id, %{"name" => "invoke_tool"} = params, opts),
+    do: MCPToolSearch.route_invoke(id, Map.get(params, "arguments", %{}) || %{}, opts)
 
   def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
@@ -172,14 +144,5 @@ defmodule DevIdeWeb.API.TerminalMCP do
 
   def call_tool(id, _params, _opts) do
     MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
-  end
-
-  defp meta_error(id, reason) do
-    err = MCPError.tool_result(reason)
-
-    MCPEnvelope.result(id, %{
-      err
-      | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
-    })
   end
 end

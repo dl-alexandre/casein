@@ -14,7 +14,7 @@ defmodule DevIDE.Terminals.SessionEvents do
   possible at this layer (it arrives later with OSC 133 command records).
   """
 
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
 
   @type event :: %{
           type: :output,

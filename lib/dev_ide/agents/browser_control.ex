@@ -11,7 +11,7 @@ defmodule DevIDE.Agents.BrowserControl do
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.PreviewActivity
 
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
   @topic_prefix "workspace_browser:"
   @default_action_timeout_ms 1_000
 

@@ -11,7 +11,7 @@ defmodule DevIDE.Annotations do
 
   alias DevIDE.Annotations.Annotation
   alias DevIDE.Audit
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @topic_prefix "workspace:"
   @attr_key_map %{
@@ -117,7 +117,7 @@ defmodule DevIDE.Annotations do
 
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   defp update_annotation(%Annotation{} = annotation, attrs, action) do
@@ -164,7 +164,7 @@ defmodule DevIDE.Annotations do
   end
 
   defp broadcast(workspace_id, message) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, topic(workspace_id), message)
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), message)
   end
 
   defp topic(workspace_id), do: @topic_prefix <> workspace_id

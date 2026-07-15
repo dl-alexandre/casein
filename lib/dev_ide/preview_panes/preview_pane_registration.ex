@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.PreviewPaneRegistration do
+defmodule DevIDE.PreviewPanes.PreviewPaneRegistration do
   use Ecto.Schema
   import Ecto.Changeset
 

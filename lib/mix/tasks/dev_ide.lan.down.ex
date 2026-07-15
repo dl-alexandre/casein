@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Lan.Down do
+defmodule Mix.Tasks.DevIDE.Lan.Down do
   @moduledoc """
   Stops the managed DevIDE LAN service and port-80 edge.
 

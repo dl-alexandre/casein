@@ -293,7 +293,7 @@ Operational result:
   controller through a reverse SSH tunnel.
 - The runner process starts and receives work, but it also starts the full
   application supervision tree on the runner host.
-- Because the full app starts `DevIde.Repo`, the remote runner tried to connect
+- Because the full app starts `DevIDE.Repo`, the remote runner tried to connect
   to a local `dev_ide_dev` database on `milcmini`. That database did not exist,
   causing repeated Postgrex connection failures and preventing a clean remote
   execution.
@@ -304,7 +304,7 @@ Remaining blocker:
 
 - Standalone runner startup is not boring on a fresh remote machine because it
   currently depends on local controller-app infrastructure, especially
-  `DevIde.Repo`.
+  `DevIDE.Repo`.
 - The runner path needs a remote-safe runtime profile or release entrypoint that
   starts only the runner dependencies needed for HTTP transport and command
   execution.

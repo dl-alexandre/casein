@@ -171,7 +171,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
   defp broadcast(workspace_id, tmux_session, pane_id, entry) when is_binary(workspace_id) do
     PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       @topic_prefix <> workspace_id,
       {:agent_state_updated, tmux_session, pane_id, entry}
     )

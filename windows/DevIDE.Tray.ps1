@@ -214,7 +214,7 @@ function Start-DevIDERuntime {
 
     if (Test-DevIDEReady $Port) { return $true }
     Write-DevIDELog "Starting desktop runtime on 127.0.0.1:$Port"
-    Invoke-DevIDERelease -Arguments @('eval', 'DevIde.Release.migrate()') -Port $Port -Wait | Out-Null
+    Invoke-DevIDERelease -Arguments @('eval', 'DevIDE.Release.migrate()') -Port $Port -Wait | Out-Null
     # On Windows the release `start` command remains attached to the daemon it
     # launches. Waiting for that command therefore waits until DevIDE stops and
     # then misreports the shutdown exit code as a startup failure.

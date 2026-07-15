@@ -1,11 +1,11 @@
 defmodule DevIDE.FilePanesTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.FilePanes
-  alias DevIDE.Files.FilePaneRegistration
+  alias DevIDE.FilePanes.FilePaneRegistration
   alias DevIDE.Panes
   alias DevIDE.Panes.Events, as: PaneEvents
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 

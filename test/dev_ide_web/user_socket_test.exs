@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.UserSocketTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.DeviceLinks
   alias DevIDE.Workspace

@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateAssignmentEvents do
+defmodule DevIDE.Repo.Migrations.CreateAssignmentEvents do
   use Ecto.Migration
 
   def change do

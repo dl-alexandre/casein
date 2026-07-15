@@ -106,12 +106,12 @@ defmodule DevIDE.Workspaces.State do
   """
   @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_mode_changes(external_id) when is_binary(external_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, mode_topic(external_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, mode_topic(external_id))
   end
 
   defp broadcast_mode_changed(external_id, mode) do
     Phoenix.PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       mode_topic(external_id),
       {:workspace_mode_changed, external_id, mode}
     )
@@ -193,7 +193,7 @@ defmodule DevIDE.Workspaces.State do
   """
   @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_agent_write_unlock_changes(external_id) when is_binary(external_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, agent_write_unlock_topic(external_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, agent_write_unlock_topic(external_id))
   end
 
   defp existing_or_new(external_id) do
@@ -205,7 +205,7 @@ defmodule DevIDE.Workspaces.State do
 
   defp broadcast_agent_write_unlock_changed(external_id, until, by) do
     Phoenix.PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       agent_write_unlock_topic(external_id),
       {:agent_write_unlock_changed, external_id, until, by}
     )

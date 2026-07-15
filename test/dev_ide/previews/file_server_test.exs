@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.FileServerTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Previews.FileServer
   alias DevIDE.Workspaces

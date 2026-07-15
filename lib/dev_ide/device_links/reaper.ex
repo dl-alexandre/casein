@@ -11,7 +11,7 @@ defmodule DevIDE.DeviceLinks.Reaper do
   import Ecto.Query
 
   alias DevIDE.DeviceLinks.Token
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @default_sweep_interval_ms 21_600_000
   @default_retention_seconds 2_592_000

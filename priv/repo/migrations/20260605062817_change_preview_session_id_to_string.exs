@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.ChangePreviewSessionIdToString do
+defmodule DevIDE.Repo.Migrations.ChangePreviewSessionIdToString do
   use Ecto.Migration
 
   def up do

@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddRunnerProgressClientReportId do
+defmodule DevIDE.Repo.Migrations.AddRunnerProgressClientReportId do
   use Ecto.Migration
 
   def change do

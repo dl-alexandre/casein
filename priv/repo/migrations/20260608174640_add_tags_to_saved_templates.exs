@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddTagsToSavedTemplates do
+defmodule DevIDE.Repo.Migrations.AddTagsToSavedTemplates do
   use Ecto.Migration
 
   def change do

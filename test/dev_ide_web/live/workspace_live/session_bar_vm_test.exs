@@ -300,6 +300,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert SessionBarVM.cycle_sort_mode(:liveness) == :recency
     end
 
+    test "cycle_sort_mode/2 :forward matches the arity-1 default" do
+      for mode <- [:recency, :name, :liveness] do
+        assert SessionBarVM.cycle_sort_mode(mode, :forward) == SessionBarVM.cycle_sort_mode(mode)
+      end
+    end
+
+    test "cycle_sort_mode/2 :backward reverses the rotation" do
+      assert SessionBarVM.cycle_sort_mode(:name, :backward) == :recency
+      assert SessionBarVM.cycle_sort_mode(:liveness, :backward) == :name
+      assert SessionBarVM.cycle_sort_mode(:recency, :backward) == :liveness
+    end
+
+    test "cycle_sort_mode/2 backward then forward round-trips every mode" do
+      for mode <- [:recency, :name, :liveness] do
+        assert mode
+               |> SessionBarVM.cycle_sort_mode(:backward)
+               |> SessionBarVM.cycle_sort_mode(:forward) == mode
+      end
+    end
+
     test "sort_workspace_summaries_for_sidebar pins current workspace first" do
       summaries = [
         %{id: "ws-b", name: "beta", session_count: 1, live?: false},

@@ -6,7 +6,7 @@ defmodule DevIDE.Push.RegistryTest do
   across both maps, and the lazy dispatcher subscription a workspace token
   triggers.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Push.Registry
 

@@ -151,7 +151,7 @@ USER dev_ide
 EXPOSE 4000
 
 # Migrations are explicit, not at server boot — operator runs:
-#   docker run dev_ide:latest /app/bin/dev_ide eval "DevIde.Release.migrate()"
+#   docker run dev_ide:latest /app/bin/dev_ide eval "DevIDE.Release.migrate()"
 # (or use the rel/overlays/bin/migrate helper) before bringing up the
 # server pool. This keeps zero-downtime upgrades sane: one task pod
 # migrates; the server pool then rolls.

@@ -12,7 +12,7 @@ defmodule DevIDE.Terminals.SessionRecovery do
   alias DevIDE.Audit
   alias DevIDE.Terminals.{ScrollbackArchive, SessionEvents, TemplatePreference}
 
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
   @dedupe_table :dev_ide_session_recovery_dedupe
   # Collapse double notifies from drift + term_exit recover within this window.
   @dedupe_ms 5_000

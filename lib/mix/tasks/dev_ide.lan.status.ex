@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Lan.Status do
+defmodule Mix.Tasks.DevIDE.Lan.Status do
   @moduledoc """
   Prints the current DevIDE LAN service status.
 

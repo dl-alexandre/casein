@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.DropObanTables do
+defmodule DevIDE.Repo.Migrations.DropObanTables do
   use Ecto.Migration
 
   # Oban was removed — the supervisor, Pruner, and config were all wired up but

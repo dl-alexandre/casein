@@ -115,7 +115,7 @@ defmodule DevIDE.Deployment.Drain do
       end
 
     Phoenix.PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       "deploy:updates",
       {:update_available, version, commits_behind}
     )
@@ -188,7 +188,7 @@ defmodule DevIDE.Deployment.Drain do
   # letting this node drain to zero and stop via the grace path rather than
   # waiting out the hard timeout. No-op once connections have already drained.
   def handle_info(:auto_reconnect, %{draining: true, count: count} = state) when count > 0 do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:deploy_reconnect})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_reconnect})
     {:noreply, %{state | auto_ref: nil}}
   end
 

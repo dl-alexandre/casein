@@ -12,7 +12,7 @@ defmodule DevIDE.Push.Registry do
 
   alias DevIDE.Push.Device
   alias DevIDE.Signals.AlertsRouter
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @type entry :: %{token: String.t(), platform: String.t(), user_id: String.t() | nil}
 
@@ -77,8 +77,12 @@ defmodule DevIDE.Push.Registry do
 
   @impl true
   def init(state) do
-    state = load_persisted_devices(state)
-    {:ok, state}
+    {:ok, state, {:continue, :load_devices}}
+  end
+
+  @impl true
+  def handle_continue(:load_devices, state) do
+    {:noreply, load_persisted_devices(state)}
   end
 
   @impl true
@@ -259,6 +263,7 @@ defmodule DevIDE.Push.Registry do
         Device
         |> where([d], is_nil(d.disabled_at))
         |> order_by([d], desc: d.last_seen_at)
+        |> limit(1_000)
         |> Repo.all()
       rescue
         _ -> []

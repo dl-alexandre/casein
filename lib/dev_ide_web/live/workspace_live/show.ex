@@ -17,35 +17,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
-  alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Files
   alias DevIDE.Labels
-  alias DevIDE.Workspaces.PathResolver
-  alias DevIDE.Links.Markdown
   alias DevIDE.Links.Open
-  alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.Desktop.PowerShellSession
   alias DevIDE.Terminals
   alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.TemplatePreference
   alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.NotificationsDrawerEvents
   alias DevIdeWeb.Plugs.AssignCurrentUser
-  alias DevIdeWeb.Plugs.ForwardAuth
   alias DevIdeWeb.TerminalTelemetry
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIDE.Panes
   alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.ArtifactEvents
   alias DevIdeWeb.WorkspaceLive.Show.ConnectEvents
+  alias DevIdeWeb.WorkspaceLive.Show.CockpitData
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias DevIdeWeb.WorkspaceLive.Show.FileOperations
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
@@ -449,71 +444,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp resolve_mount_workspace(%{"id" => id} = params, user) do
-    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-      # In trusted LAN mode, canonicalize onto the path route when the
-      # workspace has one. Untrusted deployments keep opaque id URLs (path
-      # routes expose host path shape — see WorkspaceRoutes). The bare "/"
-      # route is the scratch cockpit (not a path-root workspace mount) — keep
-      # path-root workspaces (e.g. /workspaces/home) on their id URL when
-      # PathResolver would otherwise collapse them to "/".
-      with true <- PanelGate.path_access_pre_authorized?(),
-           {:ok, route} when route != "/" <- PathResolver.route_for(workspace) do
-        {:redirect, route <> id_route_query(params)}
-      else
-        _ -> {:ok, %{workspace: workspace, path_route: nil, workspace_route: nil}}
-      end
-    end
-  end
-
-  defp resolve_mount_workspace(params, _user) do
-    segments = Map.get(params, "lan_path", [])
-
-    # Root `/` (and empty lan_path) mounts the synthetic scratch workspace
-    # directly — do NOT redirect to ~p"/" (that would loop). Path segments
-    # continue through PathResolver → workspace_for_host_path.
-    if root_lan_path?(segments) do
-      {:ok,
-       %{
-         workspace: DevIDE.Workspaces.Scratch.workspace(),
-         path_route: nil,
-         workspace_route: nil
-       }}
-    else
-      resolve_path_mount(segments)
-    end
-  end
-
-  # Deep-link params that must survive the id→path canonicalization hop.
-  # `host` is dropped deliberately: path routes are local-only and
-  # ensure_local_host has already refused anything else.
-  @id_redirect_params ~w(session window pane zoom)
-  defp id_route_query(params) do
-    query =
-      params
-      |> Map.take(@id_redirect_params)
-      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-      |> URI.encode_query()
-
-    if query == "", do: "", else: "?" <> query
-  end
-
-  defp resolve_path_mount(segments) do
-    case PathResolver.resolve(segments) do
-      {:ok, resolution} ->
-        with {:ok, workspace} <-
-               Workspaces.workspace_for_host_path(resolution.workspace_path) do
-          {:ok,
-           %{
-             workspace: workspace,
-             path_route: resolution.route_path,
-             workspace_route: resolution.workspace_route
-           }}
-        end
-
-      {:error, reason} ->
-        {:error, {:lan_path, reason}}
-    end
+  defp resolve_mount_workspace(params, user) do
+    CockpitData.resolve_mount_workspace(
+      params,
+      user,
+      PanelGate.path_access_pre_authorized?()
+    )
   end
 
   # Access is decided by deployment mode, not URL shape: LAN deployments
@@ -527,73 +463,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp root_lan_path?(segments), do: segments in [nil, []]
-
   defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
 
-  defp format_lan_path_error(:invalid_root), do: "path root is not an absolute directory"
-  defp format_lan_path_error(:missing_root), do: "path root is not configured"
-  defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
-  defp format_lan_path_error(:invalid_path), do: "path is invalid"
-  defp format_lan_path_error(:outside_root), do: "path escapes the path root"
-  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the path root"
-  defp format_lan_path_error(:too_deep), do: "path is too deep"
-  defp format_lan_path_error(:not_found), do: "directory was not found"
-  defp format_lan_path_error(reason), do: inspect(reason)
-
   defp assign_lan_path_error(socket, params, reason) do
-    segments = normalized_lan_path_segments(Map.get(params, "lan_path", []))
-    root = PathResolver.root()
-    relative_path = lan_error_relative_path(segments)
-    route_path = lan_error_route_path(segments)
+    error = CockpitData.lan_path_error(params, reason)
 
     socket
-    |> assign(:page_title, lan_path_error_title(reason))
-    |> assign(:lan_path_error, %{
-      reason: reason,
-      title: lan_path_error_title(reason),
-      message: format_lan_path_error(reason),
-      route_path: route_path,
-      relative_path: relative_path,
-      root_path: root,
-      target_path: lan_error_target_path(root, relative_path, reason)
-    })
+    |> assign(:page_title, error.title)
+    |> assign(:lan_path_error, error)
   end
-
-  defp normalized_lan_path_segments(segments) when is_list(segments) do
-    Enum.reject(segments, &(&1 in [nil, ""]))
-  end
-
-  defp normalized_lan_path_segments(_segments), do: []
-
-  defp lan_error_route_path([]), do: "/"
-
-  defp lan_error_route_path(segments) do
-    "/" <> Enum.map_join(segments, "/", &URI.encode/1)
-  end
-
-  defp lan_error_relative_path([]), do: ""
-
-  defp lan_error_relative_path(segments) do
-    if Enum.all?(segments, &is_binary/1), do: Path.join(segments), else: ""
-  end
-
-  defp lan_error_target_path(root, relative_path, reason)
-       when reason in [:not_found, :outside_root, :symlink_escape] and is_binary(root) and
-              root != "" do
-    root
-    |> Path.join(relative_path)
-    |> Path.expand()
-  end
-
-  defp lan_error_target_path(_root, _relative_path, _reason), do: nil
-
-  defp lan_path_error_title(:not_found), do: "Directory not found"
-  defp lan_path_error_title(:reserved_prefix), do: "Reserved path"
-  defp lan_path_error_title(:invalid_path), do: "Invalid path"
-  defp lan_path_error_title(:outside_root), do: "Path outside the path root"
-  defp lan_path_error_title(:symlink_escape), do: "Path outside the path root"
-  defp lan_path_error_title(_reason), do: "Path unavailable"
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -777,12 +655,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.toggle_window(socket, window_id)}
   end
 
-  def handle_event("sidebar:cycle_sessions_sort", _params, socket) do
-    {:noreply, Sidebar.cycle_sessions_sort(socket)}
+  def handle_event("sidebar:cycle_sessions_sort", params, socket) do
+    {:noreply, Sidebar.cycle_sessions_sort(socket, sort_direction(params))}
   end
 
-  def handle_event("sidebar:cycle_windows_sort", _params, socket) do
-    {:noreply, Sidebar.cycle_windows_sort(socket)}
+  def handle_event("sidebar:cycle_windows_sort", params, socket) do
+    {:noreply, Sidebar.cycle_windows_sort(socket, sort_direction(params))}
   end
 
   # Client restores the persisted sort mode when a rail hook mounts (localStorage).
@@ -2141,33 +2019,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp assign_workspace_summaries(socket, summaries) do
-    summaries = Enum.filter(summaries, &workspace_summary_visible?(&1, socket))
+    summaries =
+      CockpitData.visible_workspace_summaries(summaries, socket.assigns[:current_user])
 
     assign(socket, :workspace_summaries, summaries)
   end
 
-  defp workspace_summaries_for(workspace) do
-    Workspaces.list_records()
-    |> ensure_current_workspace_record(workspace)
-    |> SessionSummary.build_many()
-  end
-
-  # Sessions rail: flat peer model — every authenticated viewer sees every
-  # workspace summary. oauth2-proxy is the only identity gate.
-  defp workspace_summary_visible?(_summary, socket) do
-    case socket.assigns[:current_user] do
-      %{} = user -> ForwardAuth.admin?(user)
-      _ -> false
-    end
-  end
-
-  defp ensure_current_workspace_record(records, workspace) do
-    if Enum.any?(records, &(Map.get(&1, :external_id) == workspace.id)) do
-      records
-    else
-      [workspace | records]
-    end
-  end
+  defp workspace_summaries_for(workspace), do: CockpitData.workspace_summaries_for(workspace)
 
   defp refresh_isolation(socket, opts) do
     iso =
@@ -2268,97 +2126,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @doc false
   def open_annotation_file(socket, loc, path, line) do
-    case FileAccess.read_text(loc, path) do
-      {:ok, file} ->
-        mode = annotation_render_mode(socket, file)
-        payload = annotation_file_payload(socket, loc, file, mode)
-        payload = if line, do: Map.put(payload, :line, line), else: payload
-
-        socket
-        |> assign(:tab, "files")
-        |> assign_open_file(file)
-        |> assign(:file_render_mode, mode)
-        |> assign(:file_error, nil)
-        |> assign(:save_error, nil)
-        |> load_diff(file.path)
-        |> push_event("file:loaded", payload)
-
-      {:error, reason} ->
-        assign(socket, :file_error, format_file_error(reason))
-    end
+    FileOperations.open_annotation_file(socket, loc, path, line)
   end
 
   @doc false
   # Compute Elixir symbols once when a file opens/refreshes/saves so the Files
   # panel does not re-parse the whole buffer on every unrelated tree interaction.
-  def assign_open_file(socket, nil) do
-    socket
-    |> assign(:open_file, nil)
-    |> assign(:file_symbols, [])
-  end
-
-  def assign_open_file(socket, %{path: path, content: content} = file)
-      when is_binary(path) and is_binary(content) do
-    socket
-    |> assign(:open_file, file)
-    |> assign(:file_symbols, ElixirNav.symbols(content, path))
-  end
-
-  def assign_open_file(socket, file) when is_map(file) do
-    socket
-    |> assign(:open_file, file)
-    |> assign(:file_symbols, [])
-  end
-
-  defp annotation_file_payload(socket, loc, file, mode) do
-    payload = %{
-      path: file.path,
-      content: file.content,
-      version: file.version,
-      markdown: Markdown.markdown_path?(file.path),
-      render_mode: mode
-    }
-
-    if Markdown.markdown_path?(file.path) do
-      Map.put(payload, :rendered_html, annotation_rendered_html(socket, loc, file))
-    else
-      payload
-    end
-  end
-
-  defp annotation_render_mode(socket, file) do
-    case socket.assigns[:file_render_mode] do
-      "rendered" -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
-      "source" -> "source"
-      _ -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
-    end
-  end
-
-  defp annotation_rendered_html(socket, loc, file) do
-    ctx = %Ctx{
-      workspace: socket.assigns.workspace,
-      base_dir: annotation_markdown_base_dir(loc, file.path),
-      source: :doc
-    }
-
-    case Markdown.render_html(file.content, ctx) do
-      {:ok, html} -> html
-      {:error, _reason} -> ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
-    end
-  end
-
-  defp annotation_markdown_base_dir(loc, rel_path) do
-    root =
-      case loc do
-        {:local, root} -> root
-        {:remote, _host, root} -> root
-      end
-
-    case Path.dirname(rel_path) do
-      "." -> root
-      dir -> Path.join(root, dir)
-    end
-  end
+  def assign_open_file(socket, file), do: FileOperations.assign_open_file(socket, file)
 
   defp open_resolved_target(socket, {:file, %{path: path, line: line}}) do
     open_resolved_file_target(socket, path, line)
@@ -2396,145 +2170,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp fetch_side_panels(host_loc, host_path, tree) do
-    %{
-      git_status: side_panel_git_status(host_loc),
-      tree: side_panel_tree(tree, host_loc, host_path)
-    }
+    CockpitData.fetch_side_panels(host_loc, host_path, tree)
   end
 
-  defp side_panel_git_status({:ok, loc}) do
-    case FileAccess.git_status_short(loc) do
-      {:ok, entries} -> entries
-      _ -> []
-    end
-  end
-
-  defp side_panel_git_status(_), do: []
-
-  defp side_panel_tree(tree, {:ok, {:remote, _host, _root} = loc}, _host_path) do
-    case FileAccess.ls(loc, "") do
-      {:ok, raw_entries} ->
-        entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, ""))
-        Map.put(tree, "", {:expanded, entries})
-
-      _ ->
-        tree
-    end
-  end
-
-  defp side_panel_tree(tree, _host_loc, {:ok, root}) do
-    case Files.list(root, "") do
-      {:ok, entries} -> Map.put(tree, "", {:expanded, entries})
-      _ -> tree
-    end
-  end
-
-  defp side_panel_tree(tree, _host_loc, _host_path), do: tree
-
-  defp fetch_agents_panels(workspace, host_path, _actor_id) do
-    case host_path do
-      {:ok, root} ->
-        iso = Isolation.detect(workspace, root)
-        _ = Workspaces.persist_isolation(workspace.id, iso)
-
-        %{
-          db_isolation: iso,
-          project_meta: ElixirNav.project(root),
-          tooling: ElixirNav.tooling(root),
-          isolation_audit: %{
-            "isolation" => Atom.to_string(iso.isolation),
-            "source" => Atom.to_string(iso.source),
-            "redacted_summary" => iso.summary
-          }
-        }
-
-      _ ->
-        %{
-          db_isolation: %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()},
-          project_meta: %{},
-          tooling: %{},
-          isolation_audit: nil
-        }
-    end
+  defp fetch_agents_panels(workspace, host_path, actor_id) do
+    CockpitData.fetch_agents_panels(workspace, host_path, actor_id)
   end
 
   # Public: called by Show.FileEvents (extracted file/tree handlers).
-  def load_tree(socket, path) do
-    case socket.assigns[:host_loc] do
-      {:ok, {:remote, _host, _root} = loc} ->
-        case FileAccess.ls(loc, path) do
-          {:ok, raw_entries} ->
-            entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, path))
-            assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
-
-          _ ->
-            socket
-        end
-
-      _ ->
-        with {:ok, root} <- context_host_path(socket),
-             {:ok, entries} <- Files.list(root, path) do
-          assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
-        else
-          _ -> socket
-        end
-    end
-  end
-
-  defp remote_entry_to_files_shape(%{name: name, dir?: dir?, size: size}, parent) do
-    %DevIDE.Files.Entry{
-      name: name,
-      rel_path: Path.join(parent, name),
-      kind: if(dir?, do: :dir, else: :file),
-      size: size,
-      mtime: nil
-    }
-  end
+  def load_tree(socket, path), do: FileOperations.load_tree(socket, path)
 
   # `git status --short` can take hundreds of ms on a big repo; run it off
   # the LiveView process so file saves/creates/deletes render immediately.
   # The result lands in handle_async(:refresh_git_status, ...).
-  def refresh_git_status(socket) do
-    case context_host_loc(socket) do
-      {:ok, loc} ->
-        start_async(socket, :refresh_git_status, fn -> side_panel_git_status({:ok, loc}) end)
+  def refresh_git_status(socket), do: FileOperations.refresh_git_status(socket)
 
-      _ ->
-        assign(socket, :git_status, [])
-    end
-  end
+  def do_create(kind, root, rel), do: FileOperations.do_create(kind, root, rel)
 
-  def do_create(:file, root, rel) do
-    case Files.create_file(root, rel) do
-      {:ok, _} -> :ok
-      err -> err
-    end
-  end
+  def refresh_tree(socket), do: FileOperations.refresh_tree(socket)
 
-  def do_create(:dir, root, rel), do: Files.create_dir(root, rel)
-
-  def refresh_tree(socket) do
-    expanded =
-      socket.assigns.tree
-      |> Enum.filter(fn {_, {state, _}} -> state == :expanded end)
-      |> Enum.map(fn {p, _} -> p end)
-
-    Enum.reduce(expanded, assign(socket, :tree, %{}), fn p, acc -> load_tree(acc, p) end)
-  end
-
-  def load_diff(socket, path) do
-    case context_host_loc(socket) do
-      {:ok, loc} ->
-        case FileAccess.git_diff(loc, path) do
-          {:ok, ""} -> assign(socket, :file_diff, nil)
-          {:ok, diff} -> assign(socket, :file_diff, diff)
-          _ -> assign(socket, :file_diff, nil)
-        end
-
-      _ ->
-        assign(socket, :file_diff, nil)
-    end
-  end
+  def load_diff(socket, path), do: FileOperations.load_diff(socket, path)
 
   @impl true
   def render(%{lan_path_error: %{}} = assigns), do: render_lan_path_error(assigns)
@@ -2641,7 +2296,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
-          DevIde.PubSub,
+          DevIDE.PubSub,
           "preview:" <> workspace_id
         )
       end
@@ -2657,7 +2312,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp subscribe_pane_events(socket) do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
-        Phoenix.PubSub.subscribe(DevIde.PubSub, Panes.Events.topic(workspace_id))
+        Phoenix.PubSub.subscribe(DevIDE.PubSub, Panes.Events.topic(workspace_id))
       end
     end
 
@@ -3755,6 +3410,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # `{:exit_status, n}`) — those are intentional pane ends and are covered by
   # WorkspacePaneSplitTest. SessionOwner reattaches the backend on term_exit
   # without tearing the PaneWorker when possible.
+  # Tab cycles the sidebar sort chip forward; Shift+Tab (dir: "backward")
+  # reverses it. The header sort button click carries no dir → forward.
+  defp sort_direction(%{"dir" => "backward"}), do: :backward
+  defp sort_direction(_), do: :forward
+
   defp recoverable_pane_exit?(reason)
        when reason in [
               :pty_died,

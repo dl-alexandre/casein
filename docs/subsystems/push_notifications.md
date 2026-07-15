@@ -150,7 +150,7 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
 > HTTP/2: APNs refuses HTTP/1.1 and closes the connection
 > (`%Req.TransportError{reason: :closed}`). The server routes APNs through a
 > dedicated HTTP/2 Finch pool (`DevIDE.Push.APNS.Finch`, started in
-> `DevIde.Supervision.PlatformServices`), so this is handled — but it means
+> `DevIDE.Supervision.PlatformServices`), so this is handled — but it means
 > APNs delivery cannot be proven by the stub-based tests or `push.check` alone;
 > a real send (even with a dummy token → `BadDeviceToken`) is what exercises the
 > transport. A `403 InvalidProviderToken` instead means the team id / key id /

@@ -221,8 +221,8 @@ defmodule PreviewCtl.Playwright.AdapterTest do
   end
 
   defp restart_bridge! do
-    _ = Supervisor.terminate_child(DevIde.Supervisor, Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIde.Supervisor, Bridge)
+    _ = Supervisor.terminate_child(DevIDE.Supervisor, Bridge)
+    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, Bridge)
   end
 
   defp put_or_delete_env(nil), do: Application.delete_env(:preview_ctl, :playwright_script)

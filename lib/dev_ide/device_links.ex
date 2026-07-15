@@ -10,7 +10,7 @@ defmodule DevIDE.DeviceLinks do
   import Ecto.Query
 
   alias DevIDE.DeviceLinks.Token
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias DevIDE.Workspaces
 
   @origin_id "dev_ide"

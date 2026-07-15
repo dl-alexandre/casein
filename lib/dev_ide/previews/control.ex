@@ -26,7 +26,7 @@ defmodule DevIDE.Previews.Control do
     WorkspaceContext
   }
 
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @type session_id :: integer()
 
@@ -1152,7 +1152,7 @@ defmodule DevIDE.Previews.Control do
 
     for workspace_id <- WorkspaceAliases.viewer_ids(preview.workspace_id) do
       Phoenix.PubSub.broadcast(
-        DevIde.PubSub,
+        DevIDE.PubSub,
         "preview:" <> workspace_id,
         {:preview_opened, payload}
       )
@@ -1176,7 +1176,7 @@ defmodule DevIDE.Previews.Control do
 
       for workspace_id <- WorkspaceAliases.viewer_ids(entry.preview.workspace_id) do
         Phoenix.PubSub.broadcast(
-          DevIde.PubSub,
+          DevIDE.PubSub,
           "preview:" <> workspace_id,
           {:preview_observation, payload}
         )

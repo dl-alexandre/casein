@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddSharedFieldsToPreviewPaneRegistrations do
+defmodule DevIDE.Repo.Migrations.AddSharedFieldsToPreviewPaneRegistrations do
   use Ecto.Migration
 
   def up do

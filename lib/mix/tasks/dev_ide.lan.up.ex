@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Lan.Up do
+defmodule Mix.Tasks.DevIDE.Lan.Up do
   @moduledoc """
   Starts DevIDE LAN HTTP mode as a managed local service.
 

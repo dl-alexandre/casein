@@ -33,7 +33,7 @@ config :dev_ide,
   tmux_ctl: [
     runner: DevIDE.Terminals.TmuxRunner,
     session_prefix: "devide",
-    pubsub: DevIde.PubSub,
+    pubsub: DevIDE.PubSub,
     prefix_window_picker_hint: "DevIDE: use the browser window picker (C-b w)",
     prefix_session_picker_hint: "DevIDE: use the browser session picker (C-b s)"
   ],
@@ -65,7 +65,7 @@ config :dev_ide,
   # Must be :public — TerminalChannel and other connection processes write entries;
   # :protected only allows the Application process to insert and breaks joins.
   ets_table_access: :public,
-  ecto_repos: [DevIde.Repo],
+  ecto_repos: [DevIDE.Repo],
   generators: [timestamp_type: :utc_datetime],
   audit_adapter: DevIDE.Audit.EctoAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.EctoAdapter,
@@ -82,7 +82,7 @@ config :dev_ide, DevIdeWeb.Endpoint,
     formats: [html: DevIdeWeb.ErrorHTML, json: DevIdeWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: DevIde.PubSub,
+  pubsub_server: DevIDE.PubSub,
   live_view: [signing_salt: "Emi+CmP2"]
 
 # Configure the mailer
@@ -92,7 +92,7 @@ config :dev_ide, DevIdeWeb.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :dev_ide, DevIde.Mailer, adapter: Swoosh.Adapters.Local
+config :dev_ide, DevIDE.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,

@@ -176,7 +176,7 @@ deliberately omits `pid`:
 
 Implementation: `DevIDE.Desktop.Status` (writer, reader, `runtime.json`
 lifecycle) and `DevIdeWeb.DesktopHealthController`; the supervision wiring
-lives in `DevIde.Application.desktop_status/0`.
+lives in `DevIDE.Application.desktop_status/0`.
 
 The host must provide the release's environment (learned from the first
 desktop-profile boot): `DEV_IDE_PROFILE=desktop`, a generated-and-persisted

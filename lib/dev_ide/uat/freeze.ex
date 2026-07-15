@@ -27,11 +27,11 @@ defmodule DevIDE.UAT.Freeze do
   `attrs` supplies the trace metadata the audit trail can't: `:id` (required),
   `:criterion` (required), `:target`, `:identity`, `:provenance` (merged with the
   derived `authored_by_session`). `opts[:repo]` overrides the repo (default
-  `DevIde.Repo`).
+  `DevIDE.Repo`).
   """
   @spec from_session(integer(), map(), keyword()) :: {:ok, Trace.t()} | {:error, term()}
   def from_session(session_id, attrs, opts \\ []) do
-    repo = Keyword.get(opts, :repo, DevIde.Repo)
+    repo = Keyword.get(opts, :repo, DevIDE.Repo)
 
     with {:ok, id} <- fetch(attrs, :id),
          {:ok, criterion} <- fetch(attrs, :criterion) do
