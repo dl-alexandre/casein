@@ -80,6 +80,35 @@ defmodule DevIdeWeb.API.MCPToolSearchTest do
     end
   end
 
+  describe "cross-server catalog + routing" do
+    test "catalog spans every DevIDE server, each spec tagged with its server" do
+      cat = MCPToolSearch.catalog()
+      servers = cat |> Enum.map(& &1.server) |> Enum.uniq() |> Enum.sort()
+      names = Enum.map(cat, &to_string(&1.name))
+
+      assert servers == ["artifact", "preview", "terminal"]
+      assert "terminal_capture" in names
+      assert "preview_screenshot" in names
+      assert "artifact_create" in names
+    end
+
+    test "search over the catalog finds tools on other servers (cross-server)" do
+      %{matches: matches} =
+        MCPToolSearch.search(MCPToolSearch.catalog(), "take a screenshot of the page")
+
+      shot = Enum.find(matches, &(&1.name == "preview_screenshot"))
+      assert shot
+      assert shot.server == "preview"
+    end
+
+    test "owning_module routes a tool name to the server that defines it" do
+      assert MCPToolSearch.owning_module("terminal_capture") == DevIdeWeb.API.TerminalMCP
+      assert MCPToolSearch.owning_module("preview_screenshot") == DevIdeWeb.API.PreviewMCP
+      assert MCPToolSearch.owning_module("artifact_create") == DevIdeWeb.API.ArtifactMCP
+      assert MCPToolSearch.owning_module("no_such_tool") == nil
+    end
+  end
+
   describe "search/3" do
     test "finds a tool by a direct term" do
       %{matches: matches} = MCPToolSearch.search(@specs, "label an agent pane")
