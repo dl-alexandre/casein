@@ -104,6 +104,8 @@ defmodule DevIde.MixProject do
       {:eqrcode, "~> 0.2"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
+      # TODO(sec): cowlib CVE-2026-43966 — no fixed release yet.
+      {:cowlib, "~> 2.18", override: true},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
