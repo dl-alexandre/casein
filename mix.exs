@@ -104,6 +104,8 @@ defmodule DevIde.MixProject do
       {:eqrcode, "~> 0.2"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
+      # TODO(sec): cowlib CVE-2026-43966 — no fixed release yet.
+      {:cowlib, "~> 2.18", override: true},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
@@ -111,7 +113,7 @@ defmodule DevIde.MixProject do
       {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev, :test]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
@@ -122,13 +124,7 @@ defmodule DevIde.MixProject do
       {:jido_action, "~> 2.3"},
       # CloudEvents envelope + IDs for audit causality — standalone, bus unused for now.
       {:jido_signal, "~> 2.2"},
-      {:ex_machina, "~> 2.8", only: :test},
-      # elixir-vibe tooling (github.com/elixir-vibe) — code intelligence &
-      # deploy primitives. Dev/test analysis tools are runtime: false so they
-      # never ship in the release.
-      {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
-      {:reach, "~> 2.7", only: [:dev, :test], runtime: false}
-      # Code-intelligence / deploy-planning tools — dev/test only:
+      {:ex_machina, "~> 2.8", only: :test}
     ]
   end
 
