@@ -24,14 +24,14 @@ defmodule DevideMob.MixProject do
       # static-NIF build hooks Mob needs for native app linking.
       {:zigler,
        git: "https://github.com/dl-alexandre/zigler.git",
-       branch: "codex/mob-static-nifs-on-upstream",
+       ref: "50724d53cca71f1f45124b554d53c6f438973b04",
        override: true},
       {:mob, "~> 0.7"},
       # Fork branch for GenericJam/mob_dev#24: per-ABI external static archives
       # for project NIFs that resolve extern symbols at the native app link.
       {:mob_dev,
        git: "https://github.com/dl-alexandre/mob_dev.git",
-       branch: "codex/project-extra-static-libs",
+       ref: "83c5462ad4d5703d088775e2cc52aa72432b1441",
        only: :dev,
        runtime: false,
        override: true},
