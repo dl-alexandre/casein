@@ -25,7 +25,20 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   it is purely a context optimization, never a capability change.
   """
 
+  alias DevIDE.Agents.MCPError
+  alias DevIdeWeb.API.MCPEnvelope
+
   @meta_tool_names ~w(search_tools invoke_tool)
+
+  # The DevIDE-authored MCP servers that share one cross-server tool catalog.
+  # search_tools ranks over all of them and invoke_tool routes to the owner, so
+  # an agent connected to ANY endpoint can discover and run every DevIDE tool.
+  # Tidewave is excluded on purpose (dev-only, third-party plug — no seam).
+  @surface_modules [
+    {"terminal", DevIdeWeb.API.TerminalMCP},
+    {"preview", DevIdeWeb.API.PreviewMCP},
+    {"artifact", DevIdeWeb.API.ArtifactMCP}
+  ]
 
   # Always-on core per surface: the tools an agent needs every loop, which must
   # never depend on a discovery round-trip. Surfaces absent here are not filtered
@@ -137,6 +150,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
       |> Enum.map(fn {_score, spec} ->
         %{
           name: spec_name(spec),
+          server: Map.get(spec, :server),
           description: spec_desc(spec),
           inputSchema: Map.get(spec, :inputSchema) || Map.get(spec, "inputSchema")
         }
@@ -147,9 +161,86 @@ defmodule DevIdeWeb.API.MCPToolSearch do
       match_count: length(matches),
       matches: matches,
       next:
-        "Run one of these with invoke_tool: " <>
+        "Run any of these with invoke_tool from this same endpoint (it routes to " <>
+          "the owning server): " <>
           ~s({"name": "<name above>", "arguments": {...per its inputSchema...}}.)
     }
+  end
+
+  @doc """
+  The combined tool catalog across every DevIDE MCP server, each spec tagged
+  with its owning `:server`. `search_tools` ranks over this, so an agent on any
+  one endpoint can discover every DevIDE tool (not just its own server's).
+  """
+  @spec catalog() :: [map()]
+  def catalog do
+    for {server, mod} <- @surface_modules,
+        spec <- mod.tool_specs() do
+      Map.put(spec, :server, server)
+    end
+  end
+
+  @doc """
+  Handle a `search_tools` tool call: rank the cross-server catalog for the
+  call's `query`/`limit` and wrap the result as an MCP tool payload.
+  """
+  @spec search_result(term(), map()) :: map()
+  def search_result(id, args) when is_map(args) do
+    query = to_string(Map.get(args, "query") || Map.get(args, :query) || "")
+
+    limit_opts =
+      case Map.get(args, "limit") || Map.get(args, :limit) do
+        n when is_integer(n) -> [limit: n]
+        _ -> []
+      end
+
+    payload = search(catalog(), query, limit_opts)
+
+    MCPEnvelope.result(id, %{
+      content: [MCPEnvelope.text(payload)],
+      structuredContent: MCPEnvelope.jsonable(payload)
+    })
+  end
+
+  @doc """
+  Handle an `invoke_tool` tool call: find the server that owns the requested
+  tool and run it through THAT server's normal scope + audit dispatch (so
+  workspace scoping and audit are preserved regardless of which endpoint the
+  agent called from). Refuses missing names and the meta-tools themselves, and
+  returns a tool error when no server owns the name.
+  """
+  @spec route_invoke(term(), map(), keyword()) :: map()
+  def route_invoke(id, args, opts) when is_map(args) do
+    case invoke_target(args) do
+      {nil, _inner} ->
+        tool_error(id, :invoke_tool_requires_name)
+
+      {name, _inner} when name in @meta_tool_names ->
+        tool_error(id, :invoke_tool_cannot_call_meta_tool)
+
+      {name, inner} ->
+        case owning_module(name) do
+          nil -> tool_error(id, {:invoke_tool_unknown_tool, name})
+          mod -> mod.call_tool(id, %{"name" => name, "arguments" => inner}, opts)
+        end
+    end
+  end
+
+  @doc "The server module that owns `name`, or nil if no DevIDE server does."
+  @spec owning_module(String.t()) :: module() | nil
+  def owning_module(name) when is_binary(name) do
+    Enum.find_value(@surface_modules, fn {_server, mod} ->
+      if name in Enum.map(mod.tool_specs(), &spec_name/1), do: mod
+    end)
+  end
+
+  defp tool_error(id, reason) do
+    err = MCPError.tool_result(reason)
+
+    MCPEnvelope.result(id, %{
+      err
+      | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
+    })
   end
 
   @doc """
@@ -169,10 +260,11 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     %{
       name: "search_tools",
       description:
-        "Find a DevIDE tool by natural-language intent when the tool you need is " <>
-          "not in the small core set. Returns matching tool names + input schemas; " <>
-          "then call invoke_tool with one. Use for the long tail (annotations, agent " <>
-          "labels, worktree/state reporting, preview/artifact ops).",
+        "Find a DevIDE tool by natural-language intent, across ALL DevIDE MCP " <>
+          "servers (terminal, preview, artifact) — not just this endpoint's. " <>
+          "Returns matching tool names (each tagged with its `server`) + input " <>
+          "schemas; then call invoke_tool with one from this same endpoint. Use " <>
+          "for the long tail and for tools that live on another server.",
       inputSchema: %{
         type: "object",
         properties: %{
@@ -198,8 +290,9 @@ defmodule DevIdeWeb.API.MCPToolSearch do
       name: "invoke_tool",
       description:
         "Invoke a DevIDE tool by name with its arguments — used to run a tool " <>
-          "discovered via search_tools that is not in the core set. Runs through " <>
-          "the same auth, workspace scoping, and audit as a direct call.",
+          "discovered via search_tools, including one that lives on a different " <>
+          "server (invoke_tool routes to the owning server). Runs through the " <>
+          "same auth, workspace scoping, and audit as a direct call.",
       inputSchema: %{
         type: "object",
         properties: %{
