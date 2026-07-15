@@ -1,5 +1,29 @@
+defmodule DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub do
+  @moduledoc false
+  # Minimal stand-in registered under the real PowerShellSession name so the
+  # desktop `tmux:refresh_windows` handler (restart → attach_desktop_terminal)
+  # can complete in the Linux test env, where no native shell transport exists.
+  # Only this test file touches that global name, so registering it here is safe.
+  use GenServer
+
+  def start_link(_opts),
+    do: GenServer.start_link(__MODULE__, :ok, name: DevIDE.Desktop.PowerShellSession)
+
+  @impl true
+  def init(_), do: {:ok, %{}}
+
+  @impl true
+  def handle_call({:restart, _cwd, _workspace}, _from, state), do: {:reply, :ok, state}
+  def handle_call({:ensure_workspace, _cwd, _workspace}, _from, state), do: {:reply, :ok, state}
+
+  def handle_call({:subscribe, _pid}, _from, state),
+    do: {:reply, {:ok, self(), self(), :running}, state}
+end
+
 defmodule DevIdeWeb.DesktopSessionPickerTest do
   use ExUnit.Case, async: true
+
+  alias DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub
 
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveViewTest, only: [render_component: 2]
@@ -56,6 +80,7 @@ defmodule DevIdeWeb.DesktopSessionPickerTest do
   end
 
   test "refreshing synthetic desktop windows does not invoke tmux" do
+    start_supervised!(PowerShellSessionStub)
     socket = desktop_socket()
 
     assert {:noreply, refreshed} =
@@ -80,7 +105,7 @@ defmodule DevIdeWeb.DesktopSessionPickerTest do
         active_window_pane_count: 1
       )
 
-    assert html =~ "Refresh terminal"
+    assert html =~ "Restart terminal"
     refute html =~ "Stop workspace"
     refute html =~ "Refresh windows"
     refute html =~ "Panes"
