@@ -22,7 +22,7 @@ defmodule DevIDE.PreviewPanes do
   alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
-  alias DevIDE.Previews.{ControlSession, Preview, PreviewPaneRegistration}
+  alias DevIDE.PreviewPanes.PreviewPaneRegistration
   alias DevIDE.Previews.Url
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Terminals.TmuxTopology
@@ -1198,8 +1198,8 @@ defmodule DevIDE.PreviewPanes do
 
   defp persisted_registration_live?(%PreviewPaneRegistration{} = registration) do
     with %{status: :open} <- registration,
-         %Preview{status: :open} <- registration.preview,
-         %ControlSession{status: :open} <- registration.control_session,
+         true <-
+           Previews.open_control_pair?(registration.preview, registration.control_session),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            registration.tmux_session do
       tmux_session

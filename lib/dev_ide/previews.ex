@@ -19,6 +19,7 @@ defmodule DevIDE.Previews do
 
   alias DevIDE.Previews.{
     Artifacts,
+    ControlSession,
     Identity,
     Preview,
     Surface,
@@ -194,6 +195,10 @@ defmodule DevIDE.Previews do
         where: p.id == ^id and p.workspace_id == ^workspace_id
     )
   end
+
+  @doc "True when both a preview and its browser control session remain open."
+  def open_control_pair?(%Preview{status: :open}, %ControlSession{status: :open}), do: true
+  def open_control_pair?(_preview, _control_session), do: false
 
   @doc """
   Update the URL for an open preview, preserving its existing metadata allowlist.

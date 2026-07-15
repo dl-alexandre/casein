@@ -2,7 +2,7 @@ defmodule DevIDE.FilePanesTest do
   use DevIde.DataCase, async: false
 
   alias DevIDE.FilePanes
-  alias DevIDE.Files.FilePaneRegistration
+  alias DevIDE.FilePanes.FilePaneRegistration
   alias DevIDE.Panes
   alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIde.Repo
