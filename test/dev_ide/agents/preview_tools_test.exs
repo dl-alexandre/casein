@@ -1544,9 +1544,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     previous = Application.get_env(:dev_ide, :preview_loopback_port)
     Application.put_env(:dev_ide, :preview_loopback_port, 4000)
     on_exit(fn -> restore_preview_loopback_port(previous) end)
+    workspace = put_in(@v3_workspace, [:metadata, :ports, "devide"], 4000)
 
     assert {:ok, %{current_url: url, pane_id: pane_id}} =
-             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+             PreviewTools.invoke("preview_open_localhost", workspace, %{
                "port" => 4000,
                "path" => "/",
                "actor_id" => "agent-1"
@@ -1557,9 +1558,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert url == "http://localhost:4000/workspaces"
   end
 
-  test "invoke open_localhost opens a common dev port" do
+  test "invoke open_localhost opens a workspace-declared dev port" do
+    workspace = put_in(@v3_workspace, [:metadata, :ports, "dev"], 5173)
+
     assert {:ok, %{session_id: session_id, current_url: url, pane_id: pane_id}} =
-             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+             PreviewTools.invoke("preview_open_localhost", workspace, %{
                "port" => 5173,
                "path" => "/index.html",
                "actor_id" => "agent-1"
