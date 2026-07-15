@@ -1,5 +1,5 @@
 defmodule DevIDE.ReadinessTest do
-  use DevIde.DataCase, async: true
+  use DevIDE.DataCase, async: true
 
   alias DevIDE.Readiness
 

@@ -24,7 +24,7 @@ defmodule DevIDE.Mobile.Actions do
   import Ecto.Query, only: [from: 2]
 
   alias DevIDE.Mobile.{ActionOutcome, Card, UserObserver}
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias DevIDE.Runs.Ledger
   alias DevIDE.Workspaces
 

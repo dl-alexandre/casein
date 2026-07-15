@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateFilePaneRegistrations do
+defmodule DevIDE.Repo.Migrations.CreateFilePaneRegistrations do
   use Ecto.Migration
 
   def change do

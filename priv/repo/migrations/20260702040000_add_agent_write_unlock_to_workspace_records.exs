@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddAgentWriteUnlockToWorkspaceRecords do
+defmodule DevIDE.Repo.Migrations.AddAgentWriteUnlockToWorkspaceRecords do
   use Ecto.Migration
 
   def change do

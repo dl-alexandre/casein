@@ -1,4 +1,4 @@
-defmodule DevIde.Supervision.PlatformServices do
+defmodule DevIDE.Supervision.PlatformServices do
   @moduledoc false
 
   use Supervisor

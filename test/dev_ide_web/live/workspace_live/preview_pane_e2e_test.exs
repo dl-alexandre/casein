@@ -27,7 +27,7 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
     the golden measures the *pane rendering pipeline*, not some live app whose
     content drifts.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
@@ -212,8 +212,8 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
   end
 
   defp restart_bridge! do
-    _ = Supervisor.terminate_child(DevIde.Supervisor, PreviewCtl.Playwright.Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIde.Supervisor, PreviewCtl.Playwright.Bridge)
+    _ = Supervisor.terminate_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
+    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
     :ok
   end
 

@@ -1,5 +1,5 @@
 defmodule DevIDE.Signals.AlertsRouterTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Audit.Event
   alias DevIDE.SignalBus

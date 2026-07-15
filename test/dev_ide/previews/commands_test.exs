@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.CommandsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewControl.Registry, as: PreviewRegistry
   alias DevIDE.Previews.Commands

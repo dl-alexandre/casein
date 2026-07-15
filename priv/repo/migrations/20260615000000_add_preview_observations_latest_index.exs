@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddPreviewObservationsLatestIndex do
+defmodule DevIDE.Repo.Migrations.AddPreviewObservationsLatestIndex do
   use Ecto.Migration
 
   # Serves the "latest observation per (session, kind)" queries in

@@ -1,4 +1,4 @@
-defmodule DevIde.Supervision.Commands do
+defmodule DevIDE.Supervision.Commands do
   @moduledoc false
 
   use Supervisor

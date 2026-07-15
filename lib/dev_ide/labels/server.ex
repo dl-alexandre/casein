@@ -172,7 +172,7 @@ defmodule DevIDE.Labels.Server do
 
   defp broadcast(workspace_id, tmux_session, pane_id, entry) when is_binary(workspace_id) do
     PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       topic(workspace_id),
       {:pane_label_updated, tmux_session, pane_id, entry}
     )

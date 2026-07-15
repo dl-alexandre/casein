@@ -31,6 +31,17 @@ defmodule DevIDE.Files.PathSafetyTest do
     assert {:error, :symlink_escape} = PathSafety.resolve(root, "escape_link/secret")
   end
 
+  test "rejects an in-root two-hop symlink chain that ultimately escapes", %{root: root} do
+    outside = Path.join(System.tmp_dir!(), "ps-outside-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(outside)
+    File.write!(Path.join(outside, "secret"), "nope")
+    File.ln_s!(outside, Path.join(root, "escape_target"))
+    File.ln_s!("escape_target", Path.join(root, "first_link"))
+    on_exit(fn -> File.rm_rf!(outside) end)
+
+    assert {:error, :symlink_escape} = PathSafety.resolve(root, "first_link/secret")
+  end
+
   test "ignored_dir? matches the standard noisy dirs" do
     assert PathSafety.ignored_dir?(".git")
     assert PathSafety.ignored_dir?("_build")

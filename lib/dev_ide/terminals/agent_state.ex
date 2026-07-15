@@ -131,7 +131,7 @@ defmodule DevIDE.Terminals.AgentState do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   @doc false

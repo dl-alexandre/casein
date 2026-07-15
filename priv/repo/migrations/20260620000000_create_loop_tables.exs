@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateLoopTables do
+defmodule DevIDE.Repo.Migrations.CreateLoopTables do
   use Ecto.Migration
 
   def change do

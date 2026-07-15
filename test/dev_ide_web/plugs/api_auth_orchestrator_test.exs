@@ -4,7 +4,7 @@ defmodule DevIdeWeb.Plugs.ApiAuthOrchestratorTest do
   resolves to a non-global `{:orchestrator, subject}` scope that traverses
   (leaves `:api_workspace_id` unassigned), and stops working once revoked.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   import Plug.Test
   import Plug.Conn

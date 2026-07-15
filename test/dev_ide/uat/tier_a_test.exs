@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.TierATest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.UAT.{FakeRunner, Manifest, Run, Step, TierA, Trace}

@@ -17,7 +17,7 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
 
     socket =
       if connected?(socket) do
-        Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+        Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
         DevIDE.Deployment.Drain.track(self())
         apply_poller_status(socket)
       else

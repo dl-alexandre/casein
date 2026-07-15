@@ -181,7 +181,7 @@ human-iframe broadcasts.
 | `:preview_control_adapter` | `:dev_ide` | Operator-facing atom (`:memory` \| `:playwright`) |
 | `:adapter` | `:preview_ctl` | Resolved adapter module (set at boot from the atom) |
 
-`DevIde.Application.configure_preview_ctl!/0` copies `config :dev_ide, :preview_ctl`
+`DevIDE.Application.configure_preview_ctl!/0` copies `config :dev_ide, :preview_ctl`
 and maps `:preview_control_adapter` → `:preview_ctl :adapter`. Playwright script
 path uses `:dev_ide :preview_playwright_script` → `:preview_ctl :playwright_script`.
 DevIDE facades (`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,

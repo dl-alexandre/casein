@@ -9,6 +9,6 @@ defmodule DevIDE.Mobile do
   """
 
   use Boundary,
-    deps: [DevIDE, DevIde.Repo],
+    deps: [DevIDE, DevIDE.Repo],
     exports: [Card, UserObserver, Actions, ActionOutcome]
 end

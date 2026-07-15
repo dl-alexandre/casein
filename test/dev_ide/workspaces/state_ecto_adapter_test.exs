@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.State.EctoAdapterTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Workspaces.State.EctoAdapter
   alias DevIDE.Workspaces.State.WorkspaceRecord

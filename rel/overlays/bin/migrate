@@ -4,7 +4,7 @@
 # Invoked as a one-shot before rolling the server pool:
 #   docker run --rm dev_ide:latest /app/bin/migrate
 #
-# Implemented as `eval` against DevIde.Release.migrate/0
+# Implemented as `eval` against DevIDE.Release.migrate/0
 # (see audit_remote.md CC-1 and lib/dev_ide/release.ex).
 
 set -eu
@@ -16,4 +16,4 @@ if [ "${DATABASE_PATH:-}" != "" ]; then
   touch "${DATABASE_PATH}"
 fi
 
-exec ./bin/dev_ide eval "DevIde.Release.migrate()"
+exec ./bin/dev_ide eval "DevIDE.Release.migrate()"

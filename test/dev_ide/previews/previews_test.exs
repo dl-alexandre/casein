@@ -1,5 +1,5 @@
 defmodule DevIDE.PreviewsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Previews
   alias DevIDE.Previews.Preview

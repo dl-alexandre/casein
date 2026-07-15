@@ -1,5 +1,5 @@
 defmodule DevIDE.Mobile.UserObserverTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Audit
   alias DevIDE.Mobile.UserObserver
@@ -94,7 +94,7 @@ defmodule DevIDE.Mobile.UserObserverTest do
   test "needs_review updates dedupe by user workspace session and type" do
     user_id = unique_user()
     prepare_user(user_id)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, UserObserver.card_events_topic())
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, UserObserver.card_events_topic())
 
     UserObserver.needs_review_changed(user_id, %{
       workspace_id: "ws-1",

@@ -1,5 +1,5 @@
 defmodule DevIDE.NotificationsTest do
-  use DevIde.DataCase, async: true
+  use DevIDE.DataCase, async: true
 
   alias DevIDE.Audit.Event
   alias DevIDE.Notifications

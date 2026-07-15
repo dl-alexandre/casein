@@ -45,6 +45,21 @@ defmodule DevIDE.Previews.Url do
 
   def port_allowed?(_, _), do: false
 
+  @doc """
+  True when a localhost port belongs to the workspace itself.
+
+  Unlike `port_allowed?/2`, this strict policy does not allow common dev ports
+  unless workspace metadata declares or detects them.
+  """
+  @spec workspace_owned_port?(integer(), map()) :: boolean()
+  def workspace_owned_port?(port, workspace) when is_integer(port) and is_map(workspace) do
+    valid_port?(port) and
+      (port in metadata_port_values(workspace) or
+         port in detected_port_values(workspace))
+  end
+
+  def workspace_owned_port?(_, _), do: false
+
   @doc "Allowed localhost ports for a workspace, including common, metadata, and detected ports."
   @spec allowed_ports(map() | nil) :: [integer()]
   def allowed_ports(nil), do: Origin.common_dev_ports()

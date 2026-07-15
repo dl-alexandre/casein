@@ -33,7 +33,7 @@ defmodule DevIDE.Panes.Events do
 
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
   @topic_prefix "panes:"
 
   @type reason :: :registered | :updated | :removed | :heartbeat

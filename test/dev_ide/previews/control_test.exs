@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.ControlTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   import Ecto.Query
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Previews.ControlTest do
   alias DevIDE.Previews
   alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.Previews.{ControlAction, ControlObservation}
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @v3_workspace %{
     id: "ws-preview",
@@ -36,7 +36,7 @@ defmodule DevIDE.Previews.ControlTest do
   end
 
   test "open_session broadcasts the preview for connected workspace viewers" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:ws-preview")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:ws-preview")
 
     assert {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
 
@@ -59,7 +59,7 @@ defmodule DevIDE.Previews.ControlTest do
     on_exit(fn -> File.rm_rf(path) end)
 
     folder_id = DevIDE.Workspaces.Aliases.folder_id_for_path(path)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:#{folder_id}")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:#{folder_id}")
 
     workspace = %{
       id: folder_id,

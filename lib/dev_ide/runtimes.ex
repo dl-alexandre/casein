@@ -39,10 +39,31 @@ defmodule DevIDE.Runtimes do
               {:ok, Runtime.t()} | {:error, term()}
   @callback get_runtime(String.t()) :: {:ok, Runtime.t()} | :error
   @callback list_runtimes(map()) :: [Runtime.t()]
+  @callback list_runtimes_by_workspace_ids([String.t()]) :: [Runtime.t()]
   @callback events_for(String.t()) :: [LifecycleEvent.t()]
   @callback clear() :: :ok
+  @optional_callbacks list_runtimes_by_workspace_ids: 1
 
   def list_runtimes(filters \\ %{}), do: impl().list_runtimes(normalize_filter(filters))
+
+  @doc "List runtimes for several workspaces in one query, grouped by workspace id."
+  @spec list_runtimes_by_workspace_ids([String.t()]) :: %{optional(String.t()) => [Runtime.t()]}
+  def list_runtimes_by_workspace_ids(workspace_ids) when is_list(workspace_ids) do
+    workspace_ids = Enum.filter(workspace_ids, &(is_binary(&1) and &1 != ""))
+
+    adapter = impl()
+
+    runtimes =
+      if function_exported?(adapter, :list_runtimes_by_workspace_ids, 1) do
+        adapter.list_runtimes_by_workspace_ids(workspace_ids)
+      else
+        adapter.list_runtimes(%{})
+        |> Enum.filter(&(&1.workspace_id in workspace_ids))
+      end
+
+    runtimes
+    |> Enum.group_by(& &1.workspace_id)
+  end
 
   def get_runtime(runtime_id) when is_binary(runtime_id), do: impl().get_runtime(runtime_id)
   def get_runtime(_), do: :error

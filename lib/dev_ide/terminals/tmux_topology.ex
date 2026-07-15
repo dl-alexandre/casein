@@ -15,7 +15,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
 
   @registry DevIDE.Terminals.TopologyRegistry
   @supervisor DevIDE.Terminals.TopologySupervisor
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
   @topic_prefix "terminal_topology:"
 
   @type window :: Topology.window()

@@ -1,7 +1,7 @@
-defmodule DevIde.Repo do
+defmodule DevIDE.Repo do
   # Own top-level boundary so both the domain (DevIDE) and infra (DevIde)
   # layers can depend on it without creating a DevIDE <-> DevIde cycle.
-  use Boundary, top_level?: true, deps: [], exports: []
+  use Boundary, top_level?: true, deps: [], exports: [Adapter]
 
   use Ecto.Repo,
     otp_app: :dev_ide,

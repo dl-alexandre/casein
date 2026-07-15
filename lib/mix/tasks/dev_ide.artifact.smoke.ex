@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Artifact.Smoke do
+defmodule Mix.Tasks.DevIDE.Artifact.Smoke do
   @shortdoc "Create a static Artifact Project smoke preview"
 
   @moduledoc """
@@ -13,6 +13,7 @@ defmodule Mix.Tasks.DevIde.Artifact.Smoke do
   """
 
   use Mix.Task
+  use Boundary, top_level?: true, deps: [DevIDE], exports: []
 
   alias DevIDE.ArtifactProjects
 

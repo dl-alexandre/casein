@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateCommandRunRecords do
+defmodule DevIDE.Repo.Migrations.CreateCommandRunRecords do
   use Ecto.Migration
 
   def change do

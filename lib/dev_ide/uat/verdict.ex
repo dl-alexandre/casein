@@ -43,7 +43,7 @@ defmodule DevIDE.UAT.Verdict do
 
   Options:
 
-    * `:repo` — Ecto repo module (default `DevIde.Repo`), for tests
+    * `:repo` — Ecto repo module (default `DevIDE.Repo`), for tests
     * `:artifacts_root` — base dir for relative `artifact_path` (default from
       `:dev_ide, :preview_artifacts_root`)
   """
@@ -120,7 +120,7 @@ defmodule DevIDE.UAT.Verdict do
   # --- Layer 2: grounding ---------------------------------------------------
 
   defp ground(verdict, session_id, opts) do
-    repo = Keyword.get(opts, :repo, DevIde.Repo)
+    repo = Keyword.get(opts, :repo, DevIDE.Repo)
     artifacts_root = Keyword.get(opts, :artifacts_root, default_artifacts_root())
 
     {assertions, problems} =

@@ -10,10 +10,14 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
   over a real socket); the headed "edit file → HMR update in the browser" loop
   still has to be eyeballed against a real Vite app.
   """
-  use DevIDE.TestCase, async: false
+  use DevIDE.DataCase, async: false
 
-  # Loopback dev ports that pass `Url.port_allowed?/2`; we bind the first free one
-  # since this box is busy and fixed ports collide.
+  alias DevIDE.PreviewPanes
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
+
+  # Loopback dev ports that are workspace-registered after binding; we use the
+  # first free one since this box is busy and fixed ports collide.
   @candidate_ports [8080, 9000, 3000, 5173]
 
   defmodule EchoWS do
@@ -41,6 +45,7 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
 
     root = Path.join(System.tmp_dir!(), "ws-e2e-#{System.unique_integer([:positive])}")
     path = Path.join([root, "dev", "ws"])
@@ -49,17 +54,37 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
     Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :forward_auth, true)
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    PreviewPanes.clear()
+    FakeState.delete(:fake_tmux_windows)
+    FakeState.delete(:fake_tmux_panes)
 
     on_exit(fn ->
+      PreviewPanes.clear()
+      FakeState.delete(:fake_tmux_windows)
+      FakeState.delete(:fake_tmux_panes)
       File.rm_rf!(root)
       restore(:workspaces_root, prev_root)
       restore(:workspace_source, prev_source)
       restore(:forward_auth, prev_forward_auth)
       restore(:preview_proxy_hmr, prev_hmr)
+      restore(:tmux_adapter, prev_tmux)
     end)
 
     # Upstream "dev server": a real WebSocket echo on the first free allowed port.
     upstream_port = start_upstream_echo!(@candidate_ports)
+
+    session = "devide_ws_e2e"
+    pane_id = "%9"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => ":#{upstream_port}",
+               "cwd" => path,
+               "tmux_session" => session
+             })
 
     # Real HTTP listener for the DevIDE endpoint on a free port.
     devide_port = free_port()
@@ -74,6 +99,29 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp seed_session!(session, pane_id) do
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: pane_id,
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "devide-preview",
+          current_path: "/tmp"
+        }
+      ]
+    })
+  end
 
   defp start_upstream_echo!(ports) do
     Enum.find_value(ports, fn port ->

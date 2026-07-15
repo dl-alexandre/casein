@@ -1,9 +1,9 @@
 defmodule DevIDE.Agents.OrchestratorTokensTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.OrchestratorToken
   alias DevIDE.Agents.OrchestratorTokens
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   defp user(id \\ "alice"),
     do: %{id: id, username: id, email: "#{id}@example.com", role: :user}

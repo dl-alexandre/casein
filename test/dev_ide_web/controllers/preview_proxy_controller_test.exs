@@ -203,6 +203,37 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
+  test "rejects an unowned common dev port but accepts a registered workspace port",
+       %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    rejected_conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/4000/")
+
+    assert response(rejected_conn, 403) == "Port not allowed for this workspace"
+
+    {listen, port, task} =
+      listen_once!(fn socket, _request ->
+        :ok = :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nowned")
+      end)
+
+    register_preview_port!(workspace_id, port)
+    ref = Process.monitor(task.pid)
+
+    allowed_conn =
+      build_conn()
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    assert response(allowed_conn, 200) == "owned"
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
   test "forwards non-GET requests and bodies for LiveView longpoll fallback", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
 
@@ -454,6 +485,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "refuses a websocket upgrade when HMR tunneling is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
+    register_preview_port!(workspace_id, 5173)
 
     conn = ws_upgrade_conn(conn, workspace_id, 5173)
 
@@ -464,6 +496,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   test "rejects a websocket upgrade past the per-workspace cap", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true, max_per_workspace: 1)
+    register_preview_port!(workspace_id, 5173)
 
     # Occupy the single slot with a live registration, mirroring an open tunnel.
     parent = self()
@@ -505,7 +538,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
 
-    # 6000 is neither a known dev port nor a registered preview port.
+    # 6000 is neither declared/detected nor a registered preview port.
     conn = ws_upgrade_conn(conn, workspace_id, 6000)
 
     assert response(conn, 403)

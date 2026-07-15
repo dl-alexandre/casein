@@ -185,7 +185,7 @@ defmodule DevIDE.Deployment.LastDeployTest do
     System.put_env("DEVIDE_GIT_REVISION", @deployed)
     on_exit(fn -> restore_env("DEVIDE_GIT_REVISION", prev_rev) end)
 
-    Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
 
     {:ok, sub_id} =
       Jido.Signal.Bus.subscribe(

@@ -22,13 +22,13 @@ defmodule DevIDE.PreviewPanes do
   alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
-  alias DevIDE.Previews.{ControlSession, Preview, PreviewPaneRegistration}
+  alias DevIDE.PreviewPanes.PreviewPaneRegistration
   alias DevIDE.Previews.Url
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @table :dev_ide_preview_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
@@ -358,7 +358,7 @@ defmodule DevIDE.PreviewPanes do
   defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
     Enum.each(parents, fn parent ->
       try do
-        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIde.Repo, parent, task_pid)
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
       catch
         _, _ -> :ok
       end
@@ -1198,8 +1198,8 @@ defmodule DevIDE.PreviewPanes do
 
   defp persisted_registration_live?(%PreviewPaneRegistration{} = registration) do
     with %{status: :open} <- registration,
-         %Preview{status: :open} <- registration.preview,
-         %ControlSession{status: :open} <- registration.control_session,
+         true <-
+           Previews.open_control_pair?(registration.preview, registration.control_session),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            registration.tmux_session do
       tmux_session
@@ -1631,7 +1631,7 @@ defmodule DevIDE.PreviewPanes do
     payload = broadcast_payload(registration)
 
     for workspace_id <- WorkspaceAliases.viewer_ids(registration.workspace_id) do
-      Phoenix.PubSub.broadcast(DevIde.PubSub, "preview:" <> workspace_id, {
+      Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_registered,
         payload
       })
@@ -1646,7 +1646,7 @@ defmodule DevIDE.PreviewPanes do
     payload = Map.take(broadcast_payload(registration), [:pane_id, :workspace_id, :preview_id])
 
     for workspace_id <- WorkspaceAliases.viewer_ids(registration.workspace_id) do
-      Phoenix.PubSub.broadcast(DevIde.PubSub, "preview:" <> workspace_id, {
+      Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_removed,
         payload
       })

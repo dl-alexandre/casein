@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateFleetArtifactChunks do
+defmodule DevIDE.Repo.Migrations.CreateFleetArtifactChunks do
   use Ecto.Migration
 
   def change do

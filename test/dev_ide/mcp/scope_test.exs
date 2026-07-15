@@ -33,7 +33,7 @@ defmodule DevIDE.MCP.ScopeTest.Source do
 end
 
 defmodule DevIDE.MCP.ScopeTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.MCP.Scope

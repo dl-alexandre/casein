@@ -14,12 +14,12 @@ defmodule DevIDE.Links.Open do
 
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   @spec broadcast(String.t(), resolved_target()) :: :ok | {:error, term()}
   def broadcast(workspace_id, resolved) when is_binary(workspace_id) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, topic(workspace_id), {:open_target, resolved})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:open_target, resolved})
   end
 
   @spec to_json(resolved_target()) :: map()

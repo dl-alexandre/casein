@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
+defmodule Mix.Tasks.DevIDE.InsecureHttp.Setup do
   @moduledoc """
   Prepares or installs the optional insecure DevIDE LAN HTTP edge.
 

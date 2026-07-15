@@ -1,16 +1,16 @@
-defmodule DevIde.Release do
+defmodule DevIDE.Release do
   @moduledoc """
   Tasks called from a release binary at boot time.
 
   In a release there is no `mix`, so anything Mix tasks would normally
   do (like running migrations) goes here and is invoked via
-  `bin/dev_ide eval "DevIde.Release.migrate()"`.
+  `bin/dev_ide eval "DevIDE.Release.migrate()"`.
 
   This module is required by `audit_remote.md` CC-1 — the Dockerfile's
   migrate overlay calls into it.
   """
 
-  use Boundary, deps: [DevIde.Repo], exports: []
+  use Boundary, deps: [DevIDE.Repo], exports: :all
 
   @app :dev_ide
 

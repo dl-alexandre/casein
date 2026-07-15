@@ -1,5 +1,5 @@
 defmodule DevIDE.Panes.FilePaneTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.FilePanes
   alias DevIDE.Panes

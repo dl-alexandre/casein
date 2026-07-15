@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionTemplate.LoaderSavedTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.SessionTemplate.Loader
