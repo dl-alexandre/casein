@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Lan.Setup do
+defmodule Mix.Tasks.DevIDE.Lan.Setup do
   @moduledoc """
   Generates a trusted local development certificate for DevIDE LAN mode.
 

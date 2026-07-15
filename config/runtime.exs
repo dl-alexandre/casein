@@ -227,7 +227,7 @@ if config_env() == :prod and not release_cli? do
             """
         end
 
-    config :dev_ide, DevIde.Repo,
+    config :dev_ide, DevIDE.Repo,
       database: database_path,
       journal_mode: :delete,
       pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
@@ -249,7 +249,7 @@ if config_env() == :prod and not release_cli? do
 
     maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
-    config :dev_ide, DevIde.Repo,
+    config :dev_ide, DevIDE.Repo,
       # ssl: true,
       url: database_url,
       pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
@@ -794,7 +794,7 @@ if config_env() == :prod and not release_cli? do
   # In production you need to configure the mailer to use a different adapter.
   # Here is an example configuration for Mailgun:
   #
-  #     config :dev_ide, DevIde.Mailer,
+  #     config :dev_ide, DevIDE.Mailer,
   #       adapter: Swoosh.Adapters.Mailgun,
   #       api_key: System.get_env("MAILGUN_API_KEY"),
   #       domain: System.get_env("MAILGUN_DOMAIN")

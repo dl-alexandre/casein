@@ -181,7 +181,7 @@ defmodule DevIDE.Deployment.Drift do
   end
 
   defp broadcast(info) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:deploy_drift, info})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_drift, info})
   rescue
     _ -> :ok
   end

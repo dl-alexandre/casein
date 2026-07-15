@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateAnnotations do
+defmodule DevIDE.Repo.Migrations.CreateAnnotations do
   use Ecto.Migration
 
   def change do

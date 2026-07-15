@@ -103,8 +103,8 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
   end
 
   defp restart_bridge do
-    _ = Supervisor.terminate_child(DevIde.Supervisor, PreviewCtl.Playwright.Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIde.Supervisor, PreviewCtl.Playwright.Bridge)
+    _ = Supervisor.terminate_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
+    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
     :ok
   end
 

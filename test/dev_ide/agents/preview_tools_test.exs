@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.PreviewToolsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewActivity
@@ -10,7 +10,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Test.RuntimeSeed
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -317,7 +317,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "reload tools broadcast workspace browser control requests" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
             %{
@@ -1285,7 +1285,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
             result = %{
@@ -1323,7 +1323,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
     Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
 
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
 
     task =
       Task.async(fn ->
@@ -1804,7 +1804,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     browser =
       spawn(fn ->
-        Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:#{@v3_workspace.id}")
         send(parent, :browser_ready)
 
         receive do

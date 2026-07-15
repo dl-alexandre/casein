@@ -15,7 +15,7 @@ defmodule DevIDE.Previews do
 
   alias DevIDE.Audit
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   alias DevIDE.Previews.{
     Artifacts,

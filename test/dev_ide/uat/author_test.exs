@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.AuthorTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   import Ecto.Query
 

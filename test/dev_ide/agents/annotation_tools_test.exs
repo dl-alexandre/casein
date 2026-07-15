@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.AnnotationToolsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.AnnotationTools
   alias DevIDE.Annotations

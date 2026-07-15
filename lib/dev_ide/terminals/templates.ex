@@ -12,7 +12,7 @@ defmodule DevIDE.Terminals.Templates do
   alias DevIDE.Terminals.Templates.Executor
   alias DevIDE.Terminals.Templates.ReconcileExecutor
   alias DevIDE.Terminals.Templates.Reconciler
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   defmodule Row do
     @moduledoc false

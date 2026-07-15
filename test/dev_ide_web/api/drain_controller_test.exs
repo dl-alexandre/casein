@@ -41,7 +41,7 @@ defmodule DevIdeWeb.API.DrainControllerTest do
   end
 
   test "parses commits_behind from string params", %{conn: conn} do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
     conn = drain_request(conn, "3")
     assert json_response(conn, 200) == %{"ok" => true}
     assert_receive {:update_available, _version, 3}

@@ -66,16 +66,17 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
         DesktopAuth.call(conn, [])
 
       enabled?() ->
-      case get_req_header(conn, "x-auth-request-email") do
-        [email | _] when is_binary(email) and email != "" ->
-          put_user(conn, user_from_email(email))
+        case get_req_header(conn, "x-auth-request-email") do
+          [email | _] when is_binary(email) and email != "" ->
+            put_user(conn, user_from_email(email))
 
-        _ ->
-          conn
-          |> put_resp_content_type("text/plain")
-          |> send_resp(401, "Not authenticated")
-          |> halt()
-      end
+          _ ->
+            conn
+            |> put_resp_content_type("text/plain")
+            |> send_resp(401, "Not authenticated")
+            |> halt()
+        end
+
       true ->
         # Local dev / no proxy: keep the static single-user identity, but still
         # write it to the session so `from_session/1` has one consistent source.

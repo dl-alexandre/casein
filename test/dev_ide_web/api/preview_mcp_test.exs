@@ -42,7 +42,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   pure (decoded message in, JSON-RPC outcome out), so these exercise the wire
   contract directly, plus one real tools/call path through PreviewTools.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewActivity

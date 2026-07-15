@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.AddAuditEventsCorrelationIndex do
+defmodule DevIDE.Repo.Migrations.AddAuditEventsCorrelationIndex do
   @moduledoc """
   Expression index for `DevIDE.Audit.list_by_correlation/1`: causality
   correlation ids live in the metadata JSONB (stamped by

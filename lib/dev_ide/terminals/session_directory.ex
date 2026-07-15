@@ -36,7 +36,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   @registry DevIDE.Terminals.Registry
   @supervisor DevIDE.Terminals.Supervisor
-  @pubsub DevIde.PubSub
+  @pubsub DevIDE.PubSub
   @topic_prefix "terminal_tabs:"
   @poll_ms 2_000
 

@@ -4,7 +4,7 @@ defmodule DevIDE.PushTest do
   an alert-worthy audit event fires for its workspace — and nothing else does.
   Runs against the app-supervised `Registry`/`Dispatcher` with a stub provider.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.{Audit, Push}
   alias DevIDE.Mobile.UserObserver

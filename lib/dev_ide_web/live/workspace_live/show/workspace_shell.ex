@@ -383,7 +383,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               phx-click="tmux:new_window_tab"
             ></button>
           <% end %>
-           <%!-- Pane focus arrows work across all tmux pane tiles. --%>
+          <%!-- Pane focus arrows work across all tmux pane tiles. --%>
           <%= if is_binary(@tmux_session) do %>
             <button
               type="button"

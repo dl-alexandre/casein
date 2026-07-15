@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateOrchestratorApiTokens do
+defmodule DevIDE.Repo.Migrations.CreateOrchestratorApiTokens do
   use Ecto.Migration
 
   def change do

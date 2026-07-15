@@ -12,7 +12,7 @@ defmodule DevIDE.Push.Registry do
 
   alias DevIDE.Push.Device
   alias DevIDE.Signals.AlertsRouter
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @type entry :: %{token: String.t(), platform: String.t(), user_id: String.t() | nil}
 

@@ -1,5 +1,5 @@
 defmodule DevIDE.AnnotationsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Annotations
   alias DevIDE.Annotations.Annotation

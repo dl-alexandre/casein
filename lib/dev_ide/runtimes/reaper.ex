@@ -35,7 +35,7 @@ defmodule DevIDE.Runtimes.Reaper do
   @impl true
   def init(_opts) do
     Logger.info(
-      "[runtime-reaper] supervised under DevIde.Supervision.PlatformServices " <>
+      "[runtime-reaper] supervised under DevIDE.Supervision.PlatformServices " <>
         "enabled=#{enabled?()} dry_run=#{dry_run?()}"
     )
 

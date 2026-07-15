@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.RecreateObanTables do
+defmodule DevIDE.Repo.Migrations.RecreateObanTables do
   use Ecto.Migration
 
   # Prod already executed master's drop_oban_tables (20260620030000) AND still

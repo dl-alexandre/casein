@@ -12,7 +12,7 @@ defmodule DevIDE.Agents.PreviewToolsMoreTest do
 
   Reuses the same setup, fakes, and seeding helpers as the sibling suites.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewActivity

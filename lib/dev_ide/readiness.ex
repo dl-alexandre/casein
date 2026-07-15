@@ -33,7 +33,7 @@ defmodule DevIDE.Readiness do
 
   defp query_database do
     timeout = Application.get_env(:dev_ide, :readiness_timeout_ms, @default_timeout)
-    Ecto.Adapters.SQL.query(DevIde.Repo, "SELECT 1", [], timeout: timeout, log: false)
+    Ecto.Adapters.SQL.query(DevIDE.Repo, "SELECT 1", [], timeout: timeout, log: false)
   end
 
   defp ready, do: %{ok: true, checks: %{database: :ready}}

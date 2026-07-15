@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.VerdictTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Previews.{ControlObservation, ControlSession}
   alias DevIDE.UAT.Verdict

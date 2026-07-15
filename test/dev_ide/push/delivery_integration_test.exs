@@ -14,7 +14,7 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
   envelope for an audit alert; an Android user token gets the FCM envelope for a
   needs_review card.
   """
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.{Audit, Push}
   alias DevIDE.Mobile.UserObserver

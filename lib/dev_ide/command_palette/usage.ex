@@ -13,7 +13,7 @@ defmodule DevIDE.CommandPalette.Usage do
 
   require Logger
 
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   defmodule Row do
     @moduledoc false

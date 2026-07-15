@@ -1,5 +1,5 @@
 defmodule DevIDE.Runtimes.EctoAdapterTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Runtimes
   alias DevIDE.Test.RuntimeSeed

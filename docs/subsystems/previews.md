@@ -162,7 +162,7 @@ Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :me
   `scripts/preview-router.sh` as `reverse_proxy unix//…`, mirroring the live
   `/run/devide/current.sock` model) **and** `DEVIDE_PREVIEW_TIDEWAVE_PORT=<port>`.
   The port spins a second, loopback-only Bandit listener
-  (`DevIde.Application.preview_tidewave_listener/0`) serving the same endpoint, so
+  (`DevIDE.Application.preview_tidewave_listener/0`) serving the same endpoint, so
   the programmatic Tidewave MCP dial (`DevIDE.Agents.TidewaveMCP` →
   `http://127.0.0.1:<port>/tidewave/mcp`) and local tooling (screenshots, on-box
   browser) keep working — a unix socket can't serve those. Prod never sets the var,

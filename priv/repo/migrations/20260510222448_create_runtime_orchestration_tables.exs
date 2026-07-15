@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateRuntimeOrchestrationTables do
+defmodule DevIDE.Repo.Migrations.CreateRuntimeOrchestrationTables do
   use Ecto.Migration
 
   def change do

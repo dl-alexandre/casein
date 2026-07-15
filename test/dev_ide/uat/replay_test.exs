@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.ReplayTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.UAT.{Replay, Run, Step, Trace}

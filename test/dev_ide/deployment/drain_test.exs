@@ -33,7 +33,7 @@ defmodule DevIDE.Deployment.DrainTest do
   end
 
   test "start_drain broadcasts update availability while connections remain" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
     {:ok, holder} = start_supervised({Holder, []})
     assert :ok = Drain.track(holder)
 
@@ -47,7 +47,7 @@ defmodule DevIDE.Deployment.DrainTest do
   end
 
   test "auto_reconnect nudges still-attached clients to move off the draining node" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
     {:ok, holder} = start_supervised({Holder, []})
     assert :ok = Drain.track(holder)
 
@@ -60,7 +60,7 @@ defmodule DevIDE.Deployment.DrainTest do
   end
 
   test "auto_reconnect stays silent once connections have already drained" do
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
 
     assert :ok = Drain.start_drain(0)
     assert_receive {:update_available, _version, 0}

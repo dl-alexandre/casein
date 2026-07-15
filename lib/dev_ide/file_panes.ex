@@ -29,7 +29,7 @@ defmodule DevIDE.FilePanes do
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @table :dev_ide_file_panes
   @topology_tag DevIDE.Terminals.TmuxTopology

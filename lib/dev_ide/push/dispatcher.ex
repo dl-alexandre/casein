@@ -37,7 +37,7 @@ defmodule DevIDE.Push.Dispatcher do
 
   @impl true
   def init(state) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, UserObserver.card_events_topic())
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, UserObserver.card_events_topic())
     {:ok, state}
   end
 

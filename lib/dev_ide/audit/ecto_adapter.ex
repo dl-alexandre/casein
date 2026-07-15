@@ -11,7 +11,7 @@ defmodule DevIDE.Audit.EctoAdapter do
   @behaviour DevIDE.Audit.Adapter
 
   alias DevIDE.Audit.Event
-  alias DevIde.Repo
+  alias DevIDE.Repo
   import Ecto.Query
 
   defmodule Row do

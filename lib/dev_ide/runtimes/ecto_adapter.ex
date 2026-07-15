@@ -13,7 +13,7 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     RuntimeRow
   }
 
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @impl true
   def create_runtime(%Runtime{} = runtime, %LifecycleEvent{} = event) do

@@ -28,13 +28,13 @@ defmodule DevIdeWeb.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
       import DevIdeWeb.ConnCase
-      import DevIde.Factory
+      import DevIDE.Factory
     end
   end
 
   setup tags do
     DevIDE.Test.ManagerReqTest.setup(tags)
-    DevIde.DataCase.setup_sandbox(tags)
+    DevIDE.DataCase.setup_sandbox(tags)
     reset_rate_limit_table()
     # Async tests rely on config/test.exs defaults (lines 77-79); sync tests may
     # override forward_auth/admins/on_devbox and need a per-test reset.

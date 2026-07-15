@@ -1,4 +1,4 @@
-defmodule DevIde.Supervision.Previews do
+defmodule DevIDE.Supervision.Previews do
   @moduledoc false
 
   use Supervisor

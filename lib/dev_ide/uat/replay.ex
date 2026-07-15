@@ -33,13 +33,13 @@ defmodule DevIDE.UAT.Replay do
 
     * `:tier` — `:tier_a` (default) or `:tier_b`
     * `:target_instance` — label for the instance under test (default `"memory"`)
-    * `:repo` — Ecto repo (default `DevIde.Repo`)
+    * `:repo` — Ecto repo (default `DevIDE.Repo`)
     * any other option is forwarded to `PreviewControl.open_session/3`
       (e.g. `:actor_id`, `:adapter`)
   """
   @spec run(Trace.t(), map(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run(%Trace{} = trace, workspace, opts \\ []) do
-    {repo, open_opts} = Keyword.pop(opts, :repo, DevIde.Repo)
+    {repo, open_opts} = Keyword.pop(opts, :repo, DevIDE.Repo)
     {tier, open_opts} = Keyword.pop(open_opts, :tier, :tier_a)
     {target_instance, open_opts} = Keyword.pop(open_opts, :target_instance, "memory")
 

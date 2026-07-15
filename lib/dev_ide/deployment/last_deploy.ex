@@ -328,7 +328,7 @@ defmodule DevIDE.Deployment.LastDeploy do
   end
 
   defp broadcast(message) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", message)
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", message)
   rescue
     _ -> :ok
   end

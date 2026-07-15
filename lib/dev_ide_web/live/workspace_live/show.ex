@@ -2296,7 +2296,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
-          DevIde.PubSub,
+          DevIDE.PubSub,
           "preview:" <> workspace_id
         )
       end
@@ -2312,7 +2312,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp subscribe_pane_events(socket) do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
-        Phoenix.PubSub.subscribe(DevIde.PubSub, Panes.Events.topic(workspace_id))
+        Phoenix.PubSub.subscribe(DevIDE.PubSub, Panes.Events.topic(workspace_id))
       end
     end
 

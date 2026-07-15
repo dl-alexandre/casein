@@ -4,7 +4,7 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
   @behaviour DevIDE.Workspaces.State.Adapter
 
   alias DevIDE.Workspaces.State.WorkspaceRecord
-  alias DevIde.Repo
+  alias DevIDE.Repo
   import Ecto.Query
 
   defmodule Row do
