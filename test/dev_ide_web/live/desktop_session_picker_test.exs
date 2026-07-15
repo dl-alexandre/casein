@@ -13,8 +13,8 @@ defmodule DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub do
   def init(_), do: {:ok, %{}}
 
   @impl true
-  def handle_call({:restart, _cwd}, _from, state), do: {:reply, :ok, state}
-  def handle_call({:ensure_cwd, _cwd}, _from, state), do: {:reply, :ok, state}
+  def handle_call({:restart, _cwd, _workspace}, _from, state), do: {:reply, :ok, state}
+  def handle_call({:ensure_workspace, _cwd, _workspace}, _from, state), do: {:reply, :ok, state}
 
   def handle_call({:subscribe, _pid}, _from, state),
     do: {:reply, {:ok, self(), self(), :running}, state}
