@@ -4,7 +4,7 @@ defmodule DevIDE.PreviewPanesTest do
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlSession
   alias DevIDE.Previews.Preview
-  alias DevIDE.Previews.PreviewPaneRegistration
+  alias DevIDE.PreviewPanes.PreviewPaneRegistration
   alias DevIDE.Terminals.TmuxTopology
   alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
