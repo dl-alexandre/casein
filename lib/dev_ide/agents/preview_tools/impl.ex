@@ -144,7 +144,7 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
-    with {:ok, url} <- surface_url(workspace, surface, params),
+    with {:ok, url, preview_source} <- surface_url(workspace, surface, params),
          :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
@@ -159,6 +159,7 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
       payload =
         session_payload(result.session, navigation)
         |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:preview_source, preview_source)
         |> put_shared_registration(result.registration)
         |> Map.put(:health, health)
         |> Map.put(:visibility, operator_visibility.visibility)
@@ -185,7 +186,7 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
         |> Map.put("tmux_session", session)
         |> Map.put("runtime_required", true)
 
-      with {:ok, url} <- surface_url(workspace, surface, params),
+      with {:ok, url, preview_source} <- surface_url(workspace, surface, params),
            :ok <- ensure_unambiguous_tmux_session(workspace, params),
            {:ok, placement} <- resolve_preview_placement(session, params),
            opts <-
@@ -207,6 +208,7 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
         payload =
           session_payload(result.session, navigation)
           |> Map.put(:pane_id, result.pane_id)
+          |> Map.put(:preview_source, preview_source)
           |> put_shared_registration(result.registration)
           |> Map.put(:health, health)
           |> Map.put(:visibility, operator_visibility.visibility)
@@ -1839,7 +1841,8 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
 
     case SurfaceResolver.resolve_open_surface(prepared, surface, opts) do
       {:ok, %Surface{url: url} = resolved} when is_binary(url) ->
-        {:ok, prefer_scoped_local_server(prepared, surface, resolved).url}
+        chosen = prefer_scoped_local_server(prepared, surface, resolved)
+        {:ok, chosen.url, preview_source(chosen, resolved)}
 
       {:error, reason} ->
         {:error, reason}
@@ -1848,6 +1851,32 @@ defmodule DevIDE.Agents.PreviewTools.Impl do
         {:error, :surface_not_found}
     end
   end
+
+  # Provenance of the surface a default open landed on, so callers can tell the
+  # user which server they are actually looking at (worktree vs shared) instead
+  # of the swap being silent. `preferred` is the surface after
+  # `prefer_scoped_local_server/3`; `resolved` is what the resolver returned.
+  @doc false
+  @spec preview_source(Surface.t(), Surface.t()) :: map()
+  def preview_source(%Surface{source: :detected, name: "app", port: port}, %Surface{} = resolved) do
+    %{via: "worktree_local", port: port, overrode: resolved.url}
+  end
+
+  def preview_source(%Surface{source: :runtime, port: port}, _resolved) do
+    drop_nil(%{via: "runtime", port: port})
+  end
+
+  def preview_source(%Surface{name: "app", url: url} = surface, _resolved) do
+    if Url.localhost_url?(url),
+      do: drop_nil(%{via: "local", port: surface.port}),
+      else: %{via: "shared_manager"}
+  end
+
+  def preview_source(%Surface{name: name, port: port}, _resolved) do
+    drop_nil(%{via: "surface", surface: name, port: port})
+  end
+
+  defp drop_nil(map), do: :maps.filter(fn _k, v -> not is_nil(v) end, map)
 
   # A worktree that boots its own `mix phx.server` on an ephemeral port shows up
   # only as a low-priority terminal `localhost:PORT` surface, so a default "app"

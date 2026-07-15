@@ -131,4 +131,60 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
     assert %Surface{source: :detected, port: 41_042} =
              Impl.prefer_scoped_local_server(workspace, nil, @shared)
   end
+
+  describe "preview_source/2 provenance" do
+    test "labels a worktree-local override and records what it replaced" do
+      local = %Surface{
+        name: "app",
+        url: "http://localhost:41042/",
+        port: 41_042,
+        source: :detected
+      }
+
+      assert %{
+               via: "worktree_local",
+               port: 41_042,
+               overrode: "https://alice-feature.devbox.example.com"
+             } =
+               Impl.preview_source(local, @shared)
+    end
+
+    test "labels a runtime-provisioned server" do
+      runtime = %Surface{
+        name: "app",
+        url: "http://localhost:41055",
+        port: 41_055,
+        source: :runtime
+      }
+
+      assert %{via: "runtime", port: 41_055} == Impl.preview_source(runtime, @shared)
+    end
+
+    test "labels the shared manager URL when no override happened" do
+      assert %{via: "shared_manager"} == Impl.preview_source(@shared, @shared)
+    end
+  end
+
+  describe "real port probe (unstubbed)" do
+    test "selects a genuinely listening non-advertised port and rejects it once closed" do
+      # No prober stub: exercise the real DevIDE.Previews.PortProbe against an
+      # actual loopback listener, the same connect preview_open's preflight makes.
+      Application.delete_env(:dev_ide, :preview_surface_prober)
+
+      {:ok, listen} =
+        :gen_tcp.listen(0, [:binary, ip: {127, 0, 0, 1}, active: false, reuseaddr: true])
+
+      {:ok, port} = :inet.port(listen)
+      workspace = workspace_with_detected([port])
+
+      assert %Surface{source: :detected, port: ^port, url: url} =
+               Impl.prefer_scoped_local_server(workspace, "app", @shared)
+
+      assert url == "http://localhost:#{port}/"
+
+      :ok = :gen_tcp.close(listen)
+      # The registration outlives the server; a fresh probe must reject it.
+      assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+    end
+  end
 end
