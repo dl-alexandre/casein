@@ -71,6 +71,15 @@ defmodule DevIdeWeb.API.ArtifactMCP do
   end
 
   @impl true
+  # Meta-tools: callable here too so cross-server search/invoke work from the
+  # artifact endpoint (they are not advertised in this server's tools/list —
+  # artifact has no MCPToolSearch core — but stay always-callable).
+  def call_tool(id, %{"name" => "search_tools"} = params, _opts),
+    do: MCPToolSearch.search_result(id, Map.get(params, "arguments", %{}) || %{})
+
+  def call_tool(id, %{"name" => "invoke_tool"} = params, opts),
+    do: MCPToolSearch.route_invoke(id, Map.get(params, "arguments", %{}) || %{}, opts)
+
   def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     args = Map.get(params, "arguments", %{}) || %{}

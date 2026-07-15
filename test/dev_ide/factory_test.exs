@@ -1,5 +1,5 @@
-defmodule DevIde.FactoryTest do
-  use DevIde.DataCase, async: true
+defmodule DevIDE.FactoryTest do
+  use DevIDE.DataCase, async: true
 
   alias DevIDE.Audit.EctoAdapter, as: AuditEcto
   alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceEcto

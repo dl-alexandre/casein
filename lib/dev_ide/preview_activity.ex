@@ -34,7 +34,7 @@ defmodule DevIDE.PreviewActivity do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   @spec record(map()) :: entry()
@@ -104,7 +104,7 @@ defmodule DevIDE.PreviewActivity do
       end
 
     if is_binary(workspace_id) do
-      PubSub.broadcast(DevIde.PubSub, topic(workspace_id), {:preview_activity, entry})
+      PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:preview_activity, entry})
     end
 
     {:reply, entry, updated}

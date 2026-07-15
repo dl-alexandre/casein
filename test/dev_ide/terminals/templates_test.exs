@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.TemplatesTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Terminals.Templates
 

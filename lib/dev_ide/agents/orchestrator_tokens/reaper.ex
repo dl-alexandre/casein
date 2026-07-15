@@ -12,7 +12,7 @@ defmodule DevIDE.Agents.OrchestratorTokens.Reaper do
   import Ecto.Query
 
   alias DevIDE.Agents.OrchestratorToken
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @default_sweep_interval_ms 21_600_000
   @default_retention_seconds 2_592_000

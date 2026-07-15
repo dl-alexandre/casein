@@ -17,7 +17,7 @@ defmodule DevIDE.Agents.OrchestratorTokens do
   import Ecto.Query
 
   alias DevIDE.Agents.OrchestratorToken
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @default_ttl_seconds 60 * 60 * 24 * 30
 

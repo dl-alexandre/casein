@@ -1,12 +1,12 @@
 defmodule DevIDE.PreviewPanesTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlSession
   alias DevIDE.Previews.Preview
-  alias DevIDE.Previews.PreviewPaneRegistration
+  alias DevIDE.PreviewPanes.PreviewPaneRegistration
   alias DevIDE.Terminals.TmuxTopology
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -103,7 +103,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%9"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -343,7 +343,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%14"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -400,7 +400,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%18"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, _registration} =
              PreviewPanes.register(%{
@@ -474,7 +474,7 @@ defmodule DevIDE.PreviewPanesTest do
       File.rm_rf(artifacts_root)
     end)
 
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, _registration} =
              PreviewPanes.register(%{
@@ -518,7 +518,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%15"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -549,7 +549,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%16"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -726,7 +726,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%22"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, first} =
              PreviewPanes.register(%{

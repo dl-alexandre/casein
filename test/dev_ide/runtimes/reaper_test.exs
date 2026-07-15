@@ -1,12 +1,12 @@
 defmodule DevIDE.Runtimes.ReaperTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   import ExUnit.CaptureLog
 
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Reaper
-  alias DevIde.Supervision.PlatformServices
+  alias DevIDE.Supervision.PlatformServices
   alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State

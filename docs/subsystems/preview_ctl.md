@@ -46,7 +46,7 @@ integration; this is the reusable control core.
 
 ## Data flow / lifecycle
 
-1. **Configure adapter (boot).** `DevIde.Application.configure_preview_ctl!/0`
+1. **Configure adapter (boot).** `DevIDE.Application.configure_preview_ctl!/0`
    copies `config :dev_ide, :preview_ctl` and maps the operator atom
    `:preview_control_adapter` (`:memory` | `:playwright`) to the resolved module
    under `config :preview_ctl, :adapter`. The Playwright script path maps from

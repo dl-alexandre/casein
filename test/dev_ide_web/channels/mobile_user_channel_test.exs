@@ -11,7 +11,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias DevIdeWeb.ChannelAuth
 
   @endpoint DevIdeWeb.Endpoint

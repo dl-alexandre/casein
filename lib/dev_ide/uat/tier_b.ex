@@ -82,7 +82,7 @@ defmodule DevIDE.UAT.TierB do
   @spec run_criterion(String.t(), integer(), map(), keyword()) ::
           {atom(), atom(), Run.t()} | {:error, term()}
   def run_criterion(criterion, session_id, attrs, opts) do
-    repo = Keyword.get(opts, :repo, DevIde.Repo)
+    repo = Keyword.get(opts, :repo, DevIDE.Repo)
     {outcome, verdict} = evaluate(criterion, session_id, opts)
     {_, alert} = alert_for(outcome)
 

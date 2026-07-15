@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.DropLoopTables do
+defmodule DevIDE.Repo.Migrations.DropLoopTables do
   use Ecto.Migration
 
   # The experimental self-improving Loops subsystem (DevIDE.Loops) was removed —

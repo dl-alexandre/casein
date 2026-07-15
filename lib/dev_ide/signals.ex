@@ -6,7 +6,7 @@ defmodule DevIDE.Signals do
   `DevIDE.Audit` stamps them into event metadata; this module converts an
   audit event into its CloudEvents form.
 
-  Phase 3: `DevIDE.SignalBus` runs under `DevIde.Supervision.PlatformServices`,
+  Phase 3: `DevIDE.SignalBus` runs under `DevIDE.Supervision.PlatformServices`,
   `DevIDE.Signals.Publish` publishes envelopes from `DevIDE.Audit`'s broadcast
   path, and `DevIDE.Signals.AlertsRouter` routes alert-worthy signals to
   `DevIDE.Push.Dispatcher`.

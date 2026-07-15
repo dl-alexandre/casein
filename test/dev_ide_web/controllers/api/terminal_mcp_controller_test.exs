@@ -342,6 +342,47 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       assert "terminal_set_agent_label" in Enum.map(matches, & &1["name"])
     end
 
+    test "search_tools from the terminal endpoint finds tools on OTHER servers", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "search_tools", arguments: %{query: "take a screenshot of the page"}}
+          },
+          "ws-token"
+        )
+
+      %{"result" => %{"structuredContent" => %{"matches" => matches}}} =
+        json_response(conn, 200)
+
+      shot = Enum.find(matches, &(&1["name"] == "preview_screenshot"))
+      assert shot, "expected a cross-server preview match from the terminal endpoint"
+      assert shot["server"] == "preview"
+    end
+
+    test "invoke_tool with an unknown tool name returns a tool error", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "invoke_tool", arguments: %{name: "no_such_tool", arguments: %{}}}
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"isError" => true}} = json_response(conn, 200)
+    end
+
     test "invoke_tool runs a discovered tool through normal scope + audit", %{conn: conn} do
       Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
       Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)

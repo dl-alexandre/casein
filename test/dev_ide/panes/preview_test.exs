@@ -1,5 +1,5 @@
 defmodule DevIDE.Panes.PreviewTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Panes.Preview, as: PreviewPane
   alias DevIDE.PreviewPanes

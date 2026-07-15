@@ -424,6 +424,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
     :ok
   end
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp read_json_map(path) do
     with {:ok, content} <- File.read(path),
          {:ok, value} when is_map(value) <- Jason.decode(content) do

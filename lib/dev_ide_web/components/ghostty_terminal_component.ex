@@ -12,6 +12,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   def update(assigns, socket) do
     first_mount? = not Map.has_key?(socket.assigns, :term)
     themes_changed? = Map.get(assigns, :terminal_themes) != socket.assigns[:terminal_themes]
+
     force_full_refresh? =
       Map.get(assigns, :force_full_refresh, socket.assigns[:force_full_refresh]) == true
 
@@ -51,7 +52,8 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
           |> push_terminal_theme()
           |> maybe_push_component_render(
             force_full?:
-              first_mount? or term_changed? or force_full_refresh? or worker_render_authority?(socket),
+              first_mount? or term_changed? or force_full_refresh? or
+                worker_render_authority?(socket),
             reason:
               cond do
                 first_mount? -> :mount

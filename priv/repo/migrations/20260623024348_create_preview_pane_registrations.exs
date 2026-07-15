@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreatePreviewPaneRegistrations do
+defmodule DevIDE.Repo.Migrations.CreatePreviewPaneRegistrations do
   use Ecto.Migration
 
   def change do

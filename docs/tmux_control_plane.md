@@ -54,7 +54,7 @@ env keys on purpose:
 | `:tmux_adapter` | `:dev_ide` | `DevIDE.Terminals.Tmux`, `TmuxTopology`, LiveView, API, MCP | Product call sites; unchanged historical key |
 | `:adapter` | `:tmux_ctl` | `TmuxCtl.Topology.Watcher` fallback when `tmux_resolver` is omitted | Generic watcher default |
 
-At boot, `DevIde.Application.configure_tmux_ctl!/0` copies
+At boot, `DevIDE.Application.configure_tmux_ctl!/0` copies
 `config :dev_ide, :tmux_ctl` (runner, session prefix, PubSub, prefix-bind
 hint strings, etc.) into `config :tmux_ctl`. **Adapter selection is not
 copied** — each layer keeps its own key.

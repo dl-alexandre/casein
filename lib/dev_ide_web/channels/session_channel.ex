@@ -28,6 +28,7 @@ defmodule DevIdeWeb.SessionChannel do
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Notifications
   alias DevIDE.Push
+  alias DevIDE.Scope
   alias DevIDE.Session.Snapshot
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.State
@@ -159,7 +160,7 @@ defmodule DevIdeWeb.SessionChannel do
   defp scoped_to_topic?(socket, workspace_id) do
     case socket.assigns[:pairing_workspace_id] do
       nil -> true
-      ^workspace_id -> true
+      ^workspace_id -> Scope.authorizes_workspace?(Scope.from_socket(socket), workspace_id)
       _other -> false
     end
   end

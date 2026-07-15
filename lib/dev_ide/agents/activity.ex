@@ -31,7 +31,7 @@ defmodule DevIDE.Agents.Activity do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIde.PubSub, topic(workspace_id))
+    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
   end
 
   @spec recent(String.t(), pos_integer()) :: [entry()]
@@ -77,7 +77,7 @@ defmodule DevIDE.Agents.Activity do
       end
 
     if is_binary(workspace_id) do
-      PubSub.broadcast(DevIde.PubSub, topic(workspace_id), {:agent_mcp_activity, entry})
+      PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:agent_mcp_activity, entry})
     end
 
     {:reply, entry, updated}

@@ -4,7 +4,7 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
   @behaviour DevIDE.Workspaces.State.Adapter
 
   alias DevIDE.Workspaces.State.WorkspaceRecord
-  alias DevIde.Repo
+  alias DevIDE.Repo
   import Ecto.Query
 
   defmodule Row do
@@ -103,9 +103,18 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
   end
 
   @impl true
-  def list do
+  def list, do: list(load_all: true)
+
+  @doc "List workspace records with optional status filtering and a defensive limit."
+  @spec list(keyword()) :: [WorkspaceRecord.t()]
+  def list(opts) when is_list(opts) do
+    limit = opts |> Keyword.get(:limit, 200) |> clamp_limit()
+
     Row
+    |> maybe_filter_status(Keyword.get(opts, :status))
+    |> maybe_exclude_status(Keyword.get(opts, :exclude_status))
     |> order_by([r], asc: r.name)
+    |> maybe_limit(limit, Keyword.get(opts, :load_all, false))
     |> Repo.all()
     |> Enum.map(&to_record/1)
   end
@@ -146,4 +155,20 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
       updated_at: r.updated_at
     }
   end
+
+  defp maybe_filter_status(query, status) when is_binary(status),
+    do: where(query, [r], r.status == ^status)
+
+  defp maybe_filter_status(query, _status), do: query
+
+  defp maybe_exclude_status(query, status) when is_binary(status),
+    do: where(query, [r], is_nil(r.status) or r.status != ^status)
+
+  defp maybe_exclude_status(query, _status), do: query
+
+  defp maybe_limit(query, _limit, true), do: query
+  defp maybe_limit(query, limit, false), do: limit(query, ^limit)
+
+  defp clamp_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(1_000)
+  defp clamp_limit(_limit), do: 200
 end

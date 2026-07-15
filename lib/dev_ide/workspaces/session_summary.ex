@@ -39,7 +39,18 @@ defmodule DevIDE.Workspaces.SessionSummary do
     build(ws, [])
   end
 
+  @doc "Build a summary using an already-loaded runtime slice."
+  @spec build(map(), [DevIDE.Runtimes.Runtime.t()], keyword()) :: summary()
+  def build(ws, runtimes, opts) when is_map(ws) and is_list(runtimes) and is_list(opts) do
+    do_build(ws, runtimes, opts)
+  end
+
   defp build(ws, opts) when is_map(ws) do
+    id = workspace_id(ws)
+    do_build(ws, Runtimes.list_runtimes(%{"workspace_id" => id}), opts)
+  end
+
+  defp do_build(ws, runtimes, opts) do
     id = workspace_id(ws)
     name = workspace_name(ws)
     path = Map.get(ws, :path) || Map.get(ws, :host_path)
@@ -49,8 +60,6 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
     session_links =
       Enum.map(sessions, &session_link(ws, &1, preview_pane_ids, agent_activity_by_session))
-
-    runtimes = Runtimes.list_runtimes(%{"workspace_id" => id})
 
     live? = worktree_live?(sessions, runtimes, Keyword.get(opts, :live_tmux_names, :all))
 
@@ -78,10 +87,14 @@ defmodule DevIDE.Workspaces.SessionSummary do
     tmux_sessions = SessionDirectory.list_tmux_sessions()
     directory_inventory = SessionDirectory.directory_inventory()
     live_tmux_names = live_tmux_name_set(tmux_sessions)
+    workspace_ids = Enum.map(workspaces, &workspace_id/1)
+    runtimes_by_workspace = Runtimes.list_runtimes_by_workspace_ids(workspace_ids)
 
     workspaces
     |> Task.async_stream(
-      &build(&1,
+      &build(
+        &1,
+        Map.get(runtimes_by_workspace, workspace_id(&1), []),
         tmux_sessions: tmux_sessions,
         directory_inventory: directory_inventory,
         live_tmux_names: live_tmux_names

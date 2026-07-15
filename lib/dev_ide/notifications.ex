@@ -14,7 +14,7 @@ defmodule DevIDE.Notifications do
   alias DevIDE.Alerts
   alias DevIDE.Notifications.Notification
   alias DevIDE.Notifications.Preference
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @topic_prefix "notifications:user:"
   @default_limit 50
@@ -27,7 +27,7 @@ defmodule DevIDE.Notifications do
   @doc "Subscribe to durable notification changes for one user."
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(user_id) when is_binary(user_id) do
-    Phoenix.PubSub.subscribe(DevIde.PubSub, topic(user_id))
+    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(user_id))
   end
 
   @spec topic(String.t()) :: String.t()
@@ -225,7 +225,7 @@ defmodule DevIDE.Notifications do
 
     if count > 0 do
       Phoenix.PubSub.broadcast(
-        DevIde.PubSub,
+        DevIDE.PubSub,
         topic(user_id),
         {:notification_updated, :mark_all_read}
       )
@@ -340,7 +340,7 @@ defmodule DevIDE.Notifications do
   defp maybe_open_only(query, _), do: query
 
   defp broadcast(%Notification{user_id: user_id}, message) when is_binary(user_id) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, topic(user_id), message)
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(user_id), message)
   end
 
   defp emit_delivery(%Notification{} = notification, operation) do

@@ -10,12 +10,11 @@ defmodule DevIdeWeb.PreviewProxyController do
 
   ## Security
 
-  The upstream host is hard-coded to `127.0.0.1` and the port is validated
-  against `DevIDE.Previews.port_allowed?/2` (common dev ports, workspace
-  metadata ports, and already-detected ports). Combined with the
-  owner/admin authorization gate, the only thing this endpoint can reach is a
-  loopback port the requesting user is already allowed to preview — it is not a
-  general-purpose forward proxy.
+  The upstream host is hard-coded to `127.0.0.1` and the port is restricted to
+  ports declared or detected for the workspace, plus explicitly registered
+  preview ports. Common dev ports are not implicitly trusted here. Combined
+  with the owner/admin authorization gate, this prevents one workspace from
+  reaching a peer's loopback service through the proxy.
 
   ## Scope
 
@@ -102,7 +101,8 @@ defmodule DevIdeWeb.PreviewProxyController do
   end
 
   defp port_allowed?(port, workspace_id, workspace) do
-    Previews.port_allowed?(port, workspace) or registered_preview_port?(workspace_id, port)
+    Previews.workspace_owned_port?(port, workspace) or
+      registered_preview_port?(workspace_id, port)
   end
 
   defp registered_preview_port?(workspace_id, port) do

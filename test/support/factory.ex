@@ -1,4 +1,4 @@
-defmodule DevIde.Factory do
+defmodule DevIDE.Factory do
   @moduledoc """
   Shared ExMachina factories for Ecto-backed domain rows.
 
@@ -10,7 +10,7 @@ defmodule DevIde.Factory do
     top_level?: true,
     check: [in: false, out: false]
 
-  use ExMachina.Ecto, repo: DevIde.Repo
+  use ExMachina.Ecto, repo: DevIDE.Repo
 
   alias DevIDE.Audit.EctoAdapter, as: AuditEcto
   alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceEcto

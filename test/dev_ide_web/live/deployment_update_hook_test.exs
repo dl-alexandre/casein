@@ -74,7 +74,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     assert :sys.get_state(view.pid).socket.assigns.update_available == false
 
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:update_available, "v2", 3})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:update_available, "v2", 3})
 
     assert has_element?(view, "#notifications-bell-__scratch__-dot")
     assert :sys.get_state(view.pid).socket.assigns.update_available == true
@@ -225,7 +225,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
        %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:deploy_reconnect})
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_reconnect})
 
     assert_push_event(view, "devide:deploy_reconnect", %{})
   end

@@ -22,14 +22,14 @@ defmodule DevIDE.FilePanes do
 
   import Ecto.Query
 
-  alias DevIDE.Files.FilePaneRegistration
+  alias DevIDE.FilePanes.FilePaneRegistration
   alias DevIDE.Files.PathSafety
   alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
-  alias DevIde.Repo
+  alias DevIDE.Repo
 
   @table :dev_ide_file_panes
   @topology_tag DevIDE.Terminals.TmuxTopology

@@ -1,10 +1,11 @@
-defmodule DevIde.Application do
+defmodule DevIDE.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
 
   use Boundary,
-    deps: [DevIDE, DevIde.Repo, DevIdeWeb],
+    top_level?: true,
+    deps: [DevIDE, DevIDE.Repo, DevIdeWeb],
     exports: []
 
   use Application
@@ -32,23 +33,23 @@ defmodule DevIde.Application do
     children =
       [
         DevIdeWeb.Telemetry,
-        DevIde.Repo,
+        DevIDE.Repo,
         {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: DevIde.PubSub},
-        DevIde.Supervision.PlatformServices,
-        DevIde.Supervision.StateStores,
-        DevIde.Supervision.Terminals,
-        DevIde.Supervision.Commands,
-        DevIde.Supervision.Agents,
-        DevIde.Supervision.Previews,
+        {Phoenix.PubSub, name: DevIDE.PubSub},
+        DevIDE.Supervision.PlatformServices,
+        DevIDE.Supervision.StateStores,
+        DevIDE.Supervision.Terminals,
+        DevIDE.Supervision.Commands,
+        DevIDE.Supervision.Agents,
+        DevIDE.Supervision.Previews,
         PreviewCtl.Playwright.Bridge,
-        DevIde.Supervision.Deployment,
+        DevIDE.Supervision.Deployment,
         DevIdeWeb.Endpoint
       ] ++ preview_tidewave_listener() ++ desktop_status()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: DevIde.Supervisor]
+    opts = [strategy: :one_for_one, name: DevIDE.Supervisor]
     res = Supervisor.start_link(children, opts)
     _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
 

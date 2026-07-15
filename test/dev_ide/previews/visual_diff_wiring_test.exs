@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.VisualDiffWiringTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Previews.Control, as: PreviewControl

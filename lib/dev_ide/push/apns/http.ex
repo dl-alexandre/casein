@@ -27,7 +27,7 @@ defmodule DevIDE.Push.APNS.ReqClient do
   @behaviour DevIDE.Push.APNS.HTTP
 
   # The HTTP/2 Finch pool this client routes through is started in the
-  # supervision tree (`DevIde.Supervision.PlatformServices`) so the connection
+  # supervision tree (`DevIDE.Supervision.PlatformServices`) so the connection
   # is warm before the first push.
   @finch DevIDE.Push.APNS.Finch
   @max_attempts 5

@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreatePreviewControlTables do
+defmodule DevIDE.Repo.Migrations.CreatePreviewControlTables do
   use Ecto.Migration
 
   def change do

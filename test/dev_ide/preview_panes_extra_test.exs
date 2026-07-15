@@ -1,9 +1,9 @@
 defmodule DevIDE.PreviewPanesExtraTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlSession
-  alias DevIde.Repo
+  alias DevIDE.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 

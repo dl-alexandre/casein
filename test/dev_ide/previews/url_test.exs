@@ -42,6 +42,15 @@ defmodule DevIDE.Previews.UrlTest do
     refute Url.port_allowed?(9999, ws)
   end
 
+  test "common dev ports are allowed for agent control but not treated as workspace-owned" do
+    ws = %{metadata: %{ports: %{"app" => 8765}, detected_ports: [9876]}}
+
+    assert Url.port_allowed?(4000, ws)
+    refute Url.workspace_owned_port?(4000, ws)
+    assert Url.workspace_owned_port?(8765, ws)
+    assert Url.workspace_owned_port?(9876, ws)
+  end
+
   test "within_origin? rejects navigation outside allowed origins" do
     origins = Url.allowed_origins(@v3_workspace)
     base = "https://alice-feature.devbox.example.com"

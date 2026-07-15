@@ -24,7 +24,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
     case Process.whereis(@name) do
       nil ->
         case Supervisor.start_child(
-               DevIde.Supervisor,
+               DevIDE.Supervisor,
                {__MODULE__, cwd: cwd, workspace: workspace}
              ) do
           {:ok, _pid} -> :ok

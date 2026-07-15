@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.ChangePreviewWorkspaceIdToString do
+defmodule DevIDE.Repo.Migrations.ChangePreviewWorkspaceIdToString do
   use Ecto.Migration
 
   def up do

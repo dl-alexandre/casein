@@ -73,14 +73,14 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
   end
 
   defp broadcast(workspace_id, message) do
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "preview:" <> workspace_id, message)
+    Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, message)
   end
 
   # Preview lifecycle rides the generic DevIDE.Panes.Events channel since the
   # preview runtime cutover; observations stay on the legacy "preview:" topic.
   defp broadcast_pane_event(workspace_id, reason, pane_id, payload) do
     Phoenix.PubSub.broadcast(
-      DevIde.PubSub,
+      DevIDE.PubSub,
       DevIDE.Panes.Events.topic(workspace_id),
       {:pane_event,
        %{

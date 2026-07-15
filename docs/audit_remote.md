@@ -165,7 +165,7 @@ Shipped:
 - [`lib/dev_ide/release.ex`](../lib/dev_ide/release.ex) — provides
   `migrate/0` / `rollback/2` for invocation via release `eval`.
 - [`rel/overlays/bin/migrate`](../rel/overlays/bin/migrate) — shell
-  wrapper that runs `bin/dev_ide eval "DevIde.Release.migrate()"`.
+  wrapper that runs `bin/dev_ide eval "DevIDE.Release.migrate()"`.
   Migrations are explicit, not at server boot, so a CD pipeline can run
   one migrate pod before rolling the server pool.
 - [`config/runtime.exs`](../config/runtime.exs) — hardened. Fails loudly

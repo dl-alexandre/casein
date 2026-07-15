@@ -1,4 +1,4 @@
-defmodule DevIde.Repo.Migrations.CreateSavedTemplates do
+defmodule DevIDE.Repo.Migrations.CreateSavedTemplates do
   use Ecto.Migration
 
   def up do

@@ -19,6 +19,8 @@ defmodule DevIDE.Runtimes.Reaper do
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
+  @git_timeout_ms 10_000
+
   @default_sweep_interval_ms 3_600_000
 
   def start_link(opts \\ []) do
@@ -33,7 +35,7 @@ defmodule DevIDE.Runtimes.Reaper do
   @impl true
   def init(_opts) do
     Logger.info(
-      "[runtime-reaper] supervised under DevIde.Supervision.PlatformServices " <>
+      "[runtime-reaper] supervised under DevIDE.Supervision.PlatformServices " <>
         "enabled=#{enabled?()} dry_run=#{dry_run?()}"
     )
 
@@ -224,9 +226,7 @@ defmodule DevIDE.Runtimes.Reaper do
        when is_binary(path) and path != "" do
     with {:ok, %WorkspaceRecord{host_path: root}} <- State.get(workspace_id),
          true <- is_binary(root) and root != "" do
-      case System.cmd("git", ["-C", root, "worktree", "remove", "--force", path],
-             stderr_to_stdout: true
-           ) do
+      case git_worktree_remove(root, path) do
         {_, 0} ->
           :ok
 
@@ -247,6 +247,21 @@ defmodule DevIDE.Runtimes.Reaper do
   end
 
   defp teardown_worktree(_runtime), do: :ok
+
+  defp git_worktree_remove(root, path) do
+    task =
+      Task.async(fn ->
+        System.cmd("git", ["-C", root, "worktree", "remove", "--force", path],
+          stderr_to_stdout: true
+        )
+      end)
+
+    case Task.yield(task, @git_timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      nil -> {"timed out after #{@git_timeout_ms}ms", 124}
+      {:exit, reason} -> {"command exited: #{inspect(reason)}", 125}
+    end
+  end
 
   defp teardown_preview_server(%Runtime{metadata: metadata}) do
     case PreviewServer.for_metadata(metadata || %{}) do

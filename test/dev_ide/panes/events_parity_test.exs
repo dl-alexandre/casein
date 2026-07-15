@@ -4,7 +4,7 @@ defmodule DevIDE.Panes.EventsParityTest do
   # DevIDE.Panes.Events event with an equivalent payload, so the web layer can
   # switch its preview state maintenance from the legacy topic to the generic
   # one without losing a channel.
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   alias DevIDE.Panes
   alias DevIDE.Panes.Events
@@ -75,7 +75,7 @@ defmodule DevIDE.Panes.EventsParityTest do
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
 
-    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
     [_ | _] = Events.subscribe(workspace_id)
 
     assert {:ok, registration} =

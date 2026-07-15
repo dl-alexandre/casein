@@ -11,7 +11,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, DevIde.Repo,
+  config :dev_ide, DevIDE.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
@@ -23,7 +23,7 @@ if sqlite_repo? do
     pool_size: 1,
     busy_timeout: 5_000
 else
-  config :dev_ide, DevIde.Repo,
+  config :dev_ide, DevIDE.Repo,
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
@@ -112,7 +112,7 @@ config :dev_ide,
        )
 
 # In test we don't send emails
-config :dev_ide, DevIde.Mailer, adapter: Swoosh.Adapters.Test
+config :dev_ide, DevIDE.Mailer, adapter: Swoosh.Adapters.Test
 
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false

@@ -1,5 +1,5 @@
 defmodule DevIDE.CommandPalette.UsageTest do
-  use DevIde.DataCase, async: true
+  use DevIDE.DataCase, async: true
 
   alias DevIDE.CommandPalette.Usage
 

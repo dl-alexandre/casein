@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
-  use DevIde.DataCase, async: false
+  use DevIDE.DataCase, async: false
 
   # Unit coverage for the generic "pane:input" dispatch of FilePaneEvents:
   # authorization (unknown pane / other-workspace pane), the Policy.can_edit_file?
