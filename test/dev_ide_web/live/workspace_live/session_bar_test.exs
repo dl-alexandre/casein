@@ -689,6 +689,79 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
   end
 
   describe "sessions_sidebar/1 focus + quiet chrome" do
+    test "groups flat single-session workspaces without replacing workspace tiers" do
+      blocked =
+        SessionBarVM.session_tabs([
+          agent_info("blocked", "tmux-blocked")
+          |> Map.put(:metadata, %{windows: [%{id: "@1", agent_state: :blocked}]})
+        ])
+
+      tree = [
+        %{
+          id: "ws-1",
+          dom_id: "sidebar-ws-ws-1",
+          workspace_id: "ws-1",
+          label: "alpha",
+          detail: "",
+          title: "alpha",
+          current?: true,
+          live?: true,
+          group: :this,
+          session_count: 1,
+          expanded?: false,
+          flat_session?: true,
+          session: blocked |> hd() |> Map.put(:workspace_id, "ws-1"),
+          sessions: nil
+        }
+      ]
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_blocked",
+          session_tabs: blocked
+        )
+
+      assert html =~ "Needs you"
+      assert html =~ ~s(data-picker-group="needs_you")
+      assert html =~ ~s(id="active_sessions-agent_blocked")
+    end
+
+    test "groups existing picker rows into Needs You, Working, and Recent" do
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("blocked", "tmux-blocked")
+          |> Map.put(:metadata, %{windows: [%{id: "@1", agent_state: :blocked}]}),
+          agent_info("working", "tmux-working")
+          |> Map.put(:metadata, %{windows: [%{id: "@2", agent_state: :working}]}),
+          agent_info("shell", "tmux-shell")
+        ])
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 3, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_blocked",
+          default_sid: "agent_blocked",
+          session_tabs: tabs
+        )
+
+      assert html =~ "Needs you"
+      assert html =~ "Working"
+      assert html =~ "Recent"
+      assert html =~ ~s(data-picker-group="needs_you")
+    end
+
     test "renders focus mode control and quiet badge from session tabs" do
       tabs =
         SessionBarVM.session_tabs([

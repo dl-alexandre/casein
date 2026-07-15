@@ -18,6 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.PaneState
   alias DevIDE.Workspaces.Scratch
+  alias DevIDE.Terminals.SessionDirectory.Attention
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceRoutes
 
@@ -485,6 +486,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
     %{live: Enum.count(workspace_nodes, & &1.live?), total: length(workspace_nodes)}
   end
+
+  @doc "Stable-partitions session rows for attention-first rendering."
+  @spec session_attention_groups([map()]) :: [{Attention.section(), [map()]}]
+  def session_attention_groups(sessions) when is_list(sessions) do
+    grouped = Attention.group(sessions)
+
+    for section <- [:needs_you, :working, :recent],
+        rows = Map.fetch!(grouped, section),
+        rows != [],
+        do: {section, rows}
+  end
+
+  @doc "Stable-partitions workspace tree nodes by their strongest contained session state."
+  @spec node_attention_groups([map()]) :: [{Attention.section(), [map()]}]
+  def node_attention_groups(nodes) when is_list(nodes) do
+    grouped = Enum.group_by(nodes, &node_attention_section/1)
+
+    for section <- [:needs_you, :working, :recent],
+        rows = Map.get(grouped, section, []),
+        rows != [],
+        do: {section, rows}
+  end
+
+  defp node_attention_section(node) do
+    sessions =
+      cond do
+        is_map(Map.get(node, :session)) -> [Map.fetch!(node, :session)]
+        is_list(Map.get(node, :sessions)) -> Map.fetch!(node, :sessions)
+        true -> []
+      end
+
+    sessions
+    |> Enum.map(&Attention.classify(&1).section)
+    |> Enum.min_by(&attention_rank/1, fn -> :recent end)
+  end
+
+  defp attention_rank(:needs_you), do: 0
+  defp attention_rank(:working), do: 1
+  defp attention_rank(:recent), do: 2
 
   @doc """
   Top-of-tree SESSIONS node for the workspaceless scratch terminal.
