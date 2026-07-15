@@ -99,6 +99,7 @@ defmodule DevIdeWeb.Router do
 
   pipeline :device_link_api do
     plug :accepts, ["json"]
+    plug DevIdeWeb.Plugs.DeviceLinkRateLimit
   end
 
   pipeline :mcp_api do
