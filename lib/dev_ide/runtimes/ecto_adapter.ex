@@ -70,9 +70,13 @@ defmodule DevIDE.Runtimes.EctoAdapter do
 
   @impl true
   def list_runtimes(filters) do
+    filters = filters || %{}
+    limit = filters |> Map.get("limit", 500) |> clamp_limit()
+
     RuntimeRow
-    |> filter(filters || %{})
+    |> filter(Map.delete(filters, "limit"))
     |> order_by([r], asc: r.created_at)
+    |> limit(^limit)
     |> Repo.all()
     |> Enum.map(&to_runtime/1)
   end
@@ -131,6 +135,9 @@ defmodule DevIDE.Runtimes.EctoAdapter do
       _, query -> query
     end)
   end
+
+  defp clamp_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(1_000)
+  defp clamp_limit(_limit), do: 500
 
   defp runtime_attrs(%Runtime{} = runtime) do
     %{

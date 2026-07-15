@@ -71,15 +71,20 @@ defmodule DevIDE.Terminals.Templates do
   @spec list_for_workspace(String.t(), keyword()) :: [saved()]
   def list_for_workspace(workspace_id, opts \\ []) when is_binary(workspace_id) do
     tags = Keyword.get(opts, :tags)
+    limit = opts |> Keyword.get(:limit, 200) |> clamp_limit()
 
     Row
     |> where([r], r.workspace_id == ^workspace_id)
     |> maybe_filter_tags(tags)
     |> order_by([r], desc: r.inserted_at)
+    |> limit(^limit)
     |> Repo.all()
     |> maybe_filter_tag_rows(tags)
     |> Enum.map(&to_map/1)
   end
+
+  defp clamp_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(1_000)
+  defp clamp_limit(_limit), do: 200
 
   @spec get(String.t(), String.t()) :: {:ok, saved()} | {:error, :not_found}
   def get(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do

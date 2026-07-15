@@ -80,10 +80,18 @@ defmodule DevIDE.Audit.EctoAdapter do
   end
 
   @impl true
-  def list_by_correlation(correlation_id) when is_binary(correlation_id) do
+  def list_by_correlation(correlation_id) when is_binary(correlation_id),
+    do: list_by_correlation(correlation_id, [])
+
+  @spec list_by_correlation(String.t(), keyword()) :: [Event.t()]
+  def list_by_correlation(correlation_id, opts)
+      when is_binary(correlation_id) and is_list(opts) do
+    limit = opts |> Keyword.get(:limit, 500) |> clamp_limit()
+
     Row
     |> where([r], fragment("? ->> 'correlation_id' = ?", r.metadata, ^correlation_id))
     |> order_by([r], asc: r.inserted_at)
+    |> limit(^limit)
     |> Repo.all()
     |> Enum.map(&to_event/1)
   end
@@ -105,6 +113,9 @@ defmodule DevIDE.Audit.EctoAdapter do
 
     escaped <> "%"
   end
+
+  defp clamp_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(1_000)
+  defp clamp_limit(_limit), do: 500
 
   ## Mappers
 
