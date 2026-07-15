@@ -303,19 +303,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
             data-active-window={window.active? || nil}
             data-window-leader-key={window_leader_key(@windows, window, tab_idx)}
-            class={
-              [
-                "group relative flex min-w-24 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
-                # A lone window has nothing to pick between — cap it so it doesn't
-                # stretch across the whole strip. With 2+, flex-1 fills the row.
-                length(@windows) == 1 && "max-w-64",
-                if(window.active?,
-                  do: "border-primary bg-base-100 text-base-content shadow-sm",
-                  else:
-                    "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
-                )
-              ]
-            }
+            class={[
+              "group relative flex min-w-24 max-w-64 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+              if(window.active?,
+                do: "border-primary bg-base-100 text-base-content shadow-sm",
+                else:
+                  "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
+              )
+            ]}
           >
             <.window_index_badge
               window={window}

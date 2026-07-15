@@ -899,6 +899,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       # the active tab is marked so the hook can center it.
       assert html =~ ~s(phx-hook="WindowTabStrip")
       assert html =~ "data-tab-scroller"
+
+      assert html =~
+               ~s(class="tab-strip-scroller flex min-w-0 flex-1 items-center gap-1 overflow-x-auto")
+
       assert html =~ "data-active-window"
       assert html =~ ~s(data-tmux-window-index="0")
       assert html =~ ~s(data-tmux-window-index="1")
@@ -1061,7 +1065,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
   end
 
   describe "window_tabs/1 space efficiency" do
-    test "omits the running command and caps a lone window; 2+ fill the strip" do
+    test "omits the running command and keeps every tab compact" do
       one = SessionBarVM.window_tabs([window(%{current_command: "claude_exe"})])
 
       one_html =
@@ -1072,8 +1076,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       refute one_html =~ "claude_exe", "the current command must not steal tab width"
-      refute one_html =~ "max-w-80", "the old width cap that left empty space is gone"
-      assert one_html =~ "max-w-64", "a lone window is capped, not stretched"
+      one_classes = one_html |> element_class("tmux-window--1") |> String.split()
+      assert "min-w-24" in one_classes
+      assert "max-w-64" in one_classes
+      assert "shrink-0" in one_classes
+      refute "flex-1" in one_classes, "a lone window must not stretch across the strip"
 
       two =
         SessionBarVM.window_tabs([
@@ -1088,8 +1095,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           mutations_allowed?: false
         )
 
-      refute two_html =~ "max-w-64", "with 2+ windows the tabs flex-fill (no cap)"
-      assert two_html =~ "flex-1"
+      for dom_id <- ["tmux-window--1", "tmux-window--2"] do
+        tab_classes = two_html |> element_class(dom_id) |> String.split()
+        assert "max-w-64" in tab_classes
+        assert "shrink-0" in tab_classes
+
+        refute "flex-1" in tab_classes,
+               "multiple windows must size to content, not split the row"
+      end
     end
   end
 
