@@ -2148,9 +2148,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_summaries_for(workspace) do
-    WorkspaceStateAdapter.list(exclude_status: "stale", limit: 200)
+    list_sidebar_workspace_records()
     |> ensure_current_workspace_record(workspace)
     |> SessionSummary.build_many()
+  end
+
+  defp list_sidebar_workspace_records do
+    adapter =
+      Application.get_env(
+        :dev_ide,
+        :workspace_state_adapter,
+        WorkspaceStateAdapter
+      )
+
+    if function_exported?(adapter, :list, 1) do
+      adapter.list(exclude_status: "stale", limit: 200)
+    else
+      adapter.list()
+      |> Enum.reject(&(Map.get(&1, :status) == "stale"))
+      |> Enum.take(200)
+    end
   end
 
   # Sessions rail: flat peer model — every authenticated viewer sees every
