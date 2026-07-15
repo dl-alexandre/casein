@@ -152,8 +152,10 @@ defmodule DevIDE.Agents.PreviewToolsMoreTest do
   end
 
   test "preview_open mode localhost opens an allowed dev-server port" do
+    workspace = put_in(@v3_workspace, [:metadata, :ports, "dev"], 5173)
+
     assert {:ok, %{current_url: url, pane_id: pane_id}} =
-             PreviewTools.invoke("preview_open", @v3_workspace, %{
+             PreviewTools.invoke("preview_open", workspace, %{
                "mode" => "localhost",
                "port" => 5173,
                "path" => "/index.html",
