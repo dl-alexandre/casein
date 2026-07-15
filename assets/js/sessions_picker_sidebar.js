@@ -29,6 +29,36 @@ export const SessionsPickerSidebar = {
     this.el.removeEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
   },
 
+  // A LiveView patch (expand/collapse, sort, or a background activity update)
+  // can remove the row that holds keyboard focus, dropping focus to <body> —
+  // after which arrow keys scroll the page instead of moving the selection.
+  // Record focus intent before the patch, restore it after if the patch
+  // orphaned it. Scoped to *this* patch so background re-renders never yank
+  // focus away from the terminal.
+  beforeUpdate() {
+    this._refocus = this.el.contains(document.activeElement)
+    this._refocusId = this._refocus
+      ? document.activeElement.closest("[data-picker-item]")?.id || null
+      : null
+  },
+
+  updated() {
+    if (!this._refocus) return
+    this._refocus = false
+    if (this.el.contains(document.activeElement)) return // morphdom preserved it
+    const ae = document.activeElement
+    if (ae && ae !== document.body) return // focus legitimately moved (e.g. terminal)
+    this._restoreFocus()
+  },
+
+  _restoreFocus() {
+    const items = this.visibleItems()
+    if (items.length === 0) return
+    const byId = this._refocusId && items.find((el) => el.id === this._refocusId)
+    const active = items.find((el) => el.hasAttribute("data-picker-active"))
+    ;(byId || active || items[0]).focus({preventScroll: true})
+  },
+
   handleClick(e) {
     const item = e.target?.closest?.("a[data-picker-item][href][phx-click], a[data-picker-item][href][data-phx-link]")
     if (!item || !this.el.contains(item)) return
@@ -86,6 +116,25 @@ export const SessionsPickerSidebar = {
         e.preventDefault()
         if (e.key === "o") this.openCurrentInNewTab()
         else this.copyCurrentLink()
+        break
+      case "Tab":
+        // Cycle the sort chip: Tab forward, Shift+Tab back. This overrides
+        // native focus traversal inside the rail — Escape is the documented
+        // way out — which is the tradeoff we chose for a one-key sort toggle.
+        e.preventDefault()
+        this.pushEvent("sidebar:cycle_sessions_sort", {dir: e.shiftKey ? "backward" : "forward"})
+        break
+      case " ":
+        // Space always focuses the terminal while navigating rows; it only
+        // extends the filter mid-search (so multi-word session names work).
+        if (this._filter === "") {
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+        } else {
+          e.preventDefault()
+          this._filter += " "
+          this.applyFilter()
+        }
         break
       default:
         if (

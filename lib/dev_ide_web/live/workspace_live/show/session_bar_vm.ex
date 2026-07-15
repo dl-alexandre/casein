@@ -304,12 +304,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp to_string_or_nil(nil), do: nil
   defp to_string_or_nil(value), do: to_string(value)
 
-  @doc "Cycles sidebar sort mode: recency → name → liveness → recency."
+  @doc """
+  Cycles sidebar sort mode. Forward (Tab): recency → name → liveness → recency.
+  Backward (Shift+Tab) reverses it.
+  """
   @spec cycle_sort_mode(atom()) :: atom()
-  def cycle_sort_mode(:recency), do: :name
-  def cycle_sort_mode(:name), do: :liveness
-  def cycle_sort_mode(:liveness), do: :recency
-  def cycle_sort_mode(_), do: :name
+  def cycle_sort_mode(mode), do: cycle_sort_mode(mode, :forward)
+
+  @spec cycle_sort_mode(atom(), :forward | :backward) :: atom()
+  def cycle_sort_mode(:recency, :forward), do: :name
+  def cycle_sort_mode(:name, :forward), do: :liveness
+  def cycle_sort_mode(:liveness, :forward), do: :recency
+  def cycle_sort_mode(_, :forward), do: :name
+  def cycle_sort_mode(:recency, :backward), do: :liveness
+  def cycle_sort_mode(:liveness, :backward), do: :name
+  def cycle_sort_mode(:name, :backward), do: :recency
+  def cycle_sort_mode(_, :backward), do: :liveness
 
   @spec sort_mode_label(atom()) :: String.t()
   def sort_mode_label(:recency), do: "Recent"

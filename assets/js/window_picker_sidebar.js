@@ -30,6 +30,33 @@ export const WindowPickerSidebar = {
     this.el.removeEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
   },
 
+  // See SessionsPickerSidebar: keep keyboard focus inside the rail across a
+  // LiveView patch so arrow keys never fall through to the page (which would
+  // scroll it) after the focused row is re-rendered.
+  beforeUpdate() {
+    this._refocus = this.el.contains(document.activeElement)
+    this._refocusId = this._refocus
+      ? document.activeElement.closest("[data-picker-item]")?.id || null
+      : null
+  },
+
+  updated() {
+    if (!this._refocus) return
+    this._refocus = false
+    if (this.el.contains(document.activeElement)) return // morphdom preserved it
+    const ae = document.activeElement
+    if (ae && ae !== document.body) return // focus legitimately moved (e.g. terminal)
+    this._restoreFocus()
+  },
+
+  _restoreFocus() {
+    const items = this.visibleItems()
+    if (items.length === 0) return
+    const byId = this._refocusId && items.find((el) => el.id === this._refocusId)
+    const active = items.find((el) => el.hasAttribute("data-picker-active"))
+    ;(byId || active || items[0]).focus({preventScroll: true})
+  },
+
   handleClick(e) {
     const item = e.target?.closest?.("a[data-picker-item][href][phx-click]")
     if (!item || !this.el.contains(item)) return
@@ -95,6 +122,24 @@ export const WindowPickerSidebar = {
       case "&":
         e.preventDefault()
         this.killCurrentWindow()
+        break
+      case "Tab":
+        // Cycle the Windows sort chip: Tab forward, Shift+Tab back. Overrides
+        // native focus traversal inside the rail — Escape is the way out.
+        e.preventDefault()
+        this.pushEvent("sidebar:cycle_windows_sort", {dir: e.shiftKey ? "backward" : "forward"})
+        break
+      case " ":
+        // Space always focuses the terminal while navigating; only extends the
+        // filter mid-search (multi-word window names).
+        if (this._filter === "") {
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+        } else {
+          e.preventDefault()
+          this._filter += " "
+          this.applyFilter()
+        }
         break
       default:
         if (

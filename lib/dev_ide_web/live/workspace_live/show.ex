@@ -777,12 +777,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, Sidebar.toggle_window(socket, window_id)}
   end
 
-  def handle_event("sidebar:cycle_sessions_sort", _params, socket) do
-    {:noreply, Sidebar.cycle_sessions_sort(socket)}
+  def handle_event("sidebar:cycle_sessions_sort", params, socket) do
+    {:noreply, Sidebar.cycle_sessions_sort(socket, sort_direction(params))}
   end
 
-  def handle_event("sidebar:cycle_windows_sort", _params, socket) do
-    {:noreply, Sidebar.cycle_windows_sort(socket)}
+  def handle_event("sidebar:cycle_windows_sort", params, socket) do
+    {:noreply, Sidebar.cycle_windows_sort(socket, sort_direction(params))}
   end
 
   # Client restores the persisted sort mode when a rail hook mounts (localStorage).
@@ -3755,6 +3755,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # `{:exit_status, n}`) — those are intentional pane ends and are covered by
   # WorkspacePaneSplitTest. SessionOwner reattaches the backend on term_exit
   # without tearing the PaneWorker when possible.
+  # Tab cycles the sidebar sort chip forward; Shift+Tab (dir: "backward")
+  # reverses it. The header sort button click carries no dir → forward.
+  defp sort_direction(%{"dir" => "backward"}), do: :backward
+  defp sort_direction(_), do: :forward
+
   defp recoverable_pane_exit?(reason)
        when reason in [
               :pty_died,
