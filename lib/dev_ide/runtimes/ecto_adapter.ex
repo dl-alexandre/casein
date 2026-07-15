@@ -77,6 +77,17 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     |> Enum.map(&to_runtime/1)
   end
 
+  @impl true
+  def list_runtimes_by_workspace_ids([]), do: []
+
+  def list_runtimes_by_workspace_ids(workspace_ids) when is_list(workspace_ids) do
+    RuntimeRow
+    |> where([r], r.workspace_id in ^workspace_ids)
+    |> order_by([r], asc: r.created_at)
+    |> Repo.all()
+    |> Enum.map(&to_runtime/1)
+  end
+
   # NOTE (audit #5): intentionally unbounded. Replay/export need the full
   # lifecycle history and per-runtime event counts stay small in practice
   # (dozens, low hundreds on long-lived canaries). If this ever exceeds ~500 in
