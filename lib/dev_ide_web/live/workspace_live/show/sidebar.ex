@@ -144,18 +144,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
 
   @sort_modes [:recency, :name, :liveness]
 
-  @spec cycle_sessions_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def cycle_sessions_sort(socket),
+  @spec cycle_sessions_sort(Phoenix.LiveView.Socket.t(), :forward | :backward) ::
+          Phoenix.LiveView.Socket.t()
+  def cycle_sessions_sort(socket, direction \\ :forward),
     do:
       set_sessions_sort(
         socket,
-        SessionBarVM.cycle_sort_mode(socket.assigns.sessions_sidebar_sort)
+        SessionBarVM.cycle_sort_mode(socket.assigns.sessions_sidebar_sort, direction)
       )
 
-  @spec cycle_windows_sort(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
-  def cycle_windows_sort(socket),
+  @spec cycle_windows_sort(Phoenix.LiveView.Socket.t(), :forward | :backward) ::
+          Phoenix.LiveView.Socket.t()
+  def cycle_windows_sort(socket, direction \\ :forward),
     do:
-      set_windows_sort(socket, SessionBarVM.cycle_sort_mode(socket.assigns.windows_sidebar_sort))
+      set_windows_sort(
+        socket,
+        SessionBarVM.cycle_sort_mode(socket.assigns.windows_sidebar_sort, direction)
+      )
 
   @doc "Set the SESSIONS sort mode, rebuild the tree, and (by default) persist it client-side."
   @spec set_sessions_sort(Phoenix.LiveView.Socket.t(), atom(), keyword()) ::
