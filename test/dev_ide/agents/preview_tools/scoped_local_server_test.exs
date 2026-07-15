@@ -3,7 +3,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
   # (:preview_prefer_scoped_local_server, :preview_surface_prober).
   use DevIDE.TestCase, async: false
 
-  alias DevIDE.Agents.PreviewTools.Impl
+  alias DevIDE.Agents.PreviewTools.SurfaceDiscovery
   alias DevIDE.Previews.Surface
 
   # v3 workspace advertising service ports app/tidewave/api. A default "app"
@@ -58,7 +58,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
     workspace = workspace_with_detected([41_042])
 
     assert %Surface{source: :detected, port: 41_042, url: url} =
-             Impl.prefer_scoped_local_server(workspace, "app", @shared)
+             SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared)
 
     assert url == "http://localhost:41042/"
   end
@@ -70,28 +70,28 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
     workspace = workspace_with_detected([10_100, 41_080, 41_042])
 
     assert %Surface{source: :detected, port: 41_042} =
-             Impl.prefer_scoped_local_server(workspace, "app", @shared)
+             SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared)
   end
 
   test "keeps the shared URL when only advertised ports are detected" do
     stub_prober([10_100])
     workspace = workspace_with_detected([10_100])
 
-    assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared) == @shared
   end
 
   test "keeps the shared URL when two or more live candidates are ambiguous" do
     stub_prober([41_042, 41_043])
     workspace = workspace_with_detected([41_042, 41_043])
 
-    assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared) == @shared
   end
 
   test "keeps the shared URL when the single candidate is not live" do
     stub_prober([])
     workspace = workspace_with_detected([41_042])
 
-    assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared) == @shared
   end
 
   test "is a no-op when the preference flag is disabled" do
@@ -99,7 +99,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
     stub_prober([41_042])
     workspace = workspace_with_detected([41_042])
 
-    assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared) == @shared
   end
 
   test "leaves a runtime-provisioned surface untouched" do
@@ -114,14 +114,15 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
       runtime_id: "rt-1"
     }
 
-    assert Impl.prefer_scoped_local_server(workspace, "app", runtime) == runtime
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", runtime) == runtime
   end
 
   test "only overrides the default app request, not a named surface" do
     stub_prober([41_042])
     workspace = workspace_with_detected([41_042])
 
-    assert Impl.prefer_scoped_local_server(workspace, "localhost:5000", @shared) == @shared
+    assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "localhost:5000", @shared) ==
+             @shared
   end
 
   test "treats a nil request as the default app request" do
@@ -129,7 +130,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
     workspace = workspace_with_detected([41_042])
 
     assert %Surface{source: :detected, port: 41_042} =
-             Impl.prefer_scoped_local_server(workspace, nil, @shared)
+             SurfaceDiscovery.prefer_scoped_local_server(workspace, nil, @shared)
   end
 
   describe "preview_source/2 provenance" do
@@ -146,7 +147,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
                port: 41_042,
                overrode: "https://alice-feature.devbox.example.com"
              } =
-               Impl.preview_source(local, @shared)
+               SurfaceDiscovery.preview_source(local, @shared)
     end
 
     test "labels a runtime-provisioned server" do
@@ -157,11 +158,11 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
         source: :runtime
       }
 
-      assert %{via: "runtime", port: 41_055} == Impl.preview_source(runtime, @shared)
+      assert %{via: "runtime", port: 41_055} == SurfaceDiscovery.preview_source(runtime, @shared)
     end
 
     test "labels the shared manager URL when no override happened" do
-      assert %{via: "shared_manager"} == Impl.preview_source(@shared, @shared)
+      assert %{via: "shared_manager"} == SurfaceDiscovery.preview_source(@shared, @shared)
     end
   end
 
@@ -178,13 +179,13 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
       workspace = workspace_with_detected([port])
 
       assert %Surface{source: :detected, port: ^port, url: url} =
-               Impl.prefer_scoped_local_server(workspace, "app", @shared)
+               SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared)
 
       assert url == "http://localhost:#{port}/"
 
       :ok = :gen_tcp.close(listen)
       # The registration outlives the server; a fresh probe must reject it.
-      assert Impl.prefer_scoped_local_server(workspace, "app", @shared) == @shared
+      assert SurfaceDiscovery.prefer_scoped_local_server(workspace, "app", @shared) == @shared
     end
   end
 end
