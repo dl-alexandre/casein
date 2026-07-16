@@ -80,6 +80,7 @@ defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
 
     assert_receive {:grok_acp_attachment_transport_started, pid, opts}
     assert opts[:leader_socket] == leader_socket
+    assert opts[:leader_mode] == :attach
     assert opts[:plugin_dirs] == [ctx.bundle_dir]
     assert opts[:session_id] == session_id
 

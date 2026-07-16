@@ -2,9 +2,11 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
   @moduledoc """
   Bidirectional ACP transport through Grok's supported stdio bridge.
 
-  A dedicated leader is started first with auto-update disabled. The bridge
-  then attaches through `grok agent --leader stdio`, leaving Grok responsible
-  for its private IPC registration, framing, keepalives, and reconnect logic.
+  The bridge attaches through `grok agent --leader stdio`, leaving Grok
+  responsible for its private IPC registration, framing, keepalives, and
+  reconnect logic. Standalone callers may ask the transport to start a leader;
+  production hook attachments use `leader_mode: :attach` because the managed
+  launcher already owns and supervises the trusted leader process group.
   stdout remains protocol-only; stderr is delivered separately to the owner.
   """
 
@@ -57,7 +59,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
          {:ok, cwd} <- resolve_cwd(opts),
          {:ok, socket_path} <- resolve_socket_path(opts),
          :ok <- ensure_socket_parent(socket_path),
-         {:ok, leader} <- spawn_leader(executable, cwd, socket_path),
+         {:ok, leader} <- prepare_leader(executable, cwd, socket_path, opts),
          :ok <- await_socket(socket_path, leader, opts),
          {:ok, bridge} <- spawn_bridge(executable, cwd, socket_path) do
       send(caller, {:grok_acp_transport_started, ref, :ok})
@@ -65,6 +67,14 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
     else
       {:error, reason} ->
         send(caller, {:grok_acp_transport_started, ref, {:error, reason}})
+    end
+  end
+
+  defp prepare_leader(executable, cwd, socket_path, opts) when is_list(opts) do
+    case Keyword.get(opts, :leader_mode, :start) do
+      :attach -> {:ok, nil}
+      :start -> spawn_leader(executable, cwd, socket_path)
+      _other -> {:error, :invalid_leader_mode}
     end
   end
 
@@ -185,6 +195,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
 
       {:DOWN, ospid, :process, exec_pid, reason}
       when ospid == bridge.ospid and exec_pid == bridge.exec_pid ->
+        stop_process(leader)
         send(owner, {:grok_acp_transport, :exit, {:bridge_exit, exit_code(reason)}})
 
       {:DOWN, ospid, :process, exec_pid, _reason}
@@ -195,9 +206,11 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
 
       :stop ->
         stop_process(bridge)
+        stop_process(leader)
 
       {:EXIT, ^owner, _reason} ->
         stop_process(bridge)
+        stop_process(leader)
 
       _other ->
         transport_loop(owner, ref, leader, bridge)

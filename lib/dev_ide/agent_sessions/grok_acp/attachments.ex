@@ -219,6 +219,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
         attachment_key: observation.attachment_key,
         session_id: observation.session_id,
         leader_socket: observation.leader_socket,
+        leader_mode: :attach,
         plugin_dirs: [observation.bundle_dir],
         status_listener: self()
       ]
