@@ -345,9 +345,14 @@ launch_agent() {
   agent_env_stamp_pane_pairing 1 ""
   agent_env_export_runtime_paths
 
-  local launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
+  # Keep the shim and launcher on the same installed revision. Pairing env can
+  # legitimately outlive a checkout update (or point at a user's dirty branch),
+  # so preferring DEVIDE_SCRIPTS here can silently route a freshly-installed
+  # shim back through stale launch policy. Only fall back to the paired scripts
+  # tree when this CLI is itself a standalone copy without a sibling launcher.
+  local launcher="${DEVIDE_ROOT}/scripts/launch-devide-agent.sh"
   if [[ ! -f "$launcher" ]]; then
-    launcher="${DEVIDE_ROOT}/scripts/launch-devide-agent.sh"
+    launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
   fi
 
   case "$runtime" in

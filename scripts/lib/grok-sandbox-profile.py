@@ -17,7 +17,8 @@ NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 def main() -> int:
     if len(sys.argv) < 5 or sys.argv[1] != "install":
         print(
-            "usage: grok-sandbox-profile.py install <name> <read-only|strict> <deny>...",
+            "usage: grok-sandbox-profile.py install <name> <read-only|strict> "
+            "[--read-only=<path>] [--read-write=<path>] <deny>...",
             file=sys.stderr,
         )
         return 2
@@ -31,7 +32,30 @@ def main() -> int:
     path = home / "sandbox.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    deny = sorted({value for value in sys.argv[4:] if value})
+    values = [value for value in sys.argv[4:] if value]
+    read_write = sorted(
+        {
+            value.removeprefix("--read-write=")
+            for value in values
+            if value.startswith("--read-write=")
+            and value.removeprefix("--read-write=")
+        }
+    )
+    read_only = sorted(
+        {
+            value.removeprefix("--read-only=")
+            for value in values
+            if value.startswith("--read-only=")
+            and value.removeprefix("--read-only=")
+        }
+    )
+    deny = sorted(
+        {
+            value
+            for value in values
+            if not value.startswith(("--read-only=", "--read-write="))
+        }
+    )
     if not deny:
         print("error: managed Grok sandbox requires a deny set", file=sys.stderr)
         return 2
@@ -44,13 +68,14 @@ def main() -> int:
     )
     existing = block_re.sub("", existing).rstrip()
     encoded = ", ".join(json.dumps(value) for value in deny)
-    block = (
-        f"{begin}\n"
-        f"[profiles.{name}]\n"
-        f'extends = "{base}"\n'
-        f"deny = [{encoded}]\n"
-        f"{end}\n"
-    )
+    encoded_read_only = ", ".join(json.dumps(value) for value in read_only)
+    encoded_read_write = ", ".join(json.dumps(value) for value in read_write)
+    block = f'{begin}\n[profiles.{name}]\nextends = "{base}"\n'
+    if read_only:
+        block += f"read_only = [{encoded_read_only}]\n"
+    if read_write:
+        block += f"read_write = [{encoded_read_write}]\n"
+    block += f"deny = [{encoded}]\n{end}\n"
     content = (existing + "\n\n" if existing else "") + block
 
     fd, tmp_name = tempfile.mkstemp(prefix=".sandbox.toml.", dir=path.parent)

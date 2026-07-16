@@ -11,15 +11,33 @@ defmodule DevIDE.Agents.Transcripts.Grok do
   @spec allowed_path?(String.t()) :: boolean()
   def allowed_path?(path) when is_binary(path) do
     expanded = Path.expand(path)
-    root = sessions_root()
+    root = matching_sessions_root(expanded)
 
-    Path.basename(expanded) == "updates.jsonl" and
+    is_binary(root) and
+      Path.basename(expanded) == "updates.jsonl" and
       expanded != root and
       String.starts_with?(expanded, root <> "/") and
       no_symlink_components?(expanded)
   end
 
   def allowed_path?(_path), do: false
+
+  @doc false
+  @spec allowed_pending_path?(String.t()) :: boolean()
+  def allowed_pending_path?(path) when is_binary(path) do
+    expanded = Path.expand(path)
+    root = matching_sessions_root(expanded)
+
+    expected_location? =
+      is_binary(root) and
+        Path.basename(expanded) == "updates.jsonl" and
+        expanded != root and
+        String.starts_with?(expanded, root <> "/")
+
+    expected_location? and pending_path_components_safe?(expanded)
+  end
+
+  def allowed_pending_path?(_path), do: false
 
   @doc """
   Parse Grok's append-only ACP update stream into normalized transcript entries.
@@ -552,9 +570,37 @@ defmodule DevIDE.Agents.Transcripts.Grok do
     end
   end
 
-  defp sessions_root do
+  defp global_sessions_root do
     home = System.get_env("HOME") || "/home/devbox"
     Path.expand(Path.join([home, ".grok", "sessions"]))
+  end
+
+  defp matching_sessions_root(path) do
+    global = global_sessions_root()
+
+    cond do
+      path != global and String.starts_with?(path, global <> "/") ->
+        global
+
+      true ->
+        managed_sessions_root(path)
+    end
+  end
+
+  defp managed_sessions_root(path) do
+    home = Path.expand(System.get_env("HOME") || "/home/devbox")
+    base = Path.join([home, ".devide", "grok-homes"])
+    relative = Path.relative_to(path, base)
+
+    case Path.split(relative) do
+      [leader_id, "sessions" | rest] when rest != [] ->
+        if Regex.match?(~r/\A[0-9a-f]{24}\z/, leader_id) do
+          Path.join([base, leader_id, "sessions"])
+        end
+
+      _other ->
+        nil
+    end
   end
 
   defp no_symlink_components?(path) do
@@ -574,6 +620,14 @@ defmodule DevIDE.Agents.Transcripts.Grok do
           {:error, _reason} -> false
         end
       end)
+    end
+  end
+
+  defp pending_path_components_safe?(path) do
+    case File.lstat(path) do
+      {:ok, %{type: :regular}} -> no_symlink_components?(path)
+      {:error, :enoent} -> no_symlink_components?(Path.dirname(path))
+      _other -> false
     end
   end
 end

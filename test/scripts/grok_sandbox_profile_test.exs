@@ -22,6 +22,8 @@ defmodule Scripts.GrokSandboxProfileTest do
 
     assert {"managed-profile\n", 0} =
              install(grok_home, "managed-profile", "strict", [
+               "--read-only=/home/dev/.devide/grok-bundles/digest",
+               "--read-write=/tmp/devide-leader",
                "/home/dev/.ssh",
                "/tmp/leader.capability"
              ])
@@ -30,6 +32,8 @@ defmodule Scripts.GrokSandboxProfileTest do
     assert first =~ "[profiles.user]"
     assert first =~ "[profiles.managed-profile]"
     assert first =~ ~s(extends = "strict")
+    assert first =~ ~s(read_only = ["/home/dev/.devide/grok-bundles/digest"])
+    assert first =~ ~s(read_write = ["/tmp/devide-leader"])
     assert first =~ ~s("/home/dev/.ssh")
     assert first =~ ~s("/tmp/leader.capability")
     assert {:ok, stat} = File.stat(config)

@@ -471,7 +471,9 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
   defp valid_cwd(_cwd), do: nil
 
   defp valid_transcript(path) when is_binary(path) do
-    if DevIDE.Agents.Transcripts.Grok.allowed_path?(path), do: Path.expand(path), else: nil
+    if DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(path),
+      do: Path.expand(path),
+      else: nil
   end
 
   defp valid_transcript(_path), do: nil

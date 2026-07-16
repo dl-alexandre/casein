@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c '[ -x \"${HOME}/.grok/hooks/devide-agent-state.sh\" ] || exit 0; exec \"${HOME}/.grok/hooks/devide-agent-state.sh\"'",
+            "command": "sh -c '[ -x \"${DEVIDE_GROK_BOOTSTRAP_HOOK}\" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND \"${DEVIDE_GROK_BOOTSTRAP_HOOK}\"'",
             "timeout": 5
           }
         ]

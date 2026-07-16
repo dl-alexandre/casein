@@ -3,6 +3,7 @@ defmodule Scripts.AgentDoctorTest do
 
   @script Path.expand("../../scripts/lib/agent-doctor.sh", __DIR__)
   @bundle_script Path.expand("../../scripts/lib/grok-capability-bundle.py", __DIR__)
+  @leader_runtime Path.expand("../../scripts/lib/grok-leader-runtime.py", __DIR__)
   @runtimes ~w(grok claude codex opencode agent devide)
 
   setup do
@@ -98,6 +99,7 @@ defmodule Scripts.AgentDoctorTest do
           {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
           {"DEVIDE_GROK_LEADER_ROOT", leader.root},
           {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
+          {"DEVIDE_GROK_PROVIDER_AUTH_MODE", "api-key"},
           {"DEV_IDE_API_TOKEN", "never-print-this-token"}
         ]
       )
@@ -105,6 +107,7 @@ defmodule Scripts.AgentDoctorTest do
     refute File.exists?(Path.join(cwd, ".mcp.json"))
     assert output =~ "Grok capability bundle verified (digest sha256-#{bundle.digest})"
     assert output =~ "Grok private leader socket is active and healthy"
+    assert output =~ "Grok managed provider auth is durable"
     assert output =~ "Grok inspect resolved version 0.2.93"
     assert output =~ "standalone Grok inspect does not expose 3 session-scoped"
 
@@ -115,6 +118,35 @@ defmodule Scripts.AgentDoctorTest do
     assert output =~ "fail=0"
     refute output =~ "never-print-this-token"
     refute output =~ "global Grok config"
+  end
+
+  test "managed Grok diagnostics report isolated renewable OAuth without exposing credentials",
+       %{home: home, cwd: cwd} do
+    bundle = build_bundle!(home)
+    leader = listen_unix_socket!(home)
+
+    install_mock_grok(
+      home,
+      Jason.encode!(%{"grokVersion" => "0.2.93", "cwd" => cwd, "mcpServers" => []})
+    )
+
+    {output, 0} =
+      run_function(
+        home,
+        cwd,
+        "check_grok_runtime",
+        [
+          {"DEVIDE_AGENT_LAUNCH_CONTEXT", "grok"},
+          {"DEVIDE_GROK_BUNDLE_ROOT", bundle.root},
+          {"DEVIDE_GROK_BUNDLE_DIR", bundle.dir},
+          {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
+          {"DEVIDE_GROK_LEADER_ROOT", leader.root},
+          {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
+          {"DEVIDE_GROK_PROVIDER_AUTH_MODE", "oauth-inline-refresh"}
+        ]
+      )
+
+    assert output =~ "isolated refreshable OAuth (in-memory renewal)"
   end
 
   test "Grok diagnostics distinguish a plain shell from a broken managed launch", %{
@@ -234,14 +266,63 @@ defmodule Scripts.AgentDoctorTest do
   end
 
   defp listen_unix_socket!(home) do
-    root = Path.join(home, ".devide/grok-leaders")
-    socket = Path.join(root, String.duplicate("a", 24) <> ".sock")
+    base = Path.join(home, ".devide/grok-leaders")
+    root = Path.join(base, String.duplicate("a", 24))
+    socket = Path.join(root, "leader.sock")
+    metadata = Path.join(root, ".devide-launcher")
+    log = Path.join(base, "fake-leader.log")
+    server = Path.join(base, "fake-leader.py")
     File.mkdir_p!(root)
+    File.chmod!(base, 0o700)
     File.chmod!(root, 0o700)
-    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false, ifaddr: {:local, socket}])
-    :ok = :gen_tcp.close(listener)
 
+    File.write!(server, """
+    import json, socket, struct, sys
+    server = socket.socket(socket.AF_UNIX)
+    server.bind(sys.argv[1])
+    server.listen(8)
+    while True:
+        client, _ = server.accept()
+        try:
+            header = client.recv(4)
+            if len(header) != 4:
+                continue
+            size = struct.unpack(">I", header)[0]
+            data = b""
+            while len(data) < size:
+                data += client.recv(size - len(data))
+            assert json.loads(data)["type"] == "register"
+            payload = json.dumps({"type": "registered", "ready": True}).encode()
+            client.sendall(struct.pack(">I", len(payload)) + payload)
+            disconnect_size = struct.unpack(">I", client.recv(4))[0]
+            client.recv(disconnect_size)
+        finally:
+            client.close()
+    """)
+
+    assert {output, 0} =
+             System.cmd(
+               "python3",
+               [@leader_runtime, "spawn", metadata, log, "python3", server, socket],
+               stderr_to_stdout: true
+             )
+
+    pid = output |> String.trim() |> String.to_integer()
+    on_exit(fn -> System.cmd("kill", ["-KILL", "--", "-#{pid}"], stderr_to_stdout: true) end)
+
+    assert Enum.any?(1..100, fn _attempt -> leader_probe_healthy?(socket, pid) end)
     %{root: root, socket: socket}
+  end
+
+  defp leader_probe_healthy?(socket, pid) do
+    match?(
+      {_, 0},
+      System.cmd(
+        "python3",
+        [@leader_runtime, "probe", socket, Integer.to_string(pid), "1"],
+        stderr_to_stdout: true
+      )
+    )
   end
 
   defp install_mock_shims(home) do

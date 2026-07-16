@@ -53,7 +53,23 @@ shift
 export DEVIDE_AGENT_LAUNCH_CONTEXT="$RUNTIME"
 
 agent_env_resolve
+
+if [[ "$RUNTIME" == "grok" ]]; then
+  agent_env_bind_current_checkout
+  if ! agent_env_bind_current_tmux_session; then
+    echo "error: managed Grok launch requires an exact current tmux session" >&2
+    exit 1
+  fi
+fi
+
 agent_worktree_ensure "$RUNTIME" "${DEVIDE_AGENT_TASK:-adhoc}"
+
+# Token-bearing launcher scratch files live under a path every managed Grok
+# sandbox denies wholesale. Same-UID mode bits alone do not isolate concurrent
+# agent processes from secrets staged in the system temp directory.
+DEVIDE_LAUNCHER_SECRET_DIR="${HOME}/.devide/agent-mcp/.launcher-tmp"
+mkdir -p "$DEVIDE_LAUNCHER_SECRET_DIR"
+chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
 
 warn_degraded_step() {
   local label="$1"
@@ -65,10 +81,16 @@ warn_degraded_step() {
   fi
 }
 
+grok_debug() {
+  if [[ "${DEVIDE_GROK_DEBUG:-0}" == "1" ]]; then
+    printf 'devide-grok-debug: %s\n' "$*" >&2
+  fi
+}
+
 run_materialize_export() {
   local out err exports detail
-  out="$(mktemp)"
-  err="$(mktemp)"
+  out="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/materialize.out.XXXXXX")"
+  err="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/materialize.err.XXXXXX")"
 
   if bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"$out" 2>"$err"; then
     exports="$(<"$out")"
@@ -312,16 +334,30 @@ grok_install_state_hook() {
   local hooks_dir="${GROK_HOME:-${HOME}/.grok}/hooks"
   local dst="${hooks_dir}/devide-agent-state.json"
   local script_src="${ROOT}/scripts/devide-agent-state.sh"
-  local script_dst="${hooks_dir}/devide-agent-state.sh"
+  local trusted_dir="${HOME}/.devide/grok-bootstrap-hooks"
+  local script_dst="${trusted_dir}/devide-agent-state.sh"
+  local tmp
   [[ -f "$src" ]] || return 0
+  mkdir -p "$trusted_dir" 2>/dev/null || return 0
+  chmod 700 "$trusted_dir" 2>/dev/null || return 0
   mkdir -p "$hooks_dir" 2>/dev/null || return 0
   if ! cmp -s "$src" "$dst" 2>/dev/null; then
     cp "$src" "$dst" 2>/dev/null || true
   fi
   if [[ -f "$script_src" ]] && ! cmp -s "$script_src" "$script_dst" 2>/dev/null; then
-    cp "$script_src" "$script_dst" 2>/dev/null || true
-    chmod 700 "$script_dst" 2>/dev/null || true
+    tmp="$(mktemp "${trusted_dir}/.devide-agent-state.XXXXXX")"
+    cp "$script_src" "$tmp"
+    chmod 500 "$tmp"
+    mv -f "$tmp" "$script_dst"
   fi
+  export DEVIDE_GROK_BOOTSTRAP_HOOK="$script_dst"
+}
+
+grok_bind_state_hook_path() {
+  local trusted_dir="${HOME}/.devide/grok-bootstrap-hooks"
+  mkdir -p "$trusted_dir"
+  chmod 700 "$trusted_dir"
+  export DEVIDE_GROK_BOOTSTRAP_HOOK="${trusted_dir}/devide-agent-state.sh"
 }
 
 grok_validate_managed_context() {
@@ -344,7 +380,9 @@ grok_validate_managed_context() {
   socket_real="$(realpath -m "$socket")"
   root_real="$(realpath -m "$root")"
   if [[ "$(dirname "$socket_real")" != "$root_real" ]] ||
-     [[ ! "$(basename "$socket_real")" =~ ^[0-9a-f]{24}\.sock$ ]]; then
+     [[ "$(basename "$socket_real")" != "leader.sock" ]] ||
+     [[ ! "$(basename "$root_real")" =~ ^[0-9a-f]{24}$ ]] ||
+     [[ -L "$root" ]]; then
     echo "error: refusing Grok leader socket outside the private leader root" >&2
     return 1
   fi
@@ -389,7 +427,7 @@ PY
 
 grok_current_capability() {
   local token="$1" base="$2" response parsed
-  response="$(mktemp)"
+  response="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-current.XXXXXX")"
   if ! curl --max-time 5 -fsS -o "$response" \
       -H "authorization: Bearer ${token}" \
       "${base}/api/agent-capabilities/current" 2>/dev/null; then
@@ -414,7 +452,7 @@ expected = {
     "runtime": "grok",
     "tmux_session_id": os.environ["DEVIDE_TMUX_SESSION"],
     "pane_id": os.environ["TMUX_PANE"],
-    "leader_id": os.path.basename(os.environ["DEVIDE_GROK_LEADER_SOCKET"]).removesuffix(".sock"),
+    "leader_id": os.path.basename(os.path.dirname(os.environ["DEVIDE_GROK_LEADER_SOCKET"])),
     "bundle_digest": os.environ["DEVIDE_GROK_BUNDLE_DIGEST"],
     "checkout_digest": hashlib.sha256(checkout.encode()).hexdigest(),
 }
@@ -432,7 +470,7 @@ PY
 
 grok_issue_capability() {
   local bootstrap_token="$1" base="$2" response request parsed
-  response="$(mktemp)"
+  response="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-issue.XXXXXX")"
   request="$(
     DEVIDE_WORKSPACE_ID="$DEVIDE_WORKSPACE_ID" \
       DEVIDE_TMUX_SESSION="$DEVIDE_TMUX_SESSION" \
@@ -446,7 +484,7 @@ checkout = os.path.realpath(os.environ["DEVIDE_CHECKOUT"])
 print(json.dumps({
     "tmux_session_id": os.environ["DEVIDE_TMUX_SESSION"],
     "pane_id": os.environ["TMUX_PANE"],
-    "leader_id": os.path.basename(os.environ["DEVIDE_GROK_LEADER_SOCKET"]).removesuffix(".sock"),
+    "leader_id": os.path.basename(os.path.dirname(os.environ["DEVIDE_GROK_LEADER_SOCKET"])),
     "bundle_digest": os.environ["DEVIDE_GROK_BUNDLE_DIGEST"],
     "checkout_digest": hashlib.sha256(checkout.encode()).hexdigest(),
 }))
@@ -466,20 +504,99 @@ PY
   printf '%s\n' "$parsed"
 }
 
+grok_prepare_managed_home() {
+  local socket="$1" grok_bin="$2" reuse="${3:-false}"
+  local leader_id managed_root managed_home provider_auth home_action
+  leader_id="$(basename "$(dirname "$socket")")"
+  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.devide/grok-homes}"
+  home_action="prepare"
+  [[ "$reuse" == "true" ]] && home_action="resolve"
+
+  managed_home="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" "$home_action" \
+    "$managed_root" "$leader_id")" || {
+    echo "error: failed to prepare the isolated managed Grok home" >&2
+    return 1
+  }
+  if [[ -n "${DEVIDE_GROK_XAI_API_KEY:-}" ]]; then
+    export XAI_API_KEY="$DEVIDE_GROK_XAI_API_KEY"
+    unset GROK_AUTH GROK_AUTH_PATH GROK_AUTH_PROVIDER_COMMAND
+    export DEVIDE_GROK_PROVIDER_AUTH_MODE="api-key"
+  elif ! provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json \
+      2>/dev/null)"; then
+    # Refresh persistent OAuth only in this trusted launcher process when the
+    # selected credential is near expiry. The managed process receives one
+    # refreshable credential through Grok's read-only GROK_AUTH seam; neither
+    # the host auth store nor the managed auth sentinel is model-readable.
+    if command -v timeout >/dev/null 2>&1; then
+      env -u GROK_HOME -u GROK_AUTH -u GROK_AUTH_PATH \
+        -u GROK_AUTH_PROVIDER_COMMAND -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY \
+        -u DEV_IDE_API_TOKEN -u DEV_IDE_ADMIN_API_TOKEN \
+        -u DEV_IDE_WORKSPACE_API_TOKENS \
+        timeout --kill-after=2 30 "$grok_bin" --no-auto-update models \
+        >/dev/null 2>&1 || true
+    fi
+    provider_auth="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" auth-json)" || {
+      echo "error: managed Grok could not obtain refreshable OAuth with at least ten minutes remaining; set DEVIDE_GROK_XAI_API_KEY for dedicated API-key auth" >&2
+      return 1
+    }
+    export GROK_AUTH="$provider_auth"
+    unset XAI_API_KEY GROK_CODE_XAI_API_KEY
+    export DEVIDE_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
+  else
+    export GROK_AUTH="$provider_auth"
+    unset XAI_API_KEY GROK_CODE_XAI_API_KEY
+    export DEVIDE_GROK_PROVIDER_AUTH_MODE="oauth-inline-refresh"
+  fi
+
+  export GROK_HOME="$managed_home"
+  export GROK_SUBAGENTS=0
+  unset DEVIDE_GROK_XAI_API_KEY
+}
+
+grok_reset_managed_home() {
+  local socket="$1" leader_id managed_root reset_home
+  leader_id="$(basename "$(dirname "$socket")")"
+  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.devide/grok-homes}"
+  reset_home="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" prepare \
+    "$managed_root" "$leader_id")" || return 1
+  [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
+}
+
 grok_install_sandbox_profile() {
   local profile="$1" base="$2" capability_file="$3"
-  local grok_sandbox_file="${GROK_HOME:-${HOME}/.grok}/sandbox.toml"
   local tmux_dir="${TMUX%%,*}"
   local bootstrap_file="${DEVIDE_AGENT_BOOTSTRAP_FILE:-}"
+  local sensitive_env
+  local -a sensitive_agent_envs=()
 
+  # Grok expands deny globs by walking from their static prefix. Broad globs
+  # rooted at /data/workspaces can exceed its 200k-entry safety limit before
+  # the leader creates its socket. Resolve the small set of real token files
+  # up front and give the sandbox exact paths instead.
+  if [[ -d /data/workspaces ]]; then
+    while IFS= read -r -d '' sensitive_env; do
+      sensitive_agent_envs+=("$sensitive_env")
+    done < <(
+      find /data/workspaces -xdev -maxdepth 4 -type f -name .devbox-agent.env \
+        -print0 2>/dev/null
+    )
+  fi
+
+  # The leader receives only the current provider access key through its
+  # environment. Persistent OAuth/refresh credentials remain outside the
+  # managed home and are kernel-denied to Grok and every model-authored tool.
   python3 "${ROOT}/scripts/lib/grok-sandbox-profile.py" install "$profile" "$base" \
+    "--read-only=${DEVIDE_GROK_BUNDLE_DIR}" \
+    "--read-only=$(dirname "$DEVIDE_GROK_BOOTSTRAP_HOOK")" \
+    "--read-write=${DEVIDE_GROK_LEADER_ROOT}" \
     "$capability_file" \
-    "$(dirname "$capability_file")/*.capability" \
-    "$grok_sandbox_file" \
-    "${DEVIDE_AGENT_MCP_HOME:-}" \
+    "${DEVIDE_GROK_LEADER_ROOT}/.devide-launcher" \
+    "${DEVIDE_GROK_LEADER_ROOT}/.devide-runtime" \
+    "${DEVIDE_GROK_LEADER_LOG}" \
     "$bootstrap_file" \
     "${HOME}/.devide/agent-mcp" \
-    "${HOME}/.devide/grok-leaders/*.capability" \
+    "${HOME}/.devide/grok-launcher-secrets" \
+    "${HOME}/.devide/grok-leaders/*/capability" \
     "${HOME}/.devide/workspace-api-tokens.json" \
     "${HOME}/.devide/agent-auth" \
     "${HOME}/.ssh" \
@@ -501,16 +618,84 @@ grok_install_sandbox_profile() {
     "${HOME}/.npmrc" \
     "${HOME}/.pypirc" \
     "${HOME}/.grok/auth.json" \
+    "${GROK_HOME}/auth.json" \
     "${HOME}/.grok/mcp_credentials.json" \
     "/etc/devide/devide.env" \
     "$tmux_dir" \
-    "/proc/*/environ" \
-    "/data/workspaces/*/.devbox-agent.env" \
-    "/data/workspaces/*/*/.devbox-agent.env" >/dev/null
+    "/proc" \
+    "${sensitive_agent_envs[@]}" >/dev/null
+}
+
+grok_private_leader_ready() {
+  local socket="$1" timeout_seconds="${2:-2}" metadata leader_pid
+  metadata="$(dirname "$socket")/.devide-launcher"
+  [[ -S "$socket" ]] || return 1
+  leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata" \
+    2>/dev/null)" || return 1
+  [[ "$leader_pid" =~ ^[0-9]+$ ]] || return 1
+  python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" probe "$socket" "$leader_pid" "$timeout_seconds" \
+    >/dev/null 2>&1
+}
+
+grok_stop_private_leader() {
+  local socket="$1" leader_dir metadata runtime_file native_lock leader_pid
+  local _attempt
+  leader_dir="$(dirname "$socket")"
+  metadata="${leader_dir}/.devide-launcher"
+  runtime_file="${leader_dir}/.devide-runtime"
+  native_lock="${leader_dir}/leader.lock"
+
+  if [[ ! -e "$metadata" ]]; then
+    if python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" probe "$socket" 0 1 \
+        >/dev/null 2>&1; then
+      echo "error: refusing to stop a live Grok leader without trusted launcher metadata" >&2
+      return 1
+    fi
+    rm -f "$socket" "$native_lock" "$runtime_file"
+    return 0
+  fi
+
+  if ! leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity \
+      "$metadata" 2>/dev/null)"; then
+    if read -r leader_pid _starttime <"$metadata" 2>/dev/null &&
+       [[ "$leader_pid" =~ ^[0-9]+$ ]] && kill -0 "$leader_pid" 2>/dev/null; then
+      echo "error: refusing to signal a process that does not match trusted Grok metadata" >&2
+      return 1
+    fi
+    rm -f "$socket" "$native_lock" "$runtime_file" "$metadata"
+    return 0
+  fi
+
+  kill -TERM -- "-${leader_pid}" 2>/dev/null || true
+  for _attempt in $(seq 1 60); do
+    if ! python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" group-live "$leader_pid" \
+        >/dev/null 2>&1; then
+      break
+    fi
+    sleep 0.05
+  done
+  if python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" group-live "$leader_pid" \
+      >/dev/null 2>&1; then
+    kill -KILL -- "-${leader_pid}" 2>/dev/null || true
+    for _attempt in $(seq 1 40); do
+      if ! python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" group-live "$leader_pid" \
+          >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.05
+    done
+  fi
+  if python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" group-live "$leader_pid" \
+      >/dev/null 2>&1; then
+    echo "error: managed Grok leader process group did not terminate" >&2
+    return 1
+  fi
+
+  rm -f "$socket" "$native_lock" "$runtime_file" "$metadata"
 }
 
 grok_configure_capability() {
-  local grok_bin="$1" base bootstrap_token socket leader_id capability_file
+  local base bootstrap_token socket leader_id capability_file
   local parsed token capability_id write_enabled profile sandbox_base tmp
   base="$(grok_capability_api_base)" || {
     echo "error: managed Grok capability issuer URL is unavailable" >&2
@@ -518,24 +703,25 @@ grok_configure_capability() {
   }
   bootstrap_token="${DEV_IDE_API_TOKEN:-}"
   socket="$(realpath -m "$DEVIDE_GROK_LEADER_SOCKET")"
-  leader_id="$(basename "$socket" .sock)"
-  capability_file="$(dirname "$socket")/${leader_id}.capability"
+  leader_id="$(basename "$(dirname "$socket")")"
+  capability_file="$(dirname "$socket")/capability"
+  export DEVIDE_GROK_CAPABILITY_REUSED=false
 
-  if [[ -S "$socket" && -r "$capability_file" ]] &&
-     "$grok_bin" --leader-socket "$socket" leader info --json >/dev/null 2>&1; then
+  if [[ -r "$capability_file" ]] && grok_private_leader_ready "$socket"; then
     token="$(<"$capability_file")"
     if parsed="$(grok_current_capability "$token" "$base")"; then
       mapfile -t fields <<<"$parsed"
       token="${fields[0]:-}"
       capability_id="${fields[1]:-}"
       write_enabled="${fields[2]:-false}"
+      export DEVIDE_GROK_CAPABILITY_REUSED=true
+      grok_debug "capability=reused"
     fi
   fi
 
   if [[ -z "${capability_id:-}" ]]; then
-    if [[ -S "$socket" ]]; then
-      "$grok_bin" --leader-socket "$socket" leader kill >/dev/null 2>&1 || true
-      rm -f "$socket"
+    if [[ -S "$socket" || -e "$(dirname "$socket")/.devide-launcher" ]]; then
+      grok_stop_private_leader "$socket"
     fi
     parsed="$(grok_issue_capability "$bootstrap_token" "$base")" || {
       echo "error: managed Grok capability exchange failed" >&2
@@ -545,7 +731,7 @@ grok_configure_capability() {
     token="${fields[0]:-}"
     capability_id="${fields[1]:-}"
     write_enabled="${fields[2]:-false}"
-    tmp="$(mktemp "${capability_file}.XXXXXX")"
+    tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/capability-token.XXXXXX")"
     printf '%s' "$token" >"$tmp"
     chmod 600 "$tmp"
     mv -f "$tmp" "$capability_file"
@@ -558,6 +744,16 @@ grok_configure_capability() {
   fi
   profile="devide-${leader_id}-${capability_id//-/}-${sandbox_base}"
   profile="${profile:0:95}"
+  if [[ "$DEVIDE_GROK_CAPABILITY_REUSED" != "true" ]]; then
+    # Deny entries must exist when a new Grok leader resolves the custom
+    # profile. Publish empty sentinels from trusted scratch; never replace the
+    # live leader's identity/runtime files during an attach.
+    for target in "$(dirname "$socket")/.devide-launcher" "$(dirname "$socket")/.devide-runtime"; do
+      tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/leader-sentinel.XXXXXX")"
+      chmod 600 "$tmp"
+      mv -f "$tmp" "$target"
+    done
+  fi
   grok_install_sandbox_profile "$profile" "$sandbox_base" "$capability_file" || {
     echo "error: failed to install managed Grok sandbox profile" >&2
     return 1
@@ -565,6 +761,8 @@ grok_configure_capability() {
 
   export DEV_IDE_API_TOKEN="$token"
   export DEVIDE_GROK_SANDBOX_PROFILE="$profile"
+  export DEVIDE_GROK_SANDBOX_BASE="$sandbox_base"
+  export DEVIDE_GROK_CAPABILITY_FILE="$capability_file"
   export DEVIDE_GROK_PERMISSION_MODE="default"
   unset DEV_IDE_ADMIN_API_TOKEN DEV_IDE_WORKSPACE_API_TOKENS
   unset DEVIDE_AGENT_ENV_FILE DEVIDE_AGENT_BOOTSTRAP_FILE DEVIDE_AGENT_MCP_HOME
@@ -576,59 +774,134 @@ grok_prepare_private_leader() {
   local root="${DEVIDE_GROK_LEADER_ROOT:-}"
   local bundle="${DEVIDE_GROK_BUNDLE_DIR:-}"
   local digest="${DEVIDE_GROK_BUNDLE_DIGEST:-}"
-  local socket_real root_real log leader_pid="" runtime_file expected_signature current_signature tmp
+  local socket_real root_real log leader_pid="" runtime_file metadata native_lock
+  local expected_signature current_signature tmp detail
 
   socket_real="$(realpath -m "$socket")"
   root_real="$(realpath -m "$root")"
 
   mkdir -p "$root_real"
   chmod 700 "$root_real"
-  runtime_file="${socket_real%.sock}.runtime"
-  expected_signature="${sandbox_profile}:${permission_mode}"
+  runtime_file="${root_real}/.devide-runtime"
+  metadata="${root_real}/.devide-launcher"
+  native_lock="${root_real}/leader.lock"
+  expected_signature="v2:${sandbox_profile}:${permission_mode}"
+  export DEVIDE_GROK_LEADER_REUSED=false
+  grok_debug "prepare reuse_verified=${DEVIDE_GROK_REUSE_VERIFIED:-false} runtime_expected=${expected_signature} runtime_current=$(if [[ -f "$runtime_file" ]]; then cat "$runtime_file"; else printf missing; fi)"
 
-  if "$grok_bin" --leader-socket "$socket_real" leader info --json >/dev/null 2>&1; then
+  if [[ "${DEVIDE_GROK_REUSE_VERIFIED:-false}" == "true" ]] &&
+     [[ -S "$socket_real" ]] &&
+     python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata" \
+       >/dev/null 2>&1; then
+    current_signature=""
+    [[ -f "$runtime_file" ]] && current_signature="$(<"$runtime_file")"
+    if [[ "$current_signature" == "$expected_signature" ]]; then
+      export DEVIDE_GROK_LEADER_REUSED=true
+      grok_debug "leader=reused verified-fast-path"
+      return 0
+    fi
+  elif grok_private_leader_ready "$socket_real"; then
     current_signature=""
     if [[ -f "$runtime_file" ]]; then
       current_signature="$(<"$runtime_file")"
     fi
     if [[ "$current_signature" == "$expected_signature" ]]; then
+      export DEVIDE_GROK_LEADER_REUSED=true
+      grok_debug "leader=reused probed-path"
       return 0
     fi
 
-    "$grok_bin" --leader-socket "$socket_real" leader kill >/dev/null 2>&1 || true
+    grok_stop_private_leader "$socket_real"
   fi
 
-  # The socket is under our validated private root and failed a leader probe,
-  # so it is stale rather than an arbitrary user path.
-  rm -f "$socket_real"
-  rm -f "$runtime_file"
-  log="$(mktemp)"
-  nohup "$grok_bin" --sandbox "$sandbox_profile" --permission-mode "$permission_mode" \
+  # Trusted launcher metadata is written before Grok creates its native lock or
+  # socket. A lock-only slow start therefore remains safely stoppable, while a
+  # sandbox-authored native lock is never treated as process authority.
+  if [[ -s "$metadata" || -S "$socket_real" ]]; then
+    grok_stop_private_leader "$socket_real"
+  fi
+  # A replaced/new leader must never consume policy or hooks that the prior
+  # sandbox could have changed in its writable GROK_HOME.
+  grok_reset_managed_home "$socket_real"
+  grok_install_state_hook
+  grok_install_sandbox_profile \
+    "$DEVIDE_GROK_SANDBOX_PROFILE" \
+    "$DEVIDE_GROK_SANDBOX_BASE" \
+    "$DEVIDE_GROK_CAPABILITY_FILE"
+  rm -f "$socket_real" "$native_lock"
+  log="${DEVIDE_GROK_LEADER_LOG:?managed Grok leader log is missing}"
+  rm -f "$log"
+  leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" spawn \
+    "$metadata" "$log" "$grok_bin" \
+    --sandbox "$sandbox_profile" --permission-mode "$permission_mode" \
     --leader-socket "$socket_real" agent leader \
-    --no-exit-on-disconnect --relay-on-demand --no-auto-update \
-    </dev/null >/dev/null 2>"$log" &
-  leader_pid=$!
+    --no-exit-on-disconnect --relay-on-demand --no-auto-update)" || {
+    echo "error: failed to spawn the private Grok leader" >&2
+    return 1
+  }
 
-  for _attempt in $(seq 1 100); do
-    if [[ -S "$socket_real" ]] &&
-       "$grok_bin" --leader-socket "$socket_real" leader info --json >/dev/null 2>&1; then
-      tmp="$(mktemp "${runtime_file}.XXXXXX")"
+  for _attempt in $(seq 1 600); do
+    if [[ -S "$socket_real" ]] && grok_private_leader_ready "$socket_real" 60; then
+      tmp="$(mktemp "${DEVIDE_LAUNCHER_SECRET_DIR}/leader-runtime.XXXXXX")"
       printf '%s' "$expected_signature" >"$tmp"
       chmod 600 "$tmp"
       mv -f "$tmp" "$runtime_file"
-      rm -f "$log"
       return 0
     fi
-    if ! kill -0 "$leader_pid" 2>/dev/null && [[ ! -S "$socket_real" ]]; then
+    if ! python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata" \
+        >/dev/null 2>&1; then
       break
     fi
     sleep 0.05
   done
 
-  kill "$leader_pid" 2>/dev/null || true
-  rm -f "$log"
+  grok_stop_private_leader "$socket_real" || true
   echo "error: private Grok leader did not become ready at ${socket_real}" >&2
+  if [[ -s "$log" ]]; then
+    detail="$(<"$log")"
+    printf '%s\n' "${detail:0:1200}" >&2
+  fi
   return 1
+}
+
+grok_resume_quiesced_on_exit() {
+  local leader_pid="${DEVIDE_GROK_QUIESCED_PID:-}"
+  if [[ "$leader_pid" =~ ^[0-9]+$ ]]; then
+    kill -CONT -- "-${leader_pid}" 2>/dev/null || true
+  fi
+}
+
+grok_quiesce_for_reattach() {
+  local socket="$1" metadata leader_pid tui_starttime
+  metadata="$(dirname "$socket")/.devide-launcher"
+  leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity "$metadata")" || {
+    echo "error: cannot quiesce a Grok leader without trusted identity" >&2
+    return 1
+  }
+
+  export DEVIDE_GROK_QUIESCED_PID="$leader_pid"
+  trap grok_resume_quiesced_on_exit EXIT INT TERM
+  kill -STOP -- "-${leader_pid}"
+
+  # The live leader cannot race these files while stopped. Reset the only
+  # mutable launch policy and hook inputs, then make the attaching TUI cross
+  # Grok's irreversible bwrap boundary before the leader runs again.
+  grok_reset_managed_home "$socket"
+  grok_install_state_hook
+  grok_install_sandbox_profile \
+    "$DEVIDE_GROK_SANDBOX_PROFILE" \
+    "$DEVIDE_GROK_SANDBOX_BASE" \
+    "$DEVIDE_GROK_CAPABILITY_FILE"
+
+  tui_starttime="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" \
+    process-starttime "$$")"
+  env -i PATH="$PATH" python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" \
+    resume-after-sandbox "$metadata" "$$" "$tui_starttime" 20 \
+    >/dev/null 2>>"$DEVIDE_GROK_LEADER_LOG" &
+
+  # The watcher now owns the fail-safe SIGCONT. Clearing this value prevents
+  # the shell's EXIT trap from resuming early if exec succeeds.
+  export DEVIDE_GROK_QUIESCED_PID=""
 }
 
 codex_arg_sets_notify() {
@@ -705,10 +978,43 @@ case "$RUNTIME" in
   grok)
     export GROK_CURSOR_MCPS_ENABLED=false
     export GROK_CLAUDE_MCPS_ENABLED=false
-    grok_install_state_hook
     grok_bin="$(runtime_bin grok)"
     grok_validate_managed_context
     grok_socket="$(realpath -m "${DEVIDE_GROK_LEADER_SOCKET:-}")"
+    grok_leader_dir="$(dirname "$grok_socket")"
+    grok_leader_id="$(basename "$grok_leader_dir")"
+    grok_leader_base="$(dirname "$grok_leader_dir")"
+    grok_log_dir="${grok_leader_base}/.logs"
+    if [[ -L "$grok_leader_base" || -L "$grok_log_dir" ]]; then
+      echo "error: managed Grok leader base contains an unsafe symlink" >&2
+      exit 1
+    fi
+    mkdir -p "$grok_log_dir"
+    chmod 700 "$grok_leader_base" "$grok_log_dir"
+    export DEVIDE_GROK_LEADER_LOG="${grok_log_dir}/${grok_leader_id}.log"
+    exec {grok_launch_fd}>>"${grok_leader_base}/.launch-${grok_leader_id}.flock"
+    if ! flock -w 15 "$grok_launch_fd"; then
+      echo "error: timed out waiting for the managed Grok leader launch lock" >&2
+      exit 1
+    fi
+    grok_reuse_candidate=false
+    if grok_private_leader_ready "$grok_socket"; then
+      if [[ -f "${grok_leader_dir}/.devide-runtime" ]] &&
+         [[ "$(<"${grok_leader_dir}/.devide-runtime")" == v2:* ]]; then
+        grok_reuse_candidate=true
+      else
+        grok_stop_private_leader "$grok_socket"
+      fi
+    elif [[ -e "${grok_leader_dir}/.devide-launcher" || -S "$grok_socket" ]]; then
+      grok_stop_private_leader "$grok_socket"
+    fi
+    grok_debug "reuse_candidate=${grok_reuse_candidate}"
+    grok_prepare_managed_home "$grok_socket" "$grok_bin" "$grok_reuse_candidate"
+    if [[ "$grok_reuse_candidate" == "true" ]]; then
+      grok_bind_state_hook_path
+    else
+      grok_install_state_hook
+    fi
     grok_user_args=()
     while [[ $# -gt 0 ]]; do
       case "$1" in
@@ -727,8 +1033,8 @@ case "$RUNTIME" in
           fi
           shift
           ;;
-        --sandbox | --sandbox=* | --permission-mode | --permission-mode=* | --always-approve | --cwd | --cwd=* | --worktree | --worktree=*)
-          echo "error: managed Grok launch owns sandbox, permission, cwd, and worktree policy" >&2
+        --sandbox | --sandbox=* | --permission-mode | --permission-mode=* | --always-approve | --yolo | --dangerously-skip-permissions | --allow | --allow=* | --deny | --deny=* | --tools | --tools=* | --cwd | --cwd=* | --worktree | --worktree=* | -w | -w?* | --agents | --agents=* | --subagents | --check | --self-verify | --best-of-n | --best-of-n=*)
+          echo "error: managed Grok launch owns sandbox, permission, cwd, worktree, and subagent policy" >&2
           exit 2
           ;;
         *)
@@ -737,11 +1043,28 @@ case "$RUNTIME" in
           ;;
       esac
     done
-    grok_configure_capability "$grok_bin"
+    grok_configure_capability
+    if [[ "$grok_reuse_candidate" == "true" ]] &&
+       [[ "$DEVIDE_GROK_CAPABILITY_REUSED" == "true" ]]; then
+      export DEVIDE_GROK_REUSE_VERIFIED=true
+    else
+      export DEVIDE_GROK_REUSE_VERIFIED=false
+    fi
+    grok_debug "capability_reused=${DEVIDE_GROK_CAPABILITY_REUSED} reuse_verified=${DEVIDE_GROK_REUSE_VERIFIED}"
     grok_prepare_private_leader "$grok_bin" "$DEVIDE_GROK_SANDBOX_PROFILE" "$DEVIDE_GROK_PERMISSION_MODE"
+    if [[ "$DEVIDE_GROK_LEADER_REUSED" == "true" ]]; then
+      grok_quiesce_for_reattach "$grok_socket"
+      # The background handoff watcher inherited the locked fd and holds it
+      # until SIGCONT. Close only this shell's copy so the TUI does not retain
+      # the launch lock for its full lifetime.
+      exec {grok_launch_fd}>&-
+    else
+      flock -u "$grok_launch_fd"
+      exec {grok_launch_fd}>&-
+    fi
     exec "$grok_bin" --sandbox "$DEVIDE_GROK_SANDBOX_PROFILE" \
       --permission-mode "$DEVIDE_GROK_PERMISSION_MODE" \
-      --leader-socket "$grok_socket" "${grok_user_args[@]}"
+      --leader-socket "$grok_socket" --no-subagents "${grok_user_args[@]}"
     ;;
   codex)
     codex_args=()

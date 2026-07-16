@@ -354,6 +354,50 @@ defmodule Scripts.AgentWorktreeTest do
              "devide\" agent launch codex"
   end
 
+  test "installed devide CLI does not route launches through a stale paired scripts tree" do
+    tmp = tmp_dir!("devide-launch-revision-test")
+    root = Path.join(tmp, "installed")
+    scripts = Path.join(root, "scripts")
+    lib = Path.join(scripts, "lib")
+    stale_scripts = Path.join(tmp, "stale-checkout/scripts")
+
+    File.mkdir_p!(lib)
+    File.mkdir_p!(stale_scripts)
+    File.cp!(Path.join(@root, "scripts/devide"), Path.join(scripts, "devide"))
+
+    for file <- ["agent-env.sh", "real-agent-bin.sh"] do
+      File.ln_s!(Path.join(@root, "scripts/lib/#{file}"), Path.join(lib, file))
+    end
+
+    File.write!(Path.join(scripts, "launch-devide-agent.sh"), """
+    #!/usr/bin/env bash
+    printf 'installed launcher <%s>\n' "$1"
+    """)
+
+    File.write!(Path.join(stale_scripts, "launch-devide-agent.sh"), """
+    #!/usr/bin/env bash
+    printf 'stale launcher <%s>\n' "$1"
+    """)
+
+    {output, 0} =
+      System.cmd(
+        "bash",
+        [Path.join(scripts, "devide"), "agent", "launch", "grok"],
+        env: [
+          {"HOME", Path.join(tmp, "home")},
+          {"PATH", system_path()},
+          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"DEVIDE_WORKSPACE_ID", "workspace-123"},
+          {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
+          {"DEVIDE_SCRIPTS", stale_scripts}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert output == "installed launcher <grok>\n"
+    refute output =~ "stale launcher"
+  end
+
   defp git_fixture! do
     tmp =
       Path.join(System.tmp_dir!(), "agent-worktree-test-#{System.unique_integer([:positive])}")

@@ -466,7 +466,7 @@ PY
 
 grok_leader_contract() {
   local managed="$1"
-  local grok_bin="$2"
+  local _grok_bin="$2"
   local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
   local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.devide/grok-leaders}"
 
@@ -484,7 +484,8 @@ grok_leader_contract() {
   leader_root_real="$(realpath -m "$leader_root")"
 
   if [[ "$(dirname "$socket_real")" != "$leader_root_real" ]] ||
-     [[ ! "$(basename "$socket_real")" =~ ^[0-9a-f]{24}\.sock$ ]] ||
+     [[ "$(basename "$socket_real")" != "leader.sock" ]] ||
+     [[ ! "$(basename "$leader_root_real")" =~ ^[0-9a-f]{24}$ ]] ||
      [[ "${#socket_real}" -gt 100 ]]; then
     fail "Grok leader socket is outside the private leader root or has an invalid name"
     return 1
@@ -512,34 +513,16 @@ PY
     return 1
   fi
 
-  local info_out command_status=0 timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
+  local leader_pid timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
   [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=15
-  info_out="$(mktemp)"
-
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "${timeout_seconds}s" "$grok_bin" --leader-socket "$socket_real" \
-      leader info --json >"$info_out" 2>/dev/null || command_status=$?
-  else
-    "$grok_bin" --leader-socket "$socket_real" leader info --json \
-      >"$info_out" 2>/dev/null || command_status=$?
-  fi
-
-  if [[ "$command_status" == "0" ]] && python3 - "$info_out" <<'PY' >/dev/null 2>&1
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as handle:
-    value = json.load(handle)
-if not isinstance(value, dict):
-    raise SystemExit(1)
-PY
-  then
-    rm -f "$info_out"
+  if leader_pid="$(python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" identity \
+      "${leader_root_real}/.devide-launcher" 2>/dev/null)" &&
+     python3 "${ROOT}/scripts/lib/grok-leader-runtime.py" probe \
+       "$socket_real" "$leader_pid" "$timeout_seconds" >/dev/null 2>&1; then
     pass "Grok private leader socket is active and healthy"
     return 0
   fi
 
-  rm -f "$info_out"
   if [[ "$managed" == "1" ]]; then
     fail "Grok private leader probe failed (details redacted)"
   else
@@ -564,6 +547,20 @@ check_grok_runtime() {
   fi
 
   grok_leader_contract "$managed" "$grok_bin" || true
+
+  if [[ "$managed" == "1" ]]; then
+    case "${DEVIDE_GROK_PROVIDER_AUTH_MODE:-unknown}" in
+      api-key)
+        pass "Grok managed provider auth is durable (dedicated API key)"
+        ;;
+      oauth-inline-refresh)
+        pass "Grok managed provider auth is isolated refreshable OAuth (in-memory renewal)"
+        ;;
+      *)
+        warn "Grok managed provider auth mode is unknown; relaunch through the DevIDE Grok shim"
+        ;;
+    esac
+  fi
 
   if ! "$grok_bin" inspect --help 2>/dev/null | grep -q -- '--json'; then
     warn "installed Grok does not support 'grok inspect --json'; update Grok to diagnose resolved launch configuration"

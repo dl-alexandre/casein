@@ -65,7 +65,7 @@ defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
   test "attaches to a validated private leader and provides workspace permission APIs", ctx do
     workspace_id = "workspace-#{System.unique_integer([:positive])}"
     session_id = "grok-session-1"
-    leader_socket = Path.join(ctx.leader_root, "0123456789abcdef01234567.sock")
+    leader_socket = leader_socket(ctx, "0123456789abcdef01234567")
 
     :ok = Attachments.subscribe(workspace_id)
 
@@ -140,7 +140,7 @@ defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
 
   test "deduplicates unchanged observations and restarts when connection inputs change", ctx do
     workspace_id = "workspace-restart-#{System.unique_integer([:positive])}"
-    leader_socket = Path.join(ctx.leader_root, "abcdef0123456789abcdef01.sock")
+    leader_socket = leader_socket(ctx, "abcdef0123456789abcdef01")
 
     attrs =
       observation(ctx,
@@ -176,6 +176,24 @@ defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
     assert snapshot.bundle_digest == next_digest
   end
 
+  test "accepts a session-start observation before updates.jsonl is created", ctx do
+    workspace_id = "workspace-pending-transcript-#{System.unique_integer([:positive])}"
+    leader_socket = leader_socket(ctx, "1234567890abcdef12345678")
+    File.rm!(ctx.transcript_path)
+
+    assert :ok =
+             Attachments.observe(
+               observation(ctx,
+                 workspace_id: workspace_id,
+                 session_id: "grok-session-pending-transcript",
+                 leader_socket: leader_socket
+               )
+             )
+
+    assert_receive {:grok_acp_attachment_transport_started, _pid, opts}
+    assert opts[:session_id] == "grok-session-pending-transcript"
+  end
+
   test "rejects global sockets and incomplete metadata without spawning Grok", ctx do
     attrs =
       observation(ctx,
@@ -203,6 +221,13 @@ defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
       grok_bundle_dir: ctx.bundle_dir,
       grok_bundle_digest: ctx.digest
     }
+  end
+
+  defp leader_socket(ctx, leader_id) do
+    leader_dir = Path.join(ctx.leader_root, leader_id)
+    File.mkdir_p!(leader_dir)
+    File.chmod!(leader_dir, 0o700)
+    Path.join(leader_dir, "leader.sock")
   end
 
   defp assert_request(pid, method) do

@@ -95,6 +95,7 @@ defmodule DevIdeWeb.API.MCPCapabilityScope do
     bundle_dir = Map.get(args, "grok_bundle_dir") || Map.get(args, :grok_bundle_dir)
     digest = Map.get(args, "grok_bundle_digest") || Map.get(args, :grok_bundle_digest)
     runtime = Map.get(args, "agent_runtime") || Map.get(args, :agent_runtime)
+    transcript = Map.get(args, "transcript_path") || Map.get(args, :transcript_path)
 
     cond do
       runtime != "grok" ->
@@ -109,6 +110,9 @@ defmodule DevIdeWeb.API.MCPCapabilityScope do
       not bound_leader?(leader, claims.leader_id) ->
         {:error, :capability_leader_mismatch}
 
+      not bound_transcript?(transcript, claims.leader_id) ->
+        {:error, :capability_transcript_mismatch}
+
       true ->
         :ok
     end
@@ -116,8 +120,10 @@ defmodule DevIdeWeb.API.MCPCapabilityScope do
 
   defp authorize_bound_report(_name, _args, _claims), do: :ok
 
-  defp bound_leader?(leader, expected) when is_binary(leader) and is_binary(expected),
-    do: Path.basename(leader) == expected <> ".sock"
+  defp bound_leader?(leader, expected) when is_binary(leader) and is_binary(expected) do
+    Path.basename(leader) == "leader.sock" and
+      Path.basename(Path.dirname(leader)) == expected
+  end
 
   defp bound_leader?(_leader, _expected), do: false
 
@@ -125,6 +131,23 @@ defmodule DevIdeWeb.API.MCPCapabilityScope do
     do: Path.basename(dir) in [expected, "sha256-" <> expected]
 
   defp bound_bundle_dir?(_dir, _expected), do: false
+
+  defp bound_transcript?(path, leader_id)
+       when is_binary(path) and is_binary(leader_id) do
+    if Regex.match?(~r/\A[0-9a-f]{24}\z/, leader_id) do
+      home = Path.expand(System.get_env("HOME") || "/home/devbox")
+      root = Path.join([home, ".devide", "grok-homes", leader_id, "sessions"])
+      expanded = Path.expand(path)
+
+      Path.basename(expanded) == "updates.jsonl" and
+        expanded != root and
+        String.starts_with?(expanded, root <> "/")
+    else
+      false
+    end
+  end
+
+  defp bound_transcript?(_path, _leader_id), do: false
 
   defp bind_session(params, opts) do
     case capability_context(opts) do

@@ -368,17 +368,17 @@ export DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
 # One private leader per workspace/worktree lets the human TUI and DevIDE ACP
 # attachment converge on the same Grok session without touching the global
 # ~/.grok/leader.sock. Keep the path short enough for Unix sockaddr_un.
-DEVIDE_GROK_LEADER_ROOT="${DEVIDE_GROK_LEADER_ROOT:-${HOME_DIR}/.devide/grok-leaders}"
+GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.devide/grok-leaders}"
 GROK_LEADER_KEY="$(printf '%s\0%s' "${DEVIDE_WORKSPACE_ID}" "$(realpath -m "${DEVIDE_CHECKOUT}")" | sha256sum | cut -c1-24)"
-DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/${GROK_LEADER_KEY}.sock"
+DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
+DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
 if [[ "${#DEVIDE_GROK_LEADER_SOCKET}" -gt 100 ]]; then
-  GROK_LEADER_USER="${USER:-user}"
-  GROK_LEADER_USER="${GROK_LEADER_USER//[^A-Za-z0-9_.-]/-}"
-  DEVIDE_GROK_LEADER_ROOT="${TMPDIR:-/tmp}/devide-grok-leaders-${GROK_LEADER_USER}"
-  DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/${GROK_LEADER_KEY}.sock"
+  GROK_LEADER_BASE="/dev/shm/devide-grok-leaders-$(id -u)"
+  DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
+  DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
 fi
-mkdir -p "${DEVIDE_GROK_LEADER_ROOT}"
-chmod 700 "${DEVIDE_GROK_LEADER_ROOT}"
+mkdir -p "${GROK_LEADER_BASE}" "${DEVIDE_GROK_LEADER_ROOT}"
+chmod 700 "${GROK_LEADER_BASE}" "${DEVIDE_GROK_LEADER_ROOT}"
 export DEVIDE_GROK_LEADER_ROOT DEVIDE_GROK_LEADER_SOCKET
 
 ENV_SH="${STAGING}/env.sh"

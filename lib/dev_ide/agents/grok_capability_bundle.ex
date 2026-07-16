@@ -75,26 +75,39 @@ defmodule DevIDE.Agents.GrokCapabilityBundle do
       when is_binary(workspace_id) and is_binary(checkout) do
     key = sha256(workspace_id <> <<0>> <> Path.expand(checkout)) |> binary_part(0, 24)
     root = Path.expand(leader_root())
-    path = Path.join(root, key <> ".sock")
-    {root, path} = if byte_size(path) <= 100, do: {root, path}, else: short_leader_path(key)
+    leader_dir = Path.join(root, key)
+    path = Path.join(leader_dir, "leader.sock")
+
+    {root, leader_dir, path} =
+      if byte_size(path) <= 100,
+        do: {root, leader_dir, path},
+        else: short_leader_path(key)
 
     with :ok <- File.mkdir_p(root),
-         :ok <- File.chmod(root, 0o700) do
+         :ok <- File.chmod(root, 0o700),
+         true <- private_directory?(root),
+         :ok <- File.mkdir_p(leader_dir),
+         :ok <- File.chmod(leader_dir, 0o700),
+         true <- private_directory?(leader_dir) do
       {:ok, path}
     else
+      false -> {:error, :unsafe_leader_directory}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  @doc "Recognizes a direct, digest-keyed socket under the normal or short fallback root."
+  @doc "Recognizes leader.sock inside a private digest-keyed directory under a trusted root."
   def allowed_leader_socket?(path) when is_binary(path) do
     expanded = Path.expand(path)
-    name = Path.basename(expanded)
-    directory = Path.dirname(expanded)
+    leader_dir = Path.dirname(expanded)
+    root = Path.dirname(leader_dir)
 
-    Regex.match?(~r/^[0-9a-f]{24}\.sock$/, name) and
-      directory in [Path.expand(leader_root()), short_leader_root()] and
-      private_directory?(directory)
+    Path.basename(expanded) == "leader.sock" and
+      Regex.match?(~r/^[0-9a-f]{24}$/, Path.basename(leader_dir)) and
+      root in [Path.expand(leader_root()), short_leader_root()] and
+      not symlink?(expanded) and
+      private_directory?(root) and
+      private_directory?(leader_dir)
   end
 
   def allowed_leader_socket?(_path), do: false
@@ -346,21 +359,36 @@ defmodule DevIDE.Agents.GrokCapabilityBundle do
 
   defp short_leader_path(key) do
     root = short_leader_root()
-    {root, Path.join(root, key <> ".sock")}
+    leader_dir = Path.join(root, key)
+    {root, leader_dir, Path.join(leader_dir, "leader.sock")}
   end
 
   defp short_leader_root do
-    user =
-      (System.get_env("USER") || "user")
-      |> String.replace(~r/[^A-Za-z0-9_.-]/, "-")
+    # Grok's built-in profiles grant the whole system temp directory write
+    # access. A short fallback there would let one managed session alter its
+    # siblings. /dev/shm stays short for Unix sockets but is writable only at
+    # the exact per-leader directory added to DevIDE's custom profile.
+    uid = current_uid()
+    Path.join("/dev/shm", "devide-grok-leaders-#{uid}")
+  end
 
-    Path.join(System.tmp_dir!(), "devide-grok-leaders-#{user}")
+  defp current_uid do
+    with {:ok, status} <- File.read("/proc/self/status"),
+         [_, uid] <- Regex.run(~r/^Uid:\s+([0-9]+)/m, status) do
+      String.to_integer(uid)
+    else
+      _ -> File.stat!(home_dir()).uid
+    end
   end
 
   defp private_directory?(path) do
-    not symlink?(path) and
-      match?({:ok, %File.Stat{type: :directory}}, File.stat(path)) and
-      band(File.stat!(path).mode, 0o077) == 0
+    case File.lstat(path) do
+      {:ok, %File.Stat{type: :directory, uid: uid, mode: mode}} ->
+        uid == current_uid() and band(mode, 0o077) == 0
+
+      _other ->
+        false
+    end
   end
 
   defp home_dir do

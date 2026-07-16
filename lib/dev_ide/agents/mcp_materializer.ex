@@ -394,7 +394,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
 
   defp grok_bundle_hooks do
     command =
-      ~s(sh -c 'if [ -n "${GROK_PLUGIN_ROOT:-}" ] && [ -x "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh" ]; then exec "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh"; fi; [ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0; exec "${DEVIDE_AGENT_MCP_HOME}/devide-agent-state.sh"')
+      ~s(sh -c 'if [ -n "${GROK_PLUGIN_ROOT:-}" ] && [ -x "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh" ]; then exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh"; fi; [ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0; exec env -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY -u GROK_AUTH -u GROK_AUTH_PATH -u GROK_AUTH_PROVIDER_COMMAND "${DEVIDE_AGENT_MCP_HOME}/devide-agent-state.sh"')
 
     entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
 

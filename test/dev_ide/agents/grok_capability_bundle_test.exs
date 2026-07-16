@@ -112,6 +112,28 @@ defmodule DevIDE.Agents.GrokCapabilityBundleTest do
                python_digest
              ])
              |> then(fn {text, status} -> {String.trim(text), status} end)
+
+    # Re-materializing identical content must reuse the immutable directory on
+    # Linux, where rename(2) reports ENOTEMPTY rather than FileExistsError.
+    assert {second_output, 0} =
+             System.cmd("python3", [
+               @python_builder,
+               "build",
+               "--bundle-root",
+               python_root,
+               "--mcp-config",
+               context.mcp,
+               "--hook-config",
+               context.hook_config,
+               "--hook-script",
+               context.hook_script,
+               "--skills-root",
+               context.skills,
+               "--skill",
+               "verify"
+             ])
+
+    assert String.trim(second_output) == String.trim(output)
   end
 
   test "rejects skill trees containing symlinks", context do
@@ -124,9 +146,60 @@ defmodule DevIDE.Agents.GrokCapabilityBundleTest do
     assert {:ok, first} = GrokCapabilityBundle.leader_socket("workspace-1", context.tmp)
     assert {:ok, second} = GrokCapabilityBundle.leader_socket("workspace-1", context.tmp)
     assert first == second
-    assert Path.dirname(first) == Path.join(context.tmp, "leaders")
-    assert Path.basename(first) =~ ~r/^[0-9a-f]{24}\.sock$/
+    assert Path.dirname(Path.dirname(first)) == Path.join(context.tmp, "leaders")
+    assert Path.basename(Path.dirname(first)) =~ ~r/^[0-9a-f]{24}$/
+    assert Path.basename(first) == "leader.sock"
+    assert band(File.stat!(Path.dirname(Path.dirname(first))).mode, 0o077) == 0
     assert band(File.stat!(Path.dirname(first)).mode, 0o077) == 0
+    assert File.stat!(Path.dirname(Path.dirname(first))).uid == File.stat!(context.tmp).uid
+    assert File.stat!(Path.dirname(first)).uid == File.stat!(context.tmp).uid
+    assert GrokCapabilityBundle.allowed_leader_socket?(first)
+  end
+
+  test "rejects sockets outside the exact private per-leader layout", context do
+    assert {:ok, socket} = GrokCapabilityBundle.leader_socket("workspace-layout", context.tmp)
+    leader_dir = Path.dirname(socket)
+    leader_id = Path.basename(leader_dir)
+
+    refute GrokCapabilityBundle.allowed_leader_socket?(Path.join(leader_dir, "other.sock"))
+
+    refute GrokCapabilityBundle.allowed_leader_socket?(
+             Path.join([context.tmp, "leaders", leader_id <> ".sock"])
+           )
+
+    File.ln_s!(Path.join(context.tmp, "missing.sock"), socket)
+    refute GrokCapabilityBundle.allowed_leader_socket?(socket)
+    File.rm!(socket)
+
+    File.chmod!(leader_dir, 0o755)
+    refute GrokCapabilityBundle.allowed_leader_socket?(socket)
+    File.chmod!(leader_dir, 0o700)
+
+    File.rm_rf!(leader_dir)
+    File.mkdir_p!(Path.join(context.tmp, "escaped-leader"))
+    File.ln_s!(Path.join(context.tmp, "escaped-leader"), leader_dir)
+    refute GrokCapabilityBundle.allowed_leader_socket?(socket)
+  end
+
+  test "uses the same private per-leader layout under the short fallback root", context do
+    long_root = Path.join(context.tmp, String.duplicate("long-leader-root-", 8))
+    previous_leader_root = Application.get_env(:dev_ide, :grok_leader_root)
+    Application.put_env(:dev_ide, :grok_leader_root, long_root)
+
+    on_exit(fn -> restore_env(:grok_leader_root, previous_leader_root) end)
+
+    assert {:ok, socket} =
+             GrokCapabilityBundle.leader_socket("workspace-short-path", context.tmp)
+
+    refute String.starts_with?(socket, Path.expand(long_root) <> "/")
+    assert Path.basename(socket) == "leader.sock"
+    assert Path.basename(Path.dirname(socket)) =~ ~r/^[0-9a-f]{24}$/
+    assert band(File.stat!(Path.dirname(Path.dirname(socket))).mode, 0o077) == 0
+    assert band(File.stat!(Path.dirname(socket)).mode, 0o077) == 0
+    assert GrokCapabilityBundle.allowed_leader_socket?(socket)
+
+    leader_dir = Path.dirname(socket)
+    on_exit(fn -> File.rm_rf!(leader_dir) end)
   end
 
   defp compile_opts(context) do

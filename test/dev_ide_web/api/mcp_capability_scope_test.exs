@@ -53,9 +53,10 @@ defmodule DevIdeWeb.API.MCPCapabilityScopeTest do
       "name" => "terminal_report_agent_state",
       "arguments" => %{
         "agent_runtime" => "grok",
-        "grok_leader_socket" => "/tmp/#{@claims.leader_id}.sock",
+        "grok_leader_socket" => "/tmp/#{@claims.leader_id}/leader.sock",
         "grok_bundle_dir" => "/tmp/sha256-#{@claims.bundle_digest}",
-        "grok_bundle_digest" => @claims.bundle_digest
+        "grok_bundle_digest" => @claims.bundle_digest,
+        "transcript_path" => managed_transcript_path(@claims.leader_id)
       }
     }
 
@@ -65,6 +66,48 @@ defmodule DevIdeWeb.API.MCPCapabilityScopeTest do
 
     assert {:error, :capability_bundle_mismatch} =
              MCPCapabilityScope.authorize_call(bad, opts())
+
+    bad_leader =
+      put_in(
+        good,
+        ["arguments", "grok_leader_socket"],
+        "/tmp/not-#{@claims.leader_id}/leader.sock"
+      )
+
+    assert {:error, :capability_leader_mismatch} =
+             MCPCapabilityScope.authorize_call(bad_leader, opts())
+
+    legacy_flat =
+      put_in(good, ["arguments", "grok_leader_socket"], "/tmp/#{@claims.leader_id}.sock")
+
+    assert {:error, :capability_leader_mismatch} =
+             MCPCapabilityScope.authorize_call(legacy_flat, opts())
+  end
+
+  test "binds capability-scoped Grok transcripts to the issued managed leader" do
+    report = grok_state_report(managed_transcript_path(@claims.leader_id))
+
+    assert :ok = MCPCapabilityScope.authorize_call(report, opts())
+
+    sibling = String.duplicate("c", 24)
+
+    assert {:error, :capability_transcript_mismatch} =
+             report
+             |> put_in(["arguments", "transcript_path"], managed_transcript_path(sibling))
+             |> MCPCapabilityScope.authorize_call(opts())
+
+    assert {:error, :capability_transcript_mismatch} =
+             report
+             |> put_in(["arguments", "transcript_path"], global_transcript_path())
+             |> MCPCapabilityScope.authorize_call(opts())
+
+    assert {:error, :capability_transcript_mismatch} =
+             report
+             |> update_in(["arguments"], &Map.delete(&1, "transcript_path"))
+             |> MCPCapabilityScope.authorize_call(opts())
+
+    assert :ok =
+             MCPCapabilityScope.authorize_call(grok_state_report(global_transcript_path()), [])
   end
 
   test "Grok state reports fail closed when leader or bundle proof is omitted" do
@@ -117,9 +160,10 @@ defmodule DevIdeWeb.API.MCPCapabilityScopeTest do
                  "arguments" => %{
                    "state" => "done",
                    "agent_runtime" => "grok",
-                   "grok_leader_socket" => "/tmp/#{@claims.leader_id}.sock",
+                   "grok_leader_socket" => "/tmp/#{@claims.leader_id}/leader.sock",
                    "grok_bundle_dir" => "/tmp/sha256-#{@claims.bundle_digest}",
-                   "grok_bundle_digest" => @claims.bundle_digest
+                   "grok_bundle_digest" => @claims.bundle_digest,
+                   "transcript_path" => managed_transcript_path(@claims.leader_id)
                  }
                },
                opts()
@@ -146,5 +190,42 @@ defmodule DevIdeWeb.API.MCPCapabilityScopeTest do
     tools = [%{name: "terminal_send_command"}, %{name: "invoke_tool"}]
     assert tools == MCPCapabilityScope.filter_tools(tools, [])
     assert :ok = MCPCapabilityScope.authorize_call(%{"name" => "invoke_tool"}, [])
+  end
+
+  defp grok_state_report(transcript_path) do
+    %{
+      "name" => "terminal_report_agent_state",
+      "arguments" => %{
+        "agent_runtime" => "grok",
+        "grok_leader_socket" => "/tmp/#{@claims.leader_id}/leader.sock",
+        "grok_bundle_dir" => "/tmp/sha256-#{@claims.bundle_digest}",
+        "grok_bundle_digest" => @claims.bundle_digest,
+        "transcript_path" => transcript_path
+      }
+    }
+  end
+
+  defp managed_transcript_path(leader_id) do
+    Path.join([
+      System.get_env("HOME") || "/home/devbox",
+      ".devide",
+      "grok-homes",
+      leader_id,
+      "sessions",
+      "workspace",
+      "session-id",
+      "updates.jsonl"
+    ])
+  end
+
+  defp global_transcript_path do
+    Path.join([
+      System.get_env("HOME") || "/home/devbox",
+      ".grok",
+      "sessions",
+      "workspace",
+      "session-id",
+      "updates.jsonl"
+    ])
   end
 end

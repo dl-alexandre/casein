@@ -31,14 +31,77 @@ agent_env_tmux_session_id() {
   if [[ -z "${TMUX:-}" ]]; then
     return 1
   fi
-  tmux display-message -p '#{session_id}' 2>/dev/null || true
+  if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
+    tmux display-message -p -t "$TMUX_PANE" '#{session_id}' 2>/dev/null || true
+  else
+    tmux display-message -p '#{session_id}' 2>/dev/null || true
+  fi
 }
 
 agent_env_tmux_session_name() {
   if [[ -z "${TMUX:-}" ]]; then
     return 1
   fi
-  tmux display-message -p '#{session_name}' 2>/dev/null || true
+  if [[ "${TMUX_PANE:-}" =~ ^%[0-9]+$ ]]; then
+    tmux display-message -p -t "$TMUX_PANE" '#{session_name}' 2>/dev/null || true
+  else
+    tmux display-message -p '#{session_name}' 2>/dev/null || true
+  fi
+}
+
+# Bind managed-runtime MCP URLs to the tmux session that is actually launching
+# the agent. Exported/persisted pairing env can be older than the current pane,
+# and capability bundles are immutable once materialized, so this must happen
+# before bundle generation rather than during the later best-effort tmux repair.
+agent_env_bind_current_tmux_session() {
+  local session_name workspace_id key url bound
+  session_name="$(agent_env_tmux_session_name)" || return 1
+  workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+
+  [[ -n "$session_name" && -n "$workspace_id" ]] || return 1
+
+  for key in DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL; do
+    url="${!key:-}"
+    [[ -n "$url" ]] || return 1
+
+    bound="$(
+      MCP_URL="$url" DEVIDE_WORKSPACE_ID="$workspace_id" \
+        DEVIDE_TMUX_SESSION="$session_name" python3 - <<'PY'
+import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+url = urlsplit(os.environ["MCP_URL"])
+if url.scheme not in {"http", "https"} or not url.netloc:
+    raise SystemExit(1)
+
+query = [
+    (key, value)
+    for key, value in parse_qsl(url.query, keep_blank_values=True)
+    if key not in {"workspace_id", "tmux_session"}
+]
+query.extend([
+    ("workspace_id", os.environ["DEVIDE_WORKSPACE_ID"]),
+    ("tmux_session", os.environ["DEVIDE_TMUX_SESSION"]),
+])
+print(urlunsplit((url.scheme, url.netloc, url.path, urlencode(query), url.fragment)))
+PY
+    )" || return 1
+
+    printf -v "$key" '%s' "$bound"
+    export "$key"
+  done
+
+  export DEVIDE_TMUX_SESSION="$session_name"
+}
+
+# Prefer the repository the operator actually launched from over a checkout
+# path inherited from the tmux session. Session env is shared and can lag (or
+# be changed by another pane) while a pane's cwd remains the local authority.
+agent_env_bind_current_checkout() {
+  local checkout
+  checkout="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null)" || return 0
+  [[ -n "$checkout" && -d "$checkout" ]] || return 0
+  export DEVIDE_CHECKOUT="$(realpath -m "$checkout")"
 }
 
 agent_env_parse_workspace_name() {

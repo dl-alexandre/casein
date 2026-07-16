@@ -4,8 +4,15 @@ defmodule DevIDE.Agents.TranscriptsTest do
   alias DevIDE.Agents.Transcripts
 
   setup do
+    previous_home = System.get_env("HOME")
     home = tmp_home!()
-    on_exit(fn -> System.put_env("HOME", home) end)
+
+    on_exit(fn ->
+      if previous_home,
+        do: System.put_env("HOME", previous_home),
+        else: System.delete_env("HOME")
+    end)
+
     {:ok, home: home}
   end
 
@@ -29,6 +36,33 @@ defmodule DevIDE.Agents.TranscriptsTest do
       refute Transcripts.allowed_path?(outside_sessions)
     end
 
+    test "accepts isolated managed Grok sessions but rejects malformed leader roots", %{
+      home: home
+    } do
+      leader_id = "0123456789abcdef01234567"
+
+      managed =
+        Path.join([
+          home,
+          ".devide",
+          "grok-homes",
+          leader_id,
+          "sessions",
+          "project",
+          "session",
+          "updates.jsonl"
+        ])
+
+      File.mkdir_p!(Path.dirname(managed))
+      File.write!(managed, "")
+      assert Transcripts.allowed_path?(managed)
+
+      malformed = String.replace(managed, leader_id, "not-a-leader")
+      File.mkdir_p!(Path.dirname(malformed))
+      File.write!(malformed, "")
+      refute Transcripts.allowed_path?(malformed)
+    end
+
     test "rejects a symlinked Grok transcript", %{home: home} do
       outside = Path.join([home, "secret", "updates.jsonl"])
       File.mkdir_p!(Path.dirname(outside))
@@ -39,6 +73,36 @@ defmodule DevIDE.Agents.TranscriptsTest do
       File.ln_s!(outside, path)
 
       refute Transcripts.allowed_path?(path)
+    end
+
+    test "accepts a pending Grok transcript only through real parent directories", %{home: home} do
+      pending = Path.join([home, ".grok", "sessions", "project", "pending", "updates.jsonl"])
+      File.mkdir_p!(Path.dirname(pending))
+
+      assert DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(pending)
+
+      outside = Path.join([home, "outside", "pending"])
+      File.mkdir_p!(outside)
+      linked = Path.join([home, ".grok", "sessions", "linked"])
+      File.ln_s!(outside, linked)
+
+      refute DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(
+               Path.join(linked, "updates.jsonl")
+             )
+
+      managed_pending =
+        Path.join([
+          home,
+          ".devide/grok-homes",
+          "0123456789abcdef01234567",
+          "sessions",
+          "project",
+          "pending",
+          "updates.jsonl"
+        ])
+
+      File.mkdir_p!(Path.dirname(managed_pending))
+      assert DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(managed_pending)
     end
 
     test "accepts jsonl under DevIDE auth profiles", %{home: home} do

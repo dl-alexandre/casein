@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -54,6 +55,16 @@ def make_read_only(root: Path) -> None:
     for path in sorted((p for p in root.rglob("*") if p.is_dir()), reverse=True):
         path.chmod(0o555)
     root.chmod(0o555)
+
+
+def remove_read_only_tree(root: Path) -> None:
+    """Remove a temporary bundle after its files were made immutable."""
+    for path in [root, *root.rglob("*")]:
+        try:
+            path.chmod(0o700 if path.is_dir() else 0o600)
+        except OSError:
+            pass
+    shutil.rmtree(root, ignore_errors=True)
 
 
 def verify_bundle(root: Path, expected: str | None = None) -> str:
@@ -122,20 +133,21 @@ def build(args: argparse.Namespace) -> tuple[Path, str]:
 
         try:
             temp.rename(target)
-        except FileExistsError:
+        except OSError as error:
+            # Linux reports a directory-on-existing-nonempty-directory rename
+            # as ENOTEMPTY, while other platforms use EEXIST/FileExistsError.
+            # Both mean a concurrent or previous compiler won the content-
+            # addressed destination. Reuse it only after full verification.
+            if error.errno not in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise
             verify_bundle(target, digest)
-            shutil.rmtree(temp)
+            remove_read_only_tree(temp)
 
         verify_bundle(target, digest)
         return target, digest
     except Exception:
         if temp.exists():
-            for path in [temp, *temp.rglob("*")]:
-                try:
-                    path.chmod(0o700 if path.is_dir() else 0o600)
-                except OSError:
-                    pass
-            shutil.rmtree(temp, ignore_errors=True)
+            remove_read_only_tree(temp)
         raise
 
 
