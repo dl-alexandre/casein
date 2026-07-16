@@ -17,7 +17,10 @@ defmodule DevIdeWeb.API.ArtifactMCPController do
         conn
 
       {:cont, conn} ->
-        case ArtifactMCP.handle(conn.body_params, default_workspace_id: workspace_id) do
+        case ArtifactMCP.handle(conn.body_params,
+               default_workspace_id: workspace_id,
+               actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+             ) do
           {:reply, response} ->
             conn
             |> MCPTransport.maybe_issue_session(:artifact, conn.body_params, workspace_id)

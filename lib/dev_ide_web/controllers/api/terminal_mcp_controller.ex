@@ -23,7 +23,10 @@ defmodule DevIdeWeb.API.TerminalMCPController do
         conn
 
       {:cont, conn} ->
-        case TerminalMCP.handle(conn.body_params, default_workspace_id: workspace_id) do
+        case TerminalMCP.handle(conn.body_params,
+               default_workspace_id: workspace_id,
+               actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+             ) do
           {:reply, response} ->
             conn
             |> MCPTransport.maybe_issue_session(:terminal, conn.body_params, workspace_id)

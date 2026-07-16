@@ -75,6 +75,17 @@ defmodule DevIDE.Audit do
   end
 
   @doc """
+  Recent events for a workspace recorded by a specific tool, newest first.
+
+  `tool` is the indexed `audit_events.tool` column stamped by
+  `DevIDE.Agents.MCPAudit` (e.g. `"terminal_send_command"`), so per-tool
+  timelines don't need to LIKE-match action strings.
+  """
+  def recent_for_tool(workspace_id, tool, n \\ 50) when is_binary(tool) do
+    impl().recent_for_tool(workspace_id, tool, n)
+  end
+
+  @doc """
   Events sharing a correlation id, ascending by `inserted_at` (chain order).
 
   Correlation ids are stamped into event metadata by

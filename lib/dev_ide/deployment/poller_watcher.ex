@@ -2,13 +2,17 @@ defmodule DevIDE.Deployment.PollerWatcher do
   @moduledoc """
   Periodically reads the deploy-poller status file and broadcasts UI updates.
 
-  Drift is checked once on boot; poller status can change while the release keeps
-  running (gate failure, in-progress build), so this GenServer polls on an interval.
+  Poller status can change while the release keeps running (gate failure,
+  in-progress build), so this GenServer polls on an interval. Each tick also
+  re-checks drift (cheap — `Drift.remote_head/1` is cached for 60s) so drift
+  transitions are actually observed instead of only at boot, and feeds both
+  observations to `DevIDE.Deployment.DeployAudit`, which persists audit rows
+  on transitions only.
   """
 
   use GenServer
 
-  alias DevIDE.Deployment.LastDeploy
+  alias DevIDE.Deployment.{DeployAudit, Drift, LastDeploy}
 
   @default_interval_ms 30_000
 
@@ -24,7 +28,7 @@ defmodule DevIDE.Deployment.PollerWatcher do
         Keyword.get(opts, :interval_ms, config(:poller_watch_interval_ms, @default_interval_ms))
 
       send(self(), :tick)
-      {:ok, %{interval_ms: interval_ms, last_status: nil}}
+      {:ok, %{interval_ms: interval_ms, last_status: nil, audit: DeployAudit.new()}}
     else
       :ignore
     end
@@ -33,8 +37,18 @@ defmodule DevIDE.Deployment.PollerWatcher do
   @impl true
   def handle_info(:tick, %{interval_ms: interval_ms} = state) do
     status = LastDeploy.check_and_broadcast()
+    drift = if Drift.enabled?(), do: Drift.check_and_broadcast(log: false), else: nil
+    audit = DeployAudit.observe(state.audit, read_record(), drift)
+
     _ = Process.send_after(self(), :tick, interval_ms)
-    {:noreply, %{state | last_status: status}}
+    {:noreply, %{state | last_status: status, audit: audit}}
+  end
+
+  defp read_record do
+    case LastDeploy.read() do
+      {:ok, record} -> record
+      _ -> nil
+    end
   end
 
   defp watcher_enabled? do

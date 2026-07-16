@@ -289,6 +289,61 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
                     "echo scoped", []}
   end
 
+  test "a workspace-token mutation is audited with the ws:<id> actor", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws-scoped_agent" => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    DevIDE.Audit.MemoryAdapter.clear()
+    on_exit(fn -> DevIDE.Audit.MemoryAdapter.clear() end)
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "devide_ws-scoped_agent",
+              command: "echo actor"
+            }
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
+             json_response(conn, 200)
+
+    [event] = DevIDE.Audit.recent_for("ws-scoped", 1)
+    assert event.action == "agent.terminal_terminal_send_command"
+    assert event.actor_id == "ws:ws-scoped"
+    assert event.source == "terminal_mcp"
+    assert event.tool == "terminal_send_command"
+  end
+
   describe "tool search (DEV_IDE_MCP_TOOL_SEARCH)" do
     test "tools/list returns the full surface when disabled (default)", %{conn: conn} do
       conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)

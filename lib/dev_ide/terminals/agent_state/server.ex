@@ -4,6 +4,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
   use GenServer
 
   alias DevIDE.Audit
+  alias DevIDE.Export.Sanitizer
   alias Phoenix.PubSub
 
   @topic_prefix "agent_state:"
@@ -121,6 +122,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
         broadcast(workspace_id, tmux_session, pane_id, entry)
 
         DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
+          maybe_emit_state_changed(previous, entry, tmux_session, pane_id)
           maybe_emit_blocked(previous, entry, tmux_session, pane_id)
         end)
 
@@ -137,6 +139,41 @@ defmodule DevIDE.Terminals.AgentState.Server do
     {:noreply, pruned}
   end
 
+  # Every real semantic-state transition gets a durable timeline row. The
+  # dedupe clauses above already absorb identical re-reports, and a changed
+  # message with an unchanged state is not a transition, so volume stays
+  # bounded at actual state flips.
+  defp maybe_emit_state_changed(previous, entry, tmux_session, pane_id)
+       when is_binary(entry.workspace_id) do
+    if previous == nil or previous.state != entry.state do
+      Audit.emit!(%{
+        workspace_id: entry.workspace_id,
+        actor_id: "agent",
+        action: "agent.state_changed",
+        source: "agent_state",
+        target_type: "tmux_pane",
+        target_ref: pane_id,
+        metadata: %{
+          from: previous && previous.state,
+          to: entry.state,
+          pane: pane_id,
+          tmux_session: tmux_session,
+          tool: entry.tool,
+          message: sanitize_message(entry.message)
+        }
+      })
+    end
+
+    :ok
+  end
+
+  defp maybe_emit_state_changed(_previous, _entry, _tmux_session, _pane_id), do: :ok
+
+  # Reports arrive pre-truncated (AgentState.@message_limit); redact before the
+  # text lands in a persisted audit row.
+  defp sanitize_message(message) when is_binary(message), do: Sanitizer.redact_text(message)
+  defp sanitize_message(_message), do: nil
+
   # Emit a durable audit event only on a *transition* into :blocked, so a
   # re-reported blocked (e.g. a new message) does not re-alert. Alerts.@titles
   # carries "agent.blocked", so this reaches the in-app banner and OS push.
@@ -149,7 +186,11 @@ defmodule DevIDE.Terminals.AgentState.Server do
         action: "agent.blocked",
         target_type: "tmux_pane",
         target_ref: pane_id,
-        metadata: %{session: tmux_session, pane: pane_id, message: entry.message}
+        metadata: %{
+          session: tmux_session,
+          pane: pane_id,
+          message: sanitize_message(entry.message)
+        }
       })
     end
 

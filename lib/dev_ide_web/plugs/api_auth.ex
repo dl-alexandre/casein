@@ -18,6 +18,25 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
     authorize(conn, token, api_tokens())
   end
 
+  @doc """
+  Audit actor string for the verified token on this conn.
+
+  Derived from the `:api_token_scope` assign this plug sets:
+  `"ws:<workspace_id>"` for workspace-scoped tokens,
+  `"orchestrator:<subject>"` for self-serve orchestrator tokens, and
+  `"global"` for the env global token. Returns nil when the plug has not run
+  (callers keep their own fallback).
+  """
+  @spec actor(Plug.Conn.t()) :: String.t() | nil
+  def actor(conn) do
+    case conn.assigns[:api_token_scope] do
+      {:workspace, workspace_id} when is_binary(workspace_id) -> "ws:" <> workspace_id
+      {:orchestrator, subject_id} -> "orchestrator:" <> to_string(subject_id)
+      :global -> "global"
+      _ -> nil
+    end
+  end
+
   defp authorize(conn, token, tokens) do
     configured = Enum.reject(tokens, fn {_scope, expected} -> is_nil(expected) end)
 

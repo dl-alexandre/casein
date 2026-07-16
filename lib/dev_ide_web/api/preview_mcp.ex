@@ -123,6 +123,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     default_tmux_session = default_tmux_session(opts)
     args = Map.get(params, "arguments", %{}) || %{}
+    audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
       DevIDE.Signals.Context.with_new(fn ->
@@ -133,16 +134,24 @@ defmodule DevIdeWeb.API.PreviewMCP do
              ) do
           {:ok, scope} ->
             with {:ok, payload} <- PreviewTools.invoke(name, scope.workspace, scope.args) do
-              _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, {:ok, payload})
+              _ =
+                MCPAudit.record_preview(
+                  scope.workspace_id,
+                  name,
+                  scope.args,
+                  {:ok, payload},
+                  audit_opts
+                )
+
               {:ok, payload}
             else
               {:error, _reason} = err ->
-                _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, err)
+                _ = MCPAudit.record_preview(scope.workspace_id, name, scope.args, err, audit_opts)
                 err
             end
 
           {:error, reason} = err ->
-            _ = MCPAudit.record_preview(nil, name, args, err)
+            _ = MCPAudit.record_preview(nil, name, args, err, audit_opts)
             {:error, reason}
         end
       end)

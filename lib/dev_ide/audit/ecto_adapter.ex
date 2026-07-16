@@ -23,6 +23,8 @@ defmodule DevIDE.Audit.EctoAdapter do
       field :workspace_id, :string
       field :actor_id, :string
       field :action, :string
+      field :source, :string
+      field :tool, :string
       field :target_type, :string
       field :target_ref, :string
       field :decision, :string
@@ -80,6 +82,17 @@ defmodule DevIDE.Audit.EctoAdapter do
   end
 
   @impl true
+  def recent_for_tool(workspace_id, tool, n) when is_binary(tool) do
+    Row
+    |> where([r], r.workspace_id == ^workspace_id)
+    |> where([r], r.tool == ^tool)
+    |> order_by([r], desc: r.inserted_at)
+    |> limit(^n)
+    |> Repo.all()
+    |> Enum.map(&to_event/1)
+  end
+
+  @impl true
   def list_by_correlation(correlation_id) when is_binary(correlation_id),
     do: list_by_correlation(correlation_id, [])
 
@@ -125,10 +138,12 @@ defmodule DevIDE.Audit.EctoAdapter do
       workspace_id: e.workspace_id,
       actor_id: e.actor_id,
       action: e.action,
+      source: e.source,
+      tool: e.tool,
       target_type: e.target_type,
       target_ref: e.target_ref,
       decision: e.decision && Atom.to_string(e.decision),
-      reason: e.reason && Atom.to_string(e.reason),
+      reason: e.reason && to_string(e.reason),
       metadata: normalize_metadata(e.metadata),
       inserted_at: e.inserted_at
     }
@@ -158,6 +173,8 @@ defmodule DevIDE.Audit.EctoAdapter do
       workspace_id: r.workspace_id,
       actor_id: r.actor_id,
       action: r.action,
+      source: r.source,
+      tool: r.tool,
       target_type: r.target_type,
       target_ref: r.target_ref,
       decision: r.decision && safe_to_atom(r.decision),

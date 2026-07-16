@@ -115,6 +115,66 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
   end
 
+  describe "agent.state_changed audit" do
+    test "emits a durable row for every real state transition, with from/to" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :working, "compiling")
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.from == nil
+      assert metadata.to == :working
+      assert metadata.pane == "%5"
+      assert metadata.tmux_session == "devide_alpha_u-dev"
+      assert metadata.message == "compiling"
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :done, nil)
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.from == :working
+      assert metadata.to == :done
+    end
+
+    test "identical or message-only re-reports do not add timeline rows" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      assert_receive {:audit_event, %{action: "agent.state_changed"}}
+
+      # Identical report: deduped upstream, no row.
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
+
+      # Message changed but the state did not: broadcast fires, no timeline row.
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 2")
+      refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
+    end
+
+    test "a blocked transition also keeps the dedicated agent.blocked row" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%7", :blocked, "needs perm")
+
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: %{to: :blocked}}}
+      assert_receive {:audit_event, %{action: "agent.blocked"}}
+    end
+
+    test "secrets in the report message are redacted before persistence" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok =
+        AgentState.report(
+          "ws-timeline",
+          "devide_alpha_u-dev",
+          "%8",
+          :blocked,
+          "export token=super-secret"
+        )
+
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.message =~ "[REDACTED]"
+      refute metadata.message =~ "super-secret"
+    end
+  end
+
   describe "session_status/2" do
     test "maps freshest reported state to picker vocabulary" do
       :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, nil)

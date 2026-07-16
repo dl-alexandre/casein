@@ -18,20 +18,32 @@ defmodule DevIDE.Deployment.Drift do
           | {:drift, map()}
           | {:unknown, map()}
 
+  @doc "Whether the drift check is enabled (not opted out via env)."
+  @spec enabled?() :: boolean()
+  def enabled? do
+    System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK") not in ["0", "false", "no"]
+  end
+
   @doc "Starts a best-effort async drift check unless disabled by env."
   @spec check_async() :: :ok
   def check_async do
-    if System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK") in ["0", "false", "no"] do
+    if enabled?() do
+      _ = Task.start(fn -> check_and_broadcast() end)
       :ok
     else
-      _ = Task.start(fn -> check_and_broadcast() end)
       :ok
     end
   end
 
-  @doc "Runs the remote check and broadcasts/logs drift when detected."
-  @spec check_and_broadcast() :: status()
-  def check_and_broadcast do
+  @doc """
+  Runs the remote check and broadcasts/logs drift when detected.
+
+  Pass `log: false` for periodic re-checks (`PollerWatcher` ticks) so a
+  long-lived drift does not re-warn every interval; the boot-time check and
+  the durable `deploy.drift_detected` audit row carry the alert.
+  """
+  @spec check_and_broadcast(keyword()) :: status()
+  def check_and_broadcast(opts \\ []) do
     current = DevIDE.Deployment.Version.version()
     remote = remote_head()
 
@@ -39,7 +51,10 @@ defmodule DevIDE.Deployment.Drift do
 
     case status do
       {:drift, info} ->
-        Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
+        if Keyword.get(opts, :log, true) do
+          Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
+        end
+
         broadcast(info)
 
       _ ->
