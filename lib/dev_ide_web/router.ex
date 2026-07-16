@@ -216,6 +216,7 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
     get "/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions
+    post "/workspaces/:id/codex/hooks", CodexHookController, :create
 
     post "/workspaces/:id/grok-agent-capabilities",
          AgentCapabilityController,

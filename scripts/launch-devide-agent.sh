@@ -347,12 +347,13 @@ codex_arg_sets_execution_policy() {
   return 1
 }
 
-# --- Semantic agent-state reporting (Grok bootstrap + Codex notify) ----------
+# --- Semantic agent-state reporting (Grok bootstrap + Codex lifecycle hooks) -
 # Claude gets its state hooks via a materialized --settings file below. Grok
 # loads a global SessionStart bootstrap hook so DevIDE learns the session ID and
 # can attach ACP with the session-scoped capability bundle. The bundle owns the
-# remaining lifecycle hooks. Codex injects a per-launch `notify` program.
-# Both honor the same opt-out as Claude: DEVIDE_AGENT_STATE_HOOKS=0.
+# remaining lifecycle hooks. Codex receives per-launch hook tables plus the
+# legacy completion-only notify fallback. Both honor the same opt-out as
+# Claude: DEVIDE_AGENT_STATE_HOOKS=0.
 
 grok_install_state_hook() {
   [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
@@ -956,18 +957,93 @@ codex_state_notify_args() {
   printf '%s\0' -c "notify=[\"${script}\"]"
 }
 
-codex_default_args() {
-  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
-    0 | false | FALSE | no | NO | off | OFF)
-      return 0
-      ;;
-  esac
+codex_arg_sets_hooks() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      hooks.* | features.hooks=* | features.codex_hooks=*)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
 
+codex_state_hook_args() {
+  [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
+  codex_arg_sets_hooks "$@" && return 0
+
+  local script quoted event config
+  script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  [[ -x "$script" ]] || return 0
+  quoted="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$script")"
+
+  for event in SessionStart UserPromptSubmit PreToolUse PermissionRequest PostToolUse Stop SubagentStart SubagentStop; do
+    config="hooks.${event}=[{matcher=\"*\",hooks=[{type=\"command\",command=${quoted},timeout=5}]}]"
+    printf '%s\0' -c "$config"
+  done
+}
+
+codex_security_config_args() {
+  printf '%s\0' -c \
+    'shell_environment_policy.exclude=["DEV_IDE_API_TOKEN","DEV_IDE_ADMIN_API_TOKEN","DEV_IDE_WORKSPACE_API_TOKENS"]'
+}
+
+codex_workspace_mode() {
+  local fallback="${DEVIDE_WORKSPACE_MODE:-manual}"
+  local base="${DEVIDE_API_BASE_URL:-${DEVIDE_URL:-}}"
+  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  local token="${DEV_IDE_API_TOKEN:-}"
+  local payload mode
+
+  if [[ -n "$base" && -n "$workspace_id" && -n "$token" ]]; then
+    payload="$(curl --max-time 1 -fsS \
+      -H "authorization: Bearer ${token}" \
+      "${base%/}/api/workspaces/${workspace_id}/status" 2>/dev/null || true)"
+
+    mode="$(CODEX_WORKSPACE_STATUS="$payload" python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    payload = json.loads(os.environ.get("CODEX_WORKSPACE_STATUS") or "{}")
+    mode = payload.get("mode", {})
+    if isinstance(mode, dict):
+        mode = mode.get("value")
+    if isinstance(mode, str):
+        print(mode)
+except Exception:
+    pass
+PY
+)"
+
+    if [[ -n "$mode" ]]; then
+      printf '%s\n' "$mode"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "$fallback"
+}
+
+codex_default_args() {
   if codex_arg_sets_execution_policy "$@"; then
     return 0
   fi
 
-  printf '%s\0' --dangerously-bypass-approvals-and-sandbox
+  case "${DEVIDE_CODEX_DEFAULT_YOLO:-0}" in
+    1 | true | TRUE | yes | YES | on | ON)
+      printf '%s\0' --dangerously-bypass-approvals-and-sandbox
+      return 0
+      ;;
+  esac
+
+  case "$(codex_workspace_mode)" in
+    review | observe | locked)
+      printf '%s\0' --sandbox read-only --ask-for-approval never
+      ;;
+    *)
+      printf '%s\0' --sandbox workspace-write --ask-for-approval on-request
+      ;;
+  esac
 }
 
 claude_arg_sets_permission_policy() {
@@ -1097,6 +1173,12 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_mcp_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_security_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_state_hook_args "$@")
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_state_notify_args "$@")

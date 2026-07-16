@@ -14,10 +14,18 @@ defmodule DevIDE.Codex.Event do
     :thread_started,
     :thread_status_changed,
     :turn_started,
+    :turn_failed,
+    :item_started,
+    :item_completed,
     :agent_message_delta,
     :turn_completed,
+    :usage_updated,
     :approval_requested,
-    :approval_resolved
+    :approval_resolved,
+    :subagent_started,
+    :subagent_stopped,
+    :hook_observed,
+    :error
   ]
 
   @enforce_keys [
@@ -56,10 +64,18 @@ defmodule DevIDE.Codex.Event do
           :thread_started
           | :thread_status_changed
           | :turn_started
+          | :turn_failed
+          | :item_started
+          | :item_completed
           | :agent_message_delta
           | :turn_completed
+          | :usage_updated
           | :approval_requested
           | :approval_resolved
+          | :subagent_started
+          | :subagent_stopped
+          | :hook_observed
+          | :error
 
   @type t :: %__MODULE__{
           id: String.t(),

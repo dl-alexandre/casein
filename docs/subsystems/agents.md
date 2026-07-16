@@ -116,11 +116,14 @@ compile-time-fixed argv.
    managed Grok receives the immutable bundle through leader ACP metadata,
    OpenCode reads project
    `.opencode/opencode.json`, and Codex receives DevIDE MCP through launch-time
-   `-c mcp_servers...` overrides. The launcher also defaults Codex to yolo mode
-   (`--dangerously-bypass-approvals-and-sandbox`) and Claude to
-   `--dangerously-skip-permissions`, unless the operator passes an explicit
-   sandbox/approval or permission option, or sets `DEVIDE_CODEX_DEFAULT_YOLO=0` /
-   `DEVIDE_CLAUDE_DEFAULT_YOLO=0`. Palette id `clauded` maps to bare `claude`
+   `-c mcp_servers...` overrides. Codex defaults are workspace-mode aware:
+   review/observe/locked use `read-only + never`, while manual workspaces use
+   `workspace-write + on-request`. Unrestricted mode is an explicit opt-in via
+   `DEVIDE_CODEX_DEFAULT_YOLO=1`; bearer credentials are excluded from Codex's
+   repo-command environment while remaining available to the MCP client.
+   Claude still defaults to `--dangerously-skip-permissions` unless the operator
+   passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
+   Palette id `clauded` maps to bare `claude`
    (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
    Plain agent starts do not depend on `DEV_IDE_API_TOKEN` because DevIDE MCP is
    not persisted in global agent configs. Version/help probes

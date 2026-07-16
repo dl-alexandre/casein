@@ -37,6 +37,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.ArtifactEvents
   alias DevIdeWeb.WorkspaceLive.Show.ConnectEvents
+  alias DevIdeWeb.WorkspaceLive.Show.CodexEvents
   alias DevIdeWeb.WorkspaceLive.Show.CockpitData
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
@@ -106,6 +107,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
   @known_events ~w(
     switch_tab refresh
+    codex:refresh codex:select_thread codex:resolve_approval codex:start_exec codex:cancel_exec
     workspace:start workspace:stop workspace:set_mode
     workspace:grant_agent_write_unlock workspace:revoke_agent_write_unlock
     tmux:apply_template tmux:apply_previewed_template
@@ -156,7 +158,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Cockpit tabs addressable via "switch_tab" and the `?tab=` deep-link query
   # param (docs/deep_links.md). Unknown values are ignored.
-  @tabs ~w(terminal files search diff artifacts run proposals logs history)
+  @tabs ~w(terminal agents files search diff artifacts run proposals logs history)
 
   @impl true
   def mount(params, session, socket) do
@@ -333,6 +335,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:artifact_selected_id, nil)
         |> HistoryEvents.assign_defaults()
         |> GrokPermissionEvents.mount()
+        |> CodexEvents.assign_defaults()
         # Global notifications drawer (user-scoped, not workspace-scoped):
         # subscribes to the viewer's notification topic and loads the unread
         # badge count on the connected mount; the inbox list is lazy (opens).
@@ -409,6 +412,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_open_links()
         |> subscribe_pane_labels()
         |> SituationEvents.mount()
+        |> CodexEvents.subscribe_once()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -798,6 +802,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("connect:" <> _ = event, params, socket),
     do: ConnectEvents.handle_event(event, params, socket)
 
+  def handle_event("codex:" <> _ = event, params, socket),
+    do: CodexEvents.handle_event(event, params, socket)
+
   def handle_event("annotation:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
 
@@ -885,7 +892,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       if tab == "artifacts", do: ArtifactEvents.refresh_artifact_projects(socket), else: socket
 
-    if tab == "history", do: HistoryEvents.open(socket, params), else: socket
+    socket = if tab == "history", do: HistoryEvents.open(socket, params), else: socket
+    if tab == "agents", do: CodexEvents.open(socket), else: socket
   end
 
   def select_tab(socket, _tab, _params), do: socket
@@ -935,6 +943,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:grok_acp_attachments_updated, _workspace_id, _snapshots} = message, socket),
     do: {:noreply, GrokPermissionEvents.handle_info(message, socket)}
+
+  def handle_info({:codex_event, event}, socket), do: CodexEvents.handle_info(event, socket)
+
+  def handle_info(:flush_codex_deltas, socket),
+    do: CodexEvents.handle_info(:flush_codex_deltas, socket)
+
+  def handle_info({:codex_exec_event, _, _} = message, socket),
+    do: CodexEvents.handle_info(message, socket)
+
+  def handle_info({:codex_exec_data, _, _, _} = message, socket),
+    do: CodexEvents.handle_info(message, socket)
+
+  def handle_info({:codex_exec_exit, _, _, _} = message, socket),
+    do: CodexEvents.handle_info(message, socket)
 
   # Durable notification broadcasts on the viewer's user topic — subscribed by
   # NotificationsDrawerEvents at mount. Badge always updates; the drawer list
@@ -1296,13 +1318,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket
         end
 
+      send(self(), :after_mount_agents)
       {:noreply, socket}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info(:after_mount_agents, socket), do: {:noreply, socket}
+  def handle_info(:after_mount_agents, socket) do
+    socket =
+      if connected?(socket) do
+        if socket.assigns[:tab] == "agents",
+          do: CodexEvents.open(socket),
+          else: CodexEvents.refresh(socket)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
 
   def handle_info({:open_preview_demo, attempt}, socket)
       when is_integer(attempt) and attempt > 0 do

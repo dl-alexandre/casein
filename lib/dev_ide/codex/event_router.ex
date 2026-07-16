@@ -9,7 +9,7 @@ defmodule DevIDE.Codex.EventRouter do
 
   use GenServer
 
-  alias DevIDE.Codex.Event
+  alias DevIDE.Codex.{Event, EventSink, Store}
 
   @type server :: GenServer.server()
 
@@ -53,7 +53,7 @@ defmodule DevIDE.Codex.EventRouter do
     state = %{
       workspace_id: Keyword.fetch!(opts, :workspace_id),
       runtime_id: Keyword.fetch!(opts, :runtime_id),
-      sequence: 0,
+      sequence: Store.latest_sequence(Keyword.fetch!(opts, :runtime_id)),
       runtime_status: :starting,
       runtime_metadata: %{},
       subscribers: %{},
@@ -82,9 +82,16 @@ defmodule DevIDE.Codex.EventRouter do
   def handle_call({:publish, event}, _from, state) do
     if event.workspace_id == state.workspace_id and event.runtime_id == state.runtime_id do
       event = Event.resequence(event, state.sequence + 1)
-      state = project(%{state | sequence: event.sequence}, event)
-      Enum.each(Map.keys(state.subscribers), &send(&1, {:codex_event, event}))
-      {:reply, {:ok, event}, state}
+
+      case EventSink.route(event) do
+        :ok ->
+          state = project(%{state | sequence: event.sequence}, event)
+          Enum.each(Map.keys(state.subscribers), &send(&1, {:codex_event, event}))
+          {:reply, {:ok, event}, state}
+
+        {:error, reason} ->
+          {:reply, {:error, {:persistence_failed, reason}}, state}
+      end
     else
       {:reply, {:error, :runtime_mismatch}, state}
     end
@@ -143,7 +150,7 @@ defmodule DevIDE.Codex.EventRouter do
   end
 
   defp project(state, %Event{type: type, turn_id: turn_id} = event)
-       when type in [:turn_started, :turn_completed] do
+       when type in [:turn_started, :turn_completed, :turn_failed] do
     put_in(state.turns[turn_id], event)
   end
 

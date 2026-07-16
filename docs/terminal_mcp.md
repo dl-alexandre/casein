@@ -205,9 +205,12 @@ report; `blocked`/`done` are never inferred from the title):
     error) also maps to blocked. Grok's camelCase `sessionId` and
     `transcriptPath` hook fields are retained as pane metadata. The hook command
     is env-guarded, so grok sessions outside DevIDE pairing no-op silently.
-  - **Codex**: the launcher injects `-c notify=["…/devide-codex-notify.sh"]`;
-    `agent-turn-complete` reports done with the last assistant message. Codex
-    has no turn-start event — the working edge comes from dispatch (below).
+  - **Codex**: the launcher injects lifecycle hooks for SessionStart,
+    UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, and
+    SubagentStart/Stop. `devide-codex-notify.sh` sends their JSON to the
+    workspace-scoped Codex hook receiver; the completion-only `notify` program
+    remains enabled as a transition fallback. Hooks report working, blocked,
+    done, and parent/child agent state without parsing terminal scrollback.
 - **Dispatch reports**: a successful `terminal_send_agent_command` (or
   `terminal_paste_agent_text` with `submit`) reports `working` for the target
   pane itself, so every runtime gets a working edge the moment work is sent.

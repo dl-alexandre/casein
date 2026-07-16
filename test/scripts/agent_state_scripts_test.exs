@@ -105,23 +105,44 @@ defmodule Scripts.AgentStateScriptsTest do
     refute run_state_script(%{"GROK_HOOK_EVENT" => "post_tool_use"})
   end
 
-  test "codex agent-turn-complete reports done with the last assistant message" do
+  test "codex legacy notify forwards the canonical event to the workspace hook receiver" do
     notification =
       Jason.encode!(%{
         "type" => "agent-turn-complete",
+        "thread-id" => "thread-legacy",
         "turn-id" => "t1",
         "last-assistant-message" => "All tests pass."
       })
 
     body = run_codex_script([notification])
 
-    assert body =~ ~s("state": "done")
-    assert body =~ ~s("message": "All tests pass.")
-    assert body =~ ~s("pane": "%9")
+    assert body =~ "/api/workspaces/ws-test/codex/hooks"
+    assert body =~ ~s("transport":"notify")
+    assert body =~ ~s("type":"agent-turn-complete")
+    assert body =~ ~s("thread-id":"thread-legacy")
+    assert body =~ ~s("last-assistant-message":"All tests pass.")
+    assert body =~ ~s("pane":"%9")
   end
 
-  test "codex ignores other notification types" do
-    refute run_codex_script([Jason.encode!(%{"type" => "something-else"})])
+  test "codex forwards new hook types without requiring a script update" do
+    body = run_codex_script([Jason.encode!(%{"type" => "something-else"})])
+
+    assert body =~ ~s("type":"something-else")
+  end
+
+  test "codex lifecycle hooks read JSON from stdin" do
+    body =
+      run_codex_stdin(
+        Jason.encode!(%{
+          "hook_event_name" => "PermissionRequest",
+          "session_id" => "thread-1",
+          "reason" => "Network access"
+        })
+      )
+
+    assert body =~ ~s("transport":"hook")
+    assert body =~ ~s("hook_event_name":"PermissionRequest")
+    assert body =~ ~s("reason":"Network access")
   end
 
   test "codex exits 0 without DevIDE env" do
@@ -163,6 +184,23 @@ defmodule Scripts.AgentStateScriptsTest do
     {out, 0} =
       System.cmd("bash", [@codex_script | args],
         env: base_env(dir, capture),
+        stderr_to_stdout: true
+      )
+
+    assert out == ""
+    read_capture(capture)
+  end
+
+  defp run_codex_stdin(stdin) do
+    {dir, capture} = stub_curl!()
+
+    env =
+      base_env(dir, capture) ++
+        [{"HOOK_STDIN", stdin}, {"CODEX_SCRIPT", @codex_script}]
+
+    {out, 0} =
+      System.cmd("sh", ["-c", ~s(printf '%s' "$HOOK_STDIN" | bash "$CODEX_SCRIPT")],
+        env: env,
         stderr_to_stdout: true
       )
 

@@ -33,4 +33,28 @@ defmodule McpCtl.ToolTest do
              "examples" => [%{"arguments" => %{"command" => "mix test"}}]
            }
   end
+
+  test "mcp_spec emits standard safety annotations and structured output schema" do
+    tool =
+      Tool.define("remove_preview", "Remove a preview", Tool.object(%{}), %{
+        mutation?: true,
+        danger_level: :high,
+        idempotent_hint: true,
+        output_schema: %{type: "object", required: ["removed"]}
+      })
+
+    assert %{
+             inputSchema: %{type: "object"},
+             outputSchema: %{type: "object", required: ["removed"]},
+             annotations: %{
+               readOnlyHint: false,
+               destructiveHint: true,
+               idempotentHint: true,
+               openWorldHint: false
+             }
+           } = Tool.mcp_spec(tool)
+
+    refute Map.has_key?(Tool.mcp_spec(tool).metadata, "output_schema")
+    refute Map.has_key?(Tool.mcp_spec(tool).metadata, "idempotent_hint")
+  end
 end

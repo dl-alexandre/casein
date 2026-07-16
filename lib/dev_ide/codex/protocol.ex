@@ -80,6 +80,33 @@ defmodule DevIDE.Codex.Protocol do
     normalize_turn_event(:turn_completed, "turn/completed", params, context)
   end
 
+  def normalize({:notification, "item/started", params}, context) do
+    normalize_item_event(:item_started, "item/started", params, context)
+  end
+
+  def normalize({:notification, "item/completed", params}, context) do
+    normalize_item_event(:item_completed, "item/completed", params, context)
+  end
+
+  def normalize({:notification, "thread/tokenUsage/updated", params}, context) do
+    with {:ok, thread_id} <- string_field(params, "threadId", "params.threadId"),
+         {:ok, turn_id} <- string_field(params, "turnId", "params.turnId"),
+         {:ok, usage} <- map_field(params, "tokenUsage", "params.tokenUsage") do
+      {:ok,
+       Event.new!(:usage_updated, context,
+         thread_id: thread_id,
+         turn_id: turn_id,
+         payload: normalize_token_usage(usage),
+         metadata: method_metadata("thread/tokenUsage/updated")
+       )}
+    end
+  end
+
+  def normalize({:notification, method, params}, context)
+      when method in ["hook/started", "hook/completed"] do
+    normalize_hook_event(method, params, context)
+  end
+
   def normalize({:notification, "item/agentMessage/delta", params}, context) do
     with {:ok, thread_id} <- string_field(params, "threadId", "params.threadId"),
          {:ok, turn_id} <- string_field(params, "turnId", "params.turnId"),
@@ -225,8 +252,13 @@ defmodule DevIDE.Codex.Protocol do
     with {:ok, thread_id} <- string_field(params, "threadId", "params.threadId"),
          {:ok, turn} <- map_field(params, "turn", "params.turn"),
          {:ok, normalized} <- normalize_turn(turn) do
+      event_type =
+        if type == :turn_completed and normalized.payload.status == :failed,
+          do: :turn_failed,
+          else: type
+
       {:ok,
-       Event.new!(type, context,
+       Event.new!(event_type, context,
          thread_id: thread_id,
          turn_id: normalized.turn_id,
          payload: normalized.payload,
@@ -234,6 +266,117 @@ defmodule DevIDE.Codex.Protocol do
        )}
     end
   end
+
+  defp normalize_item_event(type, method, params, context) do
+    with {:ok, thread_id} <- string_field(params, "threadId", "params.threadId"),
+         {:ok, turn_id} <- string_field(params, "turnId", "params.turnId"),
+         {:ok, item} <- map_field(params, "item", "params.item"),
+         {:ok, item_id} <- string_field(item, "id", "params.item.id") do
+      payload = normalize_item(item)
+
+      {:ok,
+       Event.new!(type, context,
+         thread_id: thread_id,
+         turn_id: turn_id,
+         item_id: item_id,
+         tool_call_id: optional_binary(item, "toolCallId"),
+         payload: payload,
+         metadata: method_metadata(method)
+       )}
+    end
+  end
+
+  defp normalize_hook_event(method, params, context) do
+    with {:ok, thread_id} <- string_field(params, "threadId", "params.threadId"),
+         {:ok, run} <- map_field(params, "run", "params.run"),
+         {:ok, run_id} <- string_field(run, "id", "params.run.id") do
+      event_name = optional_binary(run, "eventName")
+      type = hook_event_type(event_name, method)
+
+      {:ok,
+       Event.new!(type, context,
+         thread_id: thread_id,
+         turn_id: optional_binary(params, "turnId"),
+         item_id: run_id,
+         payload:
+           %{
+             hook_event: event_name,
+             status: optional_binary(run, "status"),
+             scope: optional_binary(run, "scope"),
+             source: optional_binary(run, "source"),
+             source_path: optional_binary(run, "sourcePath"),
+             handler_type: optional_binary(run, "handlerType"),
+             execution_mode: optional_binary(run, "executionMode"),
+             status_message: optional_binary(run, "statusMessage"),
+             duration_ms: optional_integer(run, "durationMs"),
+             entries: bounded_value(Map.get(run, "entries", []))
+           }
+           |> compact(),
+         metadata: method_metadata(method)
+       )}
+    end
+  end
+
+  defp hook_event_type("subagentStart", "hook/completed"), do: :subagent_started
+  defp hook_event_type("subagentStop", "hook/completed"), do: :subagent_stopped
+  defp hook_event_type(_event_name, _method), do: :hook_observed
+
+  defp normalize_item(item) do
+    item
+    |> Map.take([
+      "type",
+      "status",
+      "text",
+      "command",
+      "cwd",
+      "name",
+      "server",
+      "tool",
+      "query",
+      "changes",
+      "agents",
+      "receiverThreadIds",
+      "prompt",
+      "senderThreadId",
+      "error"
+    ])
+    |> bounded_value()
+    |> Map.put_new("type", "unknown")
+  end
+
+  defp normalize_token_usage(usage) do
+    %{
+      last: normalize_usage_breakdown(Map.get(usage, "last", %{})),
+      total: normalize_usage_breakdown(Map.get(usage, "total", %{})),
+      model_context_window: optional_integer(usage, "modelContextWindow")
+    }
+    |> compact()
+  end
+
+  defp normalize_usage_breakdown(usage) when is_map(usage) do
+    %{
+      input_tokens: optional_integer(usage, "inputTokens") || 0,
+      cached_input_tokens: optional_integer(usage, "cachedInputTokens") || 0,
+      output_tokens: optional_integer(usage, "outputTokens") || 0,
+      reasoning_output_tokens: optional_integer(usage, "reasoningOutputTokens") || 0,
+      total_tokens: optional_integer(usage, "totalTokens") || 0
+    }
+  end
+
+  defp normalize_usage_breakdown(_usage), do: %{}
+
+  defp bounded_value(value) when is_binary(value), do: String.slice(value, 0, 16_000)
+
+  defp bounded_value(value) when is_list(value),
+    do: value |> Enum.take(100) |> Enum.map(&bounded_value/1)
+
+  defp bounded_value(value) when is_map(value) do
+    value
+    |> Enum.take(100)
+    |> Map.new(fn {key, inner} -> {key, bounded_value(inner)} end)
+  end
+
+  defp bounded_value(value), do: value
 
   defp normalize_thread(thread) do
     with {:ok, thread_id} <- string_field(thread, "id", "thread.id"),
