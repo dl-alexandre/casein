@@ -269,6 +269,16 @@ defmodule DevIDE.Agents.PreviewTools.Helpers do
     }
   end
 
+  def metadata("preview_compare_snapshots") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:preview_storage],
+      policy_tags: [:writes_comparison_artifact],
+      recovery_hints: ["The returned overlay is persisted as a workspace-scoped artifact."]
+    }
+  end
+
   def metadata(name) when name in ["preview_record_start", "preview_record_stop"] do
     %{
       mutation?: true,

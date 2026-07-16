@@ -18,7 +18,10 @@ defmodule DevIDE.SignalsTest do
         action: "agent.blocked",
         target_type: "tmux_pane",
         target_ref: "%3",
-        metadata: %{"message" => "needs perm"}
+        metadata: %{
+          "message" => "needs perm",
+          "agent_session_id" => "grok-session-123"
+        }
       })
 
     signal = Signals.from_audit_event(event)
@@ -30,6 +33,7 @@ defmodule DevIDE.SignalsTest do
     assert signal.time == DateTime.to_iso8601(event.inserted_at)
     assert signal.data.action == "agent.blocked"
     assert signal.data.metadata["message"] == "needs perm"
+    assert signal.data.metadata["agent_session_id"] == "grok-session-123"
     assert Trace.get(signal) == nil
   end
 

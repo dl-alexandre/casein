@@ -12,6 +12,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
   use DevIdeWeb, :controller
 
   alias DevIdeWeb.API.{MCPTransport, TerminalMCP}
+  alias DevIdeWeb.Plugs.AgentCapabilityAuthz
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
@@ -23,10 +24,13 @@ defmodule DevIdeWeb.API.TerminalMCPController do
         conn
 
       {:cont, conn} ->
-        case TerminalMCP.handle(conn.body_params,
-               default_workspace_id: workspace_id,
-               actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
-             ) do
+        opts =
+          [
+            default_workspace_id: workspace_id,
+            actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+          ] ++ AgentCapabilityAuthz.handler_opts(conn)
+
+        case TerminalMCP.handle(conn.body_params, opts) do
           {:reply, response} ->
             conn
             |> MCPTransport.maybe_issue_session(:terminal, conn.body_params, workspace_id)
@@ -46,7 +50,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
   def info(conn, _params), do: MCPTransport.stream(conn, :terminal)
 
   # Streamable HTTP: tear down the session.
-  def delete(conn, _params), do: MCPTransport.terminate(conn)
+  def delete(conn, _params), do: MCPTransport.terminate(conn, :terminal)
 
   defp default_workspace_id(conn) do
     conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]

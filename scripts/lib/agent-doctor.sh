@@ -9,6 +9,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/scripts/lib/agent-env.sh"
 # shellcheck source=lib/agent-auth-profile.sh
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
+# shellcheck source=lib/real-agent-bin.sh
+source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
 PASS=0
 WARN=0
@@ -18,9 +20,35 @@ pass() { printf 'OK   %s\n' "$*"; PASS=$((PASS + 1)); }
 warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
+devide_shims_expected() {
+  # Agent processes launched through launch-devide-agent.sh carry one of these
+  # markers. The worktree marker covers the normal path; the explicit launch
+  # marker covers deliberate DEVIDE_AGENT_SKIP_WORKTREE launches.
+  if [[ -n "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" || "${DEVIDE_WORKTREE:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  # A plain shell may source the workspace env file while intentionally keeping
+  # launcher shims off PATH. Only classify tmux as paired when the live session
+  # itself is a DevIDE session.
+  if [[ -n "${TMUX:-}" ]]; then
+    local session
+    session="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
+    [[ -n "$session" ]] || session="${DEVIDE_TMUX_SESSION:-}"
+    [[ "$session" == devide_* ]]
+    return
+  fi
+
+  return 1
+}
+
 check_shims() {
   local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
+  local shims_expected=0
+  if devide_shims_expected; then
+    shims_expected=1
+  fi
 
   for runtime in grok claude codex opencode agent devide; do
     bin="${shim_dir}/${runtime}"
@@ -54,13 +82,19 @@ check_shims() {
     # winning is the intended zero-footprint behavior.
     resolved="$(command -v "$runtime" 2>/dev/null || true)"
     if [[ -z "$resolved" ]]; then
-      fail "shim unreachable: ${runtime} not on PATH (run repair-tmux-env.sh or open a fresh DevIDE pane)"
+      if [[ "$shims_expected" == "1" ]]; then
+        fail "shim unreachable in paired context: ${runtime} not on PATH (run repair-tmux-env.sh or open a fresh DevIDE pane)"
+      else
+        pass "plain-shell isolation: ${runtime} launcher shim is not on PATH"
+      fi
       continue
     fi
     bin_target="$(readlink -f "$bin" 2>/dev/null || printf '%s' "$bin")"
     resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
     if [[ "$resolved_target" == "$bin_target" ]]; then
       pass "shim wins PATH resolution: ${runtime}"
+    elif [[ "$shims_expected" == "0" ]]; then
+      pass "plain-shell isolation: ${runtime} resolves outside DevIDE shims (${resolved})"
     else
       fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${shim_dir} first on PATH; repair-tmux-env.sh does this)"
     fi
@@ -74,11 +108,23 @@ check_shims() {
   npm_bin="${npm_prefix}/bin"
   case ":${PATH:-}:" in
     *":${shim_dir}:"*) pass "PATH includes ${shim_dir}" ;;
-    *) warn "PATH missing ${shim_dir} — new non-login panes may not find agent shims" ;;
+    *)
+      if [[ "$shims_expected" == "1" ]]; then
+        fail "paired-context PATH missing ${shim_dir} — run repair-tmux-env.sh or relaunch the agent"
+      else
+        pass "plain-shell PATH intentionally excludes ${shim_dir}"
+      fi
+      ;;
   esac
   case ":${PATH:-}:" in
     *":${npm_bin}:"*) pass "PATH includes npm agent bin (${npm_bin})" ;;
-    *) warn "PATH missing ${npm_bin} — set DEV_IDE_NPM_PREFIX / repair-tmux-env" ;;
+    *)
+      if [[ "$shims_expected" == "1" ]]; then
+        warn "paired-context PATH missing ${npm_bin} — set DEV_IDE_NPM_PREFIX / repair-tmux-env"
+      else
+        pass "plain-shell PATH does not require npm agent bin (${npm_bin})"
+      fi
+      ;;
   esac
 }
 
@@ -271,41 +317,345 @@ check_mcp_endpoints() {
   fi
 }
 
-check_grok_workspace_urls() {
+grok_inspect_rows() {
+  local inspect_file="$1"
+  shift
+
+  EXPECTED_CWD="${PWD}" \
+    EXPECTED_WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}" \
+    python3 - "$inspect_file" "$@" <<'PY'
+import json
+import os
+import re
+import sys
+from urllib.parse import parse_qs, urlsplit
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        report = json.load(handle)
+except (OSError, ValueError, TypeError):
+    raise SystemExit(1)
+
+if not isinstance(report, dict):
+    raise SystemExit(1)
+
+version = report.get("grokVersion")
+if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z._+\-]{1,64}", version):
+    version = "unknown"
+print(f"META\tversion\t{version}")
+
+reported_cwd = report.get("cwd")
+expected_cwd = os.path.realpath(os.environ["EXPECTED_CWD"])
+cwd_status = "ok" if isinstance(reported_cwd, str) and os.path.realpath(reported_cwd) == expected_cwd else "mismatch"
+print(f"META\tcwd\t{cwd_status}")
+
+servers = report.get("mcpServers")
+if servers is None:
+    servers = []
+elif not isinstance(servers, list):
+    raise SystemExit(1)
+
+workspace_id = os.environ["EXPECTED_WORKSPACE_ID"]
+
+def workspace_matches(server):
+    target = server.get("target")
+    if not isinstance(target, str) or not workspace_id:
+        return False
+    try:
+        return workspace_id in parse_qs(urlsplit(target).query).get("workspace_id", [])
+    except ValueError:
+        return False
+
+for expected_name in sys.argv[2:]:
+    candidates = [server for server in servers if isinstance(server, dict) and server.get("name") == expected_name]
+    if not candidates:
+        status = "missing"
+    elif any(workspace_matches(server) for server in candidates):
+        status = "ok"
+    else:
+        status = "wrong-workspace"
+    print(f"SERVER\t{expected_name}\t{status}")
+PY
+}
+
+grok_bundle_contract() {
+  local managed="$1"
+  local bundle="${DEVIDE_GROK_BUNDLE_DIR:-}"
+  local digest="${DEVIDE_GROK_BUNDLE_DIGEST:-}"
+
+  if [[ -z "$bundle" && -z "$digest" ]]; then
+    if [[ "$managed" == "1" ]]; then
+      fail "Grok managed launch is missing DEVIDE_GROK_BUNDLE_DIR and DEVIDE_GROK_BUNDLE_DIGEST"
+    else
+      warn "no session-scoped Grok capability bundle is active in this shell"
+    fi
+    return 1
+  fi
+
+  if [[ -z "$bundle" || -z "$digest" ]]; then
+    fail "Grok capability bundle metadata is incomplete"
+    return 1
+  fi
+
+  if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "Grok capability bundle digest is not 64 lowercase hexadecimal characters"
+    return 1
+  fi
+
+  local bundle_real bundle_root bundle_root_real
+  bundle_real="$(realpath -m "$bundle")"
+  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.devide/grok-bundles}"
+  bundle_root_real="$(realpath -m "$bundle_root")"
+
+  if [[ "$(dirname "$bundle_real")" != "$bundle_root_real" ]] ||
+     [[ "$(basename "$bundle_real")" != "sha256-${digest}" ]]; then
+    fail "Grok capability bundle is outside its content-addressed bundle root"
+    return 1
+  fi
+
+  if [[ ! -f "${bundle_real}/plugin.json" ||
+        ! -f "${bundle_real}/.mcp.json" ||
+        ! -f "${bundle_real}/hooks/hooks.json" ||
+        ! -d "${bundle_real}/skills" ]]; then
+    fail "Grok capability bundle is missing its plugin, MCP, hooks, or skills contract"
+    return 1
+  fi
+
+  local hooks_mode
+  if ! hooks_mode="$(python3 - "$bundle_real" <<'PY'
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+try:
+    plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
+    mcp = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+    hooks = json.loads((root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+except (OSError, UnicodeError, ValueError):
+    raise SystemExit(1)
+
+if not isinstance(plugin, dict) or not isinstance(mcp, dict) or not isinstance(hooks, dict):
+    raise SystemExit(1)
+if plugin.get("mcpServers") != "./.mcp.json" or plugin.get("hooks") != "./hooks/hooks.json" or plugin.get("skills") != "./skills":
+    raise SystemExit(1)
+hook_map = hooks.get("hooks")
+if not isinstance(hook_map, dict):
+    raise SystemExit(1)
+print("enabled" if hook_map else "disabled")
+PY
+  )"; then
+    fail "Grok capability bundle metadata is not valid JSON or has an unexpected manifest"
+    return 1
+  fi
+
+  if [[ "$hooks_mode" == "enabled" && ! -x "${bundle_real}/hooks/devide-agent-state.sh" ]]; then
+    fail "Grok capability bundle enables hooks without its executable state reporter"
+    return 1
+  fi
+
+  if ! python3 "${ROOT}/scripts/lib/grok-capability-bundle.py" verify \
+      "$bundle_real" --digest "$digest" >/dev/null 2>&1; then
+    fail "Grok capability bundle failed immutable digest verification"
+    return 1
+  fi
+
+  pass "Grok capability bundle verified (digest sha256-${digest})"
+  return 0
+}
+
+grok_leader_contract() {
+  local managed="$1"
+  local grok_bin="$2"
+  local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
+  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.devide/grok-leaders}"
+
+  if [[ -z "$socket" ]]; then
+    if [[ "$managed" == "1" ]]; then
+      fail "Grok managed launch is missing DEVIDE_GROK_LEADER_SOCKET"
+    else
+      warn "no private Grok leader socket is active in this shell"
+    fi
+    return 1
+  fi
+
+  local socket_real leader_root_real
+  socket_real="$(realpath -m "$socket")"
+  leader_root_real="$(realpath -m "$leader_root")"
+
+  if [[ "$(dirname "$socket_real")" != "$leader_root_real" ]] ||
+     [[ ! "$(basename "$socket_real")" =~ ^[0-9a-f]{24}\.sock$ ]] ||
+     [[ "${#socket_real}" -gt 100 ]]; then
+    fail "Grok leader socket is outside the private leader root or has an invalid name"
+    return 1
+  fi
+
+  if ! python3 - "$leader_root_real" "$socket_real" <<'PY' >/dev/null 2>&1
+import os
+import stat
+import sys
+
+root, socket_path = sys.argv[1:]
+root_stat = os.stat(root, follow_symlinks=False)
+socket_stat = os.stat(socket_path, follow_symlinks=False)
+if not stat.S_ISDIR(root_stat.st_mode) or root_stat.st_uid != os.getuid() or root_stat.st_mode & 0o077:
+    raise SystemExit(1)
+if not stat.S_ISSOCK(socket_stat.st_mode) or socket_stat.st_uid != os.getuid():
+    raise SystemExit(1)
+PY
+  then
+    if [[ "$managed" == "1" ]]; then
+      fail "Grok managed launch private leader socket is absent or not owner-isolated"
+    else
+      warn "Grok private leader socket is not currently active"
+    fi
+    return 1
+  fi
+
+  local info_out command_status=0 timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
+  [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=15
+  info_out="$(mktemp)"
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${timeout_seconds}s" "$grok_bin" --leader-socket "$socket_real" \
+      leader info --json >"$info_out" 2>/dev/null || command_status=$?
+  else
+    "$grok_bin" --leader-socket "$socket_real" leader info --json \
+      >"$info_out" 2>/dev/null || command_status=$?
+  fi
+
+  if [[ "$command_status" == "0" ]] && python3 - "$info_out" <<'PY' >/dev/null 2>&1
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)
+if not isinstance(value, dict):
+    raise SystemExit(1)
+PY
+  then
+    rm -f "$info_out"
+    pass "Grok private leader socket is active and healthy"
+    return 0
+  fi
+
+  rm -f "$info_out"
+  if [[ "$managed" == "1" ]]; then
+    fail "Grok private leader probe failed (details redacted)"
+  else
+    warn "Grok private leader probe failed (details redacted)"
+  fi
+  return 1
+}
+
+check_grok_runtime() {
   local workspace_name="${DEVIDE_WORKSPACE_NAME:-}"
-  local grok_config="${HOME}/.grok/config.toml"
+  local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+  local managed=0
+  [[ "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" == "grok" ]] && managed=1
 
-  [[ -n "$workspace_name" && -f "$grok_config" ]] || return 0
+  grok_bundle_contract "$managed" || true
 
-  local slug terminal_key preview_key artifact_key
-  slug="$(
-    DEVIDE_WORKSPACE_NAME="$workspace_name" python3 -c "
+  local grok_bin
+  grok_bin="$(real_agent_bin grok 2>/dev/null || true)"
+  if [[ -z "$grok_bin" || ! -x "$grok_bin" ]]; then
+    fail "Grok runtime discovery unavailable: real Grok executable not found"
+    return 0
+  fi
+
+  grok_leader_contract "$managed" "$grok_bin" || true
+
+  if ! "$grok_bin" inspect --help 2>/dev/null | grep -q -- '--json'; then
+    warn "installed Grok does not support 'grok inspect --json'; update Grok to diagnose resolved launch configuration"
+    return 0
+  fi
+
+  local expected_servers=()
+  if [[ -n "$workspace_name" && -n "$workspace_id" ]]; then
+    local slug
+    slug="$(
+      DEVIDE_WORKSPACE_NAME="$workspace_name" python3 -c "
 import os, re
 slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['DEVIDE_WORKSPACE_NAME']).strip('-').lower()
 print(slug or 'workspace')
 "
-  )"
-  terminal_key="devide-terminal-${slug}"
-  preview_key="devide-preview-${slug}"
-  artifact_key="devide-artifact-${slug}"
-
-  if grep -q "\\[mcp_servers\\.${terminal_key}\\]" "$grok_config" 2>/dev/null &&
-     grep -q "enabled = true" "$grok_config" 2>/dev/null; then
-    if grep -A3 "\\[mcp_servers\\.${terminal_key}\\]" "$grok_config" | grep -q "${DEVIDE_WORKSPACE_ID:-}"; then
-      pass "grok config has enabled workspace-keyed terminal MCP"
-    else
-      warn "grok terminal MCP URL may not match workspace ${workspace_name}"
-    fi
+    )"
+    expected_servers=(
+      "devide-terminal-${slug}"
+      "devide-preview-${slug}"
+      "devide-artifact-${slug}"
+    )
   else
-    warn "grok config missing enabled ${terminal_key} — run devide mcp ensure"
+    warn "Grok MCP scope diagnostics skipped because workspace pairing env is incomplete"
   fi
 
-  if ! grep -q "\\[mcp_servers\\.${preview_key}\\]" "$grok_config" 2>/dev/null; then
-    warn "grok config missing ${preview_key}"
+  local inspect_out inspect_rows
+  inspect_out="$(mktemp)"
+  if ! "$grok_bin" inspect --json >"$inspect_out" 2>/dev/null; then
+    rm -f "$inspect_out"
+    fail "Grok could not inspect the resolved configuration for ${PWD} (details redacted; run 'grok inspect --json' directly)"
+    return 0
   fi
 
-  if ! grep -q "\\[mcp_servers\\.${artifact_key}\\]" "$grok_config" 2>/dev/null; then
-    warn "grok config missing ${artifact_key}"
+  if ! inspect_rows="$(grok_inspect_rows "$inspect_out" "${expected_servers[@]}")"; then
+    rm -f "$inspect_out"
+    fail "Grok inspect returned unrecognized JSON (raw output redacted)"
+    return 0
+  fi
+  rm -f "$inspect_out"
+
+  local kind name status missing_count=0
+  local discovered=()
+  while IFS=$'\t' read -r kind name status; do
+    case "${kind}:${name}:${status}" in
+      META:version:*) pass "Grok inspect resolved version ${status}" ;;
+      META:cwd:ok) pass "Grok inspect used paired launch cwd ${PWD}" ;;
+      META:cwd:*) fail "Grok inspect did not use the requested launch cwd ${PWD}" ;;
+      SERVER:*:ok)
+        pass "Grok inspect discovered ${name} with matching workspace scope"
+        discovered+=("$name")
+        ;;
+      SERVER:*:missing)
+        missing_count=$((missing_count + 1))
+        ;;
+      SERVER:*:wrong-workspace)
+        fail "Grok discovered ${name}, but its target is scoped to a different workspace"
+        ;;
+    esac
+  done <<<"$inspect_rows"
+
+  if [[ "$missing_count" -gt 0 ]]; then
+    warn "standalone Grok inspect does not expose ${missing_count} session-scoped DevIDE MCP server(s); ACP pluginDirs and the verified bundle are authoritative"
+  fi
+
+  [[ "${#expected_servers[@]}" -gt 0 ]] || return 0
+  if ! "$grok_bin" mcp doctor --help 2>/dev/null | grep -q -- '--json'; then
+    warn "installed Grok does not support 'grok mcp doctor --json'; MCP servers were not live-probed"
+    return 0
+  fi
+
+  local timeout_seconds="${DEVIDE_GROK_DOCTOR_TIMEOUT_SECONDS:-15}"
+  [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || timeout_seconds=15
+
+  local server command_status
+  local unresolved=()
+  for server in "${expected_servers[@]}"; do
+    command_status=0
+    if command -v timeout >/dev/null 2>&1; then
+      timeout "${timeout_seconds}s" "$grok_bin" mcp doctor --json "$server" >/dev/null 2>&1 || command_status=$?
+    else
+      "$grok_bin" mcp doctor --json "$server" >/dev/null 2>&1 || command_status=$?
+    fi
+
+    if [[ "$command_status" == "0" ]]; then
+      pass "Grok MCP handshake healthy: ${server}"
+    else
+      unresolved+=("$server")
+    fi
+  done
+
+  if [[ "${#unresolved[@]}" -gt 0 ]]; then
+    warn "standalone Grok MCP doctor could not resolve session-scoped server(s): ${unresolved[*]} (details redacted; direct MCP checks remain authoritative)"
   fi
 }
 
@@ -335,7 +685,7 @@ main() {
   check_bad_redirects
   check_mcp_endpoints
   check_tidewave_mcp
-  check_grok_workspace_urls
+  check_grok_runtime
   check_auth_files
 
   if [[ -n "${TMUX:-}" ]]; then
@@ -352,4 +702,6 @@ main() {
   fi
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

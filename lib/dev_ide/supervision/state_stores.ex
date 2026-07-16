@@ -13,6 +13,7 @@ defmodule DevIDE.Supervision.StateStores do
       DevIDE.Labels.Server,
       DevIDE.Terminals.AgentState.Server,
       DevIDE.Audit.MemoryAdapter,
+      DevIDE.Agents.AgentEvents.MemoryAdapter,
       # Push pipeline — Dispatcher before Registry (Registry calls Dispatcher.watch).
       DevIDE.Push.Dispatcher,
       DevIDE.Push.Registry,

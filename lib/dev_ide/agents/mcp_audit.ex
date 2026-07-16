@@ -3,7 +3,8 @@ defmodule DevIDE.Agents.MCPAudit do
   Audit + activity helpers for agent MCP tool invocations.
   """
 
-  alias DevIDE.{Agents.Activity, Agents.MCPError, Audit, Labels}
+  alias DevIDE.Agents.{Activity, AgentEvents, MCPError}
+  alias DevIDE.{Audit, Labels}
   alias DevIDE.Export.Sanitizer
 
   @spec record_terminal(String.t(), map(), :ok | {:error, term()}, keyword()) :: :ok
@@ -11,17 +12,23 @@ defmodule DevIDE.Agents.MCPAudit do
     workspace_id = terminal_workspace_id(args, opts)
     summary = terminal_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
+    identity = record_agent_event(workspace_id, "terminal_mcp", tool, args, status, opts)
 
     _ =
       Activity.record(
-        stamp_correlation(%{
-          workspace_id: workspace_id,
-          source: :terminal_mcp,
-          tool: tool,
-          summary: summary,
-          metadata: terminal_audit_metadata(tool, args),
-          status: status
-        })
+        stamp_correlation(
+          Map.merge(
+            %{
+              workspace_id: workspace_id,
+              source: :terminal_mcp,
+              tool: tool,
+              summary: summary,
+              metadata: terminal_audit_metadata(tool, args),
+              status: status
+            },
+            identity
+          )
+        )
       )
 
     # Mutating calls persist durably whether they succeeded or failed — a
@@ -53,17 +60,23 @@ defmodule DevIDE.Agents.MCPAudit do
     summary = preview_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
     metadata = preview_audit_metadata(tool, args, result)
+    identity = record_agent_event(workspace_id, "preview_mcp", tool, args, status, opts)
 
     _ =
       Activity.record(
-        stamp_correlation(%{
-          workspace_id: workspace_id,
-          source: :preview_mcp,
-          tool: tool,
-          summary: summary,
-          metadata: metadata,
-          status: status
-        })
+        stamp_correlation(
+          Map.merge(
+            %{
+              workspace_id: workspace_id,
+              source: :preview_mcp,
+              tool: tool,
+              summary: summary,
+              metadata: metadata,
+              status: status
+            },
+            identity
+          )
+        )
       )
 
     if mutating_preview_tool?(tool) and is_binary(workspace_id) do
@@ -92,17 +105,23 @@ defmodule DevIDE.Agents.MCPAudit do
     summary = artifact_summary(tool, args, result)
     status = if match?({:error, _}, result), do: :error, else: :ok
     metadata = artifact_audit_metadata(tool, args, result)
+    identity = record_agent_event(workspace_id, "artifact_mcp", tool, args, status, opts)
 
     _ =
       Activity.record(
-        stamp_correlation(%{
-          workspace_id: workspace_id,
-          source: :artifact_mcp,
-          tool: tool,
-          summary: summary,
-          metadata: metadata,
-          status: status
-        })
+        stamp_correlation(
+          Map.merge(
+            %{
+              workspace_id: workspace_id,
+              source: :artifact_mcp,
+              tool: tool,
+              summary: summary,
+              metadata: metadata,
+              status: status
+            },
+            identity
+          )
+        )
       )
 
     if mutating_artifact_tool?(tool) and is_binary(workspace_id) do
@@ -224,6 +243,24 @@ defmodule DevIDE.Agents.MCPAudit do
       :error -> workspace_id_from_args(args)
     end
   end
+
+  defp record_agent_event(workspace_id, ingress, tool, args, status, opts)
+       when is_binary(workspace_id) do
+    event_attrs = %{
+      tool: tool,
+      session: arg_value(args, :session),
+      pane: arg_value(args, :pane),
+      agent_session_id: arg_value(args, :agent_session_id),
+      actor_id: actor_id(args, opts)
+    }
+
+    case AgentEvents.append_mcp(workspace_id, ingress, event_attrs, status) do
+      {:ok, event, _disposition} -> %{id: event.id, inserted_at: event.occurred_at}
+      {:error, _reason} -> %{}
+    end
+  end
+
+  defp record_agent_event(_workspace_id, _ingress, _tool, _args, _status, _opts), do: %{}
 
   defp workspace_id_from_args(args) do
     Map.get(args, "workspace_id") || Map.get(args, :workspace_id)

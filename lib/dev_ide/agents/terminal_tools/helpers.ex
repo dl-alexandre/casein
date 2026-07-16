@@ -170,6 +170,47 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def agent_session_id_param do
+    %{
+      type: "string",
+      description: "Agent runtime's session identifier (for example Grok's sessionId)."
+    }
+  end
+
+  @doc false
+  def agent_runtime_param do
+    %{
+      type: "string",
+      enum: ["grok", "claude", "codex", "opencode", "agent"],
+      description: "Agent runtime identity supplied by an installed DevIDE hook."
+    }
+  end
+
+  @doc false
+  def grok_leader_socket_param do
+    %{
+      type: "string",
+      description: "Private Grok leader socket injected into this managed launch."
+    }
+  end
+
+  @doc false
+  def grok_bundle_dir_param do
+    %{
+      type: "string",
+      description: "Content-addressed DevIDE Grok capability bundle directory."
+    }
+  end
+
+  @doc false
+  def grok_bundle_digest_param do
+    %{
+      type: "string",
+      description: "Lowercase SHA-256 digest of the injected Grok capability bundle."
+    }
+  end
+
+  @doc false
   def agent_state_source_param do
     %{
       type: "string",

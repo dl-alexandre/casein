@@ -518,10 +518,40 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   defp tmp_dir!(name) do
     root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
     path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
+    make_tree_writable(path)
     File.rm_rf!(path)
     File.mkdir_p!(path)
-    on_exit(fn -> File.rm_rf!(path) end)
+
+    on_exit(fn ->
+      make_tree_writable(path)
+      File.rm_rf!(path)
+    end)
+
     path
+  end
+
+  defp make_tree_writable(path) do
+    if File.exists?(path) do
+      _ = File.chmod(path, 0o700)
+
+      case File.ls(path) do
+        {:ok, names} ->
+          Enum.each(names, fn name ->
+            child = Path.join(path, name)
+
+            if File.dir?(child) do
+              make_tree_writable(child)
+            else
+              _ = File.chmod(child, 0o600)
+            end
+          end)
+
+        _ ->
+          :ok
+      end
+    end
+
+    :ok
   end
 
   defp git!(cwd, args) do
@@ -576,13 +606,17 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "workspace_id" => "alpha",
                  "session" => session,
                  "state" => "blocked",
-                 "message" => "awaiting permission"
+                 "message" => "awaiting permission",
+                 "agent_session_id" => "grok-session-123"
                })
 
       assert result.target == "%2"
       assert result.state == "blocked"
+      assert result.agent_session_id == "grok-session-123"
       assert result.status == "reported"
-      assert DevIDE.Terminals.AgentState.get(session, "%2").state == :blocked
+      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      assert entry.state == :blocked
+      assert entry.agent_session_id == "grok-session-123"
     end
 
     test "send_agent_command reports a dispatch working state for the agent pane" do
@@ -637,6 +671,23 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "session" => session,
                  "state" => "napping"
                })
+    end
+
+    test "rejects invalid Grok attachment metadata before persisting agent state" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:error, {:invalid_grok_attachment, :invalid_grok_attachment_metadata}} =
+               TerminalTools.invoke("terminal_report_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "state" => "working",
+                 "agent_runtime" => "grok",
+                 "source" => "hook",
+                 "agent_session_id" => "unverified-session"
+               })
+
+      assert DevIDE.Terminals.AgentState.get(session, "%2") == nil
     end
   end
 

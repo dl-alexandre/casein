@@ -237,4 +237,20 @@ if __name__ == "__main__":
         )
         raise SystemExit(0)
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "write-grok-mcp":
+        if len(sys.argv) != 6:
+            print(
+                "usage: merge-agent-mcp.py write-grok-mcp <path> <terminal_url> <preview_url> <artifact_url>",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        active_workspace = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
+        # Managed Grok is confined by a DevIDE capability bearer. Tidewave is
+        # a third-party endpoint outside that authorization boundary, so it is
+        # deliberately absent from the session bundle.
+        write_claude_mcp_json(
+            Path(sys.argv[2]), sys.argv[3], sys.argv[4], sys.argv[5], active_workspace
+        )
+        raise SystemExit(0)
+
     raise SystemExit(main())

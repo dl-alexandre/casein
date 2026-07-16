@@ -36,11 +36,19 @@ to re-`initialize`. Missing or unknown streamable-session errors preserve the
 top-level `error` string and include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
 `DevIDE.Agents.MCPSessions.notify/2`.
+Session ids are bound to their server, workspace, and authenticated bearer scope;
+another workspace, MCP surface, or managed-agent capability receives the same
+`404 unknown_mcp_session` response as an unknown id.
 
 ## Access scope
 
-The bearer token is fully trusted on the host. Tools only touch DevIDE-managed
-tmux sessions (`devide_*` prefix), never unrelated tmux sessions.
+Workspace and global bearers retain their existing authority. Managed Grok uses
+an expiring `grokcap_*` bearer instead: it advertises only its exact direct-tool
+grant, is bound to one workspace/private leader/tmux session/agent pane, and is
+intersected with current workspace mode and write-unlock policy on every request.
+It cannot call `search_tools` or `invoke_tool`, use a different MCP endpoint, or
+reuse another bearer's streamable session id. All terminal tools still touch only
+DevIDE-managed tmux sessions (`devide_*` prefix), never unrelated sessions.
 
 **Pass `workspace_id` on every call unless the MCP URL is pre-scoped.** Generated
 same-host agent configs include `?workspace_id=<manager UUID>` on the MCP URL,
@@ -84,12 +92,14 @@ in the **Live MCP activity** feed. Raw key tools (`terminal_send_keys` /
 `terminal_send_agent_keys`) are never gated — they carry control keys like `C-c`
 and TUI input, so gating them would break interactivity.
 
-Treat the policy as a **guardrail, not a hard security boundary**: because the
+For ordinary workspace tokens, treat the policy as a **guardrail, not a hard
+security boundary**: because the
 key tools are intentionally ungated, a determined agent could still synthesize a
 command by sending its characters plus an Enter key. The policy stops a
 well-behaved agent (and honest mistakes) from running disallowed *commands*; the
 bearer token (and optional per-workspace tokens) remains the actual trust
-boundary. Per-agent identity is a possible future addition.
+boundary. Managed Grok capabilities do not expose either raw terminal-input
+tool; they expose agent-pane shortcuts only while write is unlocked.
 
 ## Terminal mode and MCP
 
@@ -192,8 +202,9 @@ report; `blocked`/`done` are never inferred from the title):
     (`~/.grok/hooks/devide-agent-state.json`, from
     `scripts/agent-hooks/grok-devide-agent-state.json`) that runs the same
     script on the equivalent Grok events; `stop_failure` (turn died on an API
-    error) also maps to blocked. The hook command is env-guarded, so grok
-    sessions outside DevIDE pairing no-op silently.
+    error) also maps to blocked. Grok's camelCase `sessionId` and
+    `transcriptPath` hook fields are retained as pane metadata. The hook command
+    is env-guarded, so grok sessions outside DevIDE pairing no-op silently.
   - **Codex**: the launcher injects `-c notify=["…/devide-codex-notify.sh"]`;
     `agent-turn-complete` reports done with the last assistant message. Codex
     has no turn-start event — the working edge comes from dispatch (below).
@@ -209,12 +220,20 @@ terminal_report_agent_state(
   message?,     # short free-text (truncated to 200 chars)
   pane?,        # defaults to the dedicated agent pane
   session?,
+  transcript_path?,   # supported runtime's exact session JSONL path
+  agent_session_id?,  # runtime-native session id, e.g. Grok sessionId
   source?       # "agent" | "hook"
 )
 ```
 
 A transition into `blocked` emits an `agent.blocked` audit event, which reaches
 the in-app banner and OS push.
+
+`terminal_agent_transcript` reads the reported path through a runtime adapter
+and returns one normalized entry stream. Claude paths are restricted to the
+configured Claude/auth-profile roots; Grok paths must be the exact
+`~/.grok/sessions/**/updates.jsonl` shape. tmux capture is not used as the
+transcript source.
 
 An orchestrating agent can wait on another agent's state instead of polling
 `terminal_capture`:

@@ -44,6 +44,7 @@ defmodule DevIDE.Terminals.AgentState do
           tool: String.t() | nil,
           workspace_id: String.t() | nil,
           transcript_path: String.t() | nil,
+          agent_session_id: String.t() | nil,
           reported_at: DateTime.t()
         }
 
@@ -88,7 +89,8 @@ defmodule DevIDE.Terminals.AgentState do
           truncate_message(message),
           Keyword.get(opts, :source, :mcp),
           Keyword.get(opts, :tool),
-          normalize_transcript_path(Keyword.get(opts, :transcript_path))
+          normalize_transcript_path(Keyword.get(opts, :transcript_path)),
+          normalize_agent_session_id(Keyword.get(opts, :agent_session_id))
         )
     end
   end
@@ -213,7 +215,11 @@ defmodule DevIDE.Terminals.AgentState do
         heuristic = PaneState.window_state(window)
         pane = PaneState.agent_or_active_pane(window)
         entry = pane && Map.get(reports, PaneState.map_get(pane, :id))
-        put_state(window, resolve_for_display(entry, heuristic, now))
+        resolved = resolve_for_display(entry, heuristic, now)
+
+        window
+        |> put_state(resolved)
+        |> put_agent_session_id(entry, resolved)
       end)
 
     %{topology | panes: panes, windows: windows}
@@ -224,7 +230,11 @@ defmodule DevIDE.Terminals.AgentState do
   defp enrich_pane(pane, reports, now) when is_map(pane) do
     heuristic = normalize_heuristic(PaneState.map_get(pane, :pane_state))
     entry = Map.get(reports, PaneState.map_get(pane, :id))
-    put_state(pane, resolve_for_display(entry, heuristic, now))
+    resolved = resolve_for_display(entry, heuristic, now)
+
+    pane
+    |> put_state(resolved)
+    |> put_agent_session_id(entry, resolved)
   end
 
   defp enrich_pane(pane, _reports, _now), do: pane
@@ -243,6 +253,16 @@ defmodule DevIDE.Terminals.AgentState do
     do: Map.put(map, :agent_state_message, message)
 
   defp put_message(map, _message), do: map
+
+  defp put_agent_session_id(
+         map,
+         %{agent_session_id: agent_session_id},
+         {state, _message}
+       )
+       when is_binary(agent_session_id) and agent_session_id != "" and state != :unknown,
+       do: Map.put(map, :agent_session_id, agent_session_id)
+
+  defp put_agent_session_id(map, _entry, _resolved), do: map
 
   defp normalize_heuristic(:working), do: :working
   defp normalize_heuristic(:ready), do: :ready
@@ -280,4 +300,13 @@ defmodule DevIDE.Terminals.AgentState do
   end
 
   defp normalize_transcript_path(_path), do: nil
+
+  defp normalize_agent_session_id(session_id) when is_binary(session_id) do
+    case String.trim(session_id) do
+      "" -> nil
+      trimmed -> String.slice(trimmed, 0, @message_limit)
+    end
+  end
+
+  defp normalize_agent_session_id(_session_id), do: nil
 end

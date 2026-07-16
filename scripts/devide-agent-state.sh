@@ -6,9 +6,8 @@
 #   - Claude Code: via a materialized --settings file (UserPromptSubmit,
 #     PreToolUse, Notification, Stop, SessionStart/End). Event name arrives as
 #     hook_event_name in the stdin JSON payload.
-#   - Grok CLI: via the global hook file installed by the launcher
-#     (~/.grok/hooks/devide-agent-state.json). Grok exports the event as
-#     GROK_HOOK_EVENT in snake_case, which takes precedence over stdin parsing.
+#   - Grok CLI: a global SessionStart bootstrap reports the native session and
+#     private leader metadata; ACP then activates the session capability bundle.
 #
 # It is fire-and-forget: any missing environment, unmapped event, or network
 # failure exits 0 so the agent is never blocked or slowed. It never writes to
@@ -30,9 +29,10 @@ PANE="${TMUX_PANE:-}"
 
 payload="$(cat 2>/dev/null || true)"
 
-# Parse event name (line 1), single-line message (line 2), and transcript_path
-# (line 3) from the hook JSON. Claude includes transcript_path on every event;
-# Grok payloads carry neither key, but its runner exports GROK_HOOK_EVENT.
+# Parse event name (line 1), single-line message (line 2), transcript path
+# (line 3), and runtime session id (line 4) from the hook JSON. Claude uses
+# snake_case; Grok's hook envelope is camelCase. Grok's runner also exports the
+# event name as GROK_HOOK_EVENT.
 parsed="$(
   HOOK_PAYLOAD="$payload" python3 - <<'PY' 2>/dev/null || true
 import json, os
@@ -44,13 +44,15 @@ except Exception:
 
 print(str(data.get("hook_event_name") or data.get("hookEventName") or ""))
 print(" ".join(str(data.get("message") or "").split())[:200])
-print(str(data.get("transcript_path") or ""))
+print(str(data.get("transcript_path") or data.get("transcriptPath") or ""))
+print(str(data.get("session_id") or data.get("sessionId") or ""))
 PY
 )"
 
 EVENT="$(printf '%s\n' "$parsed" | sed -n 1p)"
 MESSAGE="$(printf '%s\n' "$parsed" | sed -n 2p)"
 TRANSCRIPT_PATH="$(printf '%s\n' "$parsed" | sed -n 3p)"
+AGENT_SESSION_ID="$(printf '%s\n' "$parsed" | sed -n 4p)"
 
 # Grok's runner env is authoritative when present (values are snake_case).
 EVENT="${GROK_HOOK_EVENT:-$EVENT}"
@@ -90,6 +92,7 @@ arguments="$(
     AGENT_PANE="$PANE" \
     AGENT_MESSAGE="$MESSAGE" \
     AGENT_TRANSCRIPT_PATH="$TRANSCRIPT_PATH" \
+    AGENT_SESSION_ID="$AGENT_SESSION_ID" \
     python3 - <<'PY' 2>/dev/null || true
 import json, os
 args = {
@@ -98,12 +101,27 @@ args = {
     "pane": os.environ["AGENT_PANE"],
     "source": "hook",
 }
+agent_runtime = os.environ.get("DEVIDE_AGENT_LAUNCH_CONTEXT") or ""
+if agent_runtime:
+    args["agent_runtime"] = agent_runtime
 message = os.environ.get("AGENT_MESSAGE") or ""
 if message:
     args["message"] = message
 transcript_path = os.environ.get("AGENT_TRANSCRIPT_PATH") or ""
 if transcript_path:
     args["transcript_path"] = transcript_path
+agent_session_id = os.environ.get("AGENT_SESSION_ID") or ""
+if agent_session_id:
+    args["agent_session_id"] = agent_session_id
+if agent_runtime == "grok" or os.environ.get("GROK_HOOK_EVENT"):
+    for env_name, key in [
+        ("DEVIDE_GROK_LEADER_SOCKET", "grok_leader_socket"),
+        ("DEVIDE_GROK_BUNDLE_DIR", "grok_bundle_dir"),
+        ("DEVIDE_GROK_BUNDLE_DIGEST", "grok_bundle_digest"),
+    ]:
+        value = os.environ.get(env_name) or ""
+        if value:
+            args[key] = value
 print(json.dumps(args))
 PY
 )"

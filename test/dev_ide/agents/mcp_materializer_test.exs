@@ -73,6 +73,11 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute mcp_json =~ "Bearer '"
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
 
+    grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
+    assert grok_mcp_json =~ "devide-terminal-test-ws"
+    assert grok_mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute grok_mcp_json =~ "secret-token"
+
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "devide-terminal"
     refute codex =~ "devide-preview"
@@ -188,6 +193,9 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     mcp_json = Jason.decode!(File.read!(Path.join(staging, ".mcp.json")))
     assert Map.has_key?(mcp_json["mcpServers"], "devide-tidewave-test-ws")
 
+    grok_mcp_json = Jason.decode!(File.read!(Path.join(staging, "grok/.mcp.json")))
+    refute Map.has_key?(grok_mcp_json["mcpServers"], "devide-tidewave-test-ws")
+
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "DEVIDE_TIDEWAVE_MCP_URL='http://127.0.0.1:41042/tidewave/mcp'"
   end
@@ -253,7 +261,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert mcp_json =~ "devide-artifact-test-ws"
   end
 
-  test "desktop Grok materialization merges project MCP servers without writing the token", %{
+  test "desktop materialization preserves project MCP servers and uses a Grok bundle", %{
     staging: staging
   } do
     checkout = Path.join(staging, "checkout")
@@ -277,13 +285,22 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     merged = Jason.decode!(File.read!(Path.join(checkout, ".mcp.json")))
     assert merged["projectSetting"]
     assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
-    assert merged["mcpServers"]["devide-terminal-test-ws"]
-    assert merged["mcpServers"]["devide-preview-test-ws"]
-    assert merged["mcpServers"]["devide-artifact-test-ws"]
+    refute merged["mcpServers"]["devide-terminal-test-ws"]
+    refute merged["mcpServers"]["devide-preview-test-ws"]
+    refute merged["mcpServers"]["devide-artifact-test-ws"]
 
     contents = File.read!(Path.join(checkout, ".mcp.json"))
-    assert contents =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute contents =~ "Bearer ${DEV_IDE_API_TOKEN}"
     refute contents =~ "scoped-ws-abc-token"
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert env_sh =~ "DEVIDE_GROK_BUNDLE_DIR="
+    assert env_sh =~ "DEVIDE_GROK_BUNDLE_DIGEST="
+    assert env_sh =~ "DEVIDE_GROK_LEADER_SOCKET="
+
+    [_, bundle_dir] = Regex.run(~r/export DEVIDE_GROK_BUNDLE_DIR='([^']+)'/, env_sh)
+    bundle_mcp = Jason.decode!(File.read!(Path.join(bundle_dir, ".mcp.json")))
+    refute Enum.any?(Map.keys(bundle_mcp["mcpServers"]), &String.contains?(&1, "tidewave"))
   end
 
   defp restore_workspace_tokens(nil), do: Application.delete_env(:dev_ide, :workspace_api_tokens)

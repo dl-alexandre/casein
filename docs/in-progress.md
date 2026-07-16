@@ -5,4 +5,3 @@
 > the owner. Remove the entry when the work lands on `master`.
 
 See [`development-workflow.md`](development-workflow.md) for the full workflow.
-

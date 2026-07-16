@@ -50,7 +50,7 @@ defmodule DevIdeWeb.API.MCPTransport do
         {:cont, conn}
 
       id ->
-        if MCPSessions.exists?(id) do
+        if authorized_session?(conn, id, server_for_path(conn.request_path)) do
           # Keep an actively used session alive against the idle sweep.
           _ = MCPSessions.touch(id)
           {:cont, conn}
@@ -72,7 +72,13 @@ defmodule DevIdeWeb.API.MCPTransport do
         ) ::
           Plug.Conn.t()
   def maybe_issue_session(conn, server, %{"method" => "initialize"}, workspace_id) do
-    id = MCPSessions.create(%{server: server, workspace_id: workspace_id})
+    id =
+      MCPSessions.create(%{
+        server: server,
+        workspace_id: workspace_id,
+        auth_scope: conn.assigns[:api_token_scope]
+      })
+
     put_resp_header(conn, @session_header, id)
   end
 
@@ -80,13 +86,13 @@ defmodule DevIdeWeb.API.MCPTransport do
 
   @doc "Open the server→client SSE channel for a session (the `GET` handler)."
   @spec stream(Plug.Conn.t(), :preview | :terminal | :artifact) :: Plug.Conn.t()
-  def stream(conn, _server) do
+  def stream(conn, server) do
     case session_id(conn) do
       nil ->
         conn |> put_status(400) |> json(transport_error("missing_mcp_session_id"))
 
       id ->
-        if MCPSessions.exists?(id) do
+        if authorized_session?(conn, id, server) do
           conn
           |> put_resp_header("content-type", "text/event-stream")
           |> put_resp_header("cache-control", "no-cache")
@@ -100,14 +106,14 @@ defmodule DevIdeWeb.API.MCPTransport do
   end
 
   @doc "Tear down a session (the `DELETE` handler)."
-  @spec terminate(Plug.Conn.t()) :: Plug.Conn.t()
-  def terminate(conn) do
+  @spec terminate(Plug.Conn.t(), :preview | :terminal | :artifact) :: Plug.Conn.t()
+  def terminate(conn, server) do
     case session_id(conn) do
       nil ->
         conn |> put_status(400) |> json(transport_error("missing_mcp_session_id"))
 
       id ->
-        if MCPSessions.exists?(id) do
+        if authorized_session?(conn, id, server) do
           _ = MCPSessions.delete(id)
           send_resp(conn, 204, "")
         else
@@ -123,6 +129,28 @@ defmodule DevIdeWeb.API.MCPTransport do
       {:error, _} -> conn
     end
   end
+
+  defp authorized_session?(conn, id, server) when not is_nil(server) do
+    conn = fetch_query_params(conn)
+    workspace_id = conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
+
+    case MCPSessions.fetch(id) do
+      {:ok, metadata} ->
+        metadata[:server] == server and
+          metadata[:workspace_id] == workspace_id and
+          metadata[:auth_scope] == conn.assigns[:api_token_scope]
+
+      :error ->
+        false
+    end
+  end
+
+  defp authorized_session?(_conn, _id, _server), do: false
+
+  defp server_for_path("/api/terminals/mcp"), do: :terminal
+  defp server_for_path("/api/preview/mcp"), do: :preview
+  defp server_for_path("/api/artifacts/mcp"), do: :artifact
+  defp server_for_path(_path), do: nil
 
   defp sse_loop(conn, id) do
     receive do

@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.HistoryPanel
+  import DevIdeWeb.WorkspaceLive.Show.GrokPermissionPanel
 
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader,
     only: [
@@ -544,6 +545,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       risks={@situation_risks}
       workspace={@workspace}
     />
+    <.grok_permission_panel requests={@grok_permission_requests} />
     <NotificationsDrawer.notifications_drawer
       open={@notif_drawer_open}
       loaded?={@notif_loaded?}

@@ -9,7 +9,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
 
   import Plug.Conn
 
-  alias DevIDE.Agents.OrchestratorTokens
+  alias DevIDE.Agents.{AgentCapabilityTokens, OrchestratorTokens}
 
   def init(opts), do: opts
 
@@ -38,7 +38,10 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   end
 
   defp authorize(conn, token, tokens) do
-    configured = Enum.reject(tokens, fn {_scope, expected} -> is_nil(expected) end)
+    configured =
+      Enum.reject(tokens, fn {_scope, expected} ->
+        is_nil(expected) or reserved_agent_capability?(expected)
+      end)
 
     case Enum.find(configured, fn {_scope, expected} -> secure_match?(token, expected) end) do
       {scope, _expected} ->
@@ -48,7 +51,32 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
         # Fall through to the DB-backed, hash-at-rest orchestrator tokens
         # (self-serve, subject-attributed). Only reached when no env/workspace
         # token matched, so the extra lookup is off the hot path.
-        authorize_orchestrator_token(conn, token) || fail_closed_or_deny(conn, configured)
+        authorize_db_token(conn, token) || fail_closed_or_deny(conn, configured)
+    end
+  end
+
+  defp authorize_db_token(_conn, nil), do: nil
+
+  defp authorize_db_token(conn, "grokcap_" <> _rest = token) do
+    authorize_agent_capability(conn, token)
+  end
+
+  defp authorize_db_token(conn, token), do: authorize_orchestrator_token(conn, token)
+
+  defp authorize_agent_capability(conn, token) do
+    case AgentCapabilityTokens.verify(token) do
+      {:ok, claims} ->
+        if agent_capability_path_allowed?(conn.request_path) do
+          conn
+          |> assign(:api_token_scope, {:agent_capability, claims.id})
+          |> assign(:api_workspace_id, claims.workspace_id)
+          |> assign(:api_agent_capability, claims)
+        else
+          deny(conn, 403, "agent_capability_path_forbidden")
+        end
+
+      {:error, _reason} ->
+        nil
     end
   end
 
@@ -57,8 +85,6 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   # value and `:api_workspace_id` is left unassigned (per-call confinement stays
   # in the MCP controllers). This keeps it out of the global-token tool-call
   # rejection (DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2).
-  defp authorize_orchestrator_token(_conn, nil), do: nil
-
   defp authorize_orchestrator_token(conn, token) do
     case OrchestratorTokens.verify(token) do
       {:ok, claims} ->
@@ -69,6 +95,15 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
       {:error, _reason} ->
         nil
     end
+  end
+
+  defp agent_capability_path_allowed?(path) do
+    path in [
+      "/api/terminals/mcp",
+      "/api/preview/mcp",
+      "/api/artifacts/mcp",
+      "/api/agent-capabilities/current"
+    ]
   end
 
   defp fail_closed_or_deny(conn, []) do
@@ -166,6 +201,9 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   end
 
   defp secure_match?(_token, _expected), do: false
+
+  defp reserved_agent_capability?("grokcap_" <> _rest), do: true
+  defp reserved_agent_capability?(_token), do: false
 
   defp deny(conn, status \\ 401, error \\ "unauthorized") do
     conn

@@ -84,7 +84,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   @impl true
   def list_tools(opts) do
     tool_specs()
-    |> MCPToolSearch.list_tools(:preview)
+    |> MCPToolSearch.list_tools(:preview, opts)
     |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
     |> optional_tmux_session(default_tmux_session(opts))
   end

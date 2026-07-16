@@ -10,6 +10,7 @@
 
 agent_env_load_file() {
   local file="$1"
+  export DEVIDE_AGENT_BOOTSTRAP_FILE="$(realpath -m "$file")"
   # shellcheck source=/dev/null
   source "$file"
 }

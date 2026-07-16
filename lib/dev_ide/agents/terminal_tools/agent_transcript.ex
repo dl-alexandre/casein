@@ -4,7 +4,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
   use Jido.Action,
     name: "terminal_agent_transcript",
     description:
-      "Read the agent pane's live CLI transcript (lossless JSONL, not tmux scrollback). Uses the transcript_path reported by Claude hooks on the target pane. Returns normalized entries (role, text, tool calls, timestamps) plus a cursor for incremental pulls via since. Defaults to the last 30 entries.",
+      "Read the agent pane's live CLI transcript (lossless JSONL, not tmux scrollback). Uses the transcript_path reported by supported agent hooks (Claude or Grok) on the target pane. Returns normalized entries (role, text, tool calls, timestamps) plus a cursor for incremental pulls via since. Defaults to the last 30 entries.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",

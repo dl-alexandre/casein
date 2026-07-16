@@ -129,6 +129,12 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     end
   end
 
+  @doc "Apply generic discovery reduction unless an exact agent capability owns the list."
+  @spec list_tools([map()], atom(), keyword()) :: [map()]
+  def list_tools(specs, surface, opts) when is_list(opts) do
+    if Keyword.has_key?(opts, :agent_capability), do: specs, else: list_tools(specs, surface)
+  end
+
   @doc """
   Rank `specs` against a natural-language `query` (lexical token overlap over
   tool name + description) and return the top matches as a tool payload the

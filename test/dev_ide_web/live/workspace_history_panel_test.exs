@@ -9,7 +9,7 @@ defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.{Activity, AgentEvents}
   alias DevIDE.Audit
   alias DevIDE.Labels
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -134,6 +134,60 @@ defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
 
       assert html =~ "Fresh agent follow-up"
       assert html =~ "Done"
+      assert html =~ "1 result"
+    end
+
+    test "surfaces normalized Grok ACP events while the History panel is open", %{conn: conn} do
+      mount_env!("devide-workspace-history-grok-acp")
+
+      {:ok, view, html} =
+        live(conn, ~p"/workspaces/#{@workspace_id}?host=local&tab=history&query=permission")
+
+      assert html =~ "No matching session context."
+
+      Activity.record(%{
+        workspace_id: @workspace_id,
+        source: :grok_acp,
+        tool: "grok_permission_request",
+        summary: "Permission requested · Execute tests",
+        metadata: %{
+          session_id: "grok-session-1",
+          tool_call_id: "tc-9",
+          status: "attention",
+          option_count: 2
+        },
+        status: :ok,
+        inserted_at: ~U[2026-06-29 15:30:00Z]
+      })
+
+      html = render(view)
+
+      assert html =~ "Permission requested · Execute tests"
+      assert html =~ "Attention"
+      assert html =~ "grok-session-1"
+      assert html =~ "1 result"
+    end
+
+    test "hydrates History from durable AgentEvents after the live cache is empty", %{conn: conn} do
+      mount_env!("devide-workspace-history-agent-events")
+
+      assert {:ok, _event, :inserted} =
+               AgentEvents.append_runtime(%{
+                 workspace_id: @workspace_id,
+                 producer: "grok",
+                 ingress: "acp",
+                 agent_session_id: "grok-durable-session",
+                 source_event_id: "durable-plan-1",
+                 event_type: "plan.updated",
+                 summary: "Durable plan restored · 4 steps",
+                 payload: %{schema_version: 1, step_count: 4}
+               })
+
+      {:ok, _view, html} =
+        live(conn, ~p"/workspaces/#{@workspace_id}?host=local&tab=history&query=durable")
+
+      assert html =~ "Durable plan restored · 4 steps"
+      assert html =~ "grok-durable-session"
       assert html =~ "1 result"
     end
 

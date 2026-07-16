@@ -2,8 +2,8 @@
 #
 # Materialize per-workspace MCP client configs for external agents (Grok, Claude,
 # Codex, OpenCode, Cursor). Reads .devbox-agent.env (or already-exported vars).
-# Does not replace global agent homes. DevIDE MCP is injected by the launcher
-# using project-local config files or per-launch overrides.
+# Does not replace global agent homes. Grok receives a content-addressed plugin
+# bundle through ACP `_meta.pluginDirs`; other agents use per-launch overrides.
 #
 # Usage:
 #   source .devbox-agent.env
@@ -263,6 +263,8 @@ EOF
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-claude-mcp \
   "${STAGING}/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}" "${DEVIDE_ARTIFACT_MCP_URL}"
 cp "${STAGING}/.mcp.json" "${STAGING}/cursor/mcp.json"
+python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-grok-mcp \
+  "${STAGING}/grok/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}" "${DEVIDE_ARTIFACT_MCP_URL}"
 
 # --- Claude Code hooks settings (semantic agent-state reporting) ---
 # Injected by the launcher via `claude --settings`. The hook command runs
@@ -320,6 +322,65 @@ with open(sys.argv[1], "w") as f:
 PY
 chmod 600 "${SIDECHAT_SETTINGS}"
 
+# --- Grok session capability bundle ---------------------------------------
+# Keep DevIDE capabilities out of the checkout and global Grok config. The
+# bundle contains no bearer token: .mcp.json references DEV_IDE_API_TOKEN from
+# this launch environment. A digest directory is never overwritten, so the
+# path supplied through ACP `_meta.pluginDirs` is reproducible and immutable.
+GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.devide/grok-bundles}"
+GROK_BUNDLE_ARGS=(
+  build
+  --bundle-root "${GROK_BUNDLE_ROOT}"
+  --mcp-config "${STAGING}/grok/.mcp.json"
+  --skills-root "${ROOT}/.claude/skills"
+)
+
+case "${DEVIDE_AGENT_STATE_HOOKS:-1}" in
+  0 | false | FALSE | no | NO | off | OFF)
+    GROK_BUNDLE_ARGS+=(--hooks-disabled)
+    ;;
+  *)
+    GROK_BUNDLE_ARGS+=(
+      --hook-config "${ROOT}/scripts/agent-hooks/grok-devide-agent-state.json"
+      --hook-script "${STAGING}/devide-agent-state.sh"
+    )
+    ;;
+esac
+
+for _skill in ${DEVIDE_GROK_BUNDLE_SKILLS:-preview-ui-walk verify workspace-agent-pair}; do
+  if [[ -d "${ROOT}/.claude/skills/${_skill}" ]]; then
+    GROK_BUNDLE_ARGS+=(--skill "${_skill}")
+  fi
+done
+
+mapfile -t GROK_BUNDLE_RESULT < <(
+  python3 "${ROOT}/scripts/lib/grok-capability-bundle.py" "${GROK_BUNDLE_ARGS[@]}"
+)
+DEVIDE_GROK_BUNDLE_DIR="${GROK_BUNDLE_RESULT[0]:-}"
+DEVIDE_GROK_BUNDLE_DIGEST="${GROK_BUNDLE_RESULT[1]:-}"
+if [[ ! "${DEVIDE_GROK_BUNDLE_DIGEST}" =~ ^[0-9a-f]{64}$ ]] ||
+   [[ ! -d "${DEVIDE_GROK_BUNDLE_DIR}" ]]; then
+  echo "error: Grok capability bundle compiler returned an invalid result" >&2
+  exit 1
+fi
+export DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
+
+# One private leader per workspace/worktree lets the human TUI and DevIDE ACP
+# attachment converge on the same Grok session without touching the global
+# ~/.grok/leader.sock. Keep the path short enough for Unix sockaddr_un.
+DEVIDE_GROK_LEADER_ROOT="${DEVIDE_GROK_LEADER_ROOT:-${HOME_DIR}/.devide/grok-leaders}"
+GROK_LEADER_KEY="$(printf '%s\0%s' "${DEVIDE_WORKSPACE_ID}" "$(realpath -m "${DEVIDE_CHECKOUT}")" | sha256sum | cut -c1-24)"
+DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/${GROK_LEADER_KEY}.sock"
+if [[ "${#DEVIDE_GROK_LEADER_SOCKET}" -gt 100 ]]; then
+  GROK_LEADER_USER="${USER:-user}"
+  GROK_LEADER_USER="${GROK_LEADER_USER//[^A-Za-z0-9_.-]/-}"
+  DEVIDE_GROK_LEADER_ROOT="${TMPDIR:-/tmp}/devide-grok-leaders-${GROK_LEADER_USER}"
+  DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/${GROK_LEADER_KEY}.sock"
+fi
+mkdir -p "${DEVIDE_GROK_LEADER_ROOT}"
+chmod 700 "${DEVIDE_GROK_LEADER_ROOT}"
+export DEVIDE_GROK_LEADER_ROOT DEVIDE_GROK_LEADER_SOCKET
+
 ENV_SH="${STAGING}/env.sh"
 # Write atomically: a fresh temp inode (0600 under umask) that replaces the old
 # file via rename, so a concurrent reader never sees a partial file and any
@@ -339,6 +400,10 @@ ${TIDEWAVE_ENV_EXPORT}
 ${AUTH_PROFILE_EXPORTS}
 export DEVIDE_CHECKOUT='${DEVIDE_CHECKOUT}'
 export DEVIDE_AGENT_MCP_HOME='${STAGING}'
+export DEVIDE_GROK_BUNDLE_DIR='${DEVIDE_GROK_BUNDLE_DIR}'
+export DEVIDE_GROK_BUNDLE_DIGEST='${DEVIDE_GROK_BUNDLE_DIGEST}'
+export DEVIDE_GROK_LEADER_ROOT='${DEVIDE_GROK_LEADER_ROOT}'
+export DEVIDE_GROK_LEADER_SOCKET='${DEVIDE_GROK_LEADER_SOCKET}'
 export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'
 export DEVIDE_AGENT_ENV_FILE='${ENV_SH}'
 export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
@@ -367,6 +432,10 @@ if [[ "$EXPORT_ONLY" -eq 1 ]]; then
   printf 'export DEV_IDE_API_TOKEN=%q\n' "$DEV_IDE_API_TOKEN"
   printf 'export DEVIDE_ARTIFACT_MCP_URL=%q\n' "$DEVIDE_ARTIFACT_MCP_URL"
   printf 'export DEVIDE_AGENT_MCP_HOME=%q\n' "$STAGING"
+  printf 'export DEVIDE_GROK_BUNDLE_DIR=%q\n' "$DEVIDE_GROK_BUNDLE_DIR"
+  printf 'export DEVIDE_GROK_BUNDLE_DIGEST=%q\n' "$DEVIDE_GROK_BUNDLE_DIGEST"
+  printf 'export DEVIDE_GROK_LEADER_ROOT=%q\n' "$DEVIDE_GROK_LEADER_ROOT"
+  printf 'export DEVIDE_GROK_LEADER_SOCKET=%q\n' "$DEVIDE_GROK_LEADER_SOCKET"
   printf 'export DEVIDE_CHECKOUT=%q\n' "$DEVIDE_CHECKOUT"
   printf 'export DEVIDE_AGENT_ENV_FILE=%q\n' "$ENV_SH"
   if [[ -n "$AUTH_PROFILE_EXPORTS" ]]; then
@@ -388,4 +457,6 @@ Agents (from any directory — shims on PATH after install-agent-shims.sh):
 
 MCP is injected into agents without replacing auth state.
 DevIDE MCP is not persisted in global Grok/Codex/OpenCode config files.
+Grok bundle: ${DEVIDE_GROK_BUNDLE_DIR}
+Grok bundle digest: ${DEVIDE_GROK_BUNDLE_DIGEST}
 EOF

@@ -2,12 +2,12 @@ defmodule DevIDE.Agents.Transcripts do
   @moduledoc """
   Read and normalize agent CLI session transcripts.
 
-  v1 supports Claude Code JSONL (via `DevIDE.Agents.Transcripts.Claude`). Callers
-  must pass an explicit `transcript_path` reported by the agent pane — DevIDE never
-  lists profile directories to discover sessions.
+  Supports Claude Code JSONL and Grok's persisted ACP `updates.jsonl` stream.
+  Callers must pass an explicit `transcript_path` reported by the agent pane —
+  DevIDE never lists profile directories to discover sessions.
   """
 
-  alias DevIDE.Agents.Transcripts.Claude
+  alias DevIDE.Agents.Transcripts.{Claude, Grok}
 
   @default_tail 30
 
@@ -31,14 +31,16 @@ defmodule DevIDE.Agents.Transcripts do
   """
   @spec read(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def read(path, opts \\ []) when is_binary(path) do
-    with :ok <- validate_path(path) do
-      Claude.read(path, opts)
+    with {:ok, adapter, expanded} <- transcript_adapter(path) do
+      adapter.read(expanded, opts)
     end
   end
 
-  @doc "Whether `path` is an allowed Claude JSONL transcript location."
+  @doc "Whether `path` is an allowed agent JSONL transcript location."
   @spec allowed_path?(String.t()) :: boolean()
-  def allowed_path?(path) when is_binary(path), do: match?(:ok, validate_path(path))
+  def allowed_path?(path) when is_binary(path),
+    do: match?({:ok, _adapter, _expanded}, transcript_adapter(path))
+
   def allowed_path?(_), do: false
 
   @doc """
@@ -47,16 +49,18 @@ defmodule DevIDE.Agents.Transcripts do
   """
   @spec activity_hint(String.t(), keyword()) :: String.t() | nil
   def activity_hint(path, opts \\ []) when is_binary(path) do
-    with :ok <- validate_path(path), do: Claude.activity_hint(path, opts)
+    with {:ok, adapter, expanded} <- transcript_adapter(path),
+         do: adapter.activity_hint(expanded, opts)
   end
 
   @doc "Return the final assistant message on the active transcript branch."
   @spec final_assistant_message(String.t()) :: String.t() | nil
   def final_assistant_message(path) when is_binary(path) do
-    with :ok <- validate_path(path), do: Claude.final_assistant_message(path)
+    with {:ok, adapter, expanded} <- transcript_adapter(path),
+         do: adapter.final_assistant_message(expanded)
   end
 
-  defp validate_path(path) do
+  defp transcript_adapter(path) do
     expanded = Path.expand(path)
 
     cond do
@@ -66,21 +70,24 @@ defmodule DevIDE.Agents.Transcripts do
       not File.regular?(expanded) ->
         {:error, :invalid_transcript_path}
 
-      not under_allowed_root?(expanded) ->
-        {:error, :invalid_transcript_path}
+      Grok.allowed_path?(expanded) ->
+        {:ok, Grok, expanded}
+
+      under_claude_root?(expanded) ->
+        {:ok, Claude, expanded}
 
       true ->
-        :ok
+        {:error, :invalid_transcript_path}
     end
   end
 
-  defp under_allowed_root?(path) do
-    Enum.any?(allowed_roots(), fn root ->
+  defp under_claude_root?(path) do
+    Enum.any?(claude_roots(), fn root ->
       root != path and String.starts_with?(path, root <> "/")
     end)
   end
 
-  defp allowed_roots do
+  defp claude_roots do
     home = System.get_env("HOME") || "/home/devbox"
 
     [

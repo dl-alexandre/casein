@@ -3,6 +3,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
   use GenServer
 
+  alias DevIDE.Agents.{Activity, AgentEvents}
   alias DevIDE.Audit
   alias DevIDE.Export.Sanitizer
   alias Phoenix.PubSub
@@ -15,7 +16,17 @@ defmodule DevIDE.Terminals.AgentState.Server do
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, @registered_name))
   end
 
-  def report(workspace_id, tmux_session, pane_id, state, message, source, tool, transcript_path) do
+  def report(
+        workspace_id,
+        tmux_session,
+        pane_id,
+        state,
+        message,
+        source,
+        tool,
+        transcript_path,
+        agent_session_id
+      ) do
     # Causality handoff: the reporter is usually an MCP tool call, so an
     # agent.blocked audit emitted inside the server correlates back to it.
     signals_ctx = DevIDE.Signals.Context.snapshot()
@@ -23,7 +34,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
     GenServer.cast(
       @registered_name,
       {:report, workspace_id, tmux_session, pane_id, state, message, source, tool,
-       transcript_path, signals_ctx}
+       transcript_path, agent_session_id, signals_ctx}
     )
   end
 
@@ -97,7 +108,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
   @impl true
   def handle_cast(
         {:report, workspace_id, tmux_session, pane_id, rstate, message, source, tool,
-         transcript_path, signals_ctx},
+         transcript_path, agent_session_id, signals_ctx},
         state
       ) do
     key = {tmux_session, pane_id}
@@ -110,19 +121,30 @@ defmodule DevIDE.Terminals.AgentState.Server do
       tool: tool,
       workspace_id: workspace_id,
       transcript_path: transcript_path,
+      agent_session_id: agent_session_id,
       reported_at: now
     }
 
     case Map.get(state.entries, key) do
-      %{state: ^rstate, message: ^message, transcript_path: ^transcript_path} = current ->
-        # Same state+message+path: refresh freshness silently, never broadcast. This is
-        # what makes high-frequency PreToolUse hooks cheap for subscribers.
+      %{
+        state: ^rstate,
+        message: ^message,
+        transcript_path: ^transcript_path,
+        agent_session_id: ^agent_session_id
+      } = current ->
+        # Same state, message, and runtime metadata: refresh freshness silently,
+        # never broadcast. This makes high-frequency PreToolUse hooks cheap.
         {:noreply, put_entry(state, key, %{current | reported_at: now})}
 
       %{state: ^rstate, message: ^message} = current ->
-        # State unchanged but transcript_path may have arrived late — refresh silently.
+        # State unchanged but runtime metadata may have arrived late — refresh silently.
         {:noreply,
-         put_entry(state, key, %{current | reported_at: now, transcript_path: transcript_path})}
+         put_entry(state, key, %{
+           current
+           | reported_at: now,
+             transcript_path: transcript_path,
+             agent_session_id: agent_session_id
+         })}
 
       previous ->
         # The last known state survives eviction in the tombstone map, so an
@@ -139,6 +161,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
         DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
           maybe_emit_state_changed(prior_state, entry, tmux_session, pane_id)
+          record_transition(prior_state, entry, tmux_session, pane_id)
           maybe_emit_blocked(prior_state, entry, tmux_session, pane_id)
         end)
 
@@ -176,7 +199,8 @@ defmodule DevIDE.Terminals.AgentState.Server do
           pane: pane_id,
           tmux_session: tmux_session,
           tool: entry.tool,
-          message: sanitize_message(entry.message)
+          message: sanitize_message(entry.message),
+          agent_session_id: entry.agent_session_id
         }
       })
     end
@@ -206,7 +230,8 @@ defmodule DevIDE.Terminals.AgentState.Server do
         metadata: %{
           session: tmux_session,
           pane: pane_id,
-          message: sanitize_message(entry.message)
+          message: sanitize_message(entry.message),
+          agent_session_id: entry.agent_session_id
         }
       })
     end
@@ -221,6 +246,55 @@ defmodule DevIDE.Terminals.AgentState.Server do
   defp prior_state(nil, nil), do: nil
 
   defp put_entry(state, key, entry), do: %{state | entries: Map.put(state.entries, key, entry)}
+
+  defp record_transition(prior_state, entry, tmux_session, pane_id) do
+    if prior_state == nil or prior_state != entry.state do
+      append_transition(prior_state, entry, tmux_session, pane_id)
+    else
+      :ok
+    end
+  end
+
+  defp append_transition(prior_state, entry, tmux_session, pane_id) do
+    attrs = %{
+      workspace_id: entry.workspace_id,
+      tmux_session_id: tmux_session,
+      pane_id: pane_id,
+      agent_session_id: entry.agent_session_id,
+      state: entry.state,
+      prior_state: prior_state,
+      source: entry.source,
+      tool: entry.tool,
+      message: entry.message
+    }
+
+    case AgentEvents.append_state_transition(attrs) do
+      {:ok, event, :inserted} ->
+        _ =
+          Activity.record(%{
+            id: event.id,
+            workspace_id: event.workspace_id,
+            source: :agent_state,
+            tool: "agent_state",
+            summary: event.summary,
+            status: :ok,
+            inserted_at: event.occurred_at,
+            metadata: %{
+              event: "agent_state",
+              state: entry.state,
+              prior_state: prior_state,
+              agent_session_id: entry.agent_session_id,
+              session: tmux_session,
+              pane: pane_id
+            }
+          })
+
+        :ok
+
+      _result ->
+        :ok
+    end
+  end
 
   defp trim_size(state) do
     if map_size(state.entries) <= @max_entries, do: state, else: trim_oldest(state)

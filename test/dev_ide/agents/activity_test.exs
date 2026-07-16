@@ -1,7 +1,7 @@
 defmodule DevIDE.Agents.ActivityTest do
   use DevIDE.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.{Activity, AgentEvents}
 
   setup do
     Activity.clear()
@@ -51,5 +51,41 @@ defmodule DevIDE.Agents.ActivityTest do
     })
 
     assert_receive {:agent_mcp_activity, %{tool: "preview_observe"}}
+  end
+
+  test "accepts normalized Grok ACP activity as a workspace feed source" do
+    entry =
+      Activity.record(%{
+        workspace_id: "ws-grok",
+        source: :grok_acp,
+        tool: "grok_plan",
+        summary: "Plan updated · 3 steps",
+        metadata: %{session_id: "sess-1", step_count: 3},
+        status: :ok
+      })
+
+    assert entry.source == :grok_acp
+    assert [^entry] = Activity.recent("ws-grok")
+  end
+
+  test "hydrates the live feed from the durable AgentEvent projection" do
+    assert {:ok, event, :inserted} =
+             AgentEvents.append_runtime(%{
+               workspace_id: "ws-durable-feed",
+               producer: "grok",
+               ingress: "acp",
+               agent_session_id: "sess-durable",
+               source_event_id: "plan-1",
+               event_type: "plan.updated",
+               summary: "Plan updated · 2 steps",
+               payload: %{schema_version: 1, step_count: 2}
+             })
+
+    assert [entry] = Activity.recent("ws-durable-feed")
+    assert entry.id == event.id
+    assert entry.source == :agent_event
+    assert entry.tool == "plan.updated"
+    assert entry.metadata.agent_session_id == "sess-durable"
+    assert entry.metadata["step_count"] == 2
   end
 end

@@ -172,6 +172,7 @@ defmodule DevIDE.PreviousSessions do
             target_ref,
             session,
             pane,
+            metadata_get(metadata, :agent_session_id),
             metadata_get(metadata, :session_id),
             metadata_get(metadata, :url),
             metadata_get(metadata, :display_url),
@@ -218,6 +219,7 @@ defmodule DevIDE.PreviousSessions do
           strings([
             session,
             pane,
+            metadata_get(metadata, :agent_session_id),
             metadata_get(metadata, :session_id),
             metadata_get(metadata, :url),
             metadata_get(metadata, :display_url),
@@ -754,6 +756,7 @@ defmodule DevIDE.PreviousSessions do
 
     first_string([
       metadata_get(metadata, :session),
+      metadata_get(metadata, :agent_session_id),
       metadata_get(metadata, :session_id),
       metadata_get(metadata, :tmux_session),
       target_ref,
@@ -764,6 +767,7 @@ defmodule DevIDE.PreviousSessions do
   defp activity_session(metadata) do
     first_string([
       metadata_get(metadata, :session),
+      metadata_get(metadata, :agent_session_id),
       metadata_get(metadata, :session_id),
       metadata_get(metadata, :tmux_session)
     ])
@@ -807,7 +811,12 @@ defmodule DevIDE.PreviousSessions do
       activity_entries
       |> Enum.flat_map(fn entry ->
         metadata = metadata(entry)
-        [activity_session(metadata), metadata_get(metadata, :tmux_session)]
+
+        [
+          activity_session(metadata),
+          metadata_get(metadata, :agent_session_id),
+          metadata_get(metadata, :tmux_session)
+        ]
       end)
 
     [session_ids, audit_ids, activity_ids]

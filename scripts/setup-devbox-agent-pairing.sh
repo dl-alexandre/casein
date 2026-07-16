@@ -122,10 +122,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
-# DEV_IDE_API_TOKEN is workspace-scoped. Global admin: DEV_IDE_ADMIN_API_TOKEN.
+# DEV_IDE_API_TOKEN is workspace-scoped. The global admin token stays only in
+# /etc/devide/devide.env; never copy it into an agent-readable checkout.
 
 export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
-export DEV_IDE_ADMIN_API_TOKEN='${ADMIN_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_API_BASE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'

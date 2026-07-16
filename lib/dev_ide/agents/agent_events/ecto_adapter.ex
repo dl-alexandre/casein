@@ -1,0 +1,116 @@
+defmodule DevIDE.Agents.AgentEvents.EctoAdapter do
+  @moduledoc false
+
+  @behaviour DevIDE.Agents.AgentEvents.Adapter
+
+  import Ecto.Query
+
+  alias DevIDE.Agents.AgentEvent
+  alias DevIDE.Repo
+
+  @impl true
+  def record(attrs) do
+    case existing(attrs) do
+      %AgentEvent{} = event ->
+        {:ok, event, :duplicate}
+
+      nil ->
+        insert(attrs)
+    end
+  end
+
+  @impl true
+  def recent_for(workspace_id, opts) do
+    AgentEvent
+    |> where([event], event.workspace_id == ^workspace_id)
+    |> newest_first()
+    |> limit(^Keyword.fetch!(opts, :limit))
+    |> Repo.all()
+  end
+
+  @impl true
+  def replay(workspace_id, after_at, after_id, opts) do
+    AgentEvent
+    |> where([event], event.workspace_id == ^workspace_id)
+    |> after_cursor(after_at, after_id)
+    |> order_by([event], asc: event.inserted_at, asc: event.id)
+    |> limit(^Keyword.fetch!(opts, :limit))
+    |> Repo.all()
+  end
+
+  @impl true
+  def list_for_session(workspace_id, agent_session_id, opts) do
+    AgentEvent
+    |> where(
+      [event],
+      event.workspace_id == ^workspace_id and event.agent_session_id == ^agent_session_id
+    )
+    |> newest_first()
+    |> limit(^Keyword.fetch!(opts, :limit))
+    |> Repo.all()
+  end
+
+  @impl true
+  def list_by_correlation(correlation_id, opts) do
+    AgentEvent
+    |> where([event], event.correlation_id == ^correlation_id)
+    |> order_by([event],
+      asc: event.occurred_at,
+      asc: event.inserted_at,
+      asc: event.id
+    )
+    |> limit(^Keyword.fetch!(opts, :limit))
+    |> Repo.all()
+  end
+
+  @impl true
+  def clear do
+    Repo.delete_all(AgentEvent)
+    :ok
+  end
+
+  defp insert(attrs) do
+    changeset = AgentEvent.changeset(%AgentEvent{}, attrs)
+
+    case Repo.insert(changeset) do
+      {:ok, event} ->
+        {:ok, event, :inserted}
+
+      {:error, _changeset} = error ->
+        case existing(attrs) do
+          %AgentEvent{} = event -> {:ok, event, :duplicate}
+          nil -> error
+        end
+    end
+  end
+
+  defp existing(%{source_event_id: source_event_id} = attrs)
+       when is_binary(source_event_id) and source_event_id != "" do
+    Repo.get_by(AgentEvent,
+      workspace_id: attrs.workspace_id,
+      stream_id: attrs.stream_id,
+      source_event_id: source_event_id
+    )
+  end
+
+  defp existing(_attrs), do: nil
+
+  defp newest_first(query) do
+    order_by(query, [event],
+      desc: event.occurred_at,
+      desc: event.inserted_at,
+      desc: event.id
+    )
+  end
+
+  defp after_cursor(query, %DateTime{} = after_at, after_id) when is_binary(after_id) do
+    where(
+      query,
+      [event],
+      event.inserted_at > ^after_at or
+        (event.inserted_at == ^after_at and event.id > ^after_id)
+    )
+  end
+
+  defp after_cursor(query, _after_at, _after_id), do: query
+end

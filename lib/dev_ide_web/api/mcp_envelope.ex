@@ -29,6 +29,8 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   @default_protocol_version "2025-03-26"
   @error_version "mcp-jsonrpc-v1"
 
+  alias DevIdeWeb.API.MCPCapabilityScope
+
   # Protocol versions this minimal tool surface is wire-compatible with. When a
   # client asks for one of these on `initialize`, we echo it back (per the MCP
   # spec); otherwise we fall back to our default.
@@ -77,11 +79,22 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   defp dispatch("ping", id, _params, _handler, _opts), do: {:reply, result(id, %{})}
 
   defp dispatch("tools/list", id, _params, handler, opts) do
-    {:reply, result(id, %{tools: handler.list_tools(opts)})}
+    tools = handler.list_tools(opts) |> MCPCapabilityScope.filter_tools(opts)
+    {:reply, result(id, %{tools: tools})}
   end
 
   defp dispatch("tools/call", id, params, handler, opts) do
-    {:reply, handler.call_tool(id, params, opts)}
+    case MCPCapabilityScope.prepare_call(params, opts) do
+      {:ok, scoped_params} ->
+        {:reply, handler.call_tool(id, scoped_params, opts)}
+
+      {:error, reason} ->
+        {:reply,
+         error(id, -32_003, "Agent capability does not permit this tool call", %{
+           code: "agent_capability_tool_forbidden",
+           reason: Atom.to_string(reason)
+         })}
+    end
   end
 
   defp dispatch(other, id, _params, _handler, _opts) do

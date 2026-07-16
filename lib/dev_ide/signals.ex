@@ -12,6 +12,7 @@ defmodule DevIDE.Signals do
   `DevIDE.Push.Dispatcher`.
   """
 
+  alias DevIDE.Agents.AgentEvent
   alias DevIDE.Audit.Event
   alias Jido.Signal
   alias Jido.Signal.Trace
@@ -49,6 +50,38 @@ defmodule DevIDE.Signals do
       time: event.inserted_at && DateTime.to_iso8601(event.inserted_at)
     })
     |> put_trace(event.metadata || %{})
+  end
+
+  @doc "Convert a durable agent timeline event into a metadata-only Jido signal."
+  @spec from_agent_event(AgentEvent.t()) :: Signal.t()
+  def from_agent_event(%AgentEvent{} = event) do
+    Signal.new!(domain_type("agent_event." <> event.event_type), agent_event_data(event), %{
+      id: event.id,
+      source: "/devide/agent/#{event.workspace_id}",
+      subject: event.agent_session_id || event.tmux_session_id || event.runtime_id,
+      time: event.occurred_at && DateTime.to_iso8601(event.occurred_at)
+    })
+    |> put_trace(event.payload || %{})
+  end
+
+  defp agent_event_data(%AgentEvent{} = event) do
+    %{
+      workspace_id: event.workspace_id,
+      stream_id: event.stream_id,
+      producer: event.producer,
+      ingress: event.ingress,
+      source_event_id: event.source_event_id,
+      event_type: event.event_type,
+      privacy_class: event.privacy_class,
+      agent_session_id: event.agent_session_id,
+      tmux_session_id: event.tmux_session_id,
+      pane_id: event.pane_id,
+      runtime_id: event.runtime_id,
+      actor_id: event.actor_id,
+      status: event.status,
+      summary: event.summary,
+      payload: event.payload || %{}
+    }
   end
 
   defp event_data(%Event{} = event) do

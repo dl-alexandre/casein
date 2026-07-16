@@ -7,14 +7,38 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
   end
 
-  test "grok launches install the global state hook and codex launches inject notify" do
+  test "Grok launches install the session bootstrap and Codex launches inject notify" do
     text = File.read!(@script)
 
+    assert text =~ ~S(export DEVIDE_AGENT_LAUNCH_CONTEXT="$RUNTIME")
     assert text =~ "grok_install_state_hook"
     assert text =~ "codex_state_notify_args"
     assert text =~ ~S(notify=[\"${script}\"])
     assert text =~ "DEVIDE_AGENT_STATE_HOOKS"
-    assert text =~ "agent-hooks/grok-devide-agent-state.json"
+    assert text =~ "agent-hooks/grok-devide-agent-bootstrap.json"
+    assert text =~ "grok_prepare_private_leader"
+    assert text =~ "grok_configure_capability"
+    assert text =~ "grok_issue_capability"
+    assert text =~ "/api/agent-capabilities/current"
+    assert text =~ "/grok-agent-capabilities"
+    assert text =~ "DEVIDE_GROK_BUNDLE_DIR"
+    assert text =~ "DEVIDE_GROK_SANDBOX_PROFILE"
+    assert text =~ ~S(sandbox_base="strict")
+    assert text =~ ~S(sandbox_base="read-only")
+    assert text =~ "*.capability"
+    assert text =~ ~S("${HOME}/.ssh")
+    assert text =~ "managed Grok capability materialization failed"
+    assert text =~ ~S(unset DEV_IDE_ADMIN_API_TOKEN DEV_IDE_WORKSPACE_API_TOKENS)
+    assert text =~ ~S(--permission-mode "$DEVIDE_GROK_PERMISSION_MODE")
+    assert text =~ "--no-auto-update"
+  end
+
+  test "pairing env generators do not persist the global admin bearer" do
+    setup = File.read!(Path.expand("../../scripts/setup-devbox-agent-pairing.sh", __DIR__))
+    refresh = File.read!(Path.expand("../../scripts/refresh-devbox-agent-pairing.sh", __DIR__))
+
+    refute setup =~ "export DEV_IDE_ADMIN_API_TOKEN="
+    refute refresh =~ "export DEV_IDE_ADMIN_API_TOKEN="
   end
 
   test "claude launches stage DevIDE-infra skills into the resolved config home" do

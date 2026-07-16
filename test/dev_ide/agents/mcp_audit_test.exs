@@ -9,8 +9,7 @@ defmodule DevIDE.Agents.MCPAuditTest do
   """
   use DevIDE.TestCase, async: false
 
-  alias DevIDE.Agents.MCPAudit
-  alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.{Activity, AgentEvents, MCPAudit}
   alias DevIDE.Audit
   alias DevIDE.Audit.MemoryAdapter
   alias DevIDE.PreviousSessions
@@ -65,6 +64,11 @@ defmodule DevIDE.Agents.MCPAuditTest do
                )
 
       assert Audit.recent_for("ws-audit", 10) == []
+
+      assert [%{event_type: "mcp.completed", status: "ok"} = event] =
+               AgentEvents.recent_for("ws-audit")
+
+      assert event.payload["tool"] == "terminal_list_sessions"
     end
 
     test "a failed mutating tool persists a durable record with the error reason" do
@@ -91,6 +95,11 @@ defmodule DevIDE.Agents.MCPAuditTest do
 
       assert Audit.recent_for("ws-audit", 10) == []
       assert [%{status: :error}] = Activity.recent("ws-audit", 1)
+
+      assert [%{event_type: "mcp.completed", status: "error"} = event] =
+               AgentEvents.recent_for("ws-audit")
+
+      refute inspect(event) =~ "rm -rf"
     end
 
     test "unrecognized error shapes normalize to :tool_error with sanitized detail" do

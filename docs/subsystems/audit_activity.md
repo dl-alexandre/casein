@@ -11,6 +11,12 @@ This subsystem owns the **durable event plane** of DevIDE — the half of the
 event plane (`architecture.md` "Event plane") that must survive restart and
 be reconstructable for replay, review, and post-mortem.
 
+`DevIDE.Agents.AgentEvents` is a neighboring durable *operational* projection
+for agent-session replay (ACP/MCP/state/handoffs). It intentionally does not
+replace this security evidence log: `Audit` accepts occasional duplicates and
+records decisions, while `AgentEvents` deduplicates native provider events and
+uses metadata-only session streams.
+
 It has three layers:
 
 1. **Audit** (`lib/dev_ide/audit/`) — the raw record. A flat, append-only

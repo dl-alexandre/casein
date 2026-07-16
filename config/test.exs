@@ -143,6 +143,8 @@ config :dev_ide,
   # Default audit adapter in tests is in-memory; the Ecto adapter is exercised
   # via DataCase tests that explicitly opt in.
   audit_adapter: DevIDE.Audit.MemoryAdapter,
+  agent_events_adapter: DevIDE.Agents.AgentEvents.MemoryAdapter,
+  grok_acp_auto_attach: false,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   runtimes_adapter: DevIDE.Runtimes.MemoryAdapter,
   forward_auth: false,

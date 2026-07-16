@@ -16,6 +16,7 @@ defmodule DevIDE.Runtimes do
       for the read API and `Export.WorkspaceStatus`.
   """
 
+  alias DevIDE.Agents.{Activity, AgentEvents}
   alias DevIDE.Git.Inspector, as: GitInspector
 
   alias DevIDE.Runtimes.{
@@ -596,10 +597,15 @@ defmodule DevIDE.Runtimes do
         end
 
       with {:ok, %Runtime{} = runtime} <- result do
-        if preview_start_requested?(attrs), do: PreviewLauncher.ensure_started(runtime)
-        {:ok, runtime}
+        after_worktree_upsert(runtime, attrs, existing_metadata)
       end
     end
+  end
+
+  defp after_worktree_upsert(runtime, attrs, existing_metadata) do
+    if preview_start_requested?(attrs), do: PreviewLauncher.ensure_started(runtime)
+    maybe_record_handoff(existing_metadata, runtime, attrs)
+    {:ok, runtime}
   end
 
   defp put_worktree_preview_metadata(
@@ -843,6 +849,55 @@ defmodule DevIDE.Runtimes do
     else
       Map.get(existing_metadata || %{}, "exit_reported_at")
     end
+  end
+
+  defp maybe_record_handoff(existing_metadata, %Runtime{} = runtime, attrs) do
+    metadata = runtime.metadata || %{}
+    reported_at = Map.get(metadata, "exit_reported_at")
+
+    if is_binary(reported_at) and reported_at != Map.get(existing_metadata, "exit_reported_at") do
+      event_attrs = %{
+        workspace_id: runtime.workspace_id,
+        runtime_id: runtime.id,
+        producer: Map.get(metadata, "agent"),
+        agent_session_id: runtime.session_id,
+        tmux_session_id: runtime.tmux_session_id,
+        actor_id: string_value(attrs, "actor_id"),
+        branch: runtime.branch || Map.get(metadata, "branch"),
+        exit_status: Map.get(metadata, "exit_status"),
+        handoff: Map.get(metadata, "handoff"),
+        reported_at: reported_at
+      }
+
+      case AgentEvents.append_handoff(event_attrs) do
+        {:ok, event, :inserted} ->
+          _ =
+            Activity.record(%{
+              id: event.id,
+              workspace_id: event.workspace_id,
+              source: :worktree,
+              tool: "agent_handoff",
+              summary: event.summary,
+              status: :ok,
+              inserted_at: event.occurred_at,
+              metadata: %{
+                event: "worktree_handoff",
+                runtime_id: runtime.id,
+                agent_session_id: runtime.session_id,
+                tmux_session_id: runtime.tmux_session_id,
+                exit_status: Map.get(metadata, "exit_status"),
+                branch: runtime.branch || Map.get(metadata, "branch")
+              }
+            })
+
+          :ok
+
+        _result ->
+          :ok
+      end
+    end
+
+    :ok
   end
 
   defp agent_worktree_runtime?(%Runtime{metadata: metadata}) when is_map(metadata) do

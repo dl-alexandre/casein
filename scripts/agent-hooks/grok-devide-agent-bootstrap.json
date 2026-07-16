@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c '[ -x \"${HOME}/.grok/hooks/devide-agent-state.sh\" ] || exit 0; exec \"${HOME}/.grok/hooks/devide-agent-state.sh\"'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

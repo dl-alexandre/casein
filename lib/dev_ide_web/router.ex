@@ -105,6 +105,7 @@ defmodule DevIdeWeb.Router do
   pipeline :mcp_api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
+    plug DevIdeWeb.Plugs.AgentCapabilityAuthz
     plug DevIdeWeb.Plugs.McpRateLimit
   end
 
@@ -118,6 +119,7 @@ defmodule DevIdeWeb.Router do
   # strict :accepts — SSE clients send `Accept: text/event-stream` only.
   pipeline :mcp_stream do
     plug DevIdeWeb.Plugs.ApiAuth
+    plug DevIdeWeb.Plugs.AgentCapabilityAuthz
     plug DevIdeWeb.Plugs.McpRateLimit
   end
 
@@ -214,6 +216,13 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
     get "/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions
+
+    post "/workspaces/:id/grok-agent-capabilities",
+         AgentCapabilityController,
+         :create_grok
+
+    get "/agent-capabilities/current", AgentCapabilityController, :current
+    delete "/agent-capabilities/current", AgentCapabilityController, :revoke_current
 
     post "/workspaces/:workspace_id/artifacts/:artifact_id/restore",
          ArtifactProjectController,

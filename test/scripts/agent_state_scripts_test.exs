@@ -31,6 +31,7 @@ defmodule Scripts.AgentStateScriptsTest do
                Map.fetch!(hooks, event)
 
       assert command =~ "devide-agent-state.sh"
+      assert command =~ "GROK_PLUGIN_ROOT"
       assert command =~ ~s([ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0)
     end
   end
@@ -57,10 +58,41 @@ defmodule Scripts.AgentStateScriptsTest do
     assert body =~ "terminal_report_agent_state"
   end
 
+  test "grok hook payload reports camelCase transcript and session metadata" do
+    payload =
+      Jason.encode!(%{
+        "hookEventName" => "Stop",
+        "transcriptPath" => "/home/devbox/.grok/sessions/2026/07/updates.jsonl",
+        "sessionId" => "grok-session-123"
+      })
+
+    body = run_state_script(%{}, payload)
+
+    assert body =~ ~s("transcript_path": "/home/devbox/.grok/sessions/2026/07/updates.jsonl")
+    assert body =~ ~s("agent_session_id": "grok-session-123")
+  end
+
   test "grok stop_failure reports blocked" do
     body = run_state_script(%{"GROK_HOOK_EVENT" => "stop_failure"})
 
     assert body =~ ~s("state": "blocked")
+  end
+
+  test "Grok bootstrap reports private leader and capability bundle metadata" do
+    digest = String.duplicate("a", 64)
+
+    body =
+      run_state_script(%{
+        "GROK_HOOK_EVENT" => "session_start",
+        "DEVIDE_AGENT_LAUNCH_CONTEXT" => "grok",
+        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/devide-grok-leaders-test/abc.sock",
+        "DEVIDE_GROK_BUNDLE_DIR" => "/tmp/grok-bundles/sha256-#{digest}",
+        "DEVIDE_GROK_BUNDLE_DIGEST" => digest
+      })
+
+    assert body =~ ~s("agent_runtime": "grok")
+    assert body =~ ~s("grok_leader_socket": "/tmp/devide-grok-leaders-test/abc.sock")
+    assert body =~ ~s("grok_bundle_digest": "#{digest}")
   end
 
   test "claude Stop payload on stdin still reports done" do

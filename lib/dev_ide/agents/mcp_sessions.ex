@@ -42,6 +42,7 @@ defmodule DevIDE.Agents.MCPSessions do
   @type metadata :: %{
           required(:server) => :preview | :terminal | :artifact,
           optional(:workspace_id) => String.t() | nil,
+          optional(:auth_scope) => term(),
           optional(:created_at) => integer()
         }
 

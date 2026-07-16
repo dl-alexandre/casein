@@ -2,11 +2,19 @@ defmodule DevIDE.Agents.MCPMaterializer do
   @moduledoc """
   Writes per-workspace MCP client config files (Grok, Codex, opencode, Cursor,
   `.mcp.json`, `env.sh`) into a staging home so external agents connect to the
-  DevIDE terminal/preview/artifact/Tidewave MCP endpoints with the right bearer
-  token.
+  DevIDE MCP endpoints with the right bearer token. Generic runtime configs may
+  include Tidewave; the managed Grok bundle deliberately contains only DevIDE's
+  authenticated terminal, preview, and artifact surfaces.
   """
 
-  alias DevIDE.Agents.{AgentShims, AuthProfile, MCPUrls, TidewaveMCP, WorkspaceTokens}
+  alias DevIDE.Agents.{
+    AgentShims,
+    AuthProfile,
+    GrokCapabilityBundle,
+    MCPUrls,
+    TidewaveMCP,
+    WorkspaceTokens
+  }
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -19,20 +27,24 @@ defmodule DevIDE.Agents.MCPMaterializer do
     with {:ok, token} <- agent_token(workspace),
          {:ok, staging} <- staging_home(workspace, opts) do
       urls = mcp_urls(workspace, opts)
-      checkout = Keyword.get(opts, :checkout) || workspace[:path] || workspace["path"]
+      checkout = Keyword.get(opts, :checkout) || workspace[:path] || workspace["path"] || ""
       :ok = ensure_staging_dirs(staging)
 
       :ok = write_grok_config(staging, urls, workspace)
       :ok = write_codex_config(staging, urls, workspace)
       :ok = write_opencode_config(staging, urls, workspace)
       :ok = write_mcp_json(staging, urls, token, workspace)
+      :ok = write_grok_mcp_json(staging, urls, workspace)
       :ok = stage_agent_scripts(staging)
       :ok = write_claude_hooks_settings(staging)
-      :ok = write_env_sh(staging, workspace, urls, token, checkout, opts)
 
-      maybe_copy_to_checkout(staging, checkout, opts)
-
-      {:ok, staging}
+      with {:ok, bundle} <- write_grok_bundle(staging, opts),
+           {:ok, leader_socket} <-
+             GrokCapabilityBundle.leader_socket(to_string(workspace_id(workspace)), checkout) do
+        :ok = write_env_sh(staging, workspace, urls, token, checkout, bundle, leader_socket, opts)
+        maybe_copy_to_checkout(staging, checkout, opts)
+        {:ok, staging}
+      end
     end
   end
 
@@ -220,6 +232,36 @@ defmodule DevIDE.Agents.MCPMaterializer do
     write_file(Path.join(staging, "cursor/mcp.json"), json)
   end
 
+  # Managed Grok is authorized by a DevIDE capability bearer. Tidewave is an
+  # external dev endpoint outside ApiAuth, so including it would bypass the
+  # exact capability tool grant.
+  defp write_grok_mcp_json(staging, urls, workspace) do
+    {terminal_key, preview_key, artifact_key} = server_keys(workspace)
+    bearer = "Bearer ${DEV_IDE_API_TOKEN}"
+
+    payload = %{
+      "mcpServers" => %{
+        terminal_key => %{
+          "type" => "http",
+          "url" => urls.terminal,
+          "headers" => %{"Authorization" => bearer}
+        },
+        preview_key => %{
+          "type" => "http",
+          "url" => urls.preview,
+          "headers" => %{"Authorization" => bearer}
+        },
+        artifact_key => %{
+          "type" => "http",
+          "url" => urls.artifact,
+          "headers" => %{"Authorization" => bearer}
+        }
+      }
+    }
+
+    write_file(Path.join(staging, "grok/.mcp.json"), Jason.encode!(payload, pretty: true) <> "\n")
+  end
+
   # Copy the checkout-independent agent hook scripts into the workspace staging
   # home so DevIDE's hooks resolve regardless of which project is the checkout.
   # $DEVIDE_SCRIPTS previously pointed at "<checkout>/scripts", which only exists
@@ -329,6 +371,42 @@ defmodule DevIDE.Agents.MCPMaterializer do
     :ok
   end
 
+  defp write_grok_bundle(staging, opts) do
+    hook_config = Path.join(staging, "grok-bundle-hooks.json")
+    :ok = write_file(hook_config, Jason.encode!(grok_bundle_hooks(), pretty: true) <> "\n")
+
+    skills_root = Keyword.get(opts, :grok_skills_root, Path.expand(".claude/skills"))
+
+    skills =
+      ~w(preview-ui-walk verify workspace-agent-pair)
+      |> Enum.filter(&File.dir?(Path.join(skills_root, &1)))
+
+    GrokCapabilityBundle.compile(
+      bundle_root: Keyword.get(opts, :grok_bundle_root, GrokCapabilityBundle.root()),
+      mcp_config: Path.join(staging, "grok/.mcp.json"),
+      hook_config: hook_config,
+      hook_script: Path.join(staging, "devide-agent-state.sh"),
+      hooks: Keyword.get(opts, :agent_state_hooks, true),
+      skills_root: skills_root,
+      skills: skills
+    )
+  end
+
+  defp grok_bundle_hooks do
+    command =
+      ~s(sh -c 'if [ -n "${GROK_PLUGIN_ROOT:-}" ] && [ -x "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh" ]; then exec "${GROK_PLUGIN_ROOT}/hooks/devide-agent-state.sh"; fi; [ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0; exec "${DEVIDE_AGENT_MCP_HOME}/devide-agent-state.sh"')
+
+    entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
+
+    %{
+      "hooks" =>
+        Map.new(
+          ~w(SessionStart UserPromptSubmit PreToolUse Notification Stop StopFailure SessionEnd),
+          &{&1, entry}
+        )
+    }
+  end
+
   defp server_keys(workspace) do
     slug =
       workspace
@@ -342,7 +420,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   end
 
   # sobelow_skip ["Traversal.FileModule"]
-  defp write_env_sh(staging, workspace, urls, token, checkout, opts) do
+  defp write_env_sh(staging, workspace, urls, token, checkout, bundle, leader_socket, opts) do
     workspace_id = workspace_id(workspace)
     workspace_name = workspace_name(workspace)
     env_sh = Path.join(staging, "env.sh")
@@ -363,6 +441,10 @@ defmodule DevIDE.Agents.MCPMaterializer do
     #{auth_profile_env_exports(workspace)}
     export DEVIDE_CHECKOUT=#{quote_env_sh(checkout)}
     export DEVIDE_AGENT_MCP_HOME=#{quote_env_sh(staging)}
+    export DEVIDE_GROK_BUNDLE_DIR=#{quote_env_sh(bundle.dir)}
+    export DEVIDE_GROK_BUNDLE_DIGEST=#{quote_env_sh(bundle.digest)}
+    export DEVIDE_GROK_LEADER_ROOT=#{quote_env_sh(Path.dirname(leader_socket))}
+    export DEVIDE_GROK_LEADER_SOCKET=#{quote_env_sh(leader_socket)}
     export DEVIDE_SCRIPTS=#{quote_env_sh(scripts)}
     export DEVIDE_AGENT_ENV_FILE=#{quote_env_sh(env_sh)}
     export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
@@ -381,7 +463,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   defp tmux_session_env_export(_), do: ""
 
   # sobelow_skip ["Traversal.FileModule"]
-  defp maybe_copy_to_checkout(staging, checkout, opts)
+  defp maybe_copy_to_checkout(staging, checkout, _opts)
        when is_binary(checkout) and checkout != "" do
     if File.dir?(checkout) do
       # Claude reads its workspace-isolated staging `.mcp.json` via
@@ -394,47 +476,12 @@ defmodule DevIDE.Agents.MCPMaterializer do
       :ok = File.mkdir_p(checkout_cursor_dir)
       :ok = File.cp(Path.join(staging, "cursor/mcp.json"), checkout_cursor_mcp)
       File.chmod(checkout_cursor_mcp, 0o600)
-
-      if Keyword.get(opts, :copy_grok_to_checkout, false) do
-        merge_mcp_json(Path.join(staging, ".mcp.json"), Path.join(checkout, ".mcp.json"))
-      end
     end
 
     :ok
   end
 
   defp maybe_copy_to_checkout(_staging, _checkout, _opts), do: :ok
-
-  # Grok discovers MCP servers from the project root. Preserve user-owned
-  # servers and replace only the workspace-scoped DevIDE entries generated for
-  # this launch. The generated file contains an environment placeholder, never
-  # the bearer token itself.
-  # sobelow_skip ["Traversal.FileModule"]
-  defp merge_mcp_json(generated_path, checkout_path) do
-    generated = generated_path |> File.read!() |> Jason.decode!()
-    existing = read_json_map(checkout_path)
-
-    merged =
-      Map.update(existing, "mcpServers", generated["mcpServers"], fn servers ->
-        Map.merge(if(is_map(servers), do: servers, else: %{}), generated["mcpServers"])
-      end)
-
-    write_file(checkout_path, Jason.encode!(merged, pretty: true) <> "\n")
-    File.chmod(checkout_path, 0o600)
-    :ok
-  end
-
-  # sobelow_skip ["Traversal.FileModule"]
-  defp read_json_map(path) do
-    with {:ok, content} <- File.read(path),
-         {:ok, value} when is_map(value) <- Jason.decode(content) do
-      value
-    else
-      {:error, :enoent} -> %{}
-      {:error, reason} -> raise File.Error, reason: reason, action: "read", path: path
-      _ -> raise ArgumentError, "existing #{path} must contain a JSON object"
-    end
-  end
 
   # sobelow_skip ["Traversal.FileModule"]
   defp write_file(path, content) do

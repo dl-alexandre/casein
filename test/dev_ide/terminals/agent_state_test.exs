@@ -1,11 +1,18 @@
 defmodule DevIDE.Terminals.AgentStateTest do
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.Agents.AgentEvents
   alias DevIDE.Terminals.AgentState
 
   setup do
     AgentState.clear()
-    on_exit(fn -> AgentState.clear() end)
+    AgentEvents.clear()
+
+    on_exit(fn ->
+      AgentState.clear()
+      AgentEvents.clear()
+    end)
+
     :ok
   end
 
@@ -17,6 +24,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
       tool: "terminal_report_agent_state",
       workspace_id: "ws-1",
       transcript_path: nil,
+      agent_session_id: nil,
       reported_at: DateTime.add(DateTime.utc_now(), -seconds_ago, :second)
     }
   end
@@ -60,6 +68,17 @@ defmodule DevIDE.Terminals.AgentStateTest do
       assert AgentState.get("devide_alpha_u-dev", "%3").transcript_path == path
     end
 
+    test "stores an agent runtime session id from hook reports" do
+      :ok =
+        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, nil,
+          source: :hook,
+          agent_session_id: "grok-session-123"
+        )
+
+      assert AgentState.get("devide_alpha_u-dev", "%3").agent_session_id ==
+               "grok-session-123"
+    end
+
     test "identical re-report refreshes freshness without broadcasting" do
       :ok = AgentState.subscribe("ws-state")
       :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, "compiling")
@@ -91,10 +110,22 @@ defmodule DevIDE.Terminals.AgentStateTest do
       :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :working, nil)
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
 
-      :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "needs perm")
+      :ok =
+        AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "needs perm",
+          agent_session_id: "grok-session-blocked"
+        )
+
       assert_receive {:audit_event, %{action: "agent.blocked", metadata: metadata}}
       assert metadata.pane == "%3"
       assert metadata.message == "needs perm"
+      assert metadata.agent_session_id == "grok-session-blocked"
+
+      assert [%{event_type: "agent.state_changed"} = transition | _rest] =
+               AgentEvents.recent_for("ws-audit")
+
+      assert transition.agent_session_id == "grok-session-blocked"
+      assert transition.payload["message_present"] == true
+      refute inspect(transition) =~ "needs perm"
 
       # A second blocked report (different message) must not re-alert.
       :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "still blocked")
@@ -302,7 +333,10 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "enrich_topology/2" do
     test "adds resolved agent_state to panes and windows, omitting unknown" do
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, "needs input")
+      :ok =
+        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, "needs input",
+          agent_session_id: "grok-session-123"
+        )
 
       topology = %{
         panes: [
@@ -325,9 +359,11 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
       assert agent_pane.agent_state == :blocked
       assert agent_pane.agent_state_message == "needs input"
+      assert agent_pane.agent_session_id == "grok-session-123"
       refute Map.has_key?(other_pane, :agent_state)
 
       assert hd(enriched.windows).agent_state == :blocked
+      assert hd(enriched.windows).agent_session_id == "grok-session-123"
     end
   end
 end

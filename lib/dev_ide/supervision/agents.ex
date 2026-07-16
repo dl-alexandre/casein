@@ -12,6 +12,7 @@ defmodule DevIDE.Supervision.Agents do
     children = [
       {Registry, keys: :unique, name: DevIDE.Agents.Registry},
       {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
+      DevIDE.AgentSessions.GrokACP.Attachments,
       DevIDE.Agents.MCPSessions,
       DevIDE.Agents.Activity
     ]

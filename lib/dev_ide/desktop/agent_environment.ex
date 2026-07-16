@@ -2,9 +2,10 @@ defmodule DevIDE.Desktop.AgentEnvironment do
   @moduledoc """
   Builds the workspace-scoped environment inherited by native desktop shells.
 
-  This is the Windows equivalent of `scripts/launch-devide-agent.sh`: it keeps
-  provider authentication in the user's normal agent home while injecting only
-  DevIDE's workspace token, endpoint URLs, and project MCP discovery file.
+  This is the environment-materialization half of the Windows agent launcher:
+  it keeps provider authentication in the user's normal agent home while
+  staging workspace MCP config and Grok's session capability metadata outside
+  the project checkout.
   """
 
   alias DevIDE.Agents.{MCPMaterializer, MCPUrls, WorkspaceTokens}
@@ -18,8 +19,7 @@ defmodule DevIDE.Desktop.AgentEnvironment do
          {:ok, token} <- WorkspaceTokens.for_agent(workspace),
          {:ok, staging} <-
            MCPMaterializer.materialize(workspace,
-             checkout: checkout,
-             copy_grok_to_checkout: true
+             checkout: checkout
            ) do
       {:ok,
        %{

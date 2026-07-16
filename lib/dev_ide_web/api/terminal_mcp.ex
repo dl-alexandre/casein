@@ -59,7 +59,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   @impl true
   def list_tools(opts) do
     tool_specs()
-    |> MCPToolSearch.list_tools(:terminal)
+    |> MCPToolSearch.list_tools(:terminal, opts)
     |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
   end
 

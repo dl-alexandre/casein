@@ -15,6 +15,11 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
       state: [type: :string, required: true],
       message: [type: :string],
       transcript_path: [type: :string],
+      agent_session_id: [type: :string],
+      agent_runtime: [type: :string],
+      grok_leader_socket: [type: :string],
+      grok_bundle_dir: [type: :string],
+      grok_bundle_digest: [type: :string],
       source: [type: :string]
     ]
 
@@ -33,6 +38,11 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
           state: Helpers.agent_state_param(),
           message: Helpers.agent_state_message_param(),
           transcript_path: Helpers.transcript_path_param(),
+          agent_session_id: Helpers.agent_session_id_param(),
+          agent_runtime: Helpers.agent_runtime_param(),
+          grok_leader_socket: Helpers.grok_leader_socket_param(),
+          grok_bundle_dir: Helpers.grok_bundle_dir_param(),
+          grok_bundle_digest: Helpers.grok_bundle_digest_param(),
           source: Helpers.agent_state_source_param()
         }),
         ["workspace_id", "state"]

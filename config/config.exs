@@ -68,6 +68,7 @@ config :dev_ide,
   ecto_repos: [DevIDE.Repo],
   generators: [timestamp_type: :utc_datetime],
   audit_adapter: DevIDE.Audit.EctoAdapter,
+  agent_events_adapter: DevIDE.Agents.AgentEvents.EctoAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.EctoAdapter,
   runtimes_adapter: DevIDE.Runtimes.EctoAdapter,
   # Persistent mobile companion tokens expire after this many seconds (default 90 days).

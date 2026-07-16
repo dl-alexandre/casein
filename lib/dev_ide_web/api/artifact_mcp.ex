@@ -45,7 +45,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
     # larger than the full list), so this returns the full set unchanged; the
     # routing is here so artifact adopts tool-search for free if it ever grows.
     tool_specs()
-    |> MCPToolSearch.list_tools(:artifact)
+    |> MCPToolSearch.list_tools(:artifact, opts)
     |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
   end
 

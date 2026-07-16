@@ -1,6 +1,7 @@
 defmodule DevIDE.RuntimesTest do
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.Agents.AgentEvents
   alias DevIDE.Workspace
   alias DevIDE.Previews.EnvPorts
   alias DevIDE.Runtimes
@@ -29,6 +30,7 @@ defmodule DevIDE.RuntimesTest do
     Runtimes.clear()
     WorktreeReconciler.clear()
     DevIDE.Audit.MemoryAdapter.clear()
+    AgentEvents.clear()
 
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
@@ -44,6 +46,7 @@ defmodule DevIDE.RuntimesTest do
       Runtimes.clear()
       WorktreeReconciler.clear()
       DevIDE.Audit.MemoryAdapter.clear()
+      AgentEvents.clear()
 
       restore_env(:runtimes_adapter, prev_runtime)
       restore_env(:agent_worktree_roots, prev_agent_roots)
@@ -614,6 +617,32 @@ defmodule DevIDE.RuntimesTest do
     assert clean_payload.dirty_count == 0
     refute Map.has_key?(clean_payload, :exit_status)
     refute Map.has_key?(clean_payload, :handoff)
+  end
+
+  test "observe_worktree appends a handoff only when the exit report changes" do
+    root = tmp_repo!("observe-handoff")
+    worktree = Path.join(root, "agent-worktree")
+    git!(root, ["worktree", "add", "-b", "handoff-branch", worktree, "main"])
+    seed_workspace("ws-agent-handoff", root)
+
+    attrs = %{
+      "worktree_path" => worktree,
+      "agent" => "grok",
+      "session_id" => "grok-handoff-session",
+      "exit_status" => "handoff",
+      "handoff" => "ACP prototype ready for operator review"
+    }
+
+    assert {:ok, runtime} = Runtimes.observe_worktree("ws-agent-handoff", attrs)
+    assert {:ok, _same_runtime} = Runtimes.observe_worktree("ws-agent-handoff", attrs)
+
+    assert [event] = AgentEvents.recent_for("ws-agent-handoff")
+    assert event.event_type == "worktree.handoff"
+    assert event.privacy_class == "operator_content"
+    assert event.runtime_id == runtime.id
+    assert event.agent_session_id == "grok-handoff-session"
+    assert event.payload["exit_status"] == "handoff"
+    assert event.payload["handoff"] == "ACP prototype ready for operator review"
   end
 
   test "discover_worktrees registers linked worktrees and skips home checkout" do

@@ -2,6 +2,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   @moduledoc false
 
   alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
+  alias DevIDE.AgentSessions.GrokACP.Attachments
   alias DevIDE.Audit
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Labels
@@ -321,25 +322,63 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
       message = truncated_message(params)
 
       transcript_path = string_param(params, "transcript_path")
+      agent_session_id = string_param(params, "agent_session_id")
+      agent_runtime = string_param(params, "agent_runtime")
+      grok_leader_socket = string_param(params, "grok_leader_socket")
+      grok_bundle_dir = string_param(params, "grok_bundle_dir")
+      grok_bundle_digest = string_param(params, "grok_bundle_digest")
+      report_source = agent_state_source(params)
 
-      :ok =
-        AgentState.report(workspace_id, session, pane.id, state, message,
-          source: agent_state_source(params),
-          tool: "terminal_report_agent_state",
-          transcript_path: transcript_path
-        )
+      attachment = %{
+        workspace_id: workspace_id,
+        tmux_session_id: session,
+        pane_id: pane.id,
+        cwd: pane_current_path(pane),
+        transcript_path: transcript_path,
+        agent_session_id: agent_session_id,
+        agent_runtime: agent_runtime,
+        source: report_source,
+        grok_leader_socket: grok_leader_socket,
+        grok_bundle_dir: grok_bundle_dir,
+        grok_bundle_digest: grok_bundle_digest
+      }
 
-      {:ok,
-       %{
-         session: session,
-         target: pane.id,
-         state: Atom.to_string(state),
-         message: message,
-         transcript_path: transcript_path,
-         status: "reported"
-       }}
+      with :ok <- validate_grok_attachment(agent_runtime, attachment) do
+        :ok =
+          AgentState.report(workspace_id, session, pane.id, state, message,
+            source: report_source,
+            tool: "terminal_report_agent_state",
+            transcript_path: transcript_path,
+            agent_session_id: agent_session_id
+          )
+
+        {:ok,
+         %{
+           session: session,
+           target: pane.id,
+           state: Atom.to_string(state),
+           message: message,
+           transcript_path: transcript_path,
+           agent_session_id: agent_session_id,
+           agent_runtime: agent_runtime,
+           grok_leader_socket: grok_leader_socket,
+           grok_bundle_dir: grok_bundle_dir,
+           grok_bundle_digest: grok_bundle_digest,
+           status: "reported"
+         }}
+      end
     end
   end
+
+  defp validate_grok_attachment("grok", attrs) do
+    case Attachments.observe(attrs) do
+      :ok -> :ok
+      :disabled -> :ok
+      {:error, reason} -> {:error, {:invalid_grok_attachment, reason}}
+    end
+  end
+
+  defp validate_grok_attachment(_runtime, _attrs), do: :ok
 
   @doc "Block until an agent pane reaches one of the requested semantic states."
   @spec wait_agent_state(map()) :: {:ok, map()} | {:error, term()}
@@ -626,12 +665,24 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   end
 
   defp label_target_pane(session, params) do
+    panes = tmux().list_session_panes(session)
+
     case Map.get(params, "pane") || Map.get(params, :pane) do
       pane_id when is_binary(pane_id) and pane_id != "" ->
-        if pane_id in pane_ids(session), do: {:ok, %{id: pane_id}}, else: {:error, :invalid_pane}
+        case Enum.find(panes, &(&1.id == pane_id)) do
+          nil -> {:error, :invalid_pane}
+          pane -> {:ok, pane}
+        end
 
       _ ->
         find_agent_pane(session, allow_process_fallback: true)
+    end
+  end
+
+  defp pane_current_path(pane) do
+    case Map.get(pane, :current_path) || Map.get(pane, "current_path") do
+      path when is_binary(path) and path != "" -> path
+      _ -> nil
     end
   end
 

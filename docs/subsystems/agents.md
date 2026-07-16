@@ -7,7 +7,7 @@
 ## Responsibility
 
 `DevIDE.Agents.*` is the capability + tool layer that connects external agents
-to a workspace. It does three distinct jobs:
+to a workspace. It does four distinct jobs:
 
 1. **Capability detection** (`DevIDE.Agents`, `LocalAdapter`, the
    `*Capability` modules) — observe, read-only, what agent features a
@@ -27,9 +27,16 @@ to a workspace. It does three distinct jobs:
    for each agent CLI, and push the `DEVIDE_*` env into a tmux session so a bare
    `claude` / `grok` / `codex` command picks up the DevIDE MCP servers
    automatically.
+4. **Operational replay** (`AgentEvents`, `AgentEvent`, `Activity`) — append
+   metadata-only MCP, ACP, semantic-state, transcript identity, permission, and
+   worktree handoff events to a durable per-session stream, then project them
+   into the live History feed. This is separate from the security-oriented
+   `Audit` log.
 
-A separate slice (`ReviewCommand`, `Run`) supports allowlisted review-mode
-agent runs with compile-time-fixed argv.
+Side-effecting runtime control deliberately lives beside this read-only facade:
+`DevIDE.AgentSessions.GrokACP` supervises a structured Grok ACP observer, while
+`ReviewCommand` / `Run` support allowlisted review-mode agent runs with
+compile-time-fixed argv.
 
 ## Module map
 
@@ -51,14 +58,20 @@ agent runs with compile-time-fixed argv.
 | `DevIDE.Agents.TerminalOutputFormat` | `lib/dev_ide/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
 | `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
+| `DevIDE.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/dev_ide/agents/agent_capability_token.ex`, `lib/dev_ide/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
+| `DevIDE.Agents.GrokCapabilityPolicy` | `lib/dev_ide/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
 | `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
 | `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
-| `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool call to the `Activity` feed; emit an `Audit` event for mutating tools; propose labels from terminal calls. |
+| `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool completion as a metadata-only `AgentEvent` and in `Activity`; emit an `Audit` event for successful mutating tools; propose labels from terminal calls. |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
-| `DevIDE.Agents.Activity` | `lib/dev_ide/agents/activity.ex` | Recent MCP tool-call feed for human operators (terminal + preview); LiveViews subscribe. |
+| `DevIDE.Agents.AgentEvent` / `AgentEvents` | `lib/dev_ide/agents/agent_event.ex`, `lib/dev_ide/agents/agent_events.ex` | Durable normalized agent timeline with native source-id dedupe, session/correlation queries, replay cursors, privacy constructors, and Jido publication. |
+| `DevIDE.Agents.Activity` | `lib/dev_ide/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
 | `DevIDE.Agents.ReviewCommand` | `lib/dev_ide/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
 | `DevIDE.Agents.Run` | `lib/dev_ide/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
+| `DevIDE.AgentSessions.GrokACP` | `lib/dev_ide/agent_sessions/grok_acp.ex` | Supervised Grok leader attachment: initialize/authenticate, `session/new` or `session/load`, normalize tool/plan/permission events into `Activity`. |
+| `DevIDE.AgentSessions.GrokACP.Attachments` | `lib/dev_ide/agent_sessions/grok_acp/attachments.ex` | Validates hook-reported private leader/bundle metadata, owns one ACP attachment per workspace/Grok session, and exposes workspace-scoped permission snapshots and decisions. |
+| `DevIDE.AgentSessions.GrokACP.Transport.Stdio` | `lib/dev_ide/agent_sessions/grok_acp/transport/stdio.ex` | Starts or adopts a no-auto-update Grok leader and talks ACP through Grok's supported newline-JSON stdio bridge. |
 
 ## Data flow / lifecycle
 
@@ -66,12 +79,15 @@ agent runs with compile-time-fixed argv.
 
 1. `PaneEnv.ensure_for_session/3` (or `vars_for_workspace/2`) is called for a
    workspace tmux session.
-2. It resolves the API token, then calls `MCPMaterializer.materialize/2`, which
+2. It resolves the workspace bootstrap token, then calls
+   `MCPMaterializer.materialize/2`, which
    writes a staging home containing `grok/config.toml`, `codex/config.toml`,
    `opencode.json`, `.mcp.json`, `cursor/mcp.json`, and `env.sh`. Grok,
    OpenCode, Claude/Cursor staging configs point at the terminal + preview MCP URLs
    (from `MCPUrls`) with a `Bearer ${DEV_IDE_API_TOKEN}` header, plus an
-   optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Codex staging is
+   optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Managed Grok has
+   a separate `grok/.mcp.json` containing only the three DevIDE-authenticated
+   servers; Tidewave is excluded because it is outside `ApiAuth`. Codex staging is
    intentionally free of DevIDE MCP entries; the launcher injects them at
    runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
 3. `PaneEnv.ensure_for_session/3` (and app boot via
@@ -97,7 +113,8 @@ agent runs with compile-time-fixed argv.
    runtime keeps the host global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
-   Grok reads project `.mcp.json`, OpenCode reads project
+   managed Grok receives the immutable bundle through leader ACP metadata,
+   OpenCode reads project
    `.opencode/opencode.json`, and Codex receives DevIDE MCP through launch-time
    `-c mcp_servers...` overrides. The launcher also defaults Codex to yolo mode
    (`--dangerously-bypass-approvals-and-sandbox`) and Claude to
@@ -138,10 +155,92 @@ agent runs with compile-time-fixed argv.
    `workspace_matches?`; preview: `ensure_pane_workspace_scope`), performs the
    tmux/preview operation, and returns `{:ok, map}` or `{:error, reason}`.
 4. Result is recorded via `MCPAudit.record_terminal/3` /
-   `record_preview/4` / `record_artifact/4` (→ `Activity` feed;
-   `Audit.emit!` for mutating tools;
+   `record_preview/4` / `record_artifact/4` (→ metadata-only `mcp.completed`
+   `AgentEvent` + `Activity` feed; `Audit.emit!` for successful mutating tools;
    label proposals), and errors are shaped by `MCPError` into MCP
    `structuredContent`.
+
+**Observing a shared Grok leader session:**
+
+Before Grok starts, the trusted launcher exchanges the durable workspace bearer
+for a 12-hour `grokcap_*` capability. Only its SHA-256 hash is stored. The claim
+is bound to one workspace, private leader, bundle digest, checkout digest, tmux
+session, and exact agent pane; minting a replacement for that binding revokes the
+old bearer. The durable bootstrap/admin values are removed from the child
+environment, and the raw capability cache plus known credential roots are denied
+to Grok's native tools by a managed sandbox profile. Materialization, bundle
+verification, capability exchange, and sandbox installation all fail closed for
+managed Grok launches.
+
+The token's direct-tool map is a frozen ceiling and is intersected with current
+workspace policy on every MCP request. Locked/manual operation exposes reads and
+metadata reporting only. An active, time-boxed write unlock adds supported
+mutations, but raw `terminal_send_command` and `terminal_send_keys` are never
+granted; pane-taking tools are forced to the claimed agent pane. Revoking the
+unlock removes MCP mutations immediately. A later launch also changes the sandbox
+signature and restarts an existing leader rather than reusing a previously
+writable native-tool sandbox. Write-enabled leaders extend Grok's `strict`
+profile; locked leaders extend `read-only` with explicit credential denies.
+
+`search_tools` and `invoke_tool` are intentionally absent, so cross-server
+routing cannot bypass the exact grant. Streamable HTTP session ids are also bound
+to server, workspace, and bearer scope. The capability follows the private
+leader—not one native Grok `sessionId`—because a leader is deliberately shared by
+the TUI and ACP and may host multiple conversations. Expiry or explicit
+revocation takes effect on the next request; relaunching renews an expired leader
+capability.
+
+1. A managed Grok hook reports `agent_runtime`, Grok `sessionId`, transcript,
+   private leader socket, and content-addressed capability bundle metadata through
+   `terminal_report_agent_state`. The tool derives cwd from the target tmux pane;
+   caller-supplied cwd is never trusted.
+2. `GrokACP.Attachments` accepts only Grok transcripts under `~/.grok/sessions`,
+   direct `<24hex>.sock` children of the configured private leader root (or its
+   deterministic short-path fallback when Unix socket limits require it), and
+   bundles accepted by `GrokCapabilityBundle.allowed_path?/1` whose directory
+   name matches the reported SHA-256 digest. The global `~/.grok/leader.sock`
+   and partial reports do not trigger a process.
+3. The manager starts a transient `GrokACP` child under the agents supervision
+   tree, keyed by workspace plus Grok session. Repeated
+   reports reuse it; a changed socket/cwd/bundle stops and recreates the
+   attachment so the visible digest cannot drift from the active plugin.
+4. The stdio transport starts (or adopts) a Grok leader on the configured Unix
+   socket with leader auto-update disabled, then attaches an official
+   `grok agent --leader stdio` bridge. DevIDE does not implement Grok's private
+   socket framing.
+5. The client sends ACP `initialize`, uses the authentication method advertised
+   by that response, and calls `session/load` for a known Grok session ID or
+   `session/new` otherwise. ACP has no separate subscription request: loading or
+   creating the session makes this client a leader subscriber. Negotiated
+   `_meta.pluginDirs` receives the validated bundle; unsupported extensions are
+   not sent.
+6. `tool_call`, `tool_call_update`, `plan`, and `session/request_permission`
+   messages are appended first as metadata-only `AgentEvent`s using Grok's
+   native `_meta.eventId` (or a deterministic fallback), then projected into
+   `Activity`. Reconnect replay dedupes on workspace + logical stream + native
+   source id. Raw prompts, tool input/output, and plan content are not copied.
+7. Permission requests remain pending until the workspace-scoped Attachments
+   API responds or cancels them; successful responses append
+   `permission.decided`. Safe snapshots broadcast on
+   `grok_acp_attachments:<workspace_id>` for an operator UI without exposing
+   socket, cwd, or bundle paths.
+   Requests are never auto-denied because Grok broadcasts a shared request to
+   the TUI and DevIDE, with the first response winning.
+
+**Durable AgentEvent projection:**
+
+- `agent_events` is operational replay, not security evidence. Audit decisions
+  continue to use `audit_events`; neither store replaces the other.
+- `{workspace_id, stream_id, source_event_id}` is unique. `ingress` is deliberately
+  excluded so ACP and transcript recovery can converge on one source event.
+- `replay/2` advances by opaque `{inserted_at, id}` cursor; `occurred_at` remains
+  the source/display time so late transcript backfill is not skipped.
+- Constructors allowlist metadata. Raw prompts, assistant text, thoughts, code,
+  command/keys/text, and tool input/output are excluded. Deliberate handoff text
+  is the sole current `operator_content` payload.
+- Inserted events publish `devide.agent_event.*` Jido signals with the same event
+  id and Grok/Claude `agent_session_id`. Blocked Audit/Jido payloads also carry
+  `agent_session_id` when the hook supplied one.
 
 **Capability detection (observe):**
 
@@ -172,14 +271,24 @@ available. The list is surfaced through agent UI and `GET
   surface (called by `DevIdeWeb.API.PreviewMCP`).
 - `DevIDE.Agents.MCPAudit.record_terminal/3`, `record_preview/4` — audit +
   activity recording.
+- `DevIDE.Agents.AgentEvents.append_runtime/1`, `append_mcp/4`,
+  `append_state_transition/1`, `append_handoff/1`, `recent_for/2`,
+  `list_for_session/3`, `replay/2` — normalized append/recovery surface.
 - `DevIDE.Agents.MCPError.*` — error normalization for tool handlers.
 - `DevIDE.Agents.*Capability.detect/0` — individual endpoint detection.
+- `DevIDE.AgentSessions.GrokACP.ensure_started/3`, `status/1`, `attach/2`,
+  `respond_permission/3`, `cancel_permission/2` — supervised structured Grok
+  session observation and explicit permission responses.
+- `DevIDE.AgentSessions.GrokACP.Attachments.observe/1`, `list/1`, `subscribe/1`,
+  `respond_permission/4`, `cancel_permission/3` — production leader lifecycle
+  and workspace-safe approval surface.
 
 ## Invariants & gotchas
 
 - **Detection is read-only (M7).** `DevIDE.Agents` and `LocalAdapter` observe
   only; they never start agents or grant permissions. Don't add side effects to
-  the detection path.
+  the detection path. Side-effecting ACP lifecycle belongs in the dedicated
+  agent-session modules.
 - **Web layer depends on context, not the reverse.** `TerminalMCPCapability` /
   `PreviewMCPCapability` / `ArtifactMCPCapability` / `TidewaveCapability` resolve the endpoint base URL
   through a configured MFA (`:tidewave_url_provider`, etc.) so context code never

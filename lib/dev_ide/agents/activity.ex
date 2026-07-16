@@ -1,13 +1,14 @@
 defmodule DevIDE.Agents.Activity do
   @moduledoc """
-  Recent MCP tool-call feed for human operators watching external agents.
+  Recent agent activity feed for human operators watching external agents.
 
-  Terminal and preview MCP handlers record invocations here; workspace
-  LiveViews subscribe and render the tail in the Agents tab.
+  Terminal/preview MCP handlers and structured runtime adapters record events
+  here; workspace LiveViews subscribe and render the tail.
   """
 
   use GenServer
 
+  alias DevIDE.Agents.{AgentEvent, AgentEvents}
   alias Phoenix.PubSub
 
   @topic_prefix "agent_activity:"
@@ -17,7 +18,15 @@ defmodule DevIDE.Agents.Activity do
   @type entry :: %{
           id: String.t(),
           workspace_id: String.t() | nil,
-          source: :terminal_mcp | :preview_mcp | :artifact_mcp,
+          source:
+            :terminal_mcp
+            | :preview_mcp
+            | :artifact_mcp
+            | :grok_acp
+            | :agent_state
+            | :transcript
+            | :worktree
+            | :agent_event,
           tool: String.t(),
           summary: String.t(),
           metadata: map(),
@@ -55,14 +64,22 @@ defmodule DevIDE.Agents.Activity do
   @impl true
   def handle_call({:recent, workspace_id, limit}, _from, state) do
     entries =
-      state
-      |> Map.get(workspace_id, [])
+      (Map.get(state, workspace_id, []) ++ persisted_entries(workspace_id, limit))
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
       |> Enum.take(limit)
 
     {:reply, entries, state}
   end
 
-  def handle_call(:clear, _from, _state), do: {:reply, :ok, %{}}
+  def handle_call(:clear, _from, _state) do
+    if Application.get_env(:dev_ide, :agent_events_adapter) ==
+         DevIDE.Agents.AgentEvents.MemoryAdapter do
+      _ = AgentEvents.clear()
+    end
+
+    {:reply, :ok, %{}}
+  end
 
   def handle_call({:record, attrs}, _from, state) do
     entry = build_entry(attrs)
@@ -70,7 +87,11 @@ defmodule DevIDE.Agents.Activity do
 
     updated =
       if is_binary(workspace_id) do
-        list = [entry | Map.get(state, workspace_id, [])] |> Enum.take(@max_per_workspace)
+        list =
+          [entry | Map.get(state, workspace_id, [])]
+          |> Enum.uniq_by(& &1.id)
+          |> Enum.take(@max_per_workspace)
+
         Map.put(state, workspace_id, list)
       else
         state
@@ -104,6 +125,38 @@ defmodule DevIDE.Agents.Activity do
   end
 
   defp optional_string(_), do: nil
+
+  defp persisted_entries(workspace_id, limit) do
+    workspace_id
+    |> AgentEvents.recent_for(limit: limit)
+    |> Enum.map(&event_entry/1)
+  rescue
+    _reason -> []
+  catch
+    :exit, _reason -> []
+  end
+
+  defp event_entry(%AgentEvent{} = event) do
+    %{
+      id: event.id,
+      workspace_id: event.workspace_id,
+      source: :agent_event,
+      tool: Map.get(event.payload || %{}, "tool") || event.event_type,
+      summary: event.summary || event.event_type,
+      metadata:
+        Map.merge(event.payload || %{}, %{
+          event_type: event.event_type,
+          producer: event.producer,
+          ingress: event.ingress,
+          agent_session_id: event.agent_session_id,
+          tmux_session_id: event.tmux_session_id,
+          pane_id: event.pane_id,
+          runtime_id: event.runtime_id
+        }),
+      status: if(event.status in ["error", "failed"], do: :error, else: :ok),
+      inserted_at: event.occurred_at
+    }
+  end
 
   defp topic(workspace_id), do: @topic_prefix <> workspace_id
 end

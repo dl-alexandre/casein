@@ -573,11 +573,25 @@ defmodule DevIDE.Workspaces.SessionSummary do
   defp agent_activity_title(entry) do
     metadata = activity_metadata(entry)
 
-    first_present([
-      metadata_get(metadata, :title),
-      metadata_get(metadata, :prompt_excerpt),
-      Map.get(entry, :summary)
-    ])
+    explicit_title =
+      first_present([
+        metadata_get(metadata, :title),
+        metadata_get(metadata, :prompt_excerpt)
+      ])
+
+    if state_transition_activity?(entry, metadata) do
+      explicit_title
+    else
+      explicit_title || first_present([Map.get(entry, :summary)])
+    end
+  end
+
+  # State transitions are useful timeline entries, but their generated summary
+  # (for example "Agent state · working") must not hide a richer transcript
+  # activity hint for the session title.
+  defp state_transition_activity?(entry, metadata) do
+    Map.get(entry, :source) == :agent_state or
+      metadata_get(metadata, :event_type) == "agent.state_changed"
   end
 
   defp transcript_session_activity(%{tmux_session: tmux_session}) when is_binary(tmux_session) do

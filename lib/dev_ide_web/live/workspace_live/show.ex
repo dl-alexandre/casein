@@ -43,6 +43,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.FileOperations
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
+  alias DevIdeWeb.WorkspaceLive.Show.GrokPermissionEvents
   alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.NavEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
@@ -131,6 +132,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     notifications:mark_all_read notifications:save_preferences
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
+    grok_permission:respond grok_permission:cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
@@ -330,6 +332,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:artifact_projects_error, nil)
         |> assign(:artifact_selected_id, nil)
         |> HistoryEvents.assign_defaults()
+        |> GrokPermissionEvents.mount()
         # Global notifications drawer (user-scoped, not workspace-scoped):
         # subscribes to the viewer's notification topic and loads the unread
         # badge count on the connected mount; the inbox list is lazy (opens).
@@ -783,6 +786,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("agent:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
 
+  def handle_event("grok_permission:" <> _ = event, params, socket),
+    do: GrokPermissionEvents.handle_event(event, params, socket)
+
   def handle_event("audit_drawer:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
 
@@ -926,6 +932,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:situation_seed = msg, socket),
     do: SituationEvents.handle_info(msg, socket)
+
+  def handle_info({:grok_acp_attachments_updated, _workspace_id, _snapshots} = message, socket),
+    do: {:noreply, GrokPermissionEvents.handle_info(message, socket)}
 
   # Durable notification broadcasts on the viewer's user topic — subscribed by
   # NotificationsDrawerEvents at mount. Badge always updates; the drawer list

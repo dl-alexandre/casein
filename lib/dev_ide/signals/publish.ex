@@ -1,6 +1,7 @@
 defmodule DevIDE.Signals.Publish do
   @moduledoc false
 
+  alias DevIDE.Agents.AgentEvent
   alias DevIDE.Audit.Event
   alias DevIDE.SignalBus
   alias DevIDE.Signals
@@ -27,6 +28,39 @@ defmodule DevIDE.Signals.Publish do
         {:error, reason} ->
           require Logger
           Logger.warning("signal bus publish failed for #{event.action}: #{inspect(reason)}")
+          :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  @spec agent_event(AgentEvent.t()) :: :ok
+  def agent_event(%AgentEvent{} = event) do
+    if enabled?() do
+      signal = Signals.from_agent_event(event)
+
+      case Bus.publish(SignalBus.name(), [signal]) do
+        {:ok, _count} ->
+          :telemetry.execute(
+            [:dev_ide, :signals, :publish],
+            %{count: 1},
+            %{
+              action: event.event_type,
+              workspace_id: event.workspace_id,
+              agent_event: true
+            }
+          )
+
+          :ok
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.warning(
+            "signal bus publish failed for agent event #{event.event_type}: #{inspect(reason)}"
+          )
+
           :ok
       end
     else

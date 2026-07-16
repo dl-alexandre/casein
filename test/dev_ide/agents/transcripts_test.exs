@@ -15,6 +15,32 @@ defmodule DevIDE.Agents.TranscriptsTest do
       assert Transcripts.allowed_path?(path)
     end
 
+    test "accepts only the exact Grok updates.jsonl session filename", %{home: home} do
+      path = grok_transcript!(home, "session-a", "")
+      assert Transcripts.allowed_path?(path)
+
+      other = Path.join(Path.dirname(path), "chat_history.jsonl")
+      File.write!(other, "")
+      refute Transcripts.allowed_path?(other)
+
+      outside_sessions = Path.join([home, ".grok", "updates.jsonl"])
+      File.mkdir_p!(Path.dirname(outside_sessions))
+      File.write!(outside_sessions, "")
+      refute Transcripts.allowed_path?(outside_sessions)
+    end
+
+    test "rejects a symlinked Grok transcript", %{home: home} do
+      outside = Path.join([home, "secret", "updates.jsonl"])
+      File.mkdir_p!(Path.dirname(outside))
+      File.write!(outside, "{}\n")
+
+      path = Path.join([home, ".grok", "sessions", "project", "session", "updates.jsonl"])
+      File.mkdir_p!(Path.dirname(path))
+      File.ln_s!(outside, path)
+
+      refute Transcripts.allowed_path?(path)
+    end
+
     test "accepts jsonl under DevIDE auth profiles", %{home: home} do
       auth_root = Path.join([home, ".devide", "agent-auth"])
       Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
@@ -94,6 +120,133 @@ defmodule DevIDE.Agents.TranscriptsTest do
       assert {:ok, %{entries: entries}} = Transcripts.read(path, tail: 2)
       assert Enum.map(entries, & &1.cursor) == ["u2", "a2"]
     end
+
+    test "normalizes Grok ACP chunks and tool calls", %{home: home} do
+      path = grok_transcript!(home, "session-normalized", grok_fixture())
+
+      assert {:ok, %{entries: entries, cursor: "grok:7", total_on_branch: 4}} =
+               Transcripts.read(path, tail: 10)
+
+      assert Enum.map(entries, & &1.role) == ["user", "assistant", "assistant", "assistant"]
+
+      assert [user, narration, tool, answer] = entries
+      assert user.text == "Inspect the file"
+      assert user.timestamp == "2023-11-14T22:13:20.123Z"
+      assert narration.text == "I'll inspect the file."
+      assert narration.cursor == "grok:3"
+      assert tool.tool_calls == [%{name: "Read", input_summary: "path=/tmp/show.ex"}]
+      assert answer.text == "Done."
+    end
+
+    test "supports Grok incremental pulls, tail, native event cursors, and full text", %{
+      home: home
+    } do
+      long_text = String.duplicate("x", 600)
+
+      body =
+        grok_fixture() <>
+          grok_envelope(8, "agent_message_chunk", %{
+            "content" => %{"type" => "text", "text" => long_text}
+          })
+
+      path = grok_transcript!(home, "session-incremental", body)
+
+      assert {:ok, %{entries: entries, cursor: "grok:8"}} =
+               Transcripts.read(path, since: "grok:4", tail: 10)
+
+      assert Enum.map(entries, & &1.cursor) == ["grok:8"]
+      assert entries |> List.first() |> Map.fetch!(:text) |> String.starts_with?("Done. ")
+      assert String.length(List.last(entries).text) == 500
+
+      assert {:ok, %{entries: [%{text: ^long_text}]}} =
+               Transcripts.read(path, since: "grok-session-1-7", tail: 1, full_text: true)
+
+      assert {:ok, %{entries: [last]}} = Transcripts.read(path, tail: 1)
+      assert last.cursor == "grok:8"
+    end
+
+    test "uses descriptive orphan tool updates without duplicating normal updates", %{home: home} do
+      body =
+        grok_envelope(1, "tool_call_update", %{
+          "toolCallId" => "orphan",
+          "title" => "Execute tests",
+          "rawInput" => %{"command" => "mix test"}
+        }) <>
+          grok_envelope(2, "tool_call_update", %{
+            "toolCallId" => "orphan",
+            "status" => "completed"
+          })
+
+      path = grok_transcript!(home, "session-orphan", body)
+
+      assert {:ok, %{entries: [entry], total_on_branch: 1}} = Transcripts.read(path)
+
+      assert entry.tool_calls == [
+               %{name: "Execute tests", input_summary: "command=mix test"}
+             ]
+    end
+
+    test "accepts legacy raw ACP notifications and skips a torn trailing record", %{home: home} do
+      body =
+        Jason.encode!(%{
+          "sessionId" => "legacy-session",
+          "update" => %{
+            "sessionUpdate" => "user_message_chunk",
+            "content" => %{"type" => "text", "text" => "legacy prompt"}
+          }
+        }) <> "\n{\"sessionId\":\"torn"
+
+      path = grok_transcript!(home, "session-legacy", body)
+
+      assert {:ok,
+              %{
+                entries: [%{role: "user", text: "legacy prompt", cursor: "grok:1"}],
+                cursor: "grok:1",
+                total_on_branch: 1
+              }} = Transcripts.read(path)
+    end
+
+    test "filters rewound Grok turns from the active branch", %{home: home} do
+      body =
+        grok_envelope(1, "user_message_chunk", %{
+          "content" => %{"type" => "text", "text" => "keep"},
+          "_meta" => %{"promptIndex" => 0}
+        }) <>
+          grok_envelope(2, "agent_message_chunk", %{
+            "content" => %{"type" => "text", "text" => "kept answer"}
+          }) <>
+          grok_envelope(3, "user_message_chunk", %{
+            "content" => %{"type" => "text", "text" => "discard"},
+            "_meta" => %{"promptIndex" => 1}
+          }) <>
+          grok_envelope(4, "agent_message_chunk", %{
+            "content" => %{"type" => "text", "text" => "discarded answer"}
+          }) <>
+          grok_envelope(
+            5,
+            "rewind_marker",
+            %{"target_prompt_index" => 1},
+            "_x.ai/session/update"
+          ) <>
+          grok_envelope(6, "user_message_chunk", %{
+            "content" => %{"type" => "text", "text" => "replacement"},
+            "_meta" => %{"promptIndex" => 1}
+          })
+
+      path = grok_transcript!(home, "session-rewind", body)
+
+      assert {:ok, %{entries: entries, cursor: "grok:6", total_on_branch: 3}} =
+               Transcripts.read(path, tail: 10)
+
+      assert Enum.map(entries, & &1.text) == ["keep", "kept answer", "replacement"]
+    end
+
+    test "Grok hints and final answers use normalized entries", %{home: home} do
+      path = grok_transcript!(home, "session-helpers", grok_fixture())
+
+      assert Transcripts.activity_hint(path) == "reading show.ex"
+      assert Transcripts.final_assistant_message(path) == "Done."
+    end
   end
 
   defp sample_transcript do
@@ -149,6 +302,44 @@ defmodule DevIDE.Agents.TranscriptsTest do
     File.mkdir_p!(Path.dirname(path))
     File.write!(path, body)
     path
+  end
+
+  defp grok_transcript!(home, session_id, body) do
+    path =
+      Path.join([
+        home,
+        ".grok",
+        "sessions",
+        "%2Ftmp%2Fdevide-test",
+        session_id,
+        "updates.jsonl"
+      ])
+
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, body)
+    path
+  end
+
+  defp grok_fixture do
+    Path.join([File.cwd!(), "test", "fixtures", "agents", "grok_updates.jsonl"])
+    |> File.read!()
+  end
+
+  defp grok_envelope(line, tag, fields, method \\ "session/update") do
+    update = Map.put(fields, "sessionUpdate", tag)
+
+    Jason.encode!(%{
+      "timestamp" => 1_700_000_000 + line,
+      "method" => method,
+      "params" => %{
+        "sessionId" => "grok-session-1",
+        "update" => update,
+        "_meta" => %{
+          "eventId" => "grok-session-1-#{line}",
+          "agentTimestampMs" => 1_700_000_000_000 + line
+        }
+      }
+    }) <> "\n"
   end
 
   defp tmp_home! do
