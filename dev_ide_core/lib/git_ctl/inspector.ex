@@ -16,7 +16,10 @@ defmodule GitCtl.Inspector do
     :head_sha,
     worktree?: false,
     detached?: false,
-    agent: nil
+    agent: nil,
+    upstream: nil,
+    ahead: nil,
+    behind: nil
   ]
 
   @type t :: %__MODULE__{
@@ -27,7 +30,10 @@ defmodule GitCtl.Inspector do
           head_sha: String.t(),
           worktree?: boolean(),
           detached?: boolean(),
-          agent: String.t() | nil
+          agent: String.t() | nil,
+          upstream: String.t() | nil,
+          ahead: non_neg_integer() | nil,
+          behind: non_neg_integer() | nil
         }
 
   @doc """
@@ -74,6 +80,9 @@ defmodule GitCtl.Inspector do
       {branch, detached?} =
         if context.ref in ["HEAD", ""], do: {head_sha, true}, else: {context.ref, false}
 
+      {upstream, ahead, behind} =
+        if detached?, do: {nil, nil, nil}, else: upstream_counts(cwd)
+
       {:ok,
        %__MODULE__{
          toplevel: context.toplevel,
@@ -83,7 +92,10 @@ defmodule GitCtl.Inspector do
          head_sha: head_sha,
          worktree?: context.git_dir != context.git_common_dir,
          detached?: detached?,
-         agent: infer_agent(cwd)
+         agent: infer_agent(cwd),
+         upstream: upstream,
+         ahead: ahead,
+         behind: behind
        }}
     else
       _ -> :error
@@ -117,6 +129,28 @@ defmodule GitCtl.Inspector do
     end
   rescue
     ErlangError -> :error
+  end
+
+  # Ahead/behind vs the branch's configured upstream, via a single
+  # `rev-list --left-right --count @{upstream}...HEAD` (left = behind,
+  # right = ahead). Branches with no upstream configured — and bare or broken
+  # checkouts where the lookup fails for any reason — report nils rather than
+  # turning the whole inspection into an error.
+  defp upstream_counts(cwd) do
+    with {:ok, upstream} <-
+           git_rev_parse(cwd, ["--abbrev-ref", "--symbolic-full-name", "@{upstream}"]),
+         {counts, 0} <-
+           System.cmd("git", ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+             cd: cwd,
+             stderr_to_stdout: true
+           ),
+         [behind, ahead] <- counts |> String.trim() |> String.split() do
+      {String.trim(upstream), String.to_integer(ahead), String.to_integer(behind)}
+    else
+      _ -> {nil, nil, nil}
+    end
+  rescue
+    _ -> {nil, nil, nil}
   end
 
   defp git_rev_parse(cwd, args) do

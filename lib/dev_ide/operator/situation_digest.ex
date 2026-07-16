@@ -7,7 +7,9 @@ defmodule DevIDE.Operator.SituationDigest do
   sessions and agent layout, `DevIDE.Terminals.AgentState` for semantic pane
   states, `DevIDE.Runtimes.list_agent_worktrees/1` for agent worktrees,
   `DevIDE.Deployment.Health` for deploy status, `DevIDE.Agents.Activity` and
-  `DevIDE.Audit` for recent activity. Nothing is re-derived here.
+  `DevIDE.Audit` for recent activity. Nothing is re-derived here. The one
+  filesystem read is `frozen_scopes`: freeze-skill sentinel files observed
+  under the workspace and worktree roots (facts only, no enforcement).
 
   The digest is a summary payload: free text (task summaries, agent-state
   messages, handoffs, activity summaries) is redacted through
@@ -54,6 +56,7 @@ defmodule DevIDE.Operator.SituationDigest do
         sessions: Enum.map(Map.get(summary, :sessions, []), &session_digest(&1, now)),
         agent_layout: agent_layout(summary),
         worktrees: worktrees,
+        frozen_scopes: frozen_scopes(workspace_id, worktrees),
         deploy: deploy,
         activity: activity,
         risks: []
@@ -156,6 +159,9 @@ defmodule DevIDE.Operator.SituationDigest do
         path: Map.get(worktree, :path),
         branch: Map.get(worktree, :branch),
         head_sha: Map.get(worktree, :git_head_sha),
+        upstream: Map.get(worktree, :upstream),
+        ahead: Map.get(worktree, :ahead),
+        behind: Map.get(worktree, :behind),
         dirty_count: Map.get(worktree, :dirty_count),
         status: Map.get(worktree, :worktree_status),
         exit_status: Map.get(worktree, :exit_status),
@@ -168,6 +174,72 @@ defmodule DevIDE.Operator.SituationDigest do
     _ -> []
   catch
     :exit, _ -> []
+  end
+
+  ## Frozen scopes
+
+  # The elixir-phoenix freeze skill locks agent edits behind a sentinel file
+  # (`.claude/.freeze` under the checkout root) enforced by a PreToolUse hook.
+  # The app has no model of that lock — this section only observes matching
+  # sentinel files under the workspace root and every agent worktree root so
+  # the digest can report a frozen scope as fact. Nothing here enforces or
+  # toggles the lock. Sentinel locations are configurable via
+  # `:freeze_sentinel_globs` (globs relative to each scanned root), read at
+  # digest build time.
+  @default_freeze_sentinel_globs [".claude/.freeze"]
+  @freeze_raw_max_chars 400
+
+  defp frozen_scopes(workspace_id, worktrees) do
+    roots =
+      [workspace_root(workspace_id) | Enum.map(worktrees, &Map.get(&1, :path))]
+      |> Enum.filter(&(is_binary(&1) and &1 != ""))
+      |> Enum.uniq()
+
+    for root <- roots,
+        glob <- freeze_sentinel_globs(),
+        sentinel <- Path.wildcard(Path.join(root, glob), match_dot: true),
+        File.regular?(sentinel) do
+      %{path: root, sentinel: sentinel, raw: sentinel_raw(sentinel)}
+      |> compact()
+    end
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp workspace_root(workspace_id) do
+    case Workspaces.get_record(workspace_id) do
+      {:ok, record} -> Map.get(record, :host_path)
+      :error -> nil
+    end
+  end
+
+  defp freeze_sentinel_globs do
+    case Application.get_env(:dev_ide, :freeze_sentinel_globs, @default_freeze_sentinel_globs) do
+      globs when is_list(globs) -> Enum.filter(globs, &is_binary/1)
+      _ -> @default_freeze_sentinel_globs
+    end
+  end
+
+  # An empty sentinel means "freeze everything" — the compacted scope simply
+  # carries no :raw key. Content is truncated here and redacted with the rest
+  # of the digest's free text by sanitize/1.
+  defp sentinel_raw(sentinel) do
+    with {:ok, raw} <- File.read(sentinel),
+         true <- String.valid?(raw) do
+      truncate(String.trim(raw))
+    else
+      _ -> nil
+    end
+  end
+
+  defp truncate(raw) do
+    if String.length(raw) > @freeze_raw_max_chars do
+      String.slice(raw, 0, @freeze_raw_max_chars) <> "…"
+    else
+      raw
+    end
   end
 
   ## Deploy

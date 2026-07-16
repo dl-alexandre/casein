@@ -193,6 +193,58 @@ defmodule DevIDE.RuntimesTest do
     assert [%{"port" => ^port}] = payload.preview_surfaces
   end
 
+  test "observe_worktree records upstream ahead/behind for a tracking worktree branch" do
+    root = tmp_repo!("upstream-parent")
+    worktree = Path.join(root, "agent-worktree")
+    remote = Path.join(tmp_dir!("upstream-remote"), "remote.git")
+
+    git!(root, ["init", "--bare", remote])
+    git!(root, ["remote", "add", "origin", remote])
+    git!(root, ["worktree", "add", "-b", "agent-upstream", worktree, "main"])
+    git!(worktree, ["push", "-q", "-u", "origin", "agent-upstream"])
+
+    File.write!(Path.join(worktree, "local.txt"), "local\n")
+    git!(worktree, ["add", "local.txt"])
+    git!(worktree, ["commit", "-q", "-m", "local only"])
+
+    seed_workspace("ws-upstream", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-upstream", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert runtime.metadata["upstream"] == "origin/agent-upstream"
+    assert runtime.metadata["ahead"] == 1
+    assert runtime.metadata["behind"] == 0
+
+    assert [payload] = Runtimes.list_agent_worktrees("ws-upstream")
+    assert payload.upstream == "origin/agent-upstream"
+    assert payload.ahead == 1
+    assert payload.behind == 0
+  end
+
+  test "observe_worktree omits upstream fields for a branch without tracking" do
+    root = tmp_repo!("no-upstream-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-no-upstream", worktree, "main"])
+    seed_workspace("ws-no-upstream", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-no-upstream", %{"worktree_path" => worktree})
+
+    refute Map.has_key?(runtime.metadata, "upstream")
+    refute Map.has_key?(runtime.metadata, "ahead")
+    refute Map.has_key?(runtime.metadata, "behind")
+
+    assert [payload] = Runtimes.list_agent_worktrees("ws-no-upstream")
+    refute Map.has_key?(payload, :upstream)
+    refute Map.has_key?(payload, :ahead)
+    refute Map.has_key?(payload, :behind)
+  end
+
   test "observe_worktree does not count expired runtimes against the preview port pool" do
     root = tmp_repo!("expired-port-parent")
     worktree = Path.join(root, "agent-worktree")

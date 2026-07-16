@@ -110,6 +110,9 @@ defmodule DevIDE.Operator.SituationDigestTest do
           "branch" => "agent/claude/topic",
           "worktree_path" => "/tmp/wt-digest",
           "git_head_sha" => "abc1234",
+          "upstream" => "origin/agent/claude/topic",
+          "ahead" => 2,
+          "behind" => 1,
           "dirty_count" => 3,
           "worktree_status" => "dirty",
           "exit_status" => "wip",
@@ -123,6 +126,9 @@ defmodule DevIDE.Operator.SituationDigestTest do
     assert worktree.path == "/tmp/wt-digest"
     assert worktree.branch == "agent/claude/topic"
     assert worktree.head_sha == "abc1234"
+    assert worktree.upstream == "origin/agent/claude/topic"
+    assert worktree.ahead == 2
+    assert worktree.behind == 1
     assert worktree.dirty_count == 3
     assert worktree.status == "dirty"
     assert worktree.exit_status == "wip"
@@ -136,6 +142,101 @@ defmodule DevIDE.Operator.SituationDigestTest do
     assert risk.subject == "/tmp/wt-digest"
     assert risk.detected_at == digest.generated_at
     assert risk.evidence.dirty_count == 3
+
+    # ahead: 2 + a reported exit_status counts as an agent that stopped
+    # driving the worktree, so the unpushed commits surface as a risk too.
+    assert [unpushed] = Enum.filter(digest.risks, &(&1.id == :unpushed_work))
+    assert unpushed.severity == :warn
+    assert unpushed.subject == "/tmp/wt-digest"
+    assert unpushed.evidence.ahead == 2
+  end
+
+  test "build observes freeze sentinels under the workspace and worktree roots" do
+    ws_root = tmp_dir!("frozen-ws")
+    wt_root = tmp_dir!("frozen-wt")
+
+    File.mkdir_p!(Path.join(ws_root, ".claude"))
+    File.write!(Path.join(ws_root, ".claude/.freeze"), "")
+    File.mkdir_p!(Path.join(wt_root, ".claude"))
+    File.write!(Path.join(wt_root, ".claude/.freeze"), "lib/foo\npriv/repo\n")
+
+    seed_workspace("ws-frozen", ws_root)
+
+    {:ok, _} =
+      RuntimeSeed.seed_runtime("ws-frozen",
+        runtime_id: "wt-frozen",
+        status: "provisioned",
+        worktree_path: wt_root,
+        metadata: %{
+          "kind" => "agent_worktree",
+          "worktree_path" => wt_root,
+          "observed_at" => DateTime.to_iso8601(DateTime.utc_now())
+        }
+      )
+
+    assert {:ok, digest} = SituationDigest.build("ws-frozen")
+
+    assert [ws_scope, wt_scope] = digest.frozen_scopes
+    assert ws_scope.path == ws_root
+    assert ws_scope.sentinel == Path.join(ws_root, ".claude/.freeze")
+    # Empty sentinel = "freeze everything": no raw content survives compaction.
+    refute Map.has_key?(ws_scope, :raw)
+
+    assert wt_scope.path == wt_root
+    assert wt_scope.sentinel == Path.join(wt_root, ".claude/.freeze")
+    assert wt_scope.raw == "lib/foo\npriv/repo"
+
+    risks = Enum.filter(digest.risks, &(&1.id == :frozen_scope_active))
+    assert Enum.map(risks, & &1.subject) == [ws_root, wt_root]
+    assert Enum.all?(risks, &(&1.severity == :info))
+  end
+
+  test "build honors configured freeze sentinel globs" do
+    prev = Application.get_env(:dev_ide, :freeze_sentinel_globs)
+    Application.put_env(:dev_ide, :freeze_sentinel_globs, [".devide/freeze-*"])
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:dev_ide, :freeze_sentinel_globs, prev),
+        else: Application.delete_env(:dev_ide, :freeze_sentinel_globs)
+    end)
+
+    root = tmp_dir!("frozen-globs")
+    File.mkdir_p!(Path.join(root, ".devide"))
+    File.write!(Path.join(root, ".devide/freeze-review"), "lib/only\n")
+    # The default convention is not scanned once globs are configured.
+    File.mkdir_p!(Path.join(root, ".claude"))
+    File.write!(Path.join(root, ".claude/.freeze"), "")
+
+    seed_workspace("ws-frozen-globs", root)
+
+    assert {:ok, digest} = SituationDigest.build("ws-frozen-globs")
+
+    assert [scope] = digest.frozen_scopes
+    assert scope.sentinel == Path.join(root, ".devide/freeze-review")
+    assert scope.raw == "lib/only"
+  end
+
+  test "build truncates and redacts freeze sentinel content" do
+    root = tmp_dir!("frozen-raw")
+    File.mkdir_p!(Path.join(root, ".claude"))
+
+    long = String.duplicate("lib/very/long/path\n", 40)
+
+    File.write!(
+      Path.join(root, ".claude/.freeze"),
+      "DATABASE_URL=postgres://u:p@localhost/db\n" <> long
+    )
+
+    seed_workspace("ws-frozen-raw", root)
+
+    assert {:ok, digest} = SituationDigest.build("ws-frozen-raw")
+
+    assert [scope] = digest.frozen_scopes
+    assert scope.raw =~ "[REDACTED]"
+    refute scope.raw =~ "u:p@localhost"
+    assert String.ends_with?(scope.raw, "…")
+    assert String.length(scope.raw) <= 420
   end
 
   test "build includes recent activity, last mutation, and deploy summary" do
@@ -196,6 +297,7 @@ defmodule DevIDE.Operator.SituationDigestTest do
     assert digest.workspace_id == "ws-missing"
     assert digest.sessions == []
     assert digest.worktrees == []
+    assert digest.frozen_scopes == []
     assert digest.activity.recent == []
     assert digest.activity.last_mutation == nil
     assert is_list(digest.risks)
@@ -223,6 +325,30 @@ defmodule DevIDE.Operator.SituationDigestTest do
     })
 
     session
+  end
+
+  defp seed_workspace(id, path) do
+    {:ok, _} =
+      State.sync(%Workspace{
+        id: id,
+        name: id,
+        user: "alice",
+        branch: "main",
+        status: :running,
+        path: path,
+        metadata: %{}
+      })
+
+    :ok
+  end
+
+  defp tmp_dir!(name) do
+    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    path = Path.join(root, "devide-digest-#{System.unique_integer([:positive])}-#{name}")
+    File.rm_rf!(path)
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf!(path) end)
+    path
   end
 
   defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)

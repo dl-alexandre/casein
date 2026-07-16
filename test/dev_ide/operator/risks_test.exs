@@ -59,6 +59,97 @@ defmodule DevIDE.Operator.RisksTest do
     assert Risks.detect(digest(worktrees: [landed, handed_off, clean])) == []
   end
 
+  test "unpushed_work fires for an ahead worktree whose agent reported an exit" do
+    worktree = %{
+      path: "/tmp/wt-1",
+      branch: "agent/topic",
+      upstream: "origin/agent/topic",
+      ahead: 2,
+      behind: 0,
+      status: "clean",
+      dirty_count: 0,
+      exit_status: "landed",
+      observed_at: DateTime.to_iso8601(@generated_at)
+    }
+
+    assert [risk] = Risks.detect(digest(worktrees: [worktree]))
+    assert risk.id == :unpushed_work
+    assert risk.severity == :warn
+    assert risk.subject == "/tmp/wt-1"
+    assert risk.evidence.ahead == 2
+    assert risk.evidence.upstream == "origin/agent/topic"
+    assert risk.suggestion =~ "Push the branch"
+  end
+
+  test "unpushed_work fires for an ahead worktree with a stale observation" do
+    stale = @generated_at |> DateTime.add(-16 * 60, :second) |> DateTime.to_iso8601()
+
+    worktree = %{
+      path: "/tmp/wt-1",
+      upstream: "origin/agent/topic",
+      ahead: 1,
+      behind: 0,
+      status: "clean",
+      dirty_count: 0,
+      observed_at: stale
+    }
+
+    assert [risk] = Risks.detect(digest(worktrees: [worktree]))
+    assert risk.id == :unpushed_work
+  end
+
+  test "unpushed_work stays quiet while the agent looks active or nothing is ahead" do
+    fresh = @generated_at |> DateTime.add(-60, :second) |> DateTime.to_iso8601()
+
+    active = %{
+      path: "/tmp/wt-1",
+      upstream: "origin/a",
+      ahead: 3,
+      status: "clean",
+      dirty_count: 0,
+      observed_at: fresh
+    }
+
+    pushed = %{
+      path: "/tmp/wt-2",
+      upstream: "origin/b",
+      ahead: 0,
+      behind: 2,
+      status: "clean",
+      dirty_count: 0,
+      exit_status: "landed",
+      observed_at: fresh
+    }
+
+    no_upstream = %{
+      path: "/tmp/wt-3",
+      status: "clean",
+      dirty_count: 0,
+      exit_status: "wip",
+      observed_at: fresh
+    }
+
+    assert Risks.detect(digest(worktrees: [active, pushed, no_upstream])) == []
+  end
+
+  test "frozen_scope_active reports each observed freeze sentinel as info" do
+    scopes = [
+      %{path: "/tmp/ws", sentinel: "/tmp/ws/.claude/.freeze"},
+      %{path: "/tmp/wt-1", sentinel: "/tmp/wt-1/.claude/.freeze", raw: "lib/foo"}
+    ]
+
+    assert [ws_risk, wt_risk] = Risks.detect(digest(frozen_scopes: scopes))
+
+    assert ws_risk.id == :frozen_scope_active
+    assert ws_risk.severity == :info
+    assert ws_risk.subject == "/tmp/ws"
+    assert ws_risk.evidence == %{sentinel: "/tmp/ws/.claude/.freeze"}
+    assert ws_risk.suggestion =~ "/phx:freeze off"
+
+    assert wt_risk.subject == "/tmp/wt-1"
+    assert wt_risk.evidence == %{sentinel: "/tmp/wt-1/.claude/.freeze", raw: "lib/foo"}
+  end
+
   test "deploy_drift fires when the running revision is behind" do
     deploy = %{running_revision: "abc1234", drift: true, pipeline: :ok, phase: nil}
 

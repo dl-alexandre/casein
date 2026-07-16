@@ -86,6 +86,14 @@ if pg_probe_password = System.get_env("DEV_IDE_PG_PROBE_PASSWORD") do
   config :dev_ide, :pg_probe_password, pg_probe_password
 end
 
+# Comma-separated globs (relative to the workspace root and each agent
+# worktree root) naming freeze-skill sentinel files. The situation digest only
+# *reports* matching sentinels as frozen_scopes; nothing is enforced. Default:
+# the elixir-phoenix freeze skill's `.claude/.freeze` convention.
+if freeze_globs = System.get_env("DEV_IDE_FREEZE_SENTINEL_GLOBS") do
+  config :dev_ide, :freeze_sentinel_globs, String.split(freeze_globs, ",", trim: true)
+end
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->
