@@ -12,6 +12,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     prev_allow_global = Application.get_env(:dev_ide, :allow_global_mcp_tool_calls)
     prev_tool_search = Application.get_env(:dev_ide, :mcp_tool_search)
     prev_workspace_digest = Application.get_env(:dev_ide, :workspace_digest)
+    prev_situation_server = Application.get_env(:dev_ide, :situation_server)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -25,6 +26,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       restore(:allow_global_mcp_tool_calls, prev_allow_global)
       restore(:mcp_tool_search, prev_tool_search)
       restore(:workspace_digest, prev_workspace_digest)
+      restore(:situation_server, prev_situation_server)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
@@ -559,6 +561,51 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       assert is_map(digest["deploy"])
       assert is_map(digest["activity"])
       assert is_list(digest["risks"])
+    end
+
+    test "workspace_digest is served by the live SituationServer when its flag is on",
+         %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+      Application.put_env(:dev_ide, :situation_server, true)
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-live"})
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+      # Keep the server's async worktree sweep away from the box's real
+      # agent-worktree root.
+      prev_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
+
+      Application.put_env(:dev_ide, :agent_worktree_roots, [
+        Path.join(System.tmp_dir!(), "devide-situation-test-empty")
+      ])
+
+      on_exit(fn ->
+        case DevIDE.Operator.SituationServer.whereis("ws-live") do
+          nil -> :ok
+          pid -> GenServer.stop(pid)
+        end
+
+        restore(:agent_worktree_roots, prev_roots)
+      end)
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "workspace_digest", arguments: %{}}
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"structuredContent" => digest}} = json_response(conn, 200)
+      assert digest["workspace_id"] == "ws-live"
+      assert is_list(digest["risks"])
+
+      # The request spun up (and was answered by) the live per-workspace server.
+      assert is_pid(DevIDE.Operator.SituationServer.whereis("ws-live")),
+             "expected the digest request to start the live SituationServer"
     end
   end
 

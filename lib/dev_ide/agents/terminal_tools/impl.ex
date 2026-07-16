@@ -3,7 +3,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
   alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
   alias DevIDE.Labels
-  alias DevIDE.Operator.SituationDigest
+  alias DevIDE.Operator.SituationServer
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
   alias DevIDE.Terminals.AgentState
@@ -439,11 +439,14 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     Application.get_env(:dev_ide, :agent_state_wait_recheck_ms, 1_000)
   end
 
-  @doc "Build the operator situation digest for the scoped workspace."
+  @doc """
+  The operator situation digest for the scoped workspace — served from the
+  live `SituationServer` when `:situation_server` is on, cold-built otherwise.
+  """
   @spec workspace_digest(map()) :: {:ok, map()} | {:error, term()}
   def workspace_digest(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params) do
-      SituationDigest.build(workspace_id)
+      SituationServer.get_digest(workspace_id)
     end
   end
 

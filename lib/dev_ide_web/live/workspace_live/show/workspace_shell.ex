@@ -21,6 +21,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
     ]
 
   import DevIdeWeb.WorkspaceLive.Show.TerminalPanel, only: [terminal_tab: 1]
+
+  import DevIdeWeb.WorkspaceLive.Show.SituationPanel,
+    only: [situation_badge: 1, situation_drawer: 1]
+
   import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
@@ -532,6 +536,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       open={@audit_drawer_open}
       workspace={@workspace}
       current_user={@current_user}
+    />
+    <.situation_badge enabled={@situation_enabled} risks={@situation_risks} />
+    <.situation_drawer
+      enabled={@situation_enabled}
+      open={@situation_drawer_open}
+      risks={@situation_risks}
+      workspace={@workspace}
     />
     <NotificationsDrawer.notifications_drawer
       open={@notif_drawer_open}

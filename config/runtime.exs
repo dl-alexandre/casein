@@ -54,6 +54,12 @@ config :dev_ide, :mcp_tool_search, truthy_env?.("DEV_IDE_MCP_TOOL_SEARCH")
 # tool stays callable by name either way.
 config :dev_ide, :workspace_digest, truthy_env?.("DEV_IDE_WORKSPACE_DIGEST")
 
+# When on, workspace_digest is served by a live per-workspace
+# DevIDE.Operator.SituationServer (event-fed digest + stateful risk detectors
+# broadcasting on "situation:<ws>") started on the first digest request.
+# Off by default: the digest cold-builds per call and no server is started.
+config :dev_ide, :situation_server, truthy_env?.("DEV_IDE_SITUATION_SERVER")
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->

@@ -170,6 +170,14 @@ defmodule DevIDE.Operator.SituationDigest do
 
   ## Deploy
 
+  @doc """
+  The digest's deploy section on its own — used by
+  `DevIDE.Operator.SituationServer` to refresh just this section on
+  `"deploy:updates"` events without a full rebuild.
+  """
+  @spec deploy_section() :: map()
+  def deploy_section, do: deploy()
+
   defp deploy do
     health = Health.status()
     last_deploy = Map.get(health, :last_deploy) || %{}
