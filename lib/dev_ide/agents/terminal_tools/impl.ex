@@ -3,6 +3,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
   alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
   alias DevIDE.Labels
+  alias DevIDE.Operator.SituationDigest
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
   alias DevIDE.Terminals.AgentState
@@ -40,7 +41,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
     case session_or_default_arg(params) do
       {:ok, session} ->
-        snapshot = TmuxTopology.snapshot(session, tmux: tmux())
+        snapshot = enriched_snapshot(session)
 
         payload =
           %{
@@ -84,11 +85,20 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     with {:ok, session} <- session_arg(params) do
       payload =
         session
-        |> TmuxTopology.snapshot(tmux: tmux())
+        |> enriched_snapshot()
         |> put_agent_pane_guidance(session, params)
 
       {:ok, payload}
     end
+  end
+
+  # Direct tmux snapshot plus the semantic agent-state layer. The watcher path
+  # (`TmuxTopology.get/2`) stays heuristic-only; enriching here keeps reported
+  # :blocked/:done/:idle states visible to MCP consumers without touching it.
+  defp enriched_snapshot(session) do
+    session
+    |> TmuxTopology.snapshot(tmux: tmux())
+    |> AgentState.enrich_topology(session)
   end
 
   @doc "Capture a pane's scrollback for a session (defaults to the active pane)."
@@ -427,6 +437,14 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
   defp agent_state_recheck_ms do
     Application.get_env(:dev_ide, :agent_state_wait_recheck_ms, 1_000)
+  end
+
+  @doc "Build the operator situation digest for the scoped workspace."
+  @spec workspace_digest(map()) :: {:ok, map()} | {:error, term()}
+  def workspace_digest(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params) do
+      SituationDigest.build(workspace_id)
+    end
   end
 
   @doc "Report an agent-created Git worktree for workspace-local UX."

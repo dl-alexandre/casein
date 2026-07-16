@@ -256,6 +256,18 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
     }
   end
 
+  def metadata("workspace_digest") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Pass workspace_id when the endpoint is not pre-scoped.",
+        "Follow up on risks with the suggested tool in each entry."
+      ]
+    }
+  end
+
   def metadata("terminal_wait_agent_state") do
     %{
       mutation?: false,

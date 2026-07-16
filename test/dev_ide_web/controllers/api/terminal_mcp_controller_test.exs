@@ -11,6 +11,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_allow_global = Application.get_env(:dev_ide, :allow_global_mcp_tool_calls)
     prev_tool_search = Application.get_env(:dev_ide, :mcp_tool_search)
+    prev_workspace_digest = Application.get_env(:dev_ide, :workspace_digest)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -23,6 +24,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       restore(:workspace_api_tokens, prev_workspace_tokens)
       restore(:allow_global_mcp_tool_calls, prev_allow_global)
       restore(:mcp_tool_search, prev_tool_search)
+      restore(:workspace_digest, prev_workspace_digest)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
@@ -451,6 +453,57 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
         )
 
       assert %{"result" => %{"isError" => true}} = json_response(conn, 200)
+    end
+  end
+
+  describe "workspace digest (DEV_IDE_WORKSPACE_DIGEST)" do
+    test "tools/list hides workspace_digest when disabled (default)", %{conn: conn} do
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+
+      refute "workspace_digest" in Enum.map(tools, & &1["name"])
+    end
+
+    test "tools/list advertises workspace_digest when enabled", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+      digest = Enum.find(tools, &(&1["name"] == "workspace_digest"))
+
+      assert digest, "expected workspace_digest to be advertised when the flag is on"
+      assert digest["metadata"]["mutation"] == false
+    end
+
+    test "workspace_digest returns the digest through scope dispatch", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "workspace_digest", arguments: %{}}
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"structuredContent" => digest}} = json_response(conn, 200)
+
+      # The pre-scoped token injects its workspace id; sections are present
+      # even when the workspace has no live sessions or worktrees.
+      assert digest["workspace_id"] == "ws-scoped"
+      assert is_binary(digest["generated_at"])
+      assert is_map(digest["freshness"])
+      assert is_list(digest["sessions"])
+      assert is_list(digest["worktrees"])
+      assert is_map(digest["deploy"])
+      assert is_map(digest["activity"])
+      assert is_list(digest["risks"])
     end
   end
 

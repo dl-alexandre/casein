@@ -522,6 +522,48 @@ defmodule DevIDE.RuntimesTest do
     assert [_one] = Runtimes.list_runtimes(%{"workspace_id" => "ws-agent-upsert"})
   end
 
+  test "list_agent_worktrees surfaces status, dirty, exit, and handoff metadata" do
+    root = tmp_repo!("payload-fields")
+    dirty = Path.join(root, "agent-dirty")
+    clean = Path.join(root, "agent-clean")
+    git!(root, ["worktree", "add", "-b", "payload-dirty", dirty, "main"])
+    git!(root, ["worktree", "add", "-b", "payload-clean", clean, "main"])
+    seed_workspace("ws-payload-fields", root)
+
+    File.write!(Path.join(dirty, "wip.txt"), "wip\n")
+
+    assert {:ok, _} =
+             Runtimes.observe_worktree("ws-payload-fields", %{
+               "worktree_path" => dirty,
+               "agent" => "claude",
+               "exit_status" => "wip",
+               "handoff" => "PR pending review"
+             })
+
+    assert {:ok, _} =
+             Runtimes.observe_worktree("ws-payload-fields", %{
+               "worktree_path" => clean,
+               "agent" => "claude"
+             })
+
+    worktrees = Runtimes.list_agent_worktrees("ws-payload-fields")
+
+    assert %{path: ^dirty} = dirty_payload = Enum.find(worktrees, &(&1.path == dirty))
+    assert dirty_payload.branch == "payload-dirty"
+    assert dirty_payload.worktree_status == "dirty"
+    assert dirty_payload.dirty_count == 1
+    assert dirty_payload.exit_status == "wip"
+    assert dirty_payload.handoff == "PR pending review"
+    assert dirty_payload.source == "agent_report"
+    assert {:ok, _, _} = DateTime.from_iso8601(dirty_payload.observed_at)
+
+    assert %{path: ^clean} = clean_payload = Enum.find(worktrees, &(&1.path == clean))
+    assert clean_payload.worktree_status == "clean"
+    assert clean_payload.dirty_count == 0
+    refute Map.has_key?(clean_payload, :exit_status)
+    refute Map.has_key?(clean_payload, :handoff)
+  end
+
   test "discover_worktrees registers linked worktrees and skips home checkout" do
     root = tmp_repo!("discover")
     worktree = Path.join(root, "agent-discovered")

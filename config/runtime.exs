@@ -48,6 +48,12 @@ config :dev_ide,
 # meta-tools are always callable; this only changes what tools/list advertises.
 config :dev_ide, :mcp_tool_search, truthy_env?.("DEV_IDE_MCP_TOOL_SEARCH")
 
+# When on, the terminal MCP server advertises the read-only workspace_digest
+# tool (operator situation digest: sessions, worktrees, deploy, activity,
+# risks) in tools/list. Off by default while the digest shape settles; the
+# tool stays callable by name either way.
+config :dev_ide, :workspace_digest, truthy_env?.("DEV_IDE_WORKSPACE_DIGEST")
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->

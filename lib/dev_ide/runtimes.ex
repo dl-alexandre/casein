@@ -865,7 +865,12 @@ defmodule DevIDE.Runtimes do
       git_head_sha: Map.get(metadata, "git_head_sha"),
       git_detached?: Map.get(metadata, "git_detached"),
       agent: Map.get(metadata, "agent"),
-      source: Map.get(metadata, "source")
+      source: Map.get(metadata, "source"),
+      worktree_status: Map.get(metadata, "worktree_status"),
+      dirty_count: Map.get(metadata, "dirty_count"),
+      exit_status: Map.get(metadata, "exit_status"),
+      handoff: Map.get(metadata, "handoff"),
+      observed_at: Map.get(metadata, "observed_at")
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()

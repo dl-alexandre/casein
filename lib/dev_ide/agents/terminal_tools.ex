@@ -43,7 +43,8 @@ defmodule DevIDE.Agents.TerminalTools do
     SendKeys,
     SetAgentLabel,
     Topology,
-    WaitAgentState
+    WaitAgentState,
+    WorkspaceDigest
   }
 
   alias DevIDE.Agents.ToolAction
@@ -66,7 +67,8 @@ defmodule DevIDE.Agents.TerminalTools do
     SetAgentLabel,
     ReportWorktree,
     ReportAgentState,
-    WaitAgentState
+    WaitAgentState,
+    WorkspaceDigest
   ]
 
   @by_name Map.new(@actions, &{&1.name(), &1})
@@ -74,10 +76,21 @@ defmodule DevIDE.Agents.TerminalTools do
   @doc "Tool definitions exposed to agent runtimes."
   @spec definitions() :: [tool()]
   def definitions do
-    terminal_defs = Enum.map(@actions, &ToolAction.definition/1)
+    terminal_defs =
+      @actions
+      |> Enum.reject(&hidden_action?/1)
+      |> Enum.map(&ToolAction.definition/1)
 
     terminal_defs ++ AnnotationTools.definitions()
   end
+
+  # workspace_digest is feature-flagged (DEV_IDE_WORKSPACE_DIGEST): hide it from
+  # tools/list until enabled. Like the tool-search meta-tools, it stays callable
+  # by name — the flag only changes what is advertised.
+  defp hidden_action?(WorkspaceDigest),
+    do: not Application.get_env(:dev_ide, :workspace_digest, false)
+
+  defp hidden_action?(_action), do: false
 
   @doc "Dispatch a named agent terminal tool."
   @spec invoke(String.t(), map()) :: {:ok, map()} | {:error, term()}
@@ -125,4 +138,6 @@ defmodule DevIDE.Agents.TerminalTools do
   defdelegate wait_agent_state(params), to: Impl
   @doc false
   defdelegate report_worktree(params), to: Impl
+  @doc false
+  defdelegate workspace_digest(params), to: Impl
 end
