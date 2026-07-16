@@ -113,7 +113,13 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomUp"]))
     assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomDown"]))
     assert has_element?(view, ~s(.header-overflow button[data-keybar-key="ZoomReset"]))
-    assert has_element?(view, "#notifications-bell-#{workspace_id}")
+    # Notifications, command palette, and help now live at the foot of the ⋯
+    # menu (the standalone header bell + connect-agent button were folded in —
+    # connect now lives in the help overlay's Agents tab).
+    refute has_element?(view, "#notifications-bell-#{workspace_id}")
+    refute has_element?(view, "#connect-agent-button-#{workspace_id}")
+    assert has_element?(view, ".header-overflow button[phx-click='notifications:toggle']")
+    assert has_element?(view, ".header-overflow button[phx-click='palette:open']")
 
     # Template palette/library ids are canonical in the ⋯ menu and must render
     # exactly once (duplicate DOM ids corrupt LiveView patching).
@@ -130,9 +136,12 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
       assert has_element?(view, "[data-leader-action='#{action}']")
     end
 
-    # Leader-bound chrome advertises its second key for armed highlighting.
-    assert html =~ ~s(data-leader-second-key="%")
-    assert html =~ ~s(data-leader-second-key="Z")
+    # Split/zoom keep their hidden C-b dispatch targets; the visible % / z
+    # highlight controls now live inside the selected window tab (rendered only
+    # when a window is active), not the header cluster.
+    for action <- ~w(split-right split-down zoom) do
+      assert has_element?(view, "[data-leader-action='#{action}']")
+    end
 
     refute html =~ ~s(id="terminal-mode-raw")
     assert html =~ ">stopped<"

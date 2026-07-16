@@ -1151,7 +1151,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute one_html =~ "claude_exe", "the current command must not steal tab width"
       one_classes = one_html |> element_class("tmux-window--1") |> String.split()
       assert "min-w-24" in one_classes
-      assert "max-w-64" in one_classes
+      # The active tab caps wider (max-w-80) to hold its pinned window controls.
+      assert "max-w-80" in one_classes
       assert "shrink-0" in one_classes
       refute "flex-1" in one_classes, "a lone window must not stretch across the strip"
 
@@ -1168,9 +1169,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           mutations_allowed?: false
         )
 
-      for dom_id <- ["tmux-window--1", "tmux-window--2"] do
+      # Active tab caps wider (max-w-80) for its pinned controls; the rest stay
+      # compact at max-w-64. Neither stretches (no flex-1).
+      for {dom_id, max_w} <- [{"tmux-window--1", "max-w-80"}, {"tmux-window--2", "max-w-64"}] do
         tab_classes = two_html |> element_class(dom_id) |> String.split()
-        assert "max-w-64" in tab_classes
+        assert max_w in tab_classes
         assert "shrink-0" in tab_classes
 
         refute "flex-1" in tab_classes,

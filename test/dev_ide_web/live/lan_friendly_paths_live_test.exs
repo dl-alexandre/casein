@@ -69,7 +69,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     {:ok, view, _html} = live(conn, "/")
 
     assert has_element?(view, "#workspace-header-__scratch__")
-    assert has_element?(view, "#notifications-bell-__scratch__")
+    assert has_element?(view, "#notifications-open-__scratch__")
     refute has_element?(view, "#workspace-admin-bell-__scratch__")
   end
 

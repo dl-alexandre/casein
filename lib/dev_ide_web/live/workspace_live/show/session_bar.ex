@@ -14,6 +14,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   use DevIdeWeb, :html
 
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1]
+
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
 
   attr :workspace_id, :string, required: true
@@ -273,6 +275,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :rename_window_id, :string, default: nil
   attr :path_base, :string, default: nil
 
+  attr :terminal_mode, :atom,
+    default: nil,
+    doc: "active terminal mode — enables pane split/zoom controls in the selected tab"
+
+  attr :window_zoomed?, :boolean,
+    default: false,
+    doc: "focused pane zoom state for the zoom toggle"
+
   attr :terminal_sid, :string,
     default: nil,
     doc: "active session id — lets each tab's index copy a session+window deep link"
@@ -304,11 +314,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             data-active-window={window.active? || nil}
             data-window-leader-key={window_leader_key(@windows, window, tab_idx)}
             class={[
-              "group relative flex min-w-24 max-w-64 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+              "group relative flex min-w-24 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
-                do: "border-primary bg-base-100 text-base-content shadow-sm",
+                do: "max-w-80 border-primary bg-base-100 text-base-content shadow-sm",
                 else:
-                  "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
+                  "max-w-64 border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
               )
             ]}
           >
@@ -332,36 +342,85 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 activity_id={"tmux-window-activity-" <> window.dom_frag}
               />
             </a>
+            <%!-- Window controls live in the tab. On the selected tab they're
+                  pinned; on the rest they collapse to zero width and reveal on
+                  hover/focus so unselected tabs stay compact. Splits + zoom act
+                  on the active window's focused pane, so they render only in the
+                  selected tab. Leader dispatch stays on the hidden C-b targets. --%>
             <%= if @mutations_allowed? do %>
-              <%= if @rename_window_id == window.id do %>
-                <.window_inline_rename_form
-                  window={window}
-                  input_class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-              <% else %>
+              <div class={[
+                "flex shrink-0 items-center gap-0.5",
+                if(window.active?, do: nil, else: "hidden group-hover:flex group-focus-within:flex")
+              ]}>
+                <%= if @rename_window_id == window.id do %>
+                  <.window_inline_rename_form
+                    window={window}
+                    input_class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="tmux:rename_start"
+                    phx-value-window-id={window.id}
+                    class="rounded p-1 text-base-content/35 transition hover:bg-base-300 hover:text-base-content"
+                    title="Rename tmux window"
+                    aria-label="Rename tmux window"
+                  >
+                    <.icon name="hero-pencil-square" class="size-3.5" />
+                  </button>
+                <% end %>
                 <button
                   type="button"
-                  phx-click="tmux:rename_start"
+                  phx-click="tmux:kill_window"
                   phx-value-window-id={window.id}
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                  title="Rename tmux window"
-                  aria-label="Rename tmux window"
+                  data-confirm="Kill this tmux window and everything running in it?"
+                  class="rounded p-1 text-base-content/35 transition hover:bg-error/10 hover:text-error"
+                  title="Close tmux window"
+                  aria-label="Close tmux window"
+                  disabled={length(@windows) <= 1}
                 >
-                  <.icon name="hero-pencil-square" class="size-3.5" />
+                  <.icon name="hero-x-mark" class="size-3.5" />
                 </button>
-              <% end %>
-              <button
-                type="button"
-                phx-click="tmux:kill_window"
-                phx-value-window-id={window.id}
-                data-confirm="Kill this tmux window and everything running in it?"
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                title="Close tmux window"
-                aria-label="Close tmux window"
-                disabled={length(@windows) <= 1}
-              >
-                <.icon name="hero-x-mark" class="size-3.5" />
-              </button>
+
+                <%= if window.active? and @terminal_mode in [:raw, :raw_ghostty] do %>
+                  <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
+                  <.leader_key_button
+                    key="%"
+                    phx_click="split_right"
+                    title="Split right · Ctrl + B %"
+                    aria_label="Split pane right"
+                  >
+                    <.split_icon direction={:right} class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key={"\""}
+                    phx_click="split_down"
+                    title={"Split down · Ctrl + B \""}
+                    aria_label="Split pane down"
+                  >
+                    <.split_icon direction={:down} class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="z"
+                    phx_click="pane:zoom_focused"
+                    title={
+                      if @window_zoomed?,
+                        do: "Unzoom pane · Ctrl + B z",
+                        else: "Zoom pane · Ctrl + B z"
+                    }
+                    aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+                  >
+                    <.icon
+                      name={
+                        if @window_zoomed?,
+                          do: "hero-arrows-pointing-in",
+                          else: "hero-arrows-pointing-out"
+                      }
+                      class="size-3.5"
+                    />
+                  </.leader_key_button>
+                <% end %>
+              </div>
             <% end %>
           </div>
         <% end %>

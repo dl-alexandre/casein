@@ -29,7 +29,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
   import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
-  alias DevIdeWeb.ConnectAgentDrawer
   alias DevIdeWeb.NotificationsDrawer
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -173,70 +172,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
                 topology_version={@tmux_topology_structure_version}
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
+                terminal_mode={@terminal_mode}
+                window_zoomed?={@window_zoomed?}
                 class="min-w-0 flex-1"
               />
-            </div>
-
-            <%!-- Window/pane actions — inline only for what has no
-                 direct-manipulation equivalent (splits, zoom). Window cycling
-                 uses the tab bar and C-b n/p. Display zoom lives on Ctrl+scroll
-                 / mobile keybar; focus mode lives on the sessions rail + palette.
-                 Leader mode (keyboard C-b) highlights these controls in place. --%>
-            <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%= if @tmux_mutations_enabled? and @terminal_mode in [:raw, :raw_ghostty] do %>
-                <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                <.leader_key_button
-                  key="%"
-                  phx_click="split_right"
-                  title="Split right · Ctrl + B %"
-                  aria_label="Split pane right"
-                >
-                  <.split_icon direction={:right} class="size-3.5" />
-                </.leader_key_button>
-
-                <.leader_key_button
-                  key={"\""}
-                  phx_click="split_down"
-                  title="Split down · Ctrl + B &quot;"
-                  aria_label="Split pane down"
-                >
-                  <.split_icon direction={:down} class="size-3.5" />
-                </.leader_key_button>
-
-                <.leader_key_button
-                  key="z"
-                  phx_click="pane:zoom_focused"
-                  title={
-                    if @window_zoomed?,
-                      do: "Unzoom pane · Ctrl + B z",
-                      else: "Zoom pane · Ctrl + B z"
-                  }
-                  aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-                >
-                  <.icon
-                    name={
-                      if @window_zoomed?,
-                        do: "hero-arrows-pointing-in",
-                        else: "hero-arrows-pointing-out"
-                    }
-                    class="size-3.5"
-                  />
-                </.leader_key_button>
-              <% end %>
             </div>
           <% end %>
 
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
-            <NotificationsDrawer.notifications_bell
-              id={"notifications-bell-" <> @workspace.id}
-              unread_count={@notif_unread_count}
-              deploy_failure={@deploy_failure}
-              deploy_in_progress={@deploy_in_progress}
-              update_available={@update_available}
-              deploy_drift={@deploy_drift}
-              update_commits_behind={@update_commits_behind}
-            />
-            <ConnectAgentDrawer.connect_button id={"connect-agent-button-" <> @workspace.id} />
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
           </div>
         </header>
@@ -565,15 +508,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       deploy_drift={@deploy_drift}
       update_commits_behind={@update_commits_behind}
     />
-    <ConnectAgentDrawer.connect_agent_drawer
-      open={@connect_drawer_open}
-      new_token={@connect_new_token}
-      mcp_json={@connect_mcp_json}
-      tokens={@connect_tokens}
-      error={@connect_error}
-      info={@connect_info}
+    <.leader_help_overlay
+      connect_new_token={@connect_new_token}
+      connect_mcp_json={@connect_mcp_json}
+      connect_tokens={@connect_tokens}
+      connect_error={@connect_error}
+      connect_info={@connect_info}
     />
-    <.leader_help_overlay />
     """
   end
 
@@ -589,7 +530,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :terminal_mode,
       :tmux_session,
       :terminal_sid,
-      :active_window_pane_count
+      :active_window_pane_count,
+      :notif_unread_count
     ])
   end
 

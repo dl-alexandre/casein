@@ -76,10 +76,9 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:update_available, "v2", 3})
 
-    assert has_element?(view, "#notifications-bell-__scratch__-dot")
     assert :sys.get_state(view.pid).socket.assigns.update_available == true
 
-    view |> element("#notifications-bell-__scratch__") |> render_click()
+    view |> element("#notifications-open-__scratch__") |> render_click()
 
     assert has_element?(view, "#deploy-system-update")
     assert render(view) =~ "New version available"
@@ -146,9 +145,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     {:ok, view, _html} = live(conn, ~p"/")
 
-    assert has_element?(view, "#notifications-bell-__scratch__-dot")
-
-    view |> element("#notifications-bell-__scratch__") |> render_click()
+    view |> element("#notifications-open-__scratch__") |> render_click()
 
     assert has_element?(view, "#deploy-system-failure")
     assert render(view) =~ "pre-push gate"
@@ -212,9 +209,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     {:ok, view, _html} = live(conn, ~p"/")
 
-    assert has_element?(view, "#notifications-bell-__scratch__-dot")
-
-    view |> element("#notifications-bell-__scratch__") |> render_click()
+    view |> element("#notifications-open-__scratch__") |> render_click()
 
     assert has_element?(view, "#deploy-system-in-progress")
     assert render(view) =~ "Running pre-push gate"

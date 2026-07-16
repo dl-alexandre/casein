@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   attr :desktop_terminal?, :boolean, default: false
+  attr :notif_unread_count, :integer, default: 0
 
   def header_overflow_menu(assigns) do
     ~H"""
@@ -210,6 +211,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
             + Zoom in
           </button>
         <% end %>
+
+        <%!-- Global surfaces live at the foot of the menu: notifications, then
+              the palette, then help pinned last. Notification state is only
+              surfaced once the menu is open (no ambient badge on the ⋯). --%>
+        <div class="my-0.5 border-t border-base-300/70"></div>
+
+        <button
+          id={"notifications-open-" <> @workspace.id}
+          type="button"
+          phx-click="notifications:toggle"
+          class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          title="Open notifications"
+          aria-label="Open notifications"
+        >
+          <span>Notifications</span>
+          <span
+            :if={(@notif_unread_count || 0) > 0}
+            id={"notifications-open-" <> @workspace.id <> "-count"}
+            class="inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-4 text-white"
+          >
+            {@notif_unread_count}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          phx-click="palette:open"
+          class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          title="Open command palette · Ctrl + P"
+          aria-label="Open command palette"
+        >
+          <span>Command palette</span>
+          <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
+            Ctrl P
+          </kbd>
+        </button>
+
+        <button
+          type="button"
+          phx-click={JS.toggle(to: "#leader-cheatsheet")}
+          class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          title="Help & keyboard shortcuts · Ctrl + B ?"
+          aria-label="Help and keyboard shortcuts"
+        >
+          <span>Help &amp; shortcuts</span>
+          <kbd class="rounded bg-base-200 px-1 py-0.5 font-mono text-[10px] text-base-content/60">
+            Ctrl B ?
+          </kbd>
+        </button>
       </div>
     </details>
     """

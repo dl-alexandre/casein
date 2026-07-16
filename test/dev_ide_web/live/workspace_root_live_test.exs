@@ -38,7 +38,7 @@ defmodule DevIdeWeb.WorkspaceRootLiveTest do
              has_element?(view, "#workspace-header-" <> Scratch.id())
 
     assert has_element?(view, "#workspace-header-" <> Scratch.id())
-    assert has_element?(view, "#notifications-bell-" <> Scratch.id())
+    assert has_element?(view, "#notifications-open-" <> Scratch.id())
     refute has_element?(view, "#workspace-admin-bell-" <> Scratch.id())
     # Mounted at home-rooted scratch — no bounce back through /.
     refute_redirected(view, ~p"/")

@@ -31,9 +31,11 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
     notification
   end
 
-  # `/` mounts WorkspaceLive.Show on the synthetic scratch workspace, so the
-  # bell id is suffixed with the scratch workspace id (see workspace_shell.ex).
-  @root_bell "#notifications-bell-__scratch__"
+  # `/` mounts WorkspaceLive.Show on the synthetic scratch workspace. The bell
+  # moved into the ⋯ overflow menu: `notifications-open-<ws>` is the toggle and
+  # `-count` holds the unread count (no ambient badge on the ⋯ trigger itself).
+  @root_open "#notifications-open-__scratch__"
+  @root_count "#notifications-open-__scratch__-count"
 
   describe "root cockpit surface (/)" do
     setup do
@@ -46,7 +48,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
       {:ok, view, html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#{@root_bell}-badge", "1")
+      assert has_element?(view, @root_count, "1")
       # No drawer and no inbox read at mount — only the count.
       refute html =~ ~s(id="notifications-drawer")
       refute html =~ "Blocked by policy"
@@ -58,7 +60,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
       {:ok, view, _html} = live(conn, ~p"/")
 
-      html = view |> element(@root_bell) |> render_click()
+      html = view |> element(@root_open) |> render_click()
 
       assert html =~ ~s(id="notifications-drawer")
       assert html =~ "Blocked by policy"
@@ -67,7 +69,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
       html = view |> element("#notification-read-#{notification.id}") |> render_click()
 
       assert html =~ "0 unread for dev"
-      refute has_element?(view, "#{@root_bell}-badge")
+      refute has_element?(view, @root_count)
     end
 
     test "mark-all-read clears every unread notification", %{conn: conn} do
@@ -76,24 +78,24 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
       {:ok, view, _html} = live(conn, ~p"/?drawer=notifications")
 
-      assert has_element?(view, "#{@root_bell}-badge", "2")
+      assert has_element?(view, @root_count, "2")
 
       html = view |> element("#notifications-mark-all-read") |> render_click()
 
       assert html =~ "0 unread for dev"
-      refute has_element?(view, "#{@root_bell}-badge")
+      refute has_element?(view, @root_count)
       assert Notifications.unread_count("dev") == 0
     end
 
     test "live broadcast increments the badge while the drawer is closed", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/")
 
-      refute has_element?(view, "#{@root_bell}-badge")
+      refute has_element?(view, @root_count)
 
       deliver!(%{})
 
-      assert render(view) =~ "notifications-bell-__scratch__-badge"
-      assert has_element?(view, "#{@root_bell}-badge", "1")
+      assert render(view) =~ "notifications-open-__scratch__-count"
+      assert has_element?(view, @root_count, "1")
       # Closed drawer only recounts — the list still hasn't loaded.
       assert :sys.get_state(view.pid).socket.assigns.notif_loaded? == false
     end
@@ -108,7 +110,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
       html = render(view)
 
       assert html =~ "Fresh drawer alert"
-      assert has_element?(view, "#{@root_bell}-badge", "1")
+      assert has_element?(view, @root_count, "1")
     end
 
     test "?drawer=notifications deep link opens the drawer", %{conn: conn} do
@@ -174,11 +176,11 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
       {:ok, view, html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
 
-      assert has_element?(view, "#notifications-bell-#{@workspace_id}-badge", "1")
+      assert has_element?(view, "#notifications-open-#{@workspace_id}-count", "1")
       refute html =~ ~s(id="notifications-drawer")
       assert :sys.get_state(view.pid).socket.assigns.notif_loaded? == false
 
-      html = view |> element("#notifications-bell-#{@workspace_id}") |> render_click()
+      html = view |> element("#notifications-open-#{@workspace_id}") |> render_click()
 
       assert html =~ ~s(id="notifications-drawer")
       assert html =~ "Blocked by policy"
@@ -204,12 +206,12 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
 
-      refute has_element?(view, "#notifications-bell-#{@workspace_id}-badge")
+      refute has_element?(view, "#notifications-open-#{@workspace_id}-count")
 
       deliver!(%{})
 
       render(view)
-      assert has_element?(view, "#notifications-bell-#{@workspace_id}-badge", "1")
+      assert has_element?(view, "#notifications-open-#{@workspace_id}-count", "1")
     end
   end
 

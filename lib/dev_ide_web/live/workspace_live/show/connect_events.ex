@@ -18,6 +18,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ConnectEvents do
     {:noreply, assign(socket, connect_drawer_open: open?, connect_error: nil)}
   end
 
+  # Populate the token list without a drawer — the connect UI now lives in the
+  # help overlay's Agents tab, which opens client-side, so it pushes this to
+  # refresh tokens when that tab is selected.
+  def handle_event("connect:load", _params, socket) do
+    {:noreply, load_tokens(socket)}
+  end
+
   def handle_event("connect:close", _params, socket) do
     {:noreply,
      assign(socket,

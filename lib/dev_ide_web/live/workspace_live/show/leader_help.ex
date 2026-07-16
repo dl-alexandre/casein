@@ -3,6 +3,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
 
   use DevIdeWeb, :html
 
+  attr :connect_new_token, :string, default: nil
+  attr :connect_mcp_json, :string, default: nil
+  attr :connect_tokens, :list, default: []
+  attr :connect_error, :string, default: nil
+  attr :connect_info, :string, default: nil
+
   def leader_help_overlay(assigns) do
     assigns =
       Phoenix.Component.assign(assigns, :cheat_tabs, [
@@ -25,7 +31,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
             data-cheat-tab
             aria-selected={to_string(i == 0)}
             aria-controls={"cheat-panel-#{tab.id}"}
-            phx-click={switch_cheat_tab(tab.id)}
+            phx-click={cheat_tab_js(tab.id)}
             class="-mb-px border-b-2 border-transparent px-2 py-1 text-xs font-medium text-base-content/50 hover:text-base-content/80 aria-selected:border-primary aria-selected:text-base-content"
           >
             {tab.label}
@@ -253,6 +259,121 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
               (create, serve, snapshot) — useful for UI walk reports and shareable previews.
             </.tip_row>
           </div>
+
+          <div class="mt-4 border-t border-base-300 pt-3">
+            <h3 class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-base-content/60">
+              Connect an external agent
+            </h3>
+            <p class="mb-2 text-[11px] text-base-content/60">
+              Mint a <strong>revocable</strong>, auto-expiring MCP bearer for an off-box agent and
+              copy a ready-to-paste <code class="rounded bg-base-200 px-1">.mcp.json</code>. It is
+              stored hashed and is <strong>not</strong>
+              the root token. Scope a call with <code class="rounded bg-base-200 px-1">workspace_id</code>, or omit it to traverse. Full
+              walkthrough in <code>docs/external-agent-connect.md</code>.
+            </p>
+
+            <div
+              :if={@connect_error}
+              class="mb-2 rounded border border-error/40 bg-error/10 px-2 py-1 text-[11px] text-error"
+            >
+              {@connect_error}
+            </div>
+            <div
+              :if={@connect_info}
+              class="mb-2 rounded border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-600 dark:text-emerald-300"
+            >
+              {@connect_info}
+            </div>
+
+            <form phx-submit="connect:mint" class="flex items-end gap-2">
+              <label class="flex-1">
+                <span class="block text-[10px] font-medium uppercase tracking-wide text-base-content/50">
+                  Label (optional)
+                </span>
+                <input
+                  type="text"
+                  name="label"
+                  placeholder="my laptop"
+                  maxlength="120"
+                  class="mt-1 w-full rounded border border-base-300 bg-base-100 px-2 py-1 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                />
+              </label>
+              <button
+                type="submit"
+                class="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-content transition hover:opacity-90"
+              >
+                Mint token
+              </button>
+            </form>
+
+            <div
+              :if={@connect_new_token}
+              class="mt-2 space-y-2 rounded border border-emerald-400/40 bg-emerald-400/10 p-2"
+            >
+              <p class="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                Copy this now — the raw token is shown only once.
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  id="help-connect-copy-token"
+                  phx-hook="CopyText"
+                  data-copy-text={@connect_new_token}
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-[11px] font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                >
+                  <.icon name="hero-clipboard" class="size-3.5" /> Copy token
+                </button>
+                <button
+                  type="button"
+                  id="help-connect-copy-config"
+                  phx-hook="CopyText"
+                  data-copy-text={@connect_mcp_json}
+                  class="inline-flex items-center gap-1 rounded border border-base-300 px-2 py-1 text-[11px] font-medium hover:bg-base-200 data-[copied]:border-emerald-400 data-[copied]:text-emerald-600"
+                >
+                  <.icon name="hero-clipboard-document" class="size-3.5" /> Copy .mcp.json
+                </button>
+              </div>
+              <pre class="max-h-44 overflow-auto rounded border border-base-300 bg-base-300/40 p-2 font-mono text-[10px] leading-relaxed"><code>{@connect_mcp_json}</code></pre>
+            </div>
+
+            <div class="mt-3">
+              <h4 class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+                Your tokens
+              </h4>
+              <div
+                :if={@connect_tokens == []}
+                class="rounded border border-base-300 bg-base-100 p-2 text-[11px] text-base-content/50"
+              >
+                No active tokens.
+              </div>
+              <ul :if={@connect_tokens != []} class="space-y-1.5">
+                <li
+                  :for={token <- @connect_tokens}
+                  id={"help-connect-token-#{token.id}"}
+                  class="flex items-center justify-between gap-2 rounded border border-base-300 bg-base-100 p-2"
+                >
+                  <div class="min-w-0">
+                    <p class="truncate text-[11px] font-medium text-base-content/80">
+                      {token.label || "unlabeled"}
+                    </p>
+                    <p class="font-mono text-[10px] text-base-content/50">
+                      seen {time_label(token.last_seen_at)} · expires {time_label(token.expires_at)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    phx-click="connect:revoke"
+                    phx-value-id={token.id}
+                    data-confirm="Revoke this token? Any agent using it loses access immediately."
+                    class="shrink-0 rounded border border-error/40 px-2 py-1 text-[11px] font-medium text-error hover:bg-error/10"
+                  >
+                    Revoke
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+
           <p class="mt-3 text-[10px] text-base-content/50">
             More detail in <code>docs/subsystems/agents.md</code>
           </p>
@@ -261,6 +382,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
     </div>
     """
   end
+
+  # Tab clicks are client-side, except Agents: it hosts the connect-agent panel,
+  # whose token list is server state, so selecting it also pushes connect:load to
+  # refresh tokens (mint/revoke already reload).
+  defp cheat_tab_js("agents"), do: JS.push(switch_cheat_tab("agents"), "connect:load")
+  defp cheat_tab_js(id), do: switch_cheat_tab(id)
+
+  defp time_label(nil), do: "never"
+
+  defp time_label(%DateTime{} = datetime),
+    do: Calendar.strftime(datetime, "%Y-%m-%d %H:%M UTC")
+
+  defp time_label(_), do: "unknown"
 
   # Build-to-scale: drives the help overlay's tab bar and its show/hide. Pure
   # client-side JS — no socket round-trip — so the overlay stays instant.

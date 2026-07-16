@@ -137,7 +137,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
     situation_drawer:toggle situation_drawer:close
-    connect:toggle connect:close connect:mint connect:revoke
+    connect:toggle connect:close connect:load connect:mint connect:revoke
     search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
     history:search history:clear history:refresh
     preview:open preview-pane:enter preview-pane:exit
@@ -2418,9 +2418,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> Enum.map(fn tab -> tab.sid || tab.id end)
       |> Enum.reject(&(&1 in [nil, ""]))
 
+    # Home first, live tabs last. `newest_shell_sid/2` returns only an *attachable*
+    # shell (or nil), so it is the workspace's current landing/home session — the
+    # same session the picker marks "home". Prefer it over the mount-time
+    # `default_terminal_sid`, which can go stale once shells come and go, so a bare
+    # re-entry always lands on the current home shell and never halts on a stale
+    # session or an arbitrary live tab.
     [
-      socket.assigns[:default_terminal_sid],
-      SessionSummary.newest_shell_sid(ws_id, ws_name)
+      SessionSummary.newest_shell_sid(ws_id, ws_name),
+      socket.assigns[:default_terminal_sid]
       | tab_sids
     ]
     |> Enum.reject(&(&1 in [nil, ""]))
