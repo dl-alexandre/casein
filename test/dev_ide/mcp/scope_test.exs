@@ -235,6 +235,51 @@ defmodule DevIDE.MCP.ScopeTest do
     assert scope.resolved_from.workspace == :pre_scoped
   end
 
+  test "every caller-pane tool accepts caller_pane in its schema" do
+    by_name = Map.new(DevIDE.Agents.TerminalTools.definitions(), &{&1.name, &1})
+
+    for tool_name <- Scope.terminal_caller_pane_tool_names() do
+      tool = Map.fetch!(by_name, tool_name)
+      assert Map.has_key?(tool.parameters.properties, :caller_pane), tool_name
+    end
+  end
+
+  test "injects the transport caller pane for caller-pane terminal tools" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("terminal_context", %{},
+               surface: :terminal,
+               default_workspace_id: "ws-scope",
+               default_caller_pane: "%7"
+             )
+
+    assert scope.args["caller_pane"] == "%7"
+    assert scope.resolved_from.caller_pane == :pre_scoped
+  end
+
+  test "explicit caller_pane args win over the transport default" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("terminal_context", %{"caller_pane" => "%3"},
+               surface: :terminal,
+               default_workspace_id: "ws-scope",
+               default_caller_pane: "%7"
+             )
+
+    assert scope.args["caller_pane"] == "%3"
+    assert scope.resolved_from.caller_pane == :args
+  end
+
+  test "does not inject caller_pane into tools outside the caller-pane allowlist" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("terminal_list_sessions", %{},
+               surface: :terminal,
+               default_workspace_id: "ws-scope",
+               default_caller_pane: "%7"
+             )
+
+    refute Map.has_key?(scope.args, "caller_pane")
+    assert scope.resolved_from.caller_pane == nil
+  end
+
   defp mentions_workspace_id?(%{parameters: params}) when is_map(params) do
     properties = Map.get(params, :properties) || Map.get(params, "properties") || %{}
     required = Map.get(params, :required) || Map.get(params, "required") || []

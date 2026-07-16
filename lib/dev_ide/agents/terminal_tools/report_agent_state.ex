@@ -11,6 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string],
+      caller_pane: [type: :string],
       pane: [type: :string],
       state: [type: :string, required: true],
       message: [type: :string],
@@ -34,6 +35,7 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           pane: Helpers.pane_param(),
           state: Helpers.agent_state_param(),
           message: Helpers.agent_state_message_param(),

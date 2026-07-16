@@ -49,11 +49,35 @@ defmodule DevIDE.MCP.Scope do
     preview_playback_open
   )
 
+  # Terminal tools whose resolution can anchor to the calling agent's own
+  # pane. Kept in sync with the `caller_pane` key in each action's schema —
+  # injection into a tool without the schema key would fail validation.
+  @terminal_caller_pane_tools ~w(
+    terminal_context
+    terminal_topology
+    terminal_agent_pane
+    terminal_capture_agent
+    terminal_agent_transcript
+    terminal_send_agent_keys
+    terminal_send_agent_command
+    terminal_paste_agent_text
+    terminal_set_agent_label
+    terminal_report_agent_state
+    terminal_wait_agent_state
+  )
+
+  @doc """
+  Returns terminal tool names that accept caller-pane anchoring in `resolve_tool_call/3`.
+  """
+  @spec terminal_caller_pane_tool_names() :: [String.t()]
+  def terminal_caller_pane_tool_names, do: @terminal_caller_pane_tools
+
   @type surface :: :preview | :terminal | :artifact
 
   @type resolved_from :: %{
           workspace: :args | :pre_scoped | :path | :registry | nil,
-          tmux_session: :args | :pre_scoped | nil
+          tmux_session: :args | :pre_scoped | nil,
+          caller_pane: :args | :pre_scoped | nil
         }
 
   @type t :: %{
@@ -73,10 +97,13 @@ defmodule DevIDE.MCP.Scope do
     surface = Keyword.get(opts, :surface)
     default_workspace_id = non_empty(Keyword.get(opts, :default_workspace_id))
     default_tmux_session = non_empty(Keyword.get(opts, :default_tmux_session))
+    default_caller_pane = non_empty(Keyword.get(opts, :default_caller_pane))
 
     with {:ok, args, workspace_origin} <- resolve_workspace_args(args, default_workspace_id),
          {:ok, args, tmux_origin} <-
            resolve_tmux_session_args(tool_name, args, default_tmux_session, surface),
+         {:ok, args, caller_pane_origin} <-
+           resolve_caller_pane_args(tool_name, args, default_caller_pane, surface),
          {:ok, workspace, workspace_id, workspace_origin} <-
            resolve_workspace(tool_name, args, surface, workspace_origin),
          :ok <- enforce_workspace_scope(default_workspace_id, workspace_id),
@@ -89,7 +116,11 @@ defmodule DevIDE.MCP.Scope do
          workspace_id: workspace_id,
          tmux_session: tmux_session(args),
          surface: surface,
-         resolved_from: %{workspace: workspace_origin, tmux_session: tmux_origin}
+         resolved_from: %{
+           workspace: workspace_origin,
+           tmux_session: tmux_origin,
+           caller_pane: caller_pane_origin
+         }
        }}
     end
   end
@@ -126,6 +157,27 @@ defmodule DevIDE.MCP.Scope do
 
   defp resolve_tmux_session_args(_tool_name, args, _default_tmux_session, _surface) do
     {:ok, args, tmux_session_arg_origin(args)}
+  end
+
+  # Caller-pane anchoring is a hint, not a security boundary: an explicit
+  # caller_pane in args (e.g. an off-box orchestrator acting for a pane)
+  # always wins over the transport-derived default.
+  defp resolve_caller_pane_args(tool_name, args, default_caller_pane, :terminal)
+       when tool_name in @terminal_caller_pane_tools and is_binary(default_caller_pane) do
+    case caller_pane(args) do
+      nil -> {:ok, Map.put(args, "caller_pane", default_caller_pane), :pre_scoped}
+      _ -> {:ok, args, :args}
+    end
+  end
+
+  defp resolve_caller_pane_args(_tool_name, args, _default_caller_pane, _surface) do
+    {:ok, args, if(caller_pane(args), do: :args, else: nil)}
+  end
+
+  defp caller_pane(args) when is_map(args) do
+    args
+    |> value("caller_pane")
+    |> non_empty()
   end
 
   defp resolve_workspace(tool_name, args, :preview, origin)
@@ -250,6 +302,7 @@ defmodule DevIDE.MCP.Scope do
   end
 
   defp atom_key("workspace_id"), do: :workspace_id
+  defp atom_key("caller_pane"), do: :caller_pane
   defp atom_key("workspace_path"), do: :workspace_path
   defp atom_key("path"), do: :path
   defp atom_key("cwd"), do: :cwd

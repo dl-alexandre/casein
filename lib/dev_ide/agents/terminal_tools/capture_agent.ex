@@ -14,6 +14,7 @@ defmodule DevIDE.Agents.TerminalTools.CaptureAgent do
     schema: [
       workspace_id: [type: :string],
       session: [type: :string],
+      caller_pane: [type: :string],
       lines: [type: :integer],
       ansi: [type: :boolean]
     ]
@@ -29,6 +30,7 @@ defmodule DevIDE.Agents.TerminalTools.CaptureAgent do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           lines: Helpers.lines_param(),
           ansi: Helpers.ansi_param()
         })

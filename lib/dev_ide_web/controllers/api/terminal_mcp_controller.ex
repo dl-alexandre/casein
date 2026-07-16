@@ -18,6 +18,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
   def rpc(conn, _params) do
     conn = fetch_query_params(conn)
     workspace_id = default_workspace_id(conn)
+    caller_pane = default_caller_pane(conn)
 
     case MCPTransport.ensure_known_session(conn) do
       {:halt, conn} ->
@@ -27,6 +28,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
         opts =
           [
             default_workspace_id: workspace_id,
+            default_caller_pane: caller_pane,
             actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
           ] ++ AgentCapabilityAuthz.handler_opts(conn)
 
@@ -54,5 +56,22 @@ defmodule DevIdeWeb.API.TerminalMCPController do
 
   defp default_workspace_id(conn) do
     conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
+  end
+
+  # The calling agent's own tmux pane. DevIDE-launched agents send it via the
+  # X-DevIDE-Caller-Pane header (env-expanded per pane at client startup);
+  # hand-built URLs may use a caller_pane query param. Values that are not a
+  # tmux pane id (unset/unexpanded env placeholders) are ignored.
+  defp default_caller_pane(conn) do
+    header = conn |> get_req_header("x-devide-caller-pane") |> List.first()
+    value = header || conn.query_params["caller_pane"]
+
+    with value when is_binary(value) <- value,
+         value = String.trim(value),
+         true <- Regex.match?(~r/^%\d+$/, value) do
+      value
+    else
+      _ -> nil
+    end
   end
 end

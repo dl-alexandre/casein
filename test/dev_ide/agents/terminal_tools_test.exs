@@ -323,6 +323,204 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     assert payload.next_arguments == %{workspace_id: "alpha", session: newer}
   end
 
+  describe "caller-pane anchoring" do
+    setup do
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+      :ok
+    end
+
+    test "terminal_context resolves ambiguous sessions to the caller's session" do
+      prefix = Tmux.workspace_session_prefix("alpha")
+      other = prefix <> "_other"
+      mine = prefix <> "_mine"
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        # The other session is more recent AND attached — both heuristics
+        # would pick it; the caller's own pane must win over both.
+        other => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 900}],
+        mine => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 5}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_session_meta, %{other => %{attached: true}})
+      on_exit(fn -> TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta) end)
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        other => [%{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"}],
+        mine => [%{id: "%9", window_id: "@1", index: 0, active: true, current_command: "bash"}]
+      })
+
+      assert {:ok, payload} =
+               TerminalTools.invoke("terminal_context", %{
+                 "workspace_id" => "alpha",
+                 "caller_pane" => "%9"
+               })
+
+      refute Map.get(payload, :ambiguous)
+      assert payload.recommended_session == mine
+    end
+
+    test "terminal_topology returns the caller anchor with adjacent panes" do
+      session = Tmux.session_name("alpha", "main")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "work", active: false, panes: 2, activity: 10},
+          %{id: "@2", index: 1, name: "focus", active: true, panes: 1, activity: 20}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: false,
+            current_command: "claude",
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 50
+          },
+          %{
+            id: "%2",
+            window_id: "@1",
+            index: 1,
+            active: true,
+            current_command: "bash",
+            left: 101,
+            top: 0,
+            width: 100,
+            height: 50
+          },
+          # The operator is focused here; it must NOT leak into the caller
+          # anchor of a caller living in window @1.
+          %{id: "%3", window_id: "@2", index: 0, active: true, current_command: "vim"}
+        ]
+      })
+
+      assert {:ok, payload} =
+               TerminalTools.invoke("terminal_topology", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "caller_pane" => "%1"
+               })
+
+      assert payload.caller.pane == "%1"
+      assert payload.caller.window_id == "@1"
+      assert [%{id: "%2", direction: "right"}] = payload.caller.adjacent_panes
+      assert payload.window_active_panes == %{"@1" => "%2", "@2" => "%3"}
+      assert payload.active_pane_note =~ "operator"
+    end
+
+    test "terminal_agent_pane never resolves to the caller's own pane" do
+      session = Tmux.session_name("alpha", "main")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 10}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"},
+          %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "bash"}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+        {session, "%2"} => "# DevIDE agent pane\n"
+      })
+
+      assert {:error, %{error: :caller_is_only_agent_pane, caller_pane: "%2"}} =
+               TerminalTools.invoke("terminal_agent_pane", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "caller_pane" => "%2"
+               })
+    end
+
+    test "terminal_agent_pane prefers a peer in the caller's window" do
+      session = Tmux.session_name("alpha", "main")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{id: "@1", index: 0, name: "first", active: true, panes: 1, activity: 10},
+          %{id: "@2", index: 1, name: "second", active: false, panes: 2, activity: 20}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          # Listed first: an agent pane in another window. Without the caller
+          # anchor, first-match would (wrongly) pick it.
+          %{id: "%2", window_id: "@1", index: 0, active: true, current_command: "bash"},
+          %{id: "%4", window_id: "@2", index: 0, active: false, current_command: "bash"},
+          %{id: "%5", window_id: "@2", index: 1, active: true, current_command: "bash"}
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+        {session, "%2"} => "# DevIDE agent pane\n",
+        {session, "%4"} => "# DevIDE agent pane\n"
+      })
+
+      assert {:ok, %{pane: "%4"}} =
+               TerminalTools.invoke("terminal_agent_pane", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "caller_pane" => "%5"
+               })
+    end
+
+    test "terminal_capture without pane early-binds the active pane and warns" do
+      session = Tmux.session_name("alpha", "main")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 10}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"}
+        ]
+      })
+
+      assert {:ok, payload} =
+               TerminalTools.invoke("terminal_capture", %{
+                 "workspace_id" => "alpha",
+                 "session" => session
+               })
+
+      assert payload.target == "%1"
+      assert payload.target_was_active_pane
+      assert payload.targeting_warning =~ "operator"
+    end
+
+    test "terminal_report_agent_state without pane defaults to the caller's own pane" do
+      session = Tmux.session_name("alpha", "main")
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 10}]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"},
+          %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "claude"}
+        ]
+      })
+
+      assert {:ok, %{target: "%1", state: "done"}} =
+               TerminalTools.invoke("terminal_report_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "caller_pane" => "%1",
+                 "state" => "done"
+               })
+    end
+  end
+
   test "terminal_paste_agent_text targets only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 

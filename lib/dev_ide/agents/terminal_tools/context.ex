@@ -10,7 +10,8 @@ defmodule DevIDE.Agents.TerminalTools.Context do
     vsn: "1.0.0",
     schema: [
       workspace_id: [type: :string],
-      session: [type: :string]
+      session: [type: :string],
+      caller_pane: [type: :string]
     ]
 
   @behaviour DevIDE.Agents.ToolAction
@@ -20,7 +21,13 @@ defmodule DevIDE.Agents.TerminalTools.Context do
 
   @impl DevIDE.Agents.ToolAction
   def parameters,
-    do: Tool.object(Map.merge(Helpers.workspace_props(), %{session: Helpers.session_param()}))
+    do:
+      Tool.object(
+        Map.merge(Helpers.workspace_props(), %{
+          session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param()
+        })
+      )
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_context")

@@ -11,6 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
     schema: [
       workspace_id: [type: :string],
       session: [type: :string],
+      caller_pane: [type: :string],
       pane: [type: :string],
       since: [type: :string],
       tail: [type: :integer],
@@ -28,6 +29,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           pane: Helpers.pane_param(),
           since: Helpers.since_param(),
           tail: Helpers.tail_param(),

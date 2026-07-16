@@ -10,7 +10,8 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
     vsn: "1.0.0",
     schema: [
       workspace_id: [type: :string],
-      session: [type: :string, required: true]
+      session: [type: :string, required: true],
+      caller_pane: [type: :string]
     ]
 
   @behaviour DevIDE.Agents.ToolAction
@@ -21,9 +22,13 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
   @impl DevIDE.Agents.ToolAction
   def parameters,
     do:
-      Tool.object(Map.merge(Helpers.workspace_props(), %{session: Helpers.session_param()}), [
-        "session"
-      ])
+      Tool.object(
+        Map.merge(Helpers.workspace_props(), %{
+          session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param()
+        }),
+        ["session"]
+      )
 
   @impl DevIDE.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_topology")

@@ -11,6 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string],
+      caller_pane: [type: :string],
       pane: [type: :string],
       label: [type: :string, required: true],
       freeze: [type: :boolean]
@@ -27,6 +28,7 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           pane: Helpers.pane_param(),
           label: Helpers.label_param(),
           freeze: Helpers.freeze_param()

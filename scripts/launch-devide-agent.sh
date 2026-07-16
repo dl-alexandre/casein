@@ -71,6 +71,14 @@ DEVIDE_LAUNCHER_SECRET_DIR="${HOME}/.devide/agent-mcp/.launcher-tmp"
 mkdir -p "$DEVIDE_LAUNCHER_SECRET_DIR"
 chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
 
+# Anchor MCP calls to this pane: tmux sets TMUX_PANE per pane, and the
+# materialized MCP configs send it as the X-DevIDE-Caller-Pane header
+# (env-expanded by each runtime at startup). The terminal MCP server uses it
+# to resolve "the agent pane" / "the pane beside me" relative to the caller
+# instead of the operator-focused active pane. Always exported (possibly
+# empty) so header templates never leak an unexpanded placeholder.
+export DEVIDE_CALLER_PANE="${TMUX_PANE:-}"
+
 warn_degraded_step() {
   local label="$1"
   local detail="${2:-}"
@@ -276,6 +284,24 @@ print(slug or 'workspace')
 "
 }
 
+# Codex gets per-launch -c overrides, so the caller pane can ride the URL as
+# a query param with the real value (percent-encoded: %3 -> %253). Header
+# env-expansion is not needed for this runtime.
+codex_terminal_mcp_url() {
+  local url="${DEVIDE_TERMINAL_MCP_URL}"
+
+  if [[ -n "${DEVIDE_CALLER_PANE:-}" ]]; then
+    local pane="${DEVIDE_CALLER_PANE/\%/%25}"
+    if [[ "$url" == *\?* ]]; then
+      url="${url}&caller_pane=${pane}"
+    else
+      url="${url}?caller_pane=${pane}"
+    fi
+  fi
+
+  printf '%s' "$url"
+}
+
 codex_mcp_config_args() {
   local slug terminal_key preview_key artifact_key tidewave_key
   slug="$(workspace_slug)"
@@ -285,7 +311,7 @@ codex_mcp_config_args() {
   tidewave_key="devide-tidewave-${slug}"
 
   printf '%s\0' \
-    -c "mcp_servers.${terminal_key}.url=\"${DEVIDE_TERMINAL_MCP_URL}\"" \
+    -c "mcp_servers.${terminal_key}.url=\"$(codex_terminal_mcp_url)\"" \
     -c "mcp_servers.${terminal_key}.enabled=true" \
     -c "mcp_servers.${terminal_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
     -c "mcp_servers.${preview_key}.url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \

@@ -11,6 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
     schema: [
       workspace_id: [type: :string],
       session: [type: :string],
+      caller_pane: [type: :string],
       text: [type: :string, required: true],
       submit: [type: :boolean]
     ]
@@ -26,6 +27,7 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           text: Helpers.paste_text_param(),
           submit: Helpers.submit_param()
         }),

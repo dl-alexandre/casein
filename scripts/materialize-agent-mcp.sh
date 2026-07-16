@@ -198,6 +198,7 @@ enabled = true
 
 [mcp_servers.${TERMINAL_KEY}.headers]
 Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+X-DevIDE-Caller-Pane = "\${DEVIDE_CALLER_PANE}"
 
 [mcp_servers.${PREVIEW_KEY}]
 url = "${DEVIDE_PREVIEW_MCP_URL}"
@@ -234,7 +235,8 @@ cat >"${STAGING}/opencode.json" <<EOF
       "enabled": true,
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
+        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}",
+        "X-DevIDE-Caller-Pane": "{env:DEVIDE_CALLER_PANE}"
       }
     },
     "${PREVIEW_KEY}": {

@@ -20,6 +20,13 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   @session_prefix "devide_"
   @default_capture_lines 120
 
+  # Session-level active window/pane track the attached operator's focus and
+  # move when the operator switches windows. Deictic pane references ("the
+  # pane beside me") must anchor to the caller pane, never to session focus.
+  @active_pane_note "active_window_id/active_pane_id follow the attached operator's focus and " <>
+                      "change when the operator switches windows. Anchor pane references to " <>
+                      "caller.adjacent_panes (or an explicit pane id), not to the active pane."
+
   @doc "List live DevIDE-managed tmux sessions."
   @spec list_sessions(map()) :: {:ok, map()}
   def list_sessions(params \\ %{}) do
@@ -53,6 +60,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
             recommended_session: session,
             topology: snapshot
           }
+          |> put_caller_anchor(snapshot, params)
           |> put_agent_pane_guidance(session, params)
           |> compact()
 
@@ -86,9 +94,14 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   @spec topology(map()) :: {:ok, map()} | {:error, term()}
   def topology(params) do
     with {:ok, session} <- session_arg(params) do
+      snapshot = TmuxTopology.snapshot(session, tmux: tmux())
+
       payload =
-        session
-        |> enriched_snapshot()
+        snapshot
+        |> AgentState.enrich_topology(session)
+        |> put_window_active_panes()
+        |> Map.put(:active_pane_note, @active_pane_note)
+        |> put_caller_anchor(snapshot, params)
         |> put_agent_pane_guidance(session, params)
 
       {:ok, payload}
@@ -104,27 +117,130 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     |> AgentState.enrich_topology(session)
   end
 
+  # Per-window active panes are stable anchors (they only change when the
+  # window's own layout changes); the session-level active pane is not.
+  defp put_window_active_panes(payload) do
+    case Map.get(payload, :panes) do
+      panes when is_list(panes) ->
+        Map.put(
+          payload,
+          :window_active_panes,
+          panes |> Enum.filter(& &1.active) |> Map.new(&{&1.window_id, &1.id})
+        )
+
+      _ ->
+        payload
+    end
+  end
+
+  # Resolve the caller's own pane in the snapshot and precompute its
+  # same-window neighbors so "the pane beside me" is answerable without
+  # consulting (operator-following) focus state.
+  defp put_caller_anchor(payload, snapshot, params) do
+    with pane_id when is_binary(pane_id) <- caller_pane(params),
+         panes when is_list(panes) <- Map.get(snapshot, :panes),
+         %{} = pane <- Enum.find(panes, &(&1.id == pane_id)) do
+      neighbors =
+        panes
+        |> Enum.filter(&(&1.window_id == pane.window_id and &1.id != pane.id))
+        |> Enum.sort_by(&Map.get(&1, :index, 0))
+        |> Enum.map(fn neighbor ->
+          compact(%{
+            id: neighbor.id,
+            index: Map.get(neighbor, :index),
+            direction: neighbor_direction(pane, neighbor),
+            pane_title: Map.get(neighbor, :pane_title),
+            current_command: Map.get(neighbor, :current_command),
+            pane_state: Map.get(neighbor, :pane_state)
+          })
+        end)
+
+      Map.put(payload, :caller, %{
+        pane: pane.id,
+        window_id: pane.window_id,
+        adjacent_panes: neighbors,
+        note:
+          "References like \"the pane beside me\" resolve against adjacent_panes " <>
+            "(same window as the caller), not the session active pane."
+      })
+    else
+      _ -> payload
+    end
+  end
+
+  defp neighbor_direction(anchor, other) do
+    geometry = [:left, :top, :width, :height]
+
+    if Enum.all?(geometry, &is_integer(Map.get(anchor, &1))) and
+         Enum.all?(geometry, &is_integer(Map.get(other, &1))) do
+      cond do
+        other.left >= anchor.left + anchor.width -> "right"
+        other.left + other.width <= anchor.left -> "left"
+        other.top >= anchor.top + anchor.height -> "below"
+        other.top + other.height <= anchor.top -> "above"
+        true -> "same_window"
+      end
+    else
+      "same_window"
+    end
+  end
+
   @doc "Capture a pane's scrollback for a session (defaults to the active pane)."
   @spec capture(map()) :: {:ok, map()} | {:error, term()}
   def capture(params) do
     with {:ok, session} <- session_arg(params),
-         {:ok, target} <- target_arg(session, params) do
+         {:ok, raw_target} <- target_arg(session, params) do
+      # Early-bind implicit targets: resolve "the active pane" to a concrete
+      # pane id now, so the result names what was actually read and later
+      # operator window switches cannot silently retarget follow-up calls.
+      {target, implicit?} = resolve_implicit_target(session, raw_target)
       ansi? = Map.get(params, "ansi", false) == true
       opts = [ansi: ansi?] |> put_lines(lines_param(params))
       output = tmux().capture_scrollback(target, opts) |> TerminalOutputFormat.format(ansi: ansi?)
 
       {:ok,
        %{session: session, target: target, output: output}
+       |> put_implicit_target_warning(implicit?)
        |> put_capture_metadata(output, lines_param(params))
        |> put_next("terminal_capture", capture_next_args(session, target, params))}
     end
+  end
+
+  # `target == session` means no pane was supplied and tmux would pick the
+  # session's active pane — which follows the attached operator's focus.
+  defp resolve_implicit_target(session, session), do: {implicit_active_pane(session), true}
+  defp resolve_implicit_target(_session, pane), do: {pane, false}
+
+  defp implicit_active_pane(session) do
+    snapshot = TmuxTopology.snapshot(session, tmux: tmux())
+
+    case Map.get(snapshot, :active_pane_id) do
+      pane_id when is_binary(pane_id) -> pane_id
+      _ -> session
+    end
+  rescue
+    _ -> session
+  catch
+    :exit, _ -> session
+  end
+
+  defp put_implicit_target_warning(payload, false), do: payload
+
+  defp put_implicit_target_warning(payload, true) do
+    Map.merge(payload, %{
+      target_was_active_pane: true,
+      targeting_warning:
+        "No pane was supplied; resolved to the operator-focused active pane, which follows " <>
+          "the operator across windows. Pass an explicit pane id (see terminal_topology " <>
+          "caller.adjacent_panes) to anchor the reference."
+    })
   end
 
   @doc "Find the dedicated agent pane for a session or scoped workspace."
   @spec agent_pane(map()) :: {:ok, map()} | {:error, term()}
   def agent_pane(params) do
     with {:ok, session} <- session_or_default_arg(params),
-         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: true) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: true) do
       {:ok,
        %{
          session: session,
@@ -165,7 +281,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   @spec capture_agent(map()) :: {:ok, map()} | {:error, term()}
   def capture_agent(params) do
     with {:ok, session} <- session_or_default_arg(params),
-         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: true) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: true) do
       ansi? = Map.get(params, "ansi", false) == true
       requested_lines = lines_param(params) || @default_capture_lines
       opts = [ansi: ansi?] |> put_lines(requested_lines)
@@ -187,7 +303,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   def send_agent_keys(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, keys} <- string_arg(params, "keys"),
-         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false) do
       case tmux().send_keys(session, keys, target: pane.id) do
         {_out, 0} -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
         :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
@@ -202,7 +318,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   def send_agent_command(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, command} <- string_arg(params, "command"),
-         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false) do
       case tmux().send_command(session, command, target: pane.id) do
         :ok ->
           report_dispatch_working(
@@ -229,7 +345,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   def paste_agent_text(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, text} <- string_arg(params, "text"),
-         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
+         {:ok, pane} <- find_agent_pane(session, params, allow_process_fallback: false) do
       submit? = truthy?(Map.get(params, "submit") || Map.get(params, :submit))
       opts = [target: pane.id, submit: submit?]
 
@@ -267,9 +383,11 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   def send_keys(params) do
     with {:ok, session} <- session_arg(params),
          {:ok, keys} <- string_arg(params, "keys"),
-         {:ok, target} <- target_arg(session, params) do
+         {:ok, raw_target} <- target_arg(session, params) do
+      {target, implicit?} = resolve_implicit_target(session, raw_target)
+
       case tmux().send_keys(target, keys) do
-        {_out, 0} -> {:ok, raw_sent_payload(session, target, params)}
+        {_out, 0} -> {:ok, raw_sent_payload(session, target, implicit?, params)}
         {out, _code} -> {:error, String.trim(out)}
       end
     end
@@ -280,9 +398,11 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   def send_command(params) do
     with {:ok, session} <- session_arg(params),
          {:ok, command} <- string_arg(params, "command"),
-         {:ok, target} <- target_arg(session, params) do
+         {:ok, raw_target} <- target_arg(session, params) do
+      {target, implicit?} = resolve_implicit_target(session, raw_target)
+
       case tmux().send_command(target, command) do
-        :ok -> {:ok, raw_sent_payload(session, target, params)}
+        :ok -> {:ok, raw_sent_payload(session, target, implicit?, params)}
         {:error, reason} -> {:error, reason}
         {out, _code} -> {:error, String.trim(out)}
       end
@@ -386,7 +506,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     with {:ok, workspace_id} <- workspace_id_arg(params),
          {:ok, session} <- session_or_default_arg(params),
          {:ok, states} <- wait_states_arg(params),
-         {:ok, pane} <- label_target_pane(session, params) do
+         {:ok, pane} <- label_target_pane(session, params, :other) do
       timeout_ms = clamped_timeout(params)
       :ok = AgentState.subscribe(workspace_id)
       started = System.monotonic_time(:millisecond)
@@ -624,7 +744,22 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
         {:ok, session.session}
 
       sessions ->
-        {:error, ambiguous_sessions_error(sessions)}
+        # The caller's own pane pins the session it physically lives in —
+        # a stronger signal than "whichever session the operator has attached".
+        case caller_session(sessions, params) do
+          {:ok, session} -> {:ok, session}
+          :none -> {:error, ambiguous_sessions_error(sessions)}
+        end
+    end
+  end
+
+  defp caller_session(sessions, params) do
+    with pane_id when is_binary(pane_id) <- caller_pane(params),
+         %{session: session} <-
+           Enum.find(sessions, fn %{session: session} -> pane_id in pane_ids(session) end) do
+      {:ok, session}
+    else
+      _ -> :none
     end
   end
 
@@ -647,6 +782,32 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     AgentPane.find(session, tmux(), opts)
   end
 
+  # Anchor agent-pane resolution to the caller: prefer its window's panes and
+  # never resolve to the caller itself (an agent targeting "the agent pane"
+  # wants a peer — resolving to itself sends prompts into its own input).
+  defp find_agent_pane(session, params, opts) do
+    find_agent_pane(session, caller_aware_opts(params, opts))
+  end
+
+  defp caller_aware_opts(params, opts) do
+    case caller_pane(params) do
+      nil ->
+        opts
+
+      caller ->
+        opts
+        |> Keyword.put(:exclude_pane, caller)
+        |> Keyword.put(:prefer_window_of, caller)
+    end
+  end
+
+  defp caller_pane(params) do
+    case Map.get(params, "caller_pane") || Map.get(params, :caller_pane) do
+      pane when is_binary(pane) and pane != "" -> pane
+      _ -> nil
+    end
+  end
+
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts
 
@@ -664,7 +825,10 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     end
   end
 
-  defp label_target_pane(session, params) do
+  # Default target when `pane` is omitted. `:self` tools (labels, state
+  # reports, transcripts) act on the calling agent's own pane when the caller
+  # is known; `:other` tools (waiting on a peer) must never resolve to self.
+  defp label_target_pane(session, params, default \\ :self) do
     panes = tmux().list_session_panes(session)
 
     case Map.get(params, "pane") || Map.get(params, :pane) do
@@ -675,7 +839,14 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
         end
 
       _ ->
-        find_agent_pane(session, allow_process_fallback: true)
+        caller = caller_pane(params)
+        caller_pane_struct = if default == :self, do: Enum.find(panes, &(&1.id == caller))
+
+        if caller_pane_struct do
+          {:ok, caller_pane_struct}
+        else
+          find_agent_pane(session, params, allow_process_fallback: true)
+        end
     end
   end
 
@@ -779,6 +950,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     end
   end
 
+  defp atom_key("caller_pane"), do: :caller_pane
   defp atom_key("tmux_session_id"), do: :tmux_session_id
   defp atom_key("workspace_id"), do: :workspace_id
   defp atom_key("session"), do: :session
@@ -958,7 +1130,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   end
 
   defp put_agent_pane_guidance(payload, session, params) do
-    case find_agent_pane(session, allow_process_fallback: false) do
+    case find_agent_pane(session, params, allow_process_fallback: false) do
       {:ok, pane} ->
         payload
         |> Map.put(:recommended_session, session)
@@ -999,20 +1171,22 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     )
   end
 
-  defp raw_sent_payload(session, target, params) do
+  defp raw_sent_payload(session, target, implicit?, params) do
     payload =
       %{session: session, target: target, status: "sent"}
       |> put_next("terminal_capture", capture_next_args(session, target, params))
 
-    if pane_arg_present?(params) do
-      Map.put(payload, :safe_to_mutate, true)
-    else
+    if implicit? do
       Map.merge(payload, %{
         safe_to_mutate: false,
         target_was_active_pane: true,
         targeting_warning:
-          "No pane was supplied; tmux targeted the session active pane. Prefer terminal_send_agent_command or pass an explicit pane id."
+          "No pane was supplied; input went to the operator-focused active pane, which " <>
+            "follows the operator across windows. Prefer terminal_send_agent_command or " <>
+            "pass an explicit pane id (see terminal_topology caller.adjacent_panes)."
       })
+    else
+      Map.put(payload, :safe_to_mutate, true)
     end
   end
 
@@ -1044,13 +1218,6 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
   defp agent_command_next_args(session, params),
     do: compact(%{workspace_id: workspace_id(params), session: session})
-
-  defp pane_arg_present?(params) do
-    case Map.get(params, "pane") || Map.get(params, :pane) do
-      pane when is_binary(pane) and pane != "" -> true
-      _ -> false
-    end
-  end
 
   defp error_label(%{error: error}), do: to_string(error)
 end
