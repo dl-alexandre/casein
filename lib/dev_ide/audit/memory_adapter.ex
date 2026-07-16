@@ -39,6 +39,11 @@ defmodule DevIDE.Audit.MemoryAdapter do
   end
 
   @impl DevIDE.Audit.Adapter
+  def recent_for_tool(workspace_id, tool, n) do
+    GenServer.call(__MODULE__, {:recent_for_tool, workspace_id, tool, n})
+  end
+
+  @impl DevIDE.Audit.Adapter
   def list_by_correlation(correlation_id) do
     GenServer.call(__MODULE__, {:list_by_correlation, correlation_id})
   end
@@ -72,6 +77,15 @@ defmodule DevIDE.Audit.MemoryAdapter do
       |> Enum.filter(fn e ->
         e.workspace_id == ws_id and is_binary(e.action) and String.starts_with?(e.action, prefix)
       end)
+      |> Enum.take(n)
+
+    {:reply, matches, state}
+  end
+
+  def handle_call({:recent_for_tool, ws_id, tool, n}, _from, state) do
+    matches =
+      state.events
+      |> Enum.filter(&(&1.workspace_id == ws_id and &1.tool == tool))
       |> Enum.take(n)
 
     {:reply, matches, state}

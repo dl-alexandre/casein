@@ -11,6 +11,8 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_allow_global = Application.get_env(:dev_ide, :allow_global_mcp_tool_calls)
     prev_tool_search = Application.get_env(:dev_ide, :mcp_tool_search)
+    prev_workspace_digest = Application.get_env(:dev_ide, :workspace_digest)
+    prev_situation_server = Application.get_env(:dev_ide, :situation_server)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -23,6 +25,8 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       restore(:workspace_api_tokens, prev_workspace_tokens)
       restore(:allow_global_mcp_tool_calls, prev_allow_global)
       restore(:mcp_tool_search, prev_tool_search)
+      restore(:workspace_digest, prev_workspace_digest)
+      restore(:situation_server, prev_situation_server)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
@@ -287,6 +291,61 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
                     "echo scoped", []}
   end
 
+  test "a workspace-token mutation is audited with the ws:<id> actor", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws-scoped_agent" => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    DevIDE.Audit.MemoryAdapter.clear()
+    on_exit(fn -> DevIDE.Audit.MemoryAdapter.clear() end)
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "devide_ws-scoped_agent",
+              command: "echo actor"
+            }
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
+             json_response(conn, 200)
+
+    [event] = DevIDE.Audit.recent_for("ws-scoped", 1)
+    assert event.action == "agent.terminal_terminal_send_command"
+    assert event.actor_id == "ws:ws-scoped"
+    assert event.source == "terminal_mcp"
+    assert event.tool == "terminal_send_command"
+  end
+
   describe "tool search (DEV_IDE_MCP_TOOL_SEARCH)" do
     test "tools/list returns the full surface when disabled (default)", %{conn: conn} do
       conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
@@ -451,6 +510,102 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
         )
 
       assert %{"result" => %{"isError" => true}} = json_response(conn, 200)
+    end
+  end
+
+  describe "workspace digest (DEV_IDE_WORKSPACE_DIGEST)" do
+    test "tools/list hides workspace_digest when disabled (default)", %{conn: conn} do
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+
+      refute "workspace_digest" in Enum.map(tools, & &1["name"])
+    end
+
+    test "tools/list advertises workspace_digest when enabled", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+
+      conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
+      %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+      digest = Enum.find(tools, &(&1["name"] == "workspace_digest"))
+
+      assert digest, "expected workspace_digest to be advertised when the flag is on"
+      assert digest["metadata"]["mutation"] == false
+    end
+
+    test "workspace_digest returns the digest through scope dispatch", %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "workspace_digest", arguments: %{}}
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"structuredContent" => digest}} = json_response(conn, 200)
+
+      # The pre-scoped token injects its workspace id; sections are present
+      # even when the workspace has no live sessions or worktrees.
+      assert digest["workspace_id"] == "ws-scoped"
+      assert is_binary(digest["generated_at"])
+      assert is_map(digest["freshness"])
+      assert is_list(digest["sessions"])
+      assert is_list(digest["worktrees"])
+      assert is_map(digest["deploy"])
+      assert is_map(digest["activity"])
+      assert is_list(digest["risks"])
+    end
+
+    test "workspace_digest is served by the live SituationServer when its flag is on",
+         %{conn: conn} do
+      Application.put_env(:dev_ide, :workspace_digest, true)
+      Application.put_env(:dev_ide, :situation_server, true)
+      Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-live"})
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+      # Keep the server's async worktree sweep away from the box's real
+      # agent-worktree root.
+      prev_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
+
+      Application.put_env(:dev_ide, :agent_worktree_roots, [
+        Path.join(System.tmp_dir!(), "devide-situation-test-empty")
+      ])
+
+      on_exit(fn ->
+        case DevIDE.Operator.SituationServer.whereis("ws-live") do
+          nil -> :ok
+          pid -> GenServer.stop(pid)
+        end
+
+        restore(:agent_worktree_roots, prev_roots)
+      end)
+
+      conn =
+        post_mcp(
+          conn,
+          %{
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/call",
+            params: %{name: "workspace_digest", arguments: %{}}
+          },
+          "ws-token"
+        )
+
+      assert %{"result" => %{"structuredContent" => digest}} = json_response(conn, 200)
+      assert digest["workspace_id"] == "ws-live"
+      assert is_list(digest["risks"])
+
+      # The request spun up (and was answered by) the live per-workspace server.
+      assert is_pid(DevIDE.Operator.SituationServer.whereis("ws-live")),
+             "expected the digest request to start the live SituationServer"
     end
   end
 

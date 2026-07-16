@@ -193,6 +193,58 @@ defmodule DevIDE.RuntimesTest do
     assert [%{"port" => ^port}] = payload.preview_surfaces
   end
 
+  test "observe_worktree records upstream ahead/behind for a tracking worktree branch" do
+    root = tmp_repo!("upstream-parent")
+    worktree = Path.join(root, "agent-worktree")
+    remote = Path.join(tmp_dir!("upstream-remote"), "remote.git")
+
+    git!(root, ["init", "--bare", remote])
+    git!(root, ["remote", "add", "origin", remote])
+    git!(root, ["worktree", "add", "-b", "agent-upstream", worktree, "main"])
+    git!(worktree, ["push", "-q", "-u", "origin", "agent-upstream"])
+
+    File.write!(Path.join(worktree, "local.txt"), "local\n")
+    git!(worktree, ["add", "local.txt"])
+    git!(worktree, ["commit", "-q", "-m", "local only"])
+
+    seed_workspace("ws-upstream", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-upstream", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert runtime.metadata["upstream"] == "origin/agent-upstream"
+    assert runtime.metadata["ahead"] == 1
+    assert runtime.metadata["behind"] == 0
+
+    assert [payload] = Runtimes.list_agent_worktrees("ws-upstream")
+    assert payload.upstream == "origin/agent-upstream"
+    assert payload.ahead == 1
+    assert payload.behind == 0
+  end
+
+  test "observe_worktree omits upstream fields for a branch without tracking" do
+    root = tmp_repo!("no-upstream-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-no-upstream", worktree, "main"])
+    seed_workspace("ws-no-upstream", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-no-upstream", %{"worktree_path" => worktree})
+
+    refute Map.has_key?(runtime.metadata, "upstream")
+    refute Map.has_key?(runtime.metadata, "ahead")
+    refute Map.has_key?(runtime.metadata, "behind")
+
+    assert [payload] = Runtimes.list_agent_worktrees("ws-no-upstream")
+    refute Map.has_key?(payload, :upstream)
+    refute Map.has_key?(payload, :ahead)
+    refute Map.has_key?(payload, :behind)
+  end
+
   test "observe_worktree does not count expired runtimes against the preview port pool" do
     root = tmp_repo!("expired-port-parent")
     worktree = Path.join(root, "agent-worktree")
@@ -520,6 +572,48 @@ defmodule DevIDE.RuntimesTest do
     assert second.metadata["agent"] == "codex"
 
     assert [_one] = Runtimes.list_runtimes(%{"workspace_id" => "ws-agent-upsert"})
+  end
+
+  test "list_agent_worktrees surfaces status, dirty, exit, and handoff metadata" do
+    root = tmp_repo!("payload-fields")
+    dirty = Path.join(root, "agent-dirty")
+    clean = Path.join(root, "agent-clean")
+    git!(root, ["worktree", "add", "-b", "payload-dirty", dirty, "main"])
+    git!(root, ["worktree", "add", "-b", "payload-clean", clean, "main"])
+    seed_workspace("ws-payload-fields", root)
+
+    File.write!(Path.join(dirty, "wip.txt"), "wip\n")
+
+    assert {:ok, _} =
+             Runtimes.observe_worktree("ws-payload-fields", %{
+               "worktree_path" => dirty,
+               "agent" => "claude",
+               "exit_status" => "wip",
+               "handoff" => "PR pending review"
+             })
+
+    assert {:ok, _} =
+             Runtimes.observe_worktree("ws-payload-fields", %{
+               "worktree_path" => clean,
+               "agent" => "claude"
+             })
+
+    worktrees = Runtimes.list_agent_worktrees("ws-payload-fields")
+
+    assert %{path: ^dirty} = dirty_payload = Enum.find(worktrees, &(&1.path == dirty))
+    assert dirty_payload.branch == "payload-dirty"
+    assert dirty_payload.worktree_status == "dirty"
+    assert dirty_payload.dirty_count == 1
+    assert dirty_payload.exit_status == "wip"
+    assert dirty_payload.handoff == "PR pending review"
+    assert dirty_payload.source == "agent_report"
+    assert {:ok, _, _} = DateTime.from_iso8601(dirty_payload.observed_at)
+
+    assert %{path: ^clean} = clean_payload = Enum.find(worktrees, &(&1.path == clean))
+    assert clean_payload.worktree_status == "clean"
+    assert clean_payload.dirty_count == 0
+    refute Map.has_key?(clean_payload, :exit_status)
+    refute Map.has_key?(clean_payload, :handoff)
   end
 
   test "discover_worktrees registers linked worktrees and skips home checkout" do

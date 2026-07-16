@@ -2,7 +2,10 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   @moduledoc false
 
   alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
+  alias DevIDE.Audit
+  alias DevIDE.Export.Sanitizer
   alias DevIDE.Labels
+  alias DevIDE.Operator.SituationServer
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
   alias DevIDE.Terminals.AgentState
@@ -40,7 +43,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
 
     case session_or_default_arg(params) do
       {:ok, session} ->
-        snapshot = TmuxTopology.snapshot(session, tmux: tmux())
+        snapshot = enriched_snapshot(session)
 
         payload =
           %{
@@ -84,11 +87,20 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     with {:ok, session} <- session_arg(params) do
       payload =
         session
-        |> TmuxTopology.snapshot(tmux: tmux())
+        |> enriched_snapshot()
         |> put_agent_pane_guidance(session, params)
 
       {:ok, payload}
     end
+  end
+
+  # Direct tmux snapshot plus the semantic agent-state layer. The watcher path
+  # (`TmuxTopology.get/2`) stays heuristic-only; enriching here keeps reported
+  # :blocked/:done/:idle states visible to MCP consumers without touching it.
+  defp enriched_snapshot(session) do
+    session
+    |> TmuxTopology.snapshot(tmux: tmux())
+    |> AgentState.enrich_topology(session)
   end
 
   @doc "Capture a pane's scrollback for a session (defaults to the active pane)."
@@ -429,6 +441,17 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     Application.get_env(:dev_ide, :agent_state_wait_recheck_ms, 1_000)
   end
 
+  @doc """
+  The operator situation digest for the scoped workspace — served from the
+  live `SituationServer` when `:situation_server` is on, cold-built otherwise.
+  """
+  @spec workspace_digest(map()) :: {:ok, map()} | {:error, term()}
+  def workspace_digest(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params) do
+      SituationServer.get_digest(workspace_id)
+    end
+  end
+
   @doc "Report an agent-created Git worktree for workspace-local UX."
   @spec report_worktree(map()) :: {:ok, map()} | {:error, term()}
   def report_worktree(params) do
@@ -444,6 +467,65 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
         {:error, :workspace_id_required}
     end
   end
+
+  @doc """
+  Record a pre-push gate run verdict as a durable `gate.passed` /
+  `gate.failed` audit row. Called (fail-open) by scripts/pre-push-check.sh;
+  the MCP layer additionally persists the tool call itself since gate_report
+  is classified mutating in `DevIDE.Agents.MCPAudit`.
+  """
+  @spec gate_report(map()) :: {:ok, map()} | {:error, term()}
+  def gate_report(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, passed} <- gate_passed_arg(params) do
+      action = if passed, do: "gate.passed", else: "gate.failed"
+
+      _ =
+        Audit.emit!(%{
+          workspace_id: workspace_id,
+          actor_id: "pre_push_gate",
+          action: action,
+          source: "gate",
+          target_type: "git_sha",
+          target_ref: string_param(params, "sha"),
+          metadata: gate_metadata(params)
+        })
+
+      {:ok, %{workspace_id: workspace_id, action: action, recorded: true}}
+    end
+  end
+
+  # `false` is a legitimate (and load-bearing) value — no `||` fallback here.
+  defp gate_passed_arg(params) do
+    cond do
+      is_boolean(Map.get(params, "passed")) -> {:ok, Map.get(params, "passed")}
+      is_boolean(Map.get(params, :passed)) -> {:ok, Map.get(params, :passed)}
+      true -> {:error, :passed_required}
+    end
+  end
+
+  defp gate_metadata(params) do
+    %{
+      branch: string_param(params, "branch"),
+      sha: string_param(params, "sha"),
+      duration_s: number_param(params, "duration_s"),
+      # Free text destined for a persisted row — redact like every other
+      # exported string.
+      failed_step: redact(string_param(params, "failed_step"))
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp number_param(params, key) do
+    case Map.get(params, key) do
+      value when is_number(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp redact(value) when is_binary(value), do: Sanitizer.redact_text(value)
+  defp redact(value), do: value
 
   defp refresh_reported_worktree_env(%Runtime{} = runtime, params) do
     case string_param(params, "tmux_session_id") do

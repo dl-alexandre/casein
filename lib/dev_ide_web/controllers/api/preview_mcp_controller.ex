@@ -25,7 +25,8 @@ defmodule DevIdeWeb.API.PreviewMCPController do
          :ok <- validate_tmux_session_scope(workspace_id, tmux_session) do
       case PreviewMCP.handle(conn.body_params,
              default_workspace_id: workspace_id,
-             default_tmux_session: tmux_session
+             default_tmux_session: tmux_session,
+             actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
            ) do
         {:reply, response} ->
           conn

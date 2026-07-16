@@ -31,6 +31,48 @@ defmodule GitCtl.InspectorTest do
     assert String.match?(info.branch, ~r/^[0-9a-f]{4,}$/)
   end
 
+  test "reports nil upstream/ahead/behind when no upstream is configured", %{main: main} do
+    assert {:ok, info} = Inspector.inspect_cwd(main)
+    assert info.upstream == nil
+    assert info.ahead == nil
+    assert info.behind == nil
+  end
+
+  test "reports nil upstream/ahead/behind on a detached HEAD", %{detached_worktree: detached} do
+    assert {:ok, info} = Inspector.inspect_cwd(detached)
+    assert info.detached? == true
+    assert info.upstream == nil
+    assert info.ahead == nil
+    assert info.behind == nil
+  end
+
+  test "counts ahead/behind against the configured upstream", %{tmp: tmp, main: main} do
+    remote = Path.join(tmp, "remote.git")
+    git!(main, ["init", "--bare", remote])
+    git!(main, ["remote", "add", "origin", remote])
+    git!(main, ["push", "-q", "-u", "origin", "main"])
+
+    # One commit the upstream has that HEAD does not (behind: 1), then two
+    # local commits the upstream never received (ahead: 2) — asymmetric on
+    # purpose so a swapped ahead/behind cannot pass.
+    File.write!(Path.join(main, "pushed.txt"), "pushed\n")
+    git!(main, ["add", "pushed.txt"])
+    git!(main, ["commit", "-q", "-m", "pushed"])
+    git!(main, ["push", "-q", "origin", "main"])
+    git!(main, ["reset", "-q", "--hard", "HEAD~1"])
+
+    for n <- 1..2 do
+      File.write!(Path.join(main, "local-#{n}.txt"), "local #{n}\n")
+      git!(main, ["add", "local-#{n}.txt"])
+      git!(main, ["commit", "-q", "-m", "local only #{n}"])
+    end
+
+    assert {:ok, info} = Inspector.inspect_cwd(main)
+    assert info.upstream == "origin/main"
+    assert info.ahead == 2
+    assert info.behind == 1
+  end
+
   test "returns error for non-git directories and missing paths" do
     tmp = Path.join(tmp_root(), "devide-non-git-#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp)

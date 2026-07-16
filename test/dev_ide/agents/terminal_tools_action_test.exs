@@ -10,10 +10,10 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
   alias DevIDE.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 16 terminal tools plus annotation tools" do
+    test "exposes 17 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 18
+      assert length(names) == 19
 
       for expected <- [
             "terminal_list_sessions",
@@ -32,6 +32,7 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
             "terminal_report_worktree",
             "terminal_report_agent_state",
             "terminal_wait_agent_state",
+            "gate_report",
             "annotation_list",
             "annotation_propose"
           ] do

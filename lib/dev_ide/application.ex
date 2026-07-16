@@ -41,6 +41,7 @@ defmodule DevIDE.Application do
         DevIDE.Supervision.Terminals,
         DevIDE.Supervision.Commands,
         DevIDE.Supervision.Agents,
+        DevIDE.Supervision.Operator,
         DevIDE.Supervision.Previews,
         PreviewCtl.Playwright.Bridge,
         DevIDE.Supervision.Deployment,

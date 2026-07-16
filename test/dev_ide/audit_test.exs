@@ -54,6 +54,26 @@ defmodule DevIDE.AuditTest do
     assert Audit.list() == []
   end
 
+  defmodule RaisingAdapter do
+    # Simulates the Ecto adapter during a Postgres outage: Repo.insert raises
+    # (DBConnection.ConnectionError) instead of returning {:error, _}.
+    def record(_event), do: raise("connection not available")
+  end
+
+  test "emit! absorbs adapter exceptions — GenServer hot paths must not crash" do
+    Application.put_env(:dev_ide, :audit_adapter, RaisingAdapter)
+
+    assert Audit.emit!(%{action: "ops.pg_saturation_raised", workspace_id: "_ops"}) == nil
+  end
+
+  test "recent_for_tool rejects a nil workspace instead of diverging by adapter" do
+    # apply/3 keeps the deliberate contract violation away from compile-time
+    # type checking — the point is the runtime guard.
+    assert_raise FunctionClauseError, fn ->
+      apply(Audit, :recent_for_tool, [nil, "terminal_send_command"])
+    end
+  end
+
   test "emit_decision records policy denials and merges mode metadata" do
     decision = Decision.deny(:apply_proposal, :review, :not_implemented)
 

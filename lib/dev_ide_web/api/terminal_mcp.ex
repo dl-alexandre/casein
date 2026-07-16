@@ -96,6 +96,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     args = Map.get(params, "arguments", %{}) || %{}
+    audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
       DevIDE.Signals.Context.with_new(fn ->
@@ -106,21 +107,31 @@ defmodule DevIdeWeb.API.TerminalMCP do
           {:ok, scope} ->
             case TerminalTools.invoke(name, scope.args) do
               {:ok, payload} = ok ->
-                _ = MCPAudit.record_terminal(name, scope.args, ok)
+                _ = MCPAudit.record_terminal(name, scope.args, ok, audit_opts)
                 {:ok, payload}
 
               {:error, reason} = err ->
-                _ = MCPAudit.record_terminal(name, scope.args, err)
+                _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
                 {:error, reason}
 
               :error ->
                 err = {:error, :invalid_tool_arguments}
-                _ = MCPAudit.record_terminal(name, scope.args, err)
+                _ = MCPAudit.record_terminal(name, scope.args, err, audit_opts)
                 err
             end
 
           {:error, reason} = err ->
-            _ = MCPAudit.record_terminal(name, args, err)
+            # Scope resolution failed, so `args` (and any workspace_id inside
+            # them) is untrusted — attribute the failure to the endpoint's
+            # authenticated workspace, never to a caller-claimed one.
+            _ =
+              MCPAudit.record_terminal(
+                name,
+                args,
+                err,
+                Keyword.put(audit_opts, :workspace_id, default_workspace_id)
+              )
+
             {:error, reason}
         end
       end)

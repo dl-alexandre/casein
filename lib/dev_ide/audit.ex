@@ -6,6 +6,8 @@ defmodule DevIDE.Audit do
   `DevIDE.Audit.MemoryAdapter` for testing.
   """
 
+  require Logger
+
   alias DevIDE.Audit.Event
 
   @topic_prefix "audit:"
@@ -50,13 +52,29 @@ defmodule DevIDE.Audit do
 
   defp broadcast(_event), do: :ok
 
-  @doc "Emit and ignore failures — for fire-and-forget audit calls in LiveViews."
+  @doc """
+  Emit and ignore failures — for fire-and-forget audit calls.
+
+  Absorbs exceptions as well as `{:error, _}` returns: `emit!/1` runs inside
+  GenServer hot paths (`AgentState.Server`, `PgProbe`, `SituationServer`,
+  `PollerWatcher`), where a `Repo.insert` raise during a Postgres outage must
+  never crash the emitting process — least of all the probe that exists to
+  report Postgres trouble.
+  """
   @spec emit!(map()) :: Event.t() | nil
   def emit!(attrs) do
     case emit(attrs) do
       {:ok, e} -> e
       _ -> nil
     end
+  rescue
+    error ->
+      Logger.warning("[audit] emit! failed: #{Exception.message(error)}")
+      nil
+  catch
+    :exit, reason ->
+      Logger.warning("[audit] emit! exited: #{inspect(reason)}")
+      nil
   end
 
   def list(opts \\ []), do: impl().list(opts)
@@ -72,6 +90,18 @@ defmodule DevIDE.Audit do
   def recent_with_action_prefix(workspace_id, action_prefix, n)
       when is_binary(action_prefix) do
     impl().recent_with_action_prefix(workspace_id, action_prefix, n)
+  end
+
+  @doc """
+  Recent events for a workspace recorded by a specific tool, newest first.
+
+  `tool` is the indexed `audit_events.tool` column stamped by
+  `DevIDE.Agents.MCPAudit` (e.g. `"terminal_send_command"`), so per-tool
+  timelines don't need to LIKE-match action strings.
+  """
+  def recent_for_tool(workspace_id, tool, n \\ 50)
+      when is_binary(workspace_id) and is_binary(tool) do
+    impl().recent_for_tool(workspace_id, tool, n)
   end
 
   @doc """

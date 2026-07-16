@@ -54,6 +54,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.SituationEvents
   alias DevIdeWeb.WorkspaceLive.Show.Sidebar
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
@@ -133,6 +134,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
+    situation_drawer:toggle situation_drawer:close
     connect:toggle connect:close connect:mint connect:revoke
     search:run annotation:open artifact:refresh artifact:serve artifact:inspect artifact:open
     history:search history:clear history:refresh
@@ -403,6 +405,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_browser_control()
         |> subscribe_open_links()
         |> subscribe_pane_labels()
+        |> SituationEvents.mount()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -783,6 +786,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("audit_drawer:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
 
+  def handle_event("situation_drawer:" <> _ = event, params, socket),
+    do: SituationEvents.handle_event(event, params, socket)
+
   def handle_event("connect:" <> _ = event, params, socket),
     do: ConnectEvents.handle_event(event, params, socket)
 
@@ -910,6 +916,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:agent_mcp_activity, _entry}, socket),
     do: {:noreply, HistoryEvents.refresh_if_open(socket)}
+
+  # Situation risk transitions on "situation:<ws>" — subscribed by
+  # SituationEvents at mount when the :situation_server flag is on — plus the
+  # deferred mount-time seed (the risk read is a GenServer.call that must not
+  # delay first paint).
+  def handle_info({:situation_risk, _kind, _risk} = msg, socket),
+    do: SituationEvents.handle_info(msg, socket)
+
+  def handle_info(:situation_seed = msg, socket),
+    do: SituationEvents.handle_info(msg, socket)
 
   # Durable notification broadcasts on the viewer's user topic — subscribed by
   # NotificationsDrawerEvents at mount. Badge always updates; the drawer list

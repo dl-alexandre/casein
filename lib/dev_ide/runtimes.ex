@@ -805,6 +805,9 @@ defmodule DevIDE.Runtimes do
       "git_head_sha" => git_info.head_sha,
       "git_worktree" => git_info.worktree?,
       "git_detached" => git_info.detached?,
+      "upstream" => git_info.upstream,
+      "ahead" => git_info.ahead,
+      "behind" => git_info.behind,
       "dirty_count" => dirty_count,
       "worktree_status" => if(dirty_count == 0, do: "clean", else: "dirty"),
       "observed_at" => DateTime.to_iso8601(observed_at),
@@ -864,8 +867,16 @@ defmodule DevIDE.Runtimes do
       git_common_dir: Map.get(metadata, "git_common_dir"),
       git_head_sha: Map.get(metadata, "git_head_sha"),
       git_detached?: Map.get(metadata, "git_detached"),
+      upstream: Map.get(metadata, "upstream"),
+      ahead: Map.get(metadata, "ahead"),
+      behind: Map.get(metadata, "behind"),
       agent: Map.get(metadata, "agent"),
-      source: Map.get(metadata, "source")
+      source: Map.get(metadata, "source"),
+      worktree_status: Map.get(metadata, "worktree_status"),
+      dirty_count: Map.get(metadata, "dirty_count"),
+      exit_status: Map.get(metadata, "exit_status"),
+      handoff: Map.get(metadata, "handoff"),
+      observed_at: Map.get(metadata, "observed_at")
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()

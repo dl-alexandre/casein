@@ -115,6 +115,124 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
   end
 
+  describe "agent.state_changed audit" do
+    test "emits a durable row for every real state transition, with from/to" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :working, "compiling")
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.from == nil
+      assert metadata.to == :working
+      assert metadata.pane == "%5"
+      assert metadata.tmux_session == "devide_alpha_u-dev"
+      assert metadata.message == "compiling"
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :done, nil)
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.from == :working
+      assert metadata.to == :done
+    end
+
+    test "identical or message-only re-reports do not add timeline rows" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      assert_receive {:audit_event, %{action: "agent.state_changed"}}
+
+      # Identical report: deduped upstream, no row.
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
+      refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
+
+      # Message changed but the state did not: broadcast fires, no timeline row.
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 2")
+      refute_receive {:audit_event, %{action: "agent.state_changed"}}, 100
+    end
+
+    test "an evicted pane re-reporting an unchanged state adds no timeline row" do
+      # Distinct workspaces separate the probe pane's rows from filler noise.
+      :ok = AgentState.report("ws-evict-probe", "devide_evict", "%0", :working, "step")
+
+      # Push the tracked-pane count past the cap so %0 (oldest) gets evicted.
+      for i <- 1..501 do
+        :ok = AgentState.report("ws-evict-fill", "devide_evict_fill", "%#{i}", :working, "fill")
+      end
+
+      # Casts are async — a call serializes before asserting eviction.
+      assert AgentState.get("devide_evict", "%0") == nil
+
+      # The eviction tombstone remembers the last state: this re-report is not
+      # a transition, so no new agent.state_changed row for the probe pane.
+      :ok = AgentState.report("ws-evict-probe", "devide_evict", "%0", :working, "step")
+      assert %{state: :working} = AgentState.get("devide_evict", "%0")
+
+      actions =
+        "ws-evict-probe" |> DevIDE.Audit.recent_for(10) |> Enum.map(& &1.action)
+
+      assert actions == ["agent.state_changed"]
+    end
+
+    test "a pruned pane re-reporting an unchanged state adds no timeline row" do
+      :ok = AgentState.report("ws-prune-probe", "devide_prune", "%1", :working, "step")
+      :ok = AgentState.prune_session("devide_prune", [])
+      assert AgentState.get("devide_prune", "%1") == nil
+
+      :ok = AgentState.report("ws-prune-probe", "devide_prune", "%1", :working, "step")
+      assert %{state: :working} = AgentState.get("devide_prune", "%1")
+
+      actions =
+        "ws-prune-probe" |> DevIDE.Audit.recent_for(10) |> Enum.map(& &1.action)
+
+      assert actions == ["agent.state_changed"]
+    end
+
+    test "a real transition across an eviction still records from/to" do
+      :ok = AgentState.report("ws-evict-flip", "devide_evict2", "%0", :working, "step")
+
+      for i <- 1..501 do
+        :ok = AgentState.report("ws-evict-fill2", "devide_evict_fill2", "%#{i}", :working, "f")
+      end
+
+      assert AgentState.get("devide_evict2", "%0") == nil
+
+      :ok = AgentState.report("ws-evict-flip", "devide_evict2", "%0", :blocked, "stuck")
+      assert %{state: :blocked} = AgentState.get("devide_evict2", "%0")
+
+      [row | _] =
+        "ws-evict-flip"
+        |> DevIDE.Audit.recent_for(10)
+        |> Enum.filter(&(&1.action == "agent.state_changed"))
+
+      assert row.metadata.from == :working
+      assert row.metadata.to == :blocked
+    end
+
+    test "a blocked transition also keeps the dedicated agent.blocked row" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%7", :blocked, "needs perm")
+
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: %{to: :blocked}}}
+      assert_receive {:audit_event, %{action: "agent.blocked"}}
+    end
+
+    test "secrets in the report message are redacted before persistence" do
+      :ok = DevIDE.Audit.subscribe("ws-timeline")
+
+      :ok =
+        AgentState.report(
+          "ws-timeline",
+          "devide_alpha_u-dev",
+          "%8",
+          :blocked,
+          "export token=super-secret"
+        )
+
+      assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
+      assert metadata.message =~ "[REDACTED]"
+      refute metadata.message =~ "super-secret"
+    end
+  end
+
   describe "session_status/2" do
     test "maps freshest reported state to picker vocabulary" do
       :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, nil)

@@ -117,6 +117,34 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def gate_passed_param do
+    %{
+      type: "boolean",
+      description: "Whether the gate run passed."
+    }
+  end
+
+  @doc false
+  def sha_param, do: %{type: "string"}
+
+  @doc false
+  def gate_duration_param do
+    %{
+      type: "number",
+      minimum: 0,
+      description: "Gate run duration in seconds."
+    }
+  end
+
+  @doc false
+  def gate_failed_step_param do
+    %{
+      type: "string",
+      description: "The gate step that failed (last announced step of the run)."
+    }
+  end
+
+  @doc false
   def agent_state_param do
     %{
       type: "string",
@@ -246,13 +274,26 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
       when name in [
              "terminal_set_agent_label",
              "terminal_report_worktree",
-             "terminal_report_agent_state"
+             "terminal_report_agent_state",
+             "gate_report"
            ] do
     %{
       mutation?: true,
       danger_level: :low,
       capabilities: [:terminal_metadata],
       recovery_hints: ["Pass workspace_id so DevIDE can associate the update with the workspace."]
+    }
+  end
+
+  def metadata("workspace_digest") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Pass workspace_id when the endpoint is not pre-scoped.",
+        "Follow up on risks with the suggested tool in each entry."
+      ]
     }
   end
 

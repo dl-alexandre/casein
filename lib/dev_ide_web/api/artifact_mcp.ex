@@ -83,6 +83,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
   def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     args = Map.get(params, "arguments", %{}) || %{}
+    audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
       DevIDE.Signals.Context.with_new(fn ->
@@ -94,16 +95,21 @@ defmodule DevIdeWeb.API.ArtifactMCP do
           {:ok, scope} ->
             case ArtifactTools.invoke(name, scope.args) do
               {:ok, payload} = ok ->
-                _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, ok)
+                _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, ok, audit_opts)
                 {:ok, payload}
 
               {:error, reason} = err ->
-                _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, err)
+                _ =
+                  MCPAudit.record_artifact(scope.workspace_id, name, scope.args, err, audit_opts)
+
                 {:error, reason}
             end
 
           {:error, reason} = err ->
-            _ = MCPAudit.record_artifact(nil, name, args, err)
+            # Scope resolution failed, so `args` is untrusted — attribute the
+            # failure to the endpoint's authenticated workspace (nil on
+            # non-pre-scoped endpoints, which skips the durable row).
+            _ = MCPAudit.record_artifact(default_workspace_id, name, args, err, audit_opts)
             {:error, reason}
         end
       end)

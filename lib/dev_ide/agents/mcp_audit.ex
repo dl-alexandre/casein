@@ -3,32 +3,43 @@ defmodule DevIDE.Agents.MCPAudit do
   Audit + activity helpers for agent MCP tool invocations.
   """
 
-  alias DevIDE.{Agents.Activity, Audit, Labels}
+  alias DevIDE.{Agents.Activity, Agents.MCPError, Audit, Labels}
   alias DevIDE.Export.Sanitizer
 
-  @spec record_terminal(String.t(), map(), :ok | {:error, term()}) :: :ok
-  def record_terminal(tool, args, result) when is_map(args) do
-    workspace_id = workspace_id_from_args(args)
+  @spec record_terminal(String.t(), map(), :ok | {:error, term()}, keyword()) :: :ok
+  def record_terminal(tool, args, result, opts \\ []) when is_map(args) do
+    workspace_id = terminal_workspace_id(args, opts)
     summary = terminal_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
 
     _ =
-      Activity.record(%{
-        workspace_id: workspace_id,
-        source: :terminal_mcp,
-        tool: tool,
-        summary: summary,
-        metadata: terminal_audit_metadata(tool, args),
-        status: status
-      })
+      Activity.record(
+        stamp_correlation(%{
+          workspace_id: workspace_id,
+          source: :terminal_mcp,
+          tool: tool,
+          summary: summary,
+          metadata: terminal_audit_metadata(tool, args),
+          status: status
+        })
+      )
 
-    if mutating_terminal_tool?(tool) and status == :ok do
-      Audit.emit!(%{
-        workspace_id: workspace_id,
-        actor_id: actor_id(args),
-        action: "agent.terminal_" <> tool,
-        metadata: terminal_audit_metadata(tool, args)
-      })
+    # Mutating calls persist durably whether they succeeded or failed — a
+    # rejected write attempt is audit-worthy. Read-only tools stay memory-only.
+    # Rows need a real workspace: the scope-rejection path passes untrusted
+    # raw args and may resolve no workspace at all (see terminal_workspace_id).
+    if mutating_terminal_tool?(tool) and is_binary(workspace_id) do
+      Audit.emit!(
+        %{
+          workspace_id: workspace_id,
+          actor_id: actor_id(args, opts),
+          action: "agent.terminal_" <> tool,
+          source: "terminal_mcp",
+          tool: tool,
+          metadata: terminal_audit_metadata(tool, args)
+        }
+        |> put_error(result)
+      )
     end
 
     _ = Labels.propose_from_mcp(workspace_id, tool, args, result)
@@ -36,58 +47,76 @@ defmodule DevIDE.Agents.MCPAudit do
     :ok
   end
 
-  @spec record_preview(String.t() | nil, String.t(), map(), term()) :: :ok
-  def record_preview(workspace_id, tool, args, result) when is_map(args) and is_binary(tool) do
+  @spec record_preview(String.t() | nil, String.t(), map(), term(), keyword()) :: :ok
+  def record_preview(workspace_id, tool, args, result, opts \\ [])
+      when is_map(args) and is_binary(tool) do
     summary = preview_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
     metadata = preview_audit_metadata(tool, args, result)
 
     _ =
-      Activity.record(%{
-        workspace_id: workspace_id,
-        source: :preview_mcp,
-        tool: tool,
-        summary: summary,
-        metadata: metadata,
-        status: status
-      })
+      Activity.record(
+        stamp_correlation(%{
+          workspace_id: workspace_id,
+          source: :preview_mcp,
+          tool: tool,
+          summary: summary,
+          metadata: metadata,
+          status: status
+        })
+      )
 
-    if mutating_preview_tool?(tool) and status == :ok and is_binary(workspace_id) do
-      Audit.emit!(%{
-        workspace_id: workspace_id,
-        actor_id: actor_id(args),
-        action: "agent.preview_" <> tool,
-        metadata: metadata
-      })
+    if mutating_preview_tool?(tool) and is_binary(workspace_id) do
+      Audit.emit!(
+        %{
+          workspace_id: workspace_id,
+          actor_id: actor_id(args, opts),
+          action: "agent.preview_" <> tool,
+          source: "preview_mcp",
+          tool: tool,
+          metadata: metadata
+        }
+        |> put_error(result)
+      )
     end
 
     :ok
   end
 
-  @spec record_artifact(String.t() | nil, String.t(), map(), term()) :: :ok
-  def record_artifact(workspace_id, tool, args, result) when is_map(args) and is_binary(tool) do
-    workspace_id = workspace_id || workspace_id_from_args(args)
+  # `workspace_id` must come from the caller's *validated* scope (or the
+  # endpoint's pre-scoped default) — never from raw tool args, which a caller
+  # scoped to workspace A could point at workspace B to forge rows there.
+  @spec record_artifact(String.t() | nil, String.t(), map(), term(), keyword()) :: :ok
+  def record_artifact(workspace_id, tool, args, result, opts \\ [])
+      when is_map(args) and is_binary(tool) do
     summary = artifact_summary(tool, args, result)
     status = if match?({:error, _}, result), do: :error, else: :ok
     metadata = artifact_audit_metadata(tool, args, result)
 
     _ =
-      Activity.record(%{
-        workspace_id: workspace_id,
-        source: :artifact_mcp,
-        tool: tool,
-        summary: summary,
-        metadata: metadata,
-        status: status
-      })
+      Activity.record(
+        stamp_correlation(%{
+          workspace_id: workspace_id,
+          source: :artifact_mcp,
+          tool: tool,
+          summary: summary,
+          metadata: metadata,
+          status: status
+        })
+      )
 
-    if mutating_artifact_tool?(tool) and status == :ok and is_binary(workspace_id) do
-      Audit.emit!(%{
-        workspace_id: workspace_id,
-        actor_id: actor_id(args),
-        action: "agent.artifact_" <> tool,
-        metadata: metadata
-      })
+    if mutating_artifact_tool?(tool) and is_binary(workspace_id) do
+      Audit.emit!(
+        %{
+          workspace_id: workspace_id,
+          actor_id: actor_id(args, opts),
+          action: "agent.artifact_" <> tool,
+          source: "artifact_mcp",
+          tool: tool,
+          metadata: metadata
+        }
+        |> put_error(result)
+      )
     end
 
     :ok
@@ -102,7 +131,8 @@ defmodule DevIDE.Agents.MCPAudit do
         "terminal_send_agent_command",
         "terminal_paste_agent_text",
         "annotation_propose",
-        "terminal_set_agent_label"
+        "terminal_set_agent_label",
+        "gate_report"
       ]
 
   defp mutating_preview_tool?(tool),
@@ -126,10 +156,72 @@ defmodule DevIDE.Agents.MCPAudit do
   defp mutating_artifact_tool?(tool),
     do: tool in ["artifact_create", "artifact_update", "artifact_serve", "artifact_snapshot"]
 
-  defp actor_id(args) do
+  # Prefer the authenticated actor threaded down from the controller
+  # (ws:<workspace_id> / orchestrator:<subject> / global), then an explicit
+  # actor_id argument, then the legacy "mcp" fallback.
+  defp actor_id(args, opts) do
+    case Keyword.get(opts, :actor) do
+      actor when is_binary(actor) and actor != "" -> actor
+      _ -> actor_id_from_args(args)
+    end
+  end
+
+  defp actor_id_from_args(args) do
     case Map.get(args, "actor_id") || Map.get(args, :actor_id) do
       id when is_binary(id) and id != "" -> id
       _ -> "mcp"
+    end
+  end
+
+  # Failed mutating calls persist with a bounded reason atom (the Ecto adapter
+  # stores `reason` as a string column); free-text detail rides in metadata,
+  # redacted like every other exported string.
+  defp put_error(attrs, {:error, reason}) do
+    formatted = MCPError.format(reason)
+
+    attrs
+    |> Map.put(:reason, error_reason(reason, formatted))
+    |> Map.update!(:metadata, &Map.merge(&1, error_metadata(formatted)))
+  end
+
+  defp put_error(attrs, _result), do: attrs
+
+  defp error_reason(reason, _formatted) when is_atom(reason) and not is_nil(reason), do: reason
+  defp error_reason({reason, _}, _formatted) when is_atom(reason), do: reason
+  defp error_reason({reason, _, _}, _formatted) when is_atom(reason), do: reason
+
+  defp error_reason(_reason, %{"error" => error}) when is_binary(error) do
+    # Only reuse atoms the runtime already knows — arbitrary error strings must
+    # not mint atoms.
+    String.to_existing_atom(error)
+  rescue
+    ArgumentError -> :tool_error
+  end
+
+  defp error_reason(_reason, _formatted), do: :tool_error
+
+  defp error_metadata(formatted) do
+    %{
+      error: preview_result_text(Map.get(formatted, "error")),
+      error_message: preview_arg_text(Map.get(formatted, "message"))
+    }
+    |> compact_metadata()
+  end
+
+  # Stamp the in-memory Activity entry with the same correlation_id the durable
+  # audit row gets, so the memory tail reconciles with audit_events.
+  defp stamp_correlation(attrs), do: DevIDE.Signals.Context.stamp(attrs)
+
+  # Terminal calls resolve their workspace from args — safe on the normal
+  # paths because those args are the scope-validated `scope.args`. The
+  # scope-rejection path passes raw caller args, so it must override with a
+  # trusted `:workspace_id` (the endpoint's authenticated default, possibly
+  # nil) instead of letting an attacker-supplied workspace_id attribute rows
+  # to a workspace the caller has no scope over.
+  defp terminal_workspace_id(args, opts) do
+    case Keyword.fetch(opts, :workspace_id) do
+      {:ok, trusted} -> trusted
+      :error -> workspace_id_from_args(args)
     end
   end
 
@@ -219,14 +311,16 @@ defmodule DevIDE.Agents.MCPAudit do
 
   defp tool_label(tool), do: tool
 
+  # command/keys/text are free text destined for persisted audit rows — redact
+  # like the preview/artifact metadata paths, not just truncate.
   defp terminal_audit_metadata(tool, args) do
     %{
       tool: tool,
       session: Map.get(args, "session"),
       pane: Map.get(args, "pane"),
-      command: truncate(Map.get(args, "command")),
-      keys: truncate(Map.get(args, "keys")),
-      text: truncate(Map.get(args, "text"))
+      command: preview_arg_text(Map.get(args, "command")),
+      keys: preview_arg_text(Map.get(args, "keys")),
+      text: preview_arg_text(Map.get(args, "text"))
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()

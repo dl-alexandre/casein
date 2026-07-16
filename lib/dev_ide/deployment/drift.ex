@@ -18,20 +18,35 @@ defmodule DevIDE.Deployment.Drift do
           | {:drift, map()}
           | {:unknown, map()}
 
+  @doc "Whether the drift check is enabled (not opted out via env)."
+  @spec enabled?() :: boolean()
+  def enabled? do
+    System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK") not in ["0", "false", "no"]
+  end
+
   @doc "Starts a best-effort async drift check unless disabled by env."
   @spec check_async() :: :ok
   def check_async do
-    if System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK") in ["0", "false", "no"] do
+    if enabled?() do
+      _ = Task.start(fn -> check_and_broadcast() end)
       :ok
     else
-      _ = Task.start(fn -> check_and_broadcast() end)
       :ok
     end
   end
 
-  @doc "Runs the remote check and broadcasts/logs drift when detected."
-  @spec check_and_broadcast() :: status()
-  def check_and_broadcast do
+  @doc """
+  Runs the remote check and broadcasts/logs drift when detected.
+
+  Pass `log: false` for periodic re-checks (`PollerWatcher` ticks) so a
+  long-lived drift does not re-warn every interval; the boot-time check and
+  the durable `deploy.drift_detected` audit row carry the alert. Pass
+  `broadcast: false` for the same reason — a standing drift must not fan
+  `{:deploy_drift, info}` into every workspace LiveView and SituationServer
+  on every tick; the caller broadcasts transitions via `broadcast_drift/1`.
+  """
+  @spec check_and_broadcast(keyword()) :: status()
+  def check_and_broadcast(opts \\ []) do
     current = DevIDE.Deployment.Version.version()
     remote = remote_head()
 
@@ -39,8 +54,11 @@ defmodule DevIDE.Deployment.Drift do
 
     case status do
       {:drift, info} ->
-        Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
-        broadcast(info)
+        if Keyword.get(opts, :log, true) do
+          Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
+        end
+
+        if Keyword.get(opts, :broadcast, true), do: broadcast(info)
 
       _ ->
         :ok
@@ -48,6 +66,11 @@ defmodule DevIDE.Deployment.Drift do
 
     status
   end
+
+  @doc "Broadcast a drifted status on `\"deploy:updates\"` (transition fan-out)."
+  @spec broadcast_drift(status() | nil) :: :ok
+  def broadcast_drift({:drift, info}), do: broadcast(info)
+  def broadcast_drift(_status), do: :ok
 
   @doc "Pure assessment used by tests and by the runtime check after ls-remote."
   @spec assess(String.t() | nil, {:ok, String.t()} | {:error, term()}, String.t()) :: status()

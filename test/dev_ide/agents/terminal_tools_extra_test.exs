@@ -80,6 +80,47 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
              })
   end
 
+  test "topology carries reported agent_state on panes and windows" do
+    session = Tmux.session_name("alpha", "main")
+    fake_adapter()
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/workspace",
+          role: "agent"
+        }
+      ]
+    })
+
+    DevIDE.Terminals.AgentState.clear()
+    on_exit(fn -> DevIDE.Terminals.AgentState.clear() end)
+
+    :ok = DevIDE.Terminals.AgentState.report("alpha", session, "%1", :blocked, "needs permission")
+
+    assert {:ok, snapshot} =
+             TerminalTools.invoke("terminal_topology", %{
+               "workspace_id" => "alpha",
+               "session" => session
+             })
+
+    # Regression: the MCP snapshot path used to apply only the title heuristic,
+    # so reported :blocked/:done/:idle states never reached terminal_topology.
+    assert [%{id: "%1", agent_state: :blocked, agent_state_message: "needs permission"}] =
+             snapshot.panes
+
+    assert [%{agent_state: :blocked}] = snapshot.windows
+  end
+
   test "topology returns a snapshot for an existing session" do
     session = Tmux.session_name("alpha", "main")
     fake_adapter()

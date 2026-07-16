@@ -13,7 +13,10 @@ defmodule DevIDE.Git.Inspector do
     :head_sha,
     worktree?: false,
     detached?: false,
-    agent: nil
+    agent: nil,
+    upstream: nil,
+    ahead: nil,
+    behind: nil
   ]
 
   @type t :: %__MODULE__{
@@ -24,7 +27,10 @@ defmodule DevIDE.Git.Inspector do
           head_sha: String.t(),
           worktree?: boolean(),
           detached?: boolean(),
-          agent: String.t() | nil
+          agent: String.t() | nil,
+          upstream: String.t() | nil,
+          ahead: non_neg_integer() | nil,
+          behind: non_neg_integer() | nil
         }
 
   @doc """
