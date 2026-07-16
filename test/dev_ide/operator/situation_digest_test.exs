@@ -301,6 +301,32 @@ defmodule DevIDE.Operator.SituationDigestTest do
     assert digest.activity.recent == []
     assert digest.activity.last_mutation == nil
     assert is_list(digest.risks)
+    # A missing workspace is "actually empty", not "unreadable".
+    assert digest.degraded == []
+  end
+
+  defmodule RaisingRuntimes do
+    # A runtimes read failing hard must degrade the worktrees section (and
+    # say so), never crash the digest build.
+    def list_runtimes(_filters), do: raise("runtimes read failed")
+
+    # Setup's on_exit cleanup runs while this adapter is still configured.
+    def clear, do: :ok
+  end
+
+  test "a failing worktree read marks the section degraded instead of silently emptying it" do
+    Application.put_env(:dev_ide, :runtimes_adapter, RaisingRuntimes)
+
+    assert {:ok, digest} = SituationDigest.build("ws-digest")
+    assert digest.worktrees == []
+    assert :worktrees in digest.degraded
+  end
+
+  test "a clean build reports no degraded sections" do
+    seed_agent_session()
+
+    assert {:ok, digest} = SituationDigest.build("ws-digest")
+    assert digest.degraded == []
   end
 
   defp seed_agent_session do

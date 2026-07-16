@@ -151,7 +151,10 @@ defmodule DevIdeWeb.API.PreviewMCP do
             end
 
           {:error, reason} = err ->
-            _ = MCPAudit.record_preview(nil, name, args, err, audit_opts)
+            # Scope resolution failed, so `args` is untrusted — attribute the
+            # failure to the endpoint's authenticated workspace (nil on
+            # non-pre-scoped endpoints, which skips the durable row).
+            _ = MCPAudit.record_preview(default_workspace_id, name, args, err, audit_opts)
             {:error, reason}
         end
       end)

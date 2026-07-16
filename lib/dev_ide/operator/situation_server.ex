@@ -26,9 +26,12 @@ defmodule DevIDE.Operator.SituationServer do
 
   Cheap signals mutate the digest incrementally; structural ones debounce
   (#{250}ms) a full `SituationDigest.build/1`, which also re-syncs the
-  session subscriptions to the sessions that exist now. `generated_at` and
-  `freshness` describe the last *full* rebuild — incremental patches update
-  sections without re-dating the digest.
+  session subscriptions to the sessions that exist now. `generated_at`
+  describes the last *full* rebuild — incremental patches update sections
+  without re-dating the digest — but `freshness` is re-stamped at read time
+  from per-section reference instants (`SituationDigest.freshness_as_of/1`,
+  advanced by the in-place patches), so served staleness keeps aging between
+  rebuilds instead of staying frozen at the last build.
 
   Detector engine: on relevant changes (debounced) and on a periodic tick it
   runs `DevIDE.Operator.Risks.detect/1` plus the stateful
@@ -75,6 +78,10 @@ defmodule DevIDE.Operator.SituationServer do
     :digest,
     :rebuild_timer,
     :detect_timer,
+    # Per-section absolute reference instants behind the digest's freshness
+    # stamps (SituationDigest.freshness_as_of/1) — served digests re-age
+    # freshness against these at read time.
+    freshness_as_of: %{},
     # Per-sid output freshness from SessionEvents: monotonic content gen and
     # the time we last saw (or started watching for) output.
     last_output_gen: %{},
@@ -94,7 +101,8 @@ defmodule DevIDE.Operator.SituationServer do
     # the server process).
     worktree_alarms: [],
     worktree_swept_at_ms: nil,
-    worktree_sweep_ref: nil
+    worktree_sweep_ref: nil,
+    worktree_sweep_pid: nil
   ]
 
   ## Public API
@@ -203,7 +211,13 @@ defmodule DevIDE.Operator.SituationServer do
 
     schedule_tick()
 
-    {:ok, %__MODULE__{workspace_id: workspace_id}, {:continue, :rebuild}}
+    # Seed active risks from the durable timeline so a restarted server does
+    # not re-announce standing risks (the DeployAudit seed-silently pattern),
+    # and risks left dangling by a dead server get their risk_cleared row on
+    # the first detector pass that no longer sees them.
+    {:ok,
+     %__MODULE__{workspace_id: workspace_id, active_risks: seed_standing_risks(workspace_id)},
+     {:continue, :rebuild}}
   end
 
   @impl true
@@ -217,7 +231,7 @@ defmodule DevIDE.Operator.SituationServer do
 
     case state.digest do
       nil -> {:reply, {:error, :digest_unavailable}, state}
-      digest -> {:reply, {:ok, digest}, state}
+      digest -> {:reply, {:ok, restamp_freshness(digest, state)}, state}
     end
   end
 
@@ -258,7 +272,8 @@ defmodule DevIDE.Operator.SituationServer do
 
   # MCP tool-call tail: prepend in place with the digest's own mapping and cap.
   def handle_info({:agent_mcp_activity, entry}, state) do
-    {:noreply, %{state | digest: patch_activity(state.digest, entry)}}
+    state = %{state | digest: patch_activity(state.digest, entry)}
+    {:noreply, touch_freshness(state, :activity)}
   end
 
   # Live audit event: refresh activity.last_mutation. Our own operator.*
@@ -325,7 +340,7 @@ defmodule DevIDE.Operator.SituationServer do
       Logger.warning("[situation] worktree sweep failed: #{inspect(reason)}")
     end
 
-    {:noreply, %{state | worktree_sweep_ref: nil}}
+    {:noreply, %{state | worktree_sweep_ref: nil, worktree_sweep_pid: nil}}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -335,7 +350,7 @@ defmodule DevIDE.Operator.SituationServer do
   defp rebuild(state) do
     case SituationDigest.build(state.workspace_id) do
       {:ok, digest} ->
-        %{state | digest: digest}
+        %{state | digest: digest, freshness_as_of: SituationDigest.freshness_as_of(digest)}
         |> sync_session_subscriptions(digest)
         |> sync_topology_subscriptions(digest)
         |> seed_agent_entries(digest)
@@ -459,9 +474,20 @@ defmodule DevIDE.Operator.SituationServer do
       announce(state.workspace_id, :raised, risk)
     end
 
-    for {key, risk} <- state.active_risks, not Map.has_key?(next_active, key) do
-      announce(state.workspace_id, :cleared, risk)
-    end
+    # A digest with degraded sections is missing data, not reporting recovery:
+    # a transient read failure must not clear standing risks (spurious
+    # risk_cleared rows that flap back on the next good rebuild). Clears wait
+    # for a clean digest; raises still go out.
+    next_active =
+      if Map.get(state.digest, :degraded, []) == [] do
+        for {key, risk} <- state.active_risks, not Map.has_key?(next_active, key) do
+          announce(state.workspace_id, :cleared, risk)
+        end
+
+        next_active
+      else
+        Map.merge(state.active_risks, next_active)
+      end
 
     %{state | active_risks: next_active, digest: %{state.digest | risks: Map.values(next_active)}}
   end
@@ -505,17 +531,32 @@ defmodule DevIDE.Operator.SituationServer do
       is_integer(state.worktree_swept_at_ms) and
         now_ms - state.worktree_swept_at_ms < sweep_interval_ms()
 
-    if state.worktree_sweep_ref != nil or fresh? do
-      state
-    else
-      parent = self()
+    cond do
+      state.worktree_sweep_ref != nil ->
+        # A sweep still in flight a full interval after it started is wedged
+        # (e.g. a git subprocess hung on a dead worktree path) — kill it so
+        # sweeping self-heals instead of silently stopping forever. The :DOWN
+        # clears the ref and the next detector pass restarts.
+        if not fresh?, do: Process.exit(state.worktree_sweep_pid, :kill)
+        state
 
-      {_pid, ref} =
-        spawn_monitor(fn ->
-          send(parent, {:worktree_alarms, WorktreeAlarm.sweep_now(emit: false).alarms})
-        end)
+      fresh? ->
+        state
 
-      %{state | worktree_sweep_ref: ref, worktree_swept_at_ms: now_ms}
+      true ->
+        parent = self()
+
+        {pid, ref} =
+          spawn_monitor(fn ->
+            send(parent, {:worktree_alarms, WorktreeAlarm.sweep_now(emit: false).alarms})
+          end)
+
+        %{
+          state
+          | worktree_sweep_ref: ref,
+            worktree_sweep_pid: pid,
+            worktree_swept_at_ms: now_ms
+        }
     end
   end
 
@@ -560,9 +601,9 @@ defmodule DevIDE.Operator.SituationServer do
         at: Map.get(entry, :inserted_at)
       })
 
-    digest
-    |> update_in([:activity, :recent], &Enum.take([mapped | &1 || []], @recent_activity))
-    |> put_in([:freshness, :activity], 0)
+    # Freshness rides in freshness_as_of (touched by the caller) and is
+    # re-stamped at serve time — no need to zero the stored stamp here.
+    update_in(digest, [:activity, :recent], &Enum.take([mapped | &1 || []], @recent_activity))
   end
 
   defp patch_last_mutation(nil, _event), do: nil
@@ -583,8 +624,100 @@ defmodule DevIDE.Operator.SituationServer do
   defp refresh_deploy(%{digest: nil} = state), do: state
 
   defp refresh_deploy(state) do
-    %{state | digest: Map.put(state.digest, :deploy, SituationDigest.deploy_section())}
+    deploy = SituationDigest.deploy_section()
+
+    %{
+      state
+      | digest: Map.put(state.digest, :deploy, deploy),
+        # Keep the freshness reference on the section actually served — the
+        # replaced record's stamp must not describe the new one.
+        freshness_as_of:
+          Map.put(state.freshness_as_of, :deploy, SituationDigest.deploy_as_of(deploy))
+    }
   end
+
+  ## Freshness re-aging (see moduledoc)
+
+  # Serve staleness measured now, not at the last full rebuild — a warm
+  # server may not rebuild for a long time in a quiet workspace.
+  defp restamp_freshness(digest, %{freshness_as_of: as_of}) when map_size(as_of) > 0 do
+    Map.put(digest, :freshness, SituationDigest.freshness_from(as_of, DateTime.utc_now()))
+  end
+
+  defp restamp_freshness(digest, _state), do: digest
+
+  defp touch_freshness(%{digest: nil} = state, _section), do: state
+
+  defp touch_freshness(state, section) do
+    %{state | freshness_as_of: Map.put(state.freshness_as_of, section, DateTime.utc_now())}
+  end
+
+  ## Standing-risk seed (restart dedupe)
+
+  # How many durable operator.risk_* rows the seed scan reads. Standing risks
+  # whose raise row fell outside this window may re-announce after a restart —
+  # a bounded, self-correcting duplicate rather than an unbounded one.
+  @risk_seed_rows 200
+
+  defp seed_standing_risks(workspace_id) do
+    workspace_id
+    |> Audit.recent_with_action_prefix("operator.risk_", @risk_seed_rows)
+    |> Enum.reduce(%{}, fn event, acc ->
+      case seed_risk(event) do
+        # Rows arrive newest first: the first verdict seen per key stands.
+        {key, kind, risk} -> Map.put_new(acc, key, {kind, risk})
+        nil -> acc
+      end
+    end)
+    |> Enum.flat_map(fn
+      {key, {:raised, risk}} -> [{key, risk}]
+      {_key, {:cleared, _risk}} -> []
+    end)
+    |> Map.new()
+  rescue
+    _ -> %{}
+  catch
+    :exit, _ -> %{}
+  end
+
+  defp seed_risk(%{action: "operator.risk_" <> kind} = event) when kind in ~w(raised cleared) do
+    metadata = event.metadata || %{}
+    id = seed_atom(meta_value(metadata, :id))
+    subject = meta_value(metadata, :subject)
+
+    if id do
+      risk = %{
+        id: id,
+        severity: seed_atom(meta_value(metadata, :severity)) || :warn,
+        subject: subject,
+        detected_at: event.inserted_at,
+        evidence: meta_value(metadata, :evidence) || %{},
+        suggestion: meta_value(metadata, :suggestion)
+      }
+
+      {{id, subject}, String.to_existing_atom(kind), risk}
+    end
+  end
+
+  defp seed_risk(_event), do: nil
+
+  # Metadata round-trips through JSON on the Ecto adapter (string keys) but
+  # stays atom-keyed on the memory adapter.
+  defp meta_value(metadata, key) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  # Only reuse atoms the detectors already minted — audit metadata must not
+  # create atoms.
+  defp seed_atom(value) when is_atom(value) and not is_nil(value), do: value
+
+  defp seed_atom(value) when is_binary(value) do
+    String.to_existing_atom(value)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp seed_atom(_value), do: nil
 
   ## Debounce + timers
 

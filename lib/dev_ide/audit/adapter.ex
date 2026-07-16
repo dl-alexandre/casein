@@ -12,7 +12,7 @@ defmodule DevIDE.Audit.Adapter do
               n :: pos_integer()
             ) :: [Event.t()]
   @callback recent_for_tool(
-              workspace_id :: String.t() | nil,
+              workspace_id :: String.t(),
               tool :: String.t(),
               n :: pos_integer()
             ) :: [Event.t()]

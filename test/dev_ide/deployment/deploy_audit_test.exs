@@ -80,6 +80,31 @@ defmodule DevIDE.Deployment.DeployAuditTest do
       _state = DeployAudit.observe(state, record("in_progress", "sha-2"), nil)
       assert hd(actions()) == "deploy.started"
     end
+
+    test "a retry of the same sha with the same outcome is a new attempt when started_at differs" do
+      state = DeployAudit.new()
+      state = DeployAudit.observe(state, record("in_progress", "sha-x"), nil)
+
+      state =
+        DeployAudit.observe(
+          state,
+          record("failed", "sha-x", %{"started_at" => "2026-07-16T10:00:00Z"}),
+          nil
+        )
+
+      assert actions() == ["deploy.failed"]
+
+      # The retry's in_progress window fell between two polls; its terminal
+      # observation still gets its own row because started_at keys the attempt.
+      _state =
+        DeployAudit.observe(
+          state,
+          record("failed", "sha-x", %{"started_at" => "2026-07-16T10:20:00Z"}),
+          nil
+        )
+
+      assert actions() == ["deploy.failed", "deploy.failed"]
+    end
   end
 
   describe "drift transitions" do

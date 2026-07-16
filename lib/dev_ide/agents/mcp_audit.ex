@@ -8,7 +8,7 @@ defmodule DevIDE.Agents.MCPAudit do
 
   @spec record_terminal(String.t(), map(), :ok | {:error, term()}, keyword()) :: :ok
   def record_terminal(tool, args, result, opts \\ []) when is_map(args) do
-    workspace_id = workspace_id_from_args(args)
+    workspace_id = terminal_workspace_id(args, opts)
     summary = terminal_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
 
@@ -26,7 +26,9 @@ defmodule DevIDE.Agents.MCPAudit do
 
     # Mutating calls persist durably whether they succeeded or failed — a
     # rejected write attempt is audit-worthy. Read-only tools stay memory-only.
-    if mutating_terminal_tool?(tool) do
+    # Rows need a real workspace: the scope-rejection path passes untrusted
+    # raw args and may resolve no workspace at all (see terminal_workspace_id).
+    if mutating_terminal_tool?(tool) and is_binary(workspace_id) do
       Audit.emit!(
         %{
           workspace_id: workspace_id,
@@ -81,10 +83,12 @@ defmodule DevIDE.Agents.MCPAudit do
     :ok
   end
 
+  # `workspace_id` must come from the caller's *validated* scope (or the
+  # endpoint's pre-scoped default) — never from raw tool args, which a caller
+  # scoped to workspace A could point at workspace B to forge rows there.
   @spec record_artifact(String.t() | nil, String.t(), map(), term(), keyword()) :: :ok
   def record_artifact(workspace_id, tool, args, result, opts \\ [])
       when is_map(args) and is_binary(tool) do
-    workspace_id = workspace_id || workspace_id_from_args(args)
     summary = artifact_summary(tool, args, result)
     status = if match?({:error, _}, result), do: :error, else: :ok
     metadata = artifact_audit_metadata(tool, args, result)
@@ -208,6 +212,19 @@ defmodule DevIDE.Agents.MCPAudit do
   # audit row gets, so the memory tail reconciles with audit_events.
   defp stamp_correlation(attrs), do: DevIDE.Signals.Context.stamp(attrs)
 
+  # Terminal calls resolve their workspace from args — safe on the normal
+  # paths because those args are the scope-validated `scope.args`. The
+  # scope-rejection path passes raw caller args, so it must override with a
+  # trusted `:workspace_id` (the endpoint's authenticated default, possibly
+  # nil) instead of letting an attacker-supplied workspace_id attribute rows
+  # to a workspace the caller has no scope over.
+  defp terminal_workspace_id(args, opts) do
+    case Keyword.fetch(opts, :workspace_id) do
+      {:ok, trusted} -> trusted
+      :error -> workspace_id_from_args(args)
+    end
+  end
+
   defp workspace_id_from_args(args) do
     Map.get(args, "workspace_id") || Map.get(args, :workspace_id)
   end
@@ -294,14 +311,16 @@ defmodule DevIDE.Agents.MCPAudit do
 
   defp tool_label(tool), do: tool
 
+  # command/keys/text are free text destined for persisted audit rows — redact
+  # like the preview/artifact metadata paths, not just truncate.
   defp terminal_audit_metadata(tool, args) do
     %{
       tool: tool,
       session: Map.get(args, "session"),
       pane: Map.get(args, "pane"),
-      command: truncate(Map.get(args, "command")),
-      keys: truncate(Map.get(args, "keys")),
-      text: truncate(Map.get(args, "text"))
+      command: preview_arg_text(Map.get(args, "command")),
+      keys: preview_arg_text(Map.get(args, "keys")),
+      text: preview_arg_text(Map.get(args, "text"))
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()

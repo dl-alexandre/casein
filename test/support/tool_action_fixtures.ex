@@ -16,6 +16,27 @@ defmodule DevIDE.Test.ToolActionFixtures.FastAction do
   def run(%{value: value}, _context), do: {:ok, %{value: value}}
 end
 
+defmodule DevIDE.Test.ToolActionFixtures.AliasedAction do
+  @behaviour DevIDE.Agents.ToolAction
+
+  use Jido.Action,
+    name: "aliased_action",
+    description: "aliased",
+    schema: [target_id: [type: :string, required: true]]
+
+  @impl DevIDE.Agents.ToolAction
+  def parameters, do: %{"type" => "object", "properties" => %{}}
+
+  @impl DevIDE.Agents.ToolAction
+  def mcp_metadata, do: %{mutation?: false, danger_level: :low}
+
+  @impl DevIDE.Agents.ToolAction
+  def param_aliases, do: %{target_id: ~w(target_id id)}
+
+  @impl Jido.Action
+  def run(%{target_id: target_id}, _context), do: {:ok, %{target_id: target_id}}
+end
+
 defmodule DevIDE.Test.ToolActionFixtures.SlowAction do
   @behaviour DevIDE.Agents.ToolAction
 

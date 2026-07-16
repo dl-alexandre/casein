@@ -121,7 +121,17 @@ defmodule DevIdeWeb.API.TerminalMCP do
             end
 
           {:error, reason} = err ->
-            _ = MCPAudit.record_terminal(name, args, err, audit_opts)
+            # Scope resolution failed, so `args` (and any workspace_id inside
+            # them) is untrusted — attribute the failure to the endpoint's
+            # authenticated workspace, never to a caller-claimed one.
+            _ =
+              MCPAudit.record_terminal(
+                name,
+                args,
+                err,
+                Keyword.put(audit_opts, :workspace_id, default_workspace_id)
+              )
+
             {:error, reason}
         end
       end)

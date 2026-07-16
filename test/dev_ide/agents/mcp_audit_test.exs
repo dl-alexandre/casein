@@ -136,6 +136,65 @@ defmodule DevIDE.Agents.MCPAuditTest do
       assert "mcp" in actors
     end
 
+    test "a failed mutating call with no resolvable workspace stays memory-only, no crash" do
+      # Non-pre-scoped endpoint, scope resolution failed: no workspace_id
+      # anywhere. The durable row needs a NOT NULL workspace_id, so it is
+      # skipped instead of raising out of the request.
+      assert :ok =
+               MCPAudit.record_terminal(
+                 "terminal_send_command",
+                 %{"command" => "true"},
+                 {:error, :missing_workspace_id}
+               )
+
+      assert Audit.list() == []
+    end
+
+    test "a trusted workspace override beats a caller-claimed workspace in args" do
+      # Scope-rejection path: raw args claim workspace B, but the endpoint's
+      # authenticated workspace (the override) decides where rows land — a
+      # token scoped to A must not forge rows in B.
+      assert :ok =
+               MCPAudit.record_terminal(
+                 "terminal_send_command",
+                 %{"workspace_id" => "ws-victim", "command" => "attacker text"},
+                 {:error, :workspace_scope_mismatch},
+                 actor: "ws:ws-attacker",
+                 workspace_id: "ws-attacker"
+               )
+
+      assert Audit.recent_for("ws-victim", 10) == []
+      assert Activity.recent("ws-victim", 10) == []
+
+      [event] = Audit.recent_for("ws-attacker", 10)
+      assert event.reason == :workspace_scope_mismatch
+
+      # A nil override (non-pre-scoped endpoint) drops the durable row rather
+      # than falling back to the untrusted args.
+      assert :ok =
+               MCPAudit.record_terminal(
+                 "terminal_send_command",
+                 %{"workspace_id" => "ws-victim", "command" => "attacker text"},
+                 {:error, :workspace_scope_mismatch},
+                 workspace_id: nil
+               )
+
+      assert Audit.recent_for("ws-victim", 10) == []
+    end
+
+    test "terminal metadata redacts secret-shaped command text before persistence" do
+      assert :ok =
+               MCPAudit.record_terminal(
+                 "terminal_send_command",
+                 %{"workspace_id" => "ws-audit", "command" => "curl -H token=secret-token"},
+                 {:ok, %{}}
+               )
+
+      [event] = Audit.recent_for("ws-audit", 10)
+      assert event.metadata[:command] =~ "[REDACTED]"
+      refute inspect(event.metadata) =~ "secret-token"
+    end
+
     test "Activity entry carries the same correlation_id as the audit row" do
       assert :ok =
                DevIDE.Signals.Context.with_new(fn ->
@@ -152,6 +211,36 @@ defmodule DevIDE.Agents.MCPAuditTest do
       correlation_id = event.metadata["correlation_id"]
       assert is_binary(correlation_id)
       assert entry.metadata["correlation_id"] == correlation_id
+    end
+  end
+
+  describe "record_artifact/5 workspace attribution" do
+    test "never derives the durable row's workspace from raw args" do
+      # Scope-rejection call shape (artifact_mcp error branch): workspace nil,
+      # args claim a victim workspace. No durable row may land there.
+      assert :ok =
+               MCPAudit.record_artifact(
+                 nil,
+                 "artifact_update",
+                 %{"workspace_id" => "ws-victim", "artifact_id" => "a1"},
+                 {:error, :workspace_scope_mismatch}
+               )
+
+      assert Audit.recent_for("ws-victim", 10) == []
+    end
+
+    test "persists failed mutating calls under the validated workspace" do
+      assert :ok =
+               MCPAudit.record_artifact(
+                 "ws-artifact",
+                 "artifact_update",
+                 %{"artifact_id" => "a1"},
+                 {:error, :not_found}
+               )
+
+      [event] = Audit.recent_for("ws-artifact", 10)
+      assert event.action == "agent.artifact_artifact_update"
+      assert event.reason == :not_found
     end
   end
 

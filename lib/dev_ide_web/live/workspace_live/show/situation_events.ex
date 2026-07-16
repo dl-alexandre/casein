@@ -14,29 +14,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SituationEvents do
 
   alias DevIDE.Operator.SituationServer
 
-  @doc "Mount-time state: subscribe (flag on + connected) and seed active risks."
+  @doc """
+  Mount-time state: subscribe (flag on + connected) and defer the risk seed.
+
+  The seed is a GenServer.call into the SituationServer, which may be busy in
+  a full rebuild (tmux snapshots, worktree listing) — per Show's rule, that
+  read must not delay first paint, so mount only schedules `:situation_seed`
+  and renders an empty badge until it lands.
+  """
   def mount(socket) do
     workspace_id = socket.assigns.workspace.id
     enabled? = SituationServer.enabled?()
 
     if enabled? and connected?(socket) do
       _ = SituationServer.subscribe(workspace_id)
+      send(self(), :situation_seed)
     end
 
-    server_up? = enabled? and SituationServer.whereis(workspace_id) != nil
-
     socket
-    |> assign(:situation_enabled, server_up?)
+    |> assign(:situation_enabled, enabled? and SituationServer.whereis(workspace_id) != nil)
     |> assign(:situation_drawer_open, false)
-    |> assign(
-      :situation_risks,
-      if(server_up?, do: SituationServer.active_risks(workspace_id), else: [])
-    )
+    |> assign(:situation_risks, [])
   end
 
-  # Any transition re-reads the server's active set (whereis-safe) instead of
-  # replaying raise/clear deltas — one code path, no drift.
-  def handle_info({:situation_risk, _kind, _risk}, socket) do
+  # Any transition (and the deferred mount seed) re-reads the server's active
+  # set (whereis-safe) instead of replaying raise/clear deltas — one code
+  # path, no drift.
+  def handle_info(:situation_seed, socket), do: refresh_risks(socket)
+
+  def handle_info({:situation_risk, _kind, _risk}, socket), do: refresh_risks(socket)
+
+  defp refresh_risks(socket) do
     workspace_id = socket.assigns.workspace.id
 
     {:noreply,

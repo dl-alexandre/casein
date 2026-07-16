@@ -918,8 +918,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: {:noreply, HistoryEvents.refresh_if_open(socket)}
 
   # Situation risk transitions on "situation:<ws>" — subscribed by
-  # SituationEvents at mount when the :situation_server flag is on.
+  # SituationEvents at mount when the :situation_server flag is on — plus the
+  # deferred mount-time seed (the risk read is a GenServer.call that must not
+  # delay first paint).
   def handle_info({:situation_risk, _kind, _risk} = msg, socket),
+    do: SituationEvents.handle_info(msg, socket)
+
+  def handle_info(:situation_seed = msg, socket),
     do: SituationEvents.handle_info(msg, socket)
 
   # Durable notification broadcasts on the viewer's user topic — subscribed by

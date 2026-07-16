@@ -2,7 +2,7 @@ defmodule DevIDE.Agents.ToolActionTest do
   use ExUnit.Case, async: true
 
   alias DevIDE.Agents.ToolAction
-  alias DevIDE.Test.ToolActionFixtures.{FastAction, SlowAction}
+  alias DevIDE.Test.ToolActionFixtures.{AliasedAction, FastAction, SlowAction}
 
   setup do
     handler = fn _event, measurements, metadata, _config ->
@@ -34,6 +34,18 @@ defmodule DevIDE.Agents.ToolActionTest do
 
     assert [{_measurements, %{tool: "slow_action", timed_out: true}}] =
              Process.get(:tool_action_events)
+  end
+
+  test "an explicit null does not stop the alias chain" do
+    # Clients that serialize every schema field send nulls for the unused
+    # aliases — {"target_id": null, "id": "abc"} must still resolve "abc".
+    assert {:ok, %{target_id: "abc"}} =
+             ToolAction.invoke(AliasedAction, %{"target_id" => nil, "id" => "abc"})
+  end
+
+  test "all-null aliases count as a missing argument" do
+    assert {:error, {:missing_argument, "target_id"}} =
+             ToolAction.invoke(AliasedAction, %{"target_id" => nil, "id" => nil})
   end
 
   test "validation path is unchanged and does not emit tool stop telemetry" do

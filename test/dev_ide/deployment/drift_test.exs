@@ -111,6 +111,41 @@ defmodule DevIDE.Deployment.DriftTest do
     assert {:drift, %{reason: :manual_revision}} = Drift.check_and_broadcast()
   end
 
+  test "check_and_broadcast with broadcast: false suppresses the deploy_drift fan-out" do
+    remote = String.duplicate("e", 40)
+    branch = "quiet-#{System.unique_integer([:positive])}"
+    key = {Drift, :remote_head, branch}
+
+    :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
+
+    prev_rev = System.get_env("DEVIDE_GIT_REVISION")
+    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    System.put_env("DEVIDE_GIT_REVISION", "manual-hotfix-label")
+    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+
+    on_exit(fn ->
+      restore_env("DEVIDE_GIT_REVISION", prev_rev)
+      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      :persistent_term.erase(key)
+    end)
+
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+
+    assert {:drift, _info} = Drift.check_and_broadcast(log: false, broadcast: false)
+    refute_receive {:deploy_drift, _info}, 100
+  end
+
+  test "broadcast_drift fans out only a drifted status" do
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+
+    assert :ok = Drift.broadcast_drift({:drift, %{reason: :revision_differs}})
+    assert_receive {:deploy_drift, %{reason: :revision_differs}}
+
+    assert :ok = Drift.broadcast_drift(:current)
+    assert :ok = Drift.broadcast_drift(nil)
+    refute_receive {:deploy_drift, _info}, 100
+  end
+
   test "assess treats blank current revision as unknown" do
     remote = String.duplicate("a", 40)
 

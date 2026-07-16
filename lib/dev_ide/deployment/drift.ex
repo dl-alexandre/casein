@@ -40,7 +40,10 @@ defmodule DevIDE.Deployment.Drift do
 
   Pass `log: false` for periodic re-checks (`PollerWatcher` ticks) so a
   long-lived drift does not re-warn every interval; the boot-time check and
-  the durable `deploy.drift_detected` audit row carry the alert.
+  the durable `deploy.drift_detected` audit row carry the alert. Pass
+  `broadcast: false` for the same reason — a standing drift must not fan
+  `{:deploy_drift, info}` into every workspace LiveView and SituationServer
+  on every tick; the caller broadcasts transitions via `broadcast_drift/1`.
   """
   @spec check_and_broadcast(keyword()) :: status()
   def check_and_broadcast(opts \\ []) do
@@ -55,7 +58,7 @@ defmodule DevIDE.Deployment.Drift do
           Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
         end
 
-        broadcast(info)
+        if Keyword.get(opts, :broadcast, true), do: broadcast(info)
 
       _ ->
         :ok
@@ -63,6 +66,11 @@ defmodule DevIDE.Deployment.Drift do
 
     status
   end
+
+  @doc "Broadcast a drifted status on `\"deploy:updates\"` (transition fan-out)."
+  @spec broadcast_drift(status() | nil) :: :ok
+  def broadcast_drift({:drift, info}), do: broadcast(info)
+  def broadcast_drift(_status), do: :ok
 
   @doc "Pure assessment used by tests and by the runtime check after ls-remote."
   @spec assess(String.t() | nil, {:ok, String.t()} | {:error, term()}, String.t()) :: status()

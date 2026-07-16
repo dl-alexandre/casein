@@ -45,8 +45,12 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
   def clear, do: GenServer.call(@registered_name, :clear)
 
+  # State: `entries` holds live per-pane reports; `evicted` keeps a bounded
+  # `{key => %{state: ..., reported_at: ...}}` tombstone for entries dropped by
+  # trim/prune, so a re-report of an unchanged state after eviction does not
+  # masquerade as a fresh transition and write a spurious durable audit row.
   @impl true
-  def init(state), do: {:ok, state}
+  def init(_state), do: {:ok, %{entries: %{}, evicted: %{}}}
 
   @impl true
   # Not a plain KV store: this GenServer dedupes semantic-state reports (so hook
@@ -54,19 +58,22 @@ defmodule DevIDE.Terminals.AgentState.Server do
   # and PubSub-broadcasts transitions to workspace LiveViews.
   # credo:disable-for-next-line ExSlop.Check.Warning.GenserverAsKvStore
   def handle_call({:get, key}, _from, state) do
-    {:reply, Map.get(state, key), state}
+    {:reply, Map.get(state.entries, key), state}
   end
 
   def handle_call({:for_session, tmux_session}, _from, state) do
     entries =
-      for {{session, pane}, entry} <- state, session == tmux_session, into: %{}, do: {pane, entry}
+      for {{session, pane}, entry} <- state.entries,
+          session == tmux_session,
+          into: %{},
+          do: {pane, entry}
 
     {:reply, entries, state}
   end
 
   def handle_call({:freshest, tmux_session, now, max_age_seconds}, _from, state) do
     freshest =
-      state
+      state.entries
       |> Enum.filter(fn {{session, _pane}, entry} ->
         session == tmux_session and
           DateTime.diff(now, entry.reported_at, :second) <= max_age_seconds
@@ -85,7 +92,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
     {:reply, reply, state}
   end
 
-  def handle_call(:clear, _from, _state), do: {:reply, :ok, %{}}
+  def handle_call(:clear, _from, _state), do: {:reply, :ok, %{entries: %{}, evicted: %{}}}
 
   @impl true
   def handle_cast(
@@ -106,24 +113,33 @@ defmodule DevIDE.Terminals.AgentState.Server do
       reported_at: now
     }
 
-    case Map.get(state, key) do
+    case Map.get(state.entries, key) do
       %{state: ^rstate, message: ^message, transcript_path: ^transcript_path} = current ->
         # Same state+message+path: refresh freshness silently, never broadcast. This is
         # what makes high-frequency PreToolUse hooks cheap for subscribers.
-        {:noreply, Map.put(state, key, %{current | reported_at: now})}
+        {:noreply, put_entry(state, key, %{current | reported_at: now})}
 
       %{state: ^rstate, message: ^message} = current ->
         # State unchanged but transcript_path may have arrived late — refresh silently.
         {:noreply,
-         Map.put(state, key, %{current | reported_at: now, transcript_path: transcript_path})}
+         put_entry(state, key, %{current | reported_at: now, transcript_path: transcript_path})}
 
       previous ->
-        state = state |> Map.put(key, entry) |> trim_size()
+        # The last known state survives eviction in the tombstone map, so an
+        # evicted pane re-reporting an unchanged state is still a re-report,
+        # not a transition.
+        prior_state = prior_state(previous, Map.get(state.evicted, key))
+
+        state =
+          %{state | entries: Map.put(state.entries, key, entry)}
+          |> Map.update!(:evicted, &Map.delete(&1, key))
+          |> trim_size()
+
         broadcast(workspace_id, tmux_session, pane_id, entry)
 
         DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
-          maybe_emit_state_changed(previous, entry, tmux_session, pane_id)
-          maybe_emit_blocked(previous, entry, tmux_session, pane_id)
+          maybe_emit_state_changed(prior_state, entry, tmux_session, pane_id)
+          maybe_emit_blocked(prior_state, entry, tmux_session, pane_id)
         end)
 
         {:noreply, state}
@@ -131,21 +147,22 @@ defmodule DevIDE.Terminals.AgentState.Server do
   end
 
   def handle_cast({:prune_session, tmux_session, pane_ids}, state) do
-    pruned =
-      Map.filter(state, fn {{session, pane}, _entry} ->
-        session != tmux_session or MapSet.member?(pane_ids, pane)
+    {pruned, kept} =
+      Map.split_with(state.entries, fn {{session, pane}, _entry} ->
+        session == tmux_session and not MapSet.member?(pane_ids, pane)
       end)
 
-    {:noreply, pruned}
+    {:noreply, %{state | entries: kept, evicted: tombstone(state.evicted, pruned)}}
   end
 
   # Every real semantic-state transition gets a durable timeline row. The
-  # dedupe clauses above already absorb identical re-reports, and a changed
+  # dedupe clauses above absorb identical re-reports while the entry is live,
+  # the tombstone map covers re-reports after eviction/prune, and a changed
   # message with an unchanged state is not a transition, so volume stays
   # bounded at actual state flips.
-  defp maybe_emit_state_changed(previous, entry, tmux_session, pane_id)
+  defp maybe_emit_state_changed(prior_state, entry, tmux_session, pane_id)
        when is_binary(entry.workspace_id) do
-    if previous == nil or previous.state != entry.state do
+    if prior_state == nil or prior_state != entry.state do
       Audit.emit!(%{
         workspace_id: entry.workspace_id,
         actor_id: "agent",
@@ -154,7 +171,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
         target_type: "tmux_pane",
         target_ref: pane_id,
         metadata: %{
-          from: previous && previous.state,
+          from: prior_state,
           to: entry.state,
           pane: pane_id,
           tmux_session: tmux_session,
@@ -167,7 +184,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
     :ok
   end
 
-  defp maybe_emit_state_changed(_previous, _entry, _tmux_session, _pane_id), do: :ok
+  defp maybe_emit_state_changed(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
 
   # Reports arrive pre-truncated (AgentState.@message_limit); redact before the
   # text lands in a persisted audit row.
@@ -177,9 +194,9 @@ defmodule DevIDE.Terminals.AgentState.Server do
   # Emit a durable audit event only on a *transition* into :blocked, so a
   # re-reported blocked (e.g. a new message) does not re-alert. Alerts.@titles
   # carries "agent.blocked", so this reaches the in-app banner and OS push.
-  defp maybe_emit_blocked(previous, %{state: :blocked} = entry, tmux_session, pane_id)
+  defp maybe_emit_blocked(prior_state, %{state: :blocked} = entry, tmux_session, pane_id)
        when is_binary(entry.workspace_id) do
-    if previous == nil or previous.state != :blocked do
+    if prior_state != :blocked do
       Audit.emit!(%{
         workspace_id: entry.workspace_id,
         actor_id: "agent",
@@ -197,14 +214,41 @@ defmodule DevIDE.Terminals.AgentState.Server do
     :ok
   end
 
-  defp maybe_emit_blocked(_previous, _entry, _tmux_session, _pane_id), do: :ok
+  defp maybe_emit_blocked(_prior_state, _entry, _tmux_session, _pane_id), do: :ok
+
+  defp prior_state(%{state: state}, _tombstone), do: state
+  defp prior_state(nil, %{state: state}), do: state
+  defp prior_state(nil, nil), do: nil
+
+  defp put_entry(state, key, entry), do: %{state | entries: Map.put(state.entries, key, entry)}
 
   defp trim_size(state) do
-    if map_size(state) <= @max_entries, do: state, else: trim_oldest(state)
+    if map_size(state.entries) <= @max_entries, do: state, else: trim_oldest(state)
   end
 
   defp trim_oldest(state) do
-    state
+    {evicted, kept} =
+      state.entries
+      |> Enum.sort_by(fn {_key, %{reported_at: at}} -> at end, DateTime)
+      |> Enum.split(-@max_entries)
+
+    %{state | entries: Map.new(kept), evicted: tombstone(state.evicted, evicted)}
+  end
+
+  # Tombstones are state-only (no message) and share the entry cap; when full,
+  # the oldest tombstones fall away first.
+  defp tombstone(evicted, dropped) do
+    dropped
+    |> Enum.reduce(evicted, fn {key, %{state: state, reported_at: at}}, acc ->
+      Map.put(acc, key, %{state: state, reported_at: at})
+    end)
+    |> trim_tombstones()
+  end
+
+  defp trim_tombstones(evicted) when map_size(evicted) <= @max_entries, do: evicted
+
+  defp trim_tombstones(evicted) do
+    evicted
     |> Enum.sort_by(fn {_key, %{reported_at: at}} -> at end, DateTime)
     |> Enum.take(-@max_entries)
     |> Map.new()

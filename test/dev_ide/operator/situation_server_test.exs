@@ -141,11 +141,17 @@ defmodule DevIDE.Operator.SituationServerTest do
     assert {:ok, digest} = GenServer.call(pid, :get_digest)
     assert [entry | _] = digest.activity.recent
     assert entry.tool == "terminal_capture"
-    assert digest.freshness.activity == 0
+    # Freshness is re-stamped at read time: a just-patched activity section is
+    # at most moments stale, never frozen at the last full rebuild.
+    assert digest.freshness.activity < 5_000
   end
 
   test "audit events fan into activity.last_mutation" do
     pid = start_server("ws-sit-audit")
+
+    # Settle past the boot rebuild so any operator.risk_* rows its detector
+    # pass announces are already applied before this test's event.
+    assert {:ok, _} = GenServer.call(pid, :get_digest)
 
     Audit.emit!(%{
       workspace_id: "ws-sit-audit",
@@ -260,6 +266,104 @@ defmodule DevIDE.Operator.SituationServerTest do
 
   test "active_risks is whereis-safe when no server is running" do
     assert SituationServer.active_risks("ws-sit-none") == []
+  end
+
+  test "a restart closes dangling raises from the durable timeline without re-announcing" do
+    ws = "ws-sit-seed"
+    seed_workspace(ws)
+
+    # A previous server instance raised this risk and died before clearing it.
+    Audit.emit!(%{
+      workspace_id: ws,
+      actor_id: "situation_server",
+      action: "operator.risk_raised",
+      source: "operator",
+      target_type: "risk",
+      target_ref: "devide_seed %1",
+      metadata: %{
+        id: :blocked_too_long,
+        severity: :critical,
+        subject: "devide_seed %1",
+        evidence: %{},
+        suggestion: "unblock it"
+      }
+    })
+
+    :ok = SituationServer.subscribe(ws)
+    {:ok, pid} = SituationServer.ensure_started(ws)
+    on_exit(fn -> if Process.alive?(pid), do: GenServer.stop(pid) end)
+
+    # The condition no longer holds: the seeded standing risk clears (closing
+    # the dangling raise) and is never re-announced as raised.
+    assert_receive {:situation_risk, :cleared, %{id: :blocked_too_long}}, 2_000
+    refute_receive {:situation_risk, :raised, %{id: :blocked_too_long}}, 200
+
+    events = Audit.recent_for(ws, 20)
+
+    assert Enum.any?(
+             events,
+             &(&1.action == "operator.risk_cleared" and &1.target_ref == "devide_seed %1")
+           )
+
+    # Exactly the pre-existing raise row — the restart added none.
+    assert Enum.count(
+             events,
+             &(&1.action == "operator.risk_raised" and &1.target_ref == "devide_seed %1")
+           ) == 1
+  end
+
+  test "degraded rebuild data suppresses clears until a clean digest confirms" do
+    ws = "ws-sit-degraded"
+    pid = start_server(ws)
+    :ok = SituationServer.subscribe(ws)
+    await_boot_sweep(pid)
+
+    alarm = %{
+      path: "/tmp/wt-sit-degraded",
+      workspace_id: ws,
+      runtime_id: nil,
+      branch: "agent/claude/degraded",
+      dirty: true,
+      reported: false,
+      process_alive: false,
+      exit_handoff: false,
+      age_seconds: 90_000,
+      reasons: ["unreported", "stale"]
+    }
+
+    send(pid, {:worktree_alarms, [alarm]})
+    assert_receive {:situation_risk, :raised, %{id: :leaked_worktree}}, 2_000
+
+    # Simulate a rebuild whose constituent reads failed: the risk's evidence
+    # vanished, but the digest says the data is degraded — no spurious clear.
+    :sys.replace_state(pid, fn state ->
+      %{state | digest: Map.put(state.digest, :degraded, [:sessions]), worktree_alarms: []}
+    end)
+
+    send(pid, :detect)
+    refute_receive {:situation_risk, :cleared, %{id: :leaked_worktree}}, 600
+    assert Enum.any?(SituationServer.active_risks(ws), &(&1.id == :leaked_worktree))
+
+    # The next clean digest confirms the absence and the clear goes out.
+    :sys.replace_state(pid, fn state ->
+      %{state | digest: Map.put(state.digest, :degraded, [])}
+    end)
+
+    send(pid, :detect)
+    assert_receive {:situation_risk, :cleared, %{id: :leaked_worktree}}, 2_000
+  end
+
+  test "served freshness ages from the last rebuild instead of staying frozen" do
+    pid = start_server("ws-sit-fresh")
+    assert {:ok, _} = GenServer.call(pid, :get_digest)
+
+    :sys.replace_state(pid, fn state ->
+      as_of = Map.put(state.freshness_as_of, :sessions, DateTime.add(DateTime.utc_now(), -7))
+      %{state | freshness_as_of: as_of}
+    end)
+
+    assert {:ok, digest} = GenServer.call(pid, :get_digest)
+    assert digest.freshness.sessions >= 7_000
   end
 
   test "ops:health pg saturation risks fold into the digest and clear" do

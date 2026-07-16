@@ -37,8 +37,21 @@ defmodule DevIDE.Deployment.PollerWatcher do
   @impl true
   def handle_info(:tick, %{interval_ms: interval_ms} = state) do
     status = LastDeploy.check_and_broadcast()
-    drift = if Drift.enabled?(), do: Drift.check_and_broadcast(log: false), else: nil
+
+    # Periodic re-checks neither log nor broadcast on their own — a box that
+    # sits drifted for a day must not fan {:deploy_drift, info} into every
+    # workspace LiveView and SituationServer every tick. DeployAudit tracks
+    # the transition, and the broadcast goes out only when drift is *raised*.
+    drift =
+      if Drift.enabled?(),
+        do: Drift.check_and_broadcast(log: false, broadcast: false),
+        else: nil
+
     audit = DeployAudit.observe(state.audit, read_record(), drift)
+
+    if audit.drifted == true and state.audit.drifted != true do
+      Drift.broadcast_drift(drift)
+    end
 
     _ = Process.send_after(self(), :tick, interval_ms)
     {:noreply, %{state | last_status: status, audit: audit}}

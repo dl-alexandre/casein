@@ -225,6 +225,18 @@ defmodule DevIDE.Ops.PgProbeTest do
     assert [%{port: 5432}, %{port: 15_432}] = PgProbe.targets()
   end
 
+  test "a non-numeric port falls back instead of crash-looping the probe" do
+    Application.delete_env(:dev_ide, :pg_probe_targets)
+
+    Application.put_env(
+      :dev_ide,
+      :pg_probe_targets_json,
+      ~s([{"host":"127.0.0.1","port":"54O2"}])
+    )
+
+    assert [%{host: "127.0.0.1", port: 5432}] = PgProbe.targets()
+  end
+
   ## Threshold transitions through the server
 
   test "transitions audit ops.pg_saturation_* and broadcast on ops:health" do

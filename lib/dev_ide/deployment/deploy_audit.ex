@@ -26,7 +26,10 @@ defmodule DevIDE.Deployment.DeployAudit do
 
   @workspace_id "_deploy"
 
-  @type t :: %{deploy: {String.t(), String.t()} | nil, drifted: boolean() | nil}
+  @type t :: %{
+          deploy: {String.t(), String.t(), String.t() | nil} | nil,
+          drifted: boolean() | nil
+        }
 
   @doc "Sentinel workspace id used for box-global deploy audit rows."
   @spec workspace_id() :: String.t()
@@ -70,16 +73,19 @@ defmodule DevIDE.Deployment.DeployAudit do
 
   defp observe_deploy(state, _record), do: state
 
+  # started_at joins the key so a *re-deploy* of the same sha ending in the
+  # same outcome (retry the failed gate, fail again) is a new attempt with its
+  # own rows, not a duplicate observation of the previous one.
   defp deploy_key(record) do
     outcome = record["outcome"]
     target = normalize(record["target_sha"])
 
     if is_binary(outcome) and outcome != "" and is_binary(target),
-      do: {outcome, target},
+      do: {outcome, target, normalize(record["started_at"])},
       else: nil
   end
 
-  defp emit_deploy(state, {outcome, _target} = key, record) do
+  defp emit_deploy(state, {outcome, _target, _started_at} = key, record) do
     case deploy_action(outcome) do
       nil ->
         :ok

@@ -67,7 +67,7 @@ defmodule DevIDE.Ops.PgProbe do
   # How many leak-suspect names ride along in evidence/audit metadata.
   @evidence_suspects 5
 
-  defstruct samples: [], active: %{}, probe_ref: nil
+  defstruct samples: [], active: %{}, probe_ref: nil, probe_pid: nil
 
   ## Public API
 
@@ -145,15 +145,22 @@ defmodule DevIDE.Ops.PgProbe do
       Logger.warning("[pg_probe] probe pass failed: #{inspect(reason)}")
     end
 
-    {:noreply, %{state | probe_ref: nil}}
+    {:noreply, %{state | probe_ref: nil, probe_pid: nil}}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
 
   # psql shells out with a connect timeout — too slow (and too fallible) for
   # the server loop, so each pass runs in a monitored helper process. A pass
-  # still in flight when the next tick fires is skipped, never stacked.
-  defp maybe_start_probe(%{probe_ref: ref} = state) when ref != nil, do: state
+  # still in flight when the next tick fires has outlived a full interval —
+  # per-target connect/statement timeouts cap a healthy pass far below it —
+  # so it is wedged (e.g. psql blocked on a blackholed connection): kill it
+  # instead of silently skipping every future pass. The :DOWN clears the ref
+  # and the following tick probes again.
+  defp maybe_start_probe(%{probe_ref: ref} = state) when ref != nil do
+    Process.exit(state.probe_pid, :kill)
+    state
+  end
 
   defp maybe_start_probe(state) do
     parent = self()
@@ -165,12 +172,12 @@ defmodule DevIDE.Ops.PgProbe do
         state
 
       targets ->
-        {_pid, ref} =
+        {pid, ref} =
           spawn_monitor(fn ->
             send(parent, {:pg_samples, probe_targets(targets)})
           end)
 
-        %{state | probe_ref: ref}
+        %{state | probe_ref: ref, probe_pid: pid}
     end
   end
 
@@ -453,7 +460,20 @@ defmodule DevIDE.Ops.PgProbe do
   defp value(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 
   defp port(port) when is_integer(port), do: port
-  defp port(port) when is_binary(port), do: String.to_integer(port)
+
+  # targets() runs inside handle_info(:probe) — a config typo ("54O2") must
+  # fall back to the default port, not crash-loop the probe every interval.
+  defp port(port) when is_binary(port) do
+    case Integer.parse(port) do
+      {n, ""} when n > 0 ->
+        n
+
+      _ ->
+        Logger.warning("[pg_probe] invalid target port #{inspect(port)} — using 5432")
+        5432
+    end
+  end
+
   defp port(_port), do: 5432
 
   defp interval_ms, do: Application.get_env(:dev_ide, :pg_probe_interval_ms, 60_000)

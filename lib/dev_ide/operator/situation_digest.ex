@@ -33,32 +33,62 @@ defmodule DevIDE.Operator.SituationDigest do
   @recent_activity 20
   @recent_audit 20
 
+  @deploy_fallback %{
+    running_revision: nil,
+    drift: nil,
+    pipeline: :unknown,
+    phase: nil,
+    actionable: false
+  }
+
   @doc """
   Build the situation digest for `workspace_id`.
 
   Sections degrade independently: a failing constituent read (dead tmux,
   missing workspace record, unreachable deploy poller file) empties its own
-  section instead of failing the digest.
+  section instead of failing the digest. Every section that degraded this way
+  is listed in the digest's `degraded` key, so consumers — notably the
+  `DevIDE.Operator.SituationServer` risk differ — can tell "actually empty"
+  from "unreadable right now" and avoid treating missing data as recovery.
   """
   @spec build(String.t()) :: {:ok, map()} | {:error, term()}
   def build(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
     now = DateTime.utc_now()
-    summary = session_summary(workspace_id)
-    worktrees = worktrees(workspace_id)
-    deploy = deploy()
-    activity = activity(workspace_id, now)
+    {summary, summary_ok?} = guarded(fn -> session_summary(workspace_id) end, %{sessions: []})
+    {sessions, panes_ok?} = session_digests(summary, now)
+    {worktrees, worktrees_ok?} = guarded(fn -> worktrees(workspace_id) end, [])
+
+    {frozen_scopes, frozen_ok?} =
+      guarded(fn -> frozen_scopes(workspace_id, worktrees) end, [])
+
+    {deploy, deploy_ok?} = guarded(fn -> deploy() end, @deploy_fallback)
+    {recent, recent_ok?} = guarded(fn -> recent_activity(workspace_id) end, [])
+    {last_mutation, last_mutation_ok?} = guarded(fn -> last_mutation(workspace_id) end, nil)
+    activity = %{recent: recent, last_mutation: last_mutation}
+
+    degraded =
+      for {section, ok?} <- [
+            sessions: summary_ok? and panes_ok?,
+            worktrees: worktrees_ok?,
+            frozen_scopes: frozen_ok?,
+            deploy: deploy_ok?,
+            activity: recent_ok? and last_mutation_ok?
+          ],
+          not ok?,
+          do: section
 
     digest =
       %{
         workspace_id: workspace_id,
         generated_at: now,
         freshness: freshness(now, worktrees, deploy, activity),
-        sessions: Enum.map(Map.get(summary, :sessions, []), &session_digest(&1, now)),
+        sessions: sessions,
         agent_layout: agent_layout(summary),
         worktrees: worktrees,
-        frozen_scopes: frozen_scopes(workspace_id, worktrees),
+        frozen_scopes: frozen_scopes,
         deploy: deploy,
         activity: activity,
+        degraded: degraded,
         risks: []
       }
       |> put_ops()
@@ -68,6 +98,16 @@ defmodule DevIDE.Operator.SituationDigest do
   end
 
   def build(_workspace_id), do: {:error, :invalid_workspace_id}
+
+  # Rescue-to-fallback for one section read: the digest keeps building, the
+  # section empties, and the degradation is reported instead of swallowed.
+  defp guarded(fun, fallback) do
+    {fun.(), true}
+  rescue
+    _ -> {fallback, false}
+  catch
+    :exit, _ -> {fallback, false}
+  end
 
   ## Sessions
 
@@ -79,25 +119,34 @@ defmodule DevIDE.Operator.SituationDigest do
       end
 
     SessionSummary.build(ws)
-  rescue
-    _ -> %{sessions: []}
-  catch
-    :exit, _ -> %{sessions: []}
+  end
+
+  # Pane reads degrade per session (one dead tmux session must not empty the
+  # others), so degradation bubbles up as a flag instead of a rescue.
+  defp session_digests(summary, now) do
+    Enum.map_reduce(Map.get(summary, :sessions, []), true, fn session, ok? ->
+      {digest, session_ok?} = session_digest(session, now)
+      {digest, ok? and session_ok?}
+    end)
   end
 
   defp session_digest(session, now) do
     tmux_session = present(Map.get(session, :tmux_session))
+    {panes, ok?} = panes(tmux_session, now)
 
-    %{
-      sid: Map.get(session, :id),
-      tmux_session: tmux_session,
-      agent_status: Map.get(session, :agent_status),
-      panes: panes(tmux_session, now)
-    }
-    |> compact()
+    digest =
+      %{
+        sid: Map.get(session, :id),
+        tmux_session: tmux_session,
+        agent_status: Map.get(session, :agent_status),
+        panes: panes
+      }
+      |> compact()
+
+    {digest, ok?}
   end
 
-  defp panes(nil, _now), do: []
+  defp panes(nil, _now), do: {[], true}
 
   defp panes(tmux_session, now) do
     topology =
@@ -107,11 +156,11 @@ defmodule DevIDE.Operator.SituationDigest do
 
     reports = AgentState.for_session(tmux_session)
 
-    Enum.map(topology.panes, &pane_digest(&1, reports, now))
+    {Enum.map(topology.panes, &pane_digest(&1, reports, now)), true}
   rescue
-    _ -> []
+    _ -> {[], false}
   catch
-    :exit, _ -> []
+    :exit, _ -> {[], false}
   end
 
   defp pane_digest(pane, reports, now) do
@@ -170,10 +219,6 @@ defmodule DevIDE.Operator.SituationDigest do
       }
       |> compact()
     end)
-  rescue
-    _ -> []
-  catch
-    :exit, _ -> []
   end
 
   ## Frozen scopes
@@ -202,10 +247,6 @@ defmodule DevIDE.Operator.SituationDigest do
       %{path: root, sentinel: sentinel, raw: sentinel_raw(sentinel)}
       |> compact()
     end
-  rescue
-    _ -> []
-  catch
-    :exit, _ -> []
   end
 
   defp workspace_root(workspace_id) do
@@ -250,7 +291,10 @@ defmodule DevIDE.Operator.SituationDigest do
   `"deploy:updates"` events without a full rebuild.
   """
   @spec deploy_section() :: map()
-  def deploy_section, do: deploy()
+  def deploy_section do
+    {deploy, _ok?} = guarded(fn -> deploy() end, @deploy_fallback)
+    deploy
+  end
 
   defp deploy do
     health = Health.status()
@@ -266,11 +310,6 @@ defmodule DevIDE.Operator.SituationDigest do
       finished_at: Map.get(record, "finished_at"),
       started_at: Map.get(record, "started_at")
     }
-  rescue
-    _ -> %{running_revision: nil, drift: nil, pipeline: :unknown, phase: nil, actionable: false}
-  catch
-    :exit, _ ->
-      %{running_revision: nil, drift: nil, pipeline: :unknown, phase: nil, actionable: false}
   end
 
   # true = the running revision drifts from the remote head, false = current,
@@ -299,13 +338,6 @@ defmodule DevIDE.Operator.SituationDigest do
 
   ## Activity
 
-  defp activity(workspace_id, _now) do
-    %{
-      recent: recent_activity(workspace_id),
-      last_mutation: last_mutation(workspace_id)
-    }
-  end
-
   defp recent_activity(workspace_id) do
     workspace_id
     |> Activity.recent(@recent_activity)
@@ -319,10 +351,6 @@ defmodule DevIDE.Operator.SituationDigest do
       }
       |> compact()
     end)
-  rescue
-    _ -> []
-  catch
-    :exit, _ -> []
   end
 
   defp last_mutation(workspace_id) do
@@ -340,13 +368,37 @@ defmodule DevIDE.Operator.SituationDigest do
       _ ->
         nil
     end
-  rescue
-    _ -> nil
-  catch
-    :exit, _ -> nil
   end
 
   ## Freshness
+
+  @doc """
+  Absolute per-section reference instants behind `freshness`: `generated_at`
+  minus each section's staleness (`nil` where the section has no dated data).
+
+  `DevIDE.Operator.SituationServer` keeps these and re-stamps `freshness`
+  with `freshness_from/2` at read time, so live-served digests age instead of
+  carrying stamps frozen at the last full rebuild.
+  """
+  @spec freshness_as_of(map()) :: %{atom() => DateTime.t() | nil}
+  def freshness_as_of(%{generated_at: %DateTime{} = at, freshness: freshness}) do
+    Map.new(freshness, fn
+      {section, ms} when is_integer(ms) -> {section, DateTime.add(at, -ms, :millisecond)}
+      {section, _undated} -> {section, nil}
+    end)
+  end
+
+  @doc "Re-stamp `freshness` as millisecond staleness against `now`."
+  @spec freshness_from(%{atom() => DateTime.t() | nil}, DateTime.t()) :: map()
+  def freshness_from(as_of, %DateTime{} = now) when is_map(as_of) do
+    Map.new(as_of, fn {section, at} -> {section, staleness_ms(now, at)} end)
+  end
+
+  @doc "The newest dated instant in a deploy section (`nil` when undated)."
+  @spec deploy_as_of(map()) :: DateTime.t() | nil
+  def deploy_as_of(deploy) when is_map(deploy) do
+    newest([Map.get(deploy, :finished_at), Map.get(deploy, :started_at)])
+  end
 
   # Millisecond staleness per section. Sessions and deploy health are read
   # live at build time (0); worktrees age from their newest observation and
