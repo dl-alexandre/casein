@@ -300,6 +300,9 @@ defmodule DevIDE.Ops.PgProbe do
   end
 
   @doc false
+  # psql is invoked via System.cmd with an argv list (no shell), and every
+  # argument comes from operator-provided probe config, not caller input.
+  # sobelow_skip ["CI.System"]
   @spec probe_target(map()) :: map()
   def probe_target(target) do
     args = [

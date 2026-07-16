@@ -266,6 +266,10 @@ defmodule DevIDE.Operator.SituationDigest do
   # An empty sentinel means "freeze everything" — the compacted scope simply
   # carries no :raw key. Content is truncated here and redacted with the rest
   # of the digest's free text by sanitize/1.
+  #
+  # Sentinel paths come from operator config globs expanded under workspace /
+  # worktree roots, never from caller input.
+  # sobelow_skip ["Traversal.FileModule"]
   defp sentinel_raw(sentinel) do
     with {:ok, raw} <- File.read(sentinel),
          true <- String.valid?(raw) do
