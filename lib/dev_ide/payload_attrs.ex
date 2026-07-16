@@ -28,6 +28,27 @@ defmodule DevIDE.PayloadAttrs do
 
   def get(_map, _key), do: nil
 
+  @doc """
+  Like `get/2` but presence-based: returns `{:ok, value}` for any present
+  value — including an explicit `false` — trying the string key first, then
+  the existing atom key. Boolean payload fields need this: `get/2`'s legacy
+  `||` fallback makes an explicit `false` indistinguishable from absent.
+  """
+  @spec fetch(map(), String.t()) :: {:ok, term()} | :error
+  def fetch(map, key) when is_map(map) and is_binary(key) do
+    with :error <- Map.fetch(map, key) do
+      atom_key_fetch(map, key)
+    end
+  end
+
+  def fetch(_map, _key), do: :error
+
+  defp atom_key_fetch(map, key) do
+    Map.fetch(map, String.to_existing_atom(key))
+  rescue
+    ArgumentError -> :error
+  end
+
   defp atom_key_value(map, key) do
     Map.get(map, String.to_existing_atom(key))
   rescue

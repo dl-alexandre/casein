@@ -261,4 +261,46 @@ defmodule DevIDE.Operator.SituationServerTest do
   test "active_risks is whereis-safe when no server is running" do
     assert SituationServer.active_risks("ws-sit-none") == []
   end
+
+  test "ops:health pg saturation risks fold into the digest and clear" do
+    ws = "ws-sit-ops"
+    pid = start_server(ws)
+    :ok = SituationServer.subscribe(ws)
+    await_boot_sweep(pid)
+
+    risk = %{
+      id: :pg_saturation,
+      severity: :critical,
+      subject: "127.0.0.1:15432",
+      detected_at: DateTime.utc_now(),
+      evidence: %{reasons: [:utilization_critical], utilization: 0.95},
+      suggestion: "Kill leaked wf_*/devide-<uuid> connections."
+    }
+
+    Phoenix.PubSub.broadcast(
+      DevIDE.PubSub,
+      DevIDE.Ops.PgProbe.topic(),
+      {:ops_health, :pg_saturation, :raised, risk}
+    )
+
+    assert_receive {:situation_risk, :raised, %{id: :pg_saturation, subject: "127.0.0.1:15432"}},
+                   2_000
+
+    assert {:ok, digest} = GenServer.call(pid, :get_digest)
+    assert Enum.any?(digest.risks, &(&1.id == :pg_saturation))
+
+    assert Enum.any?(
+             Audit.recent_for(ws, 20),
+             &(&1.action == "operator.risk_raised" and &1.target_ref == "127.0.0.1:15432")
+           )
+
+    Phoenix.PubSub.broadcast(
+      DevIDE.PubSub,
+      DevIDE.Ops.PgProbe.topic(),
+      {:ops_health, :pg_saturation, :cleared, risk}
+    )
+
+    assert_receive {:situation_risk, :cleared, %{id: :pg_saturation}}, 2_000
+    assert Enum.filter(SituationServer.active_risks(ws), &(&1.id == :pg_saturation)) == []
+  end
 end

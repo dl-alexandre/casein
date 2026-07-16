@@ -18,6 +18,9 @@ defmodule DevIDE.Operator.SituationServer do
     * `"agent_activity:<ws>"` — MCP tool-call tail, prepended in place
     * `DevIDE.Audit.subscribe/1` — refreshes `activity.last_mutation`
     * `"deploy:updates"` — recomputes the digest's deploy section
+    * `"ops:health"` (`DevIDE.Ops.PgProbe`) — box-global saturation risks
+      fold into every workspace's risk set; full rebuilds re-seed them from
+      `PgProbe.active_risks/0` so servers started after a raise still see it
     * `DevIDE.Terminals.TmuxTopology` + `DevIDE.Terminals.SessionDirectory`
       topics (passive) — topology-shaped changes debounce a full rebuild
 
@@ -43,6 +46,7 @@ defmodule DevIDE.Operator.SituationServer do
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Operator.Detectors
   alias DevIDE.Operator.Risks
+  alias DevIDE.Ops.PgProbe
   alias DevIDE.Operator.SituationDigest
   alias DevIDE.Runtimes.WorktreeAlarm
   alias DevIDE.Terminals.AgentState
@@ -83,6 +87,9 @@ defmodule DevIDE.Operator.SituationServer do
     agent_entries: %{},
     # Active risks keyed {id, subject}; transitions broadcast + audit.
     active_risks: %{},
+    # Box-global ops risks (pg saturation) folded in from "ops:health",
+    # keyed the same way; they join active_risks through the detector diff.
+    ops_risks: %{},
     # Cached WorktreeAlarm sweep (refreshed at most once per interval, off
     # the server process).
     worktree_alarms: [],
@@ -192,6 +199,7 @@ defmodule DevIDE.Operator.SituationServer do
     :ok = Audit.subscribe(workspace_id)
     :ok = Phoenix.PubSub.subscribe(@pubsub, "deploy:updates")
     :ok = Phoenix.PubSub.subscribe(@pubsub, SessionDirectory.topic(workspace_id))
+    :ok = PgProbe.subscribe()
 
     schedule_tick()
 
@@ -275,6 +283,20 @@ defmodule DevIDE.Operator.SituationServer do
     {:noreply, state |> refresh_deploy() |> schedule_detect()}
   end
 
+  # Box-global ops risk transition (pg saturation): fold into ops_risks and
+  # let the detector diff announce it for this workspace. The probe already
+  # wrote the box-global ops.* row; the per-workspace operator.risk_* row is
+  # this workspace's record of surfacing it.
+  def handle_info({:ops_health, _check, :raised, risk}, state) do
+    state = %{state | ops_risks: Map.put(state.ops_risks, {risk.id, risk.subject}, risk)}
+    {:noreply, schedule_detect(state)}
+  end
+
+  def handle_info({:ops_health, _check, :cleared, risk}, state) do
+    state = %{state | ops_risks: Map.delete(state.ops_risks, {risk.id, risk.subject})}
+    {:noreply, schedule_detect(state)}
+  end
+
   # Topology-shaped changes (windows/panes appeared or died, session list
   # changed): debounce a full section rebuild.
   def handle_info({TmuxTopology, _msg}, state), do: {:noreply, schedule_rebuild(state)}
@@ -317,6 +339,7 @@ defmodule DevIDE.Operator.SituationServer do
         |> sync_session_subscriptions(digest)
         |> sync_topology_subscriptions(digest)
         |> seed_agent_entries(digest)
+        |> seed_ops_risks()
         |> run_detectors()
 
       {:error, reason} ->
@@ -396,6 +419,18 @@ defmodule DevIDE.Operator.SituationServer do
     :exit, _ -> %{}
   end
 
+  # Re-seed box-global ops risks from the running probe so servers started
+  # after a raise (or after a probe restart) still surface it. Only while a
+  # probe runs — without one, the last broadcast-folded state stands.
+  defp seed_ops_risks(state) do
+    if PgProbe.running?() do
+      ops_risks = Map.new(PgProbe.active_risks(), fn risk -> {{risk.id, risk.subject}, risk} end)
+      %{state | ops_risks: ops_risks}
+    else
+      state
+    end
+  end
+
   defp collect(sessions, field) do
     sessions
     |> Enum.map(&Map.get(&1, field))
@@ -415,7 +450,8 @@ defmodule DevIDE.Operator.SituationServer do
       Risks.detect(state.digest) ++
         Detectors.blocked_too_long(state.agent_entries, now, blocked_threshold_s()) ++
         Detectors.working_no_output(state.digest, state.last_output_at, now, output_threshold_s()) ++
-        Detectors.leaked_worktree(state.worktree_alarms, state.workspace_id, now)
+        Detectors.leaked_worktree(state.worktree_alarms, state.workspace_id, now) ++
+        Map.values(state.ops_risks)
 
     next_active = Map.new(risks, fn risk -> {{risk.id, risk.subject}, risk} end)
 

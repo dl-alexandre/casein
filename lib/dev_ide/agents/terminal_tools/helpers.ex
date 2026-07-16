@@ -117,6 +117,34 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   end
 
   @doc false
+  def gate_passed_param do
+    %{
+      type: "boolean",
+      description: "Whether the gate run passed."
+    }
+  end
+
+  @doc false
+  def sha_param, do: %{type: "string"}
+
+  @doc false
+  def gate_duration_param do
+    %{
+      type: "number",
+      minimum: 0,
+      description: "Gate run duration in seconds."
+    }
+  end
+
+  @doc false
+  def gate_failed_step_param do
+    %{
+      type: "string",
+      description: "The gate step that failed (last announced step of the run)."
+    }
+  end
+
+  @doc false
   def agent_state_param do
     %{
       type: "string",
@@ -246,7 +274,8 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
       when name in [
              "terminal_set_agent_label",
              "terminal_report_worktree",
-             "terminal_report_agent_state"
+             "terminal_report_agent_state",
+             "gate_report"
            ] do
     %{
       mutation?: true,

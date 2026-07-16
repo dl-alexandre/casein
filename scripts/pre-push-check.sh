@@ -8,7 +8,66 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-log() { printf '>>> %s\n' "$*"; }
+# log announces each gate step; GATE_CURRENT_STEP remembers the last one so a
+# failing run can report which step it died in (approximate: informational log
+# lines inside a step move the marker, which is close enough for triage).
+GATE_CURRENT_STEP=""
+log() { printf '>>> %s\n' "$*"; GATE_CURRENT_STEP="$*"; }
+
+# --- Gate-run recording (fail-open) -----------------------------------------
+# Report the verdict to DevIDE as a durable gate.passed / gate.failed audit
+# row via the terminal MCP gate_report tool (the agent_worktree_report_mcp
+# pattern in scripts/lib/agent-worktree.sh). Reporting must NEVER fail the
+# gate: it is skipped silently without the workspace env, curls with a short
+# timeout, and swallows every error.
+GATE_STARTED_AT="$(date +%s)"
+
+report_gate_result() {
+  local exit_code="$1"
+  [[ -n "${DEV_IDE_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local mcp_url="${DEVIDE_TERMINAL_MCP_URL:-${DEVIDE_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
+  local branch sha duration passed failed_step
+  branch="$(git -C "${ROOT}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  sha="$(git -C "${ROOT}" rev-parse HEAD 2>/dev/null || true)"
+  duration="$(( $(date +%s) - GATE_STARTED_AT ))"
+  if [[ "${exit_code}" -eq 0 ]]; then
+    passed=true
+    failed_step=""
+  else
+    passed=false
+    failed_step="${GATE_CURRENT_STEP}"
+  fi
+
+  local params rpc_body
+  params="$(
+    GATE_BRANCH="${branch}" GATE_SHA="${sha}" GATE_PASSED="${passed}" \
+    GATE_DURATION_S="${duration}" GATE_FAILED_STEP="${failed_step}" \
+    python3 -c '
+import json, os
+print(json.dumps({
+    "workspace_id": os.environ["DEVIDE_WORKSPACE_ID"],
+    "branch": os.environ.get("GATE_BRANCH") or None,
+    "sha": os.environ.get("GATE_SHA") or None,
+    "passed": os.environ.get("GATE_PASSED") == "true",
+    "duration_s": int(os.environ.get("GATE_DURATION_S") or 0),
+    "failed_step": os.environ.get("GATE_FAILED_STEP") or None,
+}))
+' 2>/dev/null || true
+  )"
+  [[ -n "${params}" ]] || return 0
+
+  rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"gate_report\",\"arguments\":${params}}}"
+  curl -fsS --max-time 5 -X POST "${mcp_url}" \
+    -H "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    -H "content-type: application/json" \
+    -d "${rpc_body}" >/dev/null 2>&1 || true
+  return 0
+}
+trap 'report_gate_result "$?" || true' EXIT
+# -----------------------------------------------------------------------------
 
 # The deploy poller runs this gate under systemd with a 1024 soft fd limit;
 # the full test suite plus the cover HTML export opens more files than that

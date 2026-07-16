@@ -21,6 +21,7 @@ defmodule DevIDE.Operator.SituationDigest do
   alias DevIDE.Deployment.Health
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Operator.Risks
+  alias DevIDE.Ops.PgProbe
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.TmuxTopology
@@ -57,6 +58,7 @@ defmodule DevIDE.Operator.SituationDigest do
         activity: activity,
         risks: []
       }
+      |> put_ops()
       |> sanitize()
 
     {:ok, %{digest | risks: Risks.detect(digest)}}
@@ -206,6 +208,20 @@ defmodule DevIDE.Operator.SituationDigest do
       true -> false
       false -> true
       _ -> nil
+    end
+  end
+
+  ## Ops
+
+  # Box-level infrastructure health rides along only while its producer runs:
+  # with a live DevIDE.Ops.PgProbe the digest gains ops.pg (the latest
+  # per-target saturation samples); without one the key is absent entirely so
+  # consumers can tell "healthy" from "not measured".
+  defp put_ops(digest) do
+    if PgProbe.running?() do
+      Map.put(digest, :ops, %{pg: PgProbe.current()})
+    else
+      digest
     end
   end
 

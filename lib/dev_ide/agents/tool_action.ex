@@ -117,18 +117,22 @@ defmodule DevIDE.Agents.ToolAction do
   defp normalize(args, schema, aliases) do
     Enum.reduce(schema, %{}, fn {key, _opts}, acc ->
       case fetch_value(args, Map.get(aliases, key, [Atom.to_string(key)])) do
-        nil -> acc
-        value -> Map.put(acc, key, value)
+        # Explicit JSON nulls count as absent (clients send them for optional
+        # fields); an explicit false survives — boolean arguments like
+        # gate_report's `passed` are load-bearing either way.
+        {:ok, nil} -> acc
+        {:ok, value} -> Map.put(acc, key, value)
+        :error -> acc
       end
     end)
   end
 
-  defp fetch_value(_args, []), do: nil
+  defp fetch_value(_args, []), do: :error
 
   defp fetch_value(args, [name | rest]) do
-    case PayloadAttrs.get(args, name) do
-      nil -> fetch_value(args, rest)
-      value -> value
+    case PayloadAttrs.fetch(args, name) do
+      {:ok, value} -> {:ok, value}
+      :error -> fetch_value(args, rest)
     end
   end
 

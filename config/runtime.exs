@@ -60,6 +60,32 @@ config :dev_ide, :workspace_digest, truthy_env?.("DEV_IDE_WORKSPACE_DIGEST")
 # Off by default: the digest cold-builds per call and no server is started.
 config :dev_ide, :situation_server, truthy_env?.("DEV_IDE_SITUATION_SERVER")
 
+# When on, DevIDE.Ops.PgProbe polls the box's Postgres servers (host 5432 +
+# release 15432 by default) for connection saturation and leak-shaped
+# application_names (wf_*, devide-<uuid>), emitting ops.pg_saturation_*
+# audit rows and "ops:health" broadcasts on threshold transitions. Off by
+# default — it shells out to psql once per interval.
+config :dev_ide, :pg_probe, truthy_env?.("DEV_IDE_PG_PROBE")
+
+# Probe targets as JSON, e.g.
+# [{"host":"127.0.0.1","port":5432,"user":"postgres","dbname":"postgres"}].
+# Parsed by PgProbe at runtime; invalid JSON falls back to the defaults.
+if pg_probe_targets = System.get_env("DEV_IDE_PG_PROBE_TARGETS") do
+  config :dev_ide, :pg_probe_targets_json, pg_probe_targets
+end
+
+if pg_probe_user = System.get_env("DEV_IDE_PG_PROBE_USER") do
+  config :dev_ide, :pg_probe_user, pg_probe_user
+end
+
+if pg_probe_dbname = System.get_env("DEV_IDE_PG_PROBE_DBNAME") do
+  config :dev_ide, :pg_probe_dbname, pg_probe_dbname
+end
+
+if pg_probe_password = System.get_env("DEV_IDE_PG_PROBE_PASSWORD") do
+  config :dev_ide, :pg_probe_password, pg_probe_password
+end
+
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
     host when is_binary(host) and host != "" ->

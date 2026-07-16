@@ -127,7 +127,8 @@ defmodule DevIDE.Agents.MCPAudit do
         "terminal_send_agent_command",
         "terminal_paste_agent_text",
         "annotation_propose",
-        "terminal_set_agent_label"
+        "terminal_set_agent_label",
+        "gate_report"
       ]
 
   defp mutating_preview_tool?(tool),

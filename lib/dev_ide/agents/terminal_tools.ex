@@ -32,6 +32,7 @@ defmodule DevIDE.Agents.TerminalTools do
     Capture,
     CaptureAgent,
     Context,
+    GateReport,
     Impl,
     ListSessions,
     PasteAgentText,
@@ -68,7 +69,8 @@ defmodule DevIDE.Agents.TerminalTools do
     ReportWorktree,
     ReportAgentState,
     WaitAgentState,
-    WorkspaceDigest
+    WorkspaceDigest,
+    GateReport
   ]
 
   @by_name Map.new(@actions, &{&1.name(), &1})
@@ -140,4 +142,6 @@ defmodule DevIDE.Agents.TerminalTools do
   defdelegate report_worktree(params), to: Impl
   @doc false
   defdelegate workspace_digest(params), to: Impl
+  @doc false
+  defdelegate gate_report(params), to: Impl
 end
