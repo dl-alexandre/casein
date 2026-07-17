@@ -287,8 +287,93 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
              }
            } = json_response(conn, 200)
 
-    assert_receive {:fake_tmux_send_command, "devide_ws-scoped_agent", "devide_ws-scoped_agent",
-                    "echo scoped", []}
+    # No pane supplied: the implicit target early-binds to the session's
+    # active pane id at call time instead of riding the session name.
+    assert_receive {:fake_tmux_send_command, "%1", "%1", "echo scoped", []}
+  end
+
+  test "X-DevIDE-Caller-Pane header anchors caller-pane terminal tools", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 2, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "claude"},
+        %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "bash"}
+      ]
+    })
+
+    conn =
+      conn
+      |> put_req_header("x-devide-caller-pane", "%1")
+      |> post_mcp(
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_topology",
+            arguments: %{session: "devide_ws-scoped_agent"}
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{
+                 "caller" => %{
+                   "pane" => "%1",
+                   "adjacent_panes" => [%{"id" => "%2"}]
+                 }
+               }
+             }
+           } = json_response(conn, 200)
+  end
+
+  test "malformed caller-pane headers are ignored", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"}
+      ]
+    })
+
+    conn =
+      conn
+      # An unexpanded client-side env placeholder must not become a pane id.
+      |> put_req_header("x-devide-caller-pane", "${DEVIDE_CALLER_PANE}")
+      |> post_mcp(
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_topology",
+            arguments: %{session: "devide_ws-scoped_agent"}
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{"result" => %{"structuredContent" => payload}} = json_response(conn, 200)
+    refute Map.has_key?(payload, "caller")
   end
 
   test "a workspace-token mutation is audited with the ws:<id> actor", %{conn: conn} do
@@ -487,8 +572,8 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
                json_response(conn, 200)
 
-      assert_receive {:fake_tmux_send_command, "devide_ws-scoped_agent", "devide_ws-scoped_agent",
-                      "echo via-invoke", []}
+      # Implicit targets early-bind to the active pane id at call time.
+      assert_receive {:fake_tmux_send_command, "%1", "%1", "echo via-invoke", []}
     end
 
     test "invoke_tool refuses to call a meta-tool", %{conn: conn} do

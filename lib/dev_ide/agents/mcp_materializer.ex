@@ -133,6 +133,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
 
     [mcp_servers.#{terminal_key}.headers]
     Authorization = "Bearer ${DEV_IDE_API_TOKEN}"
+    X-DevIDE-Caller-Pane = "${DEVIDE_CALLER_PANE}"
 
     [mcp_servers.#{preview_key}]
     url = "#{urls.preview}"
@@ -174,7 +175,10 @@ defmodule DevIDE.Agents.MCPMaterializer do
           "url" => urls.terminal,
           "enabled" => true,
           "oauth" => false,
-          "headers" => %{"Authorization" => "Bearer {env:DEV_IDE_API_TOKEN}"}
+          "headers" => %{
+            "Authorization" => "Bearer {env:DEV_IDE_API_TOKEN}",
+            "X-DevIDE-Caller-Pane" => "{env:DEVIDE_CALLER_PANE}"
+          }
         },
         preview_key => %{
           "type" => "remote",
@@ -210,7 +214,13 @@ defmodule DevIDE.Agents.MCPMaterializer do
         terminal_key => %{
           "type" => "http",
           "url" => urls.terminal,
-          "headers" => %{"Authorization" => bearer}
+          "headers" => %{
+            "Authorization" => bearer,
+            # Anchors terminal MCP pane resolution to the calling agent's own
+            # pane; expanded per process from launch-devide-agent.sh's export.
+            # The server ignores empty/unexpanded values.
+            "X-DevIDE-Caller-Pane" => "${DEVIDE_CALLER_PANE}"
+          }
         },
         preview_key => %{
           "type" => "http",

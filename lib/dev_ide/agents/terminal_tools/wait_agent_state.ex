@@ -11,6 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
     schema: [
       workspace_id: [type: :string, required: true],
       session: [type: :string],
+      caller_pane: [type: :string],
       pane: [type: :string],
       states: [type: {:list, :string}, required: true],
       timeout_ms: [type: :integer],
@@ -28,6 +29,7 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
       Tool.object(
         Map.merge(Helpers.workspace_props(), %{
           session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
           pane: Helpers.pane_param(),
           states: Helpers.wait_states_param(),
           timeout_ms: Helpers.timeout_ms_param(),

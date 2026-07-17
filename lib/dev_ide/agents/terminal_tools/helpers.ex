@@ -25,6 +25,9 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   def pane_param, do: Params.pane()
 
   @doc false
+  def caller_pane_param, do: Params.caller_pane()
+
+  @doc false
   def lines_param, do: Params.lines()
 
   @doc false

@@ -16,6 +16,18 @@ defmodule McpCtl.Params do
     }
   end
 
+  @spec caller_pane() :: map()
+  def caller_pane do
+    %{
+      type: "string",
+      description:
+        "Pane id of the calling agent (e.g. \"%3\"). DevIDE-launched agents send it " <>
+          "automatically via the X-DevIDE-Caller-Pane header; pass it explicitly when " <>
+          "calling from outside a pane. Anchors session and pane resolution to the " <>
+          "caller instead of the operator-focused active pane."
+    }
+  end
+
   @spec keys() :: map()
   def keys, do: %{type: "string"}
 

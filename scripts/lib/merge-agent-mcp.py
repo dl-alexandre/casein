@@ -39,7 +39,13 @@ def claude_mcp_payload(
         terminal_key: {
             "type": "http",
             "url": terminal_url,
-            "headers": {"Authorization": auth},
+            "headers": {
+                "Authorization": auth,
+                # Anchors terminal MCP pane resolution to the calling agent's
+                # own pane; expanded per process from launch-devide-agent.sh's
+                # export. The server ignores empty/unexpanded values.
+                "X-DevIDE-Caller-Pane": "${DEVIDE_CALLER_PANE}",
+            },
         },
         preview_key: {
             "type": "http",

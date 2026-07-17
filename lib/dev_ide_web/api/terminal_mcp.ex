@@ -51,7 +51,12 @@ defmodule DevIdeWeb.API.TerminalMCP do
         "terminal_send_command / terminal_send_keys. Read output with " <>
         "terminal_capture (ansi defaults to false). When multiple workspace " <>
         "sessions match, pass session explicitly — ambiguous matches return " <>
-        "candidate_sessions.",
+        "candidate_sessions. Pane references anchor to the caller, not to focus: " <>
+        "the session active pane follows the operator across windows, so resolve " <>
+        "\"the pane beside me\" from the caller.adjacent_panes block that " <>
+        "terminal_context/terminal_topology return when the caller pane is known " <>
+        "(sent automatically via X-DevIDE-Caller-Pane for DevIDE-launched agents), " <>
+        "and pass explicit pane ids on capture/send calls.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
   end
@@ -102,7 +107,8 @@ defmodule DevIdeWeb.API.TerminalMCP do
       DevIDE.Signals.Context.with_new(fn ->
         case Scope.resolve_tool_call(name, args,
                surface: :terminal,
-               default_workspace_id: default_workspace_id
+               default_workspace_id: default_workspace_id,
+               default_caller_pane: Keyword.get(opts, :default_caller_pane)
              ) do
           {:ok, scope} ->
             case TerminalTools.invoke(name, scope.args) do
