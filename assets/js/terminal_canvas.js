@@ -41,6 +41,7 @@ import {
   effectiveCellFlags,
   resolveInverseColors
 } from "./terminal_cell_flags.mjs"
+import {preIsScaled, releaseCanvasToDom} from "./terminal_canvas_scale.mjs"
 
 export function canvasRendererEnabled(hook) {
   try {
@@ -158,12 +159,20 @@ export function resetCanvasRenderer(hook) {
   hook.__canvasLastCells = null
 }
 
+
 /**
  * `onRenderCells` replacement: paint `rows` to the canvas and mirror plain text
  * into the (transparent) <pre> for selection. `metricsFn(hook)` returns the
  * vendor cell metrics so glyphs align with cursor/selection.
  */
 export function paintCanvasCells(hook, pre, rows, metricsFn) {
+  // The canvas can't reproduce the pre's scale-to-fit transform (see
+  // terminal_canvas_scale.mjs). Hand scaled/zoomed viewers to the DOM renderer.
+  if (preIsScaled(hook)) {
+    releaseCanvasToDom(hook)
+    return false
+  }
+
   const metrics = metricsFn(hook)
   const ctx = hook.__glyphCtx || (ensureCanvas(hook), hook.__glyphCtx)
   if (!ctx || !metrics || !metrics.width || !metrics.height) {
@@ -171,6 +180,10 @@ export function paintCanvasCells(hook, pre, rows, metricsFn) {
     return false
   }
 
+  // Un-hide the canvas if we previously fell back to the DOM path while scaled.
+  if (hook.__glyphCanvas && hook.__glyphCanvas.style.display === "none") {
+    hook.__glyphCanvas.style.display = ""
+  }
   prepareTransparentPre(hook, pre)
 
   const canvas = hook.__glyphCanvas
