@@ -61,6 +61,12 @@ import {
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
+import {
+  fitBaseScale,
+  isMobileTerminalLayout,
+  scaledContentOffsets,
+  viewportActiveForClient
+} from "./terminal_display_layout.mjs"
 import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
 
 function escapeCellChar(value) {
@@ -1702,9 +1708,20 @@ function pushKey(hook, key) {
 // terminal (see DevIDE.Terminals.SessionOwner). `document.hasFocus()` is true
 // for at most one window at a time, so normally exactly one viewer reports
 // active. Deduped so only transitions cross the wire.
+//
+// Mobile/PWA: iOS often reports hasFocus()=false while the soft keyboard is up
+// (or while the terminal input is focused). That used to leave the phone as a
+// permanent scale-to-fit observer — the classic letterboxed "narrow column"
+// with a caret stuck on the left. See terminal_display_layout.mjs.
 function reportViewportActive(hook, force = false) {
   if (!hook || !hook.el) return
-  const active = document.visibilityState === "visible" && document.hasFocus()
+  const active = viewportActiveForClient({
+    visibilityState: document.visibilityState,
+    hasFocus: typeof document.hasFocus === "function" ? document.hasFocus() : true,
+    keyboardOpen: document.documentElement.classList.contains("devide-keyboard-open"),
+    terminalInputFocused: isTerminalInputFocused(),
+    mobileLayout: isMobileTerminalLayout()
+  })
   if (!force && hook.__lastViewportActive === active) return
   hook.__lastViewportActive = active
   if (hook.target && typeof hook.pushEventTo === "function") {
@@ -1712,6 +1729,11 @@ function reportViewportActive(hook, force = false) {
   } else if (typeof hook.pushEvent === "function") {
     hook.pushEvent("viewport_active", { active })
   }
+}
+
+function isTerminalInputFocused() {
+  const active = document.activeElement
+  return !!(active && active.matches && active.matches('[data-ghostty-input="true"]'))
 }
 
 function isSizeAuthoritative(hook) {
@@ -1756,8 +1778,57 @@ function userDisplayZoom(hook) {
   return hook.__userDisplayZoom ?? 1
 }
 
+// Scale-to-fit must move the <pre>, caret, selection layer, and hidden input
+// together. The vendor places those as siblings under `hook.screen`; transforming
+// only the <pre> left the caret parked on the left edge of the letterbox while
+// the grid floated in the center (mobile PWA screenshot class).
+function ensureScaleFrame(hook) {
+  if (!hook?.screen) return null
+  if (hook.__scaleFrame?.isConnected) return hook.__scaleFrame
+
+  const frame = document.createElement("div")
+  frame.dataset.terminalScaleFrame = "true"
+  Object.assign(frame.style, {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    transformOrigin: "top left"
+  })
+
+  const move = [hook.pre, hook.selectionLayer, hook.measure, hook.input, hook.cursorEl]
+  for (const node of move) {
+    if (node) frame.appendChild(node)
+  }
+  if (hook.__glyphCanvas) frame.appendChild(hook.__glyphCanvas)
+
+  // Keep scrollbar chrome as a direct child of screen (viewport-fixed, unscaled).
+  const track = hook.__scrollbarTrack
+  if (track && track.parentNode === hook.screen) {
+    hook.screen.insertBefore(frame, track)
+  } else {
+    hook.screen.appendChild(frame)
+  }
+
+  hook.__scaleFrame = frame
+  return frame
+}
+
 function clearDisplayScale(hook) {
   if (!hook.pre) return
+
+  const frame = hook.__scaleFrame
+  if (frame) {
+    Object.assign(frame.style, {
+      left: "0",
+      top: "0",
+      width: "100%",
+      height: "100%",
+      transform: "",
+      transformOrigin: "top left"
+    })
+  }
 
   hook.pre.style.transform = ""
   hook.pre.style.transformOrigin = ""
@@ -1796,20 +1867,51 @@ function applyScaledLayout(hook, baseScale, cols, rows, displayMode) {
     return
   }
 
-  const scaledW = contentW * scale
-  const scaledH = contentH * scale
-  const offsetX = viewport.padL + (viewport.availableW - scaledW) / 2
-  const offsetY = viewport.padT + (viewport.availableH - scaledH) / 2
+  const align = isMobileTerminalLayout() ? "top-center" : "center"
+  const {offsetX, offsetY} = scaledContentOffsets({
+    availableW: viewport.availableW,
+    availableH: viewport.availableH,
+    padL: viewport.padL,
+    padT: viewport.padT,
+    contentW,
+    contentH,
+    scale,
+    align
+  })
 
+  const frame = ensureScaleFrame(hook)
   hook.el.style.setProperty("--devide-term-display-scale", String(scale))
   hook.el.style.setProperty("--devide-term-display-zoom", String(userZoom))
   hook.el.dataset.displayMode = displayMode
-  hook.pre.style.transform = `scale(${scale})`
-  hook.pre.style.transformOrigin = "top left"
-  hook.pre.style.left = `${offsetX}px`
-  hook.pre.style.top = `${offsetY}px`
-  hook.pre.style.width = `${contentW}px`
-  hook.pre.style.height = `${contentH}px`
+
+  if (frame) {
+    Object.assign(frame.style, {
+      left: `${offsetX}px`,
+      top: `${offsetY}px`,
+      width: `${contentW}px`,
+      height: `${contentH}px`,
+      transform: `scale(${scale})`,
+      transformOrigin: "top left"
+    })
+    // Pre fills the frame; cell metrics stay unscaled inside the frame box.
+    Object.assign(hook.pre.style, {
+      transform: "",
+      transformOrigin: "",
+      left: "0",
+      top: "0",
+      width: "100%",
+      height: "100%",
+      inset: "auto"
+    })
+  } else {
+    // Fallback if screen isn't ready yet (should be rare).
+    hook.pre.style.transform = `scale(${scale})`
+    hook.pre.style.transformOrigin = "top left"
+    hook.pre.style.left = `${offsetX}px`
+    hook.pre.style.top = `${offsetY}px`
+    hook.pre.style.width = `${contentW}px`
+    hook.pre.style.height = `${contentH}px`
+  }
   syncDisplayZoomBadge(hook)
 }
 
@@ -1835,7 +1937,12 @@ function scaleToContainer(hook) {
     return
   }
 
-  const baseScale = Math.min(viewport.availableW / contentW, viewport.availableH / contentH)
+  const baseScale = fitBaseScale(
+    viewport.availableW,
+    viewport.availableH,
+    contentW,
+    contentH
+  )
   applyScaledLayout(hook, baseScale, cols, rows, "scale")
 }
 
@@ -2279,6 +2386,9 @@ const GhosttyTerminal = {
     // focused tab, not the smallest. Fires on tab show/hide and window
     // focus/blur; the initial forced report seeds the state for an already-
     // visible single viewer that never changes focus.
+    //
+    // Also re-evaluate on soft-keyboard open (MobileKeyBar) and terminal input
+    // focus — iOS PWA often leaves document.hasFocus() false while typing.
     this.__onViewportActive = () => {
       const wasActive = this.__lastViewportActive === true
       reportViewportActive(this)
@@ -2287,6 +2397,9 @@ const GhosttyTerminal = {
     document.addEventListener("visibilitychange", this.__onViewportActive)
     window.addEventListener("focus", this.__onViewportActive)
     window.addEventListener("blur", this.__onViewportActive)
+    window.addEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+    document.addEventListener("focusin", this.__onViewportActive)
+    document.addEventListener("focusout", this.__onViewportActive)
     reportViewportActive(this, true)
     applyTerminalLayout(this)
 
@@ -2848,6 +2961,9 @@ const GhosttyTerminal = {
       document.removeEventListener("visibilitychange", this.__onViewportActive)
       window.removeEventListener("focus", this.__onViewportActive)
       window.removeEventListener("blur", this.__onViewportActive)
+      window.removeEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+      document.removeEventListener("focusin", this.__onViewportActive)
+      document.removeEventListener("focusout", this.__onViewportActive)
       this.__onViewportActive = null
     }
 

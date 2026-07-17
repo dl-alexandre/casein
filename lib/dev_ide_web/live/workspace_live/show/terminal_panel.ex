@@ -175,7 +175,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
     <div
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
-      class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700/90 bg-zinc-950/95 px-1.5 py-1 text-zinc-200 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-950/88"
       style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), var(--devide-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
       role="toolbar"
       aria-label="Terminal keys"
@@ -188,7 +188,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           id={"mobile-key-bar-mode-" <> @workspace.id}
           type="button"
           phx-click="mobile_nav:toggle"
-          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded border border-zinc-600 bg-zinc-800 px-1.5 text-zinc-100 transition active:opacity-80"
+          class="mr-0.5 inline-flex min-h-[1.9rem] max-w-[min(42vw,11rem)] shrink-0 items-center gap-1 rounded-md border border-sky-500/30 bg-sky-500/10 px-2 text-zinc-100 transition active:opacity-80"
           title={"Switch session or window — " <> mobile_mode_chip_title(assigns)}
           aria-label={
             "Switch session or window. Active session: " <>
@@ -196,10 +196,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           }
           aria-expanded={@mobile_nav_open}
         >
-          <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-zinc-400" />
-          <span class="max-w-[6.5rem] truncate text-[11px] font-medium leading-none">
+          <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-sky-300/90" />
+          <span class="min-w-0 truncate text-[11px] font-medium leading-none tracking-tight">
             {mobile_active_session_label(assigns)}
           </span>
+          <.icon name="hero-chevron-up" class="size-3 shrink-0 text-zinc-500" />
         </button>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
@@ -345,6 +346,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           <button
             type="button"
             phx-click="tmux:new_window"
+            data-keybar-secondary="true"
             class={mobile_key_class()}
             aria-label="New window"
             title="New window"
@@ -366,6 +368,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             type="button"
             phx-click="tmux:cycle_window"
             phx-value-dir="prev"
+            data-keybar-secondary="true"
             class={mobile_key_class()}
             aria-label="Previous window"
             title="Previous window"
@@ -375,6 +378,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           <button
             type="button"
             phx-click="tmux:last_window"
+            data-keybar-secondary="true"
             class={mobile_key_class()}
             aria-label="Last window"
             title="Last window"
@@ -385,6 +389,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             type="button"
             phx-click="tmux:cycle_window"
             phx-value-dir="next"
+            data-keybar-secondary="true"
             class={mobile_key_class()}
             aria-label="Next window"
             title="Next window"
@@ -392,7 +397,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             ›
           </button>
         <% end %>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <span
+          data-keybar-secondary="true"
+          class="mx-0.5 h-5 w-px flex-none bg-zinc-700"
+        ></span>
         <button
           type="button"
           data-keybar-key="FontDown"
@@ -411,7 +419,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         >
           A+
         </button>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <span
+          data-keybar-secondary="true"
+          class="mx-0.5 h-5 w-px flex-none bg-zinc-700"
+        ></span>
         <button
           type="button"
           data-keybar-key="ZoomDown"
@@ -905,17 +916,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
 
   # Name of the currently attached session, used to label the mobile session
   # chip so it reads as a session switcher rather than a bare mode badge.
+  # Long worktree / path labels are shortened for the narrow key bar chip.
   defp mobile_active_session_label(assigns) do
-    if assigns.terminal_sid == assigns.default_terminal_sid do
-      case assigns.shell_button_label do
-        label when is_binary(label) and label != "" -> label
-        _ -> "Shell"
+    raw =
+      if assigns.terminal_sid == assigns.default_terminal_sid do
+        case assigns.shell_button_label do
+          label when is_binary(label) and label != "" -> label
+          _ -> "Shell"
+        end
+      else
+        case Enum.find(assigns.session_tabs, &(&1.id == assigns.terminal_sid)) do
+          %{label: label} when is_binary(label) and label != "" -> label
+          _ -> "Session"
+        end
       end
-    else
-      case Enum.find(assigns.session_tabs, &(&1.id == assigns.terminal_sid)) do
-        %{label: label} when is_binary(label) and label != "" -> label
-        _ -> "Session"
-      end
+
+    mobile_short_session_label(raw)
+  end
+
+  # Prefer a readable tail for long worktree/agent labels
+  # ("devide-agent-worktrees/foo" → "…/foo", "agent/grok/adhoc-…" → last segment).
+  defp mobile_short_session_label(label) when is_binary(label) do
+    trimmed = String.trim(label)
+
+    cond do
+      String.length(trimmed) <= 22 ->
+        trimmed
+
+      String.contains?(trimmed, "/") ->
+        trimmed
+        |> String.split("/", trim: true)
+        |> List.last()
+        |> case do
+          nil -> trimmed
+          last when byte_size(last) > 22 -> "…" <> String.slice(last, -18, 18)
+          last -> last
+        end
+
+      true ->
+        "…" <> String.slice(trimmed, -18, 18)
     end
   end
 

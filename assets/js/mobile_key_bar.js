@@ -209,6 +209,7 @@ export const MobileKeyBar = {
       if (keyboardOpen && !this.__keyboardOpen && document.querySelector(".workspace-main-header")) {
         this.pushEvent?.("terminal:auto_hide_chrome", {})
       }
+      const keyboardWasOpen = this.__keyboardOpen
       this.__keyboardOpen = keyboardOpen
       document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
       this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
@@ -225,6 +226,13 @@ export const MobileKeyBar = {
       const inset = next + barHeight
       document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
       window.dispatchEvent(new Event("resize"))
+      // Notify terminals so they can re-claim size authority on iOS (hasFocus is
+      // unreliable while the soft keyboard is up) and leave scale-to-fit mode.
+      if (keyboardWasOpen !== keyboardOpen) {
+        window.dispatchEvent(
+          new CustomEvent("devide:keyboard-open-changed", {detail: {open: keyboardOpen}})
+        )
+      }
     }
 
     this.onViewport = () => {

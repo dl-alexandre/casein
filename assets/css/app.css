@@ -112,12 +112,18 @@ body {
   html,
   body {
     overscroll-behavior-y: none;
+    /* black-translucent status bar paints over content; keep the shell under
+       the notch / Dynamic Island instead of eating the first terminal row. */
+    background: #0a0a0a;
   }
 
   .workspace-shell {
-    padding-top: 0.25rem;
+    padding-top: max(0.25rem, env(safe-area-inset-top, 0px));
   }
 
+  .workspace-main-header {
+    padding-top: 0.125rem;
+  }
 }
 
 @supports (-webkit-touch-callout: none) {
@@ -913,84 +919,122 @@ body[data-pane-overlay-active] [data-pane-index]::after {
      bar's `items-center` then vertically centers the keys. */
   .mobile-key-bar {
     flex-wrap: nowrap;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
+    gap: 0.25rem;
+    border-top-color: color-mix(in oklch, var(--color-zinc-500) 35%, transparent);
+    box-shadow: 0 -8px 24px rgb(0 0 0 / 0.28);
   }
 
   /* Scroll row fills the bar height so its centered keys ride mid-bar. */
   .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
     align-self: stretch;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-key-bar > [id^="mobile-key-bar-scroll-"]::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Session chip: reads as a switcher, not another tiny mono key. */
+  .mobile-key-bar [id^="mobile-key-bar-mode-"] {
+    border-color: color-mix(in oklch, var(--color-sky-400) 28%, var(--color-zinc-700));
+    background: color-mix(in oklch, var(--color-sky-500) 12%, var(--color-zinc-900));
+    max-width: min(42vw, 11rem);
+  }
+
+  .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
+    max-width: none;
   }
 
   .devide-keyboard-open .mobile-key-bar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-content: center;
-    min-height: 1.625rem;
-    padding-top: 0.125rem;
+    align-items: center;
+    min-height: 2rem;
+    padding-top: 0.2rem;
     --devide-mobile-keybar-safe-area-bottom: 0px;
-    --devide-mobile-keybar-padding-bottom: 0.125rem;
-    row-gap: 0.125rem;
+    --devide-mobile-keybar-padding-bottom: 0.2rem;
+    row-gap: 0;
+    box-shadow: 0 -4px 16px rgb(0 0 0 / 0.35);
   }
 
   .mobile-key-bar.devide-keybar-app-mode > [id^="mobile-key-bar-scroll-"] {
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
 
+  /* Keyboard-open keys stay tappable (≥ ~32px) without reclaiming half the screen. */
   .mobile-key-bar.devide-keybar-app-mode button {
-    min-height: 1.25rem;
-    min-width: 1.75rem;
-    padding-inline: 0.375rem;
-    font-size: 0.625rem;
+    min-height: 1.75rem;
+    min-width: 2rem;
+    padding-inline: 0.45rem;
+    font-size: 0.6875rem;
+    border-radius: 0.35rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] {
-    min-height: 1.25rem;
-    padding-inline: 0.375rem;
+    min-height: 1.75rem;
+    padding-inline: 0.45rem;
+    max-width: min(34vw, 8.5rem);
   }
 
   .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
-    font-size: 0.5625rem;
+    font-size: 0.625rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
-    padding-inline: 0.25rem;
+    padding-inline: 0.3rem;
     padding-block: 0;
-    font-size: 0.5rem;
+    font-size: 0.5625rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode span[aria-hidden],
   .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
-    height: 1rem;
+    height: 1.1rem;
   }
 
   .devide-keyboard-open .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
 
   .devide-keyboard-open .mobile-key-bar button {
-    min-height: 1.25rem;
-    min-width: 1.75rem;
-    padding-inline: 0.375rem;
-    font-size: 0.625rem;
+    min-height: 1.75rem;
+    min-width: 2rem;
+    padding-inline: 0.45rem;
+    font-size: 0.6875rem;
   }
 
   .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
-    min-height: 1.25rem;
-    padding-inline: 0.375rem;
+    min-height: 1.75rem;
+    padding-inline: 0.45rem;
   }
 
   .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
-    font-size: 0.5625rem;
+    font-size: 0.625rem;
   }
 
   .devide-keyboard-open .mobile-key-bar .leader-indicator {
-    padding-inline: 0.25rem;
+    padding-inline: 0.3rem;
     padding-block: 0;
-    font-size: 0.5rem;
+    font-size: 0.5625rem;
   }
 
   .devide-keyboard-open .mobile-key-bar .h-5.w-px {
-    height: 1rem;
+    height: 1.1rem;
+  }
+
+  /* While typing, hide low-priority chrome (font/zoom/window cycle) so the
+     primary keys stay on-screen without a long horizontal hunt. */
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontDown"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontUp"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomDown"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomReset"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomUp"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Select"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Palette"],
+  .devide-keyboard-open .mobile-key-bar [data-keybar-secondary="true"] {
+    display: none !important;
   }
 
 }
