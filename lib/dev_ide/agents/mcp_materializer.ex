@@ -16,6 +16,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
     WorkspaceTokens
   }
 
+  alias DevIDE.Workspaces
+
   @doc """
   Write per-workspace MCP client configs for external agents.
 
@@ -443,6 +445,9 @@ defmodule DevIDE.Agents.MCPMaterializer do
     export DEV_IDE_API_TOKEN=#{quote_env_sh(sanitize_token(token))}
     export DEVIDE_WORKSPACE_ID=#{quote_env_sh(workspace_id)}
     export DEVIDE_WORKSPACE_NAME=#{quote_env_sh(workspace_name)}
+    export DEVIDE_WORKSPACE_MODE=#{quote_env_sh(workspace_mode(workspace))}
+    export DEVIDE_API_BASE_URL=#{quote_env_sh(api_base_url(urls.terminal))}
+    export DEVIDE_CODEX_HOOK_URL=#{quote_env_sh(codex_hook_url(urls.terminal, workspace_id))}
     export DEVIDE_TERMINAL_MCP_URL=#{quote_env_sh(urls.terminal)}
     export DEVIDE_PREVIEW_MCP_URL=#{quote_env_sh(urls.preview)}
     export DEVIDE_ARTIFACT_MCP_URL=#{quote_env_sh(urls.artifact)}
@@ -538,6 +543,26 @@ defmodule DevIDE.Agents.MCPMaterializer do
   end
 
   defp tidewave_env_export(_), do: ""
+
+  defp workspace_mode(workspace) do
+    workspace_id = workspace_id(workspace)
+
+    case Workspaces.mode_for(workspace_id) do
+      {mode, _source} -> to_string(mode)
+      _other -> workspace |> Map.get(:mode, Map.get(workspace, "mode", :manual)) |> to_string()
+    end
+  rescue
+    _error -> workspace |> Map.get(:mode, Map.get(workspace, "mode", :manual)) |> to_string()
+  end
+
+  defp api_base_url(terminal_url) do
+    uri = URI.parse(terminal_url)
+    URI.to_string(%{uri | path: nil, query: nil, fragment: nil}) |> String.trim_trailing("/")
+  end
+
+  defp codex_hook_url(terminal_url, workspace_id) do
+    api_base_url(terminal_url) <> "/api/workspaces/#{URI.encode(workspace_id)}/codex/hooks"
+  end
 
   defp quote_env_sh(value) when is_binary(value) do
     "'" <> String.replace(value, "'", "'\\''") <> "'"

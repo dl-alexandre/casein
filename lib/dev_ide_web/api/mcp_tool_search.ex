@@ -285,6 +285,13 @@ defmodule DevIdeWeb.API.MCPToolSearch do
           }
         },
         required: ["query"]
+      },
+      outputSchema: %{type: "object", additionalProperties: true},
+      annotations: %{
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
       }
     }
   end
@@ -309,6 +316,13 @@ defmodule DevIdeWeb.API.MCPToolSearch do
           }
         },
         required: ["name"]
+      },
+      outputSchema: %{type: "object", additionalProperties: true},
+      annotations: %{
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true
       }
     }
   end

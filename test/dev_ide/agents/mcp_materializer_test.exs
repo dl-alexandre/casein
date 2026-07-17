@@ -106,6 +106,11 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
+    assert env_sh =~ "export DEVIDE_WORKSPACE_MODE='manual'"
+    assert env_sh =~ "export DEVIDE_API_BASE_URL='http://127.0.0.1:4000'"
+
+    assert env_sh =~
+             "export DEVIDE_CODEX_HOOK_URL='http://127.0.0.1:4000/api/workspaces/ws-abc/codex/hooks'"
 
     assert env_sh =~
              "export DEVIDE_ARTIFACT_MCP_URL='http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=ws-abc'"

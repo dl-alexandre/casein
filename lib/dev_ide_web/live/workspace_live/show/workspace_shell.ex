@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.HistoryPanel
   import DevIdeWeb.WorkspaceLive.Show.GrokPermissionPanel
+  import DevIdeWeb.WorkspaceLive.Show.AgentOperationsPanel
 
   import DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader,
     only: [
@@ -180,6 +181,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           <% end %>
 
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
+            <button
+              id={"agent-operations-button-" <> @workspace.id}
+              type="button"
+              phx-click="switch_tab"
+              phx-value-tab="agents"
+              class={[
+                "relative flex size-7 items-center justify-center rounded border transition pointer-coarse:size-8",
+                if(@tab == "agents",
+                  do: "border-primary/35 bg-primary/10 text-primary",
+                  else: "border-base-300 text-base-content/65 hover:bg-base-200 hover:text-primary"
+                )
+              ]}
+              title="Agent Operations"
+              aria-label={
+                if(@codex_pending_approval_count > 0,
+                  do: "Agent Operations, #{@codex_pending_approval_count} pending approvals",
+                  else: "Agent Operations"
+                )
+              }
+            >
+              <.icon name="hero-cpu-chip" class="size-4" />
+              <span
+                :if={@codex_pending_approval_count > 0}
+                class="absolute -right-1.5 -top-1.5 flex min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[8px] font-bold leading-4 text-amber-950 ring-2 ring-base-100"
+              >
+                {min(@codex_pending_approval_count, 99)}
+              </span>
+            </button>
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
           </div>
         </header>
@@ -396,6 +425,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
 
       <div class="min-h-0 flex-1">
         <.terminal_tab :if={@tab == "terminal"} {terminal_tab_attrs(assigns)} />
+        <.agent_operations_panel
+          :if={@tab == "agents"}
+          workspace={@workspace}
+          loaded?={@codex_loaded?}
+          threads={@codex_threads}
+          approvals={@codex_approvals}
+          selected_thread_id={@codex_selected_thread_id}
+          timeline={@codex_timeline}
+          live_delta={@codex_live_delta}
+          exec_form={@codex_exec_form}
+          exec_run={@codex_exec_run}
+          error={@codex_error}
+        />
         <.files_panel
           :if={@tab == "files"}
           host_loc={@host_loc}
@@ -580,7 +622,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :windows_sidebar_tree,
       :sessions_sidebar_sort,
       :windows_sidebar_sort,
-      :chrome_visible
+      :chrome_visible,
+      :codex_pending_approval_count
     ])
   end
 

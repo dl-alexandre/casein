@@ -13,6 +13,9 @@ defmodule DevIDE.Supervision.Agents do
       {Registry, keys: :unique, name: DevIDE.Agents.Registry},
       {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
       DevIDE.AgentSessions.GrokACP.Attachments,
+      {Registry, keys: :unique, name: DevIDE.Codex.Registry},
+      DevIDE.Codex.EventHub,
+      DevIDE.Codex.RuntimeSupervisor,
       DevIDE.Agents.MCPSessions,
       DevIDE.Agents.Activity
     ]

@@ -52,22 +52,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
   @doc "MCP tool specifications, mapped from ArtifactTools definitions."
   @spec tool_specs() :: [map()]
   def tool_specs do
-    for tool <- ArtifactTools.definitions() do
-      tool
-      |> base_tool_spec()
-      |> maybe_put_metadata(tool)
-    end
-  end
-
-  defp base_tool_spec(tool) do
-    %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
-  end
-
-  defp maybe_put_metadata(spec, tool) do
-    case Tool.public_metadata(tool) do
-      nil -> spec
-      metadata -> Map.put(spec, :metadata, metadata)
-    end
+    Enum.map(ArtifactTools.definitions(), &Tool.mcp_spec/1)
   end
 
   @impl true

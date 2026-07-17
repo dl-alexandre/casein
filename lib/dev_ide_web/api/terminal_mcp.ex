@@ -71,22 +71,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   @doc "MCP tool specifications, mapped from TerminalTools definitions."
   @spec tool_specs() :: [map()]
   def tool_specs do
-    for tool <- TerminalTools.definitions() do
-      tool
-      |> base_tool_spec()
-      |> maybe_put_metadata(tool)
-    end
-  end
-
-  defp base_tool_spec(tool) do
-    %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
-  end
-
-  defp maybe_put_metadata(spec, tool) do
-    case Tool.public_metadata(tool) do
-      nil -> spec
-      metadata -> Map.put(spec, :metadata, metadata)
-    end
+    Enum.map(TerminalTools.definitions(), &Tool.mcp_spec/1)
   end
 
   @impl true

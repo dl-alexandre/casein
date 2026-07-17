@@ -85,6 +85,9 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ "grok_install_state_hook"
     assert text =~ "codex_state_notify_args"
     assert text =~ ~S(notify=[\"${script}\"])
+    assert text =~ "codex_state_hook_args"
+    assert text =~ "PermissionRequest"
+    assert text =~ "SubagentStart"
     assert text =~ "DEVIDE_AGENT_STATE_HOOKS"
     assert text =~ "agent-hooks/grok-devide-agent-bootstrap.json"
     assert text =~ "grok_prepare_private_leader"
@@ -144,6 +147,18 @@ defmodule Scripts.LaunchDevideAgentTest do
 
     refute setup =~ "export DEV_IDE_ADMIN_API_TOKEN="
     refute refresh =~ "export DEV_IDE_ADMIN_API_TOKEN="
+  end
+
+  test "codex defaults to sandboxed, approval-aware modes and scrubs bearer credentials" do
+    text = File.read!(@script)
+
+    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-0)
+    assert text =~ "codex_workspace_mode"
+    assert text =~ "/api/workspaces/${workspace_id}/status"
+    assert text =~ ~S(--sandbox workspace-write --ask-for-approval on-request)
+    assert text =~ ~S(--sandbox read-only --ask-for-approval never)
+    assert text =~ ~S(shell_environment_policy.exclude)
+    refute text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
   end
 
   test "claude launches stage DevIDE-infra skills into the resolved config home" do

@@ -666,8 +666,78 @@ check_auth_files() {
   [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
 }
 
+check_codex_capabilities() {
+  local codex_bin version help schema_dir schema_hash hook_script
+  codex_bin="$(real_agent_bin codex)"
+
+  if [[ -z "$codex_bin" || ! -x "$codex_bin" ]]; then
+    fail "Codex executable not found"
+    return
+  fi
+
+  version="$($codex_bin --version 2>/dev/null || true)"
+  if [[ -n "$version" ]]; then
+    pass "Codex version: ${version}"
+  else
+    fail "Codex version probe failed"
+  fi
+
+  help="$($codex_bin exec --help 2>/dev/null || true)"
+  if [[ "$help" == *"--json"* && "$help" == *"--output-schema"* ]]; then
+    pass "codex exec supports JSONL and structured output"
+  else
+    fail "codex exec is missing --json or --output-schema"
+  fi
+
+  help="$($codex_bin app-server --help 2>/dev/null || true)"
+  if [[ "$help" == *"generate-json-schema"* ]]; then
+    pass "codex app-server and schema generation available"
+  else
+    fail "codex app-server schema generation unavailable"
+  fi
+
+  schema_dir="$(mktemp -d)"
+  if "$codex_bin" app-server generate-json-schema --out "$schema_dir" >/dev/null 2>&1; then
+    schema_hash="$({ find "$schema_dir" -type f -print0 | sort -z | xargs -0 sha256sum; } | sha256sum | awk '{print $1}')"
+    pass "app-server schema hash: ${schema_hash}"
+  else
+    fail "app-server schema generation failed"
+  fi
+  rm -rf "$schema_dir"
+
+  if "$codex_bin" \
+      -c 'hooks.SessionStart=[{matcher="*",hooks=[{type="command",command="/bin/true",timeout=1}]}]' \
+      features list >/dev/null 2>&1; then
+    pass "Codex lifecycle hook config accepted"
+  else
+    fail "Codex lifecycle hook config rejected"
+  fi
+
+  if "$codex_bin" plugin --help >/dev/null 2>&1; then
+    pass "Codex plugin commands available"
+  else
+    warn "Codex plugin commands unavailable"
+  fi
+
+  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  if [[ -x "$hook_script" ]]; then
+    pass "DevIDE Codex hook receiver staged"
+  else
+    warn "DevIDE Codex hook receiver missing (${hook_script})"
+  fi
+
+  if command -v bwrap >/dev/null 2>&1 && bwrap --dev-bind / / --unshare-net true >/dev/null 2>&1; then
+    pass "Codex Linux sandbox can create an isolated namespace"
+  elif [[ "$(uname -s)" == "Linux" ]]; then
+    warn "Codex Linux sandbox probe failed (run ensure-devbox-codex-sandbox.sh)"
+  else
+    pass "Linux bubblewrap sandbox probe not applicable"
+  fi
+}
+
 main() {
-  echo "==> DevIDE agent doctor"
+  local target="${1:-all}"
+  echo "==> DevIDE agent doctor${target:+ (${target})}"
 
   if agent_env_resolve 2>/dev/null; then
     pass "agent env resolved"
@@ -675,15 +745,28 @@ main() {
     warn "agent env not fully resolved (continuing with partial checks)"
   fi
 
-  check_shims
-  check_shim_targets
-  check_real_bins
-  check_token
-  check_bad_redirects
-  check_mcp_endpoints
-  check_tidewave_mcp
-  check_grok_runtime
-  check_auth_files
+  case "$target" in
+    codex)
+      check_token
+      check_mcp_endpoints
+      check_codex_capabilities
+      ;;
+    all|"")
+      check_shims
+      check_shim_targets
+      check_real_bins
+      check_token
+      check_bad_redirects
+      check_mcp_endpoints
+      check_tidewave_mcp
+      check_grok_runtime
+      check_auth_files
+      check_codex_capabilities
+      ;;
+    *)
+      fail "unknown doctor target: ${target} (expected codex or all)"
+      ;;
+  esac
 
   if [[ -n "${TMUX:-}" ]]; then
     if bash "${ROOT}/scripts/lib/repair-tmux-env.sh" >/dev/null 2>&1; then

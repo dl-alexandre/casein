@@ -1,0 +1,4 @@
+interface:
+  display_name: "DevIDE Deploy Durability"
+  short_description: "Land deployable changes through Git first"
+  default_prompt: "Use $devide-deploy-durability to make this DevIDE deployment durable and verify its release gate."

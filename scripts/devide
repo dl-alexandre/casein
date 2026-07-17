@@ -29,7 +29,7 @@ Commands:
   agent auth register <owner>        Fail closed: <owner>-* workspaces stop
                                      falling back to the host global login
   agent auth unregister <owner>      Allow global-auth fallback again
-  agent doctor                       Health check: shims, token, tmux env, MCP endpoints
+  agent doctor [codex]               Health/capability check; codex adds schema/hooks/sandbox
   mcp ensure                         Materialize per-workspace MCP client configs
   tools ensure <tool>                Ensure a supported terminal tool is installed
   ensure-installed <tool>            Compatibility alias for tools ensure
