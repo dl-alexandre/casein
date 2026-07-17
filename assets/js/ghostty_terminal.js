@@ -60,6 +60,7 @@ import {
   saveStoredDisplayZoom
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
+import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
 import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
 
 function escapeCellChar(value) {
@@ -1876,11 +1877,40 @@ function authoritativeFitToContainer(hook) {
   else syncDisplayZoomBadge(hook)
 }
 
+// After the authoritative fit pass: the tmux grid can still be taller/wider
+// than the fitted grid (resize not landed yet, or another writer resized the
+// window). authoritativeFitToContainer early-returns in that steady state, so
+// the oversize rows would clip at the container's bottom/right edge. Borrow
+// the observer's scale-to-fit rendering while the grids disagree, and restore
+// plain fit/zoom once the resize converges (every render re-runs this via
+// scheduleLayout, so restoration is prompt).
+function authoritativeOverflowGuard(hook) {
+  const action = fitOverflowAction({
+    cols: hook.cols,
+    rows: hook.rows,
+    fitCols: hook.__lastFitCols,
+    fitRows: hook.__lastFitRows,
+    displayMode: hook.el?.dataset?.displayMode,
+    userZoom: userDisplayZoom(hook)
+  })
+
+  if (action === "scale") {
+    scaleToContainer(hook)
+  } else if (action === "restore-fit") {
+    clearDisplayScale(hook)
+    hook.el.dataset.displayMode = "fit"
+    syncDisplayZoomBadge(hook)
+  } else if (action === "restore-zoom") {
+    applyScaledLayout(hook, 1, hook.__lastFitCols, hook.__lastFitRows, "zoom")
+  }
+}
+
 function applyTerminalLayout(hook) {
   if (!hook.fitEnabled) return
 
   if (isSizeAuthoritative(hook)) {
     authoritativeFitToContainer(hook)
+    authoritativeOverflowGuard(hook)
   } else {
     scaleToContainer(hook)
   }
