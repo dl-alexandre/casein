@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Push.Check do
+defmodule Mix.Tasks.DevIde.Push.Check do
   @moduledoc """
   Checks whether the configured server push provider can deliver to native platforms.
 
@@ -10,7 +10,7 @@ defmodule Mix.Tasks.DevIDE.Push.Check do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   alias DevIDE.Push.Diagnostics
 

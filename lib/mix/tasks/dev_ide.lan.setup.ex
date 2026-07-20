@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Lan.Setup do
+defmodule Mix.Tasks.DevIde.Lan.Setup do
   @moduledoc """
   Generates a trusted local development certificate for DevIDE LAN mode.
 
@@ -12,7 +12,7 @@ defmodule Mix.Tasks.DevIDE.Lan.Setup do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Generate mkcert certificates for LAN HTTPS development"
 

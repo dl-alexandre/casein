@@ -15,7 +15,7 @@ defmodule DevIDE.Application do
   @impl true
   def start(_type, _args) do
     DevIdeWeb.Plugs.ForwardAuth.assert_safe_listener_bind!()
-    unless desktop_mode?() or native_windows?(), do: configure_tmux_ctl!()
+    unless desktop_powershell?() or native_windows?(), do: configure_tmux_ctl!()
     configure_preview_ctl!()
     configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
@@ -36,6 +36,7 @@ defmodule DevIDE.Application do
         DevIDE.Repo,
         {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: DevIDE.PubSub},
+        DevIDE.Desktop.LaunchReplayStore,
         DevIDE.Supervision.PlatformServices,
         DevIDE.Supervision.StateStores,
         DevIDE.Supervision.Terminals,
@@ -55,6 +56,10 @@ defmodule DevIDE.Application do
     _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
 
     res
+  end
+
+  defp desktop_powershell? do
+    DevIDE.Desktop.TerminalBackend.native_session?(desktop_mode?())
   end
 
   # Ephemeral preview environments boot the endpoint on a unix socket

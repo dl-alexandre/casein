@@ -141,7 +141,8 @@ defmodule DevIDE.Codex.Event do
     true = is_map(event.metadata)
     event
   rescue
-    MatchError -> raise ArgumentError, "invalid canonical Codex event"
+    _error in MatchError ->
+      reraise ArgumentError, [message: "invalid canonical Codex event"], __STACKTRACE__
   end
 
   defp present_string?(value), do: is_binary(value) and value != ""

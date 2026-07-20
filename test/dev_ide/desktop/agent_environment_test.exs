@@ -25,7 +25,7 @@ defmodule DevIDE.Desktop.AgentEnvironmentTest do
       restore(:workspace_tokens_store, previous_store)
       restore(:agent_mcp_base_url, previous_base)
       restore_system_env("HOME", previous_home)
-      File.rm_rf(root)
+      remove_tree(root)
     end)
 
     %{checkout: checkout}
@@ -63,4 +63,22 @@ defmodule DevIDE.Desktop.AgentEnvironmentTest do
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)
+
+  defp remove_tree(root) do
+    root
+    |> writable_descendants()
+    |> Enum.each(fn path -> File.chmod(path, if(File.dir?(path), do: 0o700, else: 0o600)) end)
+
+    File.rm_rf(root)
+  end
+
+  defp writable_descendants(path) do
+    children =
+      case File.ls(path) do
+        {:ok, names} -> Enum.flat_map(names, &writable_descendants(Path.join(path, &1)))
+        _ -> []
+      end
+
+    children ++ [path]
+  end
 end

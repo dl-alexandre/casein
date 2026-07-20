@@ -34,15 +34,23 @@ struct MenuContent: View {
 
     @ViewBuilder
     private var openSection: some View {
-        if let base = monitor.status?.baseURL, monitor.state == .ready {
+        if monitor.status != nil, monitor.state == .ready {
             Button("Open DevIDE") {
-                NSWorkspace.shared.open(base)
+                Task {
+                    if let url = await monitor.cockpitURL() {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
             .keyboardShortcut("o")
 
             Button("Copy URL") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(base.absoluteString, forType: .string)
+                Task {
+                    if let url = await monitor.cleanCockpitURL() {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    }
+                }
             }
             Divider()
         }

@@ -47,8 +47,41 @@ function Open-DevIDECockpit {
 
     if (-not (Test-DevIDEReady $Port)) { return $false }
     $token = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
-    Start-Process "http://127.0.0.1:$Port/?desktop_token=$([Uri]::EscapeDataString($token))"
+    $claim = New-DevIDELaunchClaim $token
+    Start-Process "http://127.0.0.1:$Port/?$claim"
     return $true
+}
+
+function ConvertTo-DevIDEBase64Url {
+    param([byte[]]$Bytes)
+
+    [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+function New-DevIDELaunchClaim {
+    param([string]$Secret, [long]$Timestamp = 0, [string]$Nonce = '')
+
+    if (-not $Nonce) {
+        $nonceBytes = New-Object byte[] 16
+        $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $generator.GetBytes($nonceBytes)
+        } finally {
+            $generator.Dispose()
+        }
+        $Nonce = ConvertTo-DevIDEBase64Url $nonceBytes
+    }
+
+    if ($Timestamp -eq 0) { $Timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+    $message = [Text.Encoding]::UTF8.GetBytes("v1.$Timestamp.$Nonce")
+    $hmac = [Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($Secret))
+    try {
+        $proof = ConvertTo-DevIDEBase64Url ($hmac.ComputeHash($message))
+    } finally {
+        $hmac.Dispose()
+    }
+
+    return ('desktop_nonce={0}&desktop_timestamp={1}&desktop_proof={2}' -f [Uri]::EscapeDataString($Nonce), $Timestamp, [Uri]::EscapeDataString($proof))
 }
 
 function Get-FreeLoopbackPort {
@@ -122,10 +155,35 @@ function Get-OrCreateDevIDESecret {
         } finally {
             $generator.Dispose()
         }
-        [IO.File]::WriteAllText($Path, [Convert]::ToBase64String($buffer))
+        $secret = [Convert]::ToBase64String($buffer)
+        Save-DevIDEProtectedSecret $Path $secret
+        return $secret
     }
 
-    (Get-Content -Raw -LiteralPath $Path).Trim()
+    $stored = (Get-Content -Raw -LiteralPath $Path).Trim()
+    if ($stored.StartsWith('dpapi:')) {
+        $protected = [Convert]::FromBase64String($stored.Substring(6))
+        $plain = [Security.Cryptography.ProtectedData]::Unprotect(
+            $protected, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        return [Text.Encoding]::UTF8.GetString($plain)
+    }
+
+    # One-time migration from the original plaintext file format. Replace the
+    # file before returning so update backups never replicate reusable roots.
+    Save-DevIDEProtectedSecret $Path $stored
+    return $stored
+}
+
+function Save-DevIDEProtectedSecret {
+    param([string]$Path, [string]$Secret)
+
+    $plain = [Text.Encoding]::UTF8.GetBytes($Secret)
+    $protected = [Security.Cryptography.ProtectedData]::Protect(
+        $plain, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+    $encoded = 'dpapi:' + [Convert]::ToBase64String($protected)
+    $temporary = "$Path.$PID.tmp"
+    [IO.File]::WriteAllText($temporary, $encoded)
+    Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
 function Get-DevIDEEnvironment {

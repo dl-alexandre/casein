@@ -194,7 +194,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # and the picker / "new tab" affordances remain the escape hatch for an
       # intentionally independent fork.
       existing_sid =
-        if connected?(socket) and not desktop_mode?(),
+        if connected?(socket) and not desktop_powershell?(),
           do: SessionSummary.newest_shell_sid(id, ws.name)
 
       sid =
@@ -254,7 +254,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_rename_session_id, nil)
         |> assign(:active_session_kind, :shell)
         |> assign(:tmux_mutations_enabled?, true)
-        |> assign(:desktop_terminal?, desktop_mode?())
+        |> assign(:desktop_terminal?, desktop_powershell?())
         |> assign(:desktop_terminal_term, nil)
         |> assign(:desktop_terminal_pty, nil)
         |> assign(:desktop_terminal_status, :connecting)
@@ -2020,6 +2020,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
+  defp desktop_powershell?, do: DevIDE.Desktop.TerminalBackend.native_session?(desktop_mode?())
 
   defp maybe_assign_hydrated_tmux_topology(socket, data) do
     hydrated = data[:tmux_topology]

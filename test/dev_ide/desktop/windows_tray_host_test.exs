@@ -13,7 +13,13 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "System.Windows.Forms"
     assert script =~ "Windows.Forms.NotifyIcon"
     assert script =~ "http://127.0.0.1:$Port/healthz"
-    assert script =~ "desktop_token=$([Uri]::EscapeDataString($token))"
+    assert script =~ "function New-DevIDELaunchClaim"
+    assert script =~ "[Security.Cryptography.HMACSHA256]"
+    assert script =~ "desktop_nonce={0}&desktop_timestamp={1}&desktop_proof={2}"
+    refute script =~ "?desktop_token="
+    assert script =~ "[Security.Cryptography.ProtectedData]::Protect"
+    assert script =~ "[Security.Cryptography.ProtectedData]::Unprotect"
+    assert script =~ "dpapi:"
     assert script =~ "'DEV_IDE_PROFILE' = 'desktop'"
     assert script =~ "'DEV_IDE_REPO_ADAPTER' = 'sqlite'"
     assert script =~ "'DEV_IDE_API_TOKEN' = $apiToken"
@@ -80,6 +86,7 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert installer =~ "Programs\\DevIDE"
     assert installer =~ "before-update-"
     assert installer =~ "previous_data_backup"
+    refute installer =~ "@('devide.sqlite3', 'desktop-host.json', 'secret-key-base.txt'"
 
     assert installer =~
              "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"

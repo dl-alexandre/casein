@@ -16,9 +16,9 @@ defmodule Mix.Tasks.Uat.TierA do
   """
 
   use Mix.Task
-  # Mix tasks aren't a domain boundary. Mirror Mix.Tasks.DevIde: a top-level
-  # boundary that may depend on the DevIDE domain. (`classify_to: DevIde` is
-  # rejected — Boundary only allows classify_to for protocol impls / mix tasks
+  # Mix tasks aren't a domain boundary. Keep this as a top-level boundary
+  # that may depend on the DevIDE domain. Manual classification is reserved
+  # for tasks grouped under the uniquely named `DevIDEMix` boundary.
   # targeting a mix boundary, and emits "unknown boundary" otherwise.)
   use Boundary, top_level?: true, deps: [DevIDE], exports: :all
 

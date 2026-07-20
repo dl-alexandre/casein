@@ -51,7 +51,10 @@ struct CrashRecoveryIntegrationTests {
     @MainActor
     @Test func sigkilledServerAutoRestartsWithFreshPid() async throws {
         let paths = try makePaths()
-        defer { try? FileManager.default.removeItem(at: paths.dataDir) }
+        defer {
+            try? HostSecrets.deleteFromKeychain(at: paths.hostSecretsFile)
+            try? FileManager.default.removeItem(at: paths.dataDir)
+        }
         // Unique node name: the lifecycle suite may be booting its own
         // release concurrently under the default name.
         let monitor = ServerMonitor(
@@ -91,7 +94,10 @@ struct CrashRecoveryIntegrationTests {
     @MainActor
     @Test func staleContractWithoutIntentStaysStopped() async throws {
         let paths = try makePaths()
-        defer { try? FileManager.default.removeItem(at: paths.dataDir) }
+        defer {
+            try? HostSecrets.deleteFromKeychain(at: paths.hostSecretsFile)
+            try? FileManager.default.removeItem(at: paths.dataDir)
+        }
 
         // A stale file from "some earlier session": dead pid, never seen
         // ready by this monitor. The host must not surprise-start anything.

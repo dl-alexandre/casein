@@ -8,7 +8,7 @@ defmodule DevIDE.Supervision do
   (`DevIDE.*`), web (`DevIdeWeb.*`), and preview-control (`PreviewCtl.*`)
   processes in their child lists, so this boundary may depend on those.
 
-  A nested boundary under `DevIde`, mirroring the sibling app-infrastructure
+  An explicit application-infrastructure boundary, mirroring the sibling
   boundaries (`DevIDE.Application`, `DevIDE.Repo`, …).
   """
 

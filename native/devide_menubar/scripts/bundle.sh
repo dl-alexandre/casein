@@ -24,7 +24,32 @@ mkdir -p "$APP/Contents/MacOS"
 cp ".build/$CONFIGURATION/devide-menubar" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
 
-codesign --force --sign - "$APP"
+if [[ -n "${DEVIDE_RELEASE_ROOT:-}" ]]; then
+  [[ -x "$DEVIDE_RELEASE_ROOT/bin/dev_ide" ]] || {
+    echo "DEVIDE_RELEASE_ROOT is not an assembled DevIDE release" >&2
+    exit 1
+  }
+  mkdir -p "$APP/Contents/Resources"
+  ditto "$DEVIDE_RELEASE_ROOT" "$APP/Contents/Resources/release"
+fi
+
+if [[ -n "${DEVIDE_BUNDLE_VERSION:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $DEVIDE_BUNDLE_VERSION" "$APP/Contents/Info.plist"
+fi
+if [[ -n "${DEVIDE_BUILD_NUMBER:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $DEVIDE_BUILD_NUMBER" "$APP/Contents/Info.plist"
+fi
+
+# Sign every nested Mach-O before sealing the outer app. OTP releases include
+# ERTS executables, port programs, NIFs, and the bundled tmux runtime.
+while IFS= read -r -d '' candidate; do
+  if file "$candidate" | rg -q 'Mach-O'; then
+    codesign --force --sign "${DEVIDE_CODESIGN_IDENTITY:--}" "$candidate"
+  fi
+done < <(find "$APP/Contents" -type f -print0)
+
+codesign --force --sign "${DEVIDE_CODESIGN_IDENTITY:--}" "$APP"
+codesign --verify --deep --strict "$APP"
 
 echo "Built $APP"
 echo "Run with: open \"$APP\""

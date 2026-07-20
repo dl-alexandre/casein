@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Lan.Up do
+defmodule Mix.Tasks.DevIde.Lan.Up do
   @moduledoc """
   Starts DevIDE LAN HTTP mode as a managed local service.
 
@@ -15,7 +15,7 @@ defmodule Mix.Tasks.DevIDE.Lan.Up do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Start the product-like DevIDE LAN HTTP service"
 

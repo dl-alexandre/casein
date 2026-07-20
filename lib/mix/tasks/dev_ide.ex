@@ -1,10 +1,10 @@
 defmodule Mix.Tasks.DevIde do
-  @moduledoc """
-  Boundary root for project-specific Mix tasks.
-  """
+  use Boundary, classify_to: DevIDEMix
+  use Mix.Task
 
-  use Boundary,
-    top_level?: true,
-    deps: [DevIDE],
-    exports: :all
+  @shortdoc "Lists the DevIDE task namespace"
+  @moduledoc "Repository-local DevIDE task namespace."
+
+  @impl Mix.Task
+  def run(_args), do: Mix.Task.run("help", ["--search", "dev_ide"])
 end

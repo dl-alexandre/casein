@@ -1,5 +1,5 @@
 defmodule DevIDE.Files.PathSafety do
-  use Boundary, deps: [], exports: []
+  use Boundary, top_level?: true, deps: [], exports: []
 
   @moduledoc """
   Workspace path safety primitives.

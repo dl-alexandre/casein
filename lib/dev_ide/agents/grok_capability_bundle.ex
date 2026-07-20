@@ -369,7 +369,8 @@ defmodule DevIDE.Agents.GrokCapabilityBundle do
     # siblings. /dev/shm stays short for Unix sockets but is writable only at
     # the exact per-leader directory added to DevIDE's custom profile.
     uid = current_uid()
-    Path.join("/dev/shm", "devide-grok-leaders-#{uid}")
+    base = if File.dir?("/dev/shm"), do: "/dev/shm", else: "/tmp"
+    Path.join(base, "devide-grok-leaders-#{uid}")
   end
 
   defp current_uid do

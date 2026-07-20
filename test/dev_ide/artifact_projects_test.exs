@@ -455,7 +455,7 @@ defmodule DevIDE.ArtifactProjectsTest do
   test "smoke mix task creates an artifact and prints preview_open arguments" do
     output =
       capture_io(fn ->
-        Mix.Tasks.DevIDE.Artifact.Smoke.run([
+        Mix.Tasks.DevIde.Artifact.Smoke.run([
           "ws-artifacts",
           "--name",
           "Task Artifact",
@@ -477,7 +477,7 @@ defmodule DevIDE.ArtifactProjectsTest do
   test "smoke mix task can print JSON payloads for agent handoff" do
     output =
       capture_io(fn ->
-        Mix.Tasks.DevIDE.Artifact.Smoke.run([
+        Mix.Tasks.DevIde.Artifact.Smoke.run([
           "ws-artifacts",
           "--name",
           "JSON Task Artifact",

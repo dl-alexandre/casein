@@ -37,7 +37,9 @@ function Backup-UserData {
     $stamp = [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
     $backup = Join-Path $BackupRoot "before-update-$stamp"
     New-Item -ItemType Directory -Force -Path $backup | Out-Null
-    foreach ($name in @('devide.sqlite3', 'desktop-host.json', 'secret-key-base.txt', 'api-token.txt', 'desktop-launch-token.txt')) {
+    # Credentials are machine/user-bound DPAPI blobs and are neither useful nor
+    # appropriate in update backups. The live files remain in DataRoot.
+    foreach ($name in @('devide.sqlite3', 'desktop-host.json')) {
         $source = Join-Path $DataRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $backup -Force }
     }

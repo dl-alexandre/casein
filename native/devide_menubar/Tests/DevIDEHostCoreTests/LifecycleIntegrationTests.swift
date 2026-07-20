@@ -70,12 +70,14 @@ struct LifecycleIntegrationTests {
 
     @Test func fullStartStopRestartLoop() async throws {
         let paths = try makePaths()
-        defer { try? FileManager.default.removeItem(at: paths.dataDir) }
+        defer {
+            try? HostSecrets.deleteFromKeychain(at: paths.hostSecretsFile)
+            try? FileManager.default.removeItem(at: paths.dataDir)
+        }
         // Unique node name: the crash-recovery suite may be booting its own
         // release concurrently.
-        let controller = ReleaseController(
-            paths: paths,
-            releaseNode: "devide_lifecycle_e2e_\(UInt32.random(in: 0..<UInt32.max))")
+        let releaseNode = "devide_lifecycle_e2e_\(UInt32.random(in: 0..<UInt32.max))"
+        let controller = ReleaseController(paths: paths, releaseNode: releaseNode)
 
         // Start: migrate + daemon; the contract file appears once the
         // endpoint is bound (~4s in the phase-1 smoke).
@@ -86,10 +88,8 @@ struct LifecycleIntegrationTests {
         #expect(started.status == "ready")
         #expect(started.isPidAlive)
 
-        // Secrets were generated with owner-only permissions.
-        let secretAttrs = try FileManager.default.attributesOfItem(
-            atPath: paths.hostSecretsFile.path)
-        #expect((secretAttrs[.posixPermissions] as? Int) == 0o600)
+        // Secrets live in Keychain; no reusable credential file remains.
+        #expect(!FileManager.default.fileExists(atPath: paths.hostSecretsFile.path))
 
         // Health route confirms the published identity.
         let health = await HealthProbe.probe(baseURL: started.baseURL)
@@ -99,23 +99,40 @@ struct LifecycleIntegrationTests {
         #expect(report.version == started.version)
         #expect((report.uptimeMs ?? 0) > 0)
 
-        // Stop: file removed on graceful shutdown, pid exits.
-        try await controller.stop(status: started)
-        #expect(await waitForRemoval(at: paths), "runtime.json survived a graceful stop")
-        #expect(!started.isPidAlive)
+        // The cockpit itself is closed to arbitrary loopback callers. The
+        // host-minted URL exchanges its launch token for a browser session
+        // and follows the clean-URL redirect to a successful page.
+        let unauthenticated = try await URLSession(configuration: .ephemeral)
+            .data(from: started.baseURL).1 as? HTTPURLResponse
+        #expect(unauthenticated?.statusCode == 401)
+        let launchURL = try await controller.cockpitURL(for: started)
+        let authenticated = try await URLSession(configuration: .ephemeral)
+            .data(from: launchURL).1 as? HTTPURLResponse
+        #expect(authenticated?.statusCode == 200)
+        #expect(authenticated?.url?.query == nil)
 
-        // Restart proves the epmd name actually drains (the "name in use"
-        // trap): a second boot under the same RELEASE_NODE must come up.
-        try await controller.restart(status: nil)
+        // Recreate the controller like a menu-host relaunch while its daemon
+        // remains alive. Restart must adopt, rather than rotate away from,
+        // the occupied port in the live contract. This also proves graceful
+        // stop and epmd name drain under the same RELEASE_NODE.
+        let attachedController = ReleaseController(paths: paths, releaseNode: releaseNode)
+        try await attachedController.restart(status: started)
         let restarted = try #require(
             await waitForStatus(at: paths), "runtime.json never reappeared after restart")
         #expect(restarted.pid != started.pid)
+        #expect(restarted.port == started.port)
         #expect(restarted.isPidAlive)
 
         let secondHealth = await HealthProbe.probe(baseURL: restarted.baseURL)
         #expect(secondHealth != nil, "health route did not answer after restart")
 
-        try await controller.stop(status: restarted)
+        // The consumed claim remains blocked after the BEAM and replay-store
+        // process restart; DETS carries its nonce through the acceptance window.
+        let replayedAfterRestart = try await URLSession(configuration: .ephemeral)
+            .data(from: launchURL).1 as? HTTPURLResponse
+        #expect(replayedAfterRestart?.statusCode == 401)
+
+        try await attachedController.stop(status: restarted)
         #expect(await waitForRemoval(at: paths), "runtime.json survived the final stop")
     }
 }

@@ -255,13 +255,10 @@ A release can be built and run natively on macOS with
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 
-- **Case-insensitive APFS beam collisions.** `DevIde`/`DevIDE` and
-  `Mix.Tasks.DevIde`/`Mix.Tasks.Devide` are compile-time-only Boundary
-  roots whose `.beam` filenames collide on APFS/NTFS; the
-  `prune_case_colliding_modules` release step (mix.exs) drops them from
-  every release and fails the build if any *other* case collision
-  appears. Without the prune, embedded-mode boot dies with
-  `:load_failed`.
+- **Case-insensitive APFS beam collisions.** Release assembly rejects any
+  modules whose BEAM filenames differ only by case. Boundary roots use unique
+  names (`DevIDE` and `DevIDEMix`) so local compilation and packaged releases
+  enforce the same dependency graph on APFS, NTFS, and case-sensitive Linux.
 - **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
   (`Code Signature Invalid`) unless it is ad-hoc re-signed after
   download; the `dev_ide.release.lan` alias does this automatically

@@ -135,6 +135,26 @@ public final class ServerMonitor {
         perform(transition: .stopping) { try await $0.restart(status: status) }
     }
 
+    public func cockpitURL() async -> URL? {
+        guard let controller, let status else { return nil }
+        do {
+            return try await controller.cockpitURL(for: status)
+        } catch {
+            lastError = String(describing: error)
+            return nil
+        }
+    }
+
+    public func cleanCockpitURL() async -> URL? {
+        guard let controller, let status else { return nil }
+        do {
+            return try await controller.cleanCockpitURL(for: status).url
+        } catch {
+            lastError = String(describing: error)
+            return nil
+        }
+    }
+
     /// Dismiss a pending crash auto-restart: the server stays down until a
     /// manual Start.
     public func cancelAutoRestart() {

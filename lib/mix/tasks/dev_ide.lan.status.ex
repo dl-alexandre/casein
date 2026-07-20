@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Lan.Status do
+defmodule Mix.Tasks.DevIde.Lan.Status do
   @moduledoc """
   Prints the current DevIDE LAN service status.
 
@@ -6,7 +6,7 @@ defmodule Mix.Tasks.DevIDE.Lan.Status do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Show DevIDE LAN readiness"
 

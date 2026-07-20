@@ -87,6 +87,34 @@ defmodule DevIDE.Audit.SourceToolBackfillTest do
     assert %{source: nil, tool: nil} = by_action["agent.blocked"]
   end
 
+  test "backfill SQL has the same semantics on SQLite desktop releases" do
+    {:ok, conn} = Exqlite.Sqlite3.open(":memory:")
+
+    try do
+      :ok =
+        Exqlite.Sqlite3.execute(
+          conn,
+          "CREATE TABLE audit_events (action TEXT, source TEXT, tool TEXT)"
+        )
+
+      :ok =
+        Exqlite.Sqlite3.execute(
+          conn,
+          "INSERT INTO audit_events (action) VALUES ('agent.terminal_terminal_send_command')"
+        )
+
+      for sql <- migration_module().backfill_sql(), do: :ok = Exqlite.Sqlite3.execute(conn, sql)
+      {:ok, statement} = Exqlite.Sqlite3.prepare(conn, "SELECT source, tool FROM audit_events")
+
+      assert {:row, ["terminal_mcp", "terminal_send_command"]} =
+               Exqlite.Sqlite3.step(conn, statement)
+
+      :ok = Exqlite.Sqlite3.release(conn, statement)
+    after
+      :ok = Exqlite.Sqlite3.close(conn)
+    end
+  end
+
   test "backfill does not overwrite rows that already carry a source" do
     {:ok, _} =
       Audit.emit(%{

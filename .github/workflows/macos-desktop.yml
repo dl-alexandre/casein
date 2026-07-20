@@ -1,0 +1,108 @@
+name: macOS desktop package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
+    paths:
+      - "native/devide_menubar/**"
+      - "lib/dev_ide/desktop/**"
+      - "lib/dev_ide/terminals/tmux_executable.ex"
+      - "lib/dev_ide/terminals/tmux_runner.ex"
+      - "lib/dev_ide/terminals/host_server_anchor.ex"
+      - "lib/dev_ide_web/plugs/desktop_auth.ex"
+      - "config/runtime.exs"
+      - "mix.exs"
+      - "mix.lock"
+      - "rel/**"
+      - "lib/dev_ide/application.ex"
+      - "lib/dev_ide/terminals/shims.ex"
+      - "priv/repo/migrations/**"
+      - "scripts/package-macos-desktop.sh"
+      - "scripts/test-macos-desktop-package.sh"
+      - ".github/workflows/macos-desktop.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package-smoke:
+    name: Build and verify (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS 14 arm64
+            runner: macos-14
+            cache: macos-14-arm64
+          - name: macOS 15 arm64
+            runner: macos-15
+            cache: macos-15-arm64
+          - name: macOS 15 Intel
+            runner: macos-15-intel
+            cache: macos-15-x86_64
+          - name: macOS 26 arm64
+            runner: macos-26
+            cache: macos-26-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Elixir and Erlang
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          elixir-version: "1.20.0"
+          otp-version: "28.5"
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            assets/package-lock.json
+            priv/scripts/package-lock.json
+
+      - name: Restore Mix build cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            deps
+            _build
+          key: macos-mix-${{ matrix.cache }}-1.20.0-28.5-${{ hashFiles('mix.lock') }}
+
+      - name: Fetch release dependencies
+        run: |
+          mix deps.get
+          npm --prefix assets ci --no-audit --no-fund
+          npm --prefix priv/scripts ci --omit=dev --no-audit --no-fund
+
+      - name: Test host and terminal resolution
+        run: |
+          mix test test/dev_ide/terminals/tmux_executable_test.exs test/dev_ide/desktop
+          /usr/bin/swift test --package-path native/devide_menubar
+
+      - name: Build self-contained package
+        run: scripts/package-macos-desktop.sh
+
+      - name: Verify package structure and signatures
+        run: scripts/test-macos-desktop-package.sh
+
+      - name: Run packaged lifecycle and crash recovery
+        env:
+          DEVIDE_RELEASE_ROOT: ${{ github.workspace }}/native/devide_menubar/build/DevIDE MenuBar.app/Contents/Resources/release
+        run: |
+          /usr/bin/swift test --package-path native/devide_menubar --filter LifecycleIntegration
+          /usr/bin/swift test --package-path native/devide_menubar --filter CrashRecovery
+
+      - name: Upload package and integrity metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: DevIDE-${{ matrix.cache }}
+          path: native/devide_menubar/build/artifacts/*

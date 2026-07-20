@@ -17,13 +17,23 @@ public actor ReleaseController {
 
     private let paths: HostPaths
     private let releaseNode: String
+    private let inheritedEnvironment: [String: String]
+    private let secretStore: any HostSecretStore
+    private var selectedPort: Int?
 
     /// `releaseNode` is injectable so parallel test suites (or a second
     /// host instance) can boot isolated nodes; the app always uses the
     /// default.
-    public init(paths: HostPaths, releaseNode: String = ReleaseController.defaultReleaseNode) {
+    public init(
+        paths: HostPaths,
+        releaseNode: String = ReleaseController.defaultReleaseNode,
+        inheritedEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        secretStore: any HostSecretStore = KeychainSecretStore()
+    ) {
         self.paths = paths
         self.releaseNode = releaseNode
+        self.inheritedEnvironment = inheritedEnvironment
+        self.secretStore = secretStore
     }
 
     public struct CommandError: Error, CustomStringConvertible {
@@ -42,12 +52,32 @@ public actor ReleaseController {
 
         let environment = try releaseEnvironment()
         try await run(paths.migrateBinary, [], environment: environment)
-        try await run(paths.devIdeBinary, ["daemon"], environment: environment)
+        do {
+            try await run(paths.devIdeBinary, ["daemon"], environment: environment)
+        } catch {
+            // Port allocation is a bind-and-close handoff. Retry once with a
+            // fresh probe in case another process won that narrow race.
+            selectedPort = nil
+            let retryEnvironment = try releaseEnvironment()
+            do {
+                try await run(paths.devIdeBinary, ["daemon"], environment: retryEnvironment)
+            } catch {
+                selectedPort = nil
+                throw error
+            }
+        }
     }
 
     public func stop(status: RuntimeStatus?) async throws {
         phase = .stopping
         defer { phase = .idle }
+
+        if let port = status?.port, (1024...65535).contains(port) {
+            // A recreated menu host may attach to a daemon it left running.
+            // Its live port is owned by us even though a generic availability
+            // probe necessarily sees it as occupied.
+            selectedPort = port
+        }
 
         // `bin/dev_ide stop` RPCs into the node. It can fail even against a
         // live server (release rebuilds regenerate the cookie), so fall back
@@ -77,6 +107,25 @@ public actor ReleaseController {
         try await start()
     }
 
+    public func cockpitURL(for status: RuntimeStatus) throws -> URL {
+        let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile, store: secretStore)
+        var components = try cleanCockpitURL(for: status)
+        components.queryItems = try DesktopLaunchClaim.queryItems(secret: secrets.desktopLaunchToken)
+        guard let url = components.url else { throw URLError(.badURL) }
+        return url
+    }
+
+    public func cleanCockpitURL(for status: RuntimeStatus) throws -> URLComponents {
+        guard (1024...65535).contains(status.port) else { throw URLError(.badURL) }
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "127.0.0.1"
+        components.port = status.port
+        components.path = "/"
+        guard components.url != nil else { throw URLError(.badURL) }
+        return components
+    }
+
     /// Ask the release's own epmd whether our node name is still registered.
     private func epmdListsNode() async -> Bool {
         guard let epmd = epmdBinary() else { return false }
@@ -96,8 +145,8 @@ public actor ReleaseController {
         return fm.isExecutableFile(atPath: epmd.path) ? epmd : nil
     }
 
-    private func releaseEnvironment() throws -> [String: String] {
-        let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile)
+    func releaseEnvironment() throws -> [String: String] {
+        let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile, store: secretStore)
         // The host's own environment must not reconfigure the release: an
         // inherited PORT would defeat the ephemeral-port design, a stray
         // PHX_IP would fail the loopback guard, and DATABASE_PATH or a
@@ -105,22 +154,38 @@ public actor ReleaseController {
         // Allowlist rather than denylist so the next release-reconfiguring
         // var (MIX_ENV, DEV_IDE_LAN, …) is excluded by default instead of
         // needing a new scrub entry. PATH passes through for tmux/git.
-        let inherited = ProcessInfo.processInfo.environment
+        let inherited = inheritedEnvironment
         var environment: [String: String] = [:]
-        for key in ["HOME", "USER", "TMPDIR", "SHELL"] {
+        for key in ["HOME", "USER", "TMPDIR"] {
             environment[key] = inherited[key]
         }
-        environment["PATH"] =
-            inherited["PATH"] ?? "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        environment["SHELL"] = inherited["SHELL"] ?? "/bin/zsh"
+        environment["PATH"] = hostPath(inherited["PATH"])
         environment["LANG"] = inherited["LANG"] ?? "en_US.UTF-8"
         environment["LC_ALL"] = inherited["LC_ALL"] ?? "en_US.UTF-8"
         environment["DEV_IDE_PROFILE"] = "desktop"
         environment["DEV_IDE_DESKTOP_DATA_DIR"] = paths.dataDir.path
+        environment["RELEASE_TMP"] = paths.runtimeDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
         environment["DEV_IDE_API_TOKEN"] = secrets.apiToken
+        environment["DEV_IDE_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
+        let port: Int
+        if let selectedPort { port = selectedPort } else {
+            port = try HostSettings.loadOrSelect(at: paths.hostSettingsFile).port
+            selectedPort = port
+        }
+        environment["PORT"] = String(port)
         environment["PHX_SERVER"] = "true"
         environment["RELEASE_NODE"] = releaseNode
         return environment
+    }
+
+    private func hostPath(_ inherited: String?) -> String {
+        let baseline = inherited ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        var seen = Set<String>()
+        return (["/opt/homebrew/bin", "/usr/local/bin"] + baseline.split(separator: ":").map(String.init))
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .joined(separator: ":")
     }
 
     @discardableResult
@@ -129,17 +194,36 @@ public actor ReleaseController {
         _ arguments: [String],
         environment: [String: String]
     ) async throws -> String {
+        let commandOutputDirectory = paths.runtimeDir.appending(path: "commands", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: commandOutputDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let outputURL = commandOutputDirectory.appending(path: "\(UUID().uuidString).log")
+        guard FileManager.default.createFile(
+            atPath: outputURL.path,
+            contents: nil,
+            attributes: [.posixPermissions: 0o600]
+        ) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        defer { try? FileManager.default.removeItem(at: outputURL) }
+
+        let outputHandle = try FileHandle(forWritingTo: outputURL)
+        defer { try? outputHandle.close() }
+
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
         if !environment.isEmpty {
             process.environment = environment
         }
-        // Release commands produce small, bounded output, so a single pipe
-        // drained after exit cannot fill and deadlock.
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        // A regular file cannot fill like an undrained pipe. Read only its
+        // tail after exit so a noisy failed command cannot consume unbounded
+        // memory or deadlock the menu host.
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
 
         let exitCode: Int32 = try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
@@ -151,7 +235,13 @@ public actor ReleaseController {
             }
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        try outputHandle.synchronize()
+        let readHandle = try FileHandle(forReadingFrom: outputURL)
+        defer { try? readHandle.close() }
+        let length = try readHandle.seekToEnd()
+        let maximumOutputBytes: UInt64 = 64 * 1024
+        try readHandle.seek(toOffset: length > maximumOutputBytes ? length - maximumOutputBytes : 0)
+        let data = try readHandle.readToEnd() ?? Data()
         let output = String(decoding: data, as: UTF8.self)
 
         guard exitCode == 0 else {

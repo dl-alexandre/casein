@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.InsecureHttp.Setup do
+defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
   @moduledoc """
   Prepares or installs the optional insecure DevIDE LAN HTTP edge.
 
@@ -14,7 +14,7 @@ defmodule Mix.Tasks.DevIDE.InsecureHttp.Setup do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Prepare or install the intentionally insecure LAN HTTP edge"
 

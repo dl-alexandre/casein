@@ -2,17 +2,17 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
   @moduledoc """
   Per-install authentication for the loopback desktop cockpit.
 
-  The Windows host opens the cockpit with an unguessable per-install launch token.
-  This plug exchanges that token for the normal signed, HttpOnly Phoenix session
-  and redirects to a clean URL. Subsequent browser and LiveView requests use
-  that session. A loopback bind is necessary, but is not authorization: another
-  local process must not gain terminal access merely by reaching the port.
+  The desktop host opens the cockpit with a short-lived, single-use HMAC claim.
+  This plug exchanges that claim for the normal signed, HttpOnly Phoenix
+  session and redirects to a clean URL. The per-install root secret never
+  enters browser history. A loopback bind is necessary, but is not
+  authorization: another local process must not gain terminal access merely by
+  reaching the port.
   """
 
   import Plug.Conn
 
   @session_key "current_user"
-  @token_param "desktop_token"
   @desktop_user %{id: "desktop", username: "desktop", email: "desktop@local", role: :user}
   @allowed_hosts MapSet.new(["localhost", "127.0.0.1", "::1"])
 
@@ -52,7 +52,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
   defp exchange_launch_token(%Plug.Conn{method: "GET"} = conn) do
     conn = fetch_query_params(conn)
 
-    case fetch_query_token(conn) do
+    case verify_launch_claim(conn) do
       :ok ->
         conn
         |> put_session(@session_key, @desktop_user)
@@ -66,16 +66,12 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
 
   defp exchange_launch_token(conn), do: reject(conn)
 
-  defp fetch_query_token(conn) do
+  defp verify_launch_claim(conn) do
     expected = Application.get_env(:dev_ide, :desktop_launch_token)
-    supplied = conn.query_params[@token_param]
 
-    if is_binary(expected) and byte_size(expected) >= 32 and is_binary(supplied) and
-         byte_size(supplied) == byte_size(expected) and
-         Plug.Crypto.secure_compare(supplied, expected) do
-      :ok
-    else
-      :error
+    case DevIDE.Desktop.LaunchClaim.verify_and_consume(conn.query_params, expected) do
+      :ok -> :ok
+      {:error, _reason} -> :error
     end
   end
 

@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Doctor do
+defmodule Mix.Tasks.DevIde.Doctor do
   @moduledoc """
   Checks the local DevIDE development setup and can fix safe local defaults.
 
@@ -18,7 +18,7 @@ defmodule Mix.Tasks.DevIDE.Doctor do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE, DevIDE.Repo], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Check and repair local DevIDE setup"
 

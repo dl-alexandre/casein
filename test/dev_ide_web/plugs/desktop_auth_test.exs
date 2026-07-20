@@ -5,13 +5,17 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
   import Plug.Test
 
   alias DevIdeWeb.Plugs.DesktopAuth
+  alias DevIDE.Desktop.{LaunchClaim, LaunchReplayStore}
+
+  @launch_secret String.duplicate("a", 48)
 
   setup do
     previous_mode = Application.get_env(:dev_ide, :desktop_mode)
     previous_token = Application.get_env(:dev_ide, :desktop_launch_token)
 
     Application.put_env(:dev_ide, :desktop_mode, true)
-    Application.put_env(:dev_ide, :desktop_launch_token, String.duplicate("a", 48))
+    Application.put_env(:dev_ide, :desktop_launch_token, @launch_secret)
+    LaunchReplayStore.reset()
 
     on_exit(fn ->
       restore(:desktop_mode, previous_mode)
@@ -24,13 +28,75 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
   test "exchanges a valid launch token for a signed browser session" do
     conn =
       :get
-      |> desktop_conn("/?desktop_token=#{String.duplicate("a", 48)}")
+      |> desktop_conn("/?#{claim_query()}")
       |> DesktopAuth.call([])
 
     assert conn.halted
     assert conn.status == 302
     assert get_resp_header(conn, "location") == ["/"]
     assert get_session(conn, "current_user").id == "desktop"
+  end
+
+  test "rejects replay of an otherwise valid launch claim" do
+    query = claim_query()
+
+    first = :get |> desktop_conn("/?#{query}") |> DesktopAuth.call([])
+    second = :get |> desktop_conn("/?#{query}") |> DesktopAuth.call([])
+
+    assert first.status == 302
+    assert second.status == 401
+  end
+
+  test "only one concurrent exchange can consume a launch claim" do
+    params = claim_params()
+
+    results =
+      1..8
+      |> Task.async_stream(fn _ -> LaunchClaim.verify_and_consume(params, @launch_secret) end,
+        max_concurrency: 8,
+        ordered: false
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    assert Enum.count(results, &(&1 == :ok)) == 1
+    assert Enum.count(results, &(&1 == {:error, :replayed})) == 7
+  end
+
+  test "persists consumed claims across replay-store restarts" do
+    directory =
+      Path.join(System.tmp_dir!(), "launch-replays-#{System.unique_integer([:positive])}")
+
+    path = Path.join(directory, "claims.dets")
+    name = :desktop_auth_restart_test_store
+    table = :desktop_auth_restart_test_table
+    nonce = :crypto.strong_rand_bytes(16)
+    now = System.system_time(:second)
+
+    on_exit(fn -> File.rm_rf(directory) end)
+    {:ok, pid} = LaunchReplayStore.start_link(name: name, table: table, path: path)
+    assert :ok = LaunchReplayStore.consume(nonce, now + 120, now, name)
+    GenServer.stop(pid)
+
+    {:ok, pid} = LaunchReplayStore.start_link(name: name, table: table, path: path)
+    assert {:error, :replayed} = LaunchReplayStore.consume(nonce, now + 120, now, name)
+    GenServer.stop(pid)
+  end
+
+  test "rejects expired and future launch claims" do
+    now = System.system_time(:second)
+
+    for timestamp <- [now - 121, now + 11] do
+      conn = :get |> desktop_conn("/?#{claim_query(timestamp)}") |> DesktopAuth.call([])
+      assert conn.status == 401
+    end
+  end
+
+  test "rejects malformed and incorrectly signed launch claims" do
+    malformed = :get |> desktop_conn("/?desktop_nonce=x&desktop_timestamp=nope&desktop_proof=y")
+    invalid = :get |> desktop_conn("/?#{claim_query()}x")
+
+    assert DesktopAuth.call(malformed, []).status == 401
+    assert DesktopAuth.call(invalid, []).status == 401
   end
 
   test "rejects a request with no launch token or desktop session" do
@@ -50,7 +116,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
   test "rejects non-local host headers before checking credentials" do
     conn =
       :get
-      |> desktop_conn("/?desktop_token=#{String.duplicate("a", 48)}")
+      |> desktop_conn("/?#{claim_query()}")
       |> Map.put(:host, "rebinding.invalid")
       |> DesktopAuth.call([])
 
@@ -70,6 +136,23 @@ defmodule DevIdeWeb.Plugs.DesktopAuthTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp claim_query(timestamp \\ System.system_time(:second)) do
+    URI.encode_query(claim_params(timestamp))
+  end
+
+  defp claim_params(timestamp \\ System.system_time(:second)) do
+    nonce = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+
+    proof =
+      LaunchClaim.proof(@launch_secret, timestamp, nonce) |> Base.url_encode64(padding: false)
+
+    %{
+      "desktop_nonce" => nonce,
+      "desktop_timestamp" => Integer.to_string(timestamp),
+      "desktop_proof" => proof
+    }
+  end
 
   defp desktop_conn(method, path, session \\ %{}) do
     method

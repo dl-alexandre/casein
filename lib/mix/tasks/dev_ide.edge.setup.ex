@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Edge.Setup do
+defmodule Mix.Tasks.DevIde.Edge.Setup do
   @moduledoc """
   Prepares or installs the optional DevIDE LAN HTTPS edge.
 
@@ -13,7 +13,7 @@ defmodule Mix.Tasks.DevIDE.Edge.Setup do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Prepare or install the optional portless LAN HTTPS edge"
 

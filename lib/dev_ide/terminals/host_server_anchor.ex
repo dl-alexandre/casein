@@ -79,9 +79,9 @@ defmodule DevIDE.Terminals.HostServerAnchor do
 
   # sobelow_skip ["CI.System"]
   defp anchor_alive? do
-    case System.cmd("tmux", TmuxServer.args() ++ ["has-session", "-t", @anchor],
-           stderr_to_stdout: true
-         ) do
+    [cmd | args] = TmuxRunner.host_argv(["has-session", "-t", @anchor])
+
+    case System.cmd(cmd, args, stderr_to_stdout: true) do
       {_, 0} -> true
       _ -> false
     end

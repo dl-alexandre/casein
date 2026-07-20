@@ -549,8 +549,8 @@ defmodule DevIDE.Terminals.ShimsTest do
     # zsh branch first (gated on $SHELL being zsh — the macOS default), then
     # the original integrated-bash chain (the devbox default).
     assert command =~ "DEV_IDE_SHELL_INTEGRATION_ZDOTDIR"
-    assert command =~ "*/zsh)"
-    assert command =~ "exec zsh -il"
+    assert command =~ ~s(${SHELL:-})
+    assert command =~ ~s(exec "$__devide_shell" -il)
     assert command =~ "DEV_IDE_SHELL_INTEGRATION_BASH"
     assert command =~ "bash --init-file"
     assert command =~ "bash -l"
@@ -592,6 +592,39 @@ defmodule DevIDE.Terminals.ShimsTest do
       refute out =~ "read-only variable"
     end
 
+    test "custom user ZDOTDIR cannot bypass staged integration", %{tmp: tmp} do
+      Shims.materialize!()
+      home = Path.join(tmp, "home")
+      user_zdotdir = Path.join(tmp, "custom-zdotdir")
+      escaped = Path.join(tmp, "escaped-zdotdir")
+      File.mkdir_p!(home)
+      File.mkdir_p!(user_zdotdir)
+      File.write!(Path.join(user_zdotdir, ".zshenv"), "export ZDOTDIR=#{shell_quote(escaped)}\n")
+      File.write!(Path.join(user_zdotdir, ".zprofile"), "export DEVIDE_PROFILE_SEEN=1\n")
+      File.write!(Path.join(user_zdotdir, ".zshrc"), "export DEVIDE_RC_SEEN=1\n")
+
+      {out, 0} =
+        System.cmd(
+          System.find_executable("zsh"),
+          [
+            "-il",
+            "-c",
+            "print -r -- \"profile=$DEVIDE_PROFILE_SEEN rc=$DEVIDE_RC_SEEN loaded=$DEV_IDE_SHELL_INTEGRATION_LOADED zdotdir=$ZDOTDIR\""
+          ],
+          env: [
+            {"HOME", home},
+            {"PATH", "/usr/bin:/bin"},
+            {"ZDOTDIR", Shims.zdotdir_path()},
+            {"DEV_IDE_USER_ZDOTDIR", user_zdotdir},
+            {"DEV_IDE_SHELL_INTEGRATION_ZDOTDIR", Shims.zdotdir_path()},
+            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()}
+          ],
+          stderr_to_stdout: true
+        )
+
+      assert out =~ "profile=1 rc=1 loaded=1 zdotdir=#{user_zdotdir}"
+    end
+
     test "zsh integration appends the prompt-end mark to PS1", %{tmp: tmp} do
       Shims.materialize!()
       home = Path.join(tmp, "home")
@@ -614,12 +647,12 @@ defmodule DevIDE.Terminals.ShimsTest do
       assert out =~ "%{\e]133;B\a%}"
     end
 
-    test "zsh integration keeps ~/.local/bin shims ahead of bare npm package bins",
+    test "zsh integration keeps agent shims ahead of bare npm package bins",
          %{tmp: tmp} do
       Shims.materialize!()
       home = Path.join(tmp, "home")
 
-      local_bin = Path.join(home, ".local/bin")
+      local_bin = Path.join(home, ".devide/agent-shims")
       npm_bin = Path.join(home, ".local/share/npm-global/bin")
       File.mkdir_p!(local_bin)
       File.mkdir_p!(npm_bin)

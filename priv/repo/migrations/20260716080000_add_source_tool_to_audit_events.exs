@@ -9,18 +9,18 @@ defmodule DevIDE.Repo.Migrations.AddSourceToolToAuditEvents do
   @backfill_sql [
     """
     UPDATE audit_events
-    SET source = 'terminal_mcp', tool = substring(action from 16)
-    WHERE source IS NULL AND action LIKE 'agent.terminal\\_%'
+    SET source = 'terminal_mcp', tool = substr(action, 16)
+    WHERE source IS NULL AND action LIKE 'agent.terminal!_%' ESCAPE '!'
     """,
     """
     UPDATE audit_events
-    SET source = 'preview_mcp', tool = substring(action from 15)
-    WHERE source IS NULL AND action LIKE 'agent.preview\\_%'
+    SET source = 'preview_mcp', tool = substr(action, 15)
+    WHERE source IS NULL AND action LIKE 'agent.preview!_%' ESCAPE '!'
     """,
     """
     UPDATE audit_events
-    SET source = 'artifact_mcp', tool = substring(action from 16)
-    WHERE source IS NULL AND action LIKE 'agent.artifact\\_%'
+    SET source = 'artifact_mcp', tool = substr(action, 16)
+    WHERE source IS NULL AND action LIKE 'agent.artifact!_%' ESCAPE '!'
     """
   ]
 

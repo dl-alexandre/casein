@@ -9,6 +9,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
   @behaviour TmuxCtl.Runner
 
   alias DevIDE.Terminals.TmuxServer
+  alias DevIDE.Terminals.TmuxExecutable
   alias DevIDE.WorkspaceSource
 
   @doc """
@@ -106,7 +107,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
   """
   @spec host_argv([String.t()]) :: [String.t()]
   def host_argv(tmux_args) when is_list(tmux_args),
-    do: ["tmux"] ++ TmuxServer.args() ++ host_tmux_config_args() ++ tmux_args
+    do: [TmuxExecutable.resolve()] ++ TmuxServer.args() ++ host_tmux_config_args() ++ tmux_args
 
   defp host_tmux_config_args do
     case host_tmux_config_file() do
@@ -153,7 +154,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
 
   # sobelow_skip ["CI.System"]
   defp host_session_alive?(session) do
-    case System.cmd("tmux", TmuxServer.args() ++ ["has-session", "-t", session],
+    case System.cmd(TmuxExecutable.resolve(), TmuxServer.args() ++ ["has-session", "-t", session],
            stderr_to_stdout: true
          ) do
       {_, 0} -> true

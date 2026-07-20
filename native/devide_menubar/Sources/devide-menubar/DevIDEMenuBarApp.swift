@@ -12,6 +12,15 @@ struct DevIDEMenuBarApp: App {
         NSApplication.shared.setActivationPolicy(.accessory)
         let monitor = ServerMonitor()
         monitor.startPolling()
+        // A packaged desktop host owns its embedded release. Launching it —
+        // including through SMAppService at login — restores DevIDE without a
+        // second manual "Start Server" action after every reboot.
+        if monitor.paths?.releaseRoot.path.contains(".app/Contents/Resources/release") == true {
+            Task { @MainActor in
+                await monitor.tick()
+                if monitor.state == .stopped { monitor.start() }
+            }
+        }
         _monitor = State(initialValue: monitor)
     }
 

@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIDE.Lan.Down do
+defmodule Mix.Tasks.DevIde.Lan.Down do
   @moduledoc """
   Stops the managed DevIDE LAN service and port-80 edge.
 
@@ -6,7 +6,7 @@ defmodule Mix.Tasks.DevIDE.Lan.Down do
   """
 
   use Mix.Task
-  use Boundary, top_level?: true, deps: [DevIDE], exports: []
+  use Boundary, classify_to: DevIDEMix
 
   @shortdoc "Stop the managed DevIDE LAN service"
 

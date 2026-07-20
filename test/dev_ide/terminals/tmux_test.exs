@@ -103,7 +103,7 @@ defmodule DevIDE.Terminals.TmuxTest do
 
     # Host invocations carry the configured server label (`-L devide_test` in :test).
     expected =
-      ["tmux"] ++
+      [tmux_bin] ++
         DevIDE.Terminals.TmuxServer.args() ++
         ["-f", config_file, "new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"]
 

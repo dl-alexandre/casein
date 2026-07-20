@@ -17,7 +17,7 @@ defmodule DevIDE.Terminals.Shims do
   # and the staged ZDOTDIR bootstrap is materialized, enter integrated zsh;
   # otherwise fall through to the original integrated-bash chain (the devbox
   # default, where $SHELL is bash or unset under systemd).
-  @shell_command_body ~s(if command -v zsh >/dev/null 2>&1 && [ -r "${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then case "${SHELL:-}" in */zsh\) DEV_IDE_USER_ZDOTDIR="${ZDOTDIR:-}" ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}" exec zsh -il;; esac; fi; if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "${SHELL:-}" ] && [ -x "$SHELL" ]; then exec "$SHELL"; fi; exec sh)
+  @shell_command_body ~s(__devide_shell="${SHELL:-}"; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ] && [ "${__devide_shell##*/}" = zsh ] && [ -r "${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then DEV_IDE_USER_ZDOTDIR="${ZDOTDIR:-${HOME:-}}" ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}" unset DEV_IDE_SHELL_INTEGRATION_LOADED; export DEV_IDE_USER_ZDOTDIR ZDOTDIR; exec "$__devide_shell" -il; fi; if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ]; then exec "$__devide_shell"; fi; exec sh)
   @capability_env %{
     "DEV_IDE_TERMINAL" => "1",
     "DEV_IDE_CLIPBOARD" => "osc52",
@@ -770,30 +770,32 @@ defmodule DevIDE.Terminals.Shims do
 
     [[ -o interactive ]] || return 0
 
-    if [[ "${DEV_IDE_SHELL_INTEGRATION_LOADED:-}" == "1" ]]; then
+    if (( ${+functions[__devide_precmd]} )); then
       return 0
     fi
-    export DEV_IDE_SHELL_INTEGRATION_LOADED=1
+    typeset -g DEV_IDE_SHELL_INTEGRATION_LOADED=1
 
     # Belt-and-suspenders PATH repair, mirroring the bash integration: keep
     # DevIDE shims findable even when the pane inherited a thin release PATH.
     __devide_prepend_path() {
-      local d prefix=""
+      local d
+      local -a prefix rest
+      rest=("${(@s/:/)PATH}")
       for d in "$@"; do
         [[ -n "${d}" && -d "${d}" ]] || continue
-        case ":${PATH}:${prefix}:" in
-          *":${d}:"*) ;;
-          *) prefix="${prefix:+${prefix}:}${d}" ;;
-        esac
+        (( ${prefix[(Ie)${d}]} )) && continue
+        rest=("${(@)rest:#${d}}")
+        prefix+=("${d}")
       done
-      [[ -n "${prefix}" ]] && PATH="${prefix}${PATH:+:${PATH}}"
+      PATH="${(j/:/)prefix}${rest:+:${(j/:/)rest}}"
       export PATH
     }
     __devide_prepend_path \\
       "${HOME:-}/.devide/terminal-shims" \\
       "${HOME:-}/.devide/tools/bin" \\
-      "${HOME:-}/.local/bin" \\
-      "${HOME:-}/.local/share/npm-global/bin"
+      "${DEV_IDE_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${HOME:-}/.local/share/npm-global/bin" \\
+      "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path
 
     __devide_urlencode() {
@@ -880,31 +882,36 @@ defmodule DevIDE.Terminals.Shims do
     [
       {".zshenv",
        """
-       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real ~/.zshenv.
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zshenv" ]]; then
-         source "${HOME}/.zshenv"
+       # Chain through the user's original ZDOTDIR, then force the staged root
+       # back so a user .zshenv that changes ZDOTDIR cannot skip our wrappers.
+       export DEV_IDE_USER_ZDOTDIR="${DEV_IDE_USER_ZDOTDIR:-${HOME}}"
+       export DEV_IDE_SHELL_INTEGRATION_ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-${ZDOTDIR}}"
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${DEV_IDE_USER_ZDOTDIR}/.zshenv" ]]; then
+         source "${DEV_IDE_USER_ZDOTDIR}/.zshenv"
        fi
+       export ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}"
        """},
       {".zprofile",
        """
-       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real ~/.zprofile.
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zprofile" ]]; then
-         source "${HOME}/.zprofile"
+       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real .zprofile.
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${DEV_IDE_USER_ZDOTDIR}/.zprofile" ]]; then
+         source "${DEV_IDE_USER_ZDOTDIR}/.zprofile"
        fi
+       export ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}"
        """},
       {".zshrc",
        """
        # Staged by DevIDE (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
        # chain to their real ~/.zshrc, then load DevIDE shell integration.
-       if [[ -n "${DEV_IDE_USER_ZDOTDIR:-}" ]]; then
-         export ZDOTDIR="${DEV_IDE_USER_ZDOTDIR}"
+       __devide_user_zdotdir="${DEV_IDE_USER_ZDOTDIR:-${HOME}}"
+       if [[ "${__devide_user_zdotdir}" != "${HOME}" ]]; then
+         export ZDOTDIR="${__devide_user_zdotdir}"
        else
          unset ZDOTDIR
        fi
-       unset DEV_IDE_USER_ZDOTDIR
 
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${HOME}/.zshrc" ]]; then
-         source "${HOME}/.zshrc"
+       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${__devide_user_zdotdir}/.zshrc" ]]; then
+         source "${__devide_user_zdotdir}/.zshrc"
        fi
 
        if [[ -r "${DEV_IDE_SHELL_INTEGRATION_ZSH:-}" ]]; then
@@ -917,6 +924,7 @@ defmodule DevIDE.Terminals.Shims do
          fi
          unset __devide_zdotdir
        fi
+       unset DEV_IDE_USER_ZDOTDIR __devide_user_zdotdir
        """}
     ]
   end

@@ -27,7 +27,7 @@ defmodule DevIDE.MixProject do
           applications: [runtime_tools: :permanent],
           steps: [
             &ensure_static_assets/1,
-            &prune_case_colliding_modules/1,
+            &assert_no_case_colliding_modules/1,
             :assemble,
             &prune_duplicate_exec_ports/1,
             &write_release_metadata/1,
@@ -115,6 +115,7 @@ defmodule DevIDE.MixProject do
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.14", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:ex_slop, "~> 0.4.3", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
       {:boxart, "~> 0.3", only: [:dev, :test], runtime: false},
@@ -222,44 +223,26 @@ defmodule DevIDE.MixProject do
   end
 
   # APFS/NTFS are case-insensitive: two modules whose names differ only by
-  # case compile to `.beam` filenames that overwrite each other, so a release
-  # unpacked (or built) there loses one module of each pair and embedded-mode
-  # boot dies with :load_failed. Our four known pairs are pure compile-time
-  # Boundary roots with no runtime role, so they are dropped from the release;
-  # any other collision — ours or a dep's — fails the build loudly.
-  @release_prunable_modules [DevIde, DevIDE, Mix.Tasks.DevIde, Mix.Tasks.Devide]
-
-  defp prune_case_colliding_modules(release) do
-    prunable = MapSet.new(@release_prunable_modules)
-    app_file = Path.join(Mix.Project.build_path(), "lib/dev_ide/ebin/dev_ide.app")
-    {:ok, [{:application, :dev_ide, props}]} = :file.consult(String.to_charlist(app_file))
-
-    modules = Keyword.get(props, :modules, [])
-    pruned_props = Keyword.put(props, :modules, Enum.reject(modules, &(&1 in prunable)))
-    File.write!(app_file, :io_lib.format("~p.~n", [{:application, :dev_ide, pruned_props}]))
-
-    Enum.each(prunable, fn mod ->
-      # On a case-insensitive filesystem both variants resolve to the one
-      # surviving file, so removal is total no matter which casing won.
-      File.rm(Path.join(Path.dirname(app_file), "#{mod}.beam"))
-    end)
-
-    leftover =
+  # case compile to `.beam` filenames that overwrite each other. Source-level
+  # collisions are bugs, so releases reject them instead of deleting modules
+  # after compilation (which previously hid a broken Boundary graph on macOS).
+  defp assert_no_case_colliding_modules(release) do
+    collisions =
       Mix.Project.build_path()
       |> Path.join("lib/*/ebin")
       |> Path.wildcard()
       |> Enum.flat_map(&case_colliding_beams/1)
 
-    if leftover != [] do
+    if collisions != [] do
       Mix.raise("""
       modules whose names differ only by case cannot ship in a release:
       their .beam files overwrite each other on case-insensitive filesystems
       (macOS APFS, Windows NTFS) and boot fails with :load_failed.
 
-      #{Enum.map_join(leftover, "\n", &"  - #{&1}")}
+      #{Enum.map_join(collisions, "\n", &"  - #{&1}")}
 
-      Rename one module of each pair, or — if a module is compile-time-only —
-      add it to @release_prunable_modules in mix.exs.
+      Rename one module of each pair. Compile-time-only modules are not exempt:
+      their collision can still corrupt compiler plugins and local checks.
       """)
     end
 
