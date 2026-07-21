@@ -104,9 +104,14 @@ defmodule DevIDE.MixProject do
       {:eqrcode, "~> 0.2"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
-      # TODO(sec): cowlib CVE-2026-43966 — no fixed release yet.
-      {:cowlib, "~> 2.18", override: true},
+      # TODO(sec): cowlib 2.18.0 carries EEF-CVE-2026-43966/43969 with no patched
+      # release yet. Prod serves via Bandit; cowboy/cowlib enter only through
+      # test-only bypass — keep the override for dev/test, but never ship the
+      # vulnerable BEAMs in a prod release. Flip hex.audit to enforcing once
+      # cowlib >2.18.0 ships.
+      {:cowlib, "~> 2.18", only: [:dev, :test], override: true},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
+
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
       ghostty_dependency(),
@@ -189,6 +194,12 @@ defmodule DevIDE.MixProject do
         "compile --warnings-as-errors",
         "deps.unlock --check-unused",
         "deps.audit",
+        # Advisory only: prints Hex security advisories / retired packages but
+        # never fails the gate. deps.audit (mix_audit) misses cowlib CVEs that
+        # hex.audit reports; cowlib 2.18.0 is unfixable upstream today
+        # (EEF-CVE-2026-43966/43969, scoped only: [:dev, :test]). Flip this to
+        # a plain "hex.audit" once cowlib >2.18.0 ships.
+        &hex_audit_advisory/1,
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format --check-formatted",
@@ -198,7 +209,35 @@ defmodule DevIDE.MixProject do
     ]
   end
 
+  # TODO(sec): flip precommit.ci to plain "hex.audit" (enforcing) once cowlib
+  # >2.18.0 ships fixes for EEF-CVE-2026-43966/43969. Until then cowlib is
+  # scoped only: [:dev, :test] so prod releases stay clean, but hex.audit still
+  # reports the test-env dep and must not block the gate.
+  defp hex_audit_advisory(_args) do
+    Mix.shell().info("==> hex.audit (advisory — non-blocking)")
+
+    mix = System.find_executable("mix") || "mix"
+
+    {output, status} =
+      System.cmd(mix, ["hex.audit"],
+        stderr_to_stdout: true,
+        env: [{"MIX_ENV", to_string(Mix.env())}]
+      )
+
+    if output != "", do: Mix.shell().info(String.trim_trailing(output))
+
+    if status != 0 do
+      Mix.shell().info(
+        "hex.audit exited #{status} (advisory only; not failing precommit.ci — " <>
+          "see mix.exs TODO(sec) on cowlib / hex_audit_advisory)"
+      )
+    end
+
+    :ok
+  end
+
   defp ensure_static_assets(release) do
+
     required_paths = [
       "priv/static/cache_manifest.json",
       "priv/static/assets/css/app.css",
