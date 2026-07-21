@@ -37,7 +37,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       file_error: nil,
       project_meta: nil,
       tooling: nil,
-      show_hidden_files: true
+      show_hidden_files: true,
+      tree_filter: ""
     }
     |> Map.merge(Map.new(overrides))
   end
@@ -94,6 +95,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       html_hidden = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
       assert html_hidden =~ ~s(aria-pressed="false")
       refute html_hidden =~ "·hidden"
+    end
+
+    test "renders name filter input and narrows visible tree entries" do
+      tree = %{
+        "" =>
+          {:expanded,
+           [
+             file_entry("lib", "lib", :dir),
+             file_entry("README.md", "README.md", :file),
+             file_entry("mix.exs", "mix.exs", :file)
+           ]}
+      }
+
+      assigns = base_files_assigns(tree: tree, tree_filter: "")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+      assert html =~ ~s(id="tree-filter-input")
+      assert html =~ "tree:filter"
+      assert html =~ "README.md"
+      assert html =~ "mix.exs"
+      assert html =~ "lib/"
+
+      assigns = base_files_assigns(tree: tree, tree_filter: "mix")
+      filtered = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+      assert filtered =~ "mix.exs"
+      refute filtered =~ "README.md"
+      # lib/ does not match substring or fuzzy "mix"
+      refute filtered =~ "lib/"
+    end
+
+    test "filter keeps a parent dir when an expanded child matches" do
+      tree = %{
+        "" =>
+          {:expanded,
+           [
+             file_entry("lib", "lib", :dir),
+             file_entry("README.md", "README.md", :file)
+           ]},
+        "lib" =>
+          {:expanded,
+           [
+             file_entry("mix_helper.ex", "lib/mix_helper.ex", :file)
+           ]}
+      }
+
+      assigns = base_files_assigns(tree: tree, tree_filter: "mix_helper")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+      assert html =~ "lib/"
+      assert html =~ "mix_helper.ex"
+      refute html =~ "README.md"
     end
 
     test "shows the non-root selected_dir verbatim" do

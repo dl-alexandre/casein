@@ -202,6 +202,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     assert s2.assigns.files_watch_active == false
   end
 
+  test "tree:filter stores the query string on the socket" do
+    s = socket(%{tree_filter: ""})
+    assert {:noreply, s2} = FileEvents.handle_event("tree:filter", %{"q" => "mix"}, s)
+    assert s2.assigns.tree_filter == "mix"
+
+    assert {:noreply, s3} = FileEvents.handle_event("tree:filter", %{}, s2)
+    assert s3.assigns.tree_filter == ""
+  end
+
   test "tree:toggle_hidden flips show_hidden_files and refreshes expanded nodes" do
     root = Path.join(System.tmp_dir!(), "fe-hid-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)

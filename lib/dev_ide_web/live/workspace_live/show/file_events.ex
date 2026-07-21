@@ -130,6 +130,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
      |> Show.refresh_tree()}
   end
 
+  def handle_event("tree:filter", params, socket) do
+    q =
+      case params do
+        %{"q" => q} when is_binary(q) -> q
+        _ -> ""
+      end
+
+    {:noreply, assign(socket, :tree_filter, q)}
+  end
+
   # Context-menu entry point: select the target dir and open the new-file/dir
   # input in one event (the header buttons do this as two clicks).
   def handle_event("tree:new_form_at", %{"dir" => dir, "kind" => kind}, socket)

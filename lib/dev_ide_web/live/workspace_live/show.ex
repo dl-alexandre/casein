@@ -149,7 +149,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
-    tree:toggle_hidden
+    tree:toggle_hidden tree:filter
     tree:open_in_pane tree:new_form_at tree:duplicate
     tree:rename_form_node tree:rename_node tree:rename_node_cancel
     tree:delete_node_request tree:delete_node_confirm tree:delete_node_cancel
@@ -350,6 +350,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # Default true preserves historical Files-tree behavior (dotfiles visible
         # except PathSafety ignore set). Toggle hides names starting with ".".
         |> assign(:show_hidden_files, true)
+        |> assign(:tree_filter, "")
         |> assign(:context_menu, nil)
         |> assign(:node_rename, nil)
         |> assign(:node_delete, nil)

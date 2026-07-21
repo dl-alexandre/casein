@@ -28,7 +28,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   attr :file_error, :string, default: nil
   attr :node_rename, :string, default: nil, doc: "tree-node rename form value (context menu)"
   attr :node_delete, :string, default: nil, doc: "tree-node pending-delete path (context menu)"
-  attr :show_hidden_files, :boolean, default: true, doc: "when false, hide dotfile names in the tree"
+
+  attr :show_hidden_files, :boolean,
+    default: true,
+    doc: "when false, hide dotfile names in the tree"
+
+  attr :tree_filter, :string,
+    default: "",
+    doc: "substring/fuzzy filter over visible tree node names"
 
   def files_panel(assigns) do
     ~H"""
@@ -58,9 +65,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                 id="tree-toggle-hidden"
                 type="button"
                 phx-click="tree:toggle_hidden"
-                title={
-                  if @show_hidden_files, do: "Hide dotfiles", else: "Show dotfiles"
-                }
+                title={if @show_hidden_files, do: "Hide dotfiles", else: "Show dotfiles"}
                 aria-pressed={to_string(@show_hidden_files)}
                 class={[
                   "rounded border px-1.5",
@@ -71,6 +76,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
               </button>
               <button phx-click="tree:refresh" class="rounded border px-1.5">↻</button>
             </div>
+            <form phx-change="tree:filter" phx-submit="tree:filter" class="flex gap-1 text-xs">
+              <input
+                id="tree-filter-input"
+                type="search"
+                name="q"
+                value={@tree_filter}
+                phx-debounce="200"
+                placeholder="filter names…"
+                autocomplete="off"
+                class="flex-1 border rounded px-1.5 py-0.5 font-mono"
+              />
+            </form>
             <%= if @new_input do %>
               <.form for={%{}} phx-submit="tree:create" class="flex gap-1 text-xs">
                 <input
@@ -126,7 +143,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
             <%= if @tree_error do %>
               <p class="text-xs text-red-700">{@tree_error}</p>
             <% end %>
-            <.tree_node tree={@tree} selected_dir={@selected_dir} path="" />
+            <.tree_node tree={@tree} selected_dir={@selected_dir} tree_filter={@tree_filter} path="" />
             <.project_card project_meta={@project_meta} tooling={@tooling} />
             <.symbols_panel open_file={@open_file} file_symbols={@file_symbols} />
           <% _ -> %>
@@ -247,18 +264,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
 
   attr :tree, :map, required: true, doc: "rel_path => {:expanded, entries} | {:collapsed, []}"
   attr :selected_dir, :string, required: true
+  attr :tree_filter, :string, default: ""
   attr :path, :string, required: true, doc: "tree node path; root is \"\""
 
   # Recursive file-tree node. Attr-contracted so a selected_dir-only change
   # does not force the symbols panel (or project card) to re-render.
   defp tree_node(assigns) do
     state = Map.get(assigns.tree, assigns.path, {:collapsed, []})
+
+    state =
+      case state do
+        {:expanded, entries} ->
+          {:expanded, filter_tree_entries(entries, assigns.tree, assigns.tree_filter)}
+
+        other ->
+          other
+      end
+
     assigns = assign(assigns, :node, %{path: assigns.path, state: state})
 
     ~H"""
     <%= case @node.state do %>
       <% {:expanded, entries} -> %>
         <ul class="text-sm">
+          <%= if entries == [] and String.trim(@tree_filter || "") != "" do %>
+            <li class="pl-3 text-xs text-zinc-400">(no matches)</li>
+          <% end %>
           <%= for e <- entries do %>
             <li class="pl-3">
               <%= case e.kind do %>
@@ -286,7 +317,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                     </button>
                   </div>
                   <%= if match?({:expanded, _}, Map.get(@tree, e.rel_path)) do %>
-                    <.tree_node tree={@tree} selected_dir={@selected_dir} path={e.rel_path} />
+                    <.tree_node
+                      tree={@tree}
+                      selected_dir={@selected_dir}
+                      tree_filter={@tree_filter}
+                      path={e.rel_path}
+                    />
                   <% end %>
                 <% _ -> %>
                   <button
@@ -307,6 +343,61 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
         <p class="text-xs text-zinc-400">(loading…)</p>
     <% end %>
     """
+  end
+
+  # Filter only affects presentation of already-loaded nodes. Directories stay
+  # visible when an expanded descendant matches so paths remain navigable.
+  defp filter_tree_entries(entries, _tree, filter)
+       when filter in [nil, ""],
+       do: entries
+
+  defp filter_tree_entries(entries, tree, filter) when is_list(entries) do
+    q =
+      filter
+      |> to_string()
+      |> String.trim()
+      |> String.downcase()
+
+    if q == "" do
+      entries
+    else
+      Enum.filter(entries, fn e ->
+        name_match?(e.name, q) or
+          (e.kind == :dir and descendant_name_match?(tree, e.rel_path, q))
+      end)
+    end
+  end
+
+  defp descendant_name_match?(tree, path, q) do
+    case Map.get(tree, path) do
+      {:expanded, children} when is_list(children) ->
+        Enum.any?(children, fn c ->
+          name_match?(c.name, q) or
+            (c.kind == :dir and descendant_name_match?(tree, c.rel_path, q))
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp name_match?(name, q) when is_binary(name) and is_binary(q) do
+    n = String.downcase(name)
+    String.contains?(n, q) or fuzzy_name_match?(n, q)
+  end
+
+  defp name_match?(_, _), do: false
+
+  # Lightweight fuzzy: query characters appear in order in the name.
+  defp fuzzy_name_match?(name, q) do
+    q
+    |> String.graphemes()
+    |> Enum.reduce_while(String.graphemes(name), fn ch, rest ->
+      case Enum.split_while(rest, &(&1 != ch)) do
+        {_prefix, [^ch | next]} -> {:cont, next}
+        _ -> {:halt, :no}
+      end
+    end) != :no
   end
 
   attr :search_query, :string, required: true
