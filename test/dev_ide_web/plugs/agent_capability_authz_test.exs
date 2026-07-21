@@ -21,10 +21,7 @@ defmodule DevIdeWeb.Plugs.AgentCapabilityAuthzTest do
   }
 
   defp capability_conn(path, query) do
-    qs =
-      query
-      |> Enum.map(fn {k, v} -> "#{k}=#{URI.encode_www_form(to_string(v))}" end)
-      |> Enum.join("&")
+    qs = Enum.map_join(query, "&", fn {k, v} -> "#{k}=#{URI.encode_www_form(to_string(v))}" end)
 
     url = if qs == "", do: path, else: path <> "?" <> qs
 
