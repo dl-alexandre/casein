@@ -116,6 +116,57 @@ defmodule TmuxCtl.TopologyTest do
              Topology.structure_version(windows, panes_b)
   end
 
+  test "version is stable for activity ticks within the same 15s bucket" do
+    session = "topology-activity-bucket-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, activity: 30, current_command: "bash")
+
+    snap_a = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    put_fake_topology(session, activity: 31, current_command: "bash")
+    snap_b = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    assert snap_a.version == snap_b.version
+    # Payload keeps raw timestamps; only the version hash is bucketed.
+    assert [%{activity: 30}] = snap_a.panes
+    assert [%{activity: 31}] = snap_b.panes
+  end
+
+  test "version changes when activity crosses a 15s bucket boundary" do
+    session = "topology-activity-cross-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, activity: 29, current_command: "bash")
+
+    snap_a = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    put_fake_topology(session, activity: 31, current_command: "bash")
+    snap_b = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    refute snap_a.version == snap_b.version
+  end
+
+  test "version changes when current_command changes with activity fixed" do
+    session = "topology-command-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, activity: 42, current_command: "bash")
+
+    snap_a = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    put_fake_topology(session, activity: 42, current_command: "mix")
+    snap_b = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    refute snap_a.version == snap_b.version
+  end
+
+  test "structure_version is unaffected by activity and command changes" do
+    session = "topology-structure-stable-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, activity: 10, current_command: "bash")
+
+    snap_a = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    put_fake_topology(session, activity: 99, current_command: "mix")
+    snap_b = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+
+    assert snap_a.structure_version == snap_b.structure_version
+  end
+
   test "structure_version changes when pane role changes" do
     windows = [
       %{id: "@1", index: 0, name: "shell", active: true, panes: 1}
@@ -172,6 +223,46 @@ defmodule TmuxCtl.TopologyTest do
   end
 
   defp restore_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
+
+  defp put_fake_topology(session, opts) do
+    activity = Keyword.fetch!(opts, :activity)
+    current_command = Keyword.fetch!(opts, :current_command)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: activity,
+          current_command: current_command
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: current_command,
+          current_path: "/workspace",
+          activity: activity,
+          activity_flag: true,
+          bell: false,
+          unseen_changes: true
+        }
+      ]
+    })
+  end
 
   defmodule FakeMergedTopology do
     @moduledoc false
