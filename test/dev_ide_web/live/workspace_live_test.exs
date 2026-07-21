@@ -796,6 +796,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-picker-sessions-id='sidebar-ws-owned-ws']")
 
     render_hook(view, "sidebar:toggle_workspace", %{"workspace-id" => "owned-ws"})
+
+    # The rail warm-up (kicked off by sidebar:open, settled by render_async
+    # above) already cached owned-ws sessions, so expansion renders instantly —
+    # no second async round-trip before the rows are visible.
+    assert has_element?(view, "#active_sessions-u-alice-owned")
+
     render_async(view)
 
     assert has_element?(view, "#active_sessions-u-alice-owned")

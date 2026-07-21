@@ -1584,6 +1584,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_async(:sidebar_ws_warm, result, socket) do
+    {:noreply, Sidebar.handle_async_warm(socket, result)}
+  end
+
   def handle_async(:run_search, {:ok, {:ok, results}}, socket) do
     state = if results == [], do: :empty, else: :ok
 

@@ -174,6 +174,10 @@ config :dev_ide,
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See DevIDE.Terminals.TmuxServer.
   tmux_server_label: "devide_test",
+  # Disable authoritative-size debouncing in the suite (leading_ms: 0 makes
+  # every change apply immediately) so the many existing resize tests keep
+  # deterministic semantics; SessionOwner debounce tests opt back in per-test.
+  terminal_owner_size_debounce: [leading_ms: 0],
   # Unrelated LiveView/pane tests must never write tool theme configs into the
   # real $HOME; dedicated ToolThemes tests re-enable this with a tmp
   # :tool_theme_home.

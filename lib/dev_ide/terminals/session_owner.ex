@@ -103,6 +103,12 @@ defmodule DevIDE.Terminals.SessionOwner do
     # When each subscriber last reported a size (monotonic ms). Feeds the
     # bootstrap-flap detector in `record_subscriber_size/4`.
     subscriber_size_at: %{},
+    # Size-change damping (see `apply_authoritative_size/1`): a settle timer
+    # coalescing rapid authoritative-size changes, when the current quiet
+    # period started (monotonic ms), and when a size was last applied.
+    size_settle_timer: nil,
+    size_settle_started_at: nil,
+    last_size_apply_at: nil,
     # Single-flight tmux resize: `tmux_resize` is %{ref: task_ref, size: size}
     # while a resize-window task is in flight; `tmux_resize_pending` holds the
     # latest size requested meanwhile. See `maybe_resize_tmux_window/3`.
@@ -511,6 +517,22 @@ defmodule DevIDE.Terminals.SessionOwner do
 
       _pending ->
         # Task still in flight; completion path will run pending.
+        {:noreply, state}
+    end
+  end
+
+  # Size-settle timer fired: the change burst went quiet (or hit max_defer).
+  # Recompute the CURRENT winner — the burst may have converged back to the
+  # applied size, in which case nothing happens.
+  @impl true
+  def handle_info(:settle_authoritative_size, state) do
+    state = %{state | size_settle_timer: nil, size_settle_started_at: nil}
+
+    case authoritative_size(state) do
+      {size, reason} when size != state.applied_size ->
+        {:noreply, do_apply_authoritative_size(state, size, reason, now_ms())}
+
+      _ ->
         {:noreply, state}
     end
   end
@@ -1088,6 +1110,21 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
+  # Damping for authoritative-size changes. A lone change (a window resize, a
+  # rail toggle) applies immediately — the leading edge. Changes arriving in a
+  # burst (two viewers overlapping during a session hop, alternating focus
+  # reports) are coalesced: hold until the winner has been quiet for
+  # `quiet_ms`, capped at `max_defer_ms` so a sustained flap can never starve
+  # the resize entirely. Each un-damped flap used to mean a full tmux reflow +
+  # redraw on every viewer — the "screen keeps flashing" storms.
+  @size_debounce_defaults [leading_ms: 1_000, quiet_ms: 250, max_defer_ms: 1_500]
+
+  defp size_debounce(key) do
+    :dev_ide
+    |> Application.get_env(:terminal_owner_size_debounce, [])
+    |> Keyword.get(key, @size_debounce_defaults[key])
+  end
+
   defp apply_authoritative_size(state) do
     case authoritative_size(state) do
       nil ->
@@ -1096,14 +1133,56 @@ defmodule DevIDE.Terminals.SessionOwner do
       {size, _reason} when size == state.applied_size ->
         state
 
-      {{cols, rows} = size, reason} ->
-        state = resize_attachment(state, cols, rows)
-        state = maybe_resize_tmux_window(state, cols, rows)
-        emit_size_change(state, size, reason)
+      {size, reason} ->
+        now = now_ms()
 
-        %{state | applied_size: size}
-        |> schedule_tmux_drift_check()
+        if is_nil(state.last_size_apply_at) or
+             now - state.last_size_apply_at >= size_debounce(:leading_ms) do
+          do_apply_authoritative_size(state, size, reason, now)
+        else
+          schedule_size_settle(state, now)
+        end
     end
+  end
+
+  defp do_apply_authoritative_size(state, {cols, rows} = size, reason, now) do
+    state = cancel_size_settle(state)
+    state = resize_attachment(state, cols, rows)
+    state = maybe_resize_tmux_window(state, cols, rows)
+    emit_size_change(state, size, reason)
+
+    %{state | applied_size: size, last_size_apply_at: now}
+    |> schedule_tmux_drift_check()
+  end
+
+  defp schedule_size_settle(%{size_settle_timer: nil} = state, now) do
+    timer = Process.send_after(self(), :settle_authoritative_size, size_debounce(:quiet_ms))
+    %{state | size_settle_timer: timer, size_settle_started_at: now}
+  end
+
+  defp schedule_size_settle(%{size_settle_timer: timer} = state, now) do
+    # Quiet-period reset: another change while pending restarts the wait —
+    # unless the burst has already deferred past max_defer_ms, in which case
+    # the running timer is left alone so the apply cannot be starved forever.
+    if now - state.size_settle_started_at < size_debounce(:max_defer_ms) do
+      Process.cancel_timer(timer)
+
+      %{
+        state
+        | size_settle_timer:
+            Process.send_after(self(), :settle_authoritative_size, size_debounce(:quiet_ms))
+      }
+    else
+      state
+    end
+  end
+
+  defp cancel_size_settle(%{size_settle_timer: nil} = state),
+    do: %{state | size_settle_started_at: nil}
+
+  defp cancel_size_settle(%{size_settle_timer: timer} = state) do
+    Process.cancel_timer(timer)
+    %{state | size_settle_timer: nil, size_settle_started_at: nil}
   end
 
   # Returns `{ {cols, rows}, reason }` or nil. `reason` is `:focused` (a viewer
