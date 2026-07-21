@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Security
 
 function Get-DevIDEPaths {
     param([string]$Root)
@@ -164,8 +165,8 @@ function Get-OrCreateDevIDESecret {
     $stored = (Get-Content -Raw -LiteralPath $Path).Trim()
     if ($stored.StartsWith('dpapi:')) {
         $protected = [Convert]::FromBase64String($stored.Substring(6))
-        $plain = [Security.Cryptography.ProtectedData]::Unprotect(
-            $protected, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+        $plain = [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $protected, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
         return [Text.Encoding]::UTF8.GetString($plain)
     }
 
@@ -179,8 +180,8 @@ function Save-DevIDEProtectedSecret {
     param([string]$Path, [string]$Secret)
 
     $plain = [Text.Encoding]::UTF8.GetBytes($Secret)
-    $protected = [Security.Cryptography.ProtectedData]::Protect(
-        $plain, $null, [Security.Cryptography.DataProtectionScope]::CurrentUser)
+    $protected = [System.Security.Cryptography.ProtectedData]::Protect(
+        $plain, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
     $encoded = 'dpapi:' + [Convert]::ToBase64String($protected)
     $temporary = "$Path.$PID.tmp"
     [IO.File]::WriteAllText($temporary, $encoded)

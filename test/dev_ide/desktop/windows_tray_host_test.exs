@@ -11,14 +11,15 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     script = File.read!(@tray_script)
 
     assert script =~ "System.Windows.Forms"
+    assert script =~ "Add-Type -AssemblyName System.Security"
     assert script =~ "Windows.Forms.NotifyIcon"
     assert script =~ "http://127.0.0.1:$Port/healthz"
     assert script =~ "function New-DevIDELaunchClaim"
     assert script =~ "[Security.Cryptography.HMACSHA256]"
     assert script =~ "desktop_nonce={0}&desktop_timestamp={1}&desktop_proof={2}"
     refute script =~ "?desktop_token="
-    assert script =~ "[Security.Cryptography.ProtectedData]::Protect"
-    assert script =~ "[Security.Cryptography.ProtectedData]::Unprotect"
+    assert script =~ "[System.Security.Cryptography.ProtectedData]::Protect"
+    assert script =~ "[System.Security.Cryptography.ProtectedData]::Unprotect"
     assert script =~ "dpapi:"
     assert script =~ "'DEV_IDE_PROFILE' = 'desktop'"
     assert script =~ "'DEV_IDE_REPO_ADAPTER' = 'sqlite'"
