@@ -157,7 +157,7 @@ config :dev_ide,
   runtime_reaper_enabled: false,
   runtime_reaper_dry_run: true,
   # The integration source is used in the test suite because the existing
-  # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
+  # workspace flow tests assert on its HTTP-backed shape via HTTPStub servers.
   # Tests that want the Local source override this.
   workspace_source: DevIDE.WorkspaceSource.Manager,
   runtime_preview_launcher_enabled: false,
