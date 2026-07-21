@@ -63,6 +63,8 @@ defmodule DevIDE.CommandPalette do
           []
 
         s ->
+          # Default open (Files-tab viewer) first; same score so stable sort
+          # keeps the primary entry above the "open in pane" secondary.
           [
             %Item{
               id: "file:" <> rel,
@@ -71,6 +73,15 @@ defmodule DevIDE.CommandPalette do
               detail: "Open file",
               score: s,
               payload: %{event: "annotation:open", params: %{"path" => rel}}
+            },
+            %Item{
+              id: "file-pane:" <> rel,
+              kind: :file,
+              label: rel,
+              detail: "Open in pane",
+              keywords: ~w(pane split),
+              score: s,
+              payload: %{event: "tree:open_in_pane", params: %{"path" => rel}}
             }
           ]
       end
@@ -112,6 +123,15 @@ defmodule DevIDE.CommandPalette do
   """
   @spec resolve(String.t() | nil, String.t() | nil) :: {:ok, map()} | :error
   def resolve(_root, nil), do: :error
+
+  # Path-derived file ids skip Actions.allowed_events/0 — they are not
+  # static allowlist entries. Safety is PathSafety.resolve/2 against root.
+  def resolve(root, "file-pane:" <> rel) when is_binary(root) and is_binary(rel) do
+    case DevIDE.Files.PathSafety.resolve(root, rel) do
+      {:ok, _} -> {:ok, %{event: "tree:open_in_pane", params: %{"path" => rel}}}
+      _ -> :error
+    end
+  end
 
   def resolve(root, "file:" <> rel) when is_binary(root) and is_binary(rel) do
     case DevIDE.Files.PathSafety.resolve(root, rel) do

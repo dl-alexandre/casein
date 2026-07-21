@@ -307,7 +307,15 @@ defmodule DevIDE.CommandPalette.Actions do
     ]
   end
 
-  @doc "Allowlist of LiveView events the palette is permitted to dispatch."
+  @doc """
+  Allowlist of LiveView events the palette is permitted to dispatch.
+
+  Checked only for static `Actions.all/0` items in `CommandPalette.resolve/2`.
+  Path-derived file ids (`file:` → `annotation:open`, `file-pane:` →
+  `tree:open_in_pane`) are gated by `PathSafety.resolve/2` instead, but both
+  events are listed here so the allowlist documents every palette-reachable
+  event.
+  """
   def allowed_events do
     MapSet.new([
       "switch_tab",
@@ -315,6 +323,7 @@ defmodule DevIDE.CommandPalette.Actions do
       "tree:refresh",
       "isolation:refresh",
       "annotation:open",
+      "tree:open_in_pane",
       "attach_terminal_session",
       "terminal:set_mode",
       "terminal:switch_to_shell",
