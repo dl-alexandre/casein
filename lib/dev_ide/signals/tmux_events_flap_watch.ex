@@ -5,8 +5,10 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
   Attaches to `[:tmux_ctl, :events, :listener]` telemetry (emitted by
   `TmuxCtl.Events.ControlListener`) and raises one loud platform signal when
   the listener **flaps** more than **N** times (default **3**) within **M**
-  minutes (default **5**). Clears the episode after a **sustained** connection
-  (default **60s** continuous `:up`).
+  minutes (default **5**), or stays **down** (including never connecting after
+  boot — the likeliest canary failure, e.g. a missing anchor session) for
+  longer than `down_ms` (default **60s**). Clears the episode after a
+  **sustained** connection (default **60s** continuous `:up`).
 
   Surfaces exactly like sibling degradation consumers:
 
@@ -20,7 +22,8 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
       config :dev_ide, :tmux_events_flap_watch,
         threshold: 3,
         window_ms: 300_000,
-        sustained_ms: 60_000
+        sustained_ms: 60_000,
+        down_ms: 60_000
 
   Inert when `:tmux_events` is off — no false alarms on the pure-poll path.
 
@@ -85,6 +88,7 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
   @default_threshold 3
   @default_window_ms 300_000
   @default_sustained_ms 60_000
+  @default_down_ms 60_000
 
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -128,11 +132,14 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
       threshold: Keyword.get(opts, :threshold, cfg[:threshold] || @default_threshold),
       window_ms: Keyword.get(opts, :window_ms, cfg[:window_ms] || @default_window_ms),
       sustained_ms: Keyword.get(opts, :sustained_ms, cfg[:sustained_ms] || @default_sustained_ms),
+      down_ms: Keyword.get(opts, :down_ms, cfg[:down_ms] || @default_down_ms),
       attach?: Keyword.get(opts, :attach?, true),
       flap_times: [],
       raised?: false,
       connected_since: nil,
       sustained_timer: nil,
+      down_since: nil,
+      down_timer: nil,
       label: nil,
       handler_id: nil
     }
@@ -176,7 +183,13 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
       state = %{state | label: label}
       {state, action} = reduce(state, event, now_ms)
       state = apply_action(state, action, now_ms)
-      {:noreply, maybe_arm_sustained(state, event, now_ms)}
+
+      state =
+        state
+        |> maybe_arm_sustained(event, now_ms)
+        |> track_down(event, now_ms)
+
+      {:noreply, state}
     else
       {:noreply, state}
     end
@@ -205,12 +218,26 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
     end
   end
 
+  def handle_info({:down_check, down_since}, state) do
+    state = %{state | down_timer: nil}
+
+    cond do
+      state.raised? or state.down_since != down_since or not tmux_events_enabled?() ->
+        {:noreply, state}
+
+      true ->
+        downtime = now_ms() - down_since
+        {:noreply, apply_action(state, {:raise_down, downtime}, now_ms())}
+    end
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
   def terminate(_reason, state) do
     if state.handler_id, do: :telemetry.detach(state.handler_id)
     cancel_sustained_timer(state)
+    cancel_down_timer(state)
     :ok
   end
 
@@ -238,6 +265,29 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
   end
 
   defp maybe_arm_sustained(state, _event, _now_ms), do: state
+
+  # Down-duration tracking: a listener that goes down and stays down — or
+  # never connects after boot (only :reconnect_attempt events, no :up) — must
+  # raise after down_ms even though it never "flaps".
+  defp track_down(state, :up, _now_ms) do
+    %{cancel_down_timer(state) | down_since: nil}
+  end
+
+  defp track_down(%{down_since: nil} = state, event, now_ms)
+       when event in [:down, :reconnect_attempt] do
+    state = %{state | down_since: now_ms}
+    ref = Process.send_after(self(), {:down_check, now_ms}, state.down_ms)
+    %{state | down_timer: ref}
+  end
+
+  defp track_down(state, _event, _now_ms), do: state
+
+  defp cancel_down_timer(%{down_timer: nil} = state), do: state
+
+  defp cancel_down_timer(%{down_timer: ref} = state) do
+    Process.cancel_timer(ref)
+    %{state | down_timer: nil}
+  end
 
   defp arm_sustained_timer(state, connected_since, delay_ms)
        when is_integer(connected_since) and is_integer(delay_ms) do
@@ -269,6 +319,20 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
     %{state | raised?: true}
   end
 
+  defp apply_action(state, {:raise_down, downtime_ms}, _now) do
+    Logger.warning(
+      "tmux events listener down for #{downtime_ms}ms (label=#{inspect(state.label)}); " <>
+        "raising degradation signal"
+    )
+
+    announce(:raised, state, length(state.flap_times), %{
+      reason: :listener_down,
+      down_ms: downtime_ms
+    })
+
+    %{state | raised?: true}
+  end
+
   defp apply_action(state, :clear, _now) do
     Logger.info(
       "tmux events listener recovered after sustained connection " <>
@@ -279,13 +343,20 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
     %{state | raised?: false, flap_times: []}
   end
 
-  defp announce(kind, state, count) do
+  defp announce(kind, state, count, extra \\ %{}) do
     action = if kind == :raised, do: @degraded_action, else: @recovered_action
+    reason = Map.get(extra, :reason, :flapping)
 
     :telemetry.execute(
       [:dev_ide, :signals, :tmux_events_flap],
       %{count: count},
-      %{kind: kind, label: state.label, threshold: state.threshold, window_ms: state.window_ms}
+      %{
+        kind: kind,
+        reason: reason,
+        label: state.label,
+        threshold: state.threshold,
+        window_ms: state.window_ms
+      }
     )
 
     risk = %{
@@ -293,20 +364,33 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
       severity: if(kind == :raised, do: :warn, else: :info),
       subject: state.label || "host",
       detected_at: DateTime.utc_now(),
-      evidence: %{
-        flaps: count,
-        threshold: state.threshold,
-        window_ms: state.window_ms,
-        sustained_ms: state.sustained_ms,
-        label: state.label
-      },
+      evidence:
+        Map.merge(
+          %{
+            reason: reason,
+            flaps: count,
+            threshold: state.threshold,
+            window_ms: state.window_ms,
+            sustained_ms: state.sustained_ms,
+            label: state.label
+          },
+          extra
+        ),
       suggestion:
-        if kind == :raised do
-          "Host tmux control listener is flapping. Check the anchor session " <>
-            "(`__devide_keepalive`), tmux server health (`tmux -L <label> list-sessions`), " <>
-            "and DEVIDE_TMUX_EVENTS. Topology falls back to polling automatically."
-        else
-          "Listener has stayed connected past the sustained threshold."
+        cond do
+          kind != :raised ->
+            "Listener has stayed connected past the sustained threshold."
+
+          reason == :listener_down ->
+            "Host tmux control listener is down / never connected. Check the anchor " <>
+              "session (`__devide_keepalive`), tmux server health " <>
+              "(`tmux -L <label> list-sessions`), and DEVIDE_TMUX_EVENTS. Topology " <>
+              "falls back to polling automatically."
+
+          true ->
+            "Host tmux control listener is flapping. Check the anchor session " <>
+              "(`__devide_keepalive`), tmux server health (`tmux -L <label> list-sessions`), " <>
+              "and DEVIDE_TMUX_EVENTS. Topology falls back to polling automatically."
         end
     }
 
@@ -320,6 +404,7 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
         target_ref: to_string(state.label || "host"),
         metadata: %{
           "kind" => Atom.to_string(kind),
+          "reason" => Atom.to_string(reason),
           "flaps" => count,
           "threshold" => state.threshold,
           "window_ms" => state.window_ms,

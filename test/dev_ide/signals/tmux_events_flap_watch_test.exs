@@ -145,6 +145,41 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatchTest do
     assert [_] = audits(TmuxEventsFlapWatch.recovered_action())
   end
 
+  test "listener down past down_ms raises even without flapping" do
+    pid = start_watch(threshold: 10, window_ms: 60_000, down_ms: 60)
+
+    feed(pid, :down)
+    assert audits(TmuxEventsFlapWatch.degraded_action()) == []
+
+    assert_receive_audit(TmuxEventsFlapWatch.degraded_action(), 500)
+    assert [event] = audits(TmuxEventsFlapWatch.degraded_action())
+    assert event.metadata["reason"] == "listener_down"
+  end
+
+  test "never-connected boot (only reconnect_attempts) raises after down_ms" do
+    pid = start_watch(threshold: 10, window_ms: 60_000, down_ms: 60)
+
+    # Listener starts, never attaches: only reconnect_attempt telemetry, no
+    # :up and possibly no :down — the likeliest canary failure mode.
+    feed(pid, :reconnect_attempt)
+    feed(pid, :reconnect_attempt)
+
+    assert_receive_audit(TmuxEventsFlapWatch.degraded_action(), 500)
+    assert [event] = audits(TmuxEventsFlapWatch.degraded_action())
+    assert event.metadata["reason"] == "listener_down"
+  end
+
+  test "up before down_ms cancels the pending down raise" do
+    pid = start_watch(threshold: 10, window_ms: 60_000, down_ms: 80)
+
+    feed(pid, :down)
+    feed(pid, :up)
+    Process.sleep(150)
+    _ = :sys.get_state(pid)
+
+    assert audits(TmuxEventsFlapWatch.degraded_action()) == []
+  end
+
   test "thresholds are configurable via start opts" do
     pid = start_watch(threshold: 1, window_ms: 60_000)
 
