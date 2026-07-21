@@ -71,6 +71,12 @@ config :dev_ide, :situation_server, truthy_env?.("DEV_IDE_SITUATION_SERVER")
 # default — it shells out to psql once per interval.
 config :dev_ide, :pg_probe, truthy_env?.("DEV_IDE_PG_PROBE")
 
+# When on, start the host-tmux control-mode listener and wire topology
+# watchers to event-triggered refreshes (reconcile poll remains). Default
+# off — flag-off path is byte-identical to pure 300ms polling.
+# Rollback: DEVIDE_TMUX_EVENTS=0 (or unset).
+config :dev_ide, :tmux_events, truthy_env?.("DEVIDE_TMUX_EVENTS")
+
 # Probe targets as JSON, e.g.
 # [{"host":"127.0.0.1","port":5432,"user":"postgres","dbname":"postgres"}].
 # Parsed by PgProbe at runtime; invalid JSON falls back to the defaults.

@@ -119,9 +119,19 @@ defmodule DevIDE.Terminals.TmuxTopology do
     |> Keyword.put_new_lazy(:refresh_ms, fn ->
       Application.get_env(:dev_ide, :tmux_topology_refresh_ms, 300)
     end)
+    |> Keyword.put_new_lazy(:reconcile_ms, fn ->
+      Application.get_env(:dev_ide, :tmux_topology_reconcile_ms, 10_000)
+    end)
+    |> Keyword.put_new_lazy(:event_source, &event_source_opt/0)
     |> Keyword.put_new_lazy(:idle_stop_ms, fn ->
       Application.get_env(:dev_ide, :tmux_topology_idle_stop_ms, 60_000)
     end)
+  end
+
+  defp event_source_opt do
+    if DevIDE.Terminals.TmuxEvents.enabled?() do
+      {DevIDE.Terminals.TmuxEvents, []}
+    end
   end
 
   defp session_terminated_callback do

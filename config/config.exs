@@ -30,10 +30,16 @@ config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   limit: 120
 
 config :dev_ide,
+  # Event-driven tmux topology (Slice 1). Default OFF — polling path unchanged.
+  # Flip via DEVIDE_TMUX_EVENTS=1 in runtime.exs / env for canary.
+  tmux_events: false,
+  tmux_topology_reconcile_ms: 10_000,
+  tmux_events_anchor_session: "__devide_keepalive",
   tmux_ctl: [
     runner: DevIDE.Terminals.TmuxRunner,
     session_prefix: "devide",
     pubsub: DevIDE.PubSub,
+    topology_reconcile_ms: 10_000,
     prefix_window_picker_hint: "DevIDE: use the browser window picker (C-b w)",
     prefix_session_picker_hint: "DevIDE: use the browser session picker (C-b s)"
   ],
