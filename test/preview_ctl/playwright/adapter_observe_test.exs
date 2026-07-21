@@ -2,7 +2,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   # Exercises the STATIC-observation path of the Adapter that does NOT touch the
   # Playwright Bridge: `observe/1` (and the fallback inside `observe_live/1`)
   # fetch the page over HTTP via `Req.get` and build an observation from the raw
-  # HTML. Bypass serves canned responses on a localhost port so we drive the
+  # HTML. HTTPStub serves canned responses on a localhost port so we drive the
   # parser, the dom_summary shape, `<base href>` / canonical extraction, and the
   # fetch/2 error branches (non-2xx status, redirect, transport error) with no
   # Node helper involved.
@@ -12,6 +12,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   # back to the static `observe/1` path instead of reaching a live helper.
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.TestSupport.HTTPStub
   alias PreviewCtl.Playwright.Adapter
 
   # Force the Bridge into its :playwright_unavailable state (no script/executable)
@@ -35,7 +36,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   end
 
   setup do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     {:ok, bypass: bypass, base_url: "http://127.0.0.1:#{bypass.port}"}
   end
 
@@ -75,7 +76,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       </html>
       """
 
-      Bypass.expect_once(bypass, "GET", "/page", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/page", fn conn ->
         Plug.Conn.resp(conn, 200, html)
       end)
 
@@ -108,7 +109,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
     end
 
     test "title is nil when the page has no <title>", %{bypass: bypass, base_url: base_url} do
-      Bypass.expect_once(bypass, "GET", "/notitle", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/notitle", fn conn ->
         Plug.Conn.resp(conn, 200, "<html><body><p>no title here</p></body></html>")
       end)
 
@@ -121,7 +122,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
     end
 
     test "handles an empty 200 body", %{bypass: bypass, base_url: base_url} do
-      Bypass.expect_once(bypass, "GET", "/empty", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/empty", fn conn ->
         Plug.Conn.resp(conn, 200, "")
       end)
 
@@ -146,7 +147,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       </html>
       """
 
-      Bypass.expect_once(bypass, "GET", "/snap", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/snap", fn conn ->
         Plug.Conn.resp(conn, 200, html)
       end)
 
@@ -172,7 +173,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       </html>
       """
 
-      Bypass.expect_once(bypass, "GET", "/canon", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/canon", fn conn ->
         Plug.Conn.resp(conn, 200, html)
       end)
 
@@ -184,7 +185,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
 
   describe "observe/1 error branches" do
     test "returns {:http_status, ...} on a 404", %{bypass: bypass, base_url: base_url} do
-      Bypass.expect_once(bypass, "GET", "/missing", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/missing", fn conn ->
         Plug.Conn.resp(conn, 404, "Not Found")
       end)
 
@@ -198,7 +199,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
     } do
       big = String.duplicate("e", 600)
 
-      Bypass.expect(bypass, "GET", "/boom", fn conn ->
+      HTTPStub.expect(bypass, "GET", "/boom", fn conn ->
         Plug.Conn.send_resp(conn, 500, big)
       end)
 
@@ -214,7 +215,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       bypass: bypass,
       base_url: base_url
     } do
-      Bypass.expect_once(bypass, "GET", "/go", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/go", fn conn ->
         conn
         |> Plug.Conn.put_resp_header("location", "https://elsewhere.example.com/")
         |> Plug.Conn.resp(302, "")
@@ -231,7 +232,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       base_url: base_url
     } do
       url = base_url <> "/down"
-      Bypass.down(bypass)
+      HTTPStub.down(bypass)
 
       assert {:error, reason} = Adapter.observe(state_for(url))
       refute match?({:http_status, _, _}, reason)
@@ -244,7 +245,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       bypass: bypass,
       base_url: base_url
     } do
-      Bypass.expect_once(bypass, "GET", "/live", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/live", fn conn ->
         Plug.Conn.resp(
           conn,
           200,
@@ -266,7 +267,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
       bypass: bypass,
       base_url: base_url
     } do
-      Bypass.expect_once(bypass, "GET", "/live-404", fn conn ->
+      HTTPStub.expect_once(bypass, "GET", "/live-404", fn conn ->
         Plug.Conn.resp(conn, 404, "nope")
       end)
 

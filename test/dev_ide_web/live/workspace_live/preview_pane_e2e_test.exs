@@ -33,6 +33,7 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.Artifacts
   alias DevIDE.Previews.Storage.LocalDisk
+  alias DevIDE.TestSupport.HTTPStub
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -100,9 +101,9 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
     FakeState.delete(:fake_tmux_panes)
 
     # --- static fixture served on loopback for Chromium to load ---
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
 
-    Bypass.expect(bypass, fn conn ->
+    HTTPStub.expect(bypass, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("text/html")
       |> Plug.Conn.resp(200, @fixture_html)

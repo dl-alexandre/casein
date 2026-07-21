@@ -10,6 +10,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Test.RuntimeSeed
+  alias DevIDE.TestSupport.HTTPStub
   alias DevIDE.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
@@ -1482,7 +1483,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_app reports navigation_failed when loopback navigate is blocked" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     port = bypass.port
 
     previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
@@ -1510,7 +1511,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       restore_env(:preview_control_adapter, previous_adapter)
     end)
 
-    Bypass.expect_once(bypass, "GET", "/workspaces/ws-nav-fail", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/workspaces/ws-nav-fail", fn conn ->
       conn
       |> Plug.Conn.put_resp_header("location", "http://evil.example/")
       |> Plug.Conn.resp(302, "")
@@ -1574,10 +1575,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost reuses an existing pane for the same origin" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
-    Bypass.expect(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "ok")
     end)
 
@@ -1601,10 +1602,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost rejects a stale existing pane when the origin no longer responds" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "ok")
     end)
 
@@ -1616,7 +1617,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                "actor_id" => "agent-1"
              })
 
-    Bypass.down(bypass)
+    HTTPStub.down(bypass)
 
     assert {:error,
             %{
@@ -1636,8 +1637,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost rejects unreachable URL before splitting tmux" do
-    bypass = Bypass.open()
-    Bypass.down(bypass)
+    bypass = HTTPStub.open()
+    HTTPStub.down(bypass)
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
     ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
@@ -1659,10 +1660,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost rejects HTTP 404 before splitting tmux" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 404, "missing")
     end)
 
@@ -1685,12 +1686,12 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost classifies the preview-router fallback 404 as workspace_app_not_running" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
     # Mirrors what DevIDE's preview-router (scripts/preview-router.sh) returns
     # when a stopped workspace's subdomain falls through Caddy.
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 404, "No active preview environment for localhost:#{bypass.port}")
     end)
 
