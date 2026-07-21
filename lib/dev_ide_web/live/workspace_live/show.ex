@@ -273,31 +273,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
         # Workspaces.get above is required on the disconnected render (page title,
         # ensure_workspace_access, capability tokens in first-paint HTML). Surface
-        # discovery scans runtime + manager + host + tmux — defer to connected mount.
-        |> assign(
-          :preview_surfaces,
-          if(connected?(socket), do: DevIDE.Previews.discover_surfaces(ws), else: [])
-        )
+        # discovery scans runtime + manager + host + tmux — defer to
+        # :load_preview_state async (started from :after_mount_side_panels) so the
+        # first connected frame is not blocked on that scan.
+        |> assign(:preview_surfaces, [])
         # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}})
-        # for previews AND files, hydrated via Panes.snapshot/1 over the viewer's
-        # alias id set and kept live via DevIDE.Panes.Events. The legacy-shaped
-        # :preview_panes assign is a derivation of it (plus later, preview-only
-        # observation updates). Skipped on the static/disconnected render — the
-        # connected mount (LiveView mounts twice) hydrates it a frame later.
-        |> assign(
-          :feature_panes,
-          if(connected?(socket),
-            do: PreviewPaneEvents.load_feature_panes(ws, path_result),
-            else: %{}
-          )
-        )
-        |> then(
-          &assign(
-            &1,
-            :preview_panes,
-            PreviewPaneEvents.preview_panes_from_feature(&1.assigns.feature_panes)
-          )
-        )
+        # for previews AND files. Hydrated async via Panes.snapshot/1 over the
+        # viewer's alias id set (:load_preview_state); kept live via
+        # DevIDE.Panes.Events. The legacy-shaped :preview_panes assign is a
+        # derivation of it (plus later, preview-only observation updates).
+        # Empty on both static and connected first paint — same as :tree.
+        |> assign(:feature_panes, %{})
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -1307,6 +1293,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # handle_async(:refresh_git_status)) all consume :git_status/:tree as
       # plain values, and the :agents_mount results are post-processed by the
       # handle_async clause below (assign_async would bypass it entirely).
+      # Capture workspace / host_path before the closures (same pattern as
+      # neighboring asyncs) — discover_surfaces + load_feature_panes are the
+      # expensive scans previously on connected mount.
+      path_result = host_path
+      ws = workspace
+
       socket =
         socket
         |> start_async(:load_side_panels, fn ->
@@ -1314,6 +1306,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         end)
         |> start_async(:agents_mount, fn ->
           fetch_agents_panels(workspace, host_path, actor_id)
+        end)
+        |> start_async(:load_preview_state, fn ->
+          %{
+            workspace_id: ws.id,
+            preview_surfaces: DevIDE.Previews.discover_surfaces(ws),
+            feature_panes: PreviewPaneEvents.load_feature_panes(ws, path_result)
+          }
         end)
 
       send(self(), :after_mount_runs)
@@ -1499,6 +1498,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_async(:after_mount_hydration, _result, socket), do: {:noreply, socket}
+
+  def handle_async(:load_preview_state, {:ok, data}, socket) do
+    if socket.assigns.workspace.id == data.workspace_id do
+      # Live {:pane_event, _} handlers may have updated :feature_panes /
+      # :preview_panes between mount and this completion — merge with live
+      # assigns winning per key (same rationale as the tree merge below).
+      feature_panes = Map.merge(data.feature_panes, socket.assigns.feature_panes)
+
+      preview_panes =
+        Map.merge(
+          PreviewPaneEvents.preview_panes_from_feature(feature_panes),
+          socket.assigns.preview_panes
+        )
+
+      {:noreply,
+       socket
+       |> assign(:preview_surfaces, data.preview_surfaces)
+       |> assign(:feature_panes, feature_panes)
+       |> assign(:preview_panes, preview_panes)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:load_preview_state, _result, socket), do: {:noreply, socket}
 
   def handle_async(:load_side_panels, {:ok, data}, socket) do
     # The fetch ran against the mount-time tree snapshot; the user may have
