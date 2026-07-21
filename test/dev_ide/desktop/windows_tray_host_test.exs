@@ -3,6 +3,10 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
 
   @tray_script Path.expand("../../../windows/DevIDE.Tray.ps1", __DIR__)
   @package_script Path.expand("../../../scripts/package-windows-desktop.ps1", __DIR__)
+  @preview_prepare Path.expand(
+                     "../../../scripts/prepare-windows-preview-runtime.ps1",
+                     __DIR__
+                   )
   @installer Path.expand("../../../windows/Install-DevIDE.ps1", __DIR__)
   @launcher Path.expand("../../../windows/DevIDE.Launcher.ps1", __DIR__)
   @uninstaller Path.expand("../../../windows/Uninstall-DevIDE.ps1", __DIR__)
@@ -68,12 +72,25 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "Read-DesktopReleaseMetadata"
     assert script =~ "Refusing to package a dirty source tree"
     assert script =~ "New-DesktopArchive"
+    assert script =~ "Copy-DesktopTree"
+    assert script =~ "robocopy.exe"
     assert script =~ "tar.exe"
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "windows\\DevIDE.Tray.ps1"
     assert script =~ "windows\\Install-DevIDE.ps1"
     assert script =~ "pwa-icon-192.png"
     assert script =~ "windows\\DevIDE.png"
+  end
+
+  test "Windows package requires a self-contained Playwright runtime" do
+    package = File.read!(@package_script)
+    prepare = File.read!(@preview_prepare)
+
+    assert package =~ "Assert-WindowsPreviewRuntime"
+    assert package =~ "runtime\\node.exe"
+    assert package =~ "playwright-browsers"
+    assert prepare =~ "PLAYWRIGHT_BROWSERS_PATH"
+    assert prepare =~ "install chromium"
   end
 
   test "tray uses the DevIDE code mark with status badges" do

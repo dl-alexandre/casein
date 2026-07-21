@@ -29,7 +29,8 @@ defmodule PreviewCtl.Playwright.Bridge do
         buffer: "",
         executable: nil,
         script: nil,
-        scripts_dir: nil
+        scripts_dir: nil,
+        browsers_dir: nil
       }
       |> configure_helper()
 
@@ -95,13 +96,21 @@ defmodule PreviewCtl.Playwright.Bridge do
         state
 
       script ->
-        case System.find_executable("node") do
+        case node_executable(script) do
           nil ->
             Logger.warning("Preview Playwright helper is configured, but node is not available")
             state
 
           executable ->
-            %{state | executable: executable, script: script, scripts_dir: Path.dirname(script)}
+            scripts_dir = Path.dirname(script)
+
+            %{
+              state
+              | executable: executable,
+                script: script,
+                scripts_dir: scripts_dir,
+                browsers_dir: bundled_browsers_dir(scripts_dir)
+            }
         end
     end
   end
@@ -126,7 +135,21 @@ defmodule PreviewCtl.Playwright.Bridge do
   defp ensure_port(%{port: nil} = state), do: start_port(state)
   defp ensure_port(state), do: {:ok, state}
 
-  defp start_port(%{executable: executable, script: script, scripts_dir: scripts_dir} = state) do
+  defp start_port(
+         %{
+           executable: executable,
+           script: script,
+           scripts_dir: scripts_dir,
+           browsers_dir: browsers_dir
+         } = state
+       ) do
+    browser_env =
+      if is_binary(browsers_dir) do
+        [{~c"PLAYWRIGHT_BROWSERS_PATH", String.to_charlist(browsers_dir)}]
+      else
+        []
+      end
+
     port =
       Port.open({:spawn_executable, executable}, [
         {:args, [script, "--daemon"]},
@@ -134,7 +157,8 @@ defmodule PreviewCtl.Playwright.Bridge do
         :exit_status,
         :hide,
         {:line, 10_000_000},
-        {:cd, scripts_dir}
+        {:cd, scripts_dir},
+        {:env, browser_env}
       ])
 
     {:ok, %{state | port: port}}
@@ -148,6 +172,34 @@ defmodule PreviewCtl.Playwright.Bridge do
     case Application.get_env(:preview_ctl, :playwright_script) do
       nil -> nil
       path when is_binary(path) -> resolve_script_path(path)
+    end
+  end
+
+  @doc false
+  def node_executable(script \\ script_path())
+
+  def node_executable(script) when is_binary(script) do
+    bundled = Path.join([Path.dirname(script), "runtime", windows_node_name()])
+
+    [bundled, default_bundled_node(), System.find_executable("node")]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.find(&File.regular?/1)
+  end
+
+  def node_executable(_script), do: System.find_executable("node")
+
+  defp bundled_browsers_dir(scripts_dir) do
+    path = Path.join(scripts_dir, "playwright-browsers")
+    if File.dir?(path), do: path
+  end
+
+  defp windows_node_name do
+    if match?({:win32, _}, :os.type()), do: "node.exe", else: "node"
+  end
+
+  defp default_bundled_node do
+    with dir when is_binary(dir) <- priv_dir() do
+      Path.join([dir, "scripts", "runtime", windows_node_name()])
     end
   end
 

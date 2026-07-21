@@ -3,7 +3,8 @@ param(
     [string]$ReleasePath,
     [string]$OutputPath,
     [switch]$SkipBuild,
-    [switch]$AllowDirty
+    [switch]$AllowDirty,
+    [switch]$SkipPreviewRuntime
 )
 
 Set-StrictMode -Version Latest
@@ -85,6 +86,54 @@ function New-DesktopArchive {
 
 $sourceRevision = Get-SourceRevision
 
+function Assert-WindowsPreviewRuntime {
+    $scripts = Join-Path $root 'priv\scripts'
+    $required = @(
+        (Join-Path $scripts 'runtime\node.exe'),
+        (Join-Path $scripts 'node_modules\playwright\package.json'),
+        (Join-Path $scripts 'playwright-browsers')
+    )
+    $missing = @($required | Where-Object { -not (Test-Path -LiteralPath $_) })
+    if ($missing.Count -gt 0) {
+        throw "Windows preview runtime is incomplete. Run scripts\prepare-windows-preview-runtime.ps1 before packaging. Missing: $($missing -join ', ')"
+    }
+}
+
+function Copy-DesktopTree {
+    param(
+        [Parameter(Mandatory)][string]$SourcePath,
+        [Parameter(Mandatory)][string]$DestinationPath
+    )
+
+    $robocopy = Get-Command robocopy.exe -ErrorAction SilentlyContinue
+    if ($robocopy) {
+        & $robocopy.Source $SourcePath $DestinationPath /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+        # Robocopy uses 0-7 for successful copy states; 8+ means failure.
+        if ($LASTEXITCODE -ge 8) {
+            throw "robocopy failed with exit code $LASTEXITCODE while copying the release"
+        }
+    } else {
+        Copy-Item -Recurse -Force -Path (Join-Path $SourcePath '*') -Destination $DestinationPath
+    }
+}
+
+function Remove-DesktopTree {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $full = [IO.Path]::GetFullPath($Path)
+    if ($full -eq $root -or $full -eq [IO.Path]::GetPathRoot($full)) {
+        throw "Refusing unsafe tree removal: $full"
+    }
+    if (Test-Path -LiteralPath $full) {
+        $longPath = if ($full.StartsWith('\\')) { "\\?\UNC\$($full.Substring(2))" } else { "\\?\$full" }
+        [IO.Directory]::Delete($longPath, $true)
+    }
+}
+
+if (-not $SkipPreviewRuntime) {
+    Assert-WindowsPreviewRuntime
+}
+
 if ($outputPath -eq $root -or $outputPath -eq [IO.Path]::GetPathRoot($outputPath)) {
     throw "Refusing unsafe output path: $outputPath"
 }
@@ -136,10 +185,35 @@ if (-not (Test-Path -LiteralPath $releaseBat)) {
 $metadata = Read-DesktopReleaseMetadata -Path $releasePath -Revision $sourceRevision
 
 if (Test-Path -LiteralPath $outputPath) {
-    Remove-Item -Recurse -Force -LiteralPath $outputPath
+    Remove-DesktopTree -Path $outputPath
 }
 New-Item -ItemType Directory -Force -Path $outputPath | Out-Null
-Copy-Item -Recurse -Force -Path (Join-Path $releasePath '*') -Destination $outputPath
+Copy-DesktopTree -SourcePath $releasePath -DestinationPath $outputPath
+
+if (-not $SkipPreviewRuntime) {
+    $releaseScripts = Get-ChildItem -LiteralPath (Join-Path $outputPath 'lib') -Directory |
+        ForEach-Object { Join-Path $_.FullName 'priv\scripts' } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_ 'preview_playwright.mjs') } |
+        Select-Object -First 1
+    if (-not $releaseScripts) { throw 'Built release omitted the Playwright helper script' }
+
+    # Mix copies application priv before packaging, where deeply nested Chromium
+    # resources can exceed legacy Win32 path handling. Overlay the prepared tree
+    # with robocopy, which preserves the complete long-path browser payload.
+    foreach ($name in @('runtime', 'node_modules', 'playwright-browsers')) {
+        Copy-DesktopTree -SourcePath (Join-Path $root "priv\scripts\$name") -DestinationPath (Join-Path $releaseScripts $name)
+    }
+
+    $headless = Get-ChildItem -LiteralPath (Join-Path $releaseScripts 'playwright-browsers') -Directory |
+        Where-Object Name -Like 'chromium_headless_shell-*' |
+        Select-Object -First 1
+    if (-not (Test-Path -LiteralPath (Join-Path $releaseScripts 'runtime\node.exe')) -or
+        -not (Test-Path -LiteralPath (Join-Path $releaseScripts 'node_modules\playwright\package.json')) -or
+        -not $headless -or
+        -not (Test-Path -LiteralPath (Join-Path $headless.FullName 'INSTALLATION_COMPLETE'))) {
+        throw 'Packaged release omitted part of the self-contained Windows preview runtime'
+    }
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $outputPath 'windows') | Out-Null
 Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\DevIDE.Tray.ps1'),

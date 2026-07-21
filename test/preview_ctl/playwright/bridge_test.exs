@@ -43,6 +43,19 @@ defmodule PreviewCtl.Playwright.BridgeTest do
              |> Path.join("scripts/preview_playwright.mjs")
   end
 
+  test "prefers a release-local Node runtime over PATH" do
+    root = Path.join(System.tmp_dir!(), "pw-node-#{System.unique_integer([:positive])}")
+    script = Path.join(root, "preview_playwright.mjs")
+    node = Path.join([root, "runtime", "node.exe"])
+    File.mkdir_p!(Path.dirname(node))
+    File.write!(script, "")
+    File.write!(node, "")
+
+    assert Path.expand(Bridge.node_executable(script)) == Path.expand(node)
+
+    File.rm_rf!(root)
+  end
+
   test "command/1 returns playwright_unavailable when the helper is not configured" do
     Application.delete_env(:preview_ctl, :playwright_script)
     restart_bridge!()

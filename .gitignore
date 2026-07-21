@@ -59,6 +59,10 @@ npm-debug.log
 # Playwright helper deps for preview control (package.json + lock are tracked;
 # the browser-driving package itself is installed locally / in the image).
 /priv/scripts/node_modules/
+# Prepared only on Windows packaging hosts; copied into the release artifact.
+/priv/scripts/runtime/
+/priv/scripts/playwright-browsers/
+/priv/scripts/pnpm-lock.yaml
 
 # Release artifact produced by scripts/build-release.sh (regenerated each build).
 /release-out/
