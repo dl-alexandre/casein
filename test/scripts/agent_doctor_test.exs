@@ -46,13 +46,19 @@ defmodule Scripts.AgentDoctorTest do
     cwd: cwd
   } do
     install_mock_shims(home)
+    shadow_dir = install_mock_shadow_bins(home)
 
     {output, 0} =
-      run_function(home, cwd, """
-      DEVIDE_AGENT_LAUNCH_CONTEXT=grok
-      check_shims
-      printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
-      """)
+      run_function(
+        home,
+        cwd,
+        """
+        DEVIDE_AGENT_LAUNCH_CONTEXT=grok
+        check_shims
+        printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
+        """,
+        [{"PATH", "#{shadow_dir}:/usr/bin:/bin"}]
+      )
 
     assert output =~ "FAIL shim shadowed: grok resolves to"
     assert output =~ "FAIL paired-context PATH missing #{home}/.devide/agent-shims"
@@ -334,6 +340,19 @@ defmodule Scripts.AgentDoctorTest do
       File.write!(path, "#!/usr/bin/env bash\nexit 0\n")
       File.chmod!(path, 0o755)
     end
+  end
+
+  defp install_mock_shadow_bins(home) do
+    bin_dir = Path.join(home, "shadow-bin")
+    File.mkdir_p!(bin_dir)
+
+    for runtime <- @runtimes do
+      path = Path.join(bin_dir, runtime)
+      File.write!(path, "#!/usr/bin/env bash\nexit 0\n")
+      File.chmod!(path, 0o755)
+    end
+
+    bin_dir
   end
 
   defp install_mock_grok(home, inspect_json) do

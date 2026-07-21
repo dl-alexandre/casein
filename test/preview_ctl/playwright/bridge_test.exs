@@ -46,7 +46,8 @@ defmodule PreviewCtl.Playwright.BridgeTest do
   test "prefers a release-local Node runtime over PATH" do
     root = Path.join(System.tmp_dir!(), "pw-node-#{System.unique_integer([:positive])}")
     script = Path.join(root, "preview_playwright.mjs")
-    node = Path.join([root, "runtime", "node.exe"])
+    node_name = if match?({:win32, _}, :os.type()), do: "node.exe", else: "node"
+    node = Path.join([root, "runtime", node_name])
     File.mkdir_p!(Path.dirname(node))
     File.write!(script, "")
     File.write!(node, "")
