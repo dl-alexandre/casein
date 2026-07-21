@@ -164,6 +164,41 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
     assert Process.alive?(pid)
   end
 
+  test "duplicate listener_up in event mode does not trigger extra snapshots", %{fake: fake} do
+    session = "wevt-dup-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, "shell", "bash")
+
+    counter = :counters.new(1, [:atomics])
+
+    resolver = fn ->
+      :counters.add(counter, 1, 1)
+      TmuxCtl.Test.FakeAdapter
+    end
+
+    assert {:ok, pid} =
+             Watcher.ensure_started(
+               session,
+               watcher_opts(fake,
+                 enabled: true,
+                 refresh_ms: 50,
+                 reconcile_ms: 60_000,
+                 tmux_resolver: resolver
+               )
+             )
+
+    # Settle into connected event mode, then measure.
+    Process.sleep(120)
+    before = :counters.get(counter, 1)
+
+    # Queued duplicate lifecycle broadcasts around a reconnect must be no-ops
+    # while already in event mode — each used to force an uncoalesced snapshot.
+    for _ <- 1..5, do: send(pid, {TmuxCtl.Events, {:listener_up, "dup"}})
+    Process.sleep(150)
+
+    assert :counters.get(counter, 1) == before
+    assert Process.alive?(pid)
+  end
+
   test "event mode + activity-only change in same 15s bucket does not broadcast", %{fake: fake} do
     session = "wevt-bucket-#{System.unique_integer([:positive])}"
     put_fake_topology(session, "shell", "bash", activity: 30)

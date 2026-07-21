@@ -56,6 +56,10 @@ defmodule DevIDE.Terminals.TmuxEvents do
 
           pid when is_pid(pid) ->
             pubsub = pubsub()
+            # Idempotent: retry loops re-subscribe during listener outages, and
+            # duplicate subscriptions would fan every lifecycle broadcast out
+            # K times to the same watcher.
+            :ok = Phoenix.PubSub.unsubscribe(pubsub, topic(label))
             :ok = Phoenix.PubSub.subscribe(pubsub, topic(label))
 
             connected? =

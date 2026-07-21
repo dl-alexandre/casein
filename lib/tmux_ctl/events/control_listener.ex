@@ -19,6 +19,9 @@ defmodule TmuxCtl.Events.ControlListener do
 
   @default_anchor "__devide_keepalive"
   @default_backoff_ms [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
+  # A connection must stay up this long before disconnect resets backoff to
+  # the floor (prevents fast connect/die flaps from retrying at 1s forever).
+  @sustained_connection_ms 60_000
   @topic_prefix "tmux_events:"
 
   @type state_name :: :connecting | :connected | :backoff
@@ -177,6 +180,14 @@ defmodule TmuxCtl.Events.ControlListener do
       "tmux control listener disconnected (#{state.label}): #{inspect(reason)}; backing off"
     )
 
+    # Only a sustained connection earns a reset to the backoff floor; short
+    # lived connections keep climbing so a connect/die flap can't spin at 1s.
+    sustained? =
+      is_integer(state.connected_since) and
+        System.monotonic_time(:millisecond) - state.connected_since >= @sustained_connection_ms
+
+    state = if sustained?, do: %{state | backoff_index: 0}, else: state
+
     enter_backoff(%{state | state: :backoff, connected_since: nil, in_block?: false})
   end
 
@@ -260,10 +271,10 @@ defmodule TmuxCtl.Events.ControlListener do
     state = %{
       state
       | state: :connected,
-        connected_since: now,
-        # Fresh connection always starts backoff at the floor; long-lived
-        # sessions re-enter connect with index already reset in disconnect path.
-        backoff_index: 0
+        connected_since: now
+        # backoff_index deliberately NOT reset here: a connection must stay up
+        # for @sustained_connection_ms before the disconnect path resets to the
+        # floor, otherwise a fast connect/die flap retries at 1s forever.
     }
 
     broadcast_lifecycle(state, :listener_up)

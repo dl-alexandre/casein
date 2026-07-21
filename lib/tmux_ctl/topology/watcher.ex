@@ -333,6 +333,12 @@ defmodule TmuxCtl.Topology.Watcher do
     {:noreply, enter_poll_fallback(state)}
   end
 
+  def handle_info({TmuxCtl.Events, {:listener_up, _label}}, %{event_mode?: true} = state) do
+    # Already in event mode: a duplicate listener_up (e.g. queued broadcasts
+    # around a reconnect) must not trigger another uncoalesced snapshot.
+    {:noreply, state}
+  end
+
   def handle_info({TmuxCtl.Events, {:listener_up, _label}}, state) do
     case enter_event_mode(state) do
       {:ok, state} -> {:noreply, state}
