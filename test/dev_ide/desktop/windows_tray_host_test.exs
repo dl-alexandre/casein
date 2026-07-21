@@ -12,6 +12,7 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
   @uninstaller Path.expand("../../../windows/Uninstall-DevIDE.ps1", __DIR__)
   @repair Path.expand("../../../windows/Repair-DevIDE.ps1", __DIR__)
   @support Path.expand("../../../windows/New-DevIDESupportBundle.ps1", __DIR__)
+  @rollback Path.expand("../../../windows/Rollback-DevIDE.ps1", __DIR__)
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -55,6 +56,7 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
           "Open DevIDE",
           "Restart",
           "Repair installation",
+          "Roll back last update",
           "Open logs",
           "Create support bundle",
           "Launch at Windows sign-in",
@@ -62,6 +64,15 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
         ] do
       assert script =~ label
     end
+  end
+
+  test "rollback swaps only between validated installed release roots" do
+    script = File.read!(@rollback)
+
+    assert script =~ "previous_release_root"
+    assert script =~ "StartsWith($releasesRoot"
+    assert script =~ "releases\\dev_ide.relmeta.json"
+    assert script =~ "rollback = $true"
   end
 
   test "repair validates the installed release and reruns migrations" do
@@ -100,10 +111,23 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "robocopy.exe"
     assert script =~ "tar.exe"
     assert script =~ "Get-FileHash -Algorithm SHA256"
+    assert script =~ "Write-ReleaseTrustManifest"
+    assert script =~ "Set-AuthenticodeSignature"
+    assert script =~ "RequireSigned"
     assert script =~ "windows\\DevIDE.Tray.ps1"
     assert script =~ "windows\\Install-DevIDE.ps1"
     assert script =~ "pwa-icon-192.png"
     assert script =~ "windows\\DevIDE.png"
+  end
+
+  test "installer verifies signed release identity and file hashes before mutation" do
+    script = File.read!(@installer)
+
+    assert script =~ "Test-ReleaseTrust $packageRoot"
+    assert script =~ "Get-AuthenticodeSignature"
+    assert script =~ "DEVIDE_REQUIRE_SIGNED_RELEASES"
+    assert script =~ "Get-FileHash -Algorithm SHA256"
+    assert script =~ "Release integrity check failed"
   end
 
   test "Windows package requires a self-contained Playwright runtime" do

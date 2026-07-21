@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$PackageRoot = (Split-Path -Parent $PSScriptRoot),
-    [switch]$Launch
+    [switch]$Launch,
+    [switch]$RequireSigned
 )
 
 Set-StrictMode -Version Latest
@@ -17,6 +18,37 @@ function Read-ReleaseMetadata {
         throw 'This package is not a Windows desktop SQLite release.'
     }
     $metadata
+}
+
+function Test-ReleaseTrust {
+    param([string]$Root)
+
+    $manifestPath = Join-Path $Root 'windows\DevIDE.Release.psd1'
+    if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Release trust manifest is missing.' }
+    $signature = Get-AuthenticodeSignature -FilePath $manifestPath
+    $signatureRequired = $RequireSigned -or $env:DEVIDE_REQUIRE_SIGNED_RELEASES -eq '1'
+    if ($signatureRequired -and $signature.Status -ne 'Valid') {
+        throw "A trusted Authenticode release signature is required; status: $($signature.Status)."
+    }
+    if ($signature.Status -notin @('Valid', 'NotSigned')) {
+        throw "Release manifest signature is invalid: $($signature.Status)."
+    }
+
+    $manifest = Import-PowerShellDataFile -LiteralPath $manifestPath
+    if ($manifest.Schema -ne 1 -or -not $manifest.Files) { throw 'Release trust manifest is invalid.' }
+    $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    foreach ($entry in $manifest.Files.GetEnumerator()) {
+        $path = [IO.Path]::GetFullPath((Join-Path $Root ([string]$entry.Key)))
+        if (-not $path.StartsWith($rootPath, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Release trust manifest contains an unsafe path: $($entry.Key)"
+        }
+        if (-not (Test-Path -LiteralPath $path)) { throw "Release file is missing: $($entry.Key)" }
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+        if ($actual -ne ([string]$entry.Value).ToLowerInvariant()) {
+            throw "Release integrity check failed: $($entry.Key)"
+        }
+    }
+    $manifest
 }
 
 function Stop-InstalledRuntime {
@@ -49,7 +81,11 @@ function Backup-UserData {
 }
 
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
+$trust = Test-ReleaseTrust $packageRoot
 $metadata = Read-ReleaseMetadata $packageRoot
+if ($trust.Version -ne $metadata.version -or $trust.Revision -ne $metadata.revision) {
+    throw 'Release trust identity does not match release metadata.'
+}
 $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\DevIDE'
 $releasesRoot = Join-Path $installRoot 'releases'
 $dataRoot = Join-Path $env:LOCALAPPDATA 'DevIDE'
@@ -58,6 +94,11 @@ $releaseId = "$($metadata.version)-$($metadata.revision.Substring(0, 7))"
 $destination = Join-Path $releasesRoot $releaseId
 $stage = "$destination.staging-$PID"
 $currentPath = Join-Path $installRoot 'current.json'
+$previousReleaseRoot = $null
+if (Test-Path -LiteralPath $currentPath) {
+    $existingCurrent = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
+    $previousReleaseRoot = [string]$existingCurrent.release_root
+}
 
 New-Item -ItemType Directory -Force -Path $releasesRoot, $backupRoot | Out-Null
 Stop-InstalledRuntime $dataRoot
@@ -74,6 +115,7 @@ try {
         version = $metadata.version
         revision = $metadata.revision
         release_root = $destination
+        previous_release_root = $previousReleaseRoot
         previous_data_backup = $backup
         installed_at_utc = [DateTime]::UtcNow.ToString('o')
     } | ConvertTo-Json
@@ -87,6 +129,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Uninstall-DevIDE.ps1') -Destination $installedUninstaller -Force
     $installedRepair = Join-Path $installRoot 'Repair-DevIDE.ps1'
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Repair-DevIDE.ps1') -Destination $installedRepair -Force
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Rollback-DevIDE.ps1') -Destination (Join-Path $installRoot 'Rollback-DevIDE.ps1') -Force
     Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-DevIDESupportBundle.ps1') -Destination (Join-Path $installRoot 'New-DevIDESupportBundle.ps1') -Force
     Set-Content -LiteralPath (Join-Path $installRoot 'DevIDE.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0DevIDE.Launcher.ps1`""
 

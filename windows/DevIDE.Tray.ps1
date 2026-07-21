@@ -517,6 +517,7 @@ function Start-DevIDETray {
     $openItem = $menu.Items.Add('Open DevIDE')
     $restartItem = $menu.Items.Add('Restart')
     $repairItem = $menu.Items.Add('Repair installation')
+    $rollbackItem = $menu.Items.Add('Roll back last update')
     $logsItem = $menu.Items.Add('Open logs')
     $supportItem = $menu.Items.Add('Create support bundle')
     $startupItem = $menu.Items.Add('Launch at Windows sign-in')
@@ -566,6 +567,18 @@ function Start-DevIDETray {
             $tray.ShowBalloonTip(5000, 'DevIDE repair failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
         } finally {
             $repairItem.Enabled = $true
+        }
+    })
+    $rollbackItem.Add_Click({
+        try {
+            Stop-DevIDERuntime $script:Port
+            & (Join-Path $script:Paths.ReleaseRoot 'windows\Rollback-DevIDE.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE')
+            & (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE\DevIDE.Launcher.ps1')
+            $tray.Visible = $false
+            [Windows.Forms.Application]::Exit()
+        } catch {
+            Write-DevIDELog "Rollback failed: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'DevIDE rollback failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $supportItem.Add_Click({

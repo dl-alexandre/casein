@@ -4,7 +4,9 @@ param(
     [string]$OutputPath,
     [switch]$SkipBuild,
     [switch]$AllowDirty,
-    [switch]$SkipPreviewRuntime
+    [switch]$SkipPreviewRuntime,
+    [string]$SigningCertificateThumbprint,
+    [switch]$RequireSigned
 )
 
 Set-StrictMode -Version Latest
@@ -130,6 +132,56 @@ function Remove-DesktopTree {
     }
 }
 
+function Write-ReleaseTrustManifest {
+    param([string]$PackagePath, [string]$Revision, [string]$Version)
+
+    $relativeFiles = @(
+        'bin\dev_ide.bat',
+        'releases\dev_ide.relmeta.json',
+        'windows\DevIDE.Tray.ps1',
+        'windows\DevIDE.Launcher.ps1',
+        'windows\Install-DevIDE.ps1',
+        'windows\Repair-DevIDE.ps1',
+        'windows\Rollback-DevIDE.ps1',
+        'windows\New-DevIDESupportBundle.ps1'
+    )
+    if (-not $SkipPreviewRuntime) {
+        $relativeFiles += @('windows\Start-DevIDE.cmd')
+        $scripts = Get-ChildItem -LiteralPath (Join-Path $PackagePath 'lib') -Directory |
+            ForEach-Object { Join-Path $_.FullName 'priv\scripts' } |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'preview_playwright.mjs') } |
+            Select-Object -First 1
+        $packagePrefixLength = $PackagePath.TrimEnd('\').Length + 1
+        $relativeFiles += (Join-Path $scripts 'preview_playwright.mjs').Substring($packagePrefixLength)
+        $relativeFiles += (Join-Path $scripts 'runtime\node.exe').Substring($packagePrefixLength)
+    }
+
+    $entries = foreach ($relative in $relativeFiles) {
+        $path = Join-Path $PackagePath $relative
+        if (-not (Test-Path -LiteralPath $path)) { throw "Trust manifest input is missing: $relative" }
+        "        '$($relative.Replace("'", "''"))' = '$((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant())'"
+    }
+    $manifest = Join-Path $PackagePath 'windows\DevIDE.Release.psd1'
+    @"
+@{
+    Schema = 1
+    Version = '$Version'
+    Revision = '$Revision'
+    Files = @{
+$($entries -join "`r`n")
+    }
+}
+"@ | Set-Content -LiteralPath $manifest -Encoding UTF8
+
+    if ($SigningCertificateThumbprint) {
+        $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$SigningCertificateThumbprint" -ErrorAction Stop
+        $signature = Set-AuthenticodeSignature -FilePath $manifest -Certificate $certificate -HashAlgorithm SHA256
+        if ($signature.Status -ne 'Valid') { throw "Release manifest signing failed: $($signature.StatusMessage)" }
+    } elseif ($RequireSigned) {
+        throw 'A signing certificate thumbprint is required when -RequireSigned is set.'
+    }
+}
+
 if (-not $SkipPreviewRuntime) {
     Assert-WindowsPreviewRuntime
 }
@@ -221,10 +273,12 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\Install-DevIDE.ps1'),
     (Join-Path $root 'windows\Uninstall-DevIDE.ps1'),
     (Join-Path $root 'windows\Repair-DevIDE.ps1'),
+    (Join-Path $root 'windows\Rollback-DevIDE.ps1'),
     (Join-Path $root 'windows\New-DevIDESupportBundle.ps1'),
     (Join-Path $root 'windows\Start-DevIDE.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
+Write-ReleaseTrustManifest -PackagePath $outputPath -Revision $sourceRevision -Version $metadata.version
 
 $docsPath = Join-Path $outputPath 'docs'
 if (Test-Path -LiteralPath $docsPath) {
