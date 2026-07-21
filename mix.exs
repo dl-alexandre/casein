@@ -71,6 +71,8 @@ defmodule DevIDE.MixProject do
       {:ecto_sqlite3, "~> 0.24.1"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
+      # Files panel workspace tree auto-refresh (also a transitive dep of live_reload/credo).
+      {:file_system, "~> 1.0"},
       {:phoenix_live_view, "~> 1.2"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:bypass, "~> 2.1", only: :test},

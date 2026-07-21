@@ -50,6 +50,27 @@ defmodule DevIDE.Files.PathSafety do
     Enum.any?(@ignored_globs, fn g -> rel == g or String.starts_with?(rel, g <> "/") end)
   end
 
+  @doc """
+  True when `relative` should be dropped by filesystem watchers and tree
+  listing: any path segment is in the ignore set, or the path matches an
+  ignored glob.
+
+  Root (`""` / `"."`) is never ignored.
+  """
+  def ignored?(relative) when is_binary(relative) do
+    rel =
+      relative
+      |> String.replace("\\", "/")
+      |> String.trim_leading("/")
+      |> String.trim_trailing("/")
+
+    cond do
+      rel in ["", "."] -> false
+      ignored_path?(rel) -> true
+      true -> Enum.any?(Path.split(rel), &ignored_dir?/1)
+    end
+  end
+
   @doc "Reject obviously-binary content via NUL-byte sniff in the first 8 KB."
   def likely_binary?(bin) when is_binary(bin) do
     head = binary_part(bin, 0, min(byte_size(bin), 8192))

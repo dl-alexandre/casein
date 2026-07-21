@@ -149,6 +149,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
+    tree:toggle_hidden tree:filter
     tree:open_in_pane tree:new_form_at tree:duplicate
     tree:rename_form_node tree:rename_node tree:rename_node_cancel
     tree:delete_node_request tree:delete_node_confirm tree:delete_node_cancel
@@ -345,6 +346,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:delete_confirm, nil)
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
+        |> assign(:files_watch_active, false)
+        # Default true preserves historical Files-tree behavior (dotfiles visible
+        # except PathSafety ignore set). Toggle hides names starting with ".".
+        |> assign(:show_hidden_files, true)
+        |> assign(:tree_filter, "")
         |> assign(:context_menu, nil)
         |> assign(:node_rename, nil)
         |> assign(:node_delete, nil)
@@ -876,7 +882,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def select_tab(socket, tab, params \\ %{})
 
   def select_tab(socket, tab, params) when tab in @tabs do
+    previous_tab = socket.assigns[:tab] || "terminal"
     socket = assign(socket, :tab, tab)
+    socket = FileEvents.sync_files_watch(socket, previous_tab, tab)
     socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
 
     socket =
@@ -921,6 +929,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:proposal_workspace_changed, socket) do
     {:noreply, socket |> refresh_tree() |> refresh_git_status()}
+  end
+
+  # Debounced filesystem watch fan-out from DevIDE.Files.Watcher (Files tab).
+  def handle_info({:files_changed, ws_id, meta}, socket) do
+    if socket.assigns.workspace.id == ws_id and socket.assigns.tab == "files" do
+      {:noreply, FileEvents.apply_files_changed(socket, meta)}
+    else
+      {:noreply, socket}
+    end
   end
 
   # Audit / MCP-activity broadcasts — subscribed by HistoryEvents when the
@@ -1581,6 +1598,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def terminate(_reason, socket) do
+    _ = FileEvents.stop_files_watch(socket)
     _ = cleanup_ghostty_resources(socket)
     :ok
   end

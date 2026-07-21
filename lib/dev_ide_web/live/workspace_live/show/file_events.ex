@@ -13,11 +13,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   import DevIdeWeb.WorkspaceLive.Show.Context
 
   alias DevIDE.Files
+  alias DevIDE.Files.Watcher, as: FilesWatcher
   alias DevIDE.Links.Markdown
   alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.Workspaces.FileAccess
   alias DevIdeWeb.WorkspaceLive.Show
+
+  @doc """
+  Start/stop the per-workspace filesystem watcher as the Files tab is entered
+  or left. No-op for remote host locations (no local path to watch).
+  """
+  def sync_files_watch(socket, previous_tab, next_tab)
+      when is_binary(previous_tab) and is_binary(next_tab) do
+    cond do
+      previous_tab != "files" and next_tab == "files" ->
+        start_files_watch(socket)
+
+      previous_tab == "files" and next_tab != "files" ->
+        stop_files_watch(socket)
+
+      true ->
+        socket
+    end
+  end
+
+  @doc "Stop the filesystem watcher registration (e.g. LiveView terminate)."
+  def stop_files_watch(socket) do
+    ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
+
+    if is_binary(ws_id) and socket.assigns[:files_watch_active] do
+      _ = FilesWatcher.unwatch(ws_id)
+      FilesWatcher.unsubscribe(ws_id)
+    end
+
+    assign(socket, :files_watch_active, false)
+  end
+
+  @doc "Refresh expanded tree nodes and nudge the open file viewer on disk change."
+  def apply_files_changed(socket, _meta \\ %{}) do
+    socket = Show.refresh_tree(socket)
+
+    case socket.assigns.open_file do
+      %{path: path} when is_binary(path) ->
+        push_event(socket, "file:disk_changed", %{path: path})
+
+      _ ->
+        socket
+    end
+  end
 
   def handle_event("tree:toggle", %{"path" => path}, socket) do
     case Map.get(socket.assigns.tree, path) do
@@ -75,6 +119,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
   def handle_event("tree:refresh", _, socket) do
     {:noreply, socket |> Show.refresh_tree() |> Show.refresh_git_status()}
+  end
+
+  def handle_event("tree:toggle_hidden", _, socket) do
+    show? = not Map.get(socket.assigns, :show_hidden_files, true)
+
+    {:noreply,
+     socket
+     |> assign(:show_hidden_files, show?)
+     |> Show.refresh_tree()}
+  end
+
+  def handle_event("tree:filter", params, socket) do
+    q =
+      case params do
+        %{"q" => q} when is_binary(q) -> q
+        _ -> ""
+      end
+
+    {:noreply, assign(socket, :tree_filter, q)}
   end
 
   # Context-menu entry point: select the target dir and open the new-file/dir
@@ -588,6 +651,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
     case Path.dirname(rel) do
       "." -> name
       dir -> Path.join(dir, name)
+    end
+  end
+
+  defp start_files_watch(socket) do
+    ws_id = socket.assigns.workspace.id
+
+    case local_watch_root(socket) do
+      {:ok, root} ->
+        _ = FilesWatcher.subscribe(ws_id)
+
+        case FilesWatcher.watch(ws_id, root) do
+          :ok ->
+            assign(socket, :files_watch_active, true)
+
+          {:error, _reason} ->
+            FilesWatcher.unsubscribe(ws_id)
+            assign(socket, :files_watch_active, false)
+        end
+
+      :error ->
+        assign(socket, :files_watch_active, false)
+    end
+  end
+
+  # Only local host roots can be watched with inotify.
+  defp local_watch_root(socket) do
+    case context_host_loc(socket) do
+      {:ok, {:local, root}} when is_binary(root) and root != "" -> {:ok, root}
+      _ -> :error
     end
   end
 end
