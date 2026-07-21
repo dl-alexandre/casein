@@ -99,8 +99,12 @@ defmodule DevIdeWeb.Router do
 
   pipeline :device_link_api do
     plug :accepts, ["json"]
+    # Resolve real client IP from XFF only when the direct peer is loopback
+    # (oauth2-proxy/Caddy → Bandit). Must run before IP-keyed rate limiting.
+    plug DevIdeWeb.Plugs.TrustedProxyRemoteIp
     plug DevIdeWeb.Plugs.DeviceLinkRateLimit
   end
+
 
   pipeline :mcp_api do
     plug :accepts, ["json"]
