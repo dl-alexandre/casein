@@ -12,6 +12,12 @@
 // key then auto-clears), double-tap locks until tapped off.
 import { pasteFromNavigatorClipboard } from "./terminal_clipboard"
 import { copyTextSync, showClipboardToast } from "./terminal_copy"
+import {
+  GAP_JITTER_PX,
+  keyboardGap,
+  keyboardOpenForGap,
+  shouldCommitViewportInset
+} from "./mobile_keybar_viewport.mjs"
 
 const INPUT_SELECTOR = '[data-ghostty-input="true"]'
 
@@ -130,9 +136,13 @@ export const MobileKeyBar = {
     document.removeEventListener("keydown", this.onCaptureKeydown, true)
     document.removeEventListener("focusin", this.onFocusIn)
     const vv = window.visualViewport
-    if (vv && this.onViewport) {
-      vv.removeEventListener("resize", this.onViewport)
-      vv.removeEventListener("scroll", this.onViewport)
+    if (vv) {
+      if (this.onViewportResize) vv.removeEventListener("resize", this.onViewportResize)
+      if (this.onViewportScroll) vv.removeEventListener("scroll", this.onViewportScroll)
+    }
+    if (this.__barResizeObserver) {
+      this.__barResizeObserver.disconnect()
+      this.__barResizeObserver = null
     }
     if (this.__viewportFrame) cancelAnimationFrame(this.__viewportFrame)
     document.documentElement.classList.remove("devide-keyboard-open")
@@ -190,16 +200,33 @@ export const MobileKeyBar = {
 
     const update = () => {
       this.__viewportFrame = null
-      const gap = window.innerHeight - (vv.height + vv.offsetTop)
-      // gap is approximately the soft-keyboard height when fixed elements are
-      // laid out against the layout viewport. Ignore sub-pixel churn from the
-      // keyboard animation so the bar does not visibly jitter.
-      const next = Math.max(0, Math.round(gap))
-      if (this.__lastViewportGap != null && Math.abs(this.__lastViewportGap - next) < 2) return
+      const force = this.__viewportForce
+      this.__viewportForce = false
 
-      this.__lastViewportGap = next
+      // null while pinch-zoomed: that geometry has nothing to do with the
+      // keyboard, and committing it would resize the terminal grid (and
+      // auto-hide the header) mid-zoom. Keep the last committed state.
+      const gap = keyboardGap({
+        innerHeight: window.innerHeight,
+        height: vv.height,
+        offsetTop: vv.offsetTop,
+        scale: vv.scale
+      })
+      if (gap == null) return
 
-      const keyboardOpen = next > 40
+      // Cheap gate for scroll-driven churn before the forced reflow below.
+      // Forced passes (bar box changed, viewport resize) always re-measure so
+      // rotation / chrome-narrow / app-mode height changes propagate even when
+      // the gap itself is steady.
+      if (
+        !force &&
+        this.__lastViewportGap != null &&
+        Math.abs(this.__lastViewportGap - gap) < GAP_JITTER_PX
+      ) {
+        return
+      }
+
+      const keyboardOpen = keyboardOpenForGap(gap)
       // Rising edge: as soon as the user starts typing, fold the full touch
       // header down to the thin reveal strip. chrome_visible flips to false on
       // the server, so when the keyboard later closes the header stays folded
@@ -213,7 +240,7 @@ export const MobileKeyBar = {
       this.__keyboardOpen = keyboardOpen
       document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
       this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
-      document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${next}px`)
+      document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${gap}px`)
 
       // Measure the bar AFTER toggling app-mode, not before. The class collapses
       // the bar from its tall closed-keyboard height (~70px with safe-area
@@ -223,7 +250,25 @@ export const MobileKeyBar = {
       // whenever the keyboard was up. getBoundingClientRect forces the reflow,
       // so this read reflects the just-applied class.
       const barHeight = Math.ceil(this.el.getBoundingClientRect().height || 0)
-      const inset = next + barHeight
+      const inset = gap + barHeight
+
+      // Every commit costs a terminal refit (and on the authoritative viewer a
+      // tmux resize round-trip), so skip when neither the gap nor the composed
+      // inset moved meaningfully — e.g. our own class toggle re-firing the
+      // ResizeObserver at an unchanged height.
+      if (
+        !shouldCommitViewportInset({
+          gap,
+          inset,
+          lastGap: this.__lastViewportGap,
+          lastInset: this.__lastViewportInset
+        })
+      ) {
+        return
+      }
+
+      this.__lastViewportGap = gap
+      this.__lastViewportInset = inset
       document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
       window.dispatchEvent(new Event("resize"))
       // Notify terminals so they can re-claim size authority on iOS (hasFocus is
@@ -235,14 +280,27 @@ export const MobileKeyBar = {
       }
     }
 
-    this.onViewport = () => {
+    this.onViewport = (opts = {}) => {
+      if (opts.force) this.__viewportForce = true
       if (this.__viewportFrame) return
       this.__viewportFrame = requestAnimationFrame(update)
     }
+    this.onViewportResize = () => this.onViewport({ force: true })
+    this.onViewportScroll = () => this.onViewport()
 
-    vv.addEventListener("resize", this.onViewport)
-    vv.addEventListener("scroll", this.onViewport)
-    this.onViewport()
+    vv.addEventListener("resize", this.onViewportResize)
+    vv.addEventListener("scroll", this.onViewportScroll)
+
+    // The bar's own box changes outside any viewport event: chrome-narrow
+    // reveals it, rotation shifts the safe-area padding, fonts settle. Re-run
+    // (forced) so the published inset tracks the real bar height instead of
+    // going stale until the next keyboard toggle.
+    if (typeof ResizeObserver !== "undefined") {
+      this.__barResizeObserver = new ResizeObserver(() => this.onViewport({ force: true }))
+      this.__barResizeObserver.observe(this.el)
+    }
+
+    this.onViewport({ force: true })
   },
 
   // off -> armed -> locked -> off

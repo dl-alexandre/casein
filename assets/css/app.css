@@ -761,6 +761,21 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     display: block;
   }
 
+  /* Reserve the fixed key bar's footprint from first paint. The MobileKeyBar
+     hook publishes the exact measured inset (--devide-mobile-terminal-inset)
+     after mount; without a fallback the terminal mounts full-height behind the
+     bar, then shrinks by ~44-70px once JS runs — a guaranteed refit + repaint
+     flicker on every load. The estimate mirrors the closed-keyboard bar:
+     min-height 2.75rem, or key row + border + home-indicator padding when the
+     safe area is taller. */
+  .terminal-shell {
+    padding-bottom: var(
+      --devide-mobile-terminal-inset,
+      max(2.75rem, calc(2.15rem + 1px + max(0.25rem, env(safe-area-inset-bottom, 0px))))
+    );
+    transition: padding-bottom 120ms ease-out;
+  }
+
   .workspace-main-header .header-p-touch-hide {
     display: none !important;
   }
@@ -877,6 +892,16 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: none !important;
 }
 
+/* The chrome-narrow key bar previously had no matching terminal inset (the
+   rule lived under pointer:coarse only), so on a squeezed desktop pane the
+   fixed bar overlapped the terminal's bottom rows. data-chrome-narrow is
+   JS-set, and the bar's ResizeObserver re-publishes the exact inset the moment
+   the bar appears; the fallback only bridges that frame. */
+:root[data-chrome-narrow] .terminal-shell {
+  padding-bottom: var(--devide-mobile-terminal-inset, 2.5rem);
+  transition: padding-bottom 120ms ease-out;
+}
+
 @media (pointer: coarse) {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {
@@ -895,11 +920,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .workspace-shell,
   .terminal-shell {
     overscroll-behavior: contain;
-  }
-
-  .terminal-shell {
-    padding-bottom: var(--devide-mobile-terminal-inset, 0px);
-    transition: padding-bottom 120ms ease-out;
   }
 
   .devide-keyboard-open .workspace-shell {
