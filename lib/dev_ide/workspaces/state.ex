@@ -215,6 +215,25 @@ defmodule DevIDE.Workspaces.State do
 
   def get(external_id), do: impl().get(external_id)
   def list, do: impl().list()
+
+  @doc "List persisted records, optionally excluding a status and capping the result."
+  @spec list(keyword()) :: [WorkspaceRecord.t()]
+  def list(opts) when is_list(opts) do
+    adapter = impl()
+
+    if function_exported?(adapter, :list, 1) do
+      adapter.list(opts)
+    else
+      records =
+        case opts[:exclude_status] do
+          nil -> adapter.list()
+          status -> Enum.reject(adapter.list(), &(Map.get(&1, :status) == status))
+        end
+
+      Enum.take(records, opts[:limit] || 200)
+    end
+  end
+
   def delete(external_id), do: impl().delete(external_id)
 
   @doc """

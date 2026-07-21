@@ -11,7 +11,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.PathResolver
   alias DevIDE.Workspaces.SessionSummary
-  alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceStateAdapter
   alias DevIdeWeb.Plugs.ForwardAuth
   alias DevIdeWeb.WorkspaceLive.Show.FileOperations
 
@@ -177,20 +176,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
   defp format_lan_path_error(reason), do: inspect(reason)
 
   defp list_sidebar_workspace_records do
-    adapter =
-      Application.get_env(
-        :dev_ide,
-        :workspace_state_adapter,
-        WorkspaceStateAdapter
-      )
-
-    if function_exported?(adapter, :list, 1) do
-      adapter.list(exclude_status: "stale", limit: 200)
-    else
-      adapter.list()
-      |> Enum.reject(&(Map.get(&1, :status) == "stale"))
-      |> Enum.take(200)
-    end
+    Workspaces.list_records(exclude_status: "stale", limit: 200)
   end
 
   defp ensure_current_workspace_record(records, workspace) do
