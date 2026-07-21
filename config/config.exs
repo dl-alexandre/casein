@@ -30,10 +30,14 @@ config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   limit: 120
 
 config :dev_ide,
-  # Event-driven tmux topology (Slice 1). Default OFF — polling path unchanged.
+  # Event-driven tmux topology (Slice 1/2). Default OFF — polling path unchanged.
   # Flip via DEVIDE_TMUX_EVENTS=1 in runtime.exs / env for canary.
   tmux_events: false,
   tmux_topology_reconcile_ms: 10_000,
+  # SessionDirectory reconcile while event mode is healthy (5s: quieter than the
+  # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
+  # the design doc's 10s option — open question §8.1).
+  session_directory_reconcile_ms: 5_000,
   tmux_events_anchor_session: "__devide_keepalive",
   tmux_ctl: [
     runner: DevIDE.Terminals.TmuxRunner,

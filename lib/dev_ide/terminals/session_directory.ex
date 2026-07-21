@@ -17,6 +17,14 @@ defmodule DevIDE.Terminals.SessionDirectory do
   outside this node's control); when the last subscriber goes away it stops.
   `read/2` is the processless direct read used for static renders and as a
   fallback.
+
+  Optional `:event_source` (`{module, arg}`) switches the *trigger* from the
+  fixed poll to control-mode lifecycle/topology events while keeping
+  `read/2`, stable-hash, and broadcast machinery byte-identical. Event-triggered
+  recomputes are coalesced with a min-interval equal to `:poll_ms` (the old poll
+  period, default 2s). A slower `:reconcile_ms` timer (default 5s) remains as the
+  quiet-agent / out-of-band correctness backbone. Listener down / flag off falls
+  back to the original 2s poll cadence automatically.
   """
 
   use GenServer
@@ -30,6 +38,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   alias DevIDE.Terminals.SessionDirectory.Compose
   alias DevIDE.Terminals.SessionRegistry
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.TmuxEvents
   alias DevIDE.Git.Inspector, as: GitInspector
   alias DevIDE.Runtimes.WorktreeReconciler
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
@@ -39,6 +48,21 @@ defmodule DevIDE.Terminals.SessionDirectory do
   @pubsub DevIDE.PubSub
   @topic_prefix "terminal_tabs:"
   @poll_ms 2_000
+  @default_reconcile_ms 5_000
+  @retry_event_subscribe_ms 5_000
+
+  # Server-wide topology/lifecycle notifications that can change the tab list
+  # or stable window metadata. `:pane_mode_changed` is not in tab metadata.
+  @event_recompute_types MapSet.new([
+                           :sessions_changed,
+                           :session_renamed,
+                           :session_window_changed,
+                           :window_add,
+                           :window_close,
+                           :window_renamed,
+                           :window_pane_changed,
+                           :layout_change
+                         ])
 
   @doc "PubSub topic carrying `{:sessions_updated, workspace_id, tabs}`."
   def topic(workspace_id) when is_binary(workspace_id), do: @topic_prefix <> workspace_id
@@ -195,6 +219,8 @@ defmodule DevIDE.Terminals.SessionDirectory do
     # init returns immediately and DynamicSupervisor.start_child isn't
     # serialized on it. handle_continue runs before any queued call/cast, so a
     # caller's `:tabs` request still sees the populated cache.
+    now_ms = System.monotonic_time(:millisecond)
+
     {:ok,
      %{
        workspace_id: workspace_id,
@@ -203,14 +229,33 @@ defmodule DevIDE.Terminals.SessionDirectory do
        hash: Compose.stable_hash([]),
        watchers: %{},
        timer_ref: nil,
-       computing?: false
+       computing?: false,
+       poll_ms: normalize_ms(Keyword.get(opts, :poll_ms, configured_poll_ms()), @poll_ms),
+       reconcile_ms:
+         normalize_ms(
+           Keyword.get(opts, :reconcile_ms, configured_reconcile_ms()),
+           @default_reconcile_ms
+         ),
+       event_source: Keyword.get(opts, :event_source, default_event_source()),
+       event_mode?: false,
+       listener_pid: nil,
+       listener_ref: nil,
+       last_recompute_ms: now_ms,
+       pending_recompute_ref: nil,
+       retry_subscribe_ref: nil
      }, {:continue, :load_tabs}}
   end
 
   @impl true
   def handle_continue(:load_tabs, state) do
     tabs = read(state.workspace_id, workspace_names: state.workspace_names)
-    {:noreply, %{state | tabs: tabs, hash: Compose.stable_hash(tabs)}}
+    now_ms = System.monotonic_time(:millisecond)
+
+    state =
+      %{state | tabs: tabs, hash: Compose.stable_hash(tabs), last_recompute_ms: now_ms}
+      |> maybe_subscribe_event_source()
+
+    {:noreply, state}
   end
 
   @impl true
@@ -262,12 +307,61 @@ defmodule DevIDE.Terminals.SessionDirectory do
     end
   end
 
+  def handle_info({TmuxCtl.Events, {:tmux_event, event}}, state) do
+    {:noreply, maybe_event_recompute(state, event)}
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_down, _label}}, state) do
+    {:noreply, enter_poll_fallback(state)}
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_up, _label}}, %{event_mode?: true} = state) do
+    # Already in event mode: a duplicate listener_up (e.g. queued broadcasts
+    # around a reconnect) must not trigger another uncoalesced recompute.
+    {:noreply, state}
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_up, _label}}, state) do
+    {:noreply, enter_event_mode(state)}
+  end
+
+  def handle_info(:coalesced_recompute, state) do
+    state = %{state | pending_recompute_ref: nil}
+    {:noreply, start_async_recompute(state)}
+  end
+
+  def handle_info(:retry_event_subscribe, state) do
+    state = %{state | retry_subscribe_ref: nil}
+
+    cond do
+      is_nil(state.event_source) or state.event_mode? ->
+        {:noreply, state}
+
+      true ->
+        # Drop any stale monitor before re-subscribing.
+        state = demonitor_listener(state)
+        state = maybe_subscribe_event_source(state)
+
+        if state.event_mode? do
+          {:noreply, enter_event_mode(state)}
+        else
+          {:noreply, schedule_retry_subscribe(state)}
+        end
+    end
+  end
+
   # Result of an async recompute (poll). `nil` means the read failed; keep the
   # last-known tabs and just clear the in-flight flag.
   def handle_info({:recomputed, nil}, state), do: {:noreply, %{state | computing?: false}}
 
   def handle_info({:recomputed, tabs}, state),
     do: {:noreply, %{apply_tabs(state, tabs) | computing?: false}}
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{listener_ref: ref} = state)
+      when not is_nil(ref) do
+    state = %{state | listener_ref: nil, listener_pid: nil}
+    {:noreply, enter_poll_fallback(state)}
+  end
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     watchers = Map.delete(state.watchers, ref)
@@ -293,6 +387,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
     parent = self()
     workspace_id = state.workspace_id
     workspace_names = state.workspace_names
+    now_ms = System.monotonic_time(:millisecond)
 
     spawn(fn ->
       tabs =
@@ -307,7 +402,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
       send(parent, {:recomputed, tabs})
     end)
 
-    %{state | computing?: true}
+    %{state | computing?: true, last_recompute_ms: now_ms}
   end
 
   # Fast: stores the freshly-read tabs and broadcasts only when the stable hash
@@ -326,11 +421,166 @@ defmodule DevIDE.Terminals.SessionDirectory do
     %{state | tabs: tabs, hash: hash}
   end
 
+  # Events are triggers only — rate-capped at the old poll period so storms
+  # can never exceed today's subprocess load. Single-flight `computing?` is the
+  # second guard.
+  defp maybe_event_recompute(%{event_mode?: false} = state, _event), do: state
+
+  defp maybe_event_recompute(state, event) do
+    if event_triggers_recompute?(event) do
+      maybe_event_recompute(state)
+    else
+      state
+    end
+  end
+
+  defp maybe_event_recompute(state) do
+    now = System.monotonic_time(:millisecond)
+    elapsed = now - state.last_recompute_ms
+    min_interval = state.poll_ms
+
+    cond do
+      elapsed >= min_interval and is_nil(state.pending_recompute_ref) ->
+        start_async_recompute(state)
+
+      is_nil(state.pending_recompute_ref) ->
+        delay = max(min_interval - elapsed, 0)
+        ref = Process.send_after(self(), :coalesced_recompute, delay)
+        %{state | pending_recompute_ref: ref}
+
+      true ->
+        state
+    end
+  end
+
+  defp event_triggers_recompute?(%{type: type}) when is_atom(type),
+    do: MapSet.member?(@event_recompute_types, type)
+
+  defp event_triggers_recompute?(_event), do: false
+
+  defp maybe_subscribe_event_source(%{event_source: nil} = state), do: state
+
+  defp maybe_subscribe_event_source(%{event_source: {mod, arg}} = state) do
+    case mod.subscribe(arg, self()) do
+      {:ok, %{listener: listener, connected?: connected?}} when is_pid(listener) ->
+        ref = Process.monitor(listener)
+
+        %{
+          state
+          | event_mode?: connected?,
+            listener_pid: listener,
+            listener_ref: ref
+        }
+
+      {:ok, %{listener: listener}} when is_pid(listener) ->
+        ref = Process.monitor(listener)
+
+        %{
+          state
+          | event_mode?: true,
+            listener_pid: listener,
+            listener_ref: ref
+        }
+
+      {:error, :unavailable} ->
+        schedule_retry_subscribe(%{
+          state
+          | event_mode?: false,
+            listener_pid: nil,
+            listener_ref: nil
+        })
+
+      _other ->
+        schedule_retry_subscribe(%{
+          state
+          | event_mode?: false,
+            listener_pid: nil,
+            listener_ref: nil
+        })
+    end
+  end
+
+  defp maybe_subscribe_event_source(state), do: state
+
+  defp enter_event_mode(state) do
+    state =
+      state
+      |> cancel_retry_subscribe()
+      |> cancel_pending_recompute()
+      |> Map.put(:event_mode?, true)
+      |> cancel_poll_timer()
+
+    state = start_async_recompute(state)
+
+    if map_size(state.watchers) > 0 do
+      schedule_poll(state)
+    else
+      state
+    end
+  end
+
+  defp enter_poll_fallback(state) do
+    state =
+      state
+      |> Map.put(:event_mode?, false)
+      |> cancel_pending_recompute()
+      |> cancel_poll_timer()
+
+    state =
+      if map_size(state.watchers) > 0 do
+        schedule_poll(state)
+      else
+        state
+      end
+
+    schedule_retry_subscribe(state)
+  end
+
   defp schedule_poll(%{timer_ref: nil} = state) do
-    %{state | timer_ref: Process.send_after(self(), :poll, poll_ms())}
+    period = if state.event_mode?, do: state.reconcile_ms, else: state.poll_ms
+    %{state | timer_ref: Process.send_after(self(), :poll, period)}
   end
 
   defp schedule_poll(state), do: state
+
+  defp cancel_poll_timer(%{timer_ref: nil} = state), do: state
+
+  defp cancel_poll_timer(%{timer_ref: timer_ref} = state) do
+    Process.cancel_timer(timer_ref)
+    %{state | timer_ref: nil}
+  end
+
+  defp cancel_pending_recompute(%{pending_recompute_ref: nil} = state), do: state
+
+  defp cancel_pending_recompute(%{pending_recompute_ref: ref} = state) do
+    Process.cancel_timer(ref)
+    %{state | pending_recompute_ref: nil}
+  end
+
+  defp schedule_retry_subscribe(%{event_source: nil} = state), do: state
+
+  defp schedule_retry_subscribe(%{retry_subscribe_ref: ref} = state) when not is_nil(ref) do
+    state
+  end
+
+  defp schedule_retry_subscribe(state) do
+    ref = Process.send_after(self(), :retry_event_subscribe, @retry_event_subscribe_ms)
+    %{state | retry_subscribe_ref: ref}
+  end
+
+  defp cancel_retry_subscribe(%{retry_subscribe_ref: nil} = state), do: state
+
+  defp cancel_retry_subscribe(%{retry_subscribe_ref: ref} = state) do
+    Process.cancel_timer(ref)
+    %{state | retry_subscribe_ref: nil}
+  end
+
+  defp demonitor_listener(%{listener_ref: nil} = state), do: state
+
+  defp demonitor_listener(%{listener_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    %{state | listener_ref: nil, listener_pid: nil}
+  end
 
   defp workspace_names(workspace_id, opts) do
     explicit = Keyword.get(opts, :workspace_names)
@@ -350,9 +600,22 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp key(workspace_id), do: {:session_directory, workspace_id}
 
-  defp poll_ms do
+  defp default_event_source do
+    if TmuxEvents.enabled?() do
+      {TmuxEvents, []}
+    end
+  end
+
+  defp configured_poll_ms do
     Application.get_env(:dev_ide, :session_directory_poll_ms, @poll_ms)
   end
+
+  defp configured_reconcile_ms do
+    Application.get_env(:dev_ide, :session_directory_reconcile_ms, @default_reconcile_ms)
+  end
+
+  defp normalize_ms(value, _default) when is_integer(value) and value > 0, do: value
+  defp normalize_ms(_value, default), do: default
 
   defp agent_worktree_tabs(workspace_id) do
     workspace_id
