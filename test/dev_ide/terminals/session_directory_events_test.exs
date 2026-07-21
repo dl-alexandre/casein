@@ -248,6 +248,158 @@ defmodule DevIDE.Terminals.SessionDirectoryEventsTest do
     refute_receive {SessionDirectory, {:sessions_updated, ^ws, _}}, 100
   end
 
+  test "second event inside min_interval is deferred, not immediate and not dropped", %{
+    fake: fake
+  } do
+    ws = "sdevt-defer-#{System.unique_integer([:positive])}"
+    put_fake_session("devide_#{ws}_u-alice")
+
+    counter = :counters.new(1, [:atomics])
+    install_counting_adapter(counter)
+
+    min_interval = 400
+
+    assert :ok =
+             SessionDirectory.subscribe(
+               ws,
+               directory_opts(fake,
+                 workspace_name: ws,
+                 poll_ms: min_interval,
+                 reconcile_ms: 60_000
+               )
+             )
+
+    Process.sleep(100)
+    :sys.get_state(directory_pid!(ws))
+    init_calls = :counters.get(counter, 1)
+
+    # The min-interval window opens at the initial load; wait it out so event
+    # A is genuinely unthrottled.
+    Process.sleep(min_interval + 50)
+
+    # Event A recomputes immediately (nothing recent).
+    put_fake_session("devide_#{ws}_u-bob")
+    FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
+    Process.sleep(150)
+    after_a = :counters.get(counter, 1)
+    assert after_a == init_calls + 1
+
+    # Event B lands inside min_interval AFTER A's recompute completed, so the
+    # single-flight guard cannot mask it: an unthrottled implementation would
+    # recompute immediately here.
+    put_fake_session("devide_#{ws}_u-carol")
+    FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
+    Process.sleep(100)
+    assert :counters.get(counter, 1) == after_a
+
+    # ...and it must be deferred to the window edge, never dropped.
+    Process.sleep(min_interval + 150)
+    assert :counters.get(counter, 1) == after_a + 1
+
+    assert Enum.map(SessionDirectory.tabs(ws, workspace_name: ws), & &1.sid) |> Enum.sort() ==
+             ["u-alice", "u-bob", "u-carol"]
+  end
+
+  test "quiet flip broadcasts via reconcile in event mode with zero events", %{fake: fake} do
+    ws = "sdevt-quiet-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{ws}_u-alice"
+    now = DateTime.utc_now() |> DateTime.to_unix()
+
+    put_agent_window = fn activity ->
+      FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+        Map.put(windows, tmux_session, [
+          %{
+            id: "@1",
+            index: 0,
+            name: "agent",
+            active: true,
+            panes: 1,
+            activity: activity,
+            current_command: "claude"
+          }
+        ])
+      end)
+    end
+
+    # Fresh activity: not quiet.
+    put_agent_window.(now)
+
+    # poll_ms is deliberately huge: only the reconcile tick may drive this.
+    assert :ok =
+             SessionDirectory.subscribe(
+               ws,
+               directory_opts(fake,
+                 workspace_name: ws,
+                 poll_ms: 60_000,
+                 reconcile_ms: 250
+               )
+             )
+
+    assert [%{metadata: %{windows: [%{quiet: false}]}}] =
+             SessionDirectory.tabs(ws, workspace_name: ws)
+
+    flush_sessions_updated(ws)
+
+    # Agent goes silent long enough to flip quiet. NO event fires (silence has
+    # no notification) — the reconcile backbone must still broadcast the flip.
+    put_agent_window.(now - 120)
+
+    assert_receive {SessionDirectory, {:sessions_updated, ^ws, tabs}}, 2_000
+    assert [%{metadata: %{windows: [%{id: "@1", quiet: true}]}}] = tabs
+  end
+
+  test "volatile-only activity change + event recomputes without broadcasting", %{fake: fake} do
+    ws = "sdevt-vol-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{ws}_u-alice"
+
+    put_shell_window = fn activity ->
+      FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+        Map.put(windows, tmux_session, [
+          %{
+            id: "@1",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity,
+            current_command: "bash"
+          }
+        ])
+      end)
+    end
+
+    put_shell_window.(1_000)
+
+    counter = :counters.new(1, [:atomics])
+    install_counting_adapter(counter)
+
+    assert :ok =
+             SessionDirectory.subscribe(
+               ws,
+               directory_opts(fake,
+                 workspace_name: ws,
+                 poll_ms: 100,
+                 reconcile_ms: 60_000
+               )
+             )
+
+    Process.sleep(150)
+    :sys.get_state(directory_pid!(ws))
+    before = :counters.get(counter, 1)
+    flush_sessions_updated(ws)
+
+    # Activity timestamp moves (volatile, outside the stable hash); the shell
+    # window can never flip quiet, so tabs are hash-identical.
+    put_shell_window.(2_000)
+    FakeEventSource.emit(fake, %{type: :window_renamed, window_id: "@1", raw: "%window-renamed"})
+    Process.sleep(200)
+
+    # The event DID recompute...
+    assert :counters.get(counter, 1) > before
+    # ...but a volatile-only change must not re-broadcast.
+    refute_receive {SessionDirectory, {:sessions_updated, ^ws, _}}, 100
+  end
+
   # -- helpers --------------------------------------------------------------
 
   defp directory_opts(fake, overrides) do
