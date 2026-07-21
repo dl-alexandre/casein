@@ -52,9 +52,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
     # The sessions header names the current workspace ("<name> · this workspace").
     assert html =~ "this workspace"
     assert html =~ "Reports"
-    # Collapsed workspace toggles via the shared sidebar event (lazy-loads).
+    # Collapsed workspace still expands via the shared sidebar event
+    # (lazy-loads), now on the dedicated count/chevron button.
     assert html =~ ~s(phx-click="sidebar:toggle_workspace")
     assert html =~ ~s(phx-value-workspace-id="ws-other")
+  end
+
+  test "collapsed :other node row navigates to the workspace root" do
+    html = render_sheet([other_node(%{})])
+
+    # Tapping the row itself lands in the other workspace (its mount picks
+    # the home session); expansion is the chevron's job, tested above.
+    assert html =~ ~s(href="/workspaces/ws-other")
+    assert html =~ ~s(data-phx-link="redirect")
   end
 
   test "expanded :other node navigates its session rows cross-workspace" do

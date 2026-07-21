@@ -19,6 +19,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   alias DevIDE.Terminals.PaneState
   alias DevIDE.Workspaces.Scratch
   alias DevIDE.Terminals.SessionDirectory.Attention
+  alias DevIdeWeb.WorkspaceLive.Show.Browse
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceRoutes
 
@@ -426,6 +427,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           title: String.t(),
           current?: boolean(),
           live?: boolean(),
+          openable?: boolean(),
           group: :this | :other,
           session_count: non_neg_integer(),
           expanded?: boolean(),
@@ -449,6 +451,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     expanded = Keyword.get(opts, :expanded_workspaces, MapSet.new())
     current_session_tabs = Keyword.get(opts, :current_session_tabs, [])
     sidebar_ws_sessions = Keyword.get(opts, :sidebar_ws_sessions, %{})
+    viewer = Keyword.get(opts, :viewer)
 
     workspace_nodes =
       summaries
@@ -459,7 +462,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           current_workspace_id,
           expanded,
           current_session_tabs,
-          sidebar_ws_sessions
+          sidebar_ws_sessions,
+          viewer
         )
       )
 
@@ -548,6 +552,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: "Scratch terminal ($HOME)",
       current?: current?,
       live?: true,
+      openable?: true,
       group: :this,
       session_count: 1,
       expanded?: false,
@@ -602,7 +607,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     end)
   end
 
-  defp workspace_tree_node(summary, current_workspace_id, expanded, current_tabs, sidebar_ws) do
+  defp workspace_tree_node(
+         summary,
+         current_workspace_id,
+         expanded,
+         current_tabs,
+         sidebar_ws,
+         viewer
+       ) do
     workspace_id = summary_id(summary) || "workspace"
     current? = workspace_id == current_workspace_id
     expanded? = MapSet.member?(expanded, workspace_id)
@@ -634,6 +646,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: summary_workspace_title(summary),
       current?: current?,
       live?: live?,
+      openable?: workspace_openable?(summary, viewer, current?),
       group: node_group(current?),
       session_count: session_count,
       expanded?: expanded? and not flat_session?,
@@ -641,6 +654,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       session: if(flat_session?, do: List.first(sessions), else: nil),
       sessions: if(flat_session?, do: nil, else: sessions)
     }
+  end
+
+  # A workspace row may offer navigation unless it positively belongs to
+  # someone else: a viewer with identity tokens that match none of the
+  # summary's owner. Unowned summaries and unknown viewers (trusted LAN
+  # single-user mode) stay navigable — mount access checks still apply on
+  # arrival. Mirrors the Browse tier's viewer-identity matching.
+  defp workspace_openable?(_summary, _viewer, true), do: true
+
+  defp workspace_openable?(summary, viewer, _current?) do
+    owner = Map.get(summary, :user) || Map.get(summary, "user")
+    identifiers = Browse.viewer_identifiers(viewer)
+
+    cond do
+      not is_binary(owner) or owner == "" -> true
+      identifiers == [] -> true
+      true -> String.downcase(owner) in identifiers
+    end
   end
 
   # Sidebar section grouping: the current workspace (and the synthetic scratch

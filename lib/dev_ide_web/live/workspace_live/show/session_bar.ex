@@ -17,6 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1]
 
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceRoutes
 
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
@@ -771,6 +772,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       assigns
       |> assign(:home, home)
       |> assign(:current?, assigns.node.workspace_id == assigns.current_workspace_id)
+      |> assign(:openable?, Map.get(assigns.node, :openable?, true))
 
     ~H"""
     <%= if is_map(@home) do %>
@@ -833,11 +835,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         </button>
       </div>
     <% else %>
-      <%!-- No resolvable home session — a collapsed/other/teammate workspace whose
-           sessions aren't loaded or aren't visible to this viewer. Keep the row a
-           NON-navigable expand/collapse toggle (no href) so it never links into a
-           workspace the viewer cannot open. --%>
+      <%!-- No resolvable home session yet — typically a collapsed other workspace
+           whose sessions haven't been lazy-loaded. Enter / a plain click still
+           means "go": navigate to the workspace root and let the target mount
+           pick its landing session (same gesture as dashboard folder:open).
+           Expansion stays on the chevron, mirroring the resolved-home branch.
+           Teammate rows (openable?: false) keep the legacy non-navigable
+           expand/collapse toggle so the sidebar never links into another
+           person's workspace. --%>
+      <div :if={@openable?} class="flex items-stretch gap-0.5">
+        <.link
+          navigate={cross_workspace_home_path(@node.workspace_id)}
+          data-picker-item
+          data-picker-section="workspaces"
+          data-picker-sessions-id={@node.dom_id}
+          phx-value-workspace-id={@node.workspace_id}
+          class={[
+            sidebar_row_class(@node.current?),
+            "min-w-0 flex-1 flex-row items-center gap-2",
+            not @node.live? && "opacity-60"
+          ]}
+          title={workspace_home_title(@node, nil)}
+        >
+          <.sessions_sidebar_workspace_labels node={@node} />
+        </.link>
+        <button
+          :if={@expandable?}
+          type="button"
+          id={"sidebar-ws-toggle-" <> @node.dom_id}
+          data-picker-ws-toggle
+          phx-click="sidebar:toggle_workspace"
+          phx-value-workspace-id={@node.workspace_id}
+          class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-base-content/45 hover:bg-base-200 hover:text-base-content"
+          aria-label={
+            if(@node.expanded?, do: "Collapse " <> @node.label, else: "Expand " <> @node.label)
+          }
+          aria-expanded={to_string(@node.expanded?)}
+          title={if(@node.expanded?, do: "Collapse sessions", else: "Expand sessions")}
+        >
+          {@node.session_count}
+          <span class={["flex transition-transform", @node.expanded? && "rotate-90"]}>
+            <.icon name="hero-chevron-right" class="size-3" />
+          </span>
+        </button>
+      </div>
       <button
+        :if={not @openable?}
         type="button"
         data-picker-item
         data-picker-section="workspaces"
@@ -1605,6 +1648,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def cross_workspace_session_path(workspace_id, session) when is_map(session) do
     Map.get(session, :href) || sidebar_session_href(workspace_id, Map.get(session, :id))
   end
+
+  @doc """
+  Relative navigate path for a workspace row whose home session is not yet
+  resolvable (sessions not lazy-loaded). Targets the workspace root; the
+  target mount picks the landing session. Public so the mobile nav sheet
+  navigates to the exact same place as the desktop sidebar.
+  """
+  @spec cross_workspace_home_path(String.t()) :: String.t()
+  def cross_workspace_home_path(workspace_id) when is_binary(workspace_id),
+    do: WorkspaceRoutes.workspace_path(workspace_id, "local")
 
   defp session_picker_short_label(label) when is_binary(label) do
     label
