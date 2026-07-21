@@ -19,6 +19,10 @@ defmodule DevIDE.Supervision.Terminals do
       {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: DevIDE.Terminals.TopologyRegistry},
       {DynamicSupervisor, name: DevIDE.Terminals.TopologySupervisor, strategy: :one_for_one},
+      # Flag-gated control-mode listener; child_spec returns :ignore when off.
+      # Placed after HostServerAnchor.ensure!() above so attach-session never
+      # races the server-spawn cwd claim.
+      DevIDE.Terminals.TmuxEvents,
       DevIDE.Terminals.TmuxJanitor,
       DevIDE.Terminals.TmuxWindowJanitor
     ]

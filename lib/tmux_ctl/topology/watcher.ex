@@ -6,6 +6,13 @@ defmodule TmuxCtl.Topology.Watcher do
   and optional `on_session_terminated` via start options. Timing defaults come
   from `config :tmux_ctl` keys `:topology_refresh_ms`, `:topology_idle_stop_ms`,
   and `:topology_topic_prefix`.
+
+  Optional `:event_source` (`{module, arg}`) switches the *trigger* from the
+  fast poll to control-mode events while keeping snapshot/version/broadcast
+  machinery byte-identical. Event-triggered refreshes are coalesced with a
+  min-interval equal to `:refresh_ms` (the old poll period). A slower
+  `:reconcile_ms` timer (default 10s) remains as the correctness backbone.
+  Listener down / flag off falls back to the original poll cadence automatically.
   """
 
   use GenServer
@@ -13,7 +20,9 @@ defmodule TmuxCtl.Topology.Watcher do
   alias TmuxCtl.Topology
 
   @default_refresh_ms 300
+  @default_reconcile_ms 10_000
   @default_topic_prefix "terminal_topology:"
+  @retry_event_subscribe_ms 5_000
 
   @type on_session_terminated :: (map(), atom() -> :ok)
 
@@ -189,9 +198,14 @@ defmodule TmuxCtl.Topology.Watcher do
   def init({session, opts}) do
     tmux_opt = Keyword.get(opts, :tmux)
     refresh_ms = normalize_refresh_ms(Keyword.get(opts, :refresh_ms, refresh_ms(opts)))
+
+    reconcile_ms =
+      normalize_refresh_ms(Keyword.get(opts, :reconcile_ms, reconcile_ms(opts)))
+
     polling_enabled? = Keyword.get(opts, :enabled, true)
     workspace_id = Keyword.get(opts, :workspace_id)
     generation = System.unique_integer([:positive, :monotonic])
+    event_source = Keyword.get(opts, :event_source)
 
     topology_transform = topology_transform(opts)
 
@@ -202,12 +216,15 @@ defmodule TmuxCtl.Topology.Watcher do
 
     topology = topology_transform.(topology)
 
+    now_ms = System.monotonic_time(:millisecond)
+
     state = %{
       session: session,
       workspace_id: workspace_id,
       tmux_opt: tmux_opt,
       tmux_resolver: tmux_resolver(opts),
       refresh_ms: refresh_ms,
+      reconcile_ms: reconcile_ms,
       polling_enabled?: polling_enabled?,
       generation: generation,
       topology: topology,
@@ -219,10 +236,23 @@ defmodule TmuxCtl.Topology.Watcher do
       pubsub: Keyword.fetch!(opts, :pubsub),
       broadcast_tag: Keyword.get(opts, :broadcast_tag, __MODULE__),
       topic_prefix: Keyword.get(opts, :topic_prefix, topic_prefix()),
-      on_session_terminated: Keyword.get(opts, :on_session_terminated, fn _, _ -> :ok end)
+      on_session_terminated: Keyword.get(opts, :on_session_terminated, fn _, _ -> :ok end),
+      event_source: event_source,
+      event_mode?: false,
+      listener_pid: nil,
+      listener_ref: nil,
+      last_refresh_ms: now_ms,
+      pending_refresh_ref: nil,
+      retry_subscribe_ref: nil
     }
 
-    {:ok, state |> schedule_refresh() |> schedule_idle_stop()}
+    state =
+      state
+      |> maybe_subscribe_event_source()
+      |> schedule_refresh()
+      |> schedule_idle_stop()
+
+    {:ok, state}
   end
 
   @impl true
@@ -262,6 +292,10 @@ defmodule TmuxCtl.Topology.Watcher do
         :refresh_ms,
         normalize_refresh_ms(Keyword.get(opts, :refresh_ms, state.refresh_ms))
       )
+      |> Map.put(
+        :reconcile_ms,
+        normalize_refresh_ms(Keyword.get(opts, :reconcile_ms, state.reconcile_ms))
+      )
       |> Map.put(:polling_enabled?, Keyword.get(opts, :enabled, state.polling_enabled?))
       |> maybe_put_workspace_id(Keyword.get(opts, :workspace_id))
       |> schedule_refresh()
@@ -286,6 +320,68 @@ defmodule TmuxCtl.Topology.Watcher do
       {:terminated, state} ->
         {:stop, :normal, state}
     end
+  end
+
+  def handle_info({TmuxCtl.Events, {:tmux_event, _event}}, state) do
+    case maybe_event_refresh(state) do
+      {:ok, state} -> {:noreply, state}
+      {:terminated, state} -> {:stop, :normal, state}
+    end
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_down, _label}}, state) do
+    {:noreply, enter_poll_fallback(state)}
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_up, _label}}, %{event_mode?: true} = state) do
+    # Already in event mode: a duplicate listener_up (e.g. queued broadcasts
+    # around a reconnect) must not trigger another uncoalesced snapshot.
+    {:noreply, state}
+  end
+
+  def handle_info({TmuxCtl.Events, {:listener_up, _label}}, state) do
+    case enter_event_mode(state) do
+      {:ok, state} -> {:noreply, state}
+      {:terminated, state} -> {:stop, :normal, state}
+    end
+  end
+
+  def handle_info(:coalesced_refresh, state) do
+    state = %{state | pending_refresh_ref: nil}
+
+    case refresh_state(state) do
+      {:ok, state} -> {:noreply, state}
+      {:terminated, state} -> {:stop, :normal, state}
+    end
+  end
+
+  def handle_info(:retry_event_subscribe, state) do
+    state = %{state | retry_subscribe_ref: nil}
+
+    cond do
+      is_nil(state.event_source) or state.event_mode? ->
+        {:noreply, state}
+
+      true ->
+        # Drop any stale monitor before re-subscribing.
+        state = demonitor_listener(state)
+        state = maybe_subscribe_event_source(state)
+
+        if state.event_mode? do
+          case enter_event_mode(state) do
+            {:ok, state} -> {:noreply, state}
+            {:terminated, state} -> {:stop, :normal, state}
+          end
+        else
+          {:noreply, schedule_retry_subscribe(state)}
+        end
+    end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{listener_ref: ref} = state)
+      when not is_nil(ref) do
+    state = %{state | listener_ref: nil, listener_pid: nil}
+    {:noreply, enter_poll_fallback(state)}
   end
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
@@ -328,6 +424,7 @@ defmodule TmuxCtl.Topology.Watcher do
       |> Map.put(:generation, state.generation)
 
     topology = state.topology_transform.(topology)
+    now_ms = System.monotonic_time(:millisecond)
 
     if topology.windows == [] and topology.panes == [] do
       Phoenix.PubSub.broadcast(
@@ -340,7 +437,7 @@ defmodule TmuxCtl.Topology.Watcher do
 
       state.on_session_terminated.(state, :session_not_alive)
 
-      {:terminated, cancel_refresh_timer(state)}
+      {:terminated, cancel_refresh_timer(%{state | last_refresh_ms: now_ms})}
     else
       if topology.version != state.topology.version do
         Phoenix.PubSub.broadcast(
@@ -350,14 +447,105 @@ defmodule TmuxCtl.Topology.Watcher do
         )
       end
 
-      {:ok, %{state | topology: topology}}
+      {:ok, %{state | topology: topology, last_refresh_ms: now_ms}}
     end
+  end
+
+  # Events are triggers only — rate-capped at the old poll period so storms
+  # can never exceed today's subprocess load.
+  defp maybe_event_refresh(%{event_mode?: false} = state), do: {:ok, state}
+
+  defp maybe_event_refresh(state) do
+    now = System.monotonic_time(:millisecond)
+    elapsed = now - state.last_refresh_ms
+    min_interval = state.refresh_ms
+
+    cond do
+      elapsed >= min_interval and is_nil(state.pending_refresh_ref) ->
+        refresh_state(state)
+
+      is_nil(state.pending_refresh_ref) ->
+        delay = max(min_interval - elapsed, 0)
+        ref = Process.send_after(self(), :coalesced_refresh, delay)
+        {:ok, %{state | pending_refresh_ref: ref}}
+
+      true ->
+        {:ok, state}
+    end
+  end
+
+  defp maybe_subscribe_event_source(%{event_source: nil} = state), do: state
+
+  defp maybe_subscribe_event_source(%{event_source: {mod, arg}} = state) do
+    case mod.subscribe(arg, self()) do
+      {:ok, %{listener: listener, connected?: connected?}} when is_pid(listener) ->
+        ref = Process.monitor(listener)
+
+        %{
+          state
+          | event_mode?: connected?,
+            listener_pid: listener,
+            listener_ref: ref
+        }
+
+      {:ok, %{listener: listener}} when is_pid(listener) ->
+        ref = Process.monitor(listener)
+
+        %{
+          state
+          | event_mode?: true,
+            listener_pid: listener,
+            listener_ref: ref
+        }
+
+      {:error, :unavailable} ->
+        schedule_retry_subscribe(%{
+          state
+          | event_mode?: false,
+            listener_pid: nil,
+            listener_ref: nil
+        })
+
+      _other ->
+        schedule_retry_subscribe(%{
+          state
+          | event_mode?: false,
+            listener_pid: nil,
+            listener_ref: nil
+        })
+    end
+  end
+
+  defp maybe_subscribe_event_source(state), do: state
+
+  defp enter_event_mode(state) do
+    state =
+      state
+      |> cancel_retry_subscribe()
+      |> cancel_pending_refresh()
+      |> Map.put(:event_mode?, true)
+      |> cancel_refresh_timer()
+
+    case refresh_state(state) do
+      {:ok, state} -> {:ok, schedule_refresh(state)}
+      {:terminated, state} -> {:terminated, state}
+    end
+  end
+
+  defp enter_poll_fallback(state) do
+    state
+    |> Map.put(:event_mode?, false)
+    |> cancel_pending_refresh()
+    |> cancel_refresh_timer()
+    |> schedule_refresh()
+    |> schedule_retry_subscribe()
   end
 
   defp schedule_refresh(%{polling_enabled?: false} = state), do: %{state | timer_ref: nil}
 
-  defp schedule_refresh(%{refresh_ms: refresh_ms} = state) do
-    timer_ref = Process.send_after(self(), :refresh, refresh_ms)
+  defp schedule_refresh(state) do
+    period = if state.event_mode?, do: state.reconcile_ms, else: state.refresh_ms
+    timer_ref = Process.send_after(self(), :refresh, period)
     %{state | timer_ref: timer_ref}
   end
 
@@ -366,6 +554,38 @@ defmodule TmuxCtl.Topology.Watcher do
   defp cancel_refresh_timer(%{timer_ref: timer_ref} = state) do
     Process.cancel_timer(timer_ref)
     %{state | timer_ref: nil}
+  end
+
+  defp cancel_pending_refresh(%{pending_refresh_ref: nil} = state), do: state
+
+  defp cancel_pending_refresh(%{pending_refresh_ref: ref} = state) do
+    Process.cancel_timer(ref)
+    %{state | pending_refresh_ref: nil}
+  end
+
+  defp schedule_retry_subscribe(%{event_source: nil} = state), do: state
+
+  defp schedule_retry_subscribe(%{retry_subscribe_ref: ref} = state) when not is_nil(ref) do
+    state
+  end
+
+  defp schedule_retry_subscribe(state) do
+    ref = Process.send_after(self(), :retry_event_subscribe, @retry_event_subscribe_ms)
+    %{state | retry_subscribe_ref: ref}
+  end
+
+  defp cancel_retry_subscribe(%{retry_subscribe_ref: nil} = state), do: state
+
+  defp cancel_retry_subscribe(%{retry_subscribe_ref: ref} = state) do
+    Process.cancel_timer(ref)
+    %{state | retry_subscribe_ref: nil}
+  end
+
+  defp demonitor_listener(%{listener_ref: nil} = state), do: state
+
+  defp demonitor_listener(%{listener_ref: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    %{state | listener_ref: nil, listener_pid: nil}
   end
 
   defp drop_watcher(state, pid) do
@@ -415,6 +635,14 @@ defmodule TmuxCtl.Topology.Watcher do
       opts,
       :refresh_ms,
       Application.get_env(:tmux_ctl, :topology_refresh_ms, @default_refresh_ms)
+    )
+  end
+
+  defp reconcile_ms(opts) do
+    Keyword.get(
+      opts,
+      :reconcile_ms,
+      Application.get_env(:tmux_ctl, :topology_reconcile_ms, @default_reconcile_ms)
     )
   end
 
