@@ -12,21 +12,35 @@ defmodule DevIDE.Desktop.PowerShellSession do
   alias DevIDE.Desktop.AgentEnvironment
 
   @name __MODULE__
+  @registry Module.concat(__MODULE__, Registry)
+  @supervisor Module.concat(__MODULE__, Supervisor)
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: @name)
+    name = Keyword.get(opts, :name, @name)
+    GenServer.start_link(__MODULE__, Keyword.delete(opts, :name), name: name)
+  end
+
+  def child_spec(opts) do
+    workspace = Keyword.get(opts, :workspace)
+
+    %{
+      id: {__MODULE__, workspace_key(workspace)},
+      start: {__MODULE__, :start_link, [opts]},
+      restart: :permanent
+    }
   end
 
   @doc "Ensures the desktop shell is supervised in the selected workspace."
   def ensure_started(cwd \\ nil, workspace \\ nil) do
     cwd = normalize_cwd(cwd)
+    target = server(workspace)
 
-    case Process.whereis(@name) do
+    case resolve(target) do
       nil ->
-        case Supervisor.start_child(
-               DevIDE.Supervisor,
-               {__MODULE__, cwd: cwd, workspace: workspace}
-             ) do
+        opts = [cwd: cwd, workspace: workspace, name: target]
+        supervisor = if Process.whereis(@supervisor), do: @supervisor, else: DevIDE.Supervisor
+
+        case Supervisor.start_child(supervisor, {__MODULE__, opts}) do
           {:ok, _pid} -> :ok
           {:error, {:already_started, _pid}} -> :ok
           {:error, :already_present} -> :ok
@@ -39,15 +53,15 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   @doc "Subscribes the caller and returns the emulator and process handles."
-  def subscribe do
-    GenServer.call(@name, {:subscribe, self()})
+  def subscribe(workspace \\ nil) do
+    GenServer.call(server(workspace), {:subscribe, self()})
   end
 
-  def status, do: GenServer.call(@name, :status)
+  def status(workspace \\ nil), do: GenServer.call(server(workspace), :status)
 
   @doc "Restarts the native shell in the given workspace directory."
   def restart(cwd \\ nil, workspace \\ nil),
-    do: GenServer.call(@name, {:restart, normalize_cwd(cwd), workspace})
+    do: GenServer.call(server(workspace), {:restart, normalize_cwd(cwd), workspace})
 
   @impl true
   def init(opts) do
@@ -197,4 +211,26 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   defp normalize_cwd(_cwd), do: File.cwd!()
+
+  defp server(workspace) do
+    if Process.whereis(@registry) do
+      {:via, Registry, {@registry, workspace_key(workspace)}}
+    else
+      @name
+    end
+  end
+
+  defp resolve({:via, Registry, {registry, key}}) do
+    case Registry.lookup(registry, key) do
+      [{pid, _value}] -> pid
+      [] -> nil
+    end
+  end
+
+  defp resolve(name) when is_atom(name), do: Process.whereis(name)
+
+  defp workspace_key(%{id: id}) when is_binary(id), do: id
+  defp workspace_key(%{"id" => id}) when is_binary(id), do: id
+  defp workspace_key(id) when is_binary(id), do: id
+  defp workspace_key(_workspace), do: "__scratch__"
 end

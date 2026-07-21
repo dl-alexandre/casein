@@ -47,7 +47,7 @@ defmodule DevIDE.Application do
         PreviewCtl.Playwright.Bridge,
         DevIDE.Supervision.Deployment,
         DevIdeWeb.Endpoint
-      ] ++ preview_tidewave_listener() ++ desktop_status()
+      ] ++ desktop_terminal_sessions() ++ preview_tidewave_listener() ++ desktop_status()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -60,6 +60,18 @@ defmodule DevIDE.Application do
 
   defp desktop_powershell? do
     DevIDE.Desktop.TerminalBackend.native_session?(desktop_mode?())
+  end
+
+  defp desktop_terminal_sessions do
+    if desktop_powershell?() do
+      [
+        {Registry, keys: :unique, name: DevIDE.Desktop.PowerShellSession.Registry},
+        {DynamicSupervisor,
+         strategy: :one_for_one, name: DevIDE.Desktop.PowerShellSession.Supervisor}
+      ]
+    else
+      []
+    end
   end
 
   # Ephemeral preview environments boot the endpoint on a unix socket

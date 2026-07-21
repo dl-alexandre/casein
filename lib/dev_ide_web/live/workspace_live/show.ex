@@ -2053,7 +2053,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp attach_desktop_terminal(socket) do
     with :ok <-
            PowerShellSession.ensure_started(workspace_cwd(socket), socket.assigns.workspace),
-         {:ok, term, pty, status} <- PowerShellSession.subscribe() do
+         {:ok, term, pty, status} <- PowerShellSession.subscribe(socket.assigns.workspace) do
       assign(socket,
         desktop_terminal_term: term,
         desktop_terminal_pty: pty,
