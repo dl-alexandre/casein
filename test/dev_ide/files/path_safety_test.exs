@@ -56,6 +56,19 @@ defmodule DevIDE.Files.PathSafetyTest do
     refute PathSafety.ignored_path?("priv/static/images/logo.png")
   end
 
+  test "ignored? matches ignored dir segments and globs" do
+    assert PathSafety.ignored?(".git")
+    assert PathSafety.ignored?(".git/HEAD")
+    assert PathSafety.ignored?("_build/dev/lib")
+    assert PathSafety.ignored?("deps/phoenix")
+    assert PathSafety.ignored?("node_modules/x")
+    assert PathSafety.ignored?("priv/static/cache/app.js")
+    refute PathSafety.ignored?("")
+    refute PathSafety.ignored?(".")
+    refute PathSafety.ignored?("lib/dev_ide.ex")
+    refute PathSafety.ignored?(".env")
+  end
+
   test "likely_binary? sniffs NUL bytes" do
     assert PathSafety.likely_binary?(<<1, 2, 0, 3>>)
     refute PathSafety.likely_binary?("hello world")

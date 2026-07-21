@@ -68,6 +68,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "Select a file to view."
     end
 
+    test "open file header includes dirty and stale indicators" do
+      assigns =
+        base_files_assigns(
+          open_file: %{path: "README.md", content: "x", size: 1, version: "v"}
+        )
+
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+
+      assert html =~ ~s(id="dirty-indicator")
+      assert html =~ ~s(id="stale-indicator")
+    end
+
     test "shows the non-root selected_dir verbatim" do
       assigns = base_files_assigns(selected_dir: "lib/sub")
 

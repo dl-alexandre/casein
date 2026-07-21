@@ -169,6 +169,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                 </span>
               <% end %>
               <span id="dirty-indicator" data-dirty="false" class="text-amber-700"></span>
+              <span id="stale-indicator" data-stale="false" class="text-orange-700"></span>
               <span>{@open_file.size}b</span>
               <button
                 type="button"

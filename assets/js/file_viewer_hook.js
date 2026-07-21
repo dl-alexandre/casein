@@ -14,6 +14,13 @@ function setDirty(dirty) {
   el.textContent = dirty ? "● unsaved" : "saved"
 }
 
+function setStale(stale) {
+  const el = document.getElementById("stale-indicator")
+  if (!el) return
+  el.dataset.stale = stale ? "true" : "false"
+  el.textContent = stale ? "● changed on disk" : ""
+}
+
 export const FileViewerHook = {
   mounted() {
     this.path = null
@@ -62,6 +69,7 @@ export const FileViewerHook = {
       this.renderedEl.innerHTML = this.renderedHtml
       this.applyMode()
       setDirty(false)
+      setStale(false)
       revealLine(this.view, line)
     })
 
@@ -76,6 +84,7 @@ export const FileViewerHook = {
       this.renderedEl.innerHTML = ""
       this.applyMode()
       setDirty(false)
+      setStale(false)
     })
 
     this.handleEvent("save:ok", ({ version, rendered_html }) => {
@@ -86,6 +95,19 @@ export const FileViewerHook = {
         this.renderedEl.innerHTML = rendered_html
       }
       setDirty(false)
+      setStale(false)
+    })
+
+    // Filesystem watch: reload clean buffers; surface a stale marker when dirty
+    // so we never clobber unsaved edits (save path still uses version tokens).
+    this.handleEvent("file:disk_changed", ({ path }) => {
+      if (!this.path || path !== this.path) return
+      const dirty = this.view.state.doc.toString() !== this.savedDoc
+      if (dirty) {
+        setStale(true)
+      } else {
+        this.pushEvent("file:refresh", {})
+      }
     })
 
     this.handleEvent("file:render_mode", ({ mode, rendered_html }) => {
