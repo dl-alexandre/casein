@@ -171,6 +171,74 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
     assert socket_assigns(view, :feature_panes) == %{}
   end
 
+  test "async :load_preview_state hydrates feature panes without clobbering live pane events",
+       %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+    seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id, "%3"])
+
+    # Registry seed: snapshot will include this pane after :load_preview_state.
+    assert {:ok, _} =
+             FilePanes.register(%{
+               pane_id: @file_pane_id,
+               workspace_id: @workspace_id,
+               tmux_session: tmux_session,
+               pane_window_id: "@1",
+               open_files: [%{path: "lib/foo.ex", line: nil}],
+               active_path: "lib/foo.ex"
+             })
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+
+    # Connected first paint must not wait on discover_surfaces / snapshot —
+    # feature_panes starts empty (same as the static render).
+    assert socket_assigns(view, :feature_panes) == %{}
+    assert socket_assigns(view, :preview_panes) == %{}
+    assert socket_assigns(view, :preview_surfaces) == []
+
+    # Deliver a live pane event *before* async hydration settles. The merge in
+    # handle_async(:load_preview_state) must keep this entry (live wins).
+    live_pane_id = "%3"
+
+    send(
+      view.pid,
+      {:pane_event,
+       %{
+         reason: :registered,
+         type: :file,
+         pane_id: live_pane_id,
+         workspace_id: @workspace_id,
+         tmux_session: tmux_session,
+         payload: %{
+           tabs: [%{path: "lib/foo.ex", title: "foo.ex", line: nil}],
+           active_path: "lib/foo.ex",
+           active: %{
+             path: "lib/foo.ex",
+             content: "defmodule Foo do\nend\n",
+             version: "v1",
+             line: nil
+           },
+           workspace_id: @workspace_id,
+           tmux_session: tmux_session
+         }
+       }}
+    )
+
+    render(view)
+    assert %{type: :file} = socket_assigns(view, :feature_panes)[live_pane_id]
+
+    # Settle :load_preview_state (and the other after-mount asyncs).
+    render_async(view, 5_000)
+
+    # Snapshot hydration brought in the registry-seeded pane.
+    assert %{type: :file, payload: payload} =
+             socket_assigns(view, :feature_panes)[@file_pane_id]
+
+    assert payload.active_path == "lib/foo.ex"
+    # Live event delivered before async completion was not clobbered.
+    assert %{type: :file} = socket_assigns(view, :feature_panes)[live_pane_id]
+    # Surfaces assign is replaced by the async result (list, possibly empty).
+    assert is_list(socket_assigns(view, :preview_surfaces))
+  end
+
   test "tmux:select_pane on a file pane is UI-only — Ghostty never attaches to the holder",
        %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
     seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
