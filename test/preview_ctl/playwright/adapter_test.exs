@@ -1,10 +1,11 @@
 defmodule PreviewCtl.Playwright.AdapterTest do
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.TestSupport.HTTPStub
   alias PreviewCtl.Playwright.{Adapter, Bridge}
 
   setup do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     previous_script = Application.get_env(:preview_ctl, :playwright_script)
 
     Application.put_env(
@@ -39,7 +40,7 @@ defmodule PreviewCtl.Playwright.AdapterTest do
   end
 
   test "navigate and observe summarize HTML over HTTP", %{bypass: bypass, base_url: base_url} do
-    Bypass.stub(bypass, "GET", "/page", fn conn ->
+    HTTPStub.stub(bypass, "GET", "/page", fn conn ->
       conn
       |> Plug.Conn.put_resp_header("x-frame-options", "DENY")
       |> Plug.Conn.resp(
@@ -65,11 +66,11 @@ defmodule PreviewCtl.Playwright.AdapterTest do
   end
 
   test "navigate reports redirect and HTTP errors", %{bypass: bypass, base_url: base_url} do
-    Bypass.expect_once(bypass, "GET", "/redirect", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/redirect", fn conn ->
       Plug.Conn.resp(conn, 302, "") |> Plug.Conn.put_resp_header("location", "/elsewhere")
     end)
 
-    Bypass.expect_once(bypass, "GET", "/missing", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/missing", fn conn ->
       Plug.Conn.resp(conn, 404, "not found")
     end)
 
@@ -86,7 +87,7 @@ defmodule PreviewCtl.Playwright.AdapterTest do
     Application.delete_env(:preview_ctl, :playwright_script)
     restart_bridge!()
 
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
 
     on_exit(fn ->
       Application.put_env(
@@ -98,7 +99,7 @@ defmodule PreviewCtl.Playwright.AdapterTest do
       restart_bridge!()
     end)
 
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "<html><title>Static</title><body>Hi</body></html>")
     end)
 
@@ -149,7 +150,7 @@ defmodule PreviewCtl.Playwright.AdapterTest do
     Application.delete_env(:preview_ctl, :playwright_script)
     restart_bridge!()
 
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "<html><title>Static</title></html>")
     end)
 

@@ -51,6 +51,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Test.RuntimeSeed
+  alias DevIDE.TestSupport.HTTPStub
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -661,8 +662,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   end
 
   test "worktree-scoped preview opens the worktree server in the worktree tmux session" do
-    base_server = Bypass.open()
-    worktree_server = Bypass.open()
+    base_server = HTTPStub.open()
+    worktree_server = HTTPStub.open()
     request_counts = start_supervised!({Agent, fn -> %{base: 0, worktree: 0} end})
 
     stub_preview_server(base_server, request_counts, :base)
@@ -896,14 +897,14 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   end
 
   test "tools/call observe encodes redirect_blocked errors in structuredContent" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
     port = bypass.port
     previous_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
 
     Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
     on_exit(fn -> restore_adapter(previous_adapter) end)
 
-    Bypass.expect(bypass, "GET", "/", fn conn ->
+    HTTPStub.expect(bypass, "GET", "/", fn conn ->
       conn
       |> Plug.Conn.put_resp_header("location", "http://169.254.169.254/latest/meta-data/")
       |> Plug.Conn.resp(302, "")
@@ -961,13 +962,13 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   end
 
   defp stub_preview_server(bypass, request_counts, key) when key in [:base, :worktree] do
-    Bypass.stub(bypass, "GET", "/", fn conn ->
+    HTTPStub.stub(bypass, "GET", "/", fn conn ->
       Agent.update(request_counts, &Map.update!(&1, key, fn count -> count + 1 end))
 
       Plug.Conn.resp(conn, 200, "#{key} preview")
     end)
 
-    Bypass.stub(bypass, "GET", "/tidewave", fn conn ->
+    HTTPStub.stub(bypass, "GET", "/tidewave", fn conn ->
       Plug.Conn.resp(conn, 404, "not found")
     end)
   end

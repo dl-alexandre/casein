@@ -6,7 +6,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   `Phoenix.LiveViewTest.render_click/2`, which routes through
   `handle_event/3` exactly like a browser click would.
 
-  Setup mirrors `DevIdeWeb.TerminalBoundaryLiveTest`: Bypass-stubbed
+  Setup mirrors `DevIdeWeb.TerminalBoundaryLiveTest`: HTTPStub-stubbed
   workspace payload, `MemoryAdapter` for State, and `:manual` mode so the raw
   Ghostty path renders the split buttons.
 

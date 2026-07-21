@@ -3,6 +3,7 @@ defmodule DevIDE.Release.Update.ManifestTest do
 
   alias DevIDE.Release.Metadata
   alias DevIDE.Release.Update.Manifest
+  alias DevIDE.TestSupport.HTTPStub
 
   @manifest_json """
   {
@@ -50,9 +51,9 @@ defmodule DevIDE.Release.Update.ManifestTest do
   test "fetch ensures :req is started before issuing the HTTP request" do
     _ = Application.stop(:req)
 
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
 
-    Bypass.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, @manifest_json)
@@ -66,9 +67,9 @@ defmodule DevIDE.Release.Update.ManifestTest do
   end
 
   test "fetch decodes application/json responses as raw manifest JSON" do
-    bypass = Bypass.open()
+    bypass = HTTPStub.open()
 
-    Bypass.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+    HTTPStub.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, @manifest_json)
