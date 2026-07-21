@@ -64,6 +64,29 @@ function Stop-InstalledRuntime {
     Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 }
 
+function Copy-ReleaseTree {
+    param([string]$Source, [string]$Destination)
+
+    $robocopy = Get-Command robocopy.exe -ErrorAction Stop
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    & $robocopy.Source $Source $Destination /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+    if ($LASTEXITCODE -ge 8) { throw "Release copy failed with robocopy exit code $LASTEXITCODE" }
+}
+
+function Remove-ReleaseTree {
+    param([string]$Path)
+
+    $full = [IO.Path]::GetFullPath($Path)
+    $releases = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\DevIDE\releases')).TrimEnd('\') + '\'
+    if (-not $full.StartsWith($releases, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing unsafe release cleanup: $full"
+    }
+    if (Test-Path -LiteralPath $full) {
+        $longPath = if ($full.StartsWith('\\')) { "\\?\UNC\$($full.Substring(2))" } else { "\\?\$full" }
+        [IO.Directory]::Delete($longPath, $true)
+    }
+}
+
 function Backup-UserData {
     param([string]$DataRoot, [string]$BackupRoot)
 
@@ -106,7 +129,7 @@ $backup = Backup-UserData $dataRoot $backupRoot
 
 try {
     if (-not (Test-Path -LiteralPath $destination)) {
-        Copy-Item -Recurse -Force -LiteralPath $packageRoot -Destination $stage
+        Copy-ReleaseTree -Source $packageRoot -Destination $stage
         Move-Item -LiteralPath $stage -Destination $destination
     }
 
@@ -148,6 +171,6 @@ try {
     Write-Host "Installed DevIDE $releaseId for $env:USERNAME"
     Write-Host "Launcher: $(Join-Path $installRoot 'DevIDE.cmd')"
 } catch {
-    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $stage) { Remove-ReleaseTree -Path $stage }
     throw
 }

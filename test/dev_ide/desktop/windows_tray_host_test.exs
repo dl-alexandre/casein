@@ -128,6 +128,9 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     assert script =~ "DEVIDE_REQUIRE_SIGNED_RELEASES"
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "Release integrity check failed"
+    assert script =~ "Copy-ReleaseTree"
+    assert script =~ "robocopy.exe"
+    assert script =~ "Remove-ReleaseTree"
   end
 
   test "Windows package requires a self-contained Playwright runtime" do
