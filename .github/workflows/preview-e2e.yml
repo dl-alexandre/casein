@@ -41,7 +41,7 @@ jobs:
       # (config/test.exs suffixes the DB name with MIX_TEST_PARTITION).
       MIX_TEST_PARTITION: _pe2e
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # Persistent self-hosted runner: keep the incremental build/deps cache
           # (same rationale as the pr-gate job).

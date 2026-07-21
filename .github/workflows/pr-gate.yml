@@ -31,7 +31,7 @@ jobs:
     runs-on: [self-hosted, devbox]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           # The self-hosted runner is persistent; the default clean:true runs
           # `git clean -ffdx`, which deletes the gitignored _build/, deps/, and
