@@ -41,4 +41,29 @@ defmodule DevIDE.Setup.LanEdgeTest do
     assert File.read!(paths.socket_path) =~ "ListenStream=8443"
     assert File.read!(paths.service_path) =~ "127.0.0.1:4443"
   end
+
+  test "listener_open? rejects injection-shaped and malformed ports" do
+    for bad <- ["443; touch /tmp/pwned", nil, 443.0, 0, -1, 70_000] do
+      refute LanEdge.listener_open?(bad)
+    end
+  end
+
+  test "listener_open? is true for an open local TCP port" do
+    {:ok, ls} = :gen_tcp.listen(0, [])
+    {:ok, port} = :inet.port(ls)
+
+    try do
+      assert LanEdge.listener_open?(port)
+    after
+      :gen_tcp.close(ls)
+    end
+  end
+
+  test "listener_open? is false for a closed local TCP port" do
+    {:ok, ls} = :gen_tcp.listen(0, [])
+    {:ok, port} = :inet.port(ls)
+    :ok = :gen_tcp.close(ls)
+
+    refute LanEdge.listener_open?(port)
+  end
 end
