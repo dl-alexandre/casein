@@ -25,6 +25,24 @@ defmodule DevIDE.FilesTest do
              Enum.find_index(names, &(&1 == "README.md"))
   end
 
+  test "list show_hidden: false omits dotfiles but still drops ignore set", %{root: root} do
+    File.write!(Path.join(root, ".env"), "SECRET=1\n")
+    File.write!(Path.join(root, ".gitignore"), "*.beam\n")
+
+    {:ok, shown} = Files.list(root, "", show_hidden: true)
+    shown_names = Enum.map(shown, & &1.name)
+    assert ".env" in shown_names
+    assert ".gitignore" in shown_names
+    refute ".git" in shown_names
+
+    {:ok, hidden} = Files.list(root, "", show_hidden: false)
+    hidden_names = Enum.map(hidden, & &1.name)
+    refute ".env" in hidden_names
+    refute ".gitignore" in hidden_names
+    assert "lib" in hidden_names
+    assert "README.md" in hidden_names
+  end
+
   test "read_text returns content for small text files", %{root: root} do
     assert {:ok, %{content: "# hi\n", size: 5}} = Files.read_text(root, "README.md")
   end

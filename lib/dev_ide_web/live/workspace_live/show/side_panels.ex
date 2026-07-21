@@ -28,6 +28,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   attr :file_error, :string, default: nil
   attr :node_rename, :string, default: nil, doc: "tree-node rename form value (context menu)"
   attr :node_delete, :string, default: nil, doc: "tree-node pending-delete path (context menu)"
+  attr :show_hidden_files, :boolean, default: true, doc: "when false, hide dotfile names in the tree"
 
   def files_panel(assigns) do
     ~H"""
@@ -52,6 +53,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
               </button>
               <button phx-click="tree:new_form" phx-value-kind="dir" class="rounded border px-1.5">
                 +Dir
+              </button>
+              <button
+                id="tree-toggle-hidden"
+                type="button"
+                phx-click="tree:toggle_hidden"
+                title={
+                  if @show_hidden_files, do: "Hide dotfiles", else: "Show dotfiles"
+                }
+                aria-pressed={to_string(@show_hidden_files)}
+                class={[
+                  "rounded border px-1.5",
+                  @show_hidden_files && "bg-zinc-200"
+                ]}
+              >
+                {if @show_hidden_files, do: "·hidden", else: "hidden"}
               </button>
               <button phx-click="tree:refresh" class="rounded border px-1.5">↻</button>
             </div>

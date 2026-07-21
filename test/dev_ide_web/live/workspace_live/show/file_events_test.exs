@@ -201,4 +201,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     s2 = FileEvents.sync_files_watch(s, "terminal", "files")
     assert s2.assigns.files_watch_active == false
   end
+
+  test "tree:toggle_hidden flips show_hidden_files and refreshes expanded nodes" do
+    root = Path.join(System.tmp_dir!(), "fe-hid-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    File.write!(Path.join(root, "README.md"), "x\n")
+    File.write!(Path.join(root, ".env"), "y\n")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    entry = fn name, rel, kind ->
+      %DevIDE.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
+    end
+
+    s =
+      socket(%{
+        host_loc: {:ok, {:local, root}},
+        host_path: {:ok, root},
+        show_hidden_files: true,
+        tree: %{
+          "" =>
+            {:expanded,
+             [
+               entry.(".env", ".env", :file),
+               entry.("README.md", "README.md", :file)
+             ]}
+        },
+        open_file: nil,
+        workspace: %{id: "ws-hid"}
+      })
+
+    assert {:noreply, s2} = FileEvents.handle_event("tree:toggle_hidden", %{}, s)
+    assert s2.assigns.show_hidden_files == false
+    names = Enum.map(elem(s2.assigns.tree[""], 1), & &1.name)
+    refute ".env" in names
+    assert "README.md" in names
+
+    assert {:noreply, s3} = FileEvents.handle_event("tree:toggle_hidden", %{}, s2)
+    assert s3.assigns.show_hidden_files == true
+    names3 = Enum.map(elem(s3.assigns.tree[""], 1), & &1.name)
+    assert ".env" in names3
+  end
 end

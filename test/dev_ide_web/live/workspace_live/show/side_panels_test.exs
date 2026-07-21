@@ -36,7 +36,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       save_error: nil,
       file_error: nil,
       project_meta: nil,
-      tooling: nil
+      tooling: nil,
+      show_hidden_files: true
     }
     |> Map.merge(Map.new(overrides))
   end
@@ -78,6 +79,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assert html =~ ~s(id="dirty-indicator")
       assert html =~ ~s(id="stale-indicator")
+    end
+
+    test "renders hidden-files toggle reflecting current state" do
+      assigns = base_files_assigns(show_hidden_files: true)
+      html_shown = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+
+      assert html_shown =~ ~s(id="tree-toggle-hidden")
+      assert html_shown =~ "tree:toggle_hidden"
+      assert html_shown =~ "·hidden"
+      assert html_shown =~ ~s(aria-pressed="true")
+
+      assigns = base_files_assigns(show_hidden_files: false)
+      html_hidden = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+      assert html_hidden =~ ~s(aria-pressed="false")
+      refute html_hidden =~ "·hidden"
     end
 
     test "shows the non-root selected_dir verbatim" do

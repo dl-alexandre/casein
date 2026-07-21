@@ -53,11 +53,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
   end
 
   def load_tree(socket, path) do
+    show_hidden? = show_hidden_files?(socket)
+
     case socket.assigns[:host_loc] do
       {:ok, {:remote, _host, _root} = loc} ->
         case FileAccess.ls(loc, path) do
           {:ok, raw_entries} ->
-            entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, path))
+            entries =
+              raw_entries
+              |> Enum.map(&remote_entry_to_files_shape(&1, path))
+              |> reject_hidden_entries(show_hidden?)
+
             assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
 
           _ ->
@@ -66,7 +72,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
 
       _ ->
         with {:ok, root} <- Context.context_host_path(socket),
-             {:ok, entries} <- Files.list(root, path) do
+             {:ok, entries} <- Files.list(root, path, show_hidden: show_hidden?) do
           assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
         else
           _ -> socket
@@ -95,10 +101,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
 
   def git_status(_), do: []
 
-  def root_tree(tree, {:ok, {:remote, _host, _root} = loc}, _host_path) do
+  def root_tree(tree, host_loc, host_path, opts \\ [])
+
+  def root_tree(tree, {:ok, {:remote, _host, _root} = loc}, _host_path, opts) do
+    show_hidden? = Keyword.get(opts, :show_hidden, true)
+
     case FileAccess.ls(loc, "") do
       {:ok, raw_entries} ->
-        entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, ""))
+        entries =
+          raw_entries
+          |> Enum.map(&remote_entry_to_files_shape(&1, ""))
+          |> reject_hidden_entries(show_hidden?)
+
         Map.put(tree, "", {:expanded, entries})
 
       _ ->
@@ -106,14 +120,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
     end
   end
 
-  def root_tree(tree, _host_loc, {:ok, root}) do
-    case Files.list(root, "") do
+  def root_tree(tree, _host_loc, {:ok, root}, opts) do
+    show_hidden? = Keyword.get(opts, :show_hidden, true)
+
+    case Files.list(root, "", show_hidden: show_hidden?) do
       {:ok, entries} -> Map.put(tree, "", {:expanded, entries})
       _ -> tree
     end
   end
 
-  def root_tree(tree, _host_loc, _host_path), do: tree
+  def root_tree(tree, _host_loc, _host_path, _opts), do: tree
 
   def do_create(:file, root, rel) do
     case Files.create_file(root, rel) do
@@ -207,5 +223,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
       size: size,
       mtime: nil
     }
+  end
+
+  defp show_hidden_files?(socket), do: Map.get(socket.assigns, :show_hidden_files, true) != false
+
+  defp reject_hidden_entries(entries, true), do: entries
+
+  defp reject_hidden_entries(entries, false) do
+    Enum.reject(entries, fn
+      %{name: name} when is_binary(name) -> Files.hidden_name?(name)
+      _ -> false
+    end)
   end
 end

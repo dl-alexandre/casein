@@ -455,6 +455,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
           file_error={@file_error}
           node_rename={@node_rename}
           node_delete={@node_delete}
+          show_hidden_files={@show_hidden_files}
         />
         <.search_panel
           :if={@tab == "search"}

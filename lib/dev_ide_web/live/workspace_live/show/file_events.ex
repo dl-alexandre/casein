@@ -121,6 +121,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
     {:noreply, socket |> Show.refresh_tree() |> Show.refresh_git_status()}
   end
 
+  def handle_event("tree:toggle_hidden", _, socket) do
+    show? = not Map.get(socket.assigns, :show_hidden_files, true)
+
+    {:noreply,
+     socket
+     |> assign(:show_hidden_files, show?)
+     |> Show.refresh_tree()}
+  end
+
   # Context-menu entry point: select the target dir and open the new-file/dir
   # input in one event (the header buttons do this as two clicks).
   def handle_event("tree:new_form_at", %{"dir" => dir, "kind" => kind}, socket)

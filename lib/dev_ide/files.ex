@@ -25,9 +25,15 @@ defmodule DevIDE.Files do
   List the immediate children of `root <> "/" <> rel`.
 
   Filters out ignored dirs/globs. Sorts dirs before files, both alphabetically.
+
+  Options:
+    * `:show_hidden` (default `true`) — when `false`, names starting with `.`
+      are omitted (PathSafety ignore set is always applied).
   """
-  @spec list(String.t(), String.t()) :: {:ok, [Entry.t()]} | {:error, list_error()}
-  def list(root, rel \\ "") do
+  @spec list(String.t(), String.t(), keyword()) :: {:ok, [Entry.t()]} | {:error, list_error()}
+  def list(root, rel \\ "", opts \\ []) when is_list(opts) do
+    show_hidden? = Keyword.get(opts, :show_hidden, true)
+
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          {:ok, %File.Stat{type: :directory}} <- File.stat(abs),
          {:ok, names} <- File.ls(abs) do
@@ -35,6 +41,7 @@ defmodule DevIDE.Files do
         names
         |> Enum.reject(&PathSafety.ignored_dir?/1)
         |> Enum.reject(fn n -> PathSafety.ignored_path?(Path.join(rel, n)) end)
+        |> Enum.reject(fn n -> not show_hidden? and hidden_name?(n) end)
         |> Enum.flat_map(fn name -> stat_entry(abs, rel, name) end)
         |> Enum.sort_by(&{&1.kind != :dir, &1.name})
 
@@ -44,6 +51,9 @@ defmodule DevIDE.Files do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @doc "True when a single path segment is a Unix-style hidden name (dotfile)."
+  def hidden_name?(name) when is_binary(name), do: String.starts_with?(name, ".")
 
   @doc "Read a text file. Returns content and a version token. Refuses binary/large."
   @spec read_text(String.t(), String.t()) ::
