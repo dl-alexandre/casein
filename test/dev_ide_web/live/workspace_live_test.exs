@@ -2169,12 +2169,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
         |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
-    Req.Test.allow(
-      DevIDE.Integrations.Manager.Client,
-      self(),
-      Process.whereis(DevIDE.PreviewPanes)
-    )
-
     on_exit(fn ->
       DevIDE.PreviewPanes.clear()
       TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)

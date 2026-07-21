@@ -92,12 +92,6 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewPaneInputTest do
         |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
-    Req.Test.allow(
-      DevIDE.Integrations.Manager.Client,
-      self(),
-      Process.whereis(DevIDE.PreviewPanes)
-    )
-
     {:ok, _record} =
       DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
         id: @workspace_id,

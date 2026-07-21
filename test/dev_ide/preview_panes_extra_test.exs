@@ -38,6 +38,21 @@ defmodule DevIDE.PreviewPanesExtraTest do
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 
+  defp wait_until(fun, attempts \\ 50)
+
+  defp wait_until(fun, attempts) when attempts > 0 do
+    if fun.() do
+      :ok
+    else
+      receive do
+      after
+        20 -> wait_until(fun, attempts - 1)
+      end
+    end
+  end
+
+  defp wait_until(_fun, 0), do: flunk("condition not met before timeout")
+
   defp seed_workspace! do
     root =
       Path.join(
@@ -484,7 +499,11 @@ defmodule DevIDE.PreviewPanesExtraTest do
       {DevIDE.Terminals.TmuxTopology, {:session_terminated, %{session: session}}}
     )
 
-    _ = :sys.get_state(PreviewPanes)
+    # Offloaded persist close + deregister I/O — poll past the task pipeline.
+    wait_until(fn ->
+      PreviewPanes.get_by_pane(pane_id) == nil and
+        Repo.get!(ControlSession, registration.control_session_id).status == :closed
+    end)
 
     assert PreviewPanes.get_by_pane(pane_id) == nil
     assert Repo.get!(ControlSession, registration.control_session_id).status == :closed
