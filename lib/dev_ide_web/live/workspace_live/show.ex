@@ -3365,8 +3365,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> put_flash(:info, "Launched #{id} in the Windows terminal.")}
     else
       {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not launch #{id}: #{inspect(reason)}.")}
+        {:noreply, put_flash(socket, :error, "Could not launch #{id}: #{inspect(reason)}.")}
 
       other ->
         {:noreply, put_flash(socket, :error, "Could not launch #{id}: #{inspect(other)}.")}
