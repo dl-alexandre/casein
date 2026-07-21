@@ -47,4 +47,3 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimit do
     |> Keyword.get(key, default)
   end
 end
-

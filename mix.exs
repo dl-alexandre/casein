@@ -111,7 +111,6 @@ defmodule DevIDE.MixProject do
       # cowlib >2.18.0 ships.
       {:cowlib, "~> 2.18", only: [:dev, :test], override: true},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
-
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
       ghostty_dependency(),
@@ -237,7 +236,6 @@ defmodule DevIDE.MixProject do
   end
 
   defp ensure_static_assets(release) do
-
     required_paths = [
       "priv/static/cache_manifest.json",
       "priv/static/assets/css/app.css",

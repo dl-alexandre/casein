@@ -105,7 +105,6 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.DeviceLinkRateLimit
   end
 
-
   pipeline :mcp_api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
