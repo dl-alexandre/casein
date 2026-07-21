@@ -263,4 +263,74 @@ defmodule DevIDE.Files.WatcherTest do
       assert result in [:ok, {:error, :watcher_unavailable}]
     end
   end
+
+  test "event on already-watched top-level dir does not rescan; new dir does", %{
+    root: root,
+    ws_id: ws_id
+  } do
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
+    assert {:ok, pid} = Watcher.whereis(ws_id)
+
+    lib = Path.join(root, "lib")
+    watched_before = :sys.get_state(pid).watched_dirs
+
+    # Existing recursive dir — chmod/utimes-style noise must not restart backends.
+    :ok = Watcher.notify(ws_id, lib)
+
+    assert_receive {:files_changed, ^ws_id, %{paths: paths}}, 500
+    assert "lib" in paths
+    refute_receive {:files_changed, ^ws_id, %{paths: :all}}, 80
+
+    state = :sys.get_state(pid)
+    assert state.needs_rescan == false
+    assert state.watched_dirs == watched_before
+
+    # Genuinely new top-level dir still triggers rescan + :all resync broadcast.
+    new_dir = Path.join(root, "src")
+    File.mkdir_p!(new_dir)
+    :ok = Watcher.notify(ws_id, new_dir)
+
+    assert_receive {:files_changed, ^ws_id, %{paths: new_paths}}, 500
+    assert "src" in new_paths
+    assert_receive {:files_changed, ^ws_id, %{paths: :all}}, 500
+
+    state = :sys.get_state(pid)
+    assert state.needs_rescan == false
+    assert Enum.any?(state.watched_dirs.recursive, &String.ends_with?(&1, "/src"))
+  end
+
+  test "rescan restart broadcasts %{paths: :all} after backends restart", %{
+    root: root,
+    ws_id: ws_id
+  } do
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
+
+    new_dir = Path.join(root, "apps")
+    File.mkdir_p!(new_dir)
+    :ok = Watcher.notify(ws_id, new_dir)
+
+    # First the pending path list, then the post-restart full refresh.
+    assert_receive {:files_changed, ^ws_id, %{paths: paths}}, 500
+    assert "apps" in paths
+    assert_receive {:files_changed, ^ws_id, %{paths: :all}}, 500
+    refute_receive {:files_changed, ^ws_id, _}, 80
+  end
+
+  test "pending overflow collapses to a single %{paths: :all} broadcast", %{
+    root: root,
+    ws_id: ws_id
+  } do
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 40, linger_ms: 50)
+
+    # More than @max_pending_paths (500) distinct relative paths in one window.
+    for i <- 1..501 do
+      :ok = Watcher.notify(ws_id, Path.join(root, "f-#{i}.txt"))
+    end
+
+    assert_receive {:files_changed, ^ws_id, %{paths: :all}}, 500
+    refute_receive {:files_changed, ^ws_id, _}, 80
+  end
 end

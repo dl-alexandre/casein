@@ -13,7 +13,15 @@ defmodule DevIDE.Files.Watcher do
   Native scope subtracts ignored top-level directories (`.git`, `_build`,
   `deps`, `node_modules`, …) from the recursive watch set and pairs that with
   a non-recursive root watch so root-level files and newly created top-level
-  directories are still observed.
+  directories are still observed. Only newly created (not-yet-watched)
+  top-level dirs trigger a backend rescan; existing recursive watches are left
+  alone on chmod/utimes/rename noise.
+
+  Debounced meta is either a list of relative paths or the sentinel `:all`.
+  `:all` is used when pending paths exceed the overflow cap (500) in one
+  debounce window (overflow collapse) or after a rescan restart (resync so
+  subscribers recover events lost while backends were stopped). Consumers treat
+  `:all` as a full tree refresh.
 
   When the native backend cannot start (e.g. `inotifywait` missing), the
   process stays up as a no-op so callers never crash — one warning is logged.
@@ -30,8 +38,12 @@ defmodule DevIDE.Files.Watcher do
   @topic_prefix "files:watch:"
   @default_debounce_ms 400
   @default_linger_ms 30_000
+  # Cap distinct relative paths queued in one debounce window; beyond this
+  # pending collapses to `:all` so PubSub messages and LiveView affected sets
+  # stay bounded (e.g. branch switches).
+  @max_pending_paths 500
 
-  @type meta :: %{paths: [String.t()]}
+  @type meta :: %{paths: [String.t()] | :all}
 
   ## Public API
 
@@ -238,20 +250,20 @@ defmodule DevIDE.Files.Watcher do
   end
 
   def handle_info(:flush, state) do
-    paths = MapSet.to_list(state.pending)
+    state = flush_pending(state)
 
-    if paths != [] do
+    if state.needs_rescan do
+      state = restart_backends(%{state | needs_rescan: false})
+
+      # Events between stop_fs_pids and the new watch can be dropped; force a
+      # full-refresh so subscribers resync after the restart window.
       Phoenix.PubSub.broadcast(
         @pubsub,
         topic(state.workspace_id),
-        {:files_changed, state.workspace_id, %{paths: paths}}
+        {:files_changed, state.workspace_id, %{paths: :all}}
       )
-    end
 
-    state = %{state | pending: MapSet.new(), timer: nil}
-
-    if state.needs_rescan do
-      {:noreply, restart_backends(%{state | needs_rescan: false})}
+      {:noreply, state}
     else
       {:noreply, state}
     end
@@ -429,7 +441,11 @@ defmodule DevIDE.Files.Watcher do
         if PathSafety.ignored?(rel) do
           state
         else
-          state = schedule_flush(%{state | pending: MapSet.put(state.pending, rel)})
+          state =
+            state
+            |> put_pending(rel)
+            |> schedule_flush()
+
           maybe_mark_rescan(state, rel)
         end
 
@@ -438,13 +454,51 @@ defmodule DevIDE.Files.Watcher do
     end
   end
 
+  defp put_pending(%{pending: :all} = state, _rel), do: state
+
+  defp put_pending(state, rel) do
+    pending = MapSet.put(state.pending, rel)
+
+    if MapSet.size(pending) > @max_pending_paths do
+      %{state | pending: :all}
+    else
+      %{state | pending: pending}
+    end
+  end
+
+  defp flush_pending(%{pending: :all} = state) do
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      topic(state.workspace_id),
+      {:files_changed, state.workspace_id, %{paths: :all}}
+    )
+
+    %{state | pending: MapSet.new(), timer: nil}
+  end
+
+  defp flush_pending(state) do
+    paths = MapSet.to_list(state.pending)
+
+    if paths != [] do
+      Phoenix.PubSub.broadcast(
+        @pubsub,
+        topic(state.workspace_id),
+        {:files_changed, state.workspace_id, %{paths: paths}}
+      )
+    end
+
+    %{state | pending: MapSet.new(), timer: nil}
+  end
+
   defp maybe_mark_rescan(state, rel) do
-    # Top-level entry (no slash): if it is a non-ignored directory, schedule a
-    # backend restart so the recursive watcher picks up the new tree.
+    # Top-level entry (no slash): only rescan when this non-ignored directory is
+    # not already covered by the recursive watch set (new dirs only — not
+    # chmod/utimes/rename noise on existing top-level dirs).
     if rel != "" and not String.contains?(rel, "/") do
       abs = Path.join(state.root, rel)
 
-      if File.dir?(abs) and not PathSafety.ignored_dir?(rel) do
+      if File.dir?(abs) and not PathSafety.ignored_dir?(rel) and
+           abs not in state.watched_dirs.recursive do
         %{state | needs_rescan: true}
       else
         state
