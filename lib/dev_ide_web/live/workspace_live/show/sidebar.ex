@@ -241,7 +241,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         socket.assigns.workspace.id,
         expanded_workspaces: socket.assigns.sidebar_expanded_workspaces,
         current_session_tabs: socket.assigns.session_tabs,
-        sidebar_ws_sessions: socket.assigns.sidebar_ws_sessions
+        sidebar_ws_sessions: socket.assigns.sidebar_ws_sessions,
+        viewer: socket.assigns[:current_user]
       )
       |> SessionBarVM.sort_sessions_in_tree(socket.assigns.sessions_sidebar_sort)
 

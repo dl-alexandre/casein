@@ -638,6 +638,78 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert chevron =~ ~s(phx-value-workspace-id="ws-1")
     end
 
+    test "collapsed other-workspace row navigates to the workspace root, not a toggle" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []},
+            %{id: "ws-2", name: "beta", session_count: 3, live?: true, sessions: []}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")]),
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil
+        )
+
+      # ws-2's sessions aren't lazy-loaded, so no home session is resolvable —
+      # the header row must still be a navigable link to the workspace root
+      # (Enter/click lands in that workspace's home session via its mount).
+      [_, header] =
+        Regex.run(~r/(<a\b[^>]*data-picker-sessions-id="sidebar-ws-ws-2"[^>]*>)/s, html)
+
+      assert header =~ ~s(href="/workspaces/ws-2")
+      assert header =~ ~s(data-phx-link="redirect")
+      refute header =~ ~s(phx-click="sidebar:toggle_workspace")
+
+      # Expansion stays available on the dedicated chevron.
+      [_, chevron] =
+        Regex.run(~r/(<button\b[^>]*id="sidebar-ws-toggle-sidebar-ws-ws-2"[^>]*>)/s, html)
+
+      assert chevron =~ ~s(phx-click="sidebar:toggle_workspace")
+      assert chevron =~ ~s(phx-value-workspace-id="ws-2")
+    end
+
+    test "collapsed teammate workspace row stays a non-navigable toggle" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", user: "alice", session_count: 1, live?: true},
+            %{id: "ws-mine", name: "beta", user: "alice", session_count: 2, live?: true},
+            %{id: "ws-bob", name: "gamma", user: "bob", session_count: 2, live?: true}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")]),
+          sidebar_ws_sessions: %{},
+          viewer: %{id: "alice", username: "alice", email: "alice@example.com"}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil
+        )
+
+      # The viewer's own collapsed workspace links to its root...
+      assert html =~ ~s(href="/workspaces/ws-mine")
+      # ...but a teammate's workspace renders no link at all — only the
+      # legacy expand/collapse toggle row.
+      refute html =~ ~s(href="/workspaces/ws-bob")
+
+      [_, teammate_row] =
+        Regex.run(~r/(<button\b[^>]*data-picker-sessions-id="sidebar-ws-ws-bob"[^>]*>)/s, html)
+
+      assert teammate_row =~ ~s(phx-click="sidebar:toggle_workspace")
+    end
+
     test "renders the Browse tier with expand toggle and open-terminal action" do
       browse = [
         %{

@@ -817,7 +817,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             <% end %>
           </div>
         </div>
+      <% Map.get(@node, :openable?, true) -> %>
+        <%!-- Sessions not lazy-loaded yet. Tapping the row navigates to the
+             workspace root (its mount picks the landing session) — same target
+             as the desktop sidebar's unresolved-home row; expansion moves to
+             the dedicated count/chevron button. --%>
+        <div class="flex items-stretch gap-0.5">
+          <.link
+            navigate={SessionBar.cross_workspace_home_path(@node.workspace_id)}
+            data-picker-item
+            data-picker-section="workspaces"
+            class={[
+              mobile_nav_row_class(false),
+              "min-w-0 flex-1 flex-row items-center gap-2",
+              not @node.live? && "opacity-60"
+            ]}
+            title={@node.title}
+          >
+            <span class="min-w-0 flex-1 truncate text-left font-medium">{@node.label}</span>
+          </.link>
+          <button
+            :if={@node.session_count > 0}
+            type="button"
+            phx-click="sidebar:toggle_workspace"
+            phx-value-workspace-id={@node.workspace_id}
+            class="flex shrink-0 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] text-zinc-500"
+            aria-label={"Expand " <> @node.label}
+          >
+            {@node.session_count}
+            <span class="flex"><.icon name="hero-chevron-right" class="size-3" /></span>
+          </button>
+        </div>
       <% true -> %>
+        <%!-- Teammate workspace (openable?: false): keep the legacy
+             non-navigable expand/collapse toggle. --%>
         <button
           type="button"
           data-picker-item
