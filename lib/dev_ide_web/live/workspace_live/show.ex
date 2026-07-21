@@ -3296,7 +3296,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # in a terminal pane, not the Run tab's stdout-capture flow.
   # Public: called by Show.RunEvents (extracted run/workflow handlers).
   def interactive_agent?(id),
-    do: id in ~w(agent claude clauded codex grok opencode)
+    do: DevIDE.Desktop.AgentLauncher.supported?(id)
 
   # Interactive coding-agent launchers (agent / claude / grok / opencode /
   # codex / clauded) run in the raw terminal: we ensure the canonical raw
@@ -3315,6 +3315,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     cond do
       not DevIDE.Policy.Decision.allow?(decision) ->
         {:noreply, put_flash(socket, :error, "Launch not allowed.")}
+
+      socket.assigns[:desktop_terminal?] ->
+        launch_desktop_agent(socket, id)
 
       not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
         {:noreply,
@@ -3351,6 +3354,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              )}
         end
     end
+  end
+
+  defp launch_desktop_agent(socket, id) do
+    with {:ok, command} <- DevIDE.Desktop.AgentLauncher.command(id),
+         :ok <- DevIDE.Desktop.PowerShellSession.send_input(socket.assigns.workspace, command) do
+      {:noreply,
+       socket
+       |> assign(:tab, "terminal")
+       |> put_flash(:info, "Launched #{id} in the Windows terminal.")}
+    else
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not launch #{id}: #{inspect(reason)}.")}
+
+      other ->
+        {:noreply, put_flash(socket, :error, "Could not launch #{id}: #{inspect(other)}.")}
+    end
+  catch
+    :exit, reason ->
+      {:noreply, put_flash(socket, :error, "Could not launch #{id}: #{inspect(reason)}.")}
   end
 
   @doc false

@@ -59,6 +59,11 @@ defmodule DevIDE.Desktop.PowerShellSession do
 
   def status(workspace \\ nil), do: GenServer.call(server(workspace), :status)
 
+  @doc "Writes terminal input to one workspace-scoped native session."
+  def send_input(workspace, data) when is_binary(data) do
+    GenServer.call(server(workspace), {:input, data})
+  end
+
   @doc "Restarts the native shell in the given workspace directory."
   def restart(cwd \\ nil, workspace \\ nil),
     do: GenServer.call(server(workspace), {:restart, normalize_cwd(cwd), workspace})
@@ -94,6 +99,10 @@ defmodule DevIDE.Desktop.PowerShellSession do
   end
 
   def handle_call(:status, _from, state), do: {:reply, state.status, state}
+
+  def handle_call({:input, data}, _from, state) do
+    {:reply, Ghostty.PTY.write(state.pty, data), state}
+  end
 
   def handle_call({:ensure_workspace, cwd, workspace}, _from, state)
       when state.cwd == cwd and state.workspace == workspace,
