@@ -10,6 +10,8 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
   @installer Path.expand("../../../windows/Install-DevIDE.ps1", __DIR__)
   @launcher Path.expand("../../../windows/DevIDE.Launcher.ps1", __DIR__)
   @uninstaller Path.expand("../../../windows/Uninstall-DevIDE.ps1", __DIR__)
+  @repair Path.expand("../../../windows/Repair-DevIDE.ps1", __DIR__)
+  @support Path.expand("../../../windows/New-DevIDESupportBundle.ps1", __DIR__)
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -52,12 +54,34 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     for label <- [
           "Open DevIDE",
           "Restart",
+          "Repair installation",
           "Open logs",
+          "Create support bundle",
           "Launch at Windows sign-in",
           "Quit DevIDE"
         ] do
       assert script =~ label
     end
+  end
+
+  test "repair validates the installed release and reruns migrations" do
+    script = File.read!(@repair)
+
+    assert script =~ "StartsWith($releasesRoot"
+    assert script =~ "bin\\dev_ide.bat"
+    assert script =~ "& $release migrate"
+    assert script =~ "Get-Process -Id $runtimePid"
+  end
+
+  test "support bundle includes diagnostics but excludes local credentials and data" do
+    script = File.read!(@support)
+
+    assert script =~ "desktop-host.log"
+    assert script =~ "runtime.json"
+    assert script =~ "system.json"
+    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'api-token.txt')"
+    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'secret-key-base.txt')"
+    refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'devide.sqlite3')"
   end
 
   test "packager builds the Windows SQLite release and copies the host" do

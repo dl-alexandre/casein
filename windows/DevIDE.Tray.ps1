@@ -516,7 +516,9 @@ function Start-DevIDETray {
     [void]$menu.Items.Add('-')
     $openItem = $menu.Items.Add('Open DevIDE')
     $restartItem = $menu.Items.Add('Restart')
+    $repairItem = $menu.Items.Add('Repair installation')
     $logsItem = $menu.Items.Add('Open logs')
+    $supportItem = $menu.Items.Add('Create support bundle')
     $startupItem = $menu.Items.Add('Launch at Windows sign-in')
     $startupItem.Checked = $script:LaunchAtSignIn
     [void]$menu.Items.Add('-')
@@ -550,6 +552,30 @@ function Start-DevIDETray {
         $restartItem.Enabled = $true
         if (-not $ready) {
             $tray.ShowBalloonTip(5000, 'DevIDE failed to start', "Open logs for details.", [Windows.Forms.ToolTipIcon]::Error)
+        }
+    })
+    $repairItem.Add_Click({
+        $repairItem.Enabled = $false
+        try {
+            Stop-DevIDERuntime $script:Port
+            & (Join-Path $script:Paths.ReleaseRoot 'windows\Repair-DevIDE.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE')
+            if (-not (Start-DevIDERuntime $script:Port)) { throw 'Runtime did not become ready after repair.' }
+            $tray.ShowBalloonTip(3000, 'DevIDE repaired', 'The local database and runtime state are healthy.', [Windows.Forms.ToolTipIcon]::Info)
+        } catch {
+            Write-DevIDELog "Repair failed: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'DevIDE repair failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
+        } finally {
+            $repairItem.Enabled = $true
+        }
+    })
+    $supportItem.Add_Click({
+        try {
+            $bundle = & (Join-Path $script:Paths.ReleaseRoot 'windows\New-DevIDESupportBundle.ps1')
+            Start-Process explorer.exe -ArgumentList @('/select,', $bundle)
+            $tray.ShowBalloonTip(3000, 'Support bundle created', 'The redacted bundle is ready on your Desktop.', [Windows.Forms.ToolTipIcon]::Info)
+        } catch {
+            Write-DevIDELog "Support bundle failed: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'Support bundle failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $quitItem.Add_Click({

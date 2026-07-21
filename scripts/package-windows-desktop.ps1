@@ -220,6 +220,8 @@ Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\DevIDE.Launcher.ps1'),
     (Join-Path $root 'windows\Install-DevIDE.ps1'),
     (Join-Path $root 'windows\Uninstall-DevIDE.ps1'),
+    (Join-Path $root 'windows\Repair-DevIDE.ps1'),
+    (Join-Path $root 'windows\New-DevIDESupportBundle.ps1'),
     (Join-Path $root 'windows\Start-DevIDE.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
 Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
