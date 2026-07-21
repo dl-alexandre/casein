@@ -177,6 +177,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     refute match?({:expanded, [_ | _]}, Map.get(s2.assigns.tree, "collapsed"))
 
     # Client gets a disk_changed nudge for the open file (dirty handling is in JS).
+    # Phoenix 1.8 stores pushed events on the socket differently across versions;
+    # at least tree refresh succeeded which is the server-side half of the contract.
     assert Enum.any?(s2.private[:live_temp][:push_events] || [], fn
              {_, "file:disk_changed", %{path: "README.md"}} -> true
              _ -> false
@@ -185,8 +187,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
                {"file:disk_changed", %{path: "README.md"}} -> true
                _ -> false
              end) or
-             # Phoenix 1.8 stores pushed events on the socket differently across versions;
-             # at least tree refresh succeeded which is the server-side half of the contract.
              match?({:expanded, _}, s2.assigns.tree[""])
   end
 

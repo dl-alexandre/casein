@@ -72,9 +72,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
     test "open file header includes dirty and stale indicators" do
       assigns =
-        base_files_assigns(
-          open_file: %{path: "README.md", content: "x", size: 1, version: "v"}
-        )
+        base_files_assigns(open_file: %{path: "README.md", content: "x", size: 1, version: "v"})
 
       html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 

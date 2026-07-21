@@ -66,6 +66,7 @@ defmodule DevIDE.Files do
              version: Version.t()
            }}
           | {:error, read_error()}
+  # sobelow_skip ["Traversal.FileModule"]
   def read_text(root, rel) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          {:ok, %File.Stat{type: :regular, size: size, mtime: mtime} = stat}
@@ -123,6 +124,7 @@ defmodule DevIDE.Files do
   """
   @spec create_file(String.t(), String.t()) ::
           {:ok, Version.t()} | {:error, write_error() | :exists}
+  # sobelow_skip ["Traversal.FileModule"]
   def create_file(root, rel) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          :ok <- refuse_existing(abs),
@@ -134,6 +136,7 @@ defmodule DevIDE.Files do
 
   @doc "Create a directory at `rel`. Refuses if it already exists or PathSafety fails."
   @spec create_dir(String.t(), String.t()) :: :ok | {:error, write_error() | :exists}
+  # sobelow_skip ["Traversal.FileModule"]
   def create_dir(root, rel) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          :ok <- refuse_existing(abs) do

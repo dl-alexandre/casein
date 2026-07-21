@@ -27,9 +27,13 @@ defmodule DevIDE.Files.WatcherTest do
     assert {:ok, pid} = Watcher.whereis(ws_id)
     assert Process.alive?(pid)
 
+    ref = Process.monitor(pid)
     assert :ok = Watcher.unwatch(ws_id)
-    refute Process.alive?(pid)
-    assert :error = Watcher.whereis(ws_id)
+    assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
+    # Registry cleanup after the DOWN is itself async; poll briefly.
+    assert Enum.any?(1..50, fn _ ->
+             Watcher.whereis(ws_id) == :error || (Process.sleep(10) && false)
+           end)
   end
 
   test "debounces and broadcasts non-ignored relative paths", %{root: root, ws_id: ws_id} do
