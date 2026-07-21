@@ -35,6 +35,7 @@ defmodule DevIDE.Agents.TerminalTools do
     GateReport,
     Impl,
     ListSessions,
+    OpenFileInPane,
     PasteAgentText,
     ReportAgentState,
     ReportWorktree,
@@ -65,6 +66,7 @@ defmodule DevIDE.Agents.TerminalTools do
     PasteAgentText,
     SendKeys,
     SendCommand,
+    OpenFileInPane,
     SetAgentLabel,
     ReportWorktree,
     ReportAgentState,
@@ -132,6 +134,8 @@ defmodule DevIDE.Agents.TerminalTools do
   defdelegate send_keys(params), to: Impl
   @doc false
   defdelegate send_command(params), to: Impl
+  @doc false
+  defdelegate open_file_in_pane(params), to: Impl
   @doc false
   defdelegate set_agent_label(params), to: Impl
   @doc false
