@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.WorkspaceLive.Show.Browse
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
   alias DevIdeWeb.WorkspaceRoutes
 
   @type sidebar_mode :: :closed | :windows_only | :both
@@ -26,7 +27,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       sidebar_expanded_windows: MapSet.new(),
       sidebar_expanded_dirs: MapSet.new(),
       sidebar_ws_sessions: %{},
+      sidebar_ws_warm_pending?: false,
       sidebar_ws_subscriptions: MapSet.new(),
+      # Viewer resizes held while the nav rail is open; flushed on close.
+      # See TerminalInfo `:terminal_resize` / flush_held_pane_resizes/1.
+      held_pane_resizes: %{},
       sessions_sidebar_tree: [],
       windows_sidebar_tree: [],
       sessions_sidebar_sort: :recency,
@@ -70,6 +75,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       |> assign_sessions_sidebar_tree()
       |> assign_windows_sidebar_tree()
 
+    socket =
+      if sidebar_mode == :both,
+        do: warm_sidebar_ws_sessions(socket),
+        else: socket
+
     case focus do
       :sessions -> push_event(socket, "sidebar:focus_sessions", %{})
       :windows -> push_event(socket, "sidebar:focus_windows", %{})
@@ -82,6 +92,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
     socket
     |> unsubscribe_all_sidebar_workspaces()
     |> assign_sidebar_mode(:closed)
+    |> TerminalInfo.flush_held_pane_resizes()
     |> assign(:sidebar_expanded_workspaces, MapSet.new())
     |> assign(:sidebar_expanded_windows, MapSet.new())
     |> assign(:sidebar_expanded_dirs, MapSet.new())
@@ -297,20 +308,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
           [map()]
         ) :: Phoenix.LiveView.Socket.t()
   def assign_sidebar_ws_sessions(socket, workspace_id, infos) when is_list(infos) do
+    assign(
+      socket,
+      :sidebar_ws_sessions,
+      Map.put(
+        socket.assigns.sidebar_ws_sessions,
+        workspace_id,
+        ws_session_tabs(socket, workspace_id, infos)
+      )
+    )
+  end
+
+  defp ws_session_tabs(socket, workspace_id, infos) do
     summary = find_summary(socket, workspace_id)
     workspace_name = summary_workspace_name(summary, workspace_id)
     default_sid = SessionSummary.newest_shell_sid(workspace_id, workspace_name)
 
-    tabs =
-      infos
-      |> Terminals.visible_tabs(default_sid)
-      |> SessionBarVM.session_tabs()
+    infos
+    |> Terminals.visible_tabs(default_sid)
+    |> SessionBarVM.session_tabs()
+  end
 
-    assign(
-      socket,
-      :sidebar_ws_sessions,
-      Map.put(socket.assigns.sidebar_ws_sessions, workspace_id, tabs)
-    )
+  # Opening the sessions rail lazily loaded each workspace's session list only
+  # on expand — an async round-trip per row, felt as "expanding is slow" while
+  # picking. Warm the cache for live workspaces in ONE background task as the
+  # rail opens; expansion then renders instantly from `sidebar_ws_sessions`.
+  # Results merge under already-loaded entries (an expand in flight wins), and
+  # the whole cache is dropped on close/1 as before.
+  @sidebar_warm_limit 24
+
+  defp warm_sidebar_ws_sessions(socket) do
+    if socket.assigns[:sidebar_ws_warm_pending?] do
+      socket
+    else
+      current_id = socket.assigns.workspace.id
+      loaded = socket.assigns.sidebar_ws_sessions
+
+      candidates =
+        socket.assigns.workspace_summaries
+        |> Enum.filter(fn summary ->
+          id = summary_id(summary)
+
+          is_binary(id) and id != current_id and not Map.has_key?(loaded, id) and
+            (Map.get(summary, :live?, false) == true or
+               (Map.get(summary, :session_count) || 0) > 0)
+        end)
+        |> Enum.take(@sidebar_warm_limit)
+        |> Enum.map(fn summary ->
+          id = summary_id(summary)
+          {id, summary_workspace_name(summary, id)}
+        end)
+
+      if candidates == [] do
+        socket
+      else
+        socket
+        |> assign(:sidebar_ws_warm_pending?, true)
+        |> start_async(:sidebar_ws_warm, fn ->
+          Map.new(candidates, fn {id, name} ->
+            {id, SessionDirectory.read(id, workspace_name: name)}
+          end)
+        end)
+      end
+    end
+  end
+
+  @doc "Merge a completed rail warm-up (`:sidebar_ws_warm` async) into the cache."
+  @spec handle_async_warm(Phoenix.LiveView.Socket.t(), {:ok, map()} | term()) ::
+          Phoenix.LiveView.Socket.t()
+  def handle_async_warm(socket, {:ok, infos_by_ws}) when is_map(infos_by_ws) do
+    loaded = socket.assigns.sidebar_ws_sessions
+
+    merged =
+      Enum.reduce(infos_by_ws, loaded, fn {workspace_id, infos}, acc ->
+        if Map.has_key?(acc, workspace_id) or not is_list(infos) do
+          acc
+        else
+          Map.put(acc, workspace_id, ws_session_tabs(socket, workspace_id, infos))
+        end
+      end)
+
+    socket
+    |> assign(:sidebar_ws_warm_pending?, false)
+    |> assign(:sidebar_ws_sessions, merged)
+    |> assign_sessions_sidebar_tree()
+  end
+
+  def handle_async_warm(socket, _result) do
+    assign(socket, :sidebar_ws_warm_pending?, false)
   end
 
   @spec handle_async_sessions(

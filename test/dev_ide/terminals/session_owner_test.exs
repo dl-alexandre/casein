@@ -1873,6 +1873,97 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     :ok
   end
 
+  describe "authoritative size debouncing" do
+    # The suite disables debouncing globally (config/test.exs leading_ms: 0);
+    # these tests opt back in with compressed timings. quiet_ms is kept well
+    # above the assertion windows so an immediate apply and a settled apply
+    # are distinguishable.
+    setup do
+      prev = Application.get_env(:dev_ide, :terminal_owner_size_debounce)
+
+      Application.put_env(:dev_ide, :terminal_owner_size_debounce,
+        leading_ms: 200,
+        quiet_ms: 300,
+        max_defer_ms: 900
+      )
+
+      on_exit(fn ->
+        if prev,
+          do: Application.put_env(:dev_ide, :terminal_owner_size_debounce, prev),
+          else: Application.delete_env(:dev_ide, :terminal_owner_size_debounce)
+      end)
+
+      :ok
+    end
+
+    test "a focus-flap burst coalesces to one apply of the final winner" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("size-debounce")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      # Leading edge: the first change applies immediately.
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:resize, self(), 200, 60})
+      assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
+
+      # Two viewers alternating focus inside the leading window — the storm
+      # that used to reflow tmux on every flip. No intermediate size applies...
+      GenServer.cast(owner_pid, {:resize, other, 120, 40})
+      GenServer.cast(owner_pid, {:viewer_active, other, true})
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:viewer_active, other, true})
+      refute_receive {:fake_session_resize, ^fake_session, _, _}, 150
+
+      # ...and exactly the final winner lands once the burst goes quiet.
+      assert_receive {:fake_session_resize, ^fake_session, 120, 40}, 1_000
+      refute_receive {:fake_session_resize, ^fake_session, _, _}, 150
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "a lone change outside the leading window applies immediately" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("size-lone")
+
+      register_subscriber(owner_pid, self(), :raw)
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:resize, self(), 200, 60})
+      assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
+
+      # Past the leading window this is a calm, ordinary resize — it must not
+      # wait out the quiet period (300ms here; assert well under it).
+      Process.sleep(250)
+      GenServer.cast(owner_pid, {:resize, self(), 150, 50})
+      assert_receive {:fake_session_resize, ^fake_session, 150, 50}, 150
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "a burst that converges back to the applied size resizes nothing" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("size-converge")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:resize, self(), 200, 60})
+      assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
+
+      # Flap away and back: the settle recompute sees the applied size winning
+      # again and applies nothing at all.
+      GenServer.cast(owner_pid, {:resize, other, 120, 40})
+      GenServer.cast(owner_pid, {:viewer_active, other, true})
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      refute_receive {:fake_session_resize, ^fake_session, _, _}, 600
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+  end
+
   # Drives the version the fake tmux adapter reports, gating the client color
   # reports emitted on scheme/preset change.
   defp set_fake_tmux_version(version) do
