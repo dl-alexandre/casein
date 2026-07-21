@@ -55,6 +55,40 @@ defmodule TmuxCtl.Topology.WatcherTest do
                    500
   end
 
+  test "does not broadcast when only activity ticks within the same bucket" do
+    session = "watcher-activity-bucket-#{System.unique_integer([:positive])}"
+    put_fake_topology(session, "shell", "bash", activity: 30)
+
+    :ok = Watcher.subscribe(session, watcher_opts())
+
+    assert %{version: version, panes: [%{activity: 30}]} =
+             Watcher.get(session, watcher_opts(enabled: false))
+
+    # Drain any subscribe-time noise; subsequent refreshes should stay quiet
+    # while activity remains in the same 15s version bucket.
+    flush_updated(session)
+
+    put_fake_topology(session, "shell", "bash", activity: 31)
+
+    assert %{version: ^version, panes: [%{activity: 31}]} =
+             Watcher.refresh_now(session, watcher_opts())
+
+    refute_receive {@tag, {:updated, %{session: ^session}}}, 100
+
+    put_fake_topology(session, "shell", "mix", activity: 31)
+
+    assert %{panes: [%{current_command: "mix", activity: 31}]} =
+             Watcher.refresh_now(session, watcher_opts())
+
+    assert_receive {@tag,
+                    {:updated,
+                     %{
+                       session: ^session,
+                       panes: [%{current_command: "mix", activity: 31}]
+                     }}},
+                   500
+  end
+
   test "polling can be configured and stops when the tmux session dies" do
     session = "watcher-dead-#{System.unique_integer([:positive])}"
 
@@ -183,7 +217,7 @@ defmodule TmuxCtl.Topology.WatcherTest do
     |> Keyword.merge(overrides)
   end
 
-  defp put_fake_window(session, name) do
+  defp put_fake_window(session, name, activity \\ 0) do
     FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, session, [
         %{
@@ -192,15 +226,16 @@ defmodule TmuxCtl.Topology.WatcherTest do
           name: name,
           active: true,
           panes: 1,
-          activity: 0,
+          activity: activity,
           current_command: "bash"
         }
       ])
     end)
   end
 
-  defp put_fake_topology(session, window_name, command) do
-    put_fake_window(session, window_name)
+  defp put_fake_topology(session, window_name, command, opts \\ []) do
+    activity = Keyword.get(opts, :activity, 10)
+    put_fake_window(session, window_name, activity)
 
     FakeState.put(:fake_tmux_panes, %{
       session => [
@@ -215,13 +250,21 @@ defmodule TmuxCtl.Topology.WatcherTest do
           height: 40,
           current_command: command,
           current_path: "/workspace",
-          activity: 10,
+          activity: activity,
           activity_flag: true,
           bell: false,
           unseen_changes: true
         }
       ]
     })
+  end
+
+  defp flush_updated(session) do
+    receive do
+      {@tag, {:updated, %{session: ^session}}} -> flush_updated(session)
+    after
+      0 -> :ok
+    end
   end
 
   defp await_unregistered(session, attempts \\ 50) do

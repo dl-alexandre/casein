@@ -51,6 +51,10 @@ defmodule TmuxCtl.Topology do
           optional(:generation) => pos_integer()
         }
 
+  # Quantize activity timestamps for version hashing only. Below the UI :fresh
+  # threshold (30s) so age-indicator transitions still propagate within one bucket.
+  @activity_version_bucket_seconds 15
+
   @doc """
   Read topology directly from tmux (or a test adapter) without a watcher process.
   """
@@ -68,7 +72,7 @@ defmodule TmuxCtl.Topology do
       panes: panes,
       active_window_id: active && active.id,
       active_pane_id: active_pane && active_pane.id,
-      version: :erlang.phash2({windows, panes}),
+      version: :erlang.phash2(version_projection(windows, panes)),
       structure_version: structure_version(windows, panes)
     }
   end
@@ -134,6 +138,30 @@ defmodule TmuxCtl.Topology do
 
   defp default_adapter do
     Application.get_env(:tmux_ctl, :adapter, TmuxCtl.Client)
+  end
+
+  # Hash input only — snapshot/broadcast payloads keep raw :activity timestamps.
+  defp version_projection(windows, panes) do
+    {Enum.map(windows, &project_activity/1), Enum.map(panes, &project_activity/1)}
+  end
+
+  defp project_activity(entity) when is_map(entity) do
+    entity =
+      case Map.get(entity, :activity) do
+        activity when is_integer(activity) ->
+          Map.put(entity, :activity, div(activity, @activity_version_bucket_seconds))
+
+        _ ->
+          entity
+      end
+
+    case Map.get(entity, :pane_list) do
+      pane_list when is_list(pane_list) ->
+        Map.put(entity, :pane_list, Enum.map(pane_list, &project_activity/1))
+
+      _ ->
+        entity
+    end
   end
 
   defp active_pane_for_snapshot(%{id: window_id}, panes) do

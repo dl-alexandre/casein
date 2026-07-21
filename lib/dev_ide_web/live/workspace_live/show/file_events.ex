@@ -51,15 +51,59 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   end
 
   @doc "Refresh expanded tree nodes and nudge the open file viewer on disk change."
-  def apply_files_changed(socket, _meta \\ %{}) do
-    socket = Show.refresh_tree(socket)
+  def apply_files_changed(socket, meta \\ %{}) do
+    case meta do
+      %{paths: paths} when is_list(paths) and paths != [] ->
+        apply_files_changed_selective(socket, paths)
+
+      _ ->
+        # Full refresh: forward-compat for watcher overflow (e.g. %{paths: :all}).
+        socket = Show.refresh_tree(socket)
+
+        case socket.assigns.open_file do
+          %{path: path} when is_binary(path) ->
+            push_event(socket, "file:disk_changed", %{path: path})
+
+          _ ->
+            socket
+        end
+    end
+  end
+
+  defp apply_files_changed_selective(socket, paths) do
+    affected =
+      paths
+      |> Enum.flat_map(fn p -> [tree_parent(p), p] end)
+      |> MapSet.new()
+
+    expanded =
+      socket.assigns.tree
+      |> Enum.filter(fn {_path, value} -> match?({:expanded, _}, value) end)
+      |> Enum.map(fn {path, _} -> path end)
+
+    socket =
+      Enum.reduce(expanded, socket, fn dir, acc ->
+        if MapSet.member?(affected, dir), do: Show.load_tree(acc, dir), else: acc
+      end)
 
     case socket.assigns.open_file do
       %{path: path} when is_binary(path) ->
-        push_event(socket, "file:disk_changed", %{path: path})
+        if path in paths do
+          push_event(socket, "file:disk_changed", %{path: path})
+        else
+          socket
+        end
 
       _ ->
         socket
+    end
+  end
+
+  # Workspace-relative parent: "x" -> "", "a/b/c" -> "a/b".
+  defp tree_parent(path) when is_binary(path) do
+    case Path.dirname(path) do
+      "." -> ""
+      dir -> dir
     end
   end
 

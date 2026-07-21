@@ -6,8 +6,14 @@ defmodule DevIDE.Files.Watcher do
   Lifecycle is reference-counted: LiveViews call `watch/2` while the Files
   panel is open and `unwatch/1` when it closes. The first watcher starts the
   native `file_system` backend (scoped to the workspace root); the last
-  watcher leaving stops the process. Events under paths ignored by
+  watcher leaving stops the process after a short linger so quick tab reopen
+  reuses the same inotify setup. Events under paths ignored by
   `DevIDE.Files.PathSafety` are dropped before broadcast.
+
+  Native scope subtracts ignored top-level directories (`.git`, `_build`,
+  `deps`, `node_modules`, …) from the recursive watch set and pairs that with
+  a non-recursive root watch so root-level files and newly created top-level
+  directories are still observed.
 
   When the native backend cannot start (e.g. `inotifywait` missing), the
   process stays up as a no-op so callers never crash — one warning is logged.
@@ -23,6 +29,7 @@ defmodule DevIDE.Files.Watcher do
   @pubsub DevIDE.PubSub
   @topic_prefix "files:watch:"
   @default_debounce_ms 400
+  @default_linger_ms 30_000
 
   @type meta :: %{paths: [String.t()]}
 
@@ -77,7 +84,18 @@ defmodule DevIDE.Files.Watcher do
   def watch(workspace_id, root, opts \\ [])
       when is_binary(workspace_id) and is_binary(root) do
     with {:ok, pid} <- ensure_started(workspace_id, root, opts) do
-      GenServer.call(pid, {:watch, self()})
+      try do
+        GenServer.call(pid, {:watch, self()})
+      catch
+        :exit, _ ->
+          with {:ok, pid2} <- ensure_started(workspace_id, root, opts) do
+            try do
+              GenServer.call(pid2, {:watch, self()})
+            catch
+              :exit, _ -> {:error, :watcher_unavailable}
+            end
+          end
+      end
     end
   end
 
@@ -136,21 +154,30 @@ defmodule DevIDE.Files.Watcher do
 
   @impl true
   def init({workspace_id, root, opts}) do
+    # FileSystem.start_link/1 links backends to this process; trap so a backend
+    # exit (including intentional restart) does not take the watcher down.
+    Process.flag(:trap_exit, true)
+
     root = Path.expand(root)
     debounce_ms = Keyword.get(opts, :debounce_ms, @default_debounce_ms)
+    linger_ms = Keyword.get(opts, :linger_ms, @default_linger_ms)
     backend = Keyword.get(opts, :backend, :native)
 
-    {fs_pid, backend_status} = start_backend(backend, root)
+    {fs_pids, backend_status, watched_dirs} = start_backend(backend, root)
 
     state = %{
       workspace_id: workspace_id,
       root: root,
       debounce_ms: debounce_ms,
-      fs_pid: fs_pid,
+      linger_ms: linger_ms,
+      backend: backend,
+      fs_pids: fs_pids,
+      watched_dirs: watched_dirs,
       backend_status: backend_status,
       watchers: %{},
       pending: MapSet.new(),
-      timer: nil
+      timer: nil,
+      needs_rescan: false
     }
 
     {:ok, state}
@@ -175,25 +202,39 @@ defmodule DevIDE.Files.Watcher do
     state = drop_watcher(state, pid)
 
     if map_size(state.watchers) == 0 do
-      {:stop, :normal, :ok, state}
+      {:reply, :ok, schedule_maybe_stop(state)}
     else
       {:reply, :ok, state}
     end
   end
 
   @impl true
-  def handle_info({:file_event, fs_pid, {path, _events}}, %{fs_pid: fs_pid} = state)
-      when is_binary(path) do
-    {:noreply, maybe_queue_path(state, path)}
+  def handle_info({:file_event, fs_pid, {path, _events}}, state)
+      when is_binary(path) and is_pid(fs_pid) do
+    if fs_pid in state.fs_pids do
+      {:noreply, maybe_queue_path(state, path)}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info({:file_event, :test, {path, _events}}, state) when is_binary(path) do
     {:noreply, maybe_queue_path(state, path)}
   end
 
-  def handle_info({:file_event, fs_pid, :stop}, %{fs_pid: fs_pid} = state) do
-    Logger.warning("files watcher backend stopped for workspace=#{state.workspace_id}")
-    {:noreply, %{state | fs_pid: nil, backend_status: :stopped}}
+  def handle_info({:file_event, fs_pid, :stop}, state) when is_pid(fs_pid) do
+    if fs_pid in state.fs_pids do
+      fs_pids = List.delete(state.fs_pids, fs_pid)
+
+      if fs_pids == [] do
+        Logger.warning("files watcher backend stopped for workspace=#{state.workspace_id}")
+        {:noreply, %{state | fs_pids: [], backend_status: :stopped}}
+      else
+        {:noreply, %{state | fs_pids: fs_pids}}
+      end
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info(:flush, state) do
@@ -207,7 +248,21 @@ defmodule DevIDE.Files.Watcher do
       )
     end
 
-    {:noreply, %{state | pending: MapSet.new(), timer: nil}}
+    state = %{state | pending: MapSet.new(), timer: nil}
+
+    if state.needs_rescan do
+      {:noreply, restart_backends(%{state | needs_rescan: false})}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info(:maybe_stop, state) do
+    if map_size(state.watchers) == 0 do
+      {:stop, :normal, state}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
@@ -218,7 +273,22 @@ defmodule DevIDE.Files.Watcher do
       end
 
     if map_size(state.watchers) == 0 do
-      {:stop, :normal, state}
+      {:noreply, schedule_maybe_stop(state)}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:EXIT, pid, _reason}, state) when is_pid(pid) do
+    if pid in state.fs_pids do
+      fs_pids = List.delete(state.fs_pids, pid)
+
+      if fs_pids == [] do
+        Logger.warning("files watcher backend stopped for workspace=#{state.workspace_id}")
+        {:noreply, %{state | fs_pids: [], backend_status: :stopped}}
+      else
+        {:noreply, %{state | fs_pids: fs_pids}}
+      end
     else
       {:noreply, state}
     end
@@ -228,9 +298,11 @@ defmodule DevIDE.Files.Watcher do
 
   @impl true
   def terminate(_reason, state) do
-    if is_pid(state.fs_pid) and Process.alive?(state.fs_pid) do
-      Process.exit(state.fs_pid, :shutdown)
-    end
+    Enum.each(state.fs_pids, fn pid ->
+      if is_pid(pid) and Process.alive?(pid) do
+        Process.exit(pid, :shutdown)
+      end
+    end)
 
     :ok
   end
@@ -238,30 +310,118 @@ defmodule DevIDE.Files.Watcher do
   ## Internals
 
   defp start_backend(:native, root) do
-    case FileSystem.start_link(dirs: [root]) do
-      {:ok, pid} ->
-        _ = FileSystem.subscribe(pid)
-        {pid, :ok}
+    watched_dirs = compute_watched_dirs(root)
 
-      {:error, reason} ->
+    try do
+      recursive = watched_dirs.recursive
+      non_recursive = watched_dirs.non_recursive
+
+      {pids, errors} = {[], []}
+
+      {pids, errors} =
+        if recursive == [] do
+          {pids, errors}
+        else
+          start_one_fs({pids, errors}, dirs: recursive)
+        end
+
+      # Root is always non-recursive so top-level files and new dirs are seen.
+      {pids, errors} = start_one_fs({pids, errors}, dirs: non_recursive, recursive: false)
+
+      case pids do
+        [] ->
+          reason = List.first(errors) || :unavailable
+
+          Logger.warning(
+            "files watcher disabled (file_system backend unavailable: #{inspect(reason)}); " <>
+              "install inotify-tools for auto-refresh"
+          )
+
+          {[], {:error, reason}, watched_dirs}
+
+        _ ->
+          {Enum.reverse(pids), :ok, watched_dirs}
+      end
+    rescue
+      error ->
         Logger.warning(
-          "files watcher disabled (file_system backend unavailable: #{inspect(reason)}); " <>
+          "files watcher disabled (file_system raised: #{Exception.message(error)}); " <>
             "install inotify-tools for auto-refresh"
         )
 
-        {nil, {:error, reason}}
+        {[], {:error, error}, watched_dirs}
     end
-  rescue
-    error ->
-      Logger.warning(
-        "files watcher disabled (file_system raised: #{Exception.message(error)}); " <>
-          "install inotify-tools for auto-refresh"
-      )
-
-      {nil, {:error, error}}
   end
 
-  defp start_backend(:test, _root), do: {nil, :test}
+  defp start_backend(:test, root) do
+    {[], :test, compute_watched_dirs(root)}
+  end
+
+  defp start_one_fs({pids, errors}, opts) do
+    case FileSystem.start_link(opts) do
+      {:ok, pid} ->
+        _ = FileSystem.subscribe(pid)
+        {[pid | pids], errors}
+
+      {:error, reason} ->
+        {pids, [reason | errors]}
+    end
+  end
+
+  @doc false
+  def compute_watched_dirs(root) when is_binary(root) do
+    root = Path.expand(root)
+
+    recursive =
+      case File.ls(root) do
+        {:ok, entries} ->
+          entries
+          |> Enum.filter(fn name ->
+            abs = Path.join(root, name)
+            File.dir?(abs) and not PathSafety.ignored_dir?(name)
+          end)
+          |> Enum.map(&Path.join(root, &1))
+          |> Enum.sort()
+
+        {:error, _} ->
+          []
+      end
+
+    %{recursive: recursive, non_recursive: [root]}
+  end
+
+  defp restart_backends(state) do
+    stop_fs_pids(state.fs_pids)
+
+    {fs_pids, backend_status, watched_dirs} = start_backend(state.backend, state.root)
+
+    %{
+      state
+      | fs_pids: fs_pids,
+        backend_status: backend_status,
+        watched_dirs: watched_dirs
+    }
+  end
+
+  defp stop_fs_pids(pids) do
+    refs =
+      for pid <- pids, is_pid(pid), Process.alive?(pid) do
+        # Unlink before shutdown so the EXIT reason cannot race past trap_exit
+        # setup, and so we wait on a clean monitor DOWN.
+        Process.unlink(pid)
+        ref = Process.monitor(pid)
+        Process.exit(pid, :shutdown)
+        ref
+      end
+
+    Enum.each(refs, fn ref ->
+      receive do
+        {:DOWN, ^ref, :process, _, _} -> :ok
+      after
+        500 -> :ok
+      end
+    end)
+  end
 
   defp maybe_queue_path(state, abs_path) do
     case relative_under_root(state.root, abs_path) do
@@ -269,11 +429,28 @@ defmodule DevIDE.Files.Watcher do
         if PathSafety.ignored?(rel) do
           state
         else
-          schedule_flush(%{state | pending: MapSet.put(state.pending, rel)})
+          state = schedule_flush(%{state | pending: MapSet.put(state.pending, rel)})
+          maybe_mark_rescan(state, rel)
         end
 
       :error ->
         state
+    end
+  end
+
+  defp maybe_mark_rescan(state, rel) do
+    # Top-level entry (no slash): if it is a non-ignored directory, schedule a
+    # backend restart so the recursive watcher picks up the new tree.
+    if rel != "" and not String.contains?(rel, "/") do
+      abs = Path.join(state.root, rel)
+
+      if File.dir?(abs) and not PathSafety.ignored_dir?(rel) do
+        %{state | needs_rescan: true}
+      else
+        state
+      end
+    else
+      state
     end
   end
 
@@ -283,6 +460,11 @@ defmodule DevIDE.Files.Watcher do
   end
 
   defp schedule_flush(state), do: state
+
+  defp schedule_maybe_stop(%{linger_ms: ms} = state) do
+    _ = Process.send_after(self(), :maybe_stop, ms)
+    state
+  end
 
   defp drop_watcher(state, pid) do
     case Map.pop(state.watchers, pid) do
