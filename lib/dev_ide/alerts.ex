@@ -68,6 +68,17 @@ defmodule DevIDE.Alerts do
       channels: ["in_app", "push"],
       ttl_seconds: 3_600,
       dedupe_window_seconds: 300
+    },
+    # Host tmux control-mode listener flap (Slice 3). Raised by
+    # `DevIDE.Signals.TmuxEventsFlapWatch` when reconnects exceed the threshold;
+    # in-app only — platform/operator signal, not an end-user run event.
+    "tmux.events_listener_degraded" => %{
+      type: "tmux_events_listener_degraded",
+      severity: "warning",
+      title: "Tmux events listener flapping",
+      channels: ["in_app"],
+      ttl_seconds: 3_600,
+      dedupe_window_seconds: 900
     }
   }
 

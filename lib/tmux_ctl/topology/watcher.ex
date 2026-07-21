@@ -243,7 +243,10 @@ defmodule TmuxCtl.Topology.Watcher do
       listener_ref: nil,
       last_refresh_ms: now_ms,
       pending_refresh_ref: nil,
-      retry_subscribe_ref: nil
+      retry_subscribe_ref: nil,
+      # Events absorbed by coalescing since the last event/coalesced snapshot
+      # (Slice 3 observability — events_absorbed measurement).
+      events_absorbed: 0
     }
 
     state =
@@ -275,7 +278,7 @@ defmodule TmuxCtl.Topology.Watcher do
   end
 
   def handle_call(:refresh, _from, state) do
-    case refresh_state(state) do
+    case refresh_state(state, :manual) do
       {:ok, state} ->
         {:reply, state.topology, state}
 
@@ -305,7 +308,7 @@ defmodule TmuxCtl.Topology.Watcher do
 
   @impl true
   def handle_cast(:refresh, state) do
-    case refresh_state(state) do
+    case refresh_state(state, :manual) do
       {:ok, state} -> {:noreply, state}
       {:terminated, state} -> {:stop, :normal, state}
     end
@@ -313,7 +316,9 @@ defmodule TmuxCtl.Topology.Watcher do
 
   @impl true
   def handle_info(:refresh, state) do
-    case refresh_state(state) do
+    source = if state.event_mode?, do: :reconcile, else: :poll_fallback
+
+    case refresh_state(state, source) do
       {:ok, state} ->
         {:noreply, schedule_refresh(state)}
 
@@ -349,7 +354,7 @@ defmodule TmuxCtl.Topology.Watcher do
   def handle_info(:coalesced_refresh, state) do
     state = %{state | pending_refresh_ref: nil}
 
-    case refresh_state(state) do
+    case refresh_state(state, :event) do
       {:ok, state} -> {:noreply, state}
       {:terminated, state} -> {:stop, :normal, state}
     end
@@ -415,7 +420,7 @@ defmodule TmuxCtl.Topology.Watcher do
     Keyword.get(opts, :topology_transform, fn topology -> topology end)
   end
 
-  defp refresh_state(state) do
+  defp refresh_state(state, source) do
     adapter = state.tmux_opt || state.tmux_resolver.()
 
     topology =
@@ -425,6 +430,8 @@ defmodule TmuxCtl.Topology.Watcher do
 
     topology = state.topology_transform.(topology)
     now_ms = System.monotonic_time(:millisecond)
+    events_absorbed = Map.get(state, :events_absorbed, 0)
+    emit_refresh_telemetry(state, source, events_absorbed)
 
     if topology.windows == [] and topology.panes == [] do
       Phoenix.PubSub.broadcast(
@@ -437,7 +444,7 @@ defmodule TmuxCtl.Topology.Watcher do
 
       state.on_session_terminated.(state, :session_not_alive)
 
-      {:terminated, cancel_refresh_timer(%{state | last_refresh_ms: now_ms})}
+      {:terminated, cancel_refresh_timer(%{state | last_refresh_ms: now_ms, events_absorbed: 0})}
     else
       if topology.version != state.topology.version do
         Phoenix.PubSub.broadcast(
@@ -447,7 +454,7 @@ defmodule TmuxCtl.Topology.Watcher do
         )
       end
 
-      {:ok, %{state | topology: topology, last_refresh_ms: now_ms}}
+      {:ok, %{state | topology: topology, last_refresh_ms: now_ms, events_absorbed: 0}}
     end
   end
 
@@ -459,10 +466,13 @@ defmodule TmuxCtl.Topology.Watcher do
     now = System.monotonic_time(:millisecond)
     elapsed = now - state.last_refresh_ms
     min_interval = state.refresh_ms
+    # Count every event that reaches the coalescer, including the one that
+    # triggers a snapshot (absorbed=1 on immediate path; N when coalesced).
+    state = %{state | events_absorbed: Map.get(state, :events_absorbed, 0) + 1}
 
     cond do
       elapsed >= min_interval and is_nil(state.pending_refresh_ref) ->
-        refresh_state(state)
+        refresh_state(state, :event)
 
       is_nil(state.pending_refresh_ref) ->
         delay = max(min_interval - elapsed, 0)
@@ -473,6 +483,17 @@ defmodule TmuxCtl.Topology.Watcher do
         {:ok, state}
     end
   end
+
+  defp emit_refresh_telemetry(state, source, events_absorbed)
+       when source in [:event, :reconcile, :poll_fallback, :manual] do
+    :telemetry.execute(
+      [:tmux_ctl, :topology, :watcher, :refresh],
+      %{count: 1, events_absorbed: events_absorbed},
+      %{source: source, session: state.session, event_mode?: state.event_mode?}
+    )
+  end
+
+  defp emit_refresh_telemetry(_state, _source, _events_absorbed), do: :ok
 
   defp maybe_subscribe_event_source(%{event_source: nil} = state), do: state
 
@@ -526,7 +547,9 @@ defmodule TmuxCtl.Topology.Watcher do
       |> Map.put(:event_mode?, true)
       |> cancel_refresh_timer()
 
-    case refresh_state(state) do
+    # Snapshot-then-listen after listener_up / successful resubscribe — same
+    # path as a reconcile tick (state unknown; no event replay).
+    case refresh_state(state, :reconcile) do
       {:ok, state} -> {:ok, schedule_refresh(state)}
       {:terminated, state} -> {:terminated, state}
     end
