@@ -176,7 +176,10 @@ defmodule DevIDE.MixProject do
         "compile --warnings-as-errors",
         "deps.unlock --unused",
         "deps.audit",
-        "hex.audit",
+        # "cmd mix" spawn: hex.* tasks can be unresolvable inside an already-running
+        # Mix VM on the gate runner (archive not loaded); a fresh mix invocation
+        # always has them, and cmd propagates the exit code (enforcing).
+        "cmd mix hex.audit",
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format",
@@ -189,7 +192,10 @@ defmodule DevIDE.MixProject do
         "compile --warnings-as-errors",
         "deps.unlock --check-unused",
         "deps.audit",
-        "hex.audit",
+        # "cmd mix" spawn: hex.* tasks can be unresolvable inside an already-running
+        # Mix VM on the gate runner (archive not loaded); a fresh mix invocation
+        # always has them, and cmd propagates the exit code (enforcing).
+        "cmd mix hex.audit",
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format --check-formatted",
