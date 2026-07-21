@@ -100,6 +100,8 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
 
     assert launcher =~ "current.json"
     assert launcher =~ "DevIDE.Tray.ps1"
+    assert installer =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
+    assert uninstaller =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
     assert uninstaller =~ "RemoveUserData"
   end
 end

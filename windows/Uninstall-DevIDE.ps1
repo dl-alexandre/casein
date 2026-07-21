@@ -13,7 +13,9 @@ $pidPath = Join-Path $dataRoot 'runtime.pid'
 if (Test-Path -LiteralPath $pidPath) {
     $runtimePid = 0
     [void][int]::TryParse((Get-Content -Raw -LiteralPath $pidPath).Trim(), [ref]$runtimePid)
-    if ($runtimePid -gt 0) { & taskkill.exe /PID $runtimePid /T /F *> $null }
+    if ($runtimePid -gt 0 -and (Get-Process -Id $runtimePid -ErrorAction SilentlyContinue)) {
+        & taskkill.exe /PID $runtimePid /T /F *> $null
+    }
 }
 
 Remove-Item -LiteralPath $installRoot -Recurse -Force -ErrorAction SilentlyContinue
