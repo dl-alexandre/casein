@@ -22,6 +22,25 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   def session_param, do: Params.session()
 
   @doc false
+  def file_path_param do
+    %{
+      type: "string",
+      description:
+        "Workspace-relative path to open (e.g. \"lib/foo.ex\"). Absolute paths under " <>
+          "the workspace root are normalized. Paths are re-validated server-side."
+    }
+  end
+
+  @doc false
+  def line_param do
+    %{
+      type: "integer",
+      minimum: 1,
+      description: "Optional 1-based line to reveal after opening (file surface only)."
+    }
+  end
+
+  @doc false
   def pane_param, do: Params.pane()
 
   @doc false
@@ -309,6 +328,36 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
             "command" => "mix test"
           },
           structured_content: %{"status" => "sent"}
+        }
+      ]
+    }
+  end
+
+  def metadata("file_open_in_pane") do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:opens_file_surface],
+      recovery_hints: [
+        "Pass workspace_id and a workspace-relative path.",
+        "Call terminal_list_sessions first when session is unknown.",
+        "Browser-viewable types (html/svg/pdf/images) open in a preview pane."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "devide_ws-1_default",
+            "path" => "lib/foo.ex",
+            "line" => 12
+          },
+          structured_content: %{
+            "surface" => "file",
+            "pane_id" => "%4",
+            "path" => "lib/foo.ex",
+            "reused" => false
+          }
         }
       ]
     }

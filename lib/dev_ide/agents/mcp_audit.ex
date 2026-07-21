@@ -151,7 +151,8 @@ defmodule DevIDE.Agents.MCPAudit do
         "terminal_paste_agent_text",
         "annotation_propose",
         "terminal_set_agent_label",
-        "gate_report"
+        "gate_report",
+        "file_open_in_pane"
       ]
 
   defp mutating_preview_tool?(tool),
@@ -293,6 +294,21 @@ defmodule DevIDE.Agents.MCPAudit do
     if is_binary(state), do: "annotation_list · #{state}", else: "annotation_list"
   end
 
+  defp terminal_summary("file_open_in_pane", args) do
+    path = Map.get(args, "path") || Map.get(args, :path)
+    line = Map.get(args, "line") || Map.get(args, :line)
+
+    parts =
+      [
+        session_part(args),
+        if(is_binary(path) and path != "", do: "path=#{truncate(path)}"),
+        if(is_integer(line) and line > 0, do: "line=#{line}")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "file_open_in_pane", else: "file_open_in_pane · " <> Enum.join(parts, " ")
+  end
+
   defp terminal_summary(tool, args) do
     parts =
       [
@@ -355,6 +371,8 @@ defmodule DevIDE.Agents.MCPAudit do
       tool: tool,
       session: Map.get(args, "session"),
       pane: Map.get(args, "pane"),
+      path: preview_arg_text(Map.get(args, "path")),
+      line: Map.get(args, "line") || Map.get(args, :line),
       command: preview_arg_text(Map.get(args, "command")),
       keys: preview_arg_text(Map.get(args, "keys")),
       text: preview_arg_text(Map.get(args, "text"))

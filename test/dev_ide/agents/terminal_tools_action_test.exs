@@ -10,10 +10,10 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
   alias DevIDE.Agents.TerminalTools
 
   describe "definitions/0" do
-    test "exposes 17 terminal tools plus annotation tools" do
+    test "exposes 18 terminal tools plus annotation tools" do
       names = TerminalTools.definitions() |> Enum.map(& &1.name)
 
-      assert length(names) == 19
+      assert length(names) == 20
 
       for expected <- [
             "terminal_list_sessions",
@@ -28,6 +28,7 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
             "terminal_paste_agent_text",
             "terminal_send_keys",
             "terminal_send_command",
+            "file_open_in_pane",
             "terminal_set_agent_label",
             "terminal_report_worktree",
             "terminal_report_agent_state",
@@ -38,6 +39,17 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
           ] do
         assert expected in names
       end
+    end
+
+    test "file_open_in_pane requires workspace_id and path on the wire" do
+      tool = definition("file_open_in_pane")
+
+      assert tool.parameters.required == ["workspace_id", "path"]
+      assert tool.parameters.properties.path.type == "string"
+      assert tool.parameters.properties.line.type == "integer"
+      assert tool.metadata.mutation? == true
+      assert tool.metadata.danger_level == :medium
+      assert :opens_file_surface in tool.metadata.policy_tags
     end
 
     test "terminal_topology definition pins session as required on the wire" do
