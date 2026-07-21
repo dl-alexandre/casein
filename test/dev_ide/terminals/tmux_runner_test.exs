@@ -3,6 +3,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
   # (the same global state the sibling DevIDE.Terminals.TmuxTest guards).
   use DevIDE.TestCase, async: false
 
+  alias DevIDE.Terminals.TmuxExecutable
   alias DevIDE.Terminals.TmuxRunner
   alias DevIDE.Terminals.TmuxServer
 
@@ -65,7 +66,8 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     test "prepends tmux + server args and the default config file when none is configured" do
       argv = TmuxRunner.argv(["list-sessions"])
 
-      assert ["tmux" | rest] = argv
+      tmux = TmuxExecutable.resolve()
+      assert [^tmux | rest] = argv
       assert Enum.take(rest, length(TmuxServer.args())) == TmuxServer.args()
       assert List.last(argv) == "list-sessions"
       # The bundled priv/tmux/devide.conf resolves as the default config file.
@@ -80,7 +82,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
       Application.put_env(:tmux_ctl, :config_file, config)
 
-      assert ["tmux"] ++
+      assert [TmuxExecutable.resolve()] ++
                TmuxServer.args() ++
                ["-f", config, "new-session", "-A", "-s", "devide_alpha_u-dev"] ==
                TmuxRunner.host_argv(["new-session", "-A", "-s", "devide_alpha_u-dev"])
@@ -93,7 +95,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
       Application.put_env(:tmux_ctl, :config_file, config)
 
-      assert ["tmux"] ++ TmuxServer.args() ++ ["-f", config, "kill-server"] ==
+      assert [TmuxExecutable.resolve()] ++ TmuxServer.args() ++ ["-f", config, "kill-server"] ==
                TmuxRunner.argv(["kill-server"])
     end
 
@@ -158,7 +160,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       File.write!(config, "set-option -g status off\n")
       Application.put_env(:tmux_ctl, :config_file, config)
 
-      assert ["tmux"] ++
+      assert [TmuxExecutable.resolve()] ++
                TmuxServer.args() ++
                ["-f", config, "new-session", "-d", "-s", "devide_home_u-dev"] ==
                TmuxRunner.argv(["new-session", "-d", "-s", "devide_home_u-dev"],
@@ -184,7 +186,8 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       # -t names an existing host session, so host_session_alive? returns true
       # and we get host tmux argv (not the wrapper's ["sh", ...]).
       argv = TmuxRunner.argv(["send-keys", "-t", "devide_alpha_u-dev:0", "echo hi"])
-      assert ["tmux" | _] = argv
+      tmux = TmuxExecutable.resolve()
+      assert [^tmux | _] = argv
       assert "send-keys" in argv
     end
 
