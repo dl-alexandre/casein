@@ -137,21 +137,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     assert s2.assigns.count == 2
   end
 
-  test "apply_files_changed refreshes expanded tree keys only and nudges open file" do
-    root = Path.join(System.tmp_dir!(), "fe-#{System.unique_integer([:positive])}")
+  # Phoenix 1.8 stores pushed events in different private slots across versions.
+  # Returns false when neither location contains the event (no always-true disjunct).
+  defp pushed?(socket, event, payload) do
+    match? =
+      fn
+        [^event, ^payload] -> true
+        {_, ^event, ^payload} -> true
+        {^event, ^payload} -> true
+        _ -> false
+      end
+
+    live_temp = socket.private[:live_temp][:push_events] || []
+    push_events = Map.get(socket.private, :push_events, []) || []
+
+    Enum.any?(live_temp, match?) or Enum.any?(push_events, match?)
+  end
+
+  defp tree_entry(name, rel, kind) do
+    %DevIDE.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
+  end
+
+  test "apply_files_changed with path list refreshes only affected expanded dirs" do
+    root = Path.join(System.tmp_dir!(), "fe-sel-#{System.unique_integer([:positive])}")
     File.mkdir_p!(Path.join(root, "lib"))
-    File.write!(Path.join(root, "README.md"), "v1\n")
+    File.mkdir_p!(Path.join(root, "other"))
     File.write!(Path.join([root, "lib", "a.ex"]), "defmodule A, do: :ok\n")
+    File.write!(Path.join([root, "other", "x.ex"]), "defmodule X, do: :ok\n")
     on_exit(fn -> File.rm_rf!(root) end)
 
-    entry = fn name, rel, kind ->
-      %DevIDE.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
-    end
+    # Sentinel entries prove "other" was never re-listed from disk.
+    other_entries = [tree_entry("stale.ex", "other/stale.ex", :file)]
 
     tree = %{
-      "" => {:expanded, [entry.("lib", "lib", :dir), entry.("README.md", "README.md", :file)]},
-      "lib" => {:expanded, [entry.("a.ex", "lib/a.ex", :file)]},
-      "collapsed" => {:collapsed, []}
+      "" =>
+        {:expanded,
+         [
+           tree_entry("lib", "lib", :dir),
+           tree_entry("other", "other", :dir)
+         ]},
+      "lib" => {:expanded, [tree_entry("a.ex", "lib/a.ex", :file)]},
+      "other" => {:expanded, other_entries}
     }
 
     s =
@@ -159,36 +185,118 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
         host_loc: {:ok, {:local, root}},
         host_path: {:ok, root},
         tree: tree,
-        open_file: %{path: "README.md", content: "v1\n", version: "v", size: 3},
-        file_render_mode: "source",
-        workspace: %{id: "ws-fe"}
+        open_file: nil,
+        workspace: %{id: "ws-fe-sel"}
       })
 
-    File.write!(Path.join(root, "README.md"), "v2\n")
     File.write!(Path.join([root, "lib", "b.ex"]), "defmodule B, do: :ok\n")
 
-    s2 = FileEvents.apply_files_changed(s, %{paths: ["README.md", "lib/b.ex"]})
+    s2 = FileEvents.apply_files_changed(s, %{paths: ["lib/b.ex"]})
 
-    assert match?({:expanded, _}, s2.assigns.tree[""])
-    assert match?({:expanded, entries} when is_list(entries), s2.assigns.tree["lib"])
+    # Unaffected expanded dir keeps the identical pre-existing tuple (no re-list).
+    assert s2.assigns.tree["other"] == {:expanded, other_entries}
+    assert s2.assigns.tree["other"] === tree["other"]
+
     names = Enum.map(elem(s2.assigns.tree["lib"], 1), & &1.name)
     assert "b.ex" in names
-    # Collapsed nodes are not re-expanded by refresh_tree (they start empty after reset).
-    refute match?({:expanded, [_ | _]}, Map.get(s2.assigns.tree, "collapsed"))
+    refute pushed?(s2, "file:disk_changed", %{path: "lib/b.ex"})
+  end
 
-    # Client gets a disk_changed nudge for the open file (dirty handling is in JS).
-    # Phoenix 1.8 stores pushed events on the socket differently across versions;
-    # probe both private locations so the assertion stays portable.
-    assert Enum.any?(s2.private[:live_temp][:push_events] || [], fn
-             ["file:disk_changed", %{path: "README.md"}] -> true
-             {_, "file:disk_changed", %{path: "README.md"}} -> true
-             _ -> false
-           end) or
-             Enum.any?(Map.get(s2.private, :push_events, []), fn
-               ["file:disk_changed", %{path: "README.md"}] -> true
-               {"file:disk_changed", %{path: "README.md"}} -> true
-               _ -> false
-             end)
+  test "apply_files_changed nudges open file only when its path is in meta paths" do
+    root = Path.join(System.tmp_dir!(), "fe-nudge-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    File.write!(Path.join(root, "README.md"), "v1\n")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    s =
+      socket(%{
+        host_loc: {:ok, {:local, root}},
+        host_path: {:ok, root},
+        tree: %{"" => {:expanded, [tree_entry("README.md", "README.md", :file)]}},
+        open_file: %{path: "README.md", content: "v1\n", version: "v", size: 3},
+        file_render_mode: "source",
+        workspace: %{id: "ws-fe-nudge"}
+      })
+
+    s2 = FileEvents.apply_files_changed(s, %{paths: ["README.md"]})
+    assert pushed?(s2, "file:disk_changed", %{path: "README.md"})
+  end
+
+  test "apply_files_changed leaves tree and open file alone when paths are irrelevant" do
+    root = Path.join(System.tmp_dir!(), "fe-irr-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(root, "lib"))
+    File.write!(Path.join([root, "lib", "a.ex"]), "defmodule A, do: :ok\n")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    tree = %{
+      "lib" => {:expanded, [tree_entry("a.ex", "lib/a.ex", :file)]}
+    }
+
+    s =
+      socket(%{
+        host_loc: {:ok, {:local, root}},
+        host_path: {:ok, root},
+        tree: tree,
+        open_file: %{path: "lib/a.ex", content: "x", version: "v", size: 1},
+        file_render_mode: "source",
+        workspace: %{id: "ws-fe-irr"}
+      })
+
+    s2 = FileEvents.apply_files_changed(s, %{paths: ["deps/foo/bar.ex"]})
+
+    assert s2.assigns.tree == tree
+    refute pushed?(s2, "file:disk_changed", %{path: "lib/a.ex"})
+    refute pushed?(s2, "file:disk_changed", %{path: "deps/foo/bar.ex"})
+  end
+
+  test "apply_files_changed with empty meta or paths :all does full refresh and nudge" do
+    root = Path.join(System.tmp_dir!(), "fe-full-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(root, "lib"))
+    File.mkdir_p!(Path.join(root, "other"))
+    File.write!(Path.join([root, "lib", "a.ex"]), "defmodule A, do: :ok\n")
+    File.write!(Path.join([root, "other", "x.ex"]), "defmodule X, do: :ok\n")
+    File.write!(Path.join(root, "README.md"), "v1\n")
+    on_exit(fn -> File.rm_rf!(root) end)
+
+    other_entries = [tree_entry("stale.ex", "other/stale.ex", :file)]
+
+    tree = %{
+      "" =>
+        {:expanded,
+         [
+           tree_entry("lib", "lib", :dir),
+           tree_entry("other", "other", :dir),
+           tree_entry("README.md", "README.md", :file)
+         ]},
+      "lib" => {:expanded, [tree_entry("a.ex", "lib/a.ex", :file)]},
+      "other" => {:expanded, other_entries}
+    }
+
+    base_assigns = %{
+      host_loc: {:ok, {:local, root}},
+      host_path: {:ok, root},
+      tree: tree,
+      open_file: %{path: "README.md", content: "v1\n", version: "v", size: 3},
+      file_render_mode: "source",
+      workspace: %{id: "ws-fe-full"}
+    }
+
+    File.write!(Path.join([root, "lib", "b.ex"]), "defmodule B, do: :ok\n")
+
+    for meta <- [%{}, %{paths: :all}] do
+      s = socket(base_assigns)
+      s2 = FileEvents.apply_files_changed(s, meta)
+
+      # Full refresh re-lists every expanded dir (stale "other" is replaced).
+      refute s2.assigns.tree["other"] == {:expanded, other_entries}
+      other_names = Enum.map(elem(s2.assigns.tree["other"], 1), & &1.name)
+      assert "x.ex" in other_names
+
+      lib_names = Enum.map(elem(s2.assigns.tree["lib"], 1), & &1.name)
+      assert "b.ex" in lib_names
+
+      assert pushed?(s2, "file:disk_changed", %{path: "README.md"})
+    end
   end
 
   test "sync_files_watch is a no-op without a local host root" do
