@@ -28,7 +28,6 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
     |> DeviceLinkRateLimit.call(opts)
   end
 
-
   defp loopback_conn(path, xff) do
     :post
     |> conn(path)
