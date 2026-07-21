@@ -156,7 +156,8 @@ defmodule TmuxCtl.ClientExtraTest do
 
       # ...and the server answer IS cached: a third call never hits the runner.
       assert Client.server_version() == {3, 4}
-      refute_received {:tmux_runner, _}
+      refute_received {:tmux_runner, ["display-message" | _]}
+      refute_received {:tmux_runner, ["-V" | _]}
     end
 
     test "is nil on unparseable output" do

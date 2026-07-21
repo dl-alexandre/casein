@@ -70,7 +70,7 @@ defmodule DevIDE.Setup.LanEdge do
     %{socket_path: socket_path, service_path: service_path}
   end
 
-  def listener_open?(port) do
+  def listener_open?(port) when is_integer(port) and port >= 1 and port <= 65_535 do
     case System.cmd("bash", ["-lc", "timeout 2 bash -c '</dev/tcp/127.0.0.1/#{port}'"],
            stderr_to_stdout: true
          ) do
@@ -80,6 +80,8 @@ defmodule DevIDE.Setup.LanEdge do
   rescue
     _ -> false
   end
+
+  def listener_open?(_), do: false
 
   def systemd_unit_active?(unit) do
     case System.cmd("systemctl", ["is-active", "--quiet", unit], stderr_to_stdout: true) do

@@ -1,8 +1,22 @@
+defmodule DevIDE.FilePanesTest.CountingTmuxAdapter do
+  @moduledoc false
+
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
+
+  def session_topology(session) do
+    n = FakeState.get(:topology_reads, 0)
+    FakeState.put(:topology_reads, n + 1)
+    FakeAdapter.session_topology(session)
+  end
+end
+
 defmodule DevIDE.FilePanesTest do
   use DevIDE.DataCase, async: false
 
   alias DevIDE.FilePanes
   alias DevIDE.FilePanes.FilePaneRegistration
+  alias DevIDE.FilePanesTest.CountingTmuxAdapter
   alias DevIDE.Panes
   alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIDE.Repo
@@ -16,11 +30,13 @@ defmodule DevIDE.FilePanesTest do
     FilePanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
+    FakeState.delete(:topology_reads)
 
     on_exit(fn ->
       FilePanes.clear()
       FakeState.delete(:fake_tmux_windows)
       FakeState.delete(:fake_tmux_panes)
+      FakeState.delete(:topology_reads)
       restore(:tmux_adapter, prev_tmux)
       restore(:workspaces_root, prev_root)
     end)
@@ -175,5 +191,42 @@ defmodule DevIDE.FilePanesTest do
 
     assert {:ok, :closed} = FilePanes.close_tab(pane_id, "only.ex")
     assert FilePanes.get_by_pane(pane_id) == nil
+  end
+
+  test "open_file_in_pane without anchors takes exactly one topology snapshot" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_files_topo"
+    seed_session!(session, "%1")
+    write_file!(root, "topo.ex", "defmodule Topo do\nend\n")
+
+    assert {:ok, _} =
+             FilePanes.register(%{
+               pane_id: "%99",
+               workspace_id: workspace.id,
+               tmux_session: session,
+               pane_window_id: "@1",
+               placement: "right",
+               anchor_pane_id: "%1",
+               anchor_window_id: "@1",
+               open_files: [%{path: "existing.ex", line: nil}],
+               active_path: "existing.ex"
+             })
+
+    Application.put_env(:dev_ide, :tmux_adapter, CountingTmuxAdapter)
+    FakeState.put(:topology_reads, 0)
+
+    assert {:ok, %{reused: true}} =
+             FilePanes.open_file_in_pane(workspace, "topo.ex", tmux_session: session)
+
+    assert FakeState.get(:topology_reads, 0) == 1
+
+    assert {:ok, %{reused: true}} =
+             FilePanes.open_file_in_pane(workspace, "topo.ex",
+               tmux_session: session,
+               anchor_pane_id: "%1",
+               anchor_window_id: "@1"
+             )
+
+    assert FakeState.get(:topology_reads, 0) == 1
   end
 end

@@ -102,8 +102,7 @@ defmodule DevIDE.FilePanes do
          {:ok, rel} <- to_rel(loc, path),
          {:ok, _preflight} <- FileAccess.read_text(loc, rel),
          {:ok, session} <- resolve_session(workspace, opts),
-         {:ok, anchor} <- resolve_anchor(session, opts),
-         {:ok, window_id} <- resolve_window(session, anchor, opts) do
+         {:ok, {anchor, window_id}} <- resolve_anchor_window(session, opts) do
       case get_by_window(session, window_id) do
         %{pane_id: pane_id} ->
           with {:ok, reg} <-
@@ -518,30 +517,33 @@ defmodule DevIDE.FilePanes do
     end
   end
 
-  defp resolve_anchor(session, opts) do
-    case opts[:anchor_pane_id] do
-      pane when is_binary(pane) and pane != "" ->
-        {:ok, pane}
+  # At most one topology snapshot: both anchors given → zero; otherwise one.
+  defp resolve_anchor_window(session, opts) do
+    case {opts[:anchor_pane_id], opts[:anchor_window_id]} do
+      {pane, window}
+      when is_binary(pane) and pane != "" and is_binary(window) and window != "" ->
+        {:ok, {pane, window}}
 
-      _ ->
-        case TmuxTopology.snapshot(session, tmux: tmux_adapter()).active_pane_id do
-          pane when is_binary(pane) and pane != "" -> {:ok, pane}
-          _ -> {:error, :no_active_pane}
+      {pane, _} when is_binary(pane) and pane != "" ->
+        topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
+
+        case Enum.find(topology.panes || [], &(&1.id == pane)) do
+          %{window_id: window_id} when is_binary(window_id) -> {:ok, {pane, window_id}}
+          _ -> {:error, :window_not_found}
         end
-    end
-  end
-
-  defp resolve_window(session, anchor, opts) do
-    case opts[:anchor_window_id] do
-      window when is_binary(window) and window != "" ->
-        {:ok, window}
 
       _ ->
         topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
 
-        case Enum.find(topology.panes || [], &(&1.id == anchor)) do
-          %{window_id: window_id} when is_binary(window_id) -> {:ok, window_id}
-          _ -> {:error, :window_not_found}
+        case topology.active_pane_id do
+          pane when is_binary(pane) and pane != "" ->
+            case Enum.find(topology.panes || [], &(&1.id == pane)) do
+              %{window_id: window_id} when is_binary(window_id) -> {:ok, {pane, window_id}}
+              _ -> {:error, :window_not_found}
+            end
+
+          _ ->
+            {:error, :no_active_pane}
         end
     end
   end
