@@ -95,13 +95,14 @@ defmodule DevIDE.Runtimes.WorktreeAlarmTest do
     File.write!(Path.join(worktree, "fresh.txt"), "now\n")
 
     Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
-    seed_workspace("ws-fresh", root)
+    seed_workspace("ws-fresh-#{System.unique_integer([:positive])}", root)
 
     result = WorktreeAlarm.sweep_now(emit: false, ttl_seconds: 86_400)
     assert result.alarm_count == 0
   end
 
   test "sweep_now emits audit events for alarms" do
+    ws = "ws-audit-#{System.unique_integer([:positive])}"
     root = tmp_repo!("alarm-audit")
     agent_root = tmp_dir!("alarm-audit-root")
     worktree = Path.join(agent_root, "agent-grok-audit")
@@ -110,7 +111,7 @@ defmodule DevIDE.Runtimes.WorktreeAlarmTest do
     set_old_mtime!(worktree, hours_ago: 30)
 
     Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
-    seed_workspace("ws-audit", root)
+    seed_workspace(ws, root)
 
     prev_level = Logger.level()
     Logger.configure(level: :warning)
@@ -126,7 +127,7 @@ defmodule DevIDE.Runtimes.WorktreeAlarmTest do
 
     assert [_event] =
              DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
-               "ws-audit",
+               ws,
                "workspace.agent_worktree_stale",
                5
              )

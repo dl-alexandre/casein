@@ -31,10 +31,11 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "report/get/for_session" do
     test "stores and broadcasts a report, keyed by session and pane" do
-      :ok = AgentState.subscribe("ws-state")
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      :ok = AgentState.subscribe(ws)
 
       :ok =
-        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, "needs permission")
+        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs permission")
 
       assert_receive {:agent_state_updated, "devide_alpha_u-dev", "%3", entry}
       assert entry.state == :blocked
@@ -44,23 +45,26 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "accepts string states and truncates the message" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
       long = String.duplicate("x", 500)
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", "working", long)
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", "working", long)
 
       assert %{state: :working, message: message} = AgentState.get("devide_alpha_u-dev", "%3")
       assert String.length(message) == 200
     end
 
     test "ignores unrecognized states" do
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", "bogus", nil)
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", "bogus", nil)
       assert AgentState.get("devide_alpha_u-dev", "%3") == nil
     end
 
     test "stores transcript_path from hook reports" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
       path = "/home/devbox/.claude/projects/test/session.jsonl"
 
       :ok =
-        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, nil,
+        AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil,
           source: :hook,
           transcript_path: path
         )
@@ -69,8 +73,10 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "stores an agent runtime session id from hook reports" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+
       :ok =
-        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, nil,
+        AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil,
           source: :hook,
           agent_session_id: "grok-session-123"
         )
@@ -80,12 +86,13 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "identical re-report refreshes freshness without broadcasting" do
-      :ok = AgentState.subscribe("ws-state")
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, "compiling")
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      :ok = AgentState.subscribe(ws)
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, "compiling")
       assert_receive {:agent_state_updated, _, _, _}
 
       before = AgentState.get("devide_alpha_u-dev", "%3").reported_at
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, "compiling")
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, "compiling")
       refute_receive {:agent_state_updated, _, _, _}, 100
 
       after_ts = AgentState.get("devide_alpha_u-dev", "%3").reported_at
@@ -93,8 +100,9 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "prune_session drops entries for panes that no longer exist" do
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :working, nil)
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%4", :done, nil)
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil)
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%4", :done, nil)
 
       :ok = AgentState.prune_session("devide_alpha_u-dev", ["%3"])
 
@@ -105,13 +113,14 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "agent.blocked audit" do
     test "emits once on transition into blocked, not on re-report" do
-      :ok = DevIDE.Audit.subscribe("ws-audit")
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+      :ok = DevIDE.Audit.subscribe(ws)
 
-      :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :working, nil)
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil)
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
 
       :ok =
-        AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "needs perm",
+        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs perm",
           agent_session_id: "grok-session-blocked"
         )
 
@@ -121,23 +130,24 @@ defmodule DevIDE.Terminals.AgentStateTest do
       assert metadata.agent_session_id == "grok-session-blocked"
 
       assert [%{event_type: "agent.state_changed"} = transition | _rest] =
-               AgentEvents.recent_for("ws-audit")
+               AgentEvents.recent_for(ws)
 
       assert transition.agent_session_id == "grok-session-blocked"
       assert transition.payload["message_present"] == true
       refute inspect(transition) =~ "needs perm"
 
       # A second blocked report (different message) must not re-alert.
-      :ok = AgentState.report("ws-audit", "devide_alpha_u-dev", "%3", :blocked, "still blocked")
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "still blocked")
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
     end
 
     test "blocked audit inherits the reporter's causality context" do
-      :ok = DevIDE.Audit.subscribe("ws-audit-ctx")
+      ws = "ws-audit-ctx-#{System.unique_integer([:positive])}"
+      :ok = DevIDE.Audit.subscribe(ws)
 
       cid =
         DevIDE.Signals.Context.with_new(fn ->
-          :ok = AgentState.report("ws-audit-ctx", "devide_alpha_u-dev", "%9", :blocked, "stuck")
+          :ok = AgentState.report(ws, "devide_alpha_u-dev", "%9", :blocked, "stuck")
           DevIDE.Signals.Context.current().trace_id
         end)
 
@@ -266,7 +276,8 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "session_status/2" do
     test "maps freshest reported state to picker vocabulary" do
-      :ok = AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, nil)
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+      :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, nil)
       assert AgentState.session_status("devide_alpha_u-dev") == "attention"
     end
 
@@ -333,8 +344,10 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "enrich_topology/2" do
     test "adds resolved agent_state to panes and windows, omitting unknown" do
+      ws = "ws-state-#{System.unique_integer([:positive])}"
+
       :ok =
-        AgentState.report("ws-state", "devide_alpha_u-dev", "%3", :blocked, "needs input",
+        AgentState.report(ws, "devide_alpha_u-dev", "%3", :blocked, "needs input",
           agent_session_id: "grok-session-123"
         )
 
