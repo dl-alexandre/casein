@@ -35,6 +35,18 @@ $env:LOCALAPPDATA = $testLocalAppData
 
 try {
     . $trayHost -ReleaseRoot $packageRoot -LibraryOnly
+    Initialize-DevIDEJobObjectSupport
+    Assert-Condition (($null -ne ('DevIDE.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
+
+    New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
+    Set-Content -LiteralPath $script:Paths.RuntimePid -Value '2147483647' -Encoding ascii
+    Set-Content -LiteralPath $script:Paths.RuntimeStatus -Value '{"schema":1,"status":"ready"}' -Encoding ascii
+    Clear-DevIDEStaleRuntimeState 65534 | Out-Null
+    Assert-Condition (-not (Test-Path -LiteralPath $script:Paths.RuntimePid)) 'Stale runtime PID was not cleared'
+    Assert-Condition (-not (Test-Path -LiteralPath $script:Paths.RuntimeStatus)) 'Stale runtime status was not cleared'
+
+    $desktopEnvironment = Get-DevIDEEnvironment 54321
+    Assert-Condition ($desktopEnvironment.DEVIDE_RELEASE_ROOT -eq $packageRoot) 'Release root was not injected into the desktop runtime'
     $vector = New-DevIDELaunchClaim -Secret 'fixed-desktop-launch-secret-0123456789' -Timestamp 1700000000 -Nonce 'AAECAwQFBgcICQoLDA0ODw'
     Assert-Condition ($vector -eq 'desktop_nonce=AAECAwQFBgcICQoLDA0ODw&desktop_timestamp=1700000000&desktop_proof=VqZtkYtl09-mO3ZBFxIqlavgcmz21EOxoMMqIwYpyg4') 'Windows HMAC claim differs from the shared vector'
 

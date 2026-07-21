@@ -24,6 +24,7 @@ function Get-DevIDEPaths {
         Settings    = Join-Path $dataRoot 'desktop-host.json'
         Log         = Join-Path $dataRoot 'desktop-host.log'
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
+        RuntimeStatus = Join-Path $dataRoot 'runtime.json'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'DevIDE.lnk'
     }
@@ -197,6 +198,7 @@ function Get-DevIDEEnvironment {
     @{
         'DEV_IDE_PROFILE' = 'desktop'
         'DEV_IDE_DESKTOP_DATA_DIR' = $script:Paths.DataRoot
+        'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot
         'DEV_IDE_REPO_ADAPTER' = 'sqlite'
         'DATABASE_PATH' = $script:Paths.Database
         'PHX_SERVER' = 'true'
@@ -212,6 +214,103 @@ function Get-DevIDEEnvironment {
         'DEV_IDE_API_TOKEN' = $apiToken
         'DEV_IDE_DESKTOP_LAUNCH_TOKEN' = $launchToken
     }
+}
+
+function Initialize-DevIDEJobObjectSupport {
+    if ('DevIDE.Windows.JobObject' -as [type]) { return }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+namespace DevIDE.Windows {
+    public static class JobObject {
+        private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BasicLimits {
+            public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass, SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoCounters {
+            public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+            public ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ExtendedLimits {
+            public BasicLimits BasicLimitInformation;
+            public IoCounters IoInfo;
+            public UIntPtr ProcessMemoryLimit, JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed, PeakJobMemoryUsed;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern SafeFileHandle CreateJobObject(IntPtr attributes, string name);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(SafeFileHandle job, int infoClass, IntPtr info, uint length);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(SafeFileHandle job, IntPtr process);
+
+        public static SafeFileHandle CreateKillOnClose() {
+            var job = CreateJobObject(IntPtr.Zero, null);
+            if (job.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+            var limits = new ExtendedLimits();
+            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            int size = Marshal.SizeOf(limits);
+            IntPtr pointer = Marshal.AllocHGlobal(size);
+            try {
+                Marshal.StructureToPtr(limits, pointer, false);
+                if (!SetInformationJobObject(job, 9, pointer, (uint)size))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+            } finally { Marshal.FreeHGlobal(pointer); }
+            return job;
+        }
+
+        public static void Assign(SafeFileHandle job, IntPtr processHandle) {
+            if (!AssignProcessToJobObject(job, processHandle))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+}
+'@
+}
+
+function Get-DevIDERuntimePid {
+    if (-not (Test-Path -LiteralPath $script:Paths.RuntimePid)) { return 0 }
+    $runtimePid = 0
+    [void][int]::TryParse((Get-Content -Raw -LiteralPath $script:Paths.RuntimePid).Trim(), [ref]$runtimePid)
+    return $runtimePid
+}
+
+function Test-DevIDEProcessAlive {
+    param([int]$RuntimePid)
+    if ($RuntimePid -le 0) { return $false }
+    return $null -ne (Get-Process -Id $RuntimePid -ErrorAction SilentlyContinue)
+}
+
+function Clear-DevIDEStaleRuntimeState {
+    param([int]$Port)
+
+    $runtimePid = Get-DevIDERuntimePid
+    if (Test-DevIDEReady $Port) { return $true }
+
+    if (-not (Test-DevIDEProcessAlive $runtimePid)) {
+        if ($runtimePid -gt 0 -or (Test-Path -LiteralPath $script:Paths.RuntimeStatus)) {
+            Write-DevIDELog "Removing stale desktop runtime state for process $runtimePid"
+        }
+        Remove-Item -LiteralPath $script:Paths.RuntimePid -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $script:Paths.RuntimeStatus -Force -ErrorAction SilentlyContinue
+    }
+    return $false
 }
 
 function Invoke-DevIDERelease {
@@ -270,13 +369,16 @@ function Wait-DevIDEReady {
 function Start-DevIDERuntime {
     param([int]$Port)
 
-    if (Test-DevIDEReady $Port) { return $true }
+    if (Clear-DevIDEStaleRuntimeState $Port) { return $true }
     Write-DevIDELog "Starting desktop runtime on 127.0.0.1:$Port"
     Invoke-DevIDERelease -Arguments @('eval', 'DevIDE.Release.migrate()') -Port $Port -Wait | Out-Null
     # On Windows the release `start` command remains attached to the daemon it
     # launches. Waiting for that command therefore waits until DevIDE stops and
     # then misreports the shutdown exit code as a startup failure.
     $runtime = Invoke-DevIDERelease -Arguments @('start') -Port $Port
+    if ($script:RuntimeJob) { $script:RuntimeJob.Dispose() }
+    $script:RuntimeJob = [DevIDE.Windows.JobObject]::CreateKillOnClose()
+    [DevIDE.Windows.JobObject]::Assign($script:RuntimeJob, $runtime.Handle)
     Set-Content -LiteralPath $script:Paths.RuntimePid -Value $runtime.Id -Encoding ascii
     $ready = Wait-DevIDEReady $Port
     if (-not $ready) { Stop-DevIDERuntime $Port }
@@ -291,18 +393,32 @@ function Stop-DevIDERuntime {
         if (Test-DevIDEReady $Port) {
             Write-DevIDELog 'Runtime is healthy but was not started by this tray host; leaving it untouched'
         }
+        if ($script:RuntimeJob) {
+            $script:RuntimeJob.Dispose()
+            $script:RuntimeJob = $null
+        }
         return
     }
 
-    $runtimePid = 0
-    [void][int]::TryParse((Get-Content -Raw -LiteralPath $script:Paths.RuntimePid).Trim(), [ref]$runtimePid)
+    $runtimePid = Get-DevIDERuntimePid
     Remove-Item -LiteralPath $script:Paths.RuntimePid -Force -ErrorAction SilentlyContinue
-    if ($runtimePid -le 0) { return }
+    Remove-Item -LiteralPath $script:Paths.RuntimeStatus -Force -ErrorAction SilentlyContinue
+    if ($runtimePid -le 0) {
+        if ($script:RuntimeJob) {
+            $script:RuntimeJob.Dispose()
+            $script:RuntimeJob = $null
+        }
+        return
+    }
 
     Write-DevIDELog "Stopping desktop runtime process tree $runtimePid"
     & taskkill.exe /PID $runtimePid /T /F *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-DevIDELog "Runtime process tree $runtimePid was already stopped or could not be terminated"
+    }
+    if ($script:RuntimeJob) {
+        $script:RuntimeJob.Dispose()
+        $script:RuntimeJob = $null
     }
 }
 
@@ -374,11 +490,14 @@ function Start-DevIDETray {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [Windows.Forms.Application]::EnableVisualStyles()
+    Initialize-DevIDEJobObjectSupport
 
     $script:IconBitmaps = [Collections.Generic.List[Drawing.Bitmap]]::new()
     $settings = Read-DevIDESettings
     $script:Port = Get-DevIDEPort $settings.port
     $script:LaunchAtSignIn = [bool]$settings.launchAtSignIn
+    $script:RecoveryAttempts = 0
+    $script:NextRecoveryAt = [DateTime]::MinValue
     Save-DevIDESettings $script:Port $script:LaunchAtSignIn
 
     $runningIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(34, 197, 94))
@@ -447,11 +566,22 @@ function Start-DevIDETray {
             $tray.Text = 'DevIDE - Running'
             $tray.Icon = $runningIcon
             $openItem.Enabled = $true
+            $script:RecoveryAttempts = 0
         } else {
             $statusItem.Text = 'Stopped'
             $tray.Text = 'DevIDE - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
+            Clear-DevIDEStaleRuntimeState $script:Port | Out-Null
+
+            if ($script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
+                $script:RecoveryAttempts++
+                $delaySeconds = [Math]::Pow(2, $script:RecoveryAttempts)
+                $script:NextRecoveryAt = [DateTime]::UtcNow.AddSeconds($delaySeconds)
+                $statusItem.Text = "Recovering ($($script:RecoveryAttempts)/3)"
+                Write-DevIDELog "Attempting automatic runtime recovery $($script:RecoveryAttempts)/3"
+                if (Start-DevIDERuntime $script:Port) { $script:RecoveryAttempts = 0 }
+            }
         }
     })
     $timer.Start()
@@ -482,6 +612,7 @@ function Start-DevIDETray {
 }
 
 $script:Paths = Get-DevIDEPaths $ReleaseRoot
+$script:RuntimeJob = $null
 New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
 
 if (-not $LibraryOnly) {
