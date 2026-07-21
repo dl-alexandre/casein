@@ -26,7 +26,10 @@ defmodule DevIDE.Supervision.PlatformServices do
       DevIDE.Runtimes.Reaper,
       DevIDE.SignalBus.child_spec(),
       DevIDE.Signals.AlertsRouter,
-      DevIDE.Signals.DegradationWatch
+      DevIDE.Signals.DegradationWatch,
+      # Slice 3: host tmux control-listener flap → audit / ops:health (mirrors
+      # DegradationWatch patterns; thresholds via :tmux_events_flap_watch).
+      DevIDE.Signals.TmuxEventsFlapWatch
     ]
   end
 

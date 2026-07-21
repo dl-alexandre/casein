@@ -47,6 +47,12 @@ end
 # DevIDE.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_dev"
 
+# Slice 3 rollout ladder step 1: event-driven tmux topology ON in dev.
+# Canary soak + prod default stay operational (watch TmuxEventsFlapWatch
+# telemetry / flap alarm; flip via DEVIDE_TMUX_EVENTS). runtime.exs env
+# overrides both ways when set. Test env stays OFF for flag-off no-op proofs.
+config :dev_ide, :tmux_events, true
+
 devide_lan_requested? = truthy?.(System.get_env("DEV_IDE_LAN"))
 devide_lan_insecure_http? = truthy?.(System.get_env("DEV_IDE_LAN_INSECURE_HTTP"))
 devide_lan? = devide_lan_requested? or devide_lan_insecure_http?

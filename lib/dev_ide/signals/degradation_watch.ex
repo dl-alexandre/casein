@@ -62,6 +62,15 @@ defmodule DevIDE.Signals.DegradationWatch do
       fingerprint: [],
       threshold: 3,
       window_ms: 300_000
+    },
+    # Host tmux control-listener degraded (Slice 3). Primary thresholding lives
+    # in TmuxEventsFlapWatch; this rule turns repeated degraded audits into a
+    # signal.degradation_storm if an episode re-fires without recovery.
+    %{
+      action: "tmux.events_listener_degraded",
+      fingerprint: ["label"],
+      threshold: 2,
+      window_ms: 300_000
     }
   ]
 

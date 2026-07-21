@@ -22,6 +22,8 @@ defmodule TmuxCtl.Events.ControlListener do
   # A connection must stay up this long before disconnect resets backoff to
   # the floor (prevents fast connect/die flaps from retrying at 1s forever).
   @sustained_connection_ms 60_000
+  # Sliding window used by `:status` `reconnects_in_window` (Slice 3 observability).
+  @reconnect_window_ms 300_000
   @topic_prefix "tmux_events:"
 
   @type state_name :: :connecting | :connected | :backoff
@@ -43,7 +45,13 @@ defmodule TmuxCtl.Events.ControlListener do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
-  @doc "Return listener status: `%{state, label, connected_since, reconnects}`."
+  @doc """
+  Return listener status:
+  `%{state, label, connected_since, reconnects, reconnects_in_window}`.
+
+  `reconnects` is lifetime; `reconnects_in_window` counts downs in the last
+  5 minutes (for flap / soak dashboards).
+  """
   @spec status(GenServer.server()) :: map()
   def status(server \\ __MODULE__) do
     GenServer.call(server, :status)
@@ -68,6 +76,8 @@ defmodule TmuxCtl.Events.ControlListener do
       in_block?: false,
       connected_since: nil,
       reconnects: 0,
+      # Monotonic ms of each successful-connection disconnect (for window count).
+      reconnect_times: [],
       connect_timer: nil
     }
 
@@ -79,11 +89,14 @@ defmodule TmuxCtl.Events.ControlListener do
 
   @impl true
   def handle_call(:status, _from, state) do
+    now = System.monotonic_time(:millisecond)
+
     reply = %{
       state: state.state,
       label: state.label,
       connected_since: state.connected_since,
-      reconnects: state.reconnects
+      reconnects: state.reconnects,
+      reconnects_in_window: reconnects_in_window(state.reconnect_times, now)
     }
 
     {:reply, reply, state}
@@ -165,13 +178,23 @@ defmodule TmuxCtl.Events.ControlListener do
 
   defp handle_disconnect(state, reason) do
     was_connected? = state.state == :connected
+    now = System.monotonic_time(:millisecond)
     state = close_port(state)
 
     state =
       if was_connected? do
+        reconnects = state.reconnects + 1
+        reconnect_times = prune_reconnect_times([now | state.reconnect_times], now)
+
+        state = %{
+          state
+          | reconnects: reconnects,
+            reconnect_times: reconnect_times
+        }
+
         broadcast_lifecycle(state, :listener_down)
         emit_telemetry(:down, state)
-        %{state | reconnects: state.reconnects + 1}
+        state
       else
         state
       end
@@ -184,7 +207,7 @@ defmodule TmuxCtl.Events.ControlListener do
     # lived connections keep climbing so a connect/die flap can't spin at 1s.
     sustained? =
       is_integer(state.connected_since) and
-        System.monotonic_time(:millisecond) - state.connected_since >= @sustained_connection_ms
+        now - state.connected_since >= @sustained_connection_ms
 
     state = if sustained?, do: %{state | backoff_index: 0}, else: state
 
@@ -317,11 +340,28 @@ defmodule TmuxCtl.Events.ControlListener do
   defp topic(label), do: @topic_prefix <> label
 
   defp emit_telemetry(event, state) when event in [:up, :down, :reconnect_attempt] do
+    now = System.monotonic_time(:millisecond)
+
     :telemetry.execute(
       [:tmux_ctl, :events, :listener],
-      %{count: 1},
+      %{
+        count: 1,
+        reconnects: state.reconnects,
+        reconnects_in_window: reconnects_in_window(state.reconnect_times, now)
+      },
       %{event: event, label: state.label, reconnects: state.reconnects}
     )
+  end
+
+  defp reconnects_in_window(times, now) when is_list(times) do
+    times
+    |> prune_reconnect_times(now)
+    |> length()
+  end
+
+  defp prune_reconnect_times(times, now) do
+    cutoff = now - @reconnect_window_ms
+    Enum.filter(times, &(&1 > cutoff))
   end
 
   # -- port helpers ---------------------------------------------------------

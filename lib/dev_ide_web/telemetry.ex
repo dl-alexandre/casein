@@ -120,7 +120,17 @@ defmodule DevIdeWeb.Telemetry do
       # rendered inline, or requested an OS notification.
       counter("dev_ide.attention.quiet_agent.transition.count",
         tags: [:reaction, :reason, :surface_state, :target_state]
-      )
+      ),
+
+      # Event-driven tmux control listener + topology watcher (Slice 3).
+      # Listener up/down/reconnect_attempt; watcher refresh source mix and
+      # coalescing effectiveness (events_absorbed per snapshot).
+      counter("tmux_ctl.events.listener.count", tags: [:event, :label]),
+      last_value("tmux_ctl.events.listener.reconnects", tags: [:event, :label]),
+      last_value("tmux_ctl.events.listener.reconnects_in_window", tags: [:event, :label]),
+      counter("tmux_ctl.topology.watcher.refresh.count", tags: [:source]),
+      summary("tmux_ctl.topology.watcher.refresh.events_absorbed", tags: [:source]),
+      counter("dev_ide.signals.tmux_events_flap.count", tags: [:kind])
     ]
   end
 
