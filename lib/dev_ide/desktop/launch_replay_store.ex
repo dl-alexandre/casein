@@ -20,7 +20,9 @@ defmodule DevIDE.Desktop.LaunchReplayStore do
   @doc false
   def reset(server \\ __MODULE__), do: GenServer.call(server, :reset)
 
+  # Path comes from app config / opts, never user input.
   @impl true
+  # sobelow_skip ["Traversal.FileModule"]
   def init(opts) do
     case replay_path(opts) do
       nil ->

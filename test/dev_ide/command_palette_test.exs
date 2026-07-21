@@ -86,6 +86,8 @@ defmodule DevIDE.CommandPaletteTest do
     assert "switch_tab" in events
     assert "run:start" in events
     assert "terminal:set_preset" in events
+    assert "annotation:open" in events
+    assert "tree:open_in_pane" in events
     refute "file:save" in events
     refute "tree:create" in events
   end
@@ -165,14 +167,49 @@ defmodule DevIDE.CommandPaletteTest do
     assert Enum.any?(items, &(&1.kind == :file and &1.label == "lib/dev_ide/foo.ex"))
   end
 
+  test "query emits open and open-in-pane variants for each file match", %{root: root} do
+    items =
+      CommandPalette.query(root, "foo", limit: 50)
+      |> Enum.filter(&(&1.label == "lib/dev_ide/foo.ex"))
+
+    by_id = Map.new(items, &{&1.id, &1})
+
+    assert %{
+             detail: "Open file",
+             payload: %{event: "annotation:open", params: %{"path" => "lib/dev_ide/foo.ex"}}
+           } = by_id["file:lib/dev_ide/foo.ex"]
+
+    assert %{
+             detail: "Open in pane",
+             keywords: keywords,
+             payload: %{event: "tree:open_in_pane", params: %{"path" => "lib/dev_ide/foo.ex"}}
+           } = by_id["file-pane:lib/dev_ide/foo.ex"]
+
+    assert "pane" in keywords
+    assert "split" in keywords
+
+    # Primary open entry ranks at or above the pane variant (same fuzzy score;
+    # stable sort keeps open first when scores tie).
+    open_idx = Enum.find_index(items, &(&1.id == "file:lib/dev_ide/foo.ex"))
+    pane_idx = Enum.find_index(items, &(&1.id == "file-pane:lib/dev_ide/foo.ex"))
+    assert open_idx < pane_idx
+  end
+
   test "resolve maps file id back to a safe payload", %{root: root} do
     {:ok, payload} = CommandPalette.resolve(root, "file:lib/bar.ex")
     assert payload.event == "annotation:open"
     assert payload.params == %{"path" => "lib/bar.ex"}
   end
 
+  test "resolve maps file-pane id to tree:open_in_pane", %{root: root} do
+    {:ok, payload} = CommandPalette.resolve(root, "file-pane:lib/bar.ex")
+    assert payload.event == "tree:open_in_pane"
+    assert payload.params == %{"path" => "lib/bar.ex"}
+  end
+
   test "resolve refuses traversal in file id", %{root: root} do
     assert :error = CommandPalette.resolve(root, "file:../etc/passwd")
+    assert :error = CommandPalette.resolve(root, "file-pane:../etc/passwd")
   end
 
   test "resolve maps action ids to allowlisted events" do

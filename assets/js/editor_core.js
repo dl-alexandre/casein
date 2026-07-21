@@ -8,10 +8,9 @@
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import { javascript } from "@codemirror/lang-javascript"
-import { markdown } from "@codemirror/lang-markdown"
-import { json } from "@codemirror/lang-json"
 import { copyTextWithFallback, showClipboardToast } from "./terminal_copy"
+import { pickLang, languageIdForPath } from "./editor_lang.mjs"
+export { pickLang, languageIdForPath }
 
 export const SEND_AGENT_MAX_BYTES = 32 * 1024
 
@@ -19,14 +18,6 @@ export function copyEditorText(text) {
   const ok = copyTextWithFallback(text)
   showClipboardToast(ok ? "Copied" : "Copy failed", { kind: ok ? "info" : "error" })
   return ok
-}
-
-export function pickLang(path) {
-  if (!path) return []
-  if (/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(path)) return [javascript()]
-  if (/\.md$/.test(path)) return [markdown()]
-  if (/\.json$/.test(path)) return [json()]
-  return []
 }
 
 // Base extension set shared by every editor instance. `onUpdate` is a CodeMirror
