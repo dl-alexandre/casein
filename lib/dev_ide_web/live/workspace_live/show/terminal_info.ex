@@ -22,11 +22,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
     # report instead (the client scales the frozen grid to fit) and flush the
     # latest one when the rail closes. `:terminal_ready` below still applies
     # immediately so a pane mounted while the rail is open gets a real size.
-    if socket.assigns[:sidebar_mode] not in [nil, :closed] do
+    if socket.assigns[:sidebar_mode] in [nil, :closed] do
+      sync_ghostty_dimensions(socket, pane_id, cols, rows)
+    else
       held = Map.put(socket.assigns[:held_pane_resizes] || %{}, pane_id, {cols, rows})
       {:noreply, assign(socket, :held_pane_resizes, held)}
-    else
-      sync_ghostty_dimensions(socket, pane_id, cols, rows)
     end
   end
 
