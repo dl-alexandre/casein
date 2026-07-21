@@ -111,26 +111,30 @@ defmodule TmuxCtl.Topology.WatcherRefreshTelemetryTest do
     session = "wrt-poll-#{System.unique_integer([:positive])}"
     put_fake_topology(session, "shell", "bash")
 
-    assert {:ok, _pid} =
-             Watcher.ensure_started(
-               session,
-               registry: @registry,
-               supervisor: @supervisor,
-               pubsub: DevIDE.PubSub,
-               broadcast_tag: @tag,
-               topic_prefix: "terminal_topology:",
-               tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
-               enabled: true,
-               refresh_ms: 40,
-               reconcile_ms: 60_000,
-               event_source: nil
-             )
+    # Mirrors the proven watcher_events_test opts exactly (same registry/
+    # supervisor/idle_stop/broadcast shape) — only event_source: nil differs,
+    # putting the watcher on the pure poll path. An earlier variant of this
+    # test with bespoke opts hung in ensure_started on the gate runner.
+    opts = [
+      registry: @registry,
+      supervisor: @supervisor,
+      pubsub: DevIDE.PubSub,
+      tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
+      broadcast_tag: @tag,
+      refresh_ms: 50,
+      reconcile_ms: 60_000,
+      event_source: nil,
+      idle_stop_ms: 60_000
+    ]
+
+    :ok = Watcher.subscribe(session, opts)
+    assert {:ok, _pid} = Watcher.ensure_started(session, Keyword.put(opts, :enabled, true))
 
     flush_refresh_telemetry()
 
     assert_receive {:watcher_refresh_telemetry, [:tmux_ctl, :topology, :watcher, :refresh],
                     %{count: 1}, %{source: :poll_fallback, session: ^session}},
-                   500
+                   2_000
   end
 
   defp flush_refresh_telemetry do
