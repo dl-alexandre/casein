@@ -82,6 +82,9 @@ defmodule DevIDE.Workspaces do
   @spec list_records() :: [WorkspaceRecord.t()]
   def list_records, do: State.list()
 
+  @spec list_records(keyword()) :: [WorkspaceRecord.t()]
+  def list_records(opts) when is_list(opts), do: State.list(opts)
+
   @doc "Fetch one persisted workspace record by external workspace id."
   @spec get_record(String.t()) :: {:ok, WorkspaceRecord.t()} | :error
   def get_record(external_id), do: State.get(external_id)

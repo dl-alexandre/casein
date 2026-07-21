@@ -41,107 +41,119 @@ defmodule DevIDE.Agents.MCPAuditTest do
         ) do
       test "emits an Audit record for mutating tool #{tool}" do
         tool = unquote(tool)
+        ws = "ws-audit-#{System.unique_integer([:positive])}"
 
         args = %{
-          "workspace_id" => "ws-audit",
+          "workspace_id" => ws,
           "command" => "mix test",
           "keys" => "Enter"
         }
 
         assert :ok = MCPAudit.record_terminal(tool, args, {:ok, %{}})
 
-        actions = "ws-audit" |> Audit.recent_for(10) |> Enum.map(& &1.action)
+        actions = ws |> Audit.recent_for(10) |> Enum.map(& &1.action)
         assert ("agent.terminal_" <> tool) in actions
       end
     end
 
     test "does not emit an Audit record for a read-only tool" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_list_sessions",
-                 %{"workspace_id" => "ws-audit"},
+                 %{"workspace_id" => ws},
                  {:ok, %{}}
                )
 
-      assert Audit.recent_for("ws-audit", 10) == []
+      assert Audit.recent_for(ws, 10) == []
 
       assert [%{event_type: "mcp.completed", status: "ok"} = event] =
-               AgentEvents.recent_for("ws-audit")
+               AgentEvents.recent_for(ws)
 
       assert event.payload["tool"] == "terminal_list_sessions"
     end
 
     test "a failed mutating tool persists a durable record with the error reason" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_send_agent_command",
-                 %{"workspace_id" => "ws-audit", "command" => "rm -rf /"},
+                 %{"workspace_id" => ws, "command" => "rm -rf /"},
                  {:error, :boom}
                )
 
-      [event] = Audit.recent_for("ws-audit", 10)
+      [event] = Audit.recent_for(ws, 10)
       assert event.action == "agent.terminal_terminal_send_agent_command"
       assert event.reason == :boom
       assert event.metadata[:error] == "boom"
     end
 
     test "a failed read-only tool stays memory-only" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_capture",
-                 %{"workspace_id" => "ws-audit"},
+                 %{"workspace_id" => ws},
                  {:error, :boom}
                )
 
-      assert Audit.recent_for("ws-audit", 10) == []
-      assert [%{status: :error}] = Activity.recent("ws-audit", 1)
+      assert Audit.recent_for(ws, 10) == []
+      assert [%{status: :error}] = Activity.recent(ws, 1)
 
       assert [%{event_type: "mcp.completed", status: "error"} = event] =
-               AgentEvents.recent_for("ws-audit")
+               AgentEvents.recent_for(ws)
 
       refute inspect(event) =~ "rm -rf"
     end
 
     test "unrecognized error shapes normalize to :tool_error with sanitized detail" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_send_command",
-                 %{"workspace_id" => "ws-audit", "command" => "true"},
+                 %{"workspace_id" => ws, "command" => "true"},
                  {:error, "pipe burst: token=secret-token"}
                )
 
-      [event] = Audit.recent_for("ws-audit", 10)
+      [event] = Audit.recent_for(ws, 10)
       assert event.reason == :tool_error
       assert event.metadata[:error_message] =~ "pipe burst"
       refute inspect(event.metadata) =~ "secret-token"
     end
 
     test "stamps source and tool columns on emitted events" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_send_command",
-                 %{"workspace_id" => "ws-audit", "command" => "true"},
+                 %{"workspace_id" => ws, "command" => "true"},
                  {:ok, %{}}
                )
 
-      [event] = Audit.recent_for("ws-audit", 10)
+      [event] = Audit.recent_for(ws, 10)
       assert event.source == "terminal_mcp"
       assert event.tool == "terminal_send_command"
-      assert [event] == Audit.recent_for_tool("ws-audit", "terminal_send_command", 10)
+      assert [event] == Audit.recent_for_tool(ws, "terminal_send_command", 10)
     end
 
     test "prefers the authenticated actor over args and the mcp fallback" do
-      args = %{"workspace_id" => "ws-audit", "command" => "true"}
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+      args = %{"workspace_id" => ws, "command" => "true"}
 
       assert :ok =
                MCPAudit.record_terminal("terminal_send_command", args, {:ok, %{}},
-                 actor: "ws:ws-audit"
+                 actor: "ws:#{ws}"
                )
 
       assert :ok = MCPAudit.record_terminal("terminal_send_command", args, {:ok, %{}}, [])
 
-      actors = "ws-audit" |> Audit.recent_for(10) |> Enum.map(& &1.actor_id)
-      assert "ws:ws-audit" in actors
+      actors = ws |> Audit.recent_for(10) |> Enum.map(& &1.actor_id)
+      assert "ws:#{ws}" in actors
       assert "mcp" in actors
     end
 
@@ -192,14 +204,16 @@ defmodule DevIDE.Agents.MCPAuditTest do
     end
 
     test "terminal metadata redacts secret-shaped command text before persistence" do
+      ws = "ws-audit-#{System.unique_integer([:positive])}"
+
       assert :ok =
                MCPAudit.record_terminal(
                  "terminal_send_command",
-                 %{"workspace_id" => "ws-audit", "command" => "curl -H token=secret-token"},
+                 %{"workspace_id" => ws, "command" => "curl -H token=secret-token"},
                  {:ok, %{}}
                )
 
-      [event] = Audit.recent_for("ws-audit", 10)
+      [event] = Audit.recent_for(ws, 10)
       assert event.metadata[:command] =~ "[REDACTED]"
       refute inspect(event.metadata) =~ "secret-token"
     end

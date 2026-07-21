@@ -178,16 +178,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
 
     # Client gets a disk_changed nudge for the open file (dirty handling is in JS).
     # Phoenix 1.8 stores pushed events on the socket differently across versions;
-    # at least tree refresh succeeded which is the server-side half of the contract.
+    # probe both private locations so the assertion stays portable.
     assert Enum.any?(s2.private[:live_temp][:push_events] || [], fn
+             ["file:disk_changed", %{path: "README.md"}] -> true
              {_, "file:disk_changed", %{path: "README.md"}} -> true
              _ -> false
            end) or
              Enum.any?(Map.get(s2.private, :push_events, []), fn
+               ["file:disk_changed", %{path: "README.md"}] -> true
                {"file:disk_changed", %{path: "README.md"}} -> true
                _ -> false
-             end) or
-             match?({:expanded, _}, s2.assigns.tree[""])
+             end)
   end
 
   test "sync_files_watch is a no-op without a local host root" do

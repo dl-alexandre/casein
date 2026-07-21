@@ -4,6 +4,7 @@ defmodule DevIDE.WorkspacesTest do
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
+  alias DevIDE.Workspaces.State.WorkspaceRecord
   alias DevIDE.Workspace
 
   setup do
@@ -176,6 +177,49 @@ defmodule DevIDE.WorkspacesTest do
       refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: nil}, "rgomez")
       refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: "rgomez"}, nil)
       refute Workspaces.owns?(%{}, "rgomez")
+    end
+  end
+
+  describe "list_records/1" do
+    setup do
+      for {id, status} <- [
+            {"ws-running", "running"},
+            {"ws-stopped", "stopped"},
+            {"ws-stale", "stale"},
+            {"ws-other", "running"}
+          ] do
+        assert {:ok, _} =
+                 MemoryAdapter.upsert(%WorkspaceRecord{
+                   external_id: id,
+                   name: id,
+                   status: status
+                 })
+      end
+
+      :ok
+    end
+
+    test "exclude_status drops matching records" do
+      ids =
+        Workspaces.list_records(exclude_status: "stale")
+        |> Enum.map(& &1.external_id)
+        |> Enum.sort()
+
+      assert ids == ["ws-other", "ws-running", "ws-stopped"]
+      refute "ws-stale" in ids
+    end
+
+    test "limit caps the result length" do
+      assert length(Workspaces.list_records(limit: 1)) == 1
+    end
+
+    test "empty opts returns everything" do
+      ids =
+        Workspaces.list_records([])
+        |> Enum.map(& &1.external_id)
+        |> Enum.sort()
+
+      assert ids == ["ws-other", "ws-running", "ws-stale", "ws-stopped"]
     end
   end
 
