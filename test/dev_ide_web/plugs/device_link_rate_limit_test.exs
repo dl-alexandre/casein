@@ -110,7 +110,7 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
     refute real_client.status == 429
   end
 
-  test "TrustedProxyRemoteIp rewrites remote_ip from XFF only on loopback peers" do
+  test "TrustedProxyRemoteIp rewrites remote_ip from rightmost non-loopback XFF hop only on loopback peers" do
     loopback =
       :post
       |> conn("/api/device-links/exchange")
@@ -118,7 +118,7 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
       |> put_req_header("x-forwarded-for", "203.0.113.77, 10.0.0.1")
       |> TrustedProxyRemoteIp.call([])
 
-    assert loopback.remote_ip == {203, 0, 113, 77}
+    assert loopback.remote_ip == {10, 0, 0, 1}
 
     external =
       :post
@@ -128,5 +128,47 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
       |> TrustedProxyRemoteIp.call([])
 
     assert external.remote_ip == {8, 8, 8, 8}
+  end
+
+  test "TrustedProxyRemoteIp ignores client-prepended XFF spoof (rightmost non-loopback wins)" do
+    conn =
+      :post
+      |> conn("/api/device-links/exchange")
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> put_req_header("x-forwarded-for", "6.6.6.6, 198.51.100.7")
+      |> TrustedProxyRemoteIp.call([])
+
+    assert conn.remote_ip == {198, 51, 100, 7}
+  end
+
+  test "TrustedProxyRemoteIp leaves loopback peer when all XFF hops are loopback" do
+    single =
+      :post
+      |> conn("/api/device-links/exchange")
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> put_req_header("x-forwarded-for", "127.0.0.1")
+      |> TrustedProxyRemoteIp.call([])
+
+    assert single.remote_ip == {127, 0, 0, 1}
+
+    multi =
+      :post
+      |> conn("/api/device-links/exchange")
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> put_req_header("x-forwarded-for", "127.0.0.1, ::1")
+      |> TrustedProxyRemoteIp.call([])
+
+    assert multi.remote_ip == {127, 0, 0, 1}
+  end
+
+  test "TrustedProxyRemoteIp fails closed on unparseable rightmost XFF entry" do
+    conn =
+      :post
+      |> conn("/api/device-links/exchange")
+      |> Map.put(:remote_ip, {127, 0, 0, 1})
+      |> put_req_header("x-forwarded-for", "198.51.100.7, not-an-ip")
+      |> TrustedProxyRemoteIp.call([])
+
+    assert conn.remote_ip == {127, 0, 0, 1}
   end
 end
