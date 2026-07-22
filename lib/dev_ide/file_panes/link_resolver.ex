@@ -24,10 +24,20 @@ defmodule DevIDE.FilePanes.LinkResolver do
   Unlike `DevIDE.Links.Resolver` (the workspace open API's resolver), this
   module never classifies targets or touches `FileAccess` — it is a cheap,
   cached existence + confinement check built for the render hot path.
+
+  Candidates that miss root-relatively fall back to
+  `DevIDE.FilePanes.SuffixIndex`: bare names (`foo.ex`), subdir-relative
+  paths (`js/app.js` printed from a pane below the root), and absolute paths
+  outside the root (linked-worktree stacktraces) resolve when exactly one
+  workspace file's path ends with the candidate's trailing segments. While a
+  root's index is still building, those candidates miss with their underlying
+  error (`:not_found` / `:outside_root`) but are *not* cached, so they can
+  still linkify on a later frame once the index lands.
   """
 
   use GenServer
 
+  alias DevIDE.FilePanes.SuffixIndex
   alias DevIDE.Files.PathSafety
 
   @table :dev_ide_file_link_cache
@@ -35,6 +45,10 @@ defmodule DevIDE.FilePanes.LinkResolver do
   @cache_max_entries 5_000
 
   @type resolve_error :: :outside_root | :symlink_escape | :too_deep | :not_found | :invalid
+
+  # Longest trailing-segment suffix tried against the SuffixIndex before
+  # falling down to the bare basename.
+  @max_suffix_segments 5
 
   # --- lifecycle ------------------------------------------------------------
 
@@ -100,9 +114,7 @@ defmodule DevIDE.FilePanes.LinkResolver do
         result
 
       :miss ->
-        result = do_resolve(root, path)
-        cache_put(key, result)
-        result
+        finalize(key, do_resolve(root, path))
     end
   end
 
@@ -137,17 +149,69 @@ defmodule DevIDE.FilePanes.LinkResolver do
         {:skipped, new_count}
 
       :miss ->
-        result = do_resolve(root, path)
-        cache_put(key, result)
-        {result, new_count + 1}
+        {finalize(key, do_resolve(root, path)), new_count + 1}
     end
   end
 
   defp cached_resolve(_root, _root_key, _path, new_count, _max_new), do: {:skipped, new_count}
 
+  # A `{:pending, miss}` result means the suffix index for this root is still
+  # building: report the underlying miss but skip the cache, so the candidate
+  # can resolve on a later frame instead of a 10s-cached negative.
+  defp finalize(_key, {:error, {:pending, miss_error}}), do: {:error, miss_error}
+
+  defp finalize(key, result) do
+    cache_put(key, result)
+    result
+  end
+
   defp do_resolve(root, path) do
     with {:ok, rel} <- normalize(root, path),
          {:ok, abs} <- safety_resolve(root, rel) do
+      if File.regular?(abs), do: {:ok, rel}, else: suffix_fallback(root, path, :not_found)
+    else
+      # Absolute paths outside the root (linked-worktree stacktraces) and
+      # relative escapes may still name a workspace file by trailing
+      # segments; confinement is re-checked on the index hit. When nothing
+      # matches, the original refusal is preserved — click handlers treat
+      # :outside_root as a hard refusal, not a transient miss.
+      {:error, :outside_root} -> suffix_fallback(root, path, :outside_root)
+      {:error, _reason} = error -> error
+    end
+  end
+
+  # Root-relative resolution missed. Try progressively shorter trailing-
+  # segment suffixes against the workspace SuffixIndex — longest (most
+  # specific) first, down to the bare basename. A unique hit resolves; an
+  # ambiguous suffix stops the descent (shorter suffixes only match more);
+  # no match at all yields `miss_error`.
+  defp suffix_fallback(root, path, miss_error) do
+    segments = path |> Path.split() |> Enum.reject(&(&1 in ["/", ".", ".."]))
+
+    case length(segments) do
+      0 -> {:error, miss_error}
+      n -> try_suffixes(root, segments, min(n, @max_suffix_segments), miss_error)
+    end
+  end
+
+  defp try_suffixes(_root, _segments, 0, miss_error), do: {:error, miss_error}
+
+  defp try_suffixes(root, segments, k, miss_error) do
+    candidate = segments |> Enum.take(-k) |> Path.join()
+
+    case SuffixIndex.lookup(root, candidate) do
+      {:ok, rel} -> verify_index_hit(root, rel)
+      {:error, :pending} -> {:error, {:pending, miss_error}}
+      {:error, :ambiguous} -> {:error, miss_error}
+      {:error, :not_found} -> try_suffixes(root, segments, k - 1, miss_error)
+    end
+  end
+
+  # Index hits re-run confinement + existence: the index is rebuilt lazily,
+  # so an entry may be stale, and defense-in-depth keeps every resolved path
+  # PathSafety-checked regardless of where it came from.
+  defp verify_index_hit(root, rel) do
+    with {:ok, abs} <- safety_resolve(root, rel) do
       if File.regular?(abs), do: {:ok, rel}, else: {:error, :not_found}
     end
   end
