@@ -29,7 +29,7 @@ defmodule DevIDE.PreviewPanes do
 
   @table :dev_ide_preview_panes
   # Topology PubSub tag; atom form avoids a compile-time core-module edge.
-  @topology_tag :"Elixir.DevIDE.Terminals.TmuxTopology"
+  @topology_tag Deps.topology_tag()
   # Register/deregister wait on offloaded I/O that can include a 15s browser
   # navigate; the 5s GenServer default was the timeout-while-server-still-blocked trap.
   @lifecycle_call_timeout 30_000
