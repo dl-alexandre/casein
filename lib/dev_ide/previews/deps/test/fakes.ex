@@ -31,6 +31,10 @@ defmodule DevIDE.Previews.Deps.Test.Fakes do
     def viewer_ids(_), do: []
 
     @impl true
+    def viewer_ids(workspace_id, _opts) when is_binary(workspace_id), do: [workspace_id]
+    def viewer_ids(_, _), do: []
+
+    @impl true
     def linked?(left, right), do: left == right
 
     @impl true
