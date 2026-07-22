@@ -1241,7 +1241,9 @@ defmodule DevIDE.FilePanes do
   defp active_payload(%{active_path: path} = reg) do
     line = active_line(reg, path)
 
-    case workspace_loc(reg.workspace_id) do
+    # State-only: this builds the broadcast payload inside the singleton's
+    # commit_op — must never block on a Manager HTTP resolve.
+    case workspace_loc_state_only(reg.workspace_id) do
       {:ok, loc} ->
         case FileAccess.read_text(loc, path) do
           {:ok, %{content: content, version: version}} ->
@@ -1591,18 +1593,31 @@ defmodule DevIDE.FilePanes do
     end
   end
 
-  # State-only host-loc resolution for the in-server broadcast payload build.
-  # `broadcast/2` fires inside `commit_op` (the singleton process). Resolving the
-  # workspace via `Workspaces.get/1` there routes to the Manager over HTTP on a
-  # cold `State` cache; if that call hangs it backs up the singleton mailbox —
-  # the broadcast-fan-out cascade root PR #314 closes for PreviewPanes. Offload
-  # already moved register/rehydrate I/O off the callbacks; this closes the
-  # remaining in-server HTTP. Mirror `Aliases.expanded_host_path`: folder-attach
-  # id, then the `State` record's `host_path`, never a remote resolve. Cold-cache
-  # / source-only / remote workspaces degrade to `:workspace_not_found` (the
-  # payload omits active content; the viewer's on-demand hydrate path fills it) —
-  # the not-found branch already handles this shape.
+  # Full workspace host-loc resolution for CALLER-SIDE file read/write
+  # (save_tab/reload_tab). These run in the caller process, not the singleton,
+  # so the Manager resolve is fine here — and it is REQUIRED to produce
+  # `{:remote, host, path}` locs for remote workspaces (manager.ex:150), which
+  # the state-only variant below cannot. Do NOT call this from the in-server
+  # broadcast path.
   defp workspace_loc(workspace_id) do
+    with {:ok, workspace} <- Workspaces.get(workspace_id),
+         {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
+      {:ok, loc}
+    else
+      _ -> {:error, :workspace_not_found}
+    end
+  end
+
+  # State-only host-loc for the IN-SERVER broadcast payload build only. See
+  # active_payload: `broadcast/2` fires in `commit_op` (the singleton), so
+  # resolving via `workspace_loc/1` -> `Workspaces.get/1` -> Manager HTTP on a
+  # cold `State` cache could hang and back up the singleton mailbox (the
+  # broadcast-fan-out cascade root #314 closes for the PreviewPanes twin). Mirror
+  # `Aliases.expanded_host_path`: folder-attach id, then the `State` record's
+  # host_path, never a remote resolve. Remote/cold-cache workspaces yield
+  # `:workspace_not_found` (payload omits active content; the viewer's on-demand
+  # hydrate path — which uses the caller-side full resolver — fills it).
+  defp workspace_loc_state_only(workspace_id) do
     case state_only_host_path(workspace_id) do
       path when is_binary(path) and path != "" ->
         expanded = Path.expand(path)
