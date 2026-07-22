@@ -161,6 +161,15 @@ defmodule Scripts.LaunchDevideAgentTest do
     refute text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
   end
 
+  test "managed Codex tabs prefer the thread title while allowing an explicit override" do
+    text = File.read!(@script)
+
+    assert text =~ "codex_terminal_title_args"
+    assert text =~ "codex_arg_sets_terminal_title"
+    assert text =~ ~S(tui.terminal_title=["spinner","thread"])
+    assert text =~ ~S(tui.terminal_title=*)
+  end
+
   test "claude launches stage DevIDE-infra skills into the resolved config home" do
     text = File.read!(@script)
 

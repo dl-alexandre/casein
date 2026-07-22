@@ -96,6 +96,12 @@ stored or broadcast. Previous-session search indexes those events, so prompt
 intent and status are searchable without loading full paste history into
 LiveView.
 
+Managed Codex launches also override Codex's default terminal title from
+`["spinner", "project"]` to `["spinner", "thread"]`. This keeps the browser
+window tabs task-oriented instead of repeating generated worktree names such as
+`agent-codex-adhoc-<timestamp>`. An explicit `-c tui.terminal_title=...` launch
+argument remains authoritative.
+
 ## Auth
 
 `DevIdeWeb.ChannelAuth` centralises the token salt (`"user socket"`,

@@ -989,6 +989,29 @@ codex_security_config_args() {
     'shell_environment_policy.exclude=["DEV_IDE_API_TOKEN","DEV_IDE_ADMIN_API_TOKEN","DEV_IDE_WORKSPACE_API_TOKENS"]'
 }
 
+codex_arg_sets_terminal_title() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      tui.terminal_title=* | --config=tui.terminal_title=* | -c=tui.terminal_title=* | -ctui.terminal_title=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+codex_terminal_title_args() {
+  # Codex defaults to ["spinner", "project"], which labels every managed
+  # worktree tab as agent-codex-adhoc-<timestamp>. Prefer the conversation's
+  # task-oriented thread title, matching Claude's useful OSC pane titles.
+  # A caller-provided -c/--config value remains authoritative.
+  codex_arg_sets_terminal_title "$@" && return 0
+
+  printf '%s\0' -c 'tui.terminal_title=["spinner","thread"]'
+}
+
 codex_workspace_mode() {
   local fallback="${DEVIDE_WORKSPACE_MODE:-manual}"
   local base="${DEVIDE_API_BASE_URL:-${DEVIDE_URL:-}}"
@@ -1176,6 +1199,9 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_security_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_terminal_title_args "$@")
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_state_hook_args "$@")
