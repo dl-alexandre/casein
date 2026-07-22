@@ -696,6 +696,21 @@ defmodule DevIDE.FilePanes do
     end
   end
 
+  # Displaces a COMMITTED peer pane in the same {session,window} (one file pane
+  # per window). `begin_deregister` is state-first (ETS lookup), so it only
+  # displaces panes that have finished registering.
+  #
+  # KNOWN GAP (tracked debt, low-severity, self-heals): `window_index` for the
+  # NEW pane is written at commit time (`store_registration`), past the offload,
+  # not here. So if a second cold register for the same window interleaves
+  # between this register's start and its commit, it sees no peer to displace and
+  # both commit — ETS transiently holds two panes for one window until the next
+  # topology broadcast reaps the loser via `expire_vanished_panes`. The original
+  # synchronous code displaced immediately. A full fix reserves the slot here and
+  # adds a commit-time "is the window still ours?" check with loser self-
+  # deregistration; deferred to keep this offload change low-risk. The invariant
+  # is UI-only (one pane per window) and eventually-consistent, never a safety
+  # or persistence hole.
   defp maybe_displace_window_peer(registration, pane_id, state) do
     session = registration.tmux_session
     window_id = registration.pane_window_id
