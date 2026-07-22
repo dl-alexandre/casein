@@ -14,7 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   use DevIdeWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1]
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1, dom_fragment: 1]
 
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceRoutes
@@ -469,6 +469,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   attr :workspace_id, :string, required: true
   attr :tree, :list, required: true, doc: "SessionBarVM.workspace_session_tree/4 nodes"
+  attr :needs_you, :list, default: [], doc: "SessionBarVM.needs_you_strip/3 rows"
   attr :active_id, :string, default: nil
   attr :default_sid, :string, default: nil
   attr :preview_panes, :map, default: %{}
@@ -570,6 +571,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="hidden shrink-0 border-b border-base-300/70 px-2 py-1 font-mono text-[10px] text-base-content/60"
       >
       </div>
+      <.sessions_needs_you_strip
+        rows={@needs_you}
+        workspace_id={@workspace_id}
+        active_id={@active_id}
+        path_base={@path_base}
+      />
       <div class="min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden px-1 py-1.5">
         <% {ws_nodes, browse_nodes} =
           Enum.split_with(@tree, &(Map.get(&1, :kind) not in [:browse_root, :browse_dir])) %>
@@ -640,6 +647,158 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       </button>
     </nav>
     """
+  end
+
+  attr :rows, :list, required: true
+  attr :workspace_id, :string, required: true
+  attr :active_id, :string, default: nil
+  attr :path_base, :string, default: nil
+
+  # Pinned cross-workspace triage queue: every session that needs you, most
+  # urgent first, one click from being unblocked. Hidden entirely when nothing
+  # needs attention so the rail stays calm at rest.
+  defp sessions_needs_you_strip(assigns) do
+    ~H"""
+    <div
+      :if={@rows != []}
+      id={"sessions-needs-you-" <> @workspace_id}
+      data-needs-you-strip
+      class="shrink-0 border-b border-rose-500/20 bg-rose-500/[0.04] px-1 py-1"
+    >
+      <.sessions_sidebar_section_header
+        label="Needs you"
+        count={length(@rows)}
+        attention?={true}
+      />
+      <div class="flex flex-col gap-0.5">
+        <.sessions_needs_you_row
+          :for={row <- @rows}
+          row={row}
+          current_workspace_id={@workspace_id}
+          active_id={@active_id}
+          path_base={@path_base}
+        />
+      </div>
+    </div>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :current_workspace_id, :string, required: true
+  attr :active_id, :string, default: nil
+  attr :path_base, :string, default: nil
+
+  defp sessions_needs_you_row(assigns) do
+    assigns = assign(assigns, :badge, needs_you_row_badge(assigns.row))
+
+    ~H"""
+    <%= if @row.current? do %>
+      <a
+        id={"needs-you-row-" <> dom_fragment(@row.id)}
+        href={session_href(@row.workspace_id, @row.session_id, @path_base)}
+        data-needs-you-reason={@row.reason}
+        phx-click="attach_terminal_session"
+        phx-value-session-id={@row.session_id}
+        phx-value-kind={to_string(@row.kind)}
+        phx-value-tmux-session={@row.tmux_session}
+        class={[sidebar_row_class(@active_id == @row.session_id), "flex-row items-center gap-1.5"]}
+        title={needs_you_row_title(@row)}
+      >
+        <.needs_you_row_body row={@row} badge={@badge} show_workspace?={false} />
+      </a>
+    <% else %>
+      <.link
+        id={"needs-you-row-" <> dom_fragment(@row.id)}
+        navigate={needs_you_row_href(@row)}
+        data-needs-you-reason={@row.reason}
+        class={[sidebar_row_class(false), "flex-row items-center gap-1.5"]}
+        title={needs_you_row_title(@row)}
+      >
+        <.needs_you_row_body row={@row} badge={@badge} show_workspace?={true} />
+      </.link>
+    <% end %>
+    """
+  end
+
+  attr :row, :map, required: true
+  attr :badge, :map, required: true
+  attr :show_workspace?, :boolean, default: false
+
+  defp needs_you_row_body(assigns) do
+    ~H"""
+    <span class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+      <span
+        class={["size-1.5 shrink-0 rounded-full", @badge.dot]}
+        aria-hidden="true"
+      />
+      <span class="truncate font-medium">{@row.label}</span>
+      <span
+        :if={@show_workspace?}
+        class="shrink-0 truncate font-mono text-[9px] text-base-content/45"
+      >
+        {@row.workspace_label}
+      </span>
+    </span>
+    <span class={[
+      "shrink-0 rounded-full px-1.5 text-[9px] font-semibold",
+      @badge.class
+    ]}>
+      {@badge.text}
+    </span>
+    """
+  end
+
+  defp needs_you_row_href(%{href: href}) when is_binary(href) and href != "", do: href
+
+  defp needs_you_row_href(row),
+    do: cross_workspace_home_path(row.workspace_id)
+
+  defp needs_you_row_badge(%{reason: :blocked, agent_blocked_count: count}) when count > 1,
+    do: %{
+      dot: "bg-rose-500",
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "needs input ×#{count}"
+    }
+
+  defp needs_you_row_badge(%{reason: :blocked}),
+    do: %{
+      dot: "bg-rose-500",
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "needs input"
+    }
+
+  defp needs_you_row_badge(%{reason: :error}),
+    do: %{
+      dot: "bg-rose-500",
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "error"
+    }
+
+  defp needs_you_row_badge(%{reason: :completed}),
+    do: %{dot: "bg-sky-400", class: "bg-sky-400/15 text-sky-600 dark:text-sky-300", text: "done"}
+
+  defp needs_you_row_badge(_row),
+    do: %{
+      dot: "bg-violet-400",
+      class: "bg-violet-400/15 text-violet-500 dark:text-violet-300",
+      text: "quiet"
+    }
+
+  defp needs_you_row_title(row) do
+    base =
+      case row.reason do
+        :blocked -> "Agent is blocked on input"
+        :error -> "Session hit an error"
+        :completed -> "Agent finished — review its result"
+        _ -> "Agent window is quiet — likely finished or awaiting input"
+      end
+
+    scope = if(row.current?, do: base, else: base <> " · " <> row.workspace_label)
+
+    case row.message do
+      message when is_binary(message) and message != "" -> scope <> " — " <> message
+      _ -> scope
+    end
   end
 
   attr :label, :string, required: true
@@ -1907,24 +2066,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp agent_badge_for_reason(:blocked, session) do
     count = Map.get(session, :agent_blocked_count, 0)
 
+    base =
+      if(count > 1,
+        do: "#{count} agent windows are blocked on input",
+        else: "Agent is blocked on input"
+      )
+
     %{
       reason: :blocked,
       class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
       text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
-      title:
-        if(count > 1,
-          do: "#{count} agent windows are blocked on input",
-          else: "Agent is blocked on input"
-        )
+      title: with_attention_message(base, session)
     }
   end
 
-  defp agent_badge_for_reason(:completed, _session) do
+  defp agent_badge_for_reason(:completed, session) do
     %{
       reason: :completed,
       class: "bg-sky-400/15 text-sky-600 dark:text-sky-300",
       text: "done",
-      title: "Agent finished — review its result"
+      title: with_attention_message("Agent finished — review its result", session)
     }
   end
 
@@ -1938,6 +2099,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp agent_badge_for_reason(_reason, _session), do: nil
+
+  # Append the agent's own status message to a badge tooltip when one is present
+  # on the tab, so hovering tells you *why* it needs you, not just that it does.
+  defp with_attention_message(base, session) do
+    case Map.get(session, :attention_message) do
+      message when is_binary(message) and message != "" -> base <> " — " <> message
+      _ -> base
+    end
+  end
 
   defp needs_you_chip_title(1), do: "1 session needs you"
   defp needs_you_chip_title(count), do: "#{count} sessions need you"

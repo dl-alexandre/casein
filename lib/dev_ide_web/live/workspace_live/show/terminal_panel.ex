@@ -41,6 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                 <SessionBar.sessions_sidebar
                   workspace_id={@workspace.id}
                   tree={@sessions_sidebar_tree}
+                  needs_you={@sessions_sidebar_needs_you}
                   sort_mode={@sessions_sidebar_sort}
                   active_id={@terminal_sid}
                   default_sid={@default_terminal_sid}

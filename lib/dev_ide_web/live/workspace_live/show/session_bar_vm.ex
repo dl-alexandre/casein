@@ -80,6 +80,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           attention: String.t(),
           attention_section: Attention.section(),
           attention_reason: Attention.reason(),
+          attention_message: String.t() | nil,
           agent_blocked_count: non_neg_integer(),
           preview_count: non_neg_integer(),
           pane_ids: [String.t()]
@@ -154,6 +155,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       attention: session_quiet_attention(quiet_count, unseen_quiet_count),
       attention_section: attention_cls.section,
       attention_reason: attention_cls.reason,
+      attention_message: attention_message(attention_cls.reason, windows),
       agent_blocked_count: Enum.count(windows, &(&1.agent_state == :blocked)),
       pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
       preview_count: 0,
@@ -499,15 +501,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     %{live: Enum.count(workspace_nodes, & &1.live?), total: length(workspace_nodes)}
   end
 
-  @doc "Stable-partitions session rows for attention-first rendering."
+  @doc """
+  Stable-partitions session rows for attention-first rendering.
+
+  Within the `:needs_you` section, rows are ordered by urgency (blocked/error
+  before completed before quiet) so the most actionable sessions rise to the
+  top; the `:working` and `:recent` sections keep their incoming order.
+  """
   @spec session_attention_groups([map()]) :: [{Attention.section(), [map()]}]
   def session_attention_groups(sessions) when is_list(sessions) do
     grouped = Enum.group_by(sessions, &tab_attention_section/1)
 
     for section <- [:needs_you, :working, :recent],
-        rows = Map.get(grouped, section, []),
+        rows = order_within_section(section, Map.get(grouped, section, [])),
         rows != [],
         do: {section, rows}
+  end
+
+  # Urgency ordering only applies to the needs-you section. `sort_by` is stable
+  # in Elixir, so equal-rank rows keep the caller's recency/name ordering.
+  defp order_within_section(:needs_you, rows),
+    do: Enum.sort_by(rows, &tab_reason_rank/1)
+
+  defp order_within_section(_section, rows), do: rows
+
+  @doc """
+  Urgency rank for a needs-you row: lower sorts first. Blocked and lifecycle
+  errors are the most actionable, then completed agents awaiting review, then
+  quiet windows.
+  """
+  @spec tab_reason_rank(map()) :: non_neg_integer()
+  def tab_reason_rank(session) when is_map(session) do
+    case Map.get(session, :attention_reason) do
+      :blocked -> 0
+      :error -> 0
+      :completed -> 1
+      :quiet -> 2
+      _ -> 3
+    end
   end
 
   @doc """
@@ -521,6 +552,93 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   @spec tab_attention_section(map()) :: Attention.section()
   def tab_attention_section(session) when is_map(session) do
     Map.get(session, :attention_section) || Attention.classify(session).section
+  end
+
+  @type needs_you_row :: %{
+          id: String.t(),
+          session_id: String.t(),
+          workspace_id: String.t(),
+          workspace_label: String.t(),
+          current?: boolean(),
+          label: String.t(),
+          kind: atom(),
+          tmux_session: String.t() | nil,
+          href: String.t() | nil,
+          reason: Attention.reason(),
+          agent_blocked_count: non_neg_integer(),
+          message: String.t() | nil
+        }
+
+  @doc """
+  Flat, urgency-ordered list of every session that needs you, across the
+  current workspace and any warmed cross-workspace caches.
+
+  Powers the pinned "Needs you" strip at the top of the sidebar. Only sessions
+  whose tabs are actually loaded contribute a clickable row; collapsed
+  workspaces with no warmed cache surface their count via the header chip
+  instead. Pass `sidebar_ws_sessions` (workspace_id => [tab]) and the workspace
+  summaries so each row can name its workspace.
+  """
+  @spec needs_you_strip([map()], String.t(), keyword()) :: [needs_you_row()]
+  def needs_you_strip(current_tabs, current_workspace_id, opts \\ [])
+      when is_list(current_tabs) and is_binary(current_workspace_id) do
+    sidebar_ws = Keyword.get(opts, :sidebar_ws_sessions, %{})
+    summaries = Keyword.get(opts, :summaries, [])
+    labels = workspace_label_index(summaries, current_workspace_id)
+
+    current_rows =
+      current_tabs
+      |> Enum.map(&Map.put(&1, :workspace_id, current_workspace_id))
+      |> Enum.map(&needs_you_row(&1, current_workspace_id, labels))
+
+    other_rows =
+      sidebar_ws
+      |> Enum.reject(fn {workspace_id, _tabs} -> workspace_id == current_workspace_id end)
+      |> Enum.flat_map(fn {workspace_id, tabs} ->
+        # Cross-workspace tabs are cached without a workspace_id (the tree
+        # builder injects it later); stamp it from the cache key here.
+        tabs
+        |> List.wrap()
+        |> Enum.map(&Map.put(&1, :workspace_id, workspace_id))
+        |> Enum.map(&needs_you_row(&1, current_workspace_id, labels))
+      end)
+
+    (current_rows ++ other_rows)
+    |> Enum.filter(& &1)
+    |> Enum.sort_by(&{tab_reason_rank(%{attention_reason: &1.reason}), not &1.current?})
+  end
+
+  defp needs_you_row(tab, current_workspace_id, labels) do
+    if tab_attention_section(tab) == :needs_you do
+      workspace_id = Map.get(tab, :workspace_id) || current_workspace_id
+      session_id = Map.get(tab, :session_id) || tab.id
+
+      %{
+        id: workspace_id <> ":" <> session_id,
+        session_id: session_id,
+        workspace_id: workspace_id,
+        workspace_label: Map.get(labels, workspace_id, workspace_id),
+        current?: workspace_id == current_workspace_id,
+        label: tab.label,
+        kind: Map.get(tab, :kind, :shell),
+        tmux_session: Map.get(tab, :tmux_session),
+        href: blank_to_nil(Map.get(tab, :href)),
+        reason: Map.get(tab, :attention_reason, :recent),
+        agent_blocked_count: Map.get(tab, :agent_blocked_count, 0),
+        message: blank_to_nil(Map.get(tab, :attention_message))
+      }
+    end
+  end
+
+  defp workspace_label_index(summaries, current_workspace_id) do
+    summaries
+    |> Enum.reduce(%{}, fn summary, acc ->
+      case summary_id(summary) do
+        id when is_binary(id) -> Map.put(acc, id, summary_workspace_label(summary))
+        _ -> acc
+      end
+    end)
+    |> Map.put_new(current_workspace_id, current_workspace_id)
   end
 
   @doc "Stable-partitions workspace tree nodes by their strongest contained session state."
@@ -619,6 +737,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       attention: "none",
       attention_section: :recent,
       attention_reason: :recent,
+      attention_message: nil,
       agent_blocked_count: 0,
       activity_state: :idle,
       activity_class: window_activity_class(:idle),
@@ -1061,6 +1180,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       status: Map.get(info, :status),
       windows: Enum.map(windows, &%{agent_state: &1.agent_state, quiet: &1.quiet?})
     })
+  end
+
+  # Free-text detail for a needs-you badge/strip tooltip: the message of the
+  # first window whose state matches the classified reason. Rides the directory
+  # metadata already on each window, so it refreshes on the next recompute
+  # without a dedicated AgentState subscription.
+  defp attention_message(:blocked, windows),
+    do: first_window_message(windows, &(&1.agent_state == :blocked))
+
+  defp attention_message(:completed, windows),
+    do: first_window_message(windows, &(&1.agent_state == :done))
+
+  defp attention_message(_reason, _windows), do: nil
+
+  defp first_window_message(windows, match?) do
+    windows
+    |> Enum.filter(match?)
+    |> Enum.find_value(& &1.agent_state_message)
   end
 
   # When an explicit semantic state is present it drives the window's activity

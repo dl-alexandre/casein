@@ -33,6 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
       # See TerminalInfo `:terminal_resize` / flush_held_pane_resizes/1.
       held_pane_resizes: %{},
       sessions_sidebar_tree: [],
+      sessions_sidebar_needs_you: [],
       windows_sidebar_tree: [],
       sessions_sidebar_sort: :recency,
       windows_sidebar_sort: :recency
@@ -265,7 +266,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
         workspaces: summaries
       )
 
-    assign(socket, :sessions_sidebar_tree, session_tree ++ browse_tree)
+    needs_you =
+      SessionBarVM.needs_you_strip(
+        socket.assigns.session_tabs,
+        socket.assigns.workspace.id,
+        sidebar_ws_sessions: socket.assigns.sidebar_ws_sessions,
+        summaries: summaries
+      )
+
+    socket
+    |> assign(:sessions_sidebar_tree, session_tree ++ browse_tree)
+    |> assign(:sessions_sidebar_needs_you, needs_you)
   end
 
   @doc "Toggle expansion of a Browse-tier directory (empty string = browse root)."

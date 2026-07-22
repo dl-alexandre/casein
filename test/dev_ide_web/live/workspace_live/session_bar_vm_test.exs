@@ -484,4 +484,110 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
       assert other.needs_you_count == 0
     end
   end
+
+  describe "session_attention_groups urgency ordering" do
+    test "orders the needs-you section blocked/error, then completed, then quiet" do
+      tabs =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("quiet", [%{id: "@1", index: 0, name: "a", quiet: true}]),
+          shell_info_with_windows("done", [%{id: "@1", index: 0, name: "a", agent_state: :done}]),
+          shell_info_with_windows("blocked", [
+            %{id: "@1", index: 0, name: "a", agent_state: :blocked}
+          ])
+        ])
+
+      assert [{:needs_you, [blocked, done, quiet]}] =
+               SessionBarVM.session_attention_groups(tabs)
+
+      assert blocked.attention_reason == :blocked
+      assert done.attention_reason == :completed
+      assert quiet.attention_reason == :quiet
+    end
+
+    test "leaves working and recent sections in incoming order" do
+      tabs =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("w2", [%{id: "@1", index: 0, name: "a", agent_state: :working}]),
+          shell_info_with_windows("w1", [%{id: "@1", index: 0, name: "a", agent_state: :working}])
+        ])
+
+      assert [{:working, [first, second]}] = SessionBarVM.session_attention_groups(tabs)
+      assert first.id == "w2"
+      assert second.id == "w1"
+    end
+  end
+
+  describe "needs_you_strip/3" do
+    defp blocked_info(sid, message) do
+      SessionInfo.new_shell("ws-a", sid,
+        metadata: %{
+          windows: [%{id: "@1", index: 0, name: "agent", agent_state: :blocked}],
+          agent_state_messages: %{"@1" => message}
+        }
+      )
+    end
+
+    test "collects needs-you sessions across current and cached workspaces, urgency-first" do
+      current =
+        SessionBarVM.session_tabs([
+          blocked_info("here-blocked", "waiting on approval"),
+          shell_info("here-calm")
+        ])
+
+      other =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("there-done", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :done}
+          ])
+        ])
+
+      rows =
+        SessionBarVM.needs_you_strip(current, "ws-a",
+          sidebar_ws_sessions: %{"ws-b" => other},
+          summaries: [
+            %{id: "ws-a", name: "alpha"},
+            %{id: "ws-b", name: "beta"}
+          ]
+        )
+
+      assert [blocked, done] = rows
+
+      assert blocked.session_id == "here-blocked"
+      assert blocked.current?
+      assert blocked.reason == :blocked
+      assert blocked.workspace_label == "alpha"
+      assert blocked.message == "waiting on approval"
+
+      assert done.session_id == "there-done"
+      refute done.current?
+      assert done.reason == :completed
+      assert done.workspace_label == "beta"
+      assert done.id == "ws-b:there-done"
+    end
+
+    test "excludes calm sessions and the current workspace's cached duplicate" do
+      current = SessionBarVM.session_tabs([shell_info("calm-1"), shell_info("calm-2")])
+
+      rows =
+        SessionBarVM.needs_you_strip(current, "ws-a",
+          sidebar_ws_sessions: %{"ws-a" => current},
+          summaries: [%{id: "ws-a", name: "alpha"}]
+        )
+
+      assert rows == []
+    end
+
+    test "counts multiple blocked windows for the row badge" do
+      current =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("multi", [
+            %{id: "@1", index: 0, name: "a", agent_state: :blocked},
+            %{id: "@2", index: 1, name: "b", agent_state: :blocked}
+          ])
+        ])
+
+      assert [row] = SessionBarVM.needs_you_strip(current, "ws-a", summaries: [])
+      assert row.agent_blocked_count == 2
+    end
+  end
 end
