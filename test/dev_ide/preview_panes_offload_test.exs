@@ -378,6 +378,88 @@ defmodule DevIDE.PreviewPanesOffloadTest do
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5173/survivor"
   end
 
+  test "crashed rehydrate op replies shape-correct nil, not an error tuple" do
+    pane_id = "%rehydrate-crash-#{System.unique_integer([:positive])}"
+
+    Application.put_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms, 500)
+    on_exit(fn -> Application.delete_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms) end)
+
+    parent = self()
+
+    spawn(fn ->
+      send(parent, {:lookup_started, self()})
+      send(parent, {:lookup_result, PreviewPanes.get_by_pane(pane_id)})
+    end)
+
+    assert_receive {:lookup_started, _}, 1_000
+
+    # Kill the in-flight rehydrate task once it registers as a pending op.
+    wait_until(fn ->
+      state = :sys.get_state(PreviewPanes)
+
+      case Enum.find(state.pending_ops, fn {_ref, op} -> op.kind == :rehydrate end) do
+        {_ref, op} ->
+          Process.exit(op.pid, :kill)
+          true
+
+        _ ->
+          false
+      end
+    end)
+
+    # Callers pattern-match `registration | nil` — an error tuple here crashed
+    # preview_proxy_controller before the fallback-shape fix.
+    assert_receive {:lookup_result, nil}, 2_000
+  end
+
+  test "clear replies preview_cleared to queued (not yet started) op waiters" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_clear_queue"
+    pane_id = "%clearq"
+    seed_session!(session, pane_id)
+
+    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 500)
+    parent = self()
+
+    spawn(fn ->
+      PreviewPanes.register(%{
+        "pane_id" => pane_id,
+        "url" => "http://localhost:5173/slow",
+        "cwd" => path,
+        "tmux_session" => session
+      })
+    end)
+
+    wait_until(fn ->
+      state = :sys.get_state(PreviewPanes)
+      Map.has_key?(state.inflight_panes, pane_id)
+    end)
+
+    # This one lands in the per-pane op_queue behind the slow register.
+    spawn(fn ->
+      result =
+        PreviewPanes.register(%{
+          "pane_id" => pane_id,
+          "url" => "http://localhost:5173/queued",
+          "cwd" => path,
+          "tmux_session" => session
+        })
+
+      send(parent, {:queued_result, result})
+    end)
+
+    wait_until(fn ->
+      state = :sys.get_state(PreviewPanes)
+      Map.has_key?(state.op_queue, pane_id)
+    end)
+
+    :ok = PreviewPanes.clear()
+
+    # Before the fix the queued waiter was silently dropped and hung for the
+    # full 30s call timeout; now it must be released promptly.
+    assert_receive {:queued_result, {:error, :preview_cleared}}, 2_000
+  end
+
   test "get_by_session self-call guard returns nil without deadlocking" do
     parent = self()
     ref = make_ref()

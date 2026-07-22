@@ -395,6 +395,18 @@ defmodule DevIDE.PreviewPanes do
       reply_rehydrate_waiters(op, nil)
     end)
 
+    # Queued (not-yet-started) ops would otherwise be silently dropped with
+    # empty_state and their callers left hanging for the full call timeout.
+    Enum.each(state.op_queue, fn {_pane_id, q} ->
+      Enum.each(:queue.to_list(q), fn
+        {_kind, _payload, from} when not is_nil(from) ->
+          GenServer.reply(from, {:error, :preview_cleared})
+
+        _ ->
+          :ok
+      end)
+    end)
+
     offload_op(
       from,
       :clear,
@@ -429,9 +441,22 @@ defmodule DevIDE.PreviewPanes do
       {ref, op, pending} ->
         state = %{state | pending_ops: pending}
         state = clear_rehydrate_key(state, op)
-        result = {:error, :preview_op_crashed}
-        reply_op(op, result)
-        reply_rehydrate_waiters(op, nil)
+
+        # Rehydrate-kind callers expect `registration | nil` or a list, never an
+        # error tuple (preview_proxy_controller pattern-matches the shape); fall
+        # back to the committed state, which is exactly what a failed IO read
+        # would have yielded anyway.
+        case op do
+          %{kind: :rehydrate} ->
+            reply = rehydrate_fallback_reply(op, state)
+            reply_op(op, reply)
+            reply_rehydrate_waiters(op, reply)
+
+          _ ->
+            reply_op(op, {:error, :preview_op_crashed})
+            reply_rehydrate_waiters(op, nil)
+        end
+
         state = clear_inflight(state, op.pane_id, ref)
         state = drain_op_queue(state, op.pane_id)
         {:noreply, state}
@@ -519,6 +544,8 @@ defmodule DevIDE.PreviewPanes do
           maybe_test_browser_delay()
         end
 
+        if kind == :rehydrate, do: maybe_test_rehydrate_delay()
+
         fun.()
       end)
 
@@ -565,6 +592,13 @@ defmodule DevIDE.PreviewPanes do
 
   defp maybe_test_browser_delay do
     case Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
+    end
+  end
+
+  defp maybe_test_rehydrate_delay do
+    case Application.get_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
     end
@@ -917,10 +951,10 @@ defmodule DevIDE.PreviewPanes do
           {reply, state}
 
         {:error, _} ->
-          {nil, state}
+          {rehydrate_fallback_reply(op, state), state}
 
         _ ->
-          {nil, state}
+          {rehydrate_fallback_reply(op, state), state}
       end
 
     reply_op(op, reply)
@@ -977,9 +1011,22 @@ defmodule DevIDE.PreviewPanes do
     case result do
       {:session_terminated_persist_done, pane_ids} when is_list(pane_ids) ->
         Enum.reduce(pane_ids, state, fn pane_id, acc ->
-          case begin_deregister(pane_id, acc, persist?: false, from: nil) do
-            {:noreply, next} -> next
-            {:reply, _, next} -> next
+          # Respect the per-pane queue: a concurrent in-flight register must not
+          # have its inflight ref clobbered by the expiry pipeline — queue the
+          # deregister behind it instead.
+          if is_binary(pane_id) and Map.has_key?(acc.inflight_panes, pane_id) do
+            enqueue_op(
+              acc,
+              pane_id,
+              :deregister,
+              %{pane_id: pane_id, opts: [persist?: false]},
+              nil
+            )
+          else
+            case begin_deregister(pane_id, acc, persist?: false, from: nil) do
+              {:noreply, next} -> next
+              {:reply, _, next} -> next
+            end
           end
         end)
 
@@ -992,6 +1039,24 @@ defmodule DevIDE.PreviewPanes do
     reply_op(op, result)
     state
   end
+
+  # Shape-correct fallback for a rehydrate op whose IO failed or crashed:
+  # list callers get the committed-index list, lookup callers get ETS truth
+  # (or nil) — the same answer a successful run with no persisted rows yields.
+  defp rehydrate_fallback_reply(%{plan: %{list_reply: workspace_ids}}, state)
+       when is_list(workspace_ids) do
+    list_workspace_registrations(state.workspace_index, workspace_ids)
+  end
+
+  defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:pane, pane_id}}}, _state) do
+    lookup_by_pane(pane_id)
+  end
+
+  defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:session, session_id}}}, state) do
+    ets_lookup_by_session(session_id) || lookup_by_session(state.workspace_index, session_id)
+  end
+
+  defp rehydrate_fallback_reply(_op, _state), do: nil
 
   defp commit_rehydrate_item({:commit, registration}, state) when is_map(registration) do
     pane_id = registration.pane_id
