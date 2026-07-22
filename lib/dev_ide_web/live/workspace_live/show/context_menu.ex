@@ -397,6 +397,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
     end
   end
 
+  # A preview pane. All items are server-driven (no client hook needed): reload/
+  # reopen/close push existing gated preview events; "Copy URL" and "Open in new
+  # tab" carry the pane's display URL (scheme-validated for the anchor).
+  def items("preview_pane", %{"paneId" => pane_id} = ctx, _assigns)
+      when is_binary(pane_id) and pane_id != "" and byte_size(pane_id) <= @max_ctx_value_bytes do
+    url = ctx["url"]
+
+    controls = [
+      %{
+        id: "reload",
+        label: "Reload",
+        event: "preview-pane:refresh",
+        params: %{"pane-id" => pane_id}
+      },
+      %{
+        id: "reopen",
+        label: "Reopen",
+        event: "preview-pane:recover",
+        params: %{"pane-id" => pane_id}
+      }
+    ]
+
+    url_items =
+      if is_binary(url) and byte_size(url) <= @max_ctx_value_bytes and url != "" do
+        [%{divider: true}, %{id: "copy-url", label: "Copy URL", copy: url}] ++
+          preview_open_in_tab_item(url)
+      else
+        []
+      end
+
+    close = [
+      %{divider: true},
+      %{
+        id: "close",
+        label: "Close preview",
+        event: "preview-pane:close",
+        params: %{"pane-id" => pane_id}
+      }
+    ]
+
+    controls ++ url_items ++ close
+  end
+
   def items("run_entry", %{"runId" => run_id} = ctx, _assigns) when is_binary(run_id) do
     command_id = ctx["commandId"]
 
@@ -541,6 +584,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
     if is_binary(href) and String.starts_with?(href, "/") and
          not String.starts_with?(href, "//") do
       [%{id: "open-tab", label: "Open in new tab", href: href}]
+    else
+      []
+    end
+  end
+
+  # Preview URLs are absolute (the workspace's https origin), unlike the
+  # relative session/window hrefs, so this accepts http(s) only — the scheme
+  # check is what keeps a crafted ctx from smuggling a javascript:/data: URL
+  # into the anchor's href.
+  defp preview_open_in_tab_item(url) do
+    if is_binary(url) and String.match?(url, ~r{^https?://}) do
+      [%{id: "open-tab", label: "Open in new tab", href: url}]
     else
       []
     end
