@@ -1,6 +1,6 @@
-# Glossary and Operational Terminology
+# Product and operational glossary
 
-> Version: v2 (raw + MCP reality)
+> Version: v3 (authority + evidence reality)
 >
 > This document has two layers:
 >
@@ -8,17 +8,21 @@
 >   meaning must stay stable across UI, API, telemetry, and docs.
 >   Each entry includes a "Must not mean" column. Drift here is not
 >   pedantry; it is the slow path to product incoherence.
-> - **§Core concepts** onward — implementation-level vocabulary used by the
->   terminal, MCP, and audit internals.
+> - **§Core concepts** onward — the relationships between authority, clients,
+>   sessions, policy, and evidence.
 >
-> **History:** earlier versions defined a delegated-execution vocabulary
-> (assignment, lease, claim token, runner, safe action, fleet, coordinator,
-> governed command). That subsystem was removed; those terms are no longer
-> part of the product and have been dropped from this glossary.
+> **Naming stability:** DevIDE remains the current product name. Casein is only
+> a candidate governed by [`naming-gate.md`](naming-gate.md). Public naming
+> work does not rename the stable implementation identifiers `DevIDE.*`,
+> `:dev_ide`, or `DEV_IDE_*`.
 >
-> Cross-references: [`product.md`](product.md) §1–§7 introduces these
-> terms in narrative form; [`architecture.md`](architecture.md)
-> "First principles" is stated in this vocabulary.
+> **History:** delegated-execution terms such as assignment, lease, runner,
+> fleet, and governed command described a removed subsystem. They are not part
+> of the current product vocabulary.
+>
+> Cross-references: [`product.md`](product.md) §1–§7 introduces these terms in
+> narrative form; [`architecture.md`](architecture.md) states the authority map
+> and first principles in this vocabulary.
 
 ## Architectural constraints
 
@@ -27,26 +31,36 @@ UI labels, log lines, and docs must use them as defined here.
 If a new feature needs a meaning that is not in this table, add the
 term — do not overload an existing one.
 
-| Term            | Means                                                                                  | Must not mean                                                                  |
-|-----------------|----------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| **DevIDE**      | The product: workspace runtime + cockpit, considered as one named thing                | A specific UI component, a specific process, or the CLI alone                  |
-| **Runtime**     | Durable server-side authority for a workspace; owns sessions, raw-terminal admission, audit | The editor UI; a JS event loop; a generic "backend"                       |
-| **Cockpit**     | Human-facing interaction surface (browser terminal + cockpit chrome)                   | The execution engine; anything that decides what may run                       |
-| **Workspace**   | An isolated environment: git tree + filesystem + session + mode + audit                | An open tab; a directory you happen to have cd'd into; arbitrary project metadata |
-| **Operator**    | The human (or agent acting on a human's behalf) interacting through the cockpit        | A sysadmin role title; a process that executes commands                        |
-| **Agent**       | A non-human MCP client of the runtime (terminal + preview tools)                       | An in-process actor; a chatbot; the LLM itself; an "AI feature"                |
-| **Run**         | Execution lifecycle of a review-agent run                                              | A browser tab; a raw shell session; an arbitrary command                       |
-| **Mode**        | A workspace's admission policy level (`:manual` / `:review` / `:agent_write_locked` / `:shared_stage_guarded`) | Network mode; display theme; an "AI on/off" toggle; a user preference          |
-| **Policy decision** | Server-side admission evaluation (e.g. raw-terminal admission, review-agent start) | A UI checkbox; a client-side filter; a linter; a feature flag                  |
-| **Raw shell**   | Direct Session input into a server-side PTY (tmux), admitted by policy                  | A governed operation; a delegated assignment                                   |
-| **Audit**       | The time-ordered event stream of sensitive decisions and agent MCP calls                | A log file; verbose stdout; metrics; a debug channel                           |
-| **Replay**      | Reconstruction of session/scrollback state when a client reattaches (from tmux history) | Re-running a command; redo/undo                                                |
-| **MCP**         | The agent-facing tool interface (terminal + preview servers DevIDE hosts)               | The agent loop itself; a generic HTTP proxy; arbitrary host shell access       |
-| **Capability**  | A boolean or value the runtime advertises, gating which UI surfaces render             | A user role; a permission grant; a feature flag                                |
-| **Host**        | The machine a runtime happens to be reachable on                                       | A workspace; an account; an organizational unit                                |
-| **Session**     | A live, durable PTY+state attachment to a workspace (tmux underneath, but not "tmux")  | The HTTP/websocket connection; a browser tab; a login                          |
-| **Attach**      | A cockpit (or MCP agent) connecting to a running session                               | Starting a new session; logging in; subscribing to telemetry                   |
-| **Resume**      | Reattaching after disconnect, with buffered scrollback and reconstructed state         | Re-running a command; restoring from snapshot                                  |
+| Term | Means | Must not mean |
+|---|---|---|
+| **DevIDE** | The current public product name and stable implementation family | Casein before its naming gate passes; one UI component; one process; the CLI alone |
+| **Server-authoritative** | Each concern has one named server-side authority; clients authenticate, authorize, then observe or request effects | One database reconstructs everything; the browser is trusted state; “the backend decides somehow” |
+| **Authority** | The component whose current answer is binding for one concern | Every component that stores a copy; a projection; a transport; a person with an admin title |
+| **Runtime** | The server-side execution environment that hosts workspace sessions and the named authorities that govern them | The browser UI; a JavaScript loop; a fleet scheduler; a universal database |
+| **Workspace** | The addressable work context: identity, rooted filesystem/git tree, sessions, mode, and evidence scope | An open tab; an arbitrary directory; a host; a bag of project metadata |
+| **Cockpit** | The human-facing client: terminal plus workspace controls and views | The execution engine; an authority; anything that decides what may run |
+| **Human client** | A person authenticated to a workspace and interacting through the cockpit | An all-powerful operator; an anonymous browser; an agent hidden behind a human identity |
+| **Operator** | The human principal currently operating a workspace through the cockpit | A blanket admin role; an agent; the deployment's system administrator by implication |
+| **Agent client** | A non-human principal using scoped MCP tools against the same workspace surfaces | The LLM itself; an in-process actor; a chatbot feature; an unsandboxed host shell |
+| **Principal** | The authenticated identity requesting an action | A display label; a connection; the actor inferred later from free-form metadata |
+| **Actor** | The principal or system component attributed in durable evidence for a decision, effect, or outcome | Whoever happens to own the HTTP connection; an unverified client-supplied string |
+| **Transport** | HTTP, LiveView, Channels, MCP, or tmux plumbing that carries a request or state | Policy; identity; authority to execute; a domain workflow owner |
+| **Policy decision** | Server-side admission result for an action, with verdict and reason | A UI checkbox; a feature flag; a client-side filter; the effect itself |
+| **Effect** | The attempted state change after an allow decision | The decision, request, or evidence record |
+| **Outcome** | What actually happened after an attempted effect | What policy predicted; an HTTP status without domain meaning |
+| **Evidence** | Durable, attributable facts about decisions, effects, and outcomes | A complete reconstruction of live state; metrics; unstructured debug output |
+| **Audit** | The canonical durable evidence store (`Audit.Event`) | A universal run ledger; tmux scrollback; a projection; a claim of tamper evidence |
+| **Projection** | A purpose-specific read model derived from canonical evidence, such as Runs.Ledger or AgentEvents | An independent authority; a second canonical log; a full copy of all evidence |
+| **Session** | A live, durable PTY and its workspace-scoped state, backed by tmux | An HTTP/websocket connection; a browser tab; a login; a run |
+| **Run** | The execution lifecycle of one narrow review-agent command | A raw shell session; an arbitrary command; every MCP call; a browser tab |
+| **Raw shell** | Direct session input into a server-side PTY, admitted by Policy | A delegated assignment; a review-agent run; an implicit permission |
+| **Attach** | An authorized client connecting to an existing session | Authentication alone; starting a new session; replaying a command |
+| **Reconnect** | Reauthenticate, reauthorize present access, and restore the server-owned view after a connection loss | Trust cached client state; reuse stale authorization; rerun prior input |
+| **Replay** | Restore terminal state and scrollback from server/tmux history for a client | Re-execute a command; event-source the live process; redo/undo |
+| **MCP** | The scoped agent-facing tool interface DevIDE hosts | The agent loop; a generic HTTP proxy; arbitrary host access; authority by itself |
+| **Mode** | A workspace admission-policy level (`:manual`, `:review`, `:agent_write_locked`, `:shared_stage_guarded`) | Network topology; display theme; an AI toggle; identity |
+| **Capability** | A runtime-advertised boolean or value that gates an available surface | A permission grant; a user role; a decision; a deployment wish |
+| **Host** | The machine on which a runtime happens to execute | A workspace; an account; an organizational unit; a product mode |
 
 The "Must not mean" column is the load-bearing one. If you find these
 words being used in their forbidden senses anywhere in the codebase,
@@ -54,25 +68,53 @@ docs, or UI — fix the usage, not the glossary.
 
 ## Core concepts
 
+### Authority and server-authoritative state
+
+“Server-authoritative” is a rule about ownership, not a claim that one process
+or database owns everything. tmux is authoritative for the live process and
+scrollback; WorkspaceSource/records for workspace identity; Policy for
+admission; Audit for durable evidence. Clients and projections may cache or
+render those answers, but may not replace them.
+
+### Principal and actor
+
+A principal is authenticated before authorization. An actor is the attributable
+identity written into evidence for what followed. Usually they are the same;
+system outcomes may instead name the responsible runtime component. Neither is
+derived from a pane label or an untrusted request field.
+
+### Workspace
+
+A workspace is provided by a `DevIDE.WorkspaceSource`, which owns lifecycle
+truth. DevIDE maintains a redacted, denormalized `WorkspaceRecord` for fast
+reads. A workspace scopes filesystem access, sessions, policy, and evidence; it
+is not synonymous with its host or with a browser tab.
+
 ### Session
-Interactive attachment to a workspace: direct PTY input into a server-side
-tmux session via the Ghostty cell grid. Session must not mean the HTTP
-connection or a browser tab. Raw-terminal admission is a `Policy` decision.
+
+A session is a durable server-side PTY plus state, backed by tmux and rendered
+through the Ghostty cell grid. A client attaches to it. Losing that client's
+HTTP/websocket connection does not end the session, and reconnect restores
+state without replaying input.
 
 ### Run
-Execution lifecycle of a review-agent run (`DevIDE.Agents.Run`). A run is the
-canonical unit in the run ledger. Review runs spawn a fixed, allowlisted
-`DevIDE.Agents.ReviewCommand` argv as a local subprocess; there is no arbitrary
-command path.
+
+A run is the execution lifecycle of one review-agent command
+(`DevIDE.Agents.Run`). Review runs spawn a fixed, allowlisted
+`DevIDE.Agents.ReviewCommand` argv as a local subprocess. They are one
+projection over Audit evidence, not the universal unit for terminal or MCP
+activity.
 
 ### Raw shell
-Direct PTY input to tmux. Raw shell is admitted when
-`Policy.can_use_raw_terminal?/1` allows it — universally available by default
-(`:raw_terminal_everywhere`), or gated to a local host plus manual workspace
-mode when that env is disabled.
+
+Raw shell is direct PTY input to a session. `Policy.can_use_raw_terminal?/1`
+admits it according to deployment and workspace mode. An allow decision permits
+the effect; it is not itself terminal input and it does not grant unrelated
+agent-write capabilities.
 
 ### MCP tools
-External coding agents drive DevIDE over three MCP surfaces:
+
+External coding agents use three workspace-scoped MCP surfaces:
 
 - **Terminal MCP** (`DevIDE.Agents.TerminalTools`) — list sessions, read pane
   scrollback, send keys/commands to `devide_`-prefixed tmux sessions.
@@ -81,27 +123,38 @@ External coding agents drive DevIDE over three MCP surfaces:
 - **Artifact MCP** (`DevIDE.Agents.ArtifactTools`) — create and iterate on
   isolated artifact worktrees, returning Preview MCP handoff arguments.
 
-Every mutating MCP call is recorded by `DevIDE.Agents.MCPAudit` (audit + the
-live activity feed). MCP gives an agent the same reach a human has from the
-CLI — not arbitrary host shell access.
+Every mutating MCP call is attributed and recorded through
+`DevIDE.Agents.MCPAudit`, then projected into the live activity feed. MCP grants
+only the declared tools within the authenticated workspace scope; it is not a
+generic host shell or an agent runtime.
 
-### Workspace
-A development environment provided by a `DevIDE.WorkspaceSource`. The source
-owns lifecycle truth. DevIDE maintains a redacted, denormalized cache
-(`WorkspaceRecord`) for fast API responses.
+### Evidence, Audit, and projections
 
-### Mode
-A workspace safety mode (`:manual`, `:review`, `:agent_write_locked`,
-`:shared_stage_guarded`). Modes gate agent-write capabilities; DB isolation
-(`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded` for agent actors.
+`Audit.Event` is the canonical durable evidence envelope. It records who acted,
+what was requested or decided, the subject and workspace, and the resulting
+outcome with correlation/causation context where available. `Runs.Ledger` and
+`AgentEvents` are narrower read models over evidence with their own presentation
+and retention needs. They do not become authorities merely because they have a
+specialized table or UI.
 
-### DB isolation
-Classification of the workspace's database connection: `:local`, `:ephemeral`,
-`:shared_stage`, or `:unsafe`. Detected by `IsolationProbe` from env/config.
+Append-only APIs make evidence stable to read; they do not make the underlying
+storage tamper-evident. That claim requires a threat model plus mechanisms such
+as signed checkpoints or hash chaining.
 
-### Policy decision
-The result of `DevIDE.Policy.can_<action>?/1`: `%Decision{verdict: :allow | :deny, reason: atom, mode: atom}`.
-Every blocked decision is audited.
+### Decision, effect, and outcome
+
+The mutation order is: resolve scope, decide policy, record the decision,
+perform an allowed effect, then record the outcome. A denied decision has no
+effect. A permitted effect may still fail, and its outcome must say so rather
+than rewriting the earlier decision.
+
+### Mode and DB isolation
+
+A workspace mode (`:manual`, `:review`, `:agent_write_locked`, or
+`:shared_stage_guarded`) is one input to policy. DB isolation is separately
+classified as `:local`, `:ephemeral`, `:shared_stage`, or `:unsafe` by
+`IsolationProbe`; shared or unsafe databases force guarded behavior for agent
+actors. Neither term describes network topology or client identity.
 
 ## Event taxonomy
 

@@ -31,48 +31,63 @@
 
 ## 1. Definition
 
-**DevIDE is a single-runtime workspace cockpit: a durable terminal over a
-server-side runtime, with MCP as the interface coding agents use to drive it.**
+**DevIDE is a server-authoritative workspace where people and coding agents
+work in the same durable session.**
 
-The runtime is the engine: it owns durable sessions and survives disconnects.
-The browser is the cockpit: the place a human operator sees the workspace,
-types into it, and watches what an agent did. Agents are clients of the same
-runtime through MCP, not a separate plugin.
+The work runs with the workspace, not with a browser tab. Terminal processes
+continue through disconnects; a person reconnects through the cockpit, while a
+coding agent attaches through scoped MCP tools. Both clients act on the same
+workspace; the runtime records attributable policy decisions, agent tool calls,
+and execution outcomes without claiming to log every shell keystroke.
 
-The product is the durable, observable workspace session. The editor surface
-is a feature of it, not the other way around.
+The product is continuity, shared control, and evidence around real software
+work. The terminal and browser UI are how clients reach that product; they are
+not the authority that keeps it alive.
 
 ## 2. Thesis
 
-Existing editors are single-machine interaction tools. They optimize for
-one human, one keyboard, one local filesystem, one process tree. They
-treat durability, server-side state, and agent observability as plugins or
-afterthoughts.
+Software work now routinely outlives the client that started it. A coding agent
+may run for an hour, a laptop may sleep, a browser may reload, and a second
+person may need to understand the state before taking over. An editor-shaped
+client cannot provide continuity if it is also the owner of the process and its
+history.
 
-Modern software work is no longer single-machine in spirit:
+That creates three product requirements:
 
-- **durable** — sessions should outlive the operator's network connection
-- **agent-assisted** — work is increasingly delegated to coding agents
-- **observable** — what an agent did in a terminal, and what it asked for over
-  MCP, must be inspectable after the fact
+- **Continuity** — work survives network and client failure without replaying a
+  command or reconstructing a session from chat.
+- **Shared control** — people and coding agents act as explicit, scoped clients
+  of one workspace instead of driving separate hidden environments.
+- **Durable evidence** — policy decisions, agent tool calls, and execution
+  outcomes remain inspectable after the live moment has passed.
 
-The workspace itself should become **server-resident and observable** — not as
-an extension to an editor, but as the substrate the editor lives on top of.
-That is the gap DevIDE addresses.
+DevIDE makes the workspace server-authoritative so those properties are the
+default, not plugins. tmux remains the authority for live process and
+scrollback; workspace records own identity; Policy owns admission; Audit owns
+durable evidence. The cockpit can evolve without taking any of those jobs.
 
-If the runtime is right, the cockpit can be modest. If the runtime is
-wrong, no amount of editor polish recovers it.
+## 3. Mental model — one workspace, peer clients, explicit authorities
 
-## 3. Mental model — one runtime, one cockpit
+Think of DevIDE as a durable workspace with two kinds of peer client:
 
-DevIDE is **one product with one runtime**. The browser cockpit and any MCP
-agent both attach to the same server-side workspace: the same durable tmux
-sessions, the same audit trail.
+- a **human client** uses the browser cockpit to see, type, arrange, and review;
+- an **agent client** uses scoped MCP tools to inspect and act on the same
+  terminal, preview, and artifact surfaces.
 
-There is no fleet, no multi-runtime topology, and no separate "remote mode"
-product line. A workspace runs where the DevIDE server runs; the operator
-reaches it from anywhere over the web, and an agent reaches it over MCP. The
-host underneath is an implementation detail (FP-5).
+Neither client owns the workspace. On every attach or reconnect, the server
+authenticates the principal, authorizes present access, and restores the
+server-owned view. It never treats cached client state as truth and never
+replays a command merely because a connection returned.
+
+“Server-authoritative” does not mean one database reconstructs the world. Each
+concern has one named authority: tmux for the live process and scrollback,
+WorkspaceSource/records for identity, Policy for admission, and Audit for
+durable evidence. The run ledger and agent activity feed are projections over
+that evidence, not competing sources of truth.
+
+This remains a **single-runtime product**, not a fleet. A workspace runs where
+the DevIDE server runs; humans reach it over the web and agents over MCP. The
+host underneath is an implementation detail (FP-5), not a product mode.
 
 ## 4. Product boundary — what the server owns vs. what the client owns
 

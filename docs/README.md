@@ -25,7 +25,8 @@ shaped the way it is before diving into any one subsystem.
 |-----|-------------|
 | [`architecture.md`](architecture.md) | Authoritative narrative: first principles, subsystem map, trust boundaries, authority map. |
 | [`product.md`](product.md) | Product framing — what DevIDE is, the server/client boundary (§4), and the decision rules (§13). |
-| [`glossary.md`](glossary.md) | Term constraints the invariants are stated in (workspace, session, runtime, runner…). |
+| [`glossary.md`](glossary.md) | Term constraints the invariants are stated in (authority, workspace, clients, sessions, policy, evidence). |
+| [`naming-gate.md`](naming-gate.md) | Objective evidence gate for public naming decisions; Casein remains a blocked candidate until every check passes. |
 | [`state_machines.md`](state_machines.md) | The lifecycle state machines (workspace mode, runtime, run status). |
 | [`sequence_diagrams.md`](sequence_diagrams.md) | End-to-end sequences across the web tier, terminals, agents, and audit. |
 
