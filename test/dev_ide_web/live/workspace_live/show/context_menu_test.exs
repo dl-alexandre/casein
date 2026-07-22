@@ -311,6 +311,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
              ) == []
     end
 
+    test "preview pane menu pushes gated preview events and carries the url" do
+      full =
+        ContextMenu.items(
+          "preview_pane",
+          %{"paneId" => "%7", "url" => "https://ws.example.test/app"},
+          owner_assigns()
+        )
+
+      assert item_ids(full) == ["reload", "reopen", "copy-url", "open-tab", "close"]
+
+      reload = Enum.find(full, &(&1[:id] == "reload"))
+      assert reload.event == "preview-pane:refresh"
+      assert reload.params == %{"pane-id" => "%7"}
+
+      assert Enum.find(full, &(&1[:id] == "close")).event == "preview-pane:close"
+      assert Enum.find(full, &(&1[:id] == "copy-url")).copy == "https://ws.example.test/app"
+      assert Enum.find(full, &(&1[:id] == "open-tab")).href == "https://ws.example.test/app"
+    end
+
+    test "preview pane menu omits url items for a missing or non-http url" do
+      no_url = ContextMenu.items("preview_pane", %{"paneId" => "%7"}, owner_assigns())
+      assert item_ids(no_url) == ["reload", "reopen", "close"]
+
+      # A crafted javascript:/relative url still yields no anchor (scheme guard),
+      # though the harmless clipboard copy is kept.
+      for bad <- ["javascript:alert(1)", "/relative/path", "data:text/html,x"] do
+        items =
+          ContextMenu.items("preview_pane", %{"paneId" => "%7", "url" => bad}, owner_assigns())
+
+        refute "open-tab" in item_ids(items)
+      end
+
+      assert ContextMenu.items("preview_pane", %{}, owner_assigns()) == []
+    end
+
     test "run entry menu offers rerun only when a command id exists" do
       with_command =
         ContextMenu.items(

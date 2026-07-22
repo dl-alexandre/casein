@@ -1032,6 +1032,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       phx-update="ignore"
       phx-hook="PreviewPaneOverlay"
       data-pane-id={@pane.id}
+      data-ctx-menu="preview_pane"
+      data-ctx-pane-id={@pane.id}
+      data-ctx-url={@preview.display_url}
       data-pane-rect={pane_rect_json(@pane, @bounds)}
       data-display-url={@preview.display_url}
       data-playback-mode={preview_playback_mode?(@preview)}
