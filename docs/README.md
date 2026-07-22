@@ -1,4 +1,4 @@
-# DevIDE documentation index
+# Casein documentation index
 
 > When implementation and docs diverge, **the docs win: fix the code.** Every
 > doc here is a contract the code is judged against, not a transcript of what
@@ -24,8 +24,9 @@ shaped the way it is before diving into any one subsystem.
 | Doc | Description |
 |-----|-------------|
 | [`architecture.md`](architecture.md) | Authoritative narrative: first principles, subsystem map, trust boundaries, authority map. |
-| [`product.md`](product.md) | Product framing — what DevIDE is, the server/client boundary (§4), and the decision rules (§13). |
-| [`glossary.md`](glossary.md) | Term constraints the invariants are stated in (workspace, session, runtime, runner…). |
+| [`product.md`](product.md) | Product framing — what Casein is, the server/client boundary (§4), and the decision rules (§13). |
+| [`glossary.md`](glossary.md) | Term constraints the invariants are stated in (authority, workspace, clients, sessions, policy, evidence). |
+| [`naming-gate.md`](naming-gate.md) | Casein launch decision, objective naming evidence, accepted risks, and deferred follow-up checks. |
 | [`state_machines.md`](state_machines.md) | The lifecycle state machines (workspace mode, runtime, run status). |
 | [`sequence_diagrams.md`](sequence_diagrams.md) | End-to-end sequences across the web tier, terminals, agents, and audit. |
 
@@ -42,7 +43,7 @@ and is the authoritative home for that slice's invariants. See
 | [`subsystems/web_cockpit.md`](subsystems/web_cockpit.md) | The Phoenix/LiveView web cockpit that renders a workspace's durable terminal, tmux topology, files, runs, audit, and previews into the browser, where the browser is a viewer of a server-side PTY (FP-1), not an argv source. |
 | [`subsystems/agents.md`](subsystems/agents.md) | Detects a workspace's agent capabilities and gives external coding agents narrow, audited MCP tool access to its tmux sessions and preview surfaces. |
 | [`subsystems/previews.md`](subsystems/previews.md) | Opens, controls, observes, and embeds workspace-scoped browser previews for humans and MCP agents within the workspace-origin trust boundary. |
-| [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | The standalone in-repo preview/browser control library — origin guards, an ETS session registry, an adapter behaviour, and an optional Node Playwright bridge — that the DevIDE host wraps for persistence, allowlists, and iframe broadcasts. |
+| [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | The standalone in-repo preview/browser control library — origin guards, an ETS session registry, an adapter behaviour, and an optional Node Playwright bridge — that the Casein host wraps for persistence, allowlists, and iframe broadcasts. |
 | [`subsystems/workspaces.md`](subsystems/workspaces.md) | The source-agnostic workspace aggregate (the addressable unit, §FP-5) plus its pluggable discovery/lifecycle source, redacted observed-state cache with mode resolution, and read-only DB-isolation classifier. |
 | [`subsystems/runtimes.md`](subsystems/runtimes.md) | A record-only registry that projects where a workspace's work has executed (hosts, agent worktrees, lifecycle) without ever holding command-execution authority. |
 | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | Read-only-by-default workspace navigation surfaces — path-safe file I/O, ripgrep search, git context/inspection, and lightweight Elixir introspection — all rooted in one workspace path that callers cannot escape. |
@@ -60,8 +61,8 @@ Change these only by changing the doc first.
 
 | Doc | Surface |
 |-----|---------|
-| [`reference/http_api.md`](reference/http_api.md) | The HTTP/LiveView/MCP route table and Phoenix channel topics — the thin transport tier mapping browser, operator-tool, and agent traffic onto DevIDE context calls. |
-| [`reference/mcp_tools.md`](reference/mcp_tools.md) | The external MCP tool surface: narrow, bearer-gated, workspace-scoped JSON-RPC tools (terminal, preview, annotations) that drive DevIDE's tmux and browser previews, plus the external dev-only Tidewave endpoint. |
+| [`reference/http_api.md`](reference/http_api.md) | The HTTP/LiveView/MCP route table and Phoenix channel topics — the thin transport tier mapping browser, operator-tool, and agent traffic onto `DevIDE.*` context calls. |
+| [`reference/mcp_tools.md`](reference/mcp_tools.md) | The external MCP tool surface: narrow, bearer-gated, workspace-scoped JSON-RPC tools (terminal, preview, annotations) that drive Casein's tmux and browser previews, plus the external dev-only Tidewave endpoint. |
 | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | The operator-facing surface: the `devide runtimes` CLI, mix tasks, the static command allowlist that gates palette/agent runs, and the `C-b` leader-key bindings. |
 | [`deep_links.md`](deep_links.md) | Deep-link URL shapes into the cockpit (workspace/session/pane addressing). |
 | [`workspace_sources.md`](workspace_sources.md) | The `DevIDE.WorkspaceSource` behaviour contract (Boundary 3). |

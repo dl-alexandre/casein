@@ -1,48 +1,49 @@
-# DevIDE
+# Casein
 
-**Durable, agent-native development. Your session lives on the server — close
-the tab, sleep the laptop, lose the network, and the work keeps running.**
+**The workspace that keeps working.**
 
-DevIDE is a workspace runtime with a browser terminal as its cockpit. The
-runtime is the engine: it owns the session, decides what may execute, records
-what happened, and survives disconnects. The browser is just a view of it. When
-an agent is mid-task and your client disconnects, nothing stops: the tmux
-session keeps executing server-side, and on reconnect the terminal **replays
-exactly where you left off**.
+Casein is a server-authoritative workspace where people and coding agents share
+the same durable session. Close the tab, sleep the laptop, or switch machines:
+the processes keep running. Reconnect to the live terminal and durable evidence
+of what happened instead of rebuilding context from chat logs and screenshots.
 
 <!-- TODO: 60-second hero demo. Disconnect → reconnect → agent still running. -->
-![DevIDE: disconnect and reconnect with the agent still running](docs/assets/hero.gif)
+![Casein: disconnect and reconnect with the agent still running](docs/assets/hero.gif)
+
+> **Compatibility note:** Casein is the public product name. Existing modules,
+> commands, package coordinates, and environment variables retain their
+> `DevIDE.*`, `dev_ide`, and `DEV_IDE_*` names for compatibility.
 
 ### Why it exists
 
-Running AI agents on real work means living with crashes, rate limits, and
-dropped connections. Most setups tie the agent's life to the client — when the
-tab dies, the work dies with it. DevIDE puts the session under the runtime, so:
+Agentic development breaks a quiet assumption in most editors: that one client
+owns the process, the state, and the history. Long-running agents, handoffs, and
+unreliable networks need the workspace itself to be durable. Casein puts that
+workspace under server authority, so:
 
-- **Survives disconnects.** Sessions are real server-side tmux sessions
+- **The work stays alive.** Sessions are real server-side tmux sessions
   (`tmux -A` attach-or-create). A tab crash, sleep, or reboot of the *client*
   doesn't touch the work. *(verified: a process in a pane accrued 31s of output
   with zero clients attached.)*
-- **Replays on reconnect.** Reattach and the terminal restores recent
-  scrollback from an in-state buffer plus tmux history — no "where was I?"
+- **People and agents share one workspace.** A human uses the browser cockpit;
+  coding agents use scoped MCP tools. Both reach the same terminal, previews,
+  artifacts, and workspace state instead of parallel hidden environments.
+- **Reconnect restores; it does not rerun.** Reattach and the terminal restores
+  recent scrollback from an in-state buffer plus tmux history — no duplicated
+  command and no “where was I?”
   *(`DevIDE.Terminals.SessionOwner`, `DevIDE.Terminals.Session`)*
-- **Human + agent, side by side.** The agent-pair layout splits a workspace
-  into operator / agent / verify panes, each agent in its own worktree, with
-  clean/dirty status visible. You stay in control without babysitting.
-  *(`DevIDEWeb.WorkspaceLive.Show.AgentsPanel`, `DevIDE.Runtimes`)*
-- **Admission is a server decision, on the record.** Attaching a raw terminal
-  is a server-side policy check (`DevIDE.Policy.can_use_raw_terminal?/1`)
-  recorded in the run ledger, not a client capability. Agent runs that the
-  runtime drives are constrained to the command allowlist; refusals are visible
-  and audited. *(`DevIDE.Policy`, `DevIDE.Commands.Allowlist`)*
+- **Control and evidence stay server-side.** Policy decides what may happen;
+  Audit records attributable decisions and outcomes. The browser and MCP move
+  requests—they do not become authority by holding a connection.
+  *(`DevIDE.Policy`, `DevIDE.Audit`)*
 
 This is how we run dozens of agent sessions a week at MILCGroup.
 
 ### Try it / become a design partner
 
-DevIDE is early, and we're working with a small number of agent-heavy Elixir
-teams as design partners. If context-loss and multi-repo agent safety are real
-pains for you:
+Casein is early, and we're working with a small number of agent-heavy teams as
+design partners. If lost sessions, invisible agent work, and unsafe handoffs are
+real pains for you:
 
 - **Quickstart:** see [`docs/deploy.md`](docs/deploy.md) (operator runbook) and
   [`docs/architecture.md`](docs/architecture.md) (system internals).
@@ -197,7 +198,7 @@ All endpoints are bearer-gated with `DEV_IDE_API_TOKEN`.
 
 ## Safety model
 
-DevIDE operates under explicit safety invariants:
+Casein operates under explicit safety invariants:
 
 1. **Admission is recorded**: Attaching a raw terminal is a server-side policy
    decision (`DevIDE.Policy.can_use_raw_terminal?/1`) written to the run ledger;
