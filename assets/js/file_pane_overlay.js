@@ -238,7 +238,9 @@ export const FilePaneOverlay = {
   makeState(doc, path) {
     return makeEditorState(doc, path, {
       onUpdate: this._onUpdate,
-      onSave: () => this.save()
+      onSave: () => this.save(),
+      // The overlay wrapper is zinc-950; light editor defaults vanish on it.
+      dark: true
     })
   }
 }
