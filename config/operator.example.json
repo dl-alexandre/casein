@@ -1,0 +1,26 @@
+{
+  "contract_version": 1,
+  "deployment_capabilities": [
+    "socket",
+    "reverse_proxy",
+    "deploy_drift",
+    "deploy_status",
+    "poller"
+  ],
+  "deployment": {
+    "default_host": "ide.example.com",
+    "deploy_service": "example-deploy.service",
+    "git_branch": "main",
+    "git_credential_helper": "example-credential-helper",
+    "git_remote": "https://example.com/acme/devide.git",
+    "github_repo": "acme/devide",
+    "last_deploy_path": "/run/example/last-deploy.json",
+    "ls_remote_timeout_ms": 5000,
+    "phase_stale_in_progress_ms": {
+      "activate": 600000
+    },
+    "poller_watch_interval_ms": 30000,
+    "remote_head_cache_ttl_ms": 60000,
+    "stale_in_progress_ms": 2700000
+  }
+}

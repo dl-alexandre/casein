@@ -25,6 +25,12 @@ defmodule DevIDE.Deployment.CapabilitiesTest do
     refute Capabilities.enabled?(:socket)
   end
 
+  test "core defaults to no operator integrations" do
+    Application.delete_env(:dev_ide, :deployment_capabilities)
+
+    assert Capabilities.configured() == []
+  end
+
   test "configured integrations are explicit" do
     Application.put_env(:dev_ide, :deployment_capabilities, [:deploy_drift])
 

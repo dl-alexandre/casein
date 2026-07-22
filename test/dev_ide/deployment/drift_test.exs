@@ -61,6 +61,31 @@ defmodule DevIDE.Deployment.DriftTest do
     assert {:ok, ^sha} = Drift.remote_head(branch: branch, cache_ttl_ms: 60_000)
   end
 
+  test "remote_head is neutral when an operator has not configured a repository" do
+    previous_remote = System.get_env("DEV_IDE_GIT_REMOTE")
+    previous_deployment = Application.get_env(:dev_ide, :deployment)
+
+    System.delete_env("DEV_IDE_GIT_REMOTE")
+
+    Application.put_env(
+      :dev_ide,
+      :deployment,
+      Keyword.delete(previous_deployment || [], :git_remote)
+    )
+
+    on_exit(fn ->
+      restore_env("DEV_IDE_GIT_REMOTE", previous_remote)
+
+      if previous_deployment do
+        Application.put_env(:dev_ide, :deployment, previous_deployment)
+      else
+        Application.delete_env(:dev_ide, :deployment)
+      end
+    end)
+
+    assert {:error, :not_configured} = Drift.remote_head(cache_ttl_ms: 0)
+  end
+
   test "check_async is a no-op when DEV_IDE_DEPLOY_DRIFT_CHECK disables it" do
     prev = System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK")
     System.put_env("DEV_IDE_DEPLOY_DRIFT_CHECK", "0")

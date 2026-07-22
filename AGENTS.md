@@ -92,7 +92,7 @@ The running release also performs a deploy-drift check at boot. If `/etc/devide/
 |----|-------|
 | Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/devide/release` |
 | Use `bash scripts/setup-devbox-agent-pairing.sh` only to **validate** an uncommitted build locally | Treat a manual local deploy as durable without pushing |
-| Keep scripts, templates, MCP behavior, and deploy assets in the checkout (`lib/`, `scripts/`, `rel/overlays/deploy/`, etc.) | Add one-off binaries or config only on the running release tree |
+| Keep product scripts and behavior in this checkout; keep MILC host configuration in the private `MILCGroup/milc-devbox/devide` overlay | Add one-off binaries or config only on the running release tree |
 
 **Workflow that survives auto-release CI:**
 

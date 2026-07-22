@@ -155,32 +155,24 @@ exist and the remote-mode work is preserved for genuine off-box use.
 
 ### 5. Deployment — DevIDE + ops
 
-Canonical artifacts live in
-[`lib/dev_ide/integrations/manager/deploy/`](../../lib/dev_ide/integrations/manager/deploy/) —
-see its README for the install runbook. `mix release` ships them at
-`<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
-activation step (documented in the deploy/README) then copies them into the
-stable `/opt/devide/deploy/` so the running devbox references stable paths
-independent of any release tree or git checkout. This is the reconciliation after commit 7204683 (stable `/opt/devide/deploy/`
-sibling layout chosen so the installed unit survives `mv release` / `git pull`).
-See the deploy artifact README "Why the stable sibling directory?" section for
-the concrete failure mode that motivated the design. Decisions (from the open
-questions, now resolved):
+Canonical host artifacts live in the private
+`MILCGroup/milc-devbox` repository under `devide/`. Its installer writes the
+operator profile to `/etc/devide/operator.json` and stable infrastructure to
+`/opt/devide/deploy/`. Core releases contain only portable application
+artifacts and consume that overlay through the versioned operator-config
+contract. Decisions (from the open questions, now resolved):
 
 - **`mix release`** — already configured in `mix.exs`. Runtime config via
   `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
-- **Supervision: systemd unit**
-  (`lib/dev_ide/integrations/manager/deploy/devide.service`, activated into
-  the stable `/opt/devide/deploy/devide.service`). Host process in the `docker`
+- **Supervision: systemd unit** from the private operator overlay. Host process
+  in the `docker`
   group — native `/data/workspaces` + docker-socket access, matches the
   `devbox-manager` service. A container buys no isolation here since the
   docker-socket mount is root-equivalent regardless.
-- **Database: dedicated Postgres container**
-  (`lib/dev_ide/integrations/manager/deploy/docker-compose.postgres.yml`,
-  activated into the stable `/opt/devide/deploy/docker-compose.postgres.yml`) on
-  `127.0.0.1:15432` (a port
+- **Database: dedicated Postgres container** from the private operator overlay
+  on `127.0.0.1:15432` (a port
   clear of the devbox host's known occupants). The systemd unit brings it up
   `--wait`, then runs `bin/migrate`, then boots the release.
 - **Manager API calls** become `http://127.0.0.1:9000` — no `ssh -fNL` tunnel.
@@ -210,14 +202,10 @@ questions, now resolved):
    plug, `from_session/1`, `ManagerClient`/`Workspaces` auth threading,
    `owns?/2`, Index list-scoping, Show + terminal-channel link access,
    `user_socket` real identity). Static-user fallback preserved for local dev.
-3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
-   (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
-   "all workspaces" view in `WorkspaceLive.Index`,
-   `lib/dev_ide/integrations/manager/deploy/` artifacts (release-bundled at
-   `<release>/deploy/` via `rel/overlays/deploy/`, then activated into stable
-   `/opt/devide/deploy/`): systemd unit, dedicated-Postgres compose, env
-   template, runbook). The post-7204683 path reconciliation ensures release
-   swaps never break the unit.
+3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done.
+   Portable runtime support remains in core; the MILC systemd unit,
+   dedicated-Postgres compose file, environment template, and runbook are
+   maintained by the private `MILCGroup/milc-devbox/devide` overlay.
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
    exposed until auth + scoping are proven.
 

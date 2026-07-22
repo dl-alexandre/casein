@@ -183,7 +183,6 @@ defmodule DevIDE.MixProject do
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format",
-        "cmd ./scripts/check-deploy-sync.sh",
         "test"
       ],
       # CI variant: identical checks, but read-only — verifies instead of
@@ -199,7 +198,6 @@ defmodule DevIDE.MixProject do
         "sobelow --skip --exit",
         "credo --min-priority high",
         "format --check-formatted",
-        "cmd ./scripts/check-deploy-sync.sh",
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]

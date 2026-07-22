@@ -184,6 +184,6 @@ defmodule DevIDE.Deployment.Health do
   defp default_host do
     :dev_ide
     |> Application.get_env(:deployment, [])
-    |> Keyword.get(:default_host, "devide.devbox.milcgroup.com")
+    |> Keyword.get(:default_host, "localhost")
   end
 end

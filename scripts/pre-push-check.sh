@@ -175,8 +175,7 @@ log "linting JS hooks"
 log "fetching Elixir dependencies"
 "${MIX[@]}" deps.get
 
-# precommit.ci also runs ./scripts/check-deploy-sync.sh (via the mix.exs alias),
-# so it is not invoked standalone here — deploy-devbox.yml relies on the alias too.
+# precommit.ci owns the complete read-only Elixir gate used by deploy-devbox.yml.
 log "running read-only precommit checks"
 "${MIX[@]}" precommit.ci
 

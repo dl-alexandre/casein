@@ -31,6 +31,37 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
 | `DNS_CLUSTER_QUERY`         | Optional. For libcluster-style multi-node discovery (unused in v1).   |
 
+### Operator overlay contract
+
+Portable DevIDE does not require host deployment automation. Operators that
+integrate DevIDE with a reverse proxy, socket handoff, deploy poller, or source
+repository can keep those site-specific values outside the core checkout in a
+strict JSON file:
+
+```bash
+export DEV_IDE_OPERATOR_CONFIG_FILE=/etc/devide/operator.json
+```
+
+[`config/operator.example.json`](../config/operator.example.json) documents the
+accepted keys. Unknown keys, capabilities, empty strings, and invalid timeouts
+fail the release at boot. The file is data-only: it cannot load modules or
+execute code. Keep the real file in the operator's private configuration or
+overlay repository and mount it read-only into the release. The JSON is not an
+Elixir configuration language and cannot load application modules, but it is
+still trusted operator input: values such as a Git credential helper may name
+host executables used by deployment diagnostics.
+
+When the file is configured, it owns the operator boundary: site-specific
+values embedded in an older core build are discarded rather than inherited,
+and omitted capabilities default to none. Generic timing defaults may still
+come from core. This lets an overlay start with `{}` as a neutral profile and
+opt into each integration deliberately.
+
+`DEV_IDE_PROFILE=portable`, LAN, and desktop profiles continue to disable all
+operator deployment capabilities even if a file is present. This prevents a
+portable release from becoming dependent on an accidentally mounted host
+profile.
+
 ## Local stack (smoke validation)
 
 The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
@@ -42,11 +73,10 @@ For the single-machine or local-network development flow, including
 mkcert HTTPS, see
 [`docs/lan-access.md`](lan-access.md).
 
-For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
-milc devbox host) deployment, including the stable `/opt/devide/deploy/`
-layout and activation after the 7204683 reconciliation, see
-[`docs/integrations/manager.md`](integrations/manager.md) §5 and the
-self-contained runbook inside `lib/dev_ide/integrations/manager/deploy/README.md`.
+Site-specific systemd units, reverse-proxy topology, and host runbooks belong
+in a private operator overlay. Core consumes those deployments only through
+the versioned JSON contract described above; it does not ship a real site's
+configuration in the release artifact.
 
 ```bash
 # 1. Configure secrets — .env is gitignored.

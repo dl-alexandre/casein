@@ -113,32 +113,13 @@ if [ ! -f "${STATIC_DIR}/cache_manifest.json" ] || \
   exit 1
 fi
 
-# Verify deploy artifacts for devbox activation (rel/overlays/deploy/ + new
-# bin/activate_devbox_deploy helper). These are copied into the stable
-# /opt/devide/deploy/ by the activation step.
-if [ ! -f "${OUTPUT_DIR}/deploy/devide.service" ] || \
-   [ ! -f "${OUTPUT_DIR}/deploy/docker-compose.postgres.yml" ]; then
-  echo "error: extracted tree missing deploy/ artifacts (devide.service + compose)" >&2
-  echo "       required for on-devbox stable layout activation" >&2
-  exit 1
-fi
-if [ ! -x "${OUTPUT_DIR}/bin/activate_devbox_deploy" ]; then
-  echo "warning: activate_devbox_deploy helper missing (non-fatal; activation commands are also documented in deploy/README.md)" >&2
-fi
-
 echo
 echo "release ready at: ${OUTPUT_DIR}"
 echo "  bin/dev_ide   $(file -b "${OUTPUT_DIR}/bin/dev_ide" 2>/dev/null || echo 'script')"
 echo "  bin/devide    present (release operator helper)"
 echo "  bin/migrate   present"
 echo "  bin/clean_devide_socket  present"
-echo "  deploy/       present (devide.service, compose, env.example, README.md)"
-echo "  bin/activate_devbox_deploy  (optional one-command helper for devbox)"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"
-echo
-echo "Devbox activation (after scp + place under /opt/devide/release):"
-echo "  sudo /opt/devide/release/bin/activate_devbox_deploy"
-echo "  # or the explicit commands in the release's deploy/README.md"
 echo
 echo "LAN activation from this release:"
 echo "  sudo ${OUTPUT_DIR}/bin/devide lan up"
