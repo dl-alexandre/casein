@@ -1,6 +1,6 @@
 # DevIDE Architecture
 
-> Version: v2 (raw + MCP reality)
+> Version: v2.1 (raw + MCP reality; authority and evidence freeze)
 >
 > This document is the authoritative narrative for the DevIDE workspace
 > cockpit. When implementation and docs diverge, the docs win: fix the code.
@@ -11,6 +11,10 @@
 > to a single-runtime workspace cockpit: a durable raw terminal over tmux, an
 > MCP tool interface for agents, preview, and an audit/activity feed. The
 > first principles and subsystem map below describe what remains.
+>
+> **2026-07-21 freeze:** authority-per-concern, Audit-first evidence layering,
+> decision/effect/outcome flow, reconnect semantics, and explicit non-goals.
+> Canonical decision record: [`design/authority-evidence-freeze.md`](design/authority-evidence-freeze.md).
 
 ## First principles
 
@@ -25,8 +29,8 @@ in tickets and reviews (e.g. "this violates §FP-3").
 | FP-3  | **The UI reflects runtime truth.** Capabilities, state, and history are rendered from what the server reports — not assumed, not mocked. |
 | FP-5  | **Operators interact with workspaces, not machines.** A workspace is the addressable thing; the host underneath is an implementation detail of where it happens to live. |
 | FP-8  | **The server must function without the cockpit.** Sessions persist and audit accrues without any UI client connected; tmux survives BEAM restarts. |
-| FP-9  | **The cockpit must tolerate disconnect/recovery.** Network drops and server restarts are normal events the UI is designed for — not error states; reattach replays scrollback from tmux. |
-| FP-10 | **Execution leaves reviewable evidence.** Raw-session attaches, agent MCP tool calls, and review-agent runs are traceable through the audit log and the run ledger. |
+| FP-9  | **The cockpit must tolerate disconnect/recovery.** Network drops and server restarts are normal events the UI is designed for — not error states; reattach reauthenticates, reauthorizes, and restores server-owned scrollback from tmux. |
+| FP-10 | **Execution leaves reviewable evidence.** Sensitive decisions and effects are recorded as `Audit.Event`. Run ledger and agent activity are projections over that evidence — not independent authorities. |
 
 > Removed invariants (delegated-execution stack): **FP-4** ("local / remote /
 > fleet are topology variants") and **FP-7** ("fleet composes runtimes") are
@@ -40,6 +44,86 @@ is the wrong shape — find another way.
 See also: [`product.md`](product.md) §4 (server/client boundary) and §13
 (decision rules) for product-level enforcement; [`glossary.md`](glossary.md)
 for the term constraints these invariants are stated in.
+
+## Authority per concern
+
+One server-side authority per concern; **no client authority**. Do not treat
+a single store or event stream as able to reconstruct the whole system.
+
+| Concern | Authority |
+|---|---|
+| Live process and scrollback | tmux |
+| Workspace identity | WorkspaceSource / records |
+| Evidence | Audit storage (`Audit.Event`) |
+| Admission | Policy |
+
+Events explain and audit the workspace; they do not replace tmux as the
+live-execution substrate.
+
+## Evidence layering (Audit-first)
+
+| Layer | Role |
+|---|---|
+| `Audit.Event` | Canonical durable evidence |
+| `Runs.Ledger` | Constrained run/session projection (`run.*` vocabulary) over Audit |
+| `AgentEvents` | Operational projection (own dedupe, replay, retention, privacy) |
+
+**Invariant:** Audit is the canonical evidence log. Run ledger and agent
+activity are typed projections, never independent authorities. Separate
+tables and projections are fine. Shared identity (event / correlation /
+causation IDs) and explicit projection ownership prevent duplicated facts
+with no reconciliation path.
+
+Do **not** fold every MCP mutation or agent lifecycle event into the `run.*`
+vocabulary.
+
+## Decision / effect / outcome flow
+
+Transports are adapters. Cross-subsystem workflows have one explicit
+application-layer owner:
+
+```text
+LiveView / Channel / MCP
+        ↓
+resolve scope → decide policy → perform effect → append evidence
+```
+
+Preferred mutation shape (migrate domain by domain):
+
+```text
+execute(scope, action, input)
+  → validate scope
+  → decide policy
+  → record decision
+  → perform effect when allowed
+  → record outcome
+```
+
+Dependencies remain acyclic. Policy, effect, and evidence orchestration must
+not be duplicated inside Phoenix or MCP handlers. `DevIDE.Terminals.Boundary`
+(policy + ledger recording behind one domain boundary) is the reference shape.
+
+## Reconnect semantics
+
+On reconnect a client must:
+
+1. **Reauthenticate** the principal.
+2. **Reauthorize** current access to the workspace/session.
+3. **Restore** the server-owned view and scrollback (tmux is authority).
+4. **Never** replay commands or accept cached client state as truth.
+
+Historical decisions need not be recomputed. Present access is always rechecked.
+
+## Explicit non-goals (architecture freeze)
+
+- **No universal run ledger** — projections stay specialized.
+- **No new MCP protocol version** — additive tools and result schemas only.
+- **No premature domain `casein_core`** — `dev_ide_core` remains a mechanism package.
+- **No tamper-evidence claim** — append-only API is not tamper-evident storage;
+  hash chaining or signed checkpoints require an explicit threat model first.
+
+Implementation order and slice definitions:
+[`design/authority-evidence-freeze.md`](design/authority-evidence-freeze.md).
 
 ## System purpose
 
@@ -95,6 +179,8 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 ├────────────────────────────────────────────────────────────────────────┤
 │  Boundary 1: MCP agent → DevIDE MCP endpoints                            │
 │    • Authenticated via bearer token (ApiAuth plug)                       │
+│    • Principal must be resolved server-side; audit must not accept       │
+│      caller-forged actor attribution                                     │
 │    • Terminal MCP drives tmux on devide_-prefixed sessions only          │
 │    • Preview MCP drives a scoped preview session                         │
 │    • Agents cannot reach arbitrary tmux sessions or arbitrary argv on    │
@@ -114,9 +200,9 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 │    • PathSafety validates all paths are under allowed roots              │
 │    • No traversal or symlink-escape allowed                              │
 │                                                                          │
-│  Boundary 5: DevIDE → Audit / run ledger                                 │
-│    • Audit records sensitive decisions and agent MCP calls               │
-│    • Run ledger (Runs.Ledger) records raw-session and run events         │
+│  Boundary 5: DevIDE → Audit / projections                                │
+│    • Audit.Event is the canonical evidence record                        │
+│    • Run ledger (Runs.Ledger) and AgentEvents are projections            │
 │    • Audit adapter is swappable: MemoryAdapter → EctoAdapter             │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -197,7 +283,10 @@ Application.get_env(:dev_ide, :isolation_probe, DevIDE.Workspaces.IsolationProbe
 4. **Audit at egress.** Per-subsystem sanitizers strip credentials before JSON
    serialization.
 5. **tmux is the persistence boundary.** A session outlives the LiveView socket
-   and survives BEAM restarts; reattach replays scrollback from tmux history.
+   and survives BEAM restarts; reattach restores server-owned scrollback from
+   tmux history after reauth/reauthz.
+6. **Audit is canonical evidence.** Run ledger and agent activity project from
+   it; they are not parallel authorities.
 
 ## Event plane
 
@@ -207,11 +296,16 @@ DevIDE operates on three time scales:
 |---|---|---|
 | Realtime | Phoenix Channels (terminal), LiveView, PubSub (activity feed) | Browser UI |
 | Near-realtime | HTTP API + LiveView | Browser UI, status readers |
-| Durable | Audit events + run-ledger events | Replay, review, post-mortem |
+| Durable | `Audit.Event` (+ run-ledger / agent-activity projections) | Replay, review, post-mortem |
 
-The durable plane is the safety-critical one. The operational state that
-matters for review must be recoverable from `Audit.Event` + the run ledger
-(`DevIDE.Runs.Ledger`).
+The durable plane is the safety-critical one. Security-relevant review must be
+recoverable from `Audit.Event`. Run summaries and agent session replay are
+projections with their own retention and privacy rules.
+
+**Append-only is not tamper-evident.** The API may prohibit updates/deletes;
+a database operator can still rewrite rows. Tamper evidence requires hash
+chaining, signed checkpoints, or an external immutable sink — and an explicit
+threat model before any product claim.
 
 ## Future extension points (stable interfaces)
 
@@ -221,6 +315,7 @@ matters for review must be recoverable from `Audit.Event` + the run ledger
 | Multi-pane terminal | Recursive split tree per LiveView | (already implemented; see terminal.md) |
 | Idle session GC | `TmuxJanitor` timer | per-window finer-grained policy |
 | Workspace mode enforcement | Deny writes | Fine-grained capability grants |
+| Pure policy evaluation | Policy mixes fact gathering + decide | `evaluate(action, facts) → decision` with facts gathered outside |
 
 ## Document index
 
@@ -228,9 +323,11 @@ matters for review must be recoverable from `Audit.Event` + the run ledger
 |---|---|
 | [`docs/product.md`](product.md) | What DevIDE is, server/client boundary, decision rules |
 | [`docs/glossary.md`](glossary.md) | Operational terminology and event taxonomy |
+| [`docs/design/authority-evidence-freeze.md`](design/authority-evidence-freeze.md) | Authority/evidence freeze and vertical-slice order |
 | [`docs/terminal.md`](terminal.md) | Terminal subsystem architecture (Ghostty, tmux, multi-pane) |
 | [`docs/terminal_mcp.md`](terminal_mcp.md) | Terminal MCP tool surface |
 | [`docs/preview_mcp.md`](preview_mcp.md) | Preview MCP tool surface |
 | [`docs/tmux_control_plane.md`](tmux_control_plane.md) | tmux topology/templates control plane |
 | [`docs/state_machines.md`](state_machines.md) | Session, review-run, mode, and audit lifecycles |
 | [`docs/sequence_diagrams.md`](sequence_diagrams.md) | Key interaction flows |
+| [`docs/subsystems/audit_activity.md`](subsystems/audit_activity.md) | Audit / ledger / activity subsystem |
