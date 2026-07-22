@@ -1052,7 +1052,10 @@ codex_default_args() {
     return 0
   fi
 
-  case "${DEVIDE_CODEX_DEFAULT_YOLO:-0}" in
+  # Paired Codex sessions are operator-owned raw terminals, so match the
+  # interactive Full Access choice unless the caller supplies an execution
+  # policy or explicitly opts back into the workspace-mode defaults with 0.
+  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
     1 | true | TRUE | yes | YES | on | ON)
       printf '%s\0' --dangerously-bypass-approvals-and-sandbox
       return 0
