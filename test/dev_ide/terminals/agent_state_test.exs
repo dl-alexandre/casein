@@ -16,6 +16,24 @@ defmodule DevIDE.Terminals.AgentStateTest do
     :ok
   end
 
+  # Poll for an async-projected value (agent_events rows land eventually, not
+  # in lockstep with the synchronous audit PubSub). Returns the first non-nil
+  # result; flunks after ~2s.
+  defp await_until(fun, attempts \\ 100)
+
+  defp await_until(fun, attempts) when attempts > 0 do
+    case fun.() do
+      nil ->
+        Process.sleep(20)
+        await_until(fun, attempts - 1)
+
+      value ->
+        value
+    end
+  end
+
+  defp await_until(_fun, 0), do: flunk("async projection did not converge before timeout")
+
   defp entry(state, seconds_ago, message \\ nil) do
     %{
       state: state,
@@ -129,8 +147,24 @@ defmodule DevIDE.Terminals.AgentStateTest do
       assert metadata.message == "needs perm"
       assert metadata.agent_session_id == "grok-session-blocked"
 
-      assert [%{event_type: "agent.state_changed"} = transition | _rest] =
-               AgentEvents.recent_for(ws)
+      # The audit event above is synchronous PubSub, but the agent_events row
+      # is projected asynchronously — under load the blocked row can land
+      # after this point (or interleave with the :working row within the same
+      # occurred_at second). Await projection convergence before asserting on
+      # ordering, or recent_for/1 returns the :working transition first.
+      transition =
+        await_until(fn ->
+          case AgentEvents.recent_for(ws) do
+            [
+              %{event_type: "agent.state_changed", agent_session_id: "grok-session-blocked"} = t
+              | _
+            ] ->
+              t
+
+            _ ->
+              nil
+          end
+        end)
 
       assert transition.agent_session_id == "grok-session-blocked"
       assert transition.payload["message_present"] == true
