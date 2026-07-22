@@ -25,7 +25,7 @@ defmodule DevIDE.Previews.FileServer do
 
   # Topology PubSub messages use this atom tag; resolved at runtime so this
   # module never names DevIDE.Terminals.TmuxTopology at compile time.
-  @topology_tag :"Elixir.DevIDE.Terminals.TmuxTopology"
+  @topology_tag Deps.topology_tag()
   # Belt-and-suspenders: stop after this long with no ensure_started / HTTP
   # activity even if the topology signal is missed.
   @idle_ms 15 * 60 * 1000

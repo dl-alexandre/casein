@@ -183,6 +183,9 @@ log "running read-only precommit checks"
 log "checking doc citations resolve (docs/subsystems, docs/reference)"
 ./scripts/check-doc-citations.sh
 
+log "checking preview stays out of the core SCC (extraction guard, PRs #301-#303)"
+MIX="${MIX[*]}" ./scripts/check-scc-guard.sh
+
 if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
   preview_json="$(
     bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true
