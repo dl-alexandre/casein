@@ -8,7 +8,7 @@ defmodule DevIDE.Previews.SocketDetector do
   whose banner has scrolled away, is still found here.
 
   The probe runs `ss` (falling back to `lsof`) through
-  `WorkspaceSource.prepare_local_argv/2`, so it executes **inside the workspace
+  `DevIDE.HostMode.prepare_local_argv/2`, so it executes **inside the workspace
   container** in on-host mode (where the dev server's ports live in the
   container's network namespace) and directly on the host for local workspaces.
 
@@ -19,8 +19,8 @@ defmodule DevIDE.Previews.SocketDetector do
 
   require Logger
 
-  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
-  alias DevIDE.Workspaces
+  alias DevIDE.HostMode
+  alias DevIDE.Previews.Deps
 
   @max_ports 8
 
@@ -119,7 +119,7 @@ defmodule DevIDE.Previews.SocketDetector do
   def ports_for_workspace_cwd(_, _, _), do: []
 
   defp host_cwd(workspace) do
-    case Workspaces.safe_host_path(workspace) do
+    case Deps.impl(:workspaces).safe_host_path(workspace) do
       {:ok, path} -> {:ok, path}
       _ -> {:error, :no_host_path}
     end
@@ -157,7 +157,7 @@ defmodule DevIDE.Previews.SocketDetector do
           _ -> []
         end
 
-      source_ports ++ host_cwd_ports(cwd, WorkspaceSource.on_host?())
+      source_ports ++ host_cwd_ports(cwd, HostMode.on_host?())
     end
   end
 
@@ -178,7 +178,7 @@ defmodule DevIDE.Previews.SocketDetector do
       ["sh", "-c", @attached_probe]
     else
       argv = ["sh", "-c", @probe]
-      WorkspaceSource.prepare_local_argv(argv)
+      HostMode.prepare_local_argv(argv)
     end
   end
 

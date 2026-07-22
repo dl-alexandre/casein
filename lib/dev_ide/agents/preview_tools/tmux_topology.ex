@@ -4,7 +4,7 @@ defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
   alias DevIDE.Agents.AgentPane
   alias DevIDE.Agents.PreviewTools.ControlSession
   alias DevIDE.PreviewPanes
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Previews.Deps
 
   defdelegate split_preview_pane(workspace, url, opts), to: ControlSession
 
@@ -49,7 +49,7 @@ defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
 
   def repair_misplaced_preview_pane(%{pane_id: pane_id, tmux_session: tmux_session})
       when is_binary(pane_id) and is_binary(tmux_session) do
-    _ = tmux_adapter().kill_pane(tmux_session, pane_id)
+    _ = terminals().kill_pane(tmux_session, pane_id)
     _ = PreviewPanes.deregister(pane_id)
     :ok
   end
@@ -69,7 +69,7 @@ defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
 
       _ ->
         with {:ok, pane} <-
-               AgentPane.find(tmux_session, tmux_adapter(), allow_process_fallback: true) do
+               AgentPane.find(tmux_session, terminals().adapter(), allow_process_fallback: true) do
           {:ok,
            %{
              placement: "beside_agent",
@@ -84,7 +84,7 @@ defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
   def pane_window_id(tmux_session, pane_id)
       when is_binary(tmux_session) and is_binary(pane_id) do
     tmux_session
-    |> tmux_adapter().list_session_panes()
+    |> terminals().list_session_panes()
     |> Enum.find(&(Map.get(&1, :id) == pane_id))
     |> case do
       %{window_id: window_id} -> window_id
@@ -114,7 +114,5 @@ defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
     end
   end
 
-  defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
-  end
+  defp terminals, do: Deps.impl(:terminals)
 end

@@ -2,17 +2,18 @@ defmodule DevIDE.Agents.PreviewTools.PortProbing do
   @moduledoc false
 
   alias DevIDE.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
+  alias DevIDE.Previews.Deps
   alias DevIDE.Previews.WorkspaceContext
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.{PreviewLauncher, Runtime}
+  # Struct-only leaf (not in the runtime SCC).
+  alias DevIDE.Runtimes.Runtime
 
   @doc "Ensure the runtime-owned preview server for the scoped agent session."
   @spec ensure_server_here(map(), map()) :: {:ok, map()} | {:error, term()}
   def ensure_server_here(workspace, params \\ %{}) do
     with session when is_binary(session) <- string_param(params, :tmux_session),
          {:ok, %Runtime{} = runtime} <- runtime_for_tmux_session(workspace, session),
-         %{} = preview_server <- Runtimes.runtime_preview_server(runtime),
-         :ok <- PreviewLauncher.ensure_started(runtime) do
+         %{} = preview_server <- Deps.impl(:runtimes).runtime_preview_server(runtime),
+         :ok <- Deps.impl(:runtimes).ensure_preview_server_started(runtime) do
       {:ok,
        %{
          status: "queued",
@@ -141,7 +142,7 @@ defmodule DevIDE.Agents.PreviewTools.PortProbing do
     workspace_id = workspace_id(workspace)
 
     %{"workspace_id" => workspace_id}
-    |> Runtimes.list_runtimes()
+    |> Deps.impl(:runtimes).list_runtimes()
     |> Enum.find(fn %Runtime{} = runtime ->
       runtime.tmux_session_id == tmux_session and runtime.status not in ["cleaned", "expired"]
     end)

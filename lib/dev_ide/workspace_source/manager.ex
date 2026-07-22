@@ -160,19 +160,16 @@ defmodule DevIDE.WorkspaceSource.Manager do
   def safe_host_loc(%{path: path}) when is_binary(path),
     do: safe_host_loc(%Workspace{path: path})
 
-  ## Integration-specific configuration — all env-var reads live here.
+  ## Integration-specific configuration — env-var reads for on-host mode
+  ## live in `DevIDE.HostMode` (leaf, no SCC edges). Manager keeps the
+  ## public surface and delegates.
 
   @doc """
   True when DevIDE runs colocated on the integration host. Set via
   `:dev_ide, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
-  def on_host? do
-    case Application.get_env(:dev_ide, :on_devbox) do
-      nil -> System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes)
-      val -> !!val
-    end
-  end
+  defdelegate on_host?(), to: DevIDE.HostMode
 
   @doc """
   Compose service to exec into for command/terminal execution in on-host
@@ -180,11 +177,7 @@ defmodule DevIDE.WorkspaceSource.Manager do
   `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
   """
   @spec exec_service() :: String.t()
-  def exec_service do
-    Application.get_env(:dev_ide, :devbox_exec_service) ||
-      System.get_env("DEV_IDE_DEVBOX_EXEC_SERVICE") ||
-      "onebackend-v3"
-  end
+  defdelegate exec_service(), to: DevIDE.HostMode
 
   @doc """
   Working directory inside the exec service container.
@@ -195,11 +188,7 @@ defmodule DevIDE.WorkspaceSource.Manager do
   changing terminal/session code.
   """
   @spec exec_workdir() :: String.t()
-  def exec_workdir do
-    Application.get_env(:dev_ide, :devbox_exec_workdir) ||
-      System.get_env("DEV_IDE_DEVBOX_EXEC_WORKDIR") ||
-      "/app"
-  end
+  defdelegate exec_workdir(), to: DevIDE.HostMode
 
   @doc "SSH host for remote integration workspaces, or nil for local-only mode."
   @spec remote_ssh_host() :: String.t() | nil
@@ -211,40 +200,11 @@ defmodule DevIDE.WorkspaceSource.Manager do
   ## Generic command-shape overrides — called from DevIDE.Workspaces.
 
   @impl true
-  def prepare_local_argv(argv) when is_list(argv), do: prepare_local_argv(argv, [])
+  def prepare_local_argv(argv) when is_list(argv), do: DevIDE.HostMode.prepare_local_argv(argv)
 
   @impl true
   def prepare_local_argv(argv, opts) when is_list(argv) and is_list(opts) do
-    if on_host?(), do: compose_exec_argv(argv, opts), else: argv
-  end
-
-  defp compose_exec_argv(argv, opts) do
-    docker_bin = System.find_executable("docker") || "/usr/bin/docker"
-    tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
-    argv = maybe_bootstrap_normal_cwd(argv, Keyword.get(opts, :normal_cwd))
-
-    [docker_bin, "compose"] ++
-      project_dir_args(opts) ++
-      ["exec"] ++ tty_flag ++ workdir_args(opts) ++ [exec_service() | argv]
-  end
-
-  # `docker compose` finds its project from the cwd. Callers that launch
-  # via a PTY (Ghostty.PTY) can't set the process cwd, so they pass the
-  # workspace dir as `:cwd` and we pin it with `--project-directory` —
-  # otherwise compose looks in DevIDE's own dir and reports "service not
-  # running". System.cmd callers that already pass `cd: cwd` can omit it.
-  defp project_dir_args(opts) do
-    case Keyword.get(opts, :cwd) do
-      dir when is_binary(dir) and dir != "" -> ["--project-directory", dir]
-      _ -> []
-    end
-  end
-
-  defp workdir_args(opts) do
-    case Keyword.get(opts, :workdir) do
-      dir when is_binary(dir) and dir != "" -> ["--workdir", dir]
-      _ -> ["--workdir", exec_workdir()]
-    end
+    DevIDE.HostMode.prepare_local_argv(argv, opts)
   end
 
   @impl true
@@ -277,30 +237,6 @@ defmodule DevIDE.WorkspaceSource.Manager do
   end
 
   ## Internals
-
-  defp maybe_bootstrap_normal_cwd(argv, normal_cwd)
-       when is_binary(normal_cwd) and normal_cwd != "" do
-    normalized = Path.expand(normal_cwd)
-
-    if under_root?(normalized, @on_host_workspaces_root) and normalized != exec_workdir() do
-      parent = Path.dirname(normalized)
-
-      script =
-        [
-          "mkdir -p #{shell_quote(parent)}",
-          "if [ ! -e #{shell_quote(normalized)} ]; then ln -s #{shell_quote(exec_workdir())} #{shell_quote(normalized)}; fi",
-          "cd #{shell_quote(normalized)}",
-          "exec #{shell_join(argv)}"
-        ]
-        |> Enum.join(" && ")
-
-      ["sh", "-lc", script]
-    else
-      argv
-    end
-  end
-
-  defp maybe_bootstrap_normal_cwd(argv, _normal_cwd), do: argv
 
   # sobelow_skip ["CI.System"]
   defp compose_service_running?(host_cwd) do
@@ -360,8 +296,6 @@ defmodule DevIDE.WorkspaceSource.Manager do
     rel = Path.relative_to(path, root)
     rel != path and not String.starts_with?(rel, "..")
   end
-
-  defp shell_join(argv), do: Enum.map_join(argv, " ", &shell_quote/1)
 
   defp shell_quote(value) do
     "'" <> (value |> to_string() |> String.replace("'", "'\\''")) <> "'"

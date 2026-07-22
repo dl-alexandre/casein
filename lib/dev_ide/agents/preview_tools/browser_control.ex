@@ -8,7 +8,7 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
   not a delivery receipt from every open tab.
   """
 
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias DevIDE.Previews.Deps
   alias DevIDE.PreviewActivity
 
   @pubsub DevIDE.PubSub
@@ -73,7 +73,7 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
     timeout = Keyword.get(opts, :timeout_ms, @default_action_timeout_ms)
 
     if is_binary(workspace_id) and workspace_id != "" do
-      workspace_ids = WorkspaceAliases.viewer_ids(workspace_id)
+      workspace_ids = Deps.impl(:workspaces).viewer_ids(workspace_id)
       Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
 
       payload =
@@ -105,7 +105,7 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
       id when is_binary(id) and id != "" ->
         payload = event_payload(id, action, opts)
 
-        for viewer_id <- WorkspaceAliases.viewer_ids(id) do
+        for viewer_id <- Deps.impl(:workspaces).viewer_ids(id) do
           :ok =
             Phoenix.PubSub.broadcast(
               @pubsub,
