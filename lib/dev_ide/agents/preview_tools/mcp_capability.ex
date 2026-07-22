@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewMCPCapability do
+defmodule DevIDE.Agents.PreviewTools.MCPCapability do
   @moduledoc """
   Detects the DevIDE-hosted preview-control MCP endpoint.
 

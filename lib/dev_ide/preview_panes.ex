@@ -17,7 +17,7 @@ defmodule DevIDE.PreviewPanes do
 
   alias DevIDE.Audit
   alias DevIDE.Panes.Events, as: PaneEvents
-  alias DevIDE.Panes.Preview, as: PreviewPane
+  alias DevIDE.Previews.Pane, as: PreviewPane
   alias DevIDE.PreviewActivity
   alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl

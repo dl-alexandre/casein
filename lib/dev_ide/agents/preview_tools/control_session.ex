@@ -4,7 +4,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   alias DevIDE.Agents.PreviewTools.{PortProbing, SurfaceDiscovery}
   alias DevIDE.Agents.PreviewTools.TmuxTopology, as: PreviewTmuxTopology
   alias DevIDE.PreviewActivity
-  alias DevIDE.Agents.BrowserControl
+  alias DevIDE.Agents.PreviewTools.BrowserControl
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews

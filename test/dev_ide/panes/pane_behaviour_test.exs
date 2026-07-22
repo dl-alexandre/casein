@@ -34,7 +34,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
   describe "pane type dispatch" do
     test "impl/1 resolves built-in implementations" do
       assert PaneBehaviour.impl(:terminal) == DevIDE.Panes.Terminal
-      assert PaneBehaviour.impl(:preview) == DevIDE.Panes.Preview
+      assert PaneBehaviour.impl(:preview) == DevIDE.Previews.Pane
     end
 
     test "impl/1 honors :pane_impls override" do

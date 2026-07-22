@@ -19,14 +19,14 @@ defmodule DevIDE.Agents.TidewaveCapability do
   """
 
   alias DevIDE.Agents.Capability
-  alias DevIDE.Previews.EnvPorts
+  alias DevIDE.Previews
 
   @spec detect() :: Capability.t()
   def detect do
     case base_url() do
       url when is_binary(url) ->
-        port = EnvPorts.current_port()
-        preview? = EnvPorts.preview_env_instance?()
+        port = Previews.current_port()
+        preview? = Previews.preview_env_instance?()
 
         %Capability{
           kind: :tidewave,

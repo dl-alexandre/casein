@@ -11,7 +11,7 @@ defmodule DevIDE.Agents.TidewaveMCP do
   """
 
   alias DevIDE.Agents.TidewaveCapability
-  alias DevIDE.Previews.EnvRegistry
+  alias DevIDE.Previews
 
   @doc "MCP server key for agent client configs."
   @spec server_key(map() | nil) :: String.t()
@@ -122,14 +122,14 @@ defmodule DevIDE.Agents.TidewaveMCP do
 
       instance =
         if is_binary(preview_env_id) do
-          EnvRegistry.get(preview_env_id)
+          Previews.get(preview_env_id)
         else
-          List.first(EnvRegistry.running_instances())
+          List.first(Previews.running_instances())
         end
 
       case instance do
         inst when is_map(inst) ->
-          EnvRegistry.tidewave_mcp_url(inst)
+          Previews.tidewave_mcp_url(inst)
 
         _ ->
           nil

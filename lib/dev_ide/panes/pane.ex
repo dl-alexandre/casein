@@ -109,7 +109,7 @@ defmodule DevIDE.Panes.Pane do
   @optional_callbacks render_payload: 1, handle_input: 2, set_active: 2, list: 1
 
   @terminal_impl :"Elixir.DevIDE.Panes.Terminal"
-  @preview_impl :"Elixir.DevIDE.Panes.Preview"
+  @preview_impl :"Elixir.DevIDE.Previews.Pane"
   @file_impl :"Elixir.DevIDE.Panes.FilePane"
   @impls %{terminal: @terminal_impl, preview: @preview_impl, file: @file_impl}
 

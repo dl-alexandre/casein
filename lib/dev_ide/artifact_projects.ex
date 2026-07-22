@@ -303,7 +303,7 @@ defmodule DevIDE.ArtifactProjects do
   defp artifact_public_origin do
     case Application.get_env(:dev_ide, :artifact_public_url) ||
            Application.get_env(:dev_ide, :preview_app_url) do
-      url when is_binary(url) and url != "" -> DevIDE.Previews.Url.origin_of(url)
+      url when is_binary(url) and url != "" -> DevIDE.Previews.origin_of(url)
       _ -> nil
     end
   end

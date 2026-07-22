@@ -4,7 +4,7 @@ defmodule DevIDE.Agents.TerminalMCPCapability do
 
   The endpoint is served by the web layer, but capability detection lives in
   context code. The base URL is resolved through a configured MFA to keep that
-  dependency inverted — mirrors `DevIDE.Agents.PreviewMCPCapability`.
+  dependency inverted — mirrors `DevIDE.Agents.PreviewTools.MCPCapability`.
   """
 
   alias DevIDE.Agents.{Capability, MCPUrls, TerminalTools}

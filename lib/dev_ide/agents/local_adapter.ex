@@ -164,7 +164,7 @@ defmodule DevIDE.Agents.LocalAdapter do
 
   defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
   defp artifact_mcp_capability, do: DevIDE.Agents.ArtifactMCPCapability.detect()
-  defp preview_mcp_capability, do: DevIDE.Agents.PreviewMCPCapability.detect()
+  defp preview_mcp_capability, do: DevIDE.Agents.PreviewTools.MCPCapability.detect()
   defp terminal_mcp_capability, do: DevIDE.Agents.TerminalMCPCapability.detect()
 
   defp detect_fff(root) do

@@ -12,7 +12,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   """
 
   alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
-  alias DevIDE.Previews.EnvRegistry
+  alias DevIDE.Previews
   alias DevIDE.Audit
   alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Export.Sanitizer
@@ -296,7 +296,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   defp preview_environments_payload do
-    EnvRegistry.running_instances()
+    Previews.running_instances()
     |> Enum.map(fn inst ->
       %{
         id: inst["id"],
@@ -304,8 +304,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
         port: inst["port"],
         kind: inst["kind"],
         started_at: inst["started_at"],
-        tidewave_url: EnvRegistry.tidewave_url(inst),
-        tidewave_mcp_url: EnvRegistry.tidewave_mcp_url(inst)
+        tidewave_url: Previews.tidewave_url(inst),
+        tidewave_mcp_url: Previews.tidewave_mcp_url(inst)
       }
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
       |> Map.new()

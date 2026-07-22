@@ -34,7 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   alias DevIDE.Panes
   alias DevIDE.Panes.Pane
   alias DevIDE.Policy
-  alias DevIDE.Previews.FileServer
+  alias DevIDE.Previews
   alias DevIDE.Workspaces
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
@@ -335,7 +335,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
     anchor = link_anchor_pane_id(socket, params)
 
     if is_binary(tmux_session) and tmux_session != "" and is_binary(anchor) do
-      case FileServer.ensure_started(socket.assigns.workspace, tmux_session: tmux_session) do
+      case Previews.ensure_started(socket.assigns.workspace, tmux_session: tmux_session) do
         {:ok, port} ->
           url = "http://127.0.0.1:#{port}/" <> URI.encode(rel)
 

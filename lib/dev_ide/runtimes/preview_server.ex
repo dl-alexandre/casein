@@ -7,7 +7,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
   a launcher needs to start the runtime's own preview server from its worktree.
   """
 
-  alias DevIDE.Previews.EnvPorts
+  alias DevIDE.Previews
   alias DevIDE.Runtimes.Profile
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
@@ -357,7 +357,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
   end
 
   defp allocate_port(runtime_id, used_ports) do
-    {min, max} = EnvPorts.runtime_port_range()
+    {min, max} = Previews.runtime_port_range()
     slots = max - min + 1
     start = :erlang.phash2(runtime_id, slots)
     used = MapSet.new(used_ports)

@@ -7,7 +7,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
   bounded runtime and output.
   """
 
-  alias DevIDE.Previews.EnvRegistry
+  alias DevIDE.Previews
 
   @max_output 64 * 1024
 
@@ -62,7 +62,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
   defp preview_command(line, argv, opts) do
     case Keyword.get(opts, :workspace) do
       workspace when is_map(workspace) ->
-        DevIDE.Previews.Commands.run(workspace, line, argv, opts)
+        Previews.run(workspace, line, argv, opts)
 
       _ ->
         {:error, :not_allowed}
@@ -142,9 +142,9 @@ defmodule DevIDE.Terminals.InspectionCommands do
     ]
 
     preview_lines =
-      EnvRegistry.running_instances()
+      Previews.running_instances()
       |> Enum.flat_map(fn inst ->
-        case EnvRegistry.tidewave_mcp_url(inst) do
+        case Previews.tidewave_mcp_url(inst) do
           url when is_binary(url) ->
             ["  #{inst["id"]}: #{url}"]
 

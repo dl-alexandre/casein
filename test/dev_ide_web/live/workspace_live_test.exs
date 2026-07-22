@@ -2529,7 +2529,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert {:ok, %{request_id: iframe_request_id}} =
-             DevIDE.Agents.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
+             DevIDE.Agents.PreviewTools.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
                actor_id: "agent-1"
              )
 
@@ -2541,7 +2541,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     assert {:ok, %{request_id: page_request_id}} =
-             DevIDE.Agents.BrowserControl.reload_page(%{id: "ws-1"}, actor_id: "agent-1")
+             DevIDE.Agents.PreviewTools.BrowserControl.reload_page(%{id: "ws-1"}, actor_id: "agent-1")
 
     assert_push_event(view, "devide:reload_page", %{
       "action" => "reload_page",
@@ -2608,7 +2608,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     broadcast_preview_pane(view, "%2", "http://localhost:5173")
 
     assert {:ok, %{request_id: request_id}} =
-             DevIDE.Agents.BrowserControl.focus_preview_pane(
+             DevIDE.Agents.PreviewTools.BrowserControl.focus_preview_pane(
                %{id: "ws-1"},
                tmux_session,
                "%2",

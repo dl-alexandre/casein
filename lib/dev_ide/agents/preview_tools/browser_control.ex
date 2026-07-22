@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.BrowserControl do
+defmodule DevIDE.Agents.PreviewTools.BrowserControl do
   @moduledoc """
   Workspace-scoped browser control for connected DevIDE LiveView clients.
 

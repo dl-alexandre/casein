@@ -12,7 +12,7 @@ defmodule DevIDE.MCP.Scope do
   preview surface identity handling here.
   """
 
-  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.PreviewControl
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
@@ -262,7 +262,7 @@ defmodule DevIDE.MCP.Scope do
   end
 
   defp preview_session_workspace_id(%{"session_id" => session_id}) when is_integer(session_id) do
-    case Registry.get(session_id) do
+    case PreviewControl.get(session_id) do
       %{preview: %{workspace_id: workspace_id}} -> workspace_id
       _ -> nil
     end

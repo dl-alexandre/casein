@@ -19,7 +19,12 @@ defmodule DevIDE.Previews do
 
   alias DevIDE.Previews.{
     Artifacts,
+    Commands,
     ControlSession,
+    Embeddability,
+    EnvPorts,
+    EnvRegistry,
+    FileServer,
     Identity,
     Preview,
     Surface,
@@ -27,6 +32,45 @@ defmodule DevIDE.Previews do
     Url,
     WorkspaceContext
   }
+
+  # --- Facade delegations (slice 2): external callers enter via Previews -----
+
+  # Url — origin extraction + link predicates used outside the preview domain
+  defdelegate origin_of(url), to: Url
+  defdelegate normalize_localhost(url), to: Url
+  defdelegate http_url?(url), to: Url
+  defdelegate localhost_url?(url), to: Url
+  defdelegate within_origin?(path_or_url, base_url, allowed_origins), to: Url
+
+  # EnvRegistry
+  defdelegate home(), to: EnvRegistry
+  defdelegate instances_dir(), to: EnvRegistry
+  defdelegate list_instances(), to: EnvRegistry
+  defdelegate get(id), to: EnvRegistry
+  defdelegate running_instances(), to: EnvRegistry
+  defdelegate socket_path(instance), to: EnvRegistry
+  defdelegate tidewave_url(instance), to: EnvRegistry
+  defdelegate tidewave_mcp_url(instance), to: EnvRegistry
+
+  # EnvPorts
+  defdelegate port_range(), to: EnvPorts
+  defdelegate runtime_port_range(), to: EnvPorts
+  defdelegate router_port(), to: EnvPorts
+  defdelegate router_admin_port(), to: EnvPorts
+  defdelegate preview_env_port?(port), to: EnvPorts
+  defdelegate runtime_preview_port?(port), to: EnvPorts
+  defdelegate current_port(), to: EnvPorts
+  defdelegate preview_env_instance?(), to: EnvPorts
+
+  # Commands
+  defdelegate run(workspace, line, argv, opts \\ []), to: Commands
+
+  # FileServer
+  defdelegate ensure_started(workspace, opts \\ []), to: FileServer
+
+  # Embeddability
+  defdelegate frame_blocked_url?(url, opts \\ []), to: Embeddability
+  defdelegate frame_blocked?(headers), to: Embeddability
 
   @type preview :: Preview.t()
   @type workspace :: map()
@@ -292,7 +336,7 @@ defmodule DevIDE.Previews do
     case Application.get_env(:dev_ide, :preview_app_url) do
       app_url when is_binary(app_url) and app_url != "" ->
         app_url
-        |> DevIDE.Previews.Url.origin_of()
+        |> Url.origin_of()
         |> case do
           origin when is_binary(origin) -> origin <> path
           _ -> path
