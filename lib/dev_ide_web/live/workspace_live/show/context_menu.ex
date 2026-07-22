@@ -309,6 +309,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
     end
   end
 
+  # File-pane editor body. Like "editor" but scoped to a file pane: the clipboard
+  # + save actions run against the pane's own CodeMirror view, "Copy path" copies
+  # the active tab's path, and rename/delete are intentionally absent (those live
+  # on the file tree). All client actions dispatch to the pane overlay's root.
+  def items("file_pane_editor", %{"targetId" => target_id} = ctx, assigns) do
+    with true <- valid_dom_id?(target_id),
+         true <- ctx["hasFile"] == "true" do
+      target = "[id='" <> target_id <> "']"
+      path = ctx["path"]
+      has_selection = ctx["hasSelection"] == "true"
+      can_edit? = can_edit?(assigns)
+
+      clipboard = [
+        %{
+          id: "cut",
+          label: "Cut",
+          action: "cut",
+          target: target,
+          disabled: not (has_selection and can_edit?)
+        },
+        %{id: "copy", label: "Copy", action: "copy", target: target, disabled: not has_selection},
+        %{id: "paste", label: "Paste", action: "paste", target: target, disabled: not can_edit?},
+        %{id: "select-all", label: "Select all", action: "select_all", target: target}
+      ]
+
+      save =
+        if can_edit?, do: [%{id: "save", label: "Save", action: "save", target: target}], else: []
+
+      path_items =
+        if is_binary(path) and path != "" and byte_size(path) <= @max_ctx_value_bytes do
+          [%{id: "copy-path", label: "Copy path", copy: path}]
+        else
+          []
+        end
+
+      agent =
+        if tmux_mutations?(assigns) and has_selection do
+          [
+            %{divider: true},
+            %{
+              id: "send-agent",
+              label: "Send selection to agent",
+              action: "send_to_agent",
+              target: target
+            },
+            %{id: "explain", label: "Ask agent to explain", action: "explain", target: target}
+          ]
+        else
+          []
+        end
+
+      clipboard ++ [%{divider: true}] ++ save ++ path_items ++ agent
+    else
+      _ -> []
+    end
+  end
+
+  # A file-pane tab. Close / Close others route back to the overlay (which owns
+  # the dirty-buffer confirm) via client actions carrying the tab path; "Copy
+  # path" is a direct clipboard copy.
+  def items("file_pane_tab", %{"path" => path, "targetId" => target_id} = _ctx, _assigns)
+      when is_binary(path) and path != "" and byte_size(path) <= @max_ctx_value_bytes do
+    if valid_dom_id?(target_id) do
+      target = "[id='" <> target_id <> "']"
+
+      [
+        %{
+          id: "close",
+          label: "Close",
+          action: "close_tab",
+          target: target,
+          detail: %{path: path}
+        },
+        %{
+          id: "close-others",
+          label: "Close others",
+          action: "close_others",
+          target: target,
+          detail: %{path: path}
+        },
+        %{divider: true},
+        %{id: "copy-path", label: "Copy path", copy: path}
+      ]
+    else
+      []
+    end
+  end
+
   def items("run_entry", %{"runId" => run_id} = ctx, _assigns) when is_binary(run_id) do
     command_id = ctx["commandId"]
 
@@ -539,7 +627,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
                 phx-click={
                   JS.dispatch("devide:ctx-action",
                     to: item.target,
-                    detail: %{action: item.action}
+                    detail: Map.merge(%{action: item.action}, item[:detail] || %{})
                   )
                   |> JS.push("ctx:close")
                 }
