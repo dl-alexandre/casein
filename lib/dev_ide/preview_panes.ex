@@ -32,6 +32,9 @@ defmodule DevIDE.PreviewPanes do
 
   @table :dev_ide_preview_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
+  # Register/deregister wait on offloaded I/O that can include a 15s browser
+  # navigate; the 5s GenServer default was the timeout-while-server-still-blocked trap.
+  @lifecycle_call_timeout 30_000
 
   @type registration :: %{
           id: String.t(),
@@ -58,12 +61,12 @@ defmodule DevIDE.PreviewPanes do
 
   @spec register(map()) :: {:ok, registration()} | {:error, term()}
   def register(attrs) when is_map(attrs) do
-    GenServer.call(__MODULE__, {:register, attrs})
+    GenServer.call(__MODULE__, {:register, attrs}, @lifecycle_call_timeout)
   end
 
   @spec deregister(String.t()) :: :ok | {:error, :not_found}
   def deregister(pane_id) when is_binary(pane_id) do
-    GenServer.call(__MODULE__, {:deregister, pane_id})
+    GenServer.call(__MODULE__, {:deregister, pane_id}, @lifecycle_call_timeout)
   end
 
   @spec navigate(String.t(), String.t()) :: {:ok, registration()} | {:error, term()}
@@ -134,7 +137,20 @@ defmodule DevIDE.PreviewPanes do
 
   @spec get_by_session(integer()) :: registration() | nil
   def get_by_session(session_id) when is_integer(session_id) do
-    GenServer.call(__MODULE__, {:get_by_session, session_id})
+    case ets_lookup_by_session(session_id) do
+      nil ->
+        # Self-call guard: reuse-navigate → Control.record_control_activity →
+        # get_by_session must not GenServer.call into the process that is already
+        # inside handle_call (deadlock). ETS miss from the server process is nil.
+        if Process.whereis(__MODULE__) == self() do
+          nil
+        else
+          GenServer.call(__MODULE__, {:get_by_session, session_id})
+        end
+
+      registration ->
+        registration
+    end
   end
 
   @spec list_for_workspace(String.t()) :: [registration()]
@@ -179,46 +195,85 @@ defmodule DevIDE.PreviewPanes do
       write_concurrency: true
     ])
 
-    {:ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
+    {:ok, empty_state()}
+  end
+
+  defp empty_state do
+    %{
+      subscriptions: MapSet.new(),
+      workspace_index: %{},
+      pending_ops: %{},
+      inflight_panes: %{},
+      op_queue: %{},
+      rehydrate_keys: %{}
+    }
   end
 
   @impl true
-  def handle_call({:register, attrs}, _from, state) do
-    case do_register(attrs, state) do
-      {:ok, registration, state} -> {:reply, {:ok, registration}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
+  def handle_call({:register, attrs}, from, state) do
+    pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
+
+    # Heartbeat short-circuit: ETS-only, replies immediately (no offload).
+    case is_binary(pane_id) && lookup_by_pane(pane_id) do
+      %{} = existing ->
+        if truthy_param(attrs, "heartbeat") || truthy_param(attrs, :heartbeat) do
+          broadcast_registered(existing, :heartbeat)
+          refresh_topology(existing.tmux_session)
+          {:reply, {:ok, existing}, state}
+        else
+          enqueue_or_start_register(attrs, pane_id, from, state)
+        end
+
+      _ ->
+        enqueue_or_start_register(attrs, pane_id, from, state)
     end
   end
 
-  def handle_call({:deregister, pane_id}, _from, state) do
-    case do_deregister(pane_id, state) do
-      {:ok, state} -> {:reply, :ok, state}
-      {:error, reason, state} -> {:reply, {:error, reason}, state}
-    end
+  def handle_call({:deregister, pane_id}, from, state) do
+    enqueue_or_start_deregister(pane_id, from, state, persist?: true)
   end
 
   def handle_call({:navigate, pane_id, path_or_url}, from, state) do
-    offload_browser_call(from, fn -> do_navigate(pane_id, path_or_url) end, state)
+    offload_op(from, :browser, nil, nil, fn -> do_navigate(pane_id, path_or_url) end, state)
   end
 
   def handle_call({:history_action, pane_id, action}, from, state) do
-    offload_browser_call(from, fn -> do_history_action(pane_id, action) end, state)
+    offload_op(from, :browser, nil, nil, fn -> do_history_action(pane_id, action) end, state)
   end
 
   def handle_call({:sync_control_navigation, session_id, current_url}, from, state) do
-    {registration, state} =
-      case lookup_by_session(state.workspace_index, session_id) do
-        nil -> get_or_rehydrate_by_session(session_id, state)
-        registration -> {registration, state}
-      end
-
-    case registration do
+    case lookup_by_session(state.workspace_index, session_id) || ets_lookup_by_session(session_id) do
       nil ->
-        {:reply, {:ok, :unchanged}, state}
+        offload_op(
+          from,
+          :browser_rehydrate_session,
+          nil,
+          %{session_id: session_id},
+          fn ->
+            case load_open_persisted_registration_for_session(session_id) do
+              nil ->
+                {:browser_rehydrate_session_done, nil, {:ok, :unchanged}}
+
+              persisted ->
+                case rehydrate_io_result(persisted) do
+                  {:commit, registration} ->
+                    result = do_sync_control_navigation(registration, current_url)
+                    {:browser_rehydrate_session_done, registration, result}
+
+                  :drop ->
+                    {:browser_rehydrate_session_done, nil, {:ok, :unchanged}}
+                end
+            end
+          end,
+          state
+        )
 
       registration ->
-        offload_browser_call(
+        offload_op(
           from,
+          :browser,
+          nil,
+          nil,
           fn -> do_sync_control_navigation(registration, current_url) end,
           state
         )
@@ -226,19 +281,44 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def handle_call({:show_artifact, session_id, artifact_path}, from, state) do
-    {registration, state} =
-      case lookup_by_session(state.workspace_index, session_id) do
-        nil -> get_or_rehydrate_by_session(session_id, state)
-        registration -> {registration, state}
-      end
-
-    case registration do
+    case lookup_by_session(state.workspace_index, session_id) || ets_lookup_by_session(session_id) do
       nil ->
-        {:reply, {:error, :not_found}, state}
+        offload_op(
+          from,
+          :browser_rehydrate_session,
+          nil,
+          %{session_id: session_id},
+          fn ->
+            case load_open_persisted_registration_for_session(session_id) do
+              nil ->
+                {:browser_rehydrate_session_done, nil, {:error, :not_found}}
+
+              persisted ->
+                case rehydrate_io_result(persisted) do
+                  {:commit, registration} ->
+                    result =
+                      do_show_artifact(
+                        registration,
+                        artifact_path,
+                        Map.get(registration, :source_url)
+                      )
+
+                    {:browser_rehydrate_session_done, registration, result}
+
+                  :drop ->
+                    {:browser_rehydrate_session_done, nil, {:error, :not_found}}
+                end
+            end
+          end,
+          state
+        )
 
       registration ->
-        offload_browser_call(
+        offload_op(
           from,
+          :browser,
+          nil,
+          nil,
           fn ->
             do_show_artifact(registration, artifact_path, Map.get(registration, :source_url))
           end,
@@ -247,60 +327,167 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
-  def handle_call({:get_by_session, session_id}, _from, state) do
-    case lookup_by_session(state.workspace_index, session_id) do
+  def handle_call({:get_by_session, session_id}, from, state) do
+    case lookup_by_session(state.workspace_index, session_id) || ets_lookup_by_session(session_id) do
+      %{} = registration ->
+        {:reply, registration, state}
+
       nil ->
-        {registration, state} = get_or_rehydrate_by_session(session_id, state)
-        {:reply, registration, state}
-
-      registration ->
-        {:reply, registration, state}
+        start_or_join_rehydrate(
+          {:session, session_id},
+          from,
+          state,
+          fn ->
+            case load_open_persisted_registration_for_session(session_id) do
+              nil -> {:rehydrate_done, []}
+              persisted -> {:rehydrate_done, [rehydrate_io_result(persisted)]}
+            end
+          end
+        )
     end
   end
 
-  def handle_call({:get_by_pane, pane_id}, _from, state) do
-    {registration, state} = get_or_rehydrate_by_pane(pane_id, state)
-    {:reply, registration, state}
+  def handle_call({:get_by_pane, pane_id}, from, state) do
+    case lookup_by_pane(pane_id) do
+      %{} = registration ->
+        {:reply, registration, state}
+
+      nil ->
+        start_or_join_rehydrate(
+          {:pane, pane_id},
+          from,
+          state,
+          fn ->
+            case load_open_persisted_registration(pane_id) do
+              nil -> {:rehydrate_done, []}
+              persisted -> {:rehydrate_done, [rehydrate_io_result(persisted)]}
+            end
+          end
+        )
+    end
   end
 
-  def handle_call({:list_for_workspace, workspace_ids}, _from, state) do
-    state = rehydrate_workspaces(workspace_ids, state)
-    {:reply, list_workspace_registrations(state.workspace_index, workspace_ids), state}
+  def handle_call({:list_for_workspace, workspace_ids}, from, state) do
+    key = {:workspaces, Enum.sort(workspace_ids)}
+
+    start_or_join_rehydrate(
+      key,
+      from,
+      state,
+      fn ->
+        results =
+          workspace_ids
+          |> load_open_persisted_registrations()
+          |> Enum.map(&rehydrate_io_result/1)
+
+        {:rehydrate_done, results}
+      end,
+      list_reply: workspace_ids
+    )
   end
 
-  def handle_call(:clear, _from, _state) do
-    close_all_persisted_registrations()
+  def handle_call(:clear, from, state) do
     :ets.delete_all_objects(@table)
-    {:reply, :ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
+
+    # Unblock any waiters so clear() in test setup cannot hang behind crashed tasks.
+    Enum.each(state.pending_ops, fn {_ref, op} ->
+      reply_op(op, {:error, :preview_cleared})
+      reply_rehydrate_waiters(op, nil)
+    end)
+
+    # Queued (not-yet-started) ops would otherwise be silently dropped with
+    # empty_state and their callers left hanging for the full call timeout.
+    Enum.each(state.op_queue, fn {_pane_id, q} ->
+      Enum.each(:queue.to_list(q), fn
+        {_kind, _payload, from} when not is_nil(from) ->
+          GenServer.reply(from, {:error, :preview_cleared})
+
+        _ ->
+          :ok
+      end)
+    end)
+
+    offload_op(
+      from,
+      :clear,
+      nil,
+      nil,
+      fn ->
+        close_all_persisted_registrations()
+        :ok
+      end,
+      %{empty_state() | pending_ops: %{}}
+    )
   end
 
   @impl true
-  def handle_info({ref, result}, %{pending_browser: pending} = state)
-      when is_reference(ref) and is_tuple(result) do
-    case Map.pop(pending, ref) do
-      {{from, _pid}, pending} when not is_nil(from) ->
-        GenServer.reply(from, result)
-        {:noreply, %{state | pending_browser: pending}}
+  def handle_info({ref, result}, state) when is_reference(ref) do
+    case Map.pop(state.pending_ops, ref) do
+      {nil, _} ->
+        {:noreply, state}
 
-      _ ->
+      {op, pending} ->
+        state = %{state | pending_ops: pending}
+        state = commit_op(op, result, state)
         {:noreply, state}
     end
   end
 
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{pending_browser: pending} = state) do
-    case pop_pending_for_pid(pending, pid) do
-      {from, pending} when not is_nil(from) ->
-        GenServer.reply(from, {:error, :browser_task_crashed})
-        {:noreply, %{state | pending_browser: pending}}
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    case pop_pending_op_for_pid(state.pending_ops, pid) do
+      nil ->
+        {:noreply, state}
 
-      _ ->
+      {ref, op, pending} ->
+        state = %{state | pending_ops: pending}
+        state = clear_rehydrate_key(state, op)
+
+        # Rehydrate-kind callers expect `registration | nil` or a list, never an
+        # error tuple (preview_proxy_controller pattern-matches the shape); fall
+        # back to the committed state, which is exactly what a failed IO read
+        # would have yielded anyway.
+        case op do
+          %{kind: :rehydrate} ->
+            reply = rehydrate_fallback_reply(op, state)
+            reply_op(op, reply)
+            reply_rehydrate_waiters(op, reply)
+
+          _ ->
+            reply_op(op, {:error, :preview_op_crashed})
+            reply_rehydrate_waiters(op, nil)
+        end
+
+        state = clear_inflight(state, op.pane_id, ref)
+        state = drain_op_queue(state, op.pane_id)
         {:noreply, state}
     end
   end
 
-  @impl true
   def handle_info({@topology_tag, {:updated, topology}}, state) do
-    {:noreply, expire_vanished_panes(topology, state)}
+    candidates = expire_candidates(topology, state)
+
+    if candidates == [] do
+      {:noreply, state}
+    else
+      session = topology.session
+      pane_ids = MapSet.new(Enum.map(topology.panes || [], & &1.id))
+
+      offload_op(
+        nil,
+        :expire_probe,
+        nil,
+        %{session: session},
+        fn ->
+          stale =
+            Enum.reject(candidates, fn pane_id ->
+              pane_still_exists?(session, pane_id, pane_ids)
+            end)
+
+          {:expire_probe_done, stale}
+        end,
+        state
+      )
+    end
   end
 
   def handle_info({@topology_tag, {:session_terminated, %{session: session}}}, state) do
@@ -309,48 +496,86 @@ defmodule DevIDE.PreviewPanes do
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        case get_by_pane(pane_id) do
+        case lookup_by_pane(pane_id) do
           %{tmux_session: ^session} -> true
           _ -> false
         end
       end)
 
-    # One UPDATE for all vanished panes — avoid N+1 close_persisted in the reduce.
-    _ = close_persisted_many(pane_ids)
-
-    state =
-      Enum.reduce(pane_ids, state, fn pane_id, acc ->
-        case do_deregister(pane_id, acc, persist?: false) do
-          {:ok, next} -> next
-          {:error, _, next} -> next
-        end
-      end)
-
-    {:noreply, state}
+    if pane_ids == [] do
+      {:noreply, state}
+    else
+      # Batch Repo close in a task, then state-first deregisters (persist?: false)
+      # so control/preview teardown still runs through the deregister pipeline.
+      offload_op(
+        nil,
+        :session_terminated_persist,
+        nil,
+        %{pane_ids: pane_ids},
+        fn ->
+          _ = close_persisted_many(pane_ids)
+          {:session_terminated_persist_done, pane_ids}
+        end,
+        state
+      )
+    end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp offload_browser_call({caller, _} = from, fun, state) do
+  # ---- Offload infrastructure -------------------------------------------------
+
+  defp offload_op(from, kind, pane_id, plan, fun, state) do
+    caller =
+      case from do
+        {pid, _tag} when is_pid(pid) -> pid
+        _ -> self()
+      end
+
     task =
       Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
-        maybe_test_browser_delay()
+        # Prepend the originating caller's pid so Req.Test private-mode ownership
+        # resolves to the test process (not the named PreviewPanes singleton).
+        Process.put(:"$callers", [caller | List.wrap(Process.get(:"$callers"))])
+
+        # Delay only lifecycle/browser ops so rehydrate/list warm paths stay responsive
+        # under :preview_panes_test_browser_delay_ms (mailbox-responsiveness tests).
+        if kind in [:browser, :browser_rehydrate_session, :register, :deregister] do
+          maybe_test_browser_delay()
+        end
+
+        if kind == :rehydrate, do: maybe_test_rehydrate_delay()
+
         fun.()
       end)
 
     grant_repo_sandbox(task.pid, [self(), caller])
     Process.monitor(task.pid)
 
-    {:noreply,
-     %{
-       state
-       | pending_browser: Map.put(state.pending_browser, task.ref, {from, task.pid})
-     }}
+    op = %{
+      from: from,
+      pid: task.pid,
+      kind: kind,
+      pane_id: pane_id,
+      plan: plan,
+      waiters: []
+    }
+
+    state = %{state | pending_ops: Map.put(state.pending_ops, task.ref, op)}
+
+    state =
+      if is_binary(pane_id) do
+        %{state | inflight_panes: Map.put(state.inflight_panes, pane_id, task.ref)}
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
-  defp pop_pending_for_pid(pending, pid) do
+  defp pop_pending_op_for_pid(pending, pid) do
     Enum.find_value(pending, fn
-      {ref, {from, ^pid}} -> {from, Map.delete(pending, ref)}
+      {ref, %{pid: ^pid} = op} -> {ref, op, Map.delete(pending, ref)}
       _ -> nil
     end)
   end
@@ -372,33 +597,198 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
-  defp do_register(attrs, state) do
-    pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
-
-    if existing = get_by_pane(pane_id) do
-      if truthy_param(attrs, "heartbeat") || truthy_param(attrs, :heartbeat) do
-        broadcast_registered(existing, :heartbeat)
-        refresh_topology(existing.tmux_session)
-        {:ok, existing, state}
-      else
-        register_fresh(attrs, pane_id, state)
-      end
-    else
-      register_fresh(attrs, pane_id, state)
+  defp maybe_test_rehydrate_delay do
+    case Application.get_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
     end
   end
 
-  defp register_fresh(attrs, pane_id, state) do
-    state =
-      if existing = lookup_by_pane(pane_id) do
-        case do_deregister(existing.pane_id, state) do
-          {:ok, next} -> next
-          {:error, _, next} -> next
-        end
-      else
-        close_persisted_registration_for_pane(pane_id)
+  defp reply_op(%{from: from}, result) when not is_nil(from), do: GenServer.reply(from, result)
+  defp reply_op(_op, _result), do: :ok
+
+  defp reply_rehydrate_waiters(%{waiters: waiters}, result) when is_list(waiters) do
+    Enum.each(waiters, &GenServer.reply(&1, result))
+  end
+
+  defp reply_rehydrate_waiters(_op, _result), do: :ok
+
+  defp clear_inflight(state, pane_id, ref) when is_binary(pane_id) do
+    case Map.get(state.inflight_panes, pane_id) do
+      ^ref -> %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+      _ -> state
+    end
+  end
+
+  defp clear_inflight(state, _pane_id, _ref), do: state
+
+  defp clear_rehydrate_key(state, %{plan: %{rehydrate_key: key}}) when not is_nil(key) do
+    case Map.get(state.rehydrate_keys, key) do
+      ref when is_reference(ref) ->
+        %{state | rehydrate_keys: Map.delete(state.rehydrate_keys, key)}
+
+      _ ->
         state
-      end
+    end
+  end
+
+  defp clear_rehydrate_key(state, _op), do: state
+
+  defp enqueue_op(state, pane_id, kind, payload, from) when is_binary(pane_id) do
+    q = Map.get(state.op_queue, pane_id, :queue.new())
+    q = :queue.in({kind, payload, from}, q)
+    %{state | op_queue: Map.put(state.op_queue, pane_id, q)}
+  end
+
+  defp drain_op_queue(state, pane_id) when is_binary(pane_id) do
+    case Map.get(state.op_queue, pane_id) do
+      nil ->
+        state
+
+      q ->
+        case :queue.out(q) do
+          {:empty, _} ->
+            %{state | op_queue: Map.delete(state.op_queue, pane_id)}
+
+          {{:value, {kind, payload, from}}, q2} ->
+            state =
+              if :queue.is_empty(q2) do
+                %{state | op_queue: Map.delete(state.op_queue, pane_id)}
+              else
+                %{state | op_queue: Map.put(state.op_queue, pane_id, q2)}
+              end
+
+            case start_queued_op(kind, payload, from, state) do
+              {:noreply, next} ->
+                next
+
+              {:reply, reply, next} ->
+                if from, do: GenServer.reply(from, reply)
+                next
+            end
+        end
+    end
+  end
+
+  defp drain_op_queue(state, _pane_id), do: state
+
+  defp start_queued_op(:register, attrs, from, state) do
+    pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
+    start_register(attrs, pane_id, from, state)
+  end
+
+  defp start_queued_op(:deregister, %{pane_id: pane_id, opts: opts}, from, state) do
+    begin_deregister(pane_id, state, Keyword.put(opts, :from, from))
+  end
+
+  defp enqueue_or_start_register(attrs, pane_id, from, state) do
+    if is_binary(pane_id) and Map.has_key?(state.inflight_panes, pane_id) do
+      {:noreply, enqueue_op(state, pane_id, :register, attrs, from)}
+    else
+      start_register(attrs, pane_id, from, state)
+    end
+  end
+
+  defp start_register(attrs, pane_id, from, state) do
+    plan = register_plan(pane_id)
+
+    offload_op(
+      from,
+      :register,
+      pane_id,
+      plan,
+      fn -> run_register_io(plan, attrs) end,
+      state
+    )
+  end
+
+  defp register_plan(pane_id) when is_binary(pane_id) do
+    case lookup_by_pane(pane_id) do
+      %{} = existing ->
+        # Precompute shared_session? against pre-delete ETS state (invariant 3).
+        # Equivalent to post-delete session_has_other_registrations?/1.
+        shared_session? =
+          existing.control_session_id
+          |> registrations_by_session()
+          |> Enum.any?(&(&1.pane_id != pane_id))
+
+        {:replace, existing, shared_session?}
+
+      nil ->
+        :fresh
+    end
+  end
+
+  defp register_plan(_pane_id), do: :fresh
+
+  defp enqueue_or_start_deregister(pane_id, from, state, opts) do
+    if is_binary(pane_id) and Map.has_key?(state.inflight_panes, pane_id) do
+      {:noreply, enqueue_op(state, pane_id, :deregister, %{pane_id: pane_id, opts: opts}, from)}
+    else
+      begin_deregister(pane_id, state, Keyword.put(opts, :from, from))
+    end
+  end
+
+  # State-first deregister (ETS + index), then offload I/O tail.
+  defp begin_deregister(pane_id, state, opts) do
+    from = Keyword.get(opts, :from)
+    persist? = Keyword.get(opts, :persist?, true)
+
+    case lookup_by_pane(pane_id) do
+      nil ->
+        if from do
+          {:reply, {:error, :not_found}, state}
+        else
+          {:noreply, state}
+        end
+
+      registration ->
+        :ets.delete(@table, pane_id)
+        # shared_session? AFTER ETS delete (invariant 3).
+        shared_session? = session_has_other_registrations?(registration.control_session_id)
+        state = drop_workspace_index(state, pane_id, registration.workspace_id)
+
+        plan = %{
+          registration: registration,
+          shared_session?: shared_session?,
+          persist?: persist?
+        }
+
+        offload_op(
+          from,
+          :deregister,
+          pane_id,
+          plan,
+          fn -> run_deregister_io(plan) end,
+          state
+        )
+    end
+  end
+
+  # ---- Register / deregister I/O (task process) + commit (server) ------------
+
+  defp run_register_io(plan, attrs) do
+    pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
+
+    case plan do
+      {:replace, old_registration, shared_session?} ->
+        _ = close_persisted_registration(old_registration)
+
+        unless shared_session? do
+          _ = PreviewControl.close_session(old_registration.control_session_id)
+
+          if preview =
+               Previews.get_for_workspace(
+                 old_registration.preview_id,
+                 old_registration.workspace_id
+               ) do
+            _ = Previews.close(preview)
+          end
+        end
+
+      :fresh ->
+        close_persisted_registration_for_pane(pane_id)
+    end
 
     tmux_session = string_param(attrs, "tmux_session") || string_param(attrs, :tmux_session)
 
@@ -419,53 +809,344 @@ defmodule DevIDE.PreviewPanes do
       }
 
       with {:ok, _persisted} <- persist_registration(registration) do
-        :ets.insert(@table, {pane_id, registration})
-
-        state =
-          state
-          |> put_workspace_index(pane_id, workspace.id)
-          |> maybe_subscribe_topology(tmux_session)
-
-        broadcast_registered(registration)
-        record_activity(registration, "registered", registration_summary(registration))
-        refresh_topology(tmux_session)
-        emit_audit!("preview_pane.registered", registration)
-
-        {:ok, registration, state}
+        {:register_done, registration, plan}
       end
     end
+  end
+
+  defp run_deregister_io(%{
+         registration: registration,
+         shared_session?: shared_session?,
+         persist?: persist?
+       }) do
+    if persist? do
+      close_persisted_registration(registration)
+    end
+
+    unless shared_session? do
+      _ = PreviewControl.close_session(registration.control_session_id)
+
+      if preview =
+           Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
+        _ = Previews.close(preview)
+      end
+    end
+
+    {:deregister_done, registration}
+  end
+
+  defp commit_op(%{kind: :browser} = op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
+  defp commit_op(%{kind: :clear} = op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
+  defp commit_op(%{kind: :register, pane_id: pane_id, plan: plan} = op, result, state) do
+    state =
+      case result do
+        {:register_done, registration, _plan} ->
+          # Atomic commit: ETS + workspace_index + subscription (invariant 1).
+          state =
+            case plan do
+              {:replace, old_registration, _}
+              when old_registration.workspace_id != registration.workspace_id ->
+                drop_workspace_index(state, pane_id, old_registration.workspace_id)
+
+              _ ->
+                state
+            end
+
+          :ets.insert(@table, {registration.pane_id, registration})
+
+          state =
+            state
+            |> put_workspace_index(registration.pane_id, registration.workspace_id)
+            |> maybe_subscribe_topology(registration.tmux_session)
+
+          broadcast_registered(registration)
+          record_activity(registration, "registered", registration_summary(registration))
+          refresh_topology(registration.tmux_session)
+          emit_audit!("preview_pane.registered", registration)
+          reply_op(op, {:ok, registration})
+          state
+
+        {:error, reason} ->
+          reply_op(op, {:error, reason})
+          state
+
+        other when is_tuple(other) ->
+          # with/1 failure shapes like {:error, reason}
+          reply_op(op, other)
+          state
+
+        other ->
+          reply_op(op, {:error, other})
+          state
+      end
+
+    state = clear_inflight(state, pane_id, Map.get(state.inflight_panes, pane_id))
+    # clear_inflight needs the ref we just removed from pending_ops — force clear:
+    state = %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+    drain_op_queue(state, pane_id)
+  end
+
+  defp commit_op(%{kind: :deregister, pane_id: pane_id, plan: plan} = op, result, state) do
+    registration = plan.registration
+
+    case result do
+      {:deregister_done, ^registration} ->
+        broadcast_removed(registration)
+        record_activity(registration, "removed", "preview pane removed")
+        emit_audit!("preview_pane.removed", registration)
+        reply_op(op, :ok)
+
+      {:deregister_done, _} ->
+        broadcast_removed(registration)
+        record_activity(registration, "removed", "preview pane removed")
+        emit_audit!("preview_pane.removed", registration)
+        reply_op(op, :ok)
+
+      {:error, reason} ->
+        reply_op(op, {:error, reason})
+
+      other ->
+        reply_op(op, other)
+    end
+
+    state = %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+    drain_op_queue(state, pane_id)
+  end
+
+  defp commit_op(%{kind: :rehydrate} = op, result, state) do
+    state = clear_rehydrate_key(state, op)
+
+    {reply, state} =
+      case result do
+        {:rehydrate_done, io_results} when is_list(io_results) ->
+          state =
+            Enum.reduce(io_results, state, fn item, acc ->
+              commit_rehydrate_item(item, acc)
+            end)
+
+          reply =
+            case op.plan do
+              %{list_reply: workspace_ids} when is_list(workspace_ids) ->
+                list_workspace_registrations(state.workspace_index, workspace_ids)
+
+              %{rehydrate_key: {:pane, pane_id}} ->
+                lookup_by_pane(pane_id)
+
+              %{rehydrate_key: {:session, session_id}} ->
+                ets_lookup_by_session(session_id) ||
+                  lookup_by_session(state.workspace_index, session_id)
+
+              _ ->
+                nil
+            end
+
+          {reply, state}
+
+        {:error, _} ->
+          {rehydrate_fallback_reply(op, state), state}
+
+        _ ->
+          {rehydrate_fallback_reply(op, state), state}
+      end
+
+    reply_op(op, reply)
+    reply_rehydrate_waiters(op, reply)
+    state
+  end
+
+  defp commit_op(%{kind: :browser_rehydrate_session} = op, result, state) do
+    case result do
+      {:browser_rehydrate_session_done, registration, browser_result} ->
+        state =
+          if is_map(registration) do
+            commit_rehydrate_item({:commit, registration}, state)
+          else
+            state
+          end
+
+        reply_op(op, browser_result)
+        state
+
+      other ->
+        reply_op(op, other)
+        state
+    end
+  end
+
+  defp commit_op(%{kind: :expire_probe} = op, result, state) do
+    _ = op
+
+    case result do
+      {:expire_probe_done, stale} when is_list(stale) and stale != [] ->
+        # One batched Repo close (offloaded), then deregister pipeline with persist?: false.
+        offload_op(
+          nil,
+          :session_terminated_persist,
+          nil,
+          %{pane_ids: stale},
+          fn ->
+            _ = close_persisted_many(stale)
+            {:session_terminated_persist_done, stale}
+          end,
+          state
+        )
+        |> elem(1)
+
+      _ ->
+        state
+    end
+  end
+
+  defp commit_op(%{kind: :session_terminated_persist} = op, result, state) do
+    _ = op
+
+    case result do
+      {:session_terminated_persist_done, pane_ids} when is_list(pane_ids) ->
+        Enum.reduce(pane_ids, state, fn pane_id, acc ->
+          # Respect the per-pane queue: a concurrent in-flight register must not
+          # have its inflight ref clobbered by the expiry pipeline — queue the
+          # deregister behind it instead.
+          if is_binary(pane_id) and Map.has_key?(acc.inflight_panes, pane_id) do
+            enqueue_op(
+              acc,
+              pane_id,
+              :deregister,
+              %{pane_id: pane_id, opts: [persist?: false]},
+              nil
+            )
+          else
+            case begin_deregister(pane_id, acc, persist?: false, from: nil) do
+              {:noreply, next} -> next
+              {:reply, _, next} -> next
+            end
+          end
+        end)
+
+      _ ->
+        state
+    end
+  end
+
+  defp commit_op(op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
+  # Shape-correct fallback for a rehydrate op whose IO failed or crashed:
+  # list callers get the committed-index list, lookup callers get ETS truth
+  # (or nil) — the same answer a successful run with no persisted rows yields.
+  defp rehydrate_fallback_reply(%{plan: %{list_reply: workspace_ids}}, state)
+       when is_list(workspace_ids) do
+    list_workspace_registrations(state.workspace_index, workspace_ids)
+  end
+
+  defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:pane, pane_id}}}, _state) do
+    lookup_by_pane(pane_id)
+  end
+
+  defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:session, session_id}}}, state) do
+    ets_lookup_by_session(session_id) || lookup_by_session(state.workspace_index, session_id)
+  end
+
+  defp rehydrate_fallback_reply(_op, _state), do: nil
+
+  defp commit_rehydrate_item({:commit, registration}, state) when is_map(registration) do
+    pane_id = registration.pane_id
+
+    cond do
+      Map.has_key?(state.inflight_panes, pane_id) ->
+        # Lifecycle op owns this pane — skip rehydrate commit (design).
+        state
+
+      lookup_by_pane(pane_id) ->
+        state
+
+      true ->
+        :ets.insert(@table, {pane_id, registration})
+
+        state
+        |> put_workspace_index(pane_id, registration.workspace_id)
+        |> maybe_subscribe_topology(registration.tmux_session)
+    end
+  end
+
+  defp commit_rehydrate_item(:drop, state), do: state
+  defp commit_rehydrate_item({:drop, _registration}, state), do: state
+  defp commit_rehydrate_item(_, state), do: state
+
+  defp rehydrate_io_result(%PreviewPaneRegistration{} = persisted) do
+    registration = persisted_registration_to_map(persisted)
+
+    if persisted_registration_live?(persisted) do
+      {:commit, registration}
+    else
+      close_persisted_registration(registration)
+      :drop
+    end
+  end
+
+  defp start_or_join_rehydrate(key, from, state, fun, opts \\ []) do
+    case Map.get(state.rehydrate_keys, key) do
+      ref when is_reference(ref) ->
+        case Map.get(state.pending_ops, ref) do
+          %{kind: :rehydrate} = op ->
+            op = %{op | waiters: [from | op.waiters]}
+            {:noreply, %{state | pending_ops: Map.put(state.pending_ops, ref, op)}}
+
+          _ ->
+            start_rehydrate(key, from, state, fun, opts)
+        end
+
+      _ ->
+        start_rehydrate(key, from, state, fun, opts)
+    end
+  end
+
+  defp start_rehydrate(key, from, state, fun, opts) do
+    list_reply = Keyword.get(opts, :list_reply)
+
+    plan = %{
+      rehydrate_key: key,
+      list_reply: list_reply
+    }
+
+    # Seed rehydrate_keys after offload assigns the ref — offload returns noreply+state.
+    {:noreply, state} =
+      offload_op(from, :rehydrate, nil, plan, fun, state)
+
+    # Find the ref we just added for this plan.
+    ref =
+      Enum.find_value(state.pending_ops, fn
+        {r, %{kind: :rehydrate, plan: %{rehydrate_key: ^key}}} -> r
+        _ -> nil
+      end)
+
+    state =
+      if is_reference(ref) do
+        %{state | rehydrate_keys: Map.put(state.rehydrate_keys, key, ref)}
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
   defp truthy_param(attrs, key) when is_map(attrs) do
     Map.get(attrs, key) in [true, 1, "1", "true", "yes", "on"]
   end
 
-  defp do_deregister(pane_id, state, opts \\ []) do
-    case get_by_pane(pane_id) do
-      nil ->
-        {:error, :not_found, state}
-
-      registration ->
-        :ets.delete(@table, pane_id)
-
-        if Keyword.get(opts, :persist?, true) do
-          close_persisted_registration(registration)
-        end
-
-        unless session_has_other_registrations?(registration.control_session_id) do
-          _ = PreviewControl.close_session(registration.control_session_id)
-
-          if preview =
-               Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
-            _ = Previews.close(preview)
-          end
-        end
-
-        state = drop_workspace_index(state, pane_id, registration.workspace_id)
-        broadcast_removed(registration)
-        record_activity(registration, "removed", "preview pane removed")
-        emit_audit!("preview_pane.removed", registration)
-        {:ok, state}
+  defp ets_lookup_by_session(session_id) when is_integer(session_id) do
+    case registrations_by_session(session_id) do
+      [registration | _] -> registration
+      _ -> nil
     end
   end
 
@@ -1099,31 +1780,21 @@ defmodule DevIDE.PreviewPanes do
     :ok
   end
 
-  defp expire_vanished_panes(%{session: session, panes: panes}, state) do
+  # Candidates that appear vanished from the topology event alone (no tmux I/O).
+  # The expire_probe task confirms with list_session_panes before deregistering.
+  defp expire_candidates(%{session: session, panes: panes}, state) do
     pane_ids = MapSet.new(Enum.map(panes || [], & &1.id))
 
-    stale =
-      state.workspace_index
-      |> Map.values()
-      |> List.flatten()
-      |> Enum.filter(fn pane_id ->
-        case get_by_pane(pane_id) do
-          %{tmux_session: ^session} = reg ->
-            not MapSet.member?(pane_ids, reg.pane_id)
+    state.workspace_index
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.filter(fn pane_id ->
+      case lookup_by_pane(pane_id) do
+        %{tmux_session: ^session} = reg ->
+          not MapSet.member?(pane_ids, reg.pane_id)
 
-          _ ->
-            false
-        end
-      end)
-      |> Enum.reject(&pane_still_exists?(session, &1, pane_ids))
-
-    # One UPDATE for all vanished panes — avoid N+1 close_persisted in the reduce.
-    _ = close_persisted_many(stale)
-
-    Enum.reduce(stale, state, fn pane_id, acc ->
-      case do_deregister(pane_id, acc, persist?: false) do
-        {:ok, next} -> next
-        {:error, _, next} -> next
+        _ ->
+          false
       end
     end)
   end
@@ -1142,58 +1813,6 @@ defmodule DevIDE.PreviewPanes do
     end
   rescue
     ArgumentError -> nil
-  end
-
-  defp get_or_rehydrate_by_pane(pane_id, state) do
-    case lookup_by_pane(pane_id) do
-      nil ->
-        case load_open_persisted_registration(pane_id) do
-          nil -> {nil, state}
-          persisted -> rehydrate_persisted_registration(persisted, state)
-        end
-
-      registration ->
-        {registration, state}
-    end
-  end
-
-  defp get_or_rehydrate_by_session(session_id, state) when is_integer(session_id) do
-    case load_open_persisted_registration_for_session(session_id) do
-      nil -> {nil, state}
-      persisted -> rehydrate_persisted_registration(persisted, state)
-    end
-  end
-
-  defp rehydrate_workspaces(workspace_ids, state) when is_list(workspace_ids) do
-    workspace_ids
-    |> load_open_persisted_registrations()
-    |> Enum.reduce(state, fn persisted, acc ->
-      {_registration, next} = rehydrate_persisted_registration(persisted, acc)
-      next
-    end)
-  end
-
-  defp rehydrate_persisted_registration(%PreviewPaneRegistration{} = persisted, state) do
-    registration = persisted_registration_to_map(persisted)
-
-    cond do
-      lookup_by_pane(registration.pane_id) ->
-        {lookup_by_pane(registration.pane_id), state}
-
-      not persisted_registration_live?(persisted) ->
-        close_persisted_registration(registration)
-        {nil, drop_workspace_index(state, registration.pane_id, registration.workspace_id)}
-
-      true ->
-        :ets.insert(@table, {registration.pane_id, registration})
-
-        state =
-          state
-          |> put_workspace_index(registration.pane_id, registration.workspace_id)
-          |> maybe_subscribe_topology(registration.tmux_session)
-
-        {registration, state}
-    end
   end
 
   defp persisted_registration_live?(%PreviewPaneRegistration{} = registration) do

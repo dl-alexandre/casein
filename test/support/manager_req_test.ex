@@ -7,10 +7,10 @@ defmodule DevIDE.Test.ManagerReqTest do
     Req.Test.set_req_test_from_context(context)
     Req.Test.stub(Client, &default_response/1)
 
-    if pid = Process.whereis(DevIDE.PreviewPanes) do
-      Req.Test.allow(Client, self(), pid)
-    end
-
+    # PreviewPanes offload tasks prepend the originating caller's pid to $callers,
+    # so Req.Test private ownership resolves to the test process. Do NOT allow the
+    # named PreviewPanes singleton pid — that allowance is the cascade-class footgun
+    # Slice 1 removes (see preview-extraction-design.md).
     :ok
   end
 

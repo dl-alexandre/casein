@@ -66,6 +66,23 @@ defmodule DevIDE.PreviewPanesTest do
 
   defp wait_for_preview_panes_restart(_old_pid, 0), do: flunk("PreviewPanes did not restart")
 
+  # Topology expiry/session_terminated offload tmux + Repo I/O; :sys.get_state only
+  # flushes the GenServer mailbox, not in-flight tasks. Poll until the condition holds.
+  defp wait_until(fun, attempts \\ 50)
+
+  defp wait_until(fun, attempts) when attempts > 0 do
+    if fun.() do
+      :ok
+    else
+      receive do
+      after
+        20 -> wait_until(fun, attempts - 1)
+      end
+    end
+  end
+
+  defp wait_until(_fun, 0), do: flunk("condition not met before timeout")
+
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "preview-panes-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
@@ -446,13 +463,26 @@ defmodule DevIDE.PreviewPanesTest do
     caller = {self(), make_ref()}
 
     :sys.replace_state(PreviewPanes, fn state ->
-      %{state | pending_browser: %{pending_ref => {caller, pending_pid}}}
+      %{
+        state
+        | pending_ops: %{
+            pending_ref => %{
+              from: caller,
+              pid: pending_pid,
+              kind: :browser,
+              pane_id: nil,
+              plan: nil,
+              waiters: []
+            }
+          }
+      }
     end)
 
+    # DOWN for a different pid must not disturb the still-pending op.
     send(Process.whereis(PreviewPanes), {:DOWN, make_ref(), :process, self(), :normal})
 
     state = :sys.get_state(PreviewPanes)
-    assert %{^pending_ref => {^caller, ^pending_pid}} = state.pending_browser
+    assert %{^pending_ref => %{from: ^caller, pid: ^pending_pid}} = state.pending_ops
   end
 
   test "navigate falls back to a snapshot when the target refuses framing" do
@@ -773,7 +803,10 @@ defmodule DevIDE.PreviewPanesTest do
       {TmuxTopology, {:updated, %{session: session, panes: []}}}
     )
 
-    _ = :sys.get_state(PreviewPanes)
+    # Probe offload confirms the pane still exists in FakeTmux — must not expire.
+    wait_until(fn ->
+      match?(%{}, :sys.get_state(PreviewPanes)) and PreviewPanes.get_by_pane(pane_id) != nil
+    end)
 
     assert PreviewPanes.get_by_pane(pane_id)
 
@@ -784,8 +817,7 @@ defmodule DevIDE.PreviewPanesTest do
       {TmuxTopology, {:updated, %{session: session, panes: []}}}
     )
 
-    _ = :sys.get_state(PreviewPanes)
-
+    wait_until(fn -> PreviewPanes.get_by_pane(pane_id) == nil end)
     refute PreviewPanes.get_by_pane(pane_id)
   end
 
@@ -933,7 +965,7 @@ defmodule DevIDE.PreviewPanesTest do
        {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 
-    _ = :sys.get_state(DevIDE.PreviewPanes)
+    wait_until(fn -> PreviewPanes.get_by_pane(pane_id) == nil end)
     assert PreviewPanes.get_by_pane(pane_id) == nil
   end
 
@@ -988,7 +1020,15 @@ defmodule DevIDE.PreviewPanesTest do
       {TmuxTopology, {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 
-    _ = :sys.get_state(PreviewPanes)
+    wait_until(fn ->
+      Enum.all?(pane_ids, fn pane_id ->
+        PreviewPanes.get_by_pane(pane_id) == nil and
+          match?(
+            %PreviewPaneRegistration{status: :closed},
+            Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
+          )
+      end)
+    end)
 
     for pane_id <- pane_ids do
       assert PreviewPanes.get_by_pane(pane_id) == nil
