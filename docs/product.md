@@ -1,6 +1,6 @@
-# DevIDE — Product
+# Casein — Product
 
-> Canonical articulation of what DevIDE is, who it is for, what the
+> Canonical articulation of what Casein is, who it is for, what the
 > server owns, what the client owns, and why the distinction matters.
 >
 > When a future feature, UI surface, or runtime change is proposed, this
@@ -15,9 +15,12 @@
 >
 > **History:** earlier versions of this document described a delegated-execution
 > product — local/remote/fleet operating modes, a governed-command plane, and
-> runner-claimed assignments. That stack was removed. DevIDE is now a
+> runner-claimed assignments. That stack was removed. Casein is now a
 > single-runtime workspace cockpit: a durable raw terminal over tmux, MCP as
 > the agent interface, preview, and an audit/activity feed.
+>
+> **Naming compatibility:** Casein is the public product name. Stable
+> implementation identifiers remain `DevIDE.*`, `:dev_ide`, and `DEV_IDE_*`.
 >
 > Companion docs:
 > [`architecture.md`](architecture.md) (system internals + invariants),
@@ -31,7 +34,7 @@
 
 ## 1. Definition
 
-**DevIDE is a server-authoritative workspace where people and coding agents
+**Casein is a server-authoritative workspace where people and coding agents
 work in the same durable session.**
 
 The work runs with the workspace, not with a browser tab. Terminal processes
@@ -61,14 +64,14 @@ That creates three product requirements:
 - **Durable evidence** — policy decisions, agent tool calls, and execution
   outcomes remain inspectable after the live moment has passed.
 
-DevIDE makes the workspace server-authoritative so those properties are the
+Casein makes the workspace server-authoritative so those properties are the
 default, not plugins. tmux remains the authority for live process and
 scrollback; workspace records own identity; Policy owns admission; Audit owns
 durable evidence. The cockpit can evolve without taking any of those jobs.
 
 ## 3. Mental model — one workspace, peer clients, explicit authorities
 
-Think of DevIDE as a durable workspace with two kinds of peer client:
+Think of Casein as a durable workspace with two kinds of peer client:
 
 - a **human client** uses the browser cockpit to see, type, arrange, and review;
 - an **agent client** uses scoped MCP tools to inspect and act on the same
@@ -86,7 +89,7 @@ durable evidence. The run ledger and agent activity feed are projections over
 that evidence, not competing sources of truth.
 
 This remains a **single-runtime product**, not a fleet. A workspace runs where
-the DevIDE server runs; humans reach it over the web and agents over MCP. The
+the Casein server runs; humans reach it over the web and agents over MCP. The
 host underneath is an implementation detail (FP-5), not a product mode.
 
 ## 4. Product boundary — what the server owns vs. what the client owns
@@ -173,7 +176,7 @@ purpose.
   what you want.
 - **Not supporting every language equally on day one.** Language support
   emerges as the cockpit needs it; the runtime is language-agnostic.
-- **Not a multi-runtime fleet.** DevIDE coordinates one runtime. There is no
+- **Not a multi-runtime fleet.** Casein coordinates one runtime. There is no
   scheduler, no cross-host placement, no runner pool.
 - **Not an agent framework.** Agents are MCP clients of the runtime, not
   things the runtime defines or schedules.

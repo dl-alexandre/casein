@@ -1,43 +1,57 @@
-# Public naming gate
+# Casein launch decision and naming risk register
 
-> Candidate: **Casein**
+> Public product name: **Casein**
 >
-> Current public name: **DevIDE**
+> Previous public name: **DevIDE**
 >
-> Gate status: **BLOCKED** (assessment dated 2026-07-22)
+> Decision: **GO WITH ACCEPTED RISKS** (2026-07-22)
 
-This is a release gate, not a preference survey. A candidate name is approved
-only when every blocking check below is `PASS`, the evidence is linked, and the
-decision owners record a dated go/no-go decision. `UNKNOWN` blocks just as
-surely as `FAIL`; scores and enthusiasm cannot average away a hard conflict.
+The product owner has directed the project to launch under the public name
+**Casein**. A dedicated domain is not required for launch: the existing source,
+documentation, and distribution channels remain canonical until the team
+chooses to add or migrate them.
 
-Until this gate passes, **Casein is a candidate codename only**. Do not use it
-as the product name in the README, documentation titles, UI, package metadata,
-release artifacts, repository name, or public URLs. Candidate/research records
-such as this gate may name it explicitly without presenting it as the product.
+This decision does not claim that every naming risk is resolved. The objective
+checks below remain the evidence register, with unresolved items recorded as
+accepted or deferred instead of silently marked `PASS`. This document is not
+legal clearance, and the collision evidence is not a legal conclusion.
 
-The naming decision is deliberately separate from implementation identity.
-Keep `DevIDE.*`, `:dev_ide`, and `DEV_IDE_*` unchanged during this campaign. A
-future public-brand decision does not authorize a codebase-wide rename.
+The public-brand decision is deliberately separate from implementation
+identity. Keep `DevIDE.*`, `:dev_ide`, `dev_ide`, and `DEV_IDE_*` unchanged.
+Existing commands, package coordinates, repository paths, release artifacts,
+URLs, and deployment configuration remain compatibility surfaces unless a
+separate migration is approved.
 
-## Blocking checklist
+## Initial launch scope
 
-| ID | Objective pass condition | Required evidence | Casein status |
+- Use **Casein** in the README hero, product brief, glossary, and documentation
+  index.
+- Keep the existing GitHub repository as the canonical source location.
+- Do not claim or publish an unqualified `casein` package coordinate.
+- Do not block launch on owning `casein.com` or another dedicated domain.
+- Do not rename application modules, OTP app names, environment variables,
+  commands, services, database identities, telemetry labels, or tmux prefixes.
+- Make any broader UI, repository, package, or URL migration a separate,
+  reversible change.
+
+## Objective checklist and disposition
+
+| ID | Objective check | Evidence required | Casein disposition |
 |---|---|---|---|
-| **N1 — Legal clearance** | A qualified reviewer clears the exact name, close spellings, and phonetic equivalents for the intended software and SaaS goods/services in every launch jurisdiction. | Dated search exports and written sign-off covering at least US classes 9 and 42, plus EU and UK equivalents if those markets are in launch scope. | **UNKNOWN** — no clearance or sign-off is recorded. |
-| **N2 — Product collision** | No active software or developer-tool product creates a likely mistaken-identity problem, or counsel and the product owner explicitly accept and document the risk. | Exact-name search across GitHub, general web results, app stores, and relevant product directories; owner, activity, category, and last-updated date for every material collision. | **FAIL** — Casein is already the name of a Rails CMS and several software repositories. |
-| **N3 — Install namespace** | Every intended install command and package coordinate is controlled, or a tested qualified alternative is both unambiguous and acceptable to target users. | Registry ownership screenshots or API records for each planned ecosystem, plus the exact proposed install commands. | **UNKNOWN** — exact `casein` packages exist on RubyGems and npm, and no intended/qualified namespace plan is recorded. |
-| **N4 — Web and source identity** | The team controls the primary domain and canonical source/social identities before announcement. Redirects and typo-defense names are documented. | Registrar receipts, DNS ownership proof, organization/repository ownership, and a redirect map. A registry `not found` response alone is not ownership. | **UNKNOWN** — `casein.com` is registered, and no Casein domain or canonical source identity is recorded as controlled. |
-| **N5 — Search distinction** | In a clean, signed-out search, at least 15 of the first 20 results for both `NAME software` and `NAME developer tool` refer to this product. No conflicting software product appears in the first five. | Dated result capture from two search engines in the US and one intended non-US market. | **FAIL** — current results are dominated by the milk protein and existing Casein software. |
-| **N6 — Spoken and written comprehension** | In a test with at least 10 target users, at least 8 spell the name correctly after hearing it once, at least 8 pronounce it acceptably after reading it once, and at least 8 recall it after 24 hours. | Participant script, anonymized responses, totals, and date. Do not coach pronunciation before the first response. | **UNKNOWN** — no test is recorded. |
-| **N7 — Positioning fit** | After reading only the proposed hero, at least 8 of 10 target users identify the product as a durable workspace for people and coding agents; no more than 2 identify it primarily with food, nutrition, or biotechnology. | Anonymized comprehension responses using the fixed prompt in §Test script. | **UNKNOWN** — no test is recorded. |
-| **N8 — Migration safety** | A complete public-surface inventory, staged rollout, compatibility period, redirect plan, and one-release rollback are reviewed before any rename commit. | Checked migration inventory with owners for docs, UI, domains, repository, release assets, package coordinates, telemetry labels, and support material. | **UNKNOWN** — intentionally deferred until N1–N7 pass. |
-| **N9 — Decision record** | Product, engineering, and legal/brand owners sign one dated decision that cites N1–N8 evidence and names the launch spelling, capitalization, pronunciation, and canonical URL. | Committed decision record with all approvers and no open blocking item. | **UNKNOWN**. |
+| **N1 — Legal clearance** | Review the exact name, close spellings, and phonetic equivalents for intended software and SaaS goods/services in launch jurisdictions. | Dated search exports and qualified written review for relevant jurisdictions and classes. | **DEFERRED / ACCEPTED RISK** — no qualified clearance is recorded. This remains a follow-up and is not represented as complete. |
+| **N2 — Product collision** | Identify active exact-name software and decide whether it creates an unacceptable mistaken-identity risk. | Exact-name searches across source hosts, registries, app stores, product directories, and the general web. | **ACCEPTED RISK** — the owner has chosen to launch despite the Rails CMS and other exact-name repositories. |
+| **N3 — Install namespace** | Control every advertised install coordinate, or use a qualified coordinate that cannot be confused with an existing package. | Registry ownership records and the exact proposed install command. | **NOT IN INITIAL SCOPE** — existing `casein` packages are not ours, so the launch will not advertise that unqualified coordinate. |
+| **N4 — Web and source identity** | Publish one canonical source location. A dedicated domain is optional and must not be implied as controlled without evidence. | Link to the controlled canonical repository or site; ownership proof for any additional identity claimed later. | **PASS FOR INITIAL SCOPE** — the existing `dl-alexandre/dev_ide` repository remains canonical; no dedicated domain is required or claimed. |
+| **N5 — Search distinction** | Measure whether target users can distinguish this product from protein-related and existing software results. | Dated, signed-out result captures for `Casein software` and `Casein developer tool`. | **DEFERRED / ACCEPTED RISK** — current search results are not distinctive. Treat search position as a post-launch acquisition risk, not a launch gate. |
+| **N6 — Spoken and written comprehension** | With at least 10 target users, measure spelling after hearing, pronunciation after reading, and unaided 24-hour recall. | Participant script, anonymized first responses, totals, and date. | **DEFERRED** — no test is recorded. |
+| **N7 — Positioning fit** | After reading only the hero, at least 8 of 10 target users identify a durable workspace for people and coding agents; no more than 2 identify food, nutrition, or biotechnology as the primary product category. | Anonymized comprehension responses using the fixed prompt below. | **DEFERRED** — no test is recorded. |
+| **N8 — Migration safety** | Bound the launch surface, preserve compatibility identifiers, and keep the public-copy change reversible. | Reviewed surface inventory, explicit exclusions, compatibility note, and rollback commit. | **PASS FOR INITIAL SCOPE** — the rollout is limited to five documentation files, internal identifiers remain stable, and the change can be reverted independently. |
+| **N9 — Decision record** | Record a dated owner decision that states the launch name, scope, unresolved risks, and compatibility boundary. | A committed decision record linked from the documentation index. | **PASS** — this document records the 2026-07-22 owner direction to launch as Casein without a dedicated-domain prerequisite. |
 
 ## Current collision evidence
 
-The records below are discovery evidence, not a legal conclusion. Recheck all
-of them within 30 days of a naming decision.
+The records below are discovery evidence, not a legal conclusion. Recheck them
+before claiming clearance or an unqualified package or web identity.
 
 - [RubyGems `casein`](https://rubygems.org/gems/casein) is an existing Rails CMS
   package. On 2026-07-22 its registry API reported version `5.5.1.0` and more
@@ -47,27 +61,27 @@ of them within 30 days of a naming decision.
 - GitHub contains an established [Casein Rails CMS](https://github.com/russellquinn/casein)
   and multiple other exact-name software repositories.
 - [Verisign RDAP for `casein.com`](https://rdap.verisign.com/com/v1/domain/CASEIN.COM)
-  reports the domain registered through 2031. Google Registry RDAP returned
-  `not found` for [`casein.dev`](https://pubapi.registry.google/rdap/domain/casein.dev)
-  and [`casein.app`](https://pubapi.registry.google/rdap/domain/casein.app) on
-  2026-07-22, but that is not evidence that either domain is purchasable,
+  reports the domain registered through 2031. This does not block the scoped
+  launch because no dedicated domain is required or claimed.
+- Google Registry RDAP returned `not found` for
+  [`casein.dev`](https://pubapi.registry.google/rdap/domain/casein.dev) and
+  [`casein.app`](https://pubapi.registry.google/rdap/domain/casein.app) on
+  2026-07-22. That is not evidence that either domain is purchasable,
   unreserved, or controlled.
-- No qualified trademark clearance has been completed. Search and preserve
-  results from the [USPTO trademark search](https://tmsearch.uspto.gov/),
+- No qualified trademark clearance has been completed. The
+  [USPTO trademark search](https://tmsearch.uspto.gov/),
   [EUIPO eSearch](https://euipo.europa.eu/eSearch/), and
-  [UK IPO trademark search](https://trademarks.ipo.gov.uk/ipo-tmtext) before
-  review; database searches do not replace qualified legal judgment.
+  [UK IPO trademark search](https://trademarks.ipo.gov.uk/ipo-tmtext) remain
+  follow-up inputs; database searches do not replace qualified legal judgment.
 
 ## Test script
 
 Use the same artifact and questions for every participant. Do not mention milk,
-protein, DevIDE, or the candidate's intended pronunciation before the first
-response.
+protein, DevIDE, or the intended pronunciation before the first response.
 
-1. Show the candidate name for five seconds. Ask the participant to say it.
-2. Say the candidate once. Ask the participant to write it.
-3. Show the README hero draft with the candidate substituted only in the test
-   copy. Ask: “What does this product do, and who is it for?”
+1. Show **Casein** for five seconds. Ask the participant to say it.
+2. Say the name once. Ask the participant to write it.
+3. Show the README hero. Ask: “What does this product do, and who is it for?”
 4. Ask: “What existing product or category does this name make you think of?”
 5. After 24 hours, ask the participant to recall the name without a hint.
 
@@ -75,15 +89,19 @@ Record the first response verbatim, then score it against N6 and N7. Changing
 the prompt, coaching the participant, or discarding an unfavorable association
 invalidates that result.
 
-## Decision procedure
+## Decision record
 
-- [ ] Assign one accountable owner for each of N1–N9.
-- [ ] Attach dated evidence beside every row; use `PASS`, `FAIL`, or `UNKNOWN`.
-- [ ] Stop at the first `FAIL` unless the candidate itself changes.
-- [ ] Re-run time-sensitive searches within 30 days of the final decision.
-- [ ] Record the final go/no-go decision and all approvers.
-- [ ] Only after a recorded `GO`, open a separate public-brand rollout plan.
+- [x] Product owner selected **Casein** as the public product name.
+- [x] A dedicated domain was removed as a launch prerequisite.
+- [x] Known product, search, namespace, and legal-clearance risks are recorded.
+- [x] Initial launch scope and compatibility exclusions are explicit.
+- [x] Public copy uses Casein while implementation identifiers remain stable.
+- [ ] Complete qualified legal review before representing the name as cleared.
+- [ ] Reserve any future package, repository, social, or domain identity before
+      advertising it as canonical.
+- [ ] Run the comprehension and positioning tests when launch feedback is
+      available.
 
-The current decision is **NO-GO**. The Casein campaign may refine positioning
-and test copy, but it must not ship Casein as the public product name while this
-document remains blocked.
+The current decision is **GO WITH ACCEPTED RISKS** for the scoped public-copy
+launch. That authorization does not silently expand to package publication,
+repository transfer, domain acquisition, or internal identifier migration.

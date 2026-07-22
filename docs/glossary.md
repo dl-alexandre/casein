@@ -11,10 +11,10 @@
 > - **§Core concepts** onward — the relationships between authority, clients,
 >   sessions, policy, and evidence.
 >
-> **Naming stability:** DevIDE remains the current product name. Casein is only
-> a candidate governed by [`naming-gate.md`](naming-gate.md). Public naming
-> work does not rename the stable implementation identifiers `DevIDE.*`,
-> `:dev_ide`, or `DEV_IDE_*`.
+> **Naming stability:** Casein is the public product name. The stable
+> implementation family remains `DevIDE.*`, `:dev_ide`, and `DEV_IDE_*`; the
+> public-name decision in [`naming-gate.md`](naming-gate.md) does not rename
+> those compatibility surfaces.
 >
 > **History:** delegated-execution terms such as assignment, lease, runner,
 > fleet, and governed command described a removed subsystem. They are not part
@@ -33,7 +33,8 @@ term — do not overload an existing one.
 
 | Term | Means | Must not mean |
 |---|---|---|
-| **DevIDE** | The current public product name and stable implementation family | Casein before its naming gate passes; one UI component; one process; the CLI alone |
+| **Casein** | The public product: a server-authoritative workspace for people and coding agents | A code namespace; a package coordinate; one UI component; one process; the CLI alone |
+| **DevIDE** | The compatibility-stable implementation family (`DevIDE.*`, `:dev_ide`, `DEV_IDE_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
 | **Server-authoritative** | Each concern has one named server-side authority; clients authenticate, authorize, then observe or request effects | One database reconstructs everything; the browser is trusted state; “the backend decides somehow” |
 | **Authority** | The component whose current answer is binding for one concern | Every component that stores a copy; a projection; a transport; a person with an admin title |
 | **Runtime** | The server-side execution environment that hosts workspace sessions and the named authorities that govern them | The browser UI; a JavaScript loop; a fleet scheduler; a universal database |
@@ -57,7 +58,7 @@ term — do not overload an existing one.
 | **Attach** | An authorized client connecting to an existing session | Authentication alone; starting a new session; replaying a command |
 | **Reconnect** | Reauthenticate, reauthorize present access, and restore the server-owned view after a connection loss | Trust cached client state; reuse stale authorization; rerun prior input |
 | **Replay** | Restore terminal state and scrollback from server/tmux history for a client | Re-execute a command; event-source the live process; redo/undo |
-| **MCP** | The scoped agent-facing tool interface DevIDE hosts | The agent loop; a generic HTTP proxy; arbitrary host access; authority by itself |
+| **MCP** | The scoped agent-facing tool interface Casein hosts | The agent loop; a generic HTTP proxy; arbitrary host access; authority by itself |
 | **Mode** | A workspace admission-policy level (`:manual`, `:review`, `:agent_write_locked`, `:shared_stage_guarded`) | Network topology; display theme; an AI toggle; identity |
 | **Capability** | A runtime-advertised boolean or value that gates an available surface | A permission grant; a user role; a decision; a deployment wish |
 | **Host** | The machine on which a runtime happens to execute | A workspace; an account; an organizational unit; a product mode |
@@ -86,7 +87,7 @@ derived from a pane label or an untrusted request field.
 ### Workspace
 
 A workspace is provided by a `DevIDE.WorkspaceSource`, which owns lifecycle
-truth. DevIDE maintains a redacted, denormalized `WorkspaceRecord` for fast
+truth. Casein maintains a redacted, denormalized `WorkspaceRecord` for fast
 reads. A workspace scopes filesystem access, sessions, policy, and evidence; it
 is not synonymous with its host or with a browser tab.
 

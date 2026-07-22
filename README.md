@@ -1,20 +1,24 @@
-# DevIDE
+# Casein
 
 **The workspace that keeps working.**
 
-DevIDE is a server-authoritative workspace where people and coding agents share
+Casein is a server-authoritative workspace where people and coding agents share
 the same durable session. Close the tab, sleep the laptop, or switch machines:
 the processes keep running. Reconnect to the live terminal and durable evidence
 of what happened instead of rebuilding context from chat logs and screenshots.
 
 <!-- TODO: 60-second hero demo. Disconnect → reconnect → agent still running. -->
-![DevIDE: disconnect and reconnect with the agent still running](docs/assets/hero.gif)
+![Casein: disconnect and reconnect with the agent still running](docs/assets/hero.gif)
+
+> **Compatibility note:** Casein is the public product name. Existing modules,
+> commands, package coordinates, and environment variables retain their
+> `DevIDE.*`, `dev_ide`, and `DEV_IDE_*` names for compatibility.
 
 ### Why it exists
 
 Agentic development breaks a quiet assumption in most editors: that one client
 owns the process, the state, and the history. Long-running agents, handoffs, and
-unreliable networks need the workspace itself to be durable. DevIDE puts that
+unreliable networks need the workspace itself to be durable. Casein puts that
 workspace under server authority, so:
 
 - **The work stays alive.** Sessions are real server-side tmux sessions
@@ -37,7 +41,7 @@ This is how we run dozens of agent sessions a week at MILCGroup.
 
 ### Try it / become a design partner
 
-DevIDE is early, and we're working with a small number of agent-heavy teams as
+Casein is early, and we're working with a small number of agent-heavy teams as
 design partners. If lost sessions, invisible agent work, and unsafe handoffs are
 real pains for you:
 
@@ -194,7 +198,7 @@ All endpoints are bearer-gated with `DEV_IDE_API_TOKEN`.
 
 ## Safety model
 
-DevIDE operates under explicit safety invariants:
+Casein operates under explicit safety invariants:
 
 1. **Admission is recorded**: Attaching a raw terminal is a server-side policy
    decision (`DevIDE.Policy.can_use_raw_terminal?/1`) written to the run ledger;
