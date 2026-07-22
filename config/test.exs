@@ -111,16 +111,6 @@ config :dev_ide,
          "devide-test-workspace-tokens-#{System.get_env("MIX_TEST_PARTITION") || "0"}.json"
        )
 
-# MCP materializer writes under `$HOME/.devide/agent-mcp/...`. Some agent
-# worktrees land on hosts where that tree is mode-000/RO; point test staging
-# at a per-run tmp home so LiveView pane-env materialization stays writable.
-config :dev_ide,
-       :agent_home_dir,
-       Path.join(
-         System.tmp_dir!(),
-         "devide-test-agent-home-#{System.get_env("MIX_TEST_PARTITION") || "0"}-#{System.pid()}"
-       )
-
 # In test we don't send emails
 config :dev_ide, DevIDE.Mailer, adapter: Swoosh.Adapters.Test
 
