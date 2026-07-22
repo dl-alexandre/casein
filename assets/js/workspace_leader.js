@@ -1,5 +1,11 @@
 import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
+import {
+  pickerCloseEvent,
+  pickerElementVisible,
+  pickerToggleDecision,
+  visiblePickerSurfaces,
+} from "./workspace_picker_toggle.mjs"
 
 // C-b leader key system + Space → focus terminal.
 //
@@ -298,6 +304,16 @@ export const WorkspaceLeader = {
       return
     }
 
+    // Picker rails are server-rendered but can hand focus back to the terminal
+    // while they remain open. Capture Escape globally so closing them never
+    // depends on which descendant currently owns focus. An armed leader keeps
+    // its existing Escape-to-cancel behavior.
+    if (e.key === "Escape" && !this._leaderActive && this._closeVisiblePicker()) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      return
+    }
+
     if (!this._leaderActive) return
 
     // Ignore bare modifier keydowns while waiting for the second key
@@ -375,12 +391,28 @@ export const WorkspaceLeader = {
 
       const target = document.querySelector(`[data-leader-action="${action}"]`)
       const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
-      const onMobileLayout = mobileKeyBar && mobileKeyBar.offsetParent !== null
+      const onMobileLayout = pickerElementVisible(mobileKeyBar)
 
       // On touch/narrow layouts the desktop pickers are CSS-hidden (the mobile
-      // nav sheet takes over). Route C-b s / C-b w to the sheet instead.
+      // nav sheet takes over). A picker shortcut is a true toggle: repeating
+      // C-b s / C-b w for the currently visible picker closes it.
       if (action === "session-picker" || action === "window-picker") {
-        if (onMobileLayout) {
+        const decision = pickerToggleDecision(action, {
+          mobileLayout: onMobileLayout,
+          ...visiblePickerSurfaces(document),
+        })
+
+        if (decision === "close-mobile") {
+          this._closePicker("mobile_nav:close")
+          return
+        }
+
+        if (decision === "close-sidebar") {
+          this._closePicker("sidebar:close")
+          return
+        }
+
+        if (decision === "open-mobile") {
           const token = this._beginLeaderCommand()
           this.pushEvent(
             "mobile_nav:open",
@@ -446,6 +478,25 @@ export const WorkspaceLeader = {
 
       this._dispatchLeaderAction(target)
     }
+  },
+
+  _closeVisiblePicker() {
+    const event = pickerCloseEvent(visiblePickerSurfaces(document))
+    if (!event) return false
+
+    this.pushEvent?.(event, {})
+
+    window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+    return true
+  },
+
+  _closePicker(event) {
+    const token = this._beginLeaderCommand()
+    this.pushEvent(event, {}, () => {
+      this._finishLeaderCommand(token)
+      window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+    })
+    this._setLeaderCommandFallback(token)
   },
 
   // Route leader actions to LiveView. Simple phx-click handlers are pushed

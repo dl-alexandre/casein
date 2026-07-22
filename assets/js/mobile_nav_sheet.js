@@ -34,9 +34,8 @@ export const MobileNavSheet = {
   },
 
   updated() {
-    // Re-pressing Ctrl+B S / Ctrl+B W while the sheet is open changes the focus
-    // hint, and the back arrow / ← hop flips the view; re-seat the cursor on
-    // the section that is now showing.
+    // The back arrow / ← hop flips the view; re-seat the cursor on the section
+    // that is now showing. Repeating Ctrl+B S / Ctrl+B W closes the sheet.
     const hint = this.el.dataset.mobileNavFocus || "sessions"
     const view = this.view()
     if (hint !== this._focusHint || view !== this._view) {
