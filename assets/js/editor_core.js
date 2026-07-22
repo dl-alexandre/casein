@@ -8,11 +8,21 @@
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language"
+import {
+  HighlightStyle,
+  syntaxHighlighting,
+  bracketMatching,
+  indentOnInput,
+  foldGutter,
+  codeFolding,
+  foldKeymap
+} from "@codemirror/language"
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete"
 import { tags } from "@lezer/highlight"
 import { copyTextWithFallback, showClipboardToast } from "./terminal_copy"
 import { pickLang, languageIdForPath } from "./editor_lang.mjs"
-export { pickLang, languageIdForPath }
+import { fileErrorMessage } from "./editor_file_status.mjs"
+export { pickLang, languageIdForPath, fileErrorMessage }
 
 // Dark editor theme for surfaces on dark chrome (the file-pane overlay's
 // zinc-950 wrapper). Without an explicit theme CodeMirror falls back to its
@@ -31,7 +41,23 @@ const darkTheme = EditorView.theme(
       color: "#52525b",
       border: "none"
     },
-    ".cm-activeLineGutter": { backgroundColor: "#27272a66", color: "#a1a1aa" }
+    ".cm-activeLineGutter": { backgroundColor: "#27272a66", color: "#a1a1aa" },
+    // Matched-bracket highlight — CM's default is tuned for light backgrounds.
+    ".cm-matchingBracket": {
+      backgroundColor: "#3f6f4a80",
+      color: "#e4e4e7",
+      outline: "1px solid #4ade8066"
+    },
+    ".cm-nonmatchingBracket": { backgroundColor: "#7f1d1d80" },
+    // Fold arrows in the gutter and the "…" placeholder shown for folded code.
+    ".cm-foldGutter .cm-gutterElement": { color: "#52525b" },
+    ".cm-foldPlaceholder": {
+      backgroundColor: "#27272a",
+      color: "#a1a1aa",
+      border: "1px solid #3f3f46",
+      borderRadius: "3px",
+      padding: "0 3px"
+    }
   },
   { dark: true }
 )
@@ -64,6 +90,17 @@ export function copyEditorText(text) {
   return ok
 }
 
+// Editing-ergonomics extensions common to every surface: matching-bracket
+// highlight, auto-close of brackets/quotes, re-indent on input, and a fold
+// gutter with its keymap. Kept as one array so both surfaces stay in step.
+const ergonomicExtensions = [
+  bracketMatching(),
+  closeBrackets(),
+  indentOnInput(),
+  codeFolding(),
+  foldGutter()
+]
+
 // Base extension set shared by every editor instance. `onUpdate` is a CodeMirror
 // updateListener extension; `onSave` (if given) is bound to Mod-s (Cmd/Ctrl+S);
 // `dark` (if true) applies the dark theme + token palette above.
@@ -76,7 +113,16 @@ export function editorExtensions({ onUpdate, onSave, dark } = {}) {
     lineNumbers(),
     highlightActiveLine(),
     history(),
-    keymap.of([...saveBinding, ...defaultKeymap, ...historyKeymap])
+    ...ergonomicExtensions,
+    // closeBracketsKeymap first (backspace over an auto-pair), then fold keys,
+    // save, and the defaults.
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...foldKeymap,
+      ...saveBinding,
+      ...defaultKeymap,
+      ...historyKeymap
+    ])
   ]
 
   if (dark) exts.push(...darkEditorExtensions)
