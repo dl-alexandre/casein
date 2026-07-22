@@ -1554,12 +1554,38 @@ defmodule DevIDE.FilePanes do
     end
   end
 
+  # State-only host-loc resolution for the in-server broadcast payload build.
+  # `broadcast/2` fires inside `commit_op` (the singleton process). Resolving the
+  # workspace via `Workspaces.get/1` there routes to the Manager over HTTP on a
+  # cold `State` cache; if that call hangs it backs up the singleton mailbox —
+  # the broadcast-fan-out cascade root PR #314 closes for PreviewPanes. Offload
+  # already moved register/rehydrate I/O off the callbacks; this closes the
+  # remaining in-server HTTP. Mirror `Aliases.expanded_host_path`: folder-attach
+  # id, then the `State` record's `host_path`, never a remote resolve. Cold-cache
+  # / source-only / remote workspaces degrade to `:workspace_not_found` (the
+  # payload omits active content; the viewer's on-demand hydrate path fills it) —
+  # the not-found branch already handles this shape.
   defp workspace_loc(workspace_id) do
-    with {:ok, workspace} <- Workspaces.get(workspace_id),
-         {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
-      {:ok, loc}
-    else
-      _ -> {:error, :workspace_not_found}
+    case state_only_host_path(workspace_id) do
+      path when is_binary(path) and path != "" ->
+        expanded = Path.expand(path)
+        if File.dir?(expanded), do: {:ok, {:local, expanded}}, else: {:error, :not_found}
+
+      _ ->
+        {:error, :workspace_not_found}
+    end
+  end
+
+  defp state_only_host_path(workspace_id) do
+    case Workspaces.decode_folder_id(workspace_id) do
+      path when is_binary(path) ->
+        path
+
+      _ ->
+        case Workspaces.State.get(workspace_id) do
+          {:ok, %{host_path: path}} when is_binary(path) and path != "" -> path
+          _ -> nil
+        end
     end
   end
 
