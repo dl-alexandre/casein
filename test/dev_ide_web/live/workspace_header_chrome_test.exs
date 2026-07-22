@@ -118,6 +118,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # connect now lives in the help overlay's Agents tab).
     refute has_element?(view, "#notifications-bell-#{workspace_id}")
     refute has_element?(view, "#connect-agent-button-#{workspace_id}")
+    refute has_element?(view, "#agent-operations-button-#{workspace_id}")
     assert has_element?(view, ".header-overflow button[phx-click='notifications:toggle']")
     assert has_element?(view, ".header-overflow button[phx-click='palette:open']")
 

@@ -12,11 +12,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
     <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <button
-          :if={@codex_pending_approval_count > 0}
-          id={"codex-terminal-approval-banner-" <> @workspace.id}
+          :if={@agent_approval_count > 0}
+          id={"agent-terminal-approval-banner-" <> @workspace.id}
           type="button"
-          phx-click="switch_tab"
-          phx-value-tab="agents"
+          phx-click="notifications:toggle"
           class="group flex shrink-0 items-center gap-2 border-b border-amber-400/25 bg-amber-400/[0.08] px-3 py-2 text-left text-[11px] text-amber-800 transition hover:bg-amber-400/[0.14] dark:text-amber-200"
         >
           <span class="relative flex size-2 shrink-0">
@@ -24,11 +23,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             <span class="relative inline-flex size-2 rounded-full bg-amber-500"></span>
           </span>
           <span class="font-semibold">
-            {@codex_pending_approval_count} Codex approval{if @codex_pending_approval_count == 1,
+            {@agent_approval_count} agent approval{if @agent_approval_count == 1,
               do: "",
               else: "s"} waiting
           </span>
-          <span class="text-amber-700/70 dark:text-amber-200/60">Open Agent Operations</span>
+          <span class="text-amber-700/70 dark:text-amber-200/60">Review in Notifications</span>
           <.icon
             name="hero-arrow-right"
             class="ml-auto size-3.5 transition-transform group-hover:translate-x-0.5"

@@ -159,7 +159,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Cockpit tabs addressable via "switch_tab" and the `?tab=` deep-link query
   # param (docs/deep_links.md). Unknown values are ignored.
-  @tabs ~w(terminal agents files search diff artifacts run proposals logs history)
+  @tabs ~w(terminal files search diff artifacts run proposals logs history)
 
   @impl true
   def mount(params, session, socket) do
@@ -886,8 +886,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       if tab == "artifacts", do: ArtifactEvents.refresh_artifact_projects(socket), else: socket
 
-    socket = if tab == "history", do: HistoryEvents.open(socket, params), else: socket
-    if tab == "agents", do: CodexEvents.open(socket), else: socket
+    if tab == "history" do
+      socket
+      |> HistoryEvents.open(params)
+      |> CodexEvents.open()
+    else
+      socket
+    end
   end
 
   def select_tab(socket, _tab, _params), do: socket
@@ -1344,9 +1349,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info(:after_mount_agents, socket) do
     socket =
       if connected?(socket) do
-        if socket.assigns[:tab] == "agents",
-          do: CodexEvents.open(socket),
-          else: CodexEvents.refresh(socket)
+        CodexEvents.open(socket)
       else
         socket
       end

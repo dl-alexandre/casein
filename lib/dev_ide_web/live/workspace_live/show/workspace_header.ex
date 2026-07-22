@@ -7,20 +7,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
 
   attr :desktop_terminal?, :boolean, default: false
   attr :notif_unread_count, :integer, default: 0
+  attr :agent_approval_count, :integer, default: 0
 
   def header_overflow_menu(assigns) do
     ~H"""
+    <span
+      id={"agent-approval-announcer-" <> @workspace.id}
+      class="sr-only"
+      aria-live="assertive"
+      aria-atomic="true"
+    >
+      <%= if @agent_approval_count > 0 do %>
+        {@agent_approval_count} agent approval{if @agent_approval_count == 1,
+          do: "",
+          else: "s"} waiting in Notifications.
+      <% end %>
+    </span>
     <details
       id={"header-overflow-" <> @workspace.id}
       phx-hook="HeaderOverflow"
       class="header-overflow relative shrink-0"
     >
       <summary
-        class="flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
-        title="More workspace and terminal controls"
-        aria-label="More header controls"
+        class="relative flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
+        title={header_overflow_title(@agent_approval_count)}
+        aria-label={header_overflow_title(@agent_approval_count)}
       >
         ⋯
+        <span
+          :if={@agent_approval_count > 0}
+          id={"header-agent-approval-count-" <> @workspace.id}
+          class="absolute -right-1.5 -top-1.5 inline-flex min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-bold leading-4 text-amber-950 ring-2 ring-base-100"
+        >
+          {min(@agent_approval_count, 99)}
+        </span>
       </summary>
 
       <div class="header-overflow-menu">
@@ -227,11 +247,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
         >
           <span>Notifications</span>
           <span
-            :if={(@notif_unread_count || 0) > 0}
+            :if={notification_attention_count(assigns) > 0}
             id={"notifications-open-" <> @workspace.id <> "-count"}
-            class="inline-flex min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-4 text-white"
+            class={[
+              "inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-4",
+              if((@notif_unread_count || 0) > 0,
+                do: "bg-red-600 text-white",
+                else: "bg-amber-400 text-amber-950"
+              )
+            ]}
           >
-            {@notif_unread_count}
+            {notification_attention_count(assigns)}
           </span>
         </button>
 
@@ -264,6 +290,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
     </details>
     """
   end
+
+  defp notification_attention_count(assigns) do
+    (assigns.notif_unread_count || 0) + (assigns.agent_approval_count || 0)
+  end
+
+  defp header_overflow_title(count) when count > 0,
+    do: "More controls — #{count} agent approval#{if count == 1, do: "", else: "s"} waiting"
+
+  defp header_overflow_title(_count), do: "More workspace and terminal controls"
 
   @doc false
   def workspace_startable?(%{status: status}, nil),
