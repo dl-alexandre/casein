@@ -16,6 +16,10 @@ defmodule DevIDE.FilePanes do
   File **content and version tokens are never stored** — they are read fresh from
   disk via `DevIDE.Workspaces.FileAccess` on every render/save so a stale token
   can never clobber a concurrently-edited file.
+
+  I/O (Repo + tmux) runs in `Task.Supervisor.async_nolink` offload tasks with
+  per-pane serialization. ETS + `workspace_index` + `window_index` commits stay
+  atomic in the GenServer process.
   """
 
   use GenServer
@@ -34,6 +38,8 @@ defmodule DevIDE.FilePanes do
   @table :dev_ide_file_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
   @pane_type :file
+  # Register/deregister/clear wait on offloaded Repo/tmux I/O.
+  @lifecycle_call_timeout 30_000
 
   @type registration :: %{
           id: String.t(),
@@ -65,22 +71,18 @@ defmodule DevIDE.FilePanes do
       write_concurrency: true
     ])
 
-    {:ok, fresh_state()}
+    {:ok, empty_state()}
   end
 
-  # In-memory state. `persist_queue`/`persist_inflight`/`flush_waiters` back the
-  # deferred-write worker (see "deferred persistence" below): Repo + tmux
-  # side-effects run in a supervised task off the GenServer's reply path so the
-  # singleton is never blocked on IO. ETS + the indexes stay authoritative and
-  # are updated synchronously, so live reads never wait on persistence.
-  defp fresh_state do
+  defp empty_state do
     %{
       subscriptions: MapSet.new(),
       workspace_index: %{},
       window_index: %{},
-      persist_queue: :queue.new(),
-      persist_inflight: nil,
-      persist_inflight_pid: nil,
+      pending_ops: %{},
+      inflight_panes: %{},
+      op_queue: %{},
+      rehydrate_keys: %{},
       flush_waiters: []
     }
   end
@@ -131,26 +133,15 @@ defmodule DevIDE.FilePanes do
   @doc "Register a file pane binding. Broadcasts `:registered`."
   @spec register(map()) :: {:ok, registration()} | {:error, term()}
   def register(attrs) when is_map(attrs) do
-    case GenServer.call(__MODULE__, {:register, attrs}) do
-      {:ok, reg} ->
-        broadcast(:registered, reg)
-        {:ok, reg}
-
-      err ->
-        err
-    end
+    GenServer.call(__MODULE__, {:register, attrs}, @lifecycle_call_timeout)
   end
 
   @doc "Remove a file pane binding and kill its holder pane. Broadcasts `:removed`."
   @spec deregister(String.t()) :: :ok | {:error, :not_found}
   def deregister(pane_id) when is_binary(pane_id) do
-    case GenServer.call(__MODULE__, {:deregister, pane_id}) do
-      {:ok, reg} ->
-        broadcast(:removed, reg)
-        :ok
-
-      err ->
-        err
+    case GenServer.call(__MODULE__, {:deregister, pane_id}, @lifecycle_call_timeout) do
+      {:ok, _reg} -> :ok
+      err -> err
     end
   end
 
@@ -172,9 +163,8 @@ defmodule DevIDE.FilePanes do
   """
   @spec close_tab(String.t(), String.t()) :: {:ok, registration() | :closed} | {:error, term()}
   def close_tab(pane_id, path) when is_binary(pane_id) and is_binary(path) do
-    case GenServer.call(__MODULE__, {:close_tab, pane_id, path}) do
-      {:ok, :closed, reg} ->
-        broadcast(:removed, reg)
+    case GenServer.call(__MODULE__, {:close_tab, pane_id, path}, @lifecycle_call_timeout) do
+      {:ok, :closed, _reg} ->
         {:ok, :closed}
 
       {:ok, reg} ->
@@ -262,66 +252,83 @@ defmodule DevIDE.FilePanes do
   end
 
   @spec clear() :: :ok
-  def clear, do: GenServer.call(__MODULE__, :clear)
+  def clear, do: GenServer.call(__MODULE__, :clear, @lifecycle_call_timeout)
 
   @doc """
-  Blocks until every deferred persistence/tmux side-effect has drained.
+  Blocks until all previously queued Repo and tmux side effects have drained.
 
-  Registration mutations reply as soon as ETS is updated and enqueue their Repo
-  and tmux work to a background worker. Callers (and tests) that must observe the
-  persisted row immediately after a mutation call this to await that worker.
+  Most lifecycle calls already wait for their own offloaded work. Tab mutations
+  reply after their in-memory commit, so callers that require persistence before
+  continuing can use this compatibility boundary.
   """
   @spec flush() :: :ok
-  def flush, do: GenServer.call(__MODULE__, :flush)
+  def flush, do: GenServer.call(__MODULE__, :flush, @lifecycle_call_timeout)
 
   # --- GenServer callbacks ------------------------------------------------------
 
   @impl true
-  def handle_call({:register, attrs}, _from, state) do
-    case do_register(attrs, state) do
-      {:ok, reg, state} -> {:reply, {:ok, reg}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
+  def handle_call({:register, attrs}, from, state) do
+    pane_id = string_param(attrs, :pane_id)
+    enqueue_or_start_register(attrs, pane_id, from, state)
+  end
+
+  def handle_call({:deregister, pane_id}, from, state) do
+    enqueue_or_start_deregister(pane_id, from, state, persist?: true)
+  end
+
+  def handle_call({:open_tab, pane_id, path, opts}, from, state) do
+    case lookup_by_pane(pane_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      reg ->
+        activate? = Keyword.get(opts, :activate, true) != false
+        line = normalize_line(opts[:line])
+        tab = %{path: path, line: line}
+
+        open_files =
+          case Enum.find_index(reg.open_files, &(&1.path == path)) do
+            nil ->
+              reg.open_files ++ [tab]
+
+            idx ->
+              List.replace_at(reg.open_files, idx, merge_tab(Enum.at(reg.open_files, idx), line))
+          end
+
+        updated = %{
+          reg
+          | open_files: open_files,
+            active_path: if(activate?, do: path, else: reg.active_path)
+        }
+
+        # In-memory mutation + reply first; offload only the Repo upsert.
+        state = store_registration(updated, state)
+        GenServer.reply(from, {:ok, updated})
+        enqueue_or_start_tab_persist(pane_id, updated, state)
     end
   end
 
-  def handle_call({:deregister, pane_id}, _from, state) do
-    case do_deregister(pane_id, state) do
-      {:ok, reg, state} -> {:reply, {:ok, reg}, state}
-      {:error, reason, state} -> {:reply, {:error, reason}, state}
+  def handle_call({:activate_tab, pane_id, path}, from, state) do
+    case lookup_by_pane(pane_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      reg ->
+        updated =
+          if Enum.any?(reg.open_files, &(&1.path == path)) do
+            %{reg | active_path: path}
+          else
+            reg
+          end
+
+        state = store_registration(updated, state)
+        GenServer.reply(from, {:ok, updated})
+        enqueue_or_start_tab_persist(pane_id, updated, state)
     end
   end
 
-  def handle_call({:open_tab, pane_id, path, opts}, _from, state) do
-    reply_with_mutation(state, pane_id, fn reg ->
-      activate? = Keyword.get(opts, :activate, true) != false
-      line = normalize_line(opts[:line])
-      tab = %{path: path, line: line}
-
-      open_files =
-        case Enum.find_index(reg.open_files, &(&1.path == path)) do
-          nil ->
-            reg.open_files ++ [tab]
-
-          idx ->
-            List.replace_at(reg.open_files, idx, merge_tab(Enum.at(reg.open_files, idx), line))
-        end
-
-      %{reg | open_files: open_files, active_path: if(activate?, do: path, else: reg.active_path)}
-    end)
-  end
-
-  def handle_call({:activate_tab, pane_id, path}, _from, state) do
-    reply_with_mutation(state, pane_id, fn reg ->
-      if Enum.any?(reg.open_files, &(&1.path == path)) do
-        %{reg | active_path: path}
-      else
-        reg
-      end
-    end)
-  end
-
-  def handle_call({:close_tab, pane_id, path}, _from, state) do
-    case get_by_pane(pane_id) do
+  def handle_call({:close_tab, pane_id, path}, from, state) do
+    case lookup_by_pane(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -329,56 +336,104 @@ defmodule DevIDE.FilePanes do
         remaining = Enum.reject(reg.open_files, &(&1.path == path))
 
         if remaining == [] do
-          {:ok, closed_reg, state} = do_deregister(pane_id, state)
-          {:reply, {:ok, :closed, closed_reg}, state}
+          enqueue_or_start_deregister(pane_id, from, state, persist?: true, reply: :closed)
         else
           active_path =
             if reg.active_path == path, do: last_path(remaining), else: reg.active_path
 
           updated = %{reg | open_files: remaining, active_path: active_path}
-          state = persist_and_store(updated, state)
-          {:reply, {:ok, updated}, state}
+          state = store_registration(updated, state)
+          GenServer.reply(from, {:ok, updated})
+          enqueue_or_start_tab_persist(pane_id, updated, state)
         end
     end
   end
 
-  def handle_call({:get_by_pane, pane_id}, _from, state) do
-    # ETS hits skip the drain; a miss falls through to the DB, which must first
-    # reflect any pending close so a just-deregistered pane isn't rehydrated.
-    state = if lookup_by_pane(pane_id), do: state, else: drain_writes_sync(state)
-    {reg, state} = get_or_rehydrate_by_pane(pane_id, state)
-    {:reply, reg, state}
+  def handle_call({:get_by_pane, pane_id}, from, state) do
+    case lookup_by_pane(pane_id) do
+      %{} = registration ->
+        {:reply, registration, state}
+
+      nil ->
+        start_or_join_rehydrate(
+          {:pane, pane_id},
+          from,
+          state,
+          fn ->
+            case load_open_persisted(pane_id) do
+              nil -> {:rehydrate_done, []}
+              persisted -> {:rehydrate_done, [rehydrate_io_result(persisted)]}
+            end
+          end
+        )
+    end
   end
 
   def handle_call({:get_by_window, session, window_id}, _from, state) do
     reg =
       case Map.get(state.window_index, {session, window_id}) do
         nil -> nil
-        pane_id -> get_by_pane(pane_id)
+        pane_id -> lookup_by_pane(pane_id)
       end
 
     {:reply, reg, state}
   end
 
-  def handle_call({:list_for_workspace, workspace_ids}, _from, state) do
-    # Reads the DB for cold panes — drain pending closes first so a just-removed
-    # pane's still-open row can't be rehydrated back into the list.
-    state = rehydrate_workspaces(workspace_ids, drain_writes_sync(state))
-    {:reply, list_workspace_registrations(state.workspace_index, workspace_ids), state}
+  def handle_call({:list_for_workspace, workspace_ids}, from, state) do
+    key = {:workspaces, Enum.sort(workspace_ids)}
+
+    start_or_join_rehydrate(
+      key,
+      from,
+      state,
+      fn ->
+        results =
+          workspace_ids
+          |> load_open_persisted_for_workspaces()
+          |> Enum.map(&rehydrate_io_result/1)
+
+        {:rehydrate_done, results}
+      end,
+      list_reply: workspace_ids
+    )
   end
 
-  def handle_call(:clear, _from, state) do
-    # Lifecycle boundary: await any in-flight write so its insert can't land
-    # after close_all, then close everything synchronously for a clean slate.
-    state = await_inflight_write(state)
-    close_all_persisted()
+  def handle_call(:clear, from, state) do
     :ets.delete_all_objects(@table)
-    Enum.each(state.flush_waiters, &GenServer.reply(&1, :ok))
-    {:reply, :ok, fresh_state()}
+
+    # Unblock any waiters so clear() in test setup cannot hang behind crashed tasks.
+    Enum.each(state.pending_ops, fn {_ref, op} ->
+      reply_op(op, {:error, :file_cleared})
+      reply_rehydrate_waiters(op, nil)
+    end)
+
+    # Queued (not-yet-started) ops would otherwise be silently dropped with
+    # empty_state and their callers left hanging for the full call timeout.
+    Enum.each(state.op_queue, fn {_pane_id, q} ->
+      Enum.each(:queue.to_list(q), fn
+        {_kind, _payload, waiter} when not is_nil(waiter) ->
+          GenServer.reply(waiter, {:error, :file_cleared})
+
+        _ ->
+          :ok
+      end)
+    end)
+
+    offload_op(
+      from,
+      :clear,
+      nil,
+      nil,
+      fn ->
+        close_all_persisted()
+        :ok
+      end,
+      %{empty_state() | pending_ops: %{}, flush_waiters: state.flush_waiters}
+    )
   end
 
   def handle_call(:flush, from, state) do
-    if idle_writes?(state) do
+    if idle_ops?(state) do
       {:reply, :ok, state}
     else
       {:noreply, %{state | flush_waiters: [from | state.flush_waiters]}}
@@ -386,153 +441,712 @@ defmodule DevIDE.FilePanes do
   end
 
   @impl true
+  def handle_info({ref, result}, state) when is_reference(ref) do
+    case Map.pop(state.pending_ops, ref) do
+      {nil, _} ->
+        {:noreply, state}
+
+      {op, pending} ->
+        state = %{state | pending_ops: pending}
+        state = commit_op(op, result, state)
+        {:noreply, maybe_notify_flush_waiters(state)}
+    end
+  end
+
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
+    case pop_pending_op_for_pid(state.pending_ops, pid) do
+      nil ->
+        {:noreply, state}
+
+      {ref, op, pending} ->
+        state = %{state | pending_ops: pending}
+        state = clear_rehydrate_key(state, op)
+
+        # Rehydrate-kind callers expect `registration | nil` or a list, never an
+        # error tuple — fall back to the committed state shape.
+        case op do
+          %{kind: :rehydrate} ->
+            reply = rehydrate_fallback_reply(op, state)
+            reply_op(op, reply)
+            reply_rehydrate_waiters(op, reply)
+
+          _ ->
+            reply_op(op, {:error, :file_op_crashed})
+            reply_rehydrate_waiters(op, nil)
+        end
+
+        state = clear_inflight(state, op.pane_id, ref)
+        state = drain_op_queue(state, op.pane_id)
+        {:noreply, maybe_notify_flush_waiters(state)}
+    end
+  end
+
   def handle_info({@topology_tag, {:updated, topology}}, state) do
-    {:noreply, expire_vanished_panes(topology, state)}
+    state = expire_vanished_panes(topology, state)
+    {:noreply, state}
   end
 
   def handle_info({@topology_tag, {:session_terminated, %{session: session}}}, state) do
-    stale =
+    pane_ids =
       state.workspace_index
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        match?(%{tmux_session: ^session}, get_by_pane(pane_id))
+        match?(%{tmux_session: ^session}, lookup_by_pane(pane_id))
       end)
 
-    # One UPDATE for all vanished panes — avoid N+1 close_persisted/1 in the reduce.
-    state = if stale == [], do: state, else: enqueue_write(state, {:close, stale})
-
-    state =
-      Enum.reduce(stale, state, fn pane_id, acc ->
-        {reg, acc} =
-          case do_deregister(pane_id, acc, persist?: false) do
-            {:ok, reg, next} -> {reg, next}
-            {:error, _, next} -> {nil, next}
-          end
-
-        if reg, do: broadcast(:removed, reg)
-        acc
-      end)
-
-    {:noreply, state}
-  end
-
-  # Deferred-write worker finished: run the next queued side-effect (or satisfy
-  # flush waiters once the queue empties). A ref that isn't the current inflight
-  # one is a straggler from a cleared/superseded worker — just tidy its monitor.
-  def handle_info({ref, _result}, state) when is_reference(ref) do
-    if ref == state.persist_inflight do
-      {:noreply, write_completed(state, ref)}
-    else
-      Process.demonitor(ref, [:flush])
+    if pane_ids == [] do
       {:noreply, state}
-    end
-  end
-
-  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) when is_reference(ref) do
-    if ref == state.persist_inflight do
-      {:noreply, start_next_write(%{state | persist_inflight: nil, persist_inflight_pid: nil})}
     else
-      {:noreply, state}
+      # Batch Repo close in a task, then state-first deregisters (persist?: false).
+      offload_op(
+        nil,
+        :session_terminated_persist,
+        nil,
+        %{pane_ids: pane_ids},
+        fn ->
+          _ = close_persisted_many(pane_ids)
+          {:session_terminated_persist_done, pane_ids}
+        end,
+        state
+      )
     end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # --- registration internals ---------------------------------------------------
+  # ---- Offload infrastructure -------------------------------------------------
 
-  defp do_register(attrs, state) do
+  defp offload_op(from, kind, pane_id, plan, fun, state) do
+    caller =
+      case from do
+        {pid, _tag} when is_pid(pid) -> pid
+        _ -> self()
+      end
+
+    task =
+      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+        # Prepend the originating caller's pid so Ecto sandbox ownership
+        # resolves to the test process (not the named FilePanes singleton).
+        Process.put(:"$callers", [caller | List.wrap(Process.get(:"$callers"))])
+
+        if kind in [:register, :deregister, :tab_persist, :session_terminated_persist] do
+          maybe_test_io_delay()
+        end
+
+        if kind == :rehydrate, do: maybe_test_rehydrate_delay()
+
+        fun.()
+      end)
+
+    grant_repo_sandbox(task.pid, [self(), caller])
+    Process.monitor(task.pid)
+
+    op = %{
+      from: from,
+      pid: task.pid,
+      kind: kind,
+      pane_id: pane_id,
+      plan: plan,
+      waiters: []
+    }
+
+    state = %{state | pending_ops: Map.put(state.pending_ops, task.ref, op)}
+
+    state =
+      if is_binary(pane_id) do
+        %{state | inflight_panes: Map.put(state.inflight_panes, pane_id, task.ref)}
+      else
+        state
+      end
+
+    {:noreply, state}
+  end
+
+  defp pop_pending_op_for_pid(pending, pid) do
+    Enum.find_value(pending, fn
+      {ref, %{pid: ^pid} = op} -> {ref, op, Map.delete(pending, ref)}
+      _ -> nil
+    end)
+  end
+
+  defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
+    Enum.each(parents, fn parent ->
+      try do
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
+      catch
+        _, _ -> :ok
+      end
+    end)
+  end
+
+  defp maybe_test_io_delay do
+    case Application.get_env(:dev_ide, :file_panes_test_io_delay_ms) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
+    end
+  end
+
+  defp maybe_test_rehydrate_delay do
+    case Application.get_env(:dev_ide, :file_panes_test_rehydrate_delay_ms) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
+    end
+  end
+
+  defp reply_op(%{from: from}, result) when not is_nil(from), do: GenServer.reply(from, result)
+  defp reply_op(_op, _result), do: :ok
+
+  defp reply_rehydrate_waiters(%{waiters: waiters}, result) when is_list(waiters) do
+    Enum.each(waiters, &GenServer.reply(&1, result))
+  end
+
+  defp reply_rehydrate_waiters(_op, _result), do: :ok
+
+  defp idle_ops?(state) do
+    map_size(state.pending_ops) == 0 and
+      map_size(state.inflight_panes) == 0 and
+      map_size(state.op_queue) == 0 and
+      map_size(state.rehydrate_keys) == 0
+  end
+
+  defp maybe_notify_flush_waiters(%{flush_waiters: []} = state), do: state
+
+  defp maybe_notify_flush_waiters(state) do
+    if idle_ops?(state) do
+      Enum.each(state.flush_waiters, &GenServer.reply(&1, :ok))
+      %{state | flush_waiters: []}
+    else
+      state
+    end
+  end
+
+  defp clear_inflight(state, pane_id, ref) when is_binary(pane_id) do
+    case Map.get(state.inflight_panes, pane_id) do
+      ^ref -> %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+      _ -> state
+    end
+  end
+
+  defp clear_inflight(state, _pane_id, _ref), do: state
+
+  defp clear_rehydrate_key(state, %{plan: %{rehydrate_key: key}}) when not is_nil(key) do
+    case Map.get(state.rehydrate_keys, key) do
+      ref when is_reference(ref) ->
+        %{state | rehydrate_keys: Map.delete(state.rehydrate_keys, key)}
+
+      _ ->
+        state
+    end
+  end
+
+  defp clear_rehydrate_key(state, _op), do: state
+
+  defp enqueue_op(state, pane_id, kind, payload, from) when is_binary(pane_id) do
+    q = Map.get(state.op_queue, pane_id, :queue.new())
+    q = :queue.in({kind, payload, from}, q)
+    %{state | op_queue: Map.put(state.op_queue, pane_id, q)}
+  end
+
+  defp drain_op_queue(state, pane_id) when is_binary(pane_id) do
+    case Map.get(state.op_queue, pane_id) do
+      nil ->
+        state
+
+      q ->
+        case :queue.out(q) do
+          {:empty, _} ->
+            %{state | op_queue: Map.delete(state.op_queue, pane_id)}
+
+          {{:value, {kind, payload, from}}, q2} ->
+            state =
+              if :queue.is_empty(q2) do
+                %{state | op_queue: Map.delete(state.op_queue, pane_id)}
+              else
+                %{state | op_queue: Map.put(state.op_queue, pane_id, q2)}
+              end
+
+            case start_queued_op(kind, payload, from, state) do
+              {:noreply, next} ->
+                next
+
+              {:reply, reply, next} ->
+                if from, do: GenServer.reply(from, reply)
+                next
+            end
+        end
+    end
+  end
+
+  defp drain_op_queue(state, _pane_id), do: state
+
+  defp start_queued_op(:register, attrs, from, state) do
+    pane_id = string_param(attrs, :pane_id)
+    start_register(attrs, pane_id, from, state)
+  end
+
+  defp start_queued_op(:deregister, %{pane_id: pane_id, opts: opts}, from, state) do
+    begin_deregister(pane_id, state, Keyword.put(opts, :from, from))
+  end
+
+  defp start_queued_op(:tab_persist, registration, _from, state) do
+    pane_id = registration.pane_id
+    start_tab_persist(pane_id, registration, state)
+  end
+
+  defp enqueue_or_start_register(attrs, pane_id, from, state) do
+    if is_binary(pane_id) and Map.has_key?(state.inflight_panes, pane_id) do
+      {:noreply, enqueue_op(state, pane_id, :register, attrs, from)}
+    else
+      start_register(attrs, pane_id, from, state)
+    end
+  end
+
+  defp start_register(attrs, pane_id, from, state) do
+    case build_registration(attrs) do
+      {:ok, registration} ->
+        # Displace any existing file pane on the same tmux window (one per window).
+        state = maybe_displace_window_peer(registration, pane_id, state)
+
+        plan = %{registration: registration}
+
+        offload_op(
+          from,
+          :register,
+          pane_id,
+          plan,
+          fn ->
+            case persist_registration(registration) do
+              {:ok, _} -> {:register_done, registration}
+              {:error, reason} -> {:error, reason}
+            end
+          end,
+          state
+        )
+
+      {:error, reason} ->
+        if from do
+          {:reply, {:error, reason}, state}
+        else
+          {:noreply, state}
+        end
+    end
+  end
+
+  # Displaces a COMMITTED peer pane in the same {session,window} (one file pane
+  # per window). `begin_deregister` is state-first (ETS lookup), so it only
+  # displaces panes that have finished registering.
+  #
+  # KNOWN GAP (tracked debt, low-severity, self-heals): `window_index` for the
+  # NEW pane is written at commit time (`store_registration`), past the offload,
+  # not here. So if a second cold register for the same window interleaves
+  # between this register's start and its commit, it sees no peer to displace and
+  # both commit — ETS transiently holds two panes for one window until the next
+  # topology broadcast reaps the loser via `expire_vanished_panes`. The original
+  # synchronous code displaced immediately. A full fix reserves the slot here and
+  # adds a commit-time "is the window still ours?" check with loser self-
+  # deregistration; deferred to keep this offload change low-risk. The invariant
+  # is UI-only (one pane per window) and eventually-consistent, never a safety
+  # or persistence hole.
+  defp maybe_displace_window_peer(registration, pane_id, state) do
+    session = registration.tmux_session
+    window_id = registration.pane_window_id
+
+    case is_binary(session) && is_binary(window_id) &&
+           Map.get(state.window_index, {session, window_id}) do
+      existing when is_binary(existing) and existing != pane_id ->
+        case begin_deregister(existing, state, persist?: true, from: nil) do
+          {:noreply, next} -> next
+          {:reply, _, next} -> next
+        end
+
+      _ ->
+        state
+    end
+  end
+
+  defp enqueue_or_start_deregister(pane_id, from, state, opts) do
+    if is_binary(pane_id) and Map.has_key?(state.inflight_panes, pane_id) do
+      {:noreply, enqueue_op(state, pane_id, :deregister, %{pane_id: pane_id, opts: opts}, from)}
+    else
+      begin_deregister(pane_id, state, Keyword.put(opts, :from, from))
+    end
+  end
+
+  # State-first deregister (ETS + both indexes), then offload I/O tail.
+  defp begin_deregister(pane_id, state, opts) do
+    from = Keyword.get(opts, :from)
+    persist? = Keyword.get(opts, :persist?, true)
+    reply = Keyword.get(opts, :reply, :ok)
+
+    case lookup_by_pane(pane_id) do
+      nil ->
+        if from do
+          {:reply, {:error, :not_found}, state}
+        else
+          {:noreply, state}
+        end
+
+      registration ->
+        :ets.delete(@table, pane_id)
+
+        state =
+          state
+          |> drop_workspace_index(pane_id, registration.workspace_id)
+          |> drop_window_index(registration)
+
+        plan = %{
+          registration: registration,
+          persist?: persist?,
+          reply: reply
+        }
+
+        offload_op(
+          from,
+          :deregister,
+          pane_id,
+          plan,
+          fn -> run_deregister_io(plan) end,
+          state
+        )
+    end
+  end
+
+  defp run_deregister_io(%{
+         registration: registration,
+         persist?: persist?
+       }) do
+    if persist? do
+      close_persisted(registration.pane_id)
+    end
+
+    _ = kill_pane(registration)
+    {:deregister_done, registration}
+  end
+
+  defp enqueue_or_start_tab_persist(pane_id, registration, state) do
+    if is_binary(pane_id) and Map.has_key?(state.inflight_panes, pane_id) do
+      {:noreply, enqueue_op(state, pane_id, :tab_persist, registration, nil)}
+    else
+      start_tab_persist(pane_id, registration, state)
+    end
+  end
+
+  defp start_tab_persist(pane_id, registration, state) do
+    offload_op(
+      nil,
+      :tab_persist,
+      pane_id,
+      %{registration: registration},
+      fn ->
+        _ = persist_registration(registration)
+        {:tab_persist_done, registration.pane_id}
+      end,
+      state
+    )
+  end
+
+  # ---- commit (server) --------------------------------------------------------
+
+  defp commit_op(%{kind: :clear} = op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
+  defp commit_op(%{kind: :register, pane_id: pane_id} = op, result, state) do
+    state =
+      case result do
+        {:register_done, registration} ->
+          # Atomic commit: ETS + workspace_index + window_index + subscription.
+          state = store_registration(registration, state)
+          broadcast(:registered, registration)
+          reply_op(op, {:ok, registration})
+          state
+
+        {:error, reason} ->
+          reply_op(op, {:error, reason})
+          state
+
+        other when is_tuple(other) ->
+          reply_op(op, other)
+          state
+
+        other ->
+          reply_op(op, {:error, other})
+          state
+      end
+
+    state = %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+    drain_op_queue(state, pane_id)
+  end
+
+  defp commit_op(%{kind: :deregister, pane_id: pane_id, plan: plan} = op, result, state) do
+    registration = plan.registration
+
+    case result do
+      {:deregister_done, _} ->
+        broadcast(:removed, registration)
+
+        case plan.reply do
+          :closed -> reply_op(op, {:ok, :closed, registration})
+          _ -> reply_op(op, {:ok, registration})
+        end
+
+      {:error, reason} ->
+        reply_op(op, {:error, reason})
+
+      other ->
+        reply_op(op, other)
+    end
+
+    state = %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+    drain_op_queue(state, pane_id)
+  end
+
+  defp commit_op(%{kind: :tab_persist, pane_id: pane_id}, _result, state) do
+    state = %{state | inflight_panes: Map.delete(state.inflight_panes, pane_id)}
+    drain_op_queue(state, pane_id)
+  end
+
+  defp commit_op(%{kind: :rehydrate} = op, result, state) do
+    state = clear_rehydrate_key(state, op)
+
+    {reply, state} =
+      case result do
+        {:rehydrate_done, io_results} when is_list(io_results) ->
+          {state, dead_pane_ids} =
+            Enum.reduce(io_results, {state, []}, fn item, {acc, dead} ->
+              case commit_rehydrate_item(item, acc) do
+                {:drop_close, pane_id, next} -> {next, [pane_id | dead]}
+                next -> {next, dead}
+              end
+            end)
+
+          # Close dead persisted rows off-server (never from the GenServer).
+          state =
+            case Enum.uniq(dead_pane_ids) do
+              [] ->
+                state
+
+              pane_ids ->
+                {:noreply, next} =
+                  offload_op(
+                    nil,
+                    :rehydrate_close,
+                    nil,
+                    %{pane_ids: pane_ids},
+                    fn ->
+                      _ = close_persisted_many(pane_ids)
+                      :ok
+                    end,
+                    state
+                  )
+
+                next
+            end
+
+          reply =
+            case op.plan do
+              %{list_reply: workspace_ids} when is_list(workspace_ids) ->
+                list_workspace_registrations(state.workspace_index, workspace_ids)
+
+              %{rehydrate_key: {:pane, pane_id}} ->
+                lookup_by_pane(pane_id)
+
+              _ ->
+                nil
+            end
+
+          {reply, state}
+
+        {:error, _} ->
+          {rehydrate_fallback_reply(op, state), state}
+
+        _ ->
+          {rehydrate_fallback_reply(op, state), state}
+      end
+
+    reply_op(op, reply)
+    reply_rehydrate_waiters(op, reply)
+    state
+  end
+
+  defp commit_op(%{kind: :session_terminated_persist} = op, result, state) do
+    _ = op
+
+    case result do
+      {:session_terminated_persist_done, pane_ids} when is_list(pane_ids) ->
+        Enum.reduce(pane_ids, state, fn pane_id, acc ->
+          # Respect the per-pane queue: a concurrent in-flight register must not
+          # have its inflight ref clobbered — queue the deregister behind it.
+          if is_binary(pane_id) and Map.has_key?(acc.inflight_panes, pane_id) do
+            enqueue_op(
+              acc,
+              pane_id,
+              :deregister,
+              %{pane_id: pane_id, opts: [persist?: false]},
+              nil
+            )
+          else
+            case begin_deregister(pane_id, acc, persist?: false, from: nil) do
+              {:noreply, next} -> next
+              {:reply, _, next} -> next
+            end
+          end
+        end)
+
+      _ ->
+        state
+    end
+  end
+
+  defp commit_op(%{kind: :rehydrate_close} = _op, _result, state), do: state
+
+  defp commit_op(op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
+  # Shape-correct fallback for a rehydrate op whose IO failed or crashed.
+  defp rehydrate_fallback_reply(%{plan: %{list_reply: workspace_ids}}, state)
+       when is_list(workspace_ids) do
+    list_workspace_registrations(state.workspace_index, workspace_ids)
+  end
+
+  defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:pane, pane_id}}}, _state) do
+    lookup_by_pane(pane_id)
+  end
+
+  defp rehydrate_fallback_reply(_op, _state), do: nil
+
+  defp commit_rehydrate_item({:commit, registration}, state) when is_map(registration) do
+    pane_id = registration.pane_id
+
+    cond do
+      Map.has_key?(state.inflight_panes, pane_id) ->
+        # Lifecycle op owns this pane — skip rehydrate commit.
+        state
+
+      lookup_by_pane(pane_id) ->
+        state
+
+      true ->
+        store_registration(registration, state)
+    end
+  end
+
+  # Dead on the wire, but ETS may already hold a live registration (list rehydrate
+  # races with a warm path). Never close or drop indexes for panes the server owns.
+  defp commit_rehydrate_item({:drop, reg}, state) when is_map(reg) do
+    pane_id = reg.pane_id
+
+    cond do
+      Map.has_key?(state.inflight_panes, pane_id) ->
+        state
+
+      lookup_by_pane(pane_id) ->
+        state
+
+      true ->
+        next =
+          state
+          |> drop_workspace_index(pane_id, reg.workspace_id)
+          |> drop_window_index(reg)
+
+        {:drop_close, pane_id, next}
+    end
+  end
+
+  defp commit_rehydrate_item(:drop, state), do: state
+  defp commit_rehydrate_item(_, state), do: state
+
+  # pane_live? runs only in offload tasks. Closing dead rows is deferred to the
+  # GenServer commit so we never close_persisted a pane still live in ETS.
+  defp rehydrate_io_result(%FilePaneRegistration{} = persisted) do
+    reg = persisted_to_map(persisted)
+
+    if pane_live?(reg) do
+      {:commit, reg}
+    else
+      {:drop, reg}
+    end
+  end
+
+  defp start_or_join_rehydrate(key, from, state, fun, opts \\ []) do
+    case Map.get(state.rehydrate_keys, key) do
+      ref when is_reference(ref) ->
+        case Map.get(state.pending_ops, ref) do
+          %{kind: :rehydrate} = op ->
+            op = %{op | waiters: [from | op.waiters]}
+            {:noreply, %{state | pending_ops: Map.put(state.pending_ops, ref, op)}}
+
+          _ ->
+            start_rehydrate(key, from, state, fun, opts)
+        end
+
+      _ ->
+        start_rehydrate(key, from, state, fun, opts)
+    end
+  end
+
+  defp start_rehydrate(key, from, state, fun, opts) do
+    list_reply = Keyword.get(opts, :list_reply)
+
+    plan = %{
+      rehydrate_key: key,
+      list_reply: list_reply
+    }
+
+    {:noreply, state} = offload_op(from, :rehydrate, nil, plan, fun, state)
+
+    ref =
+      Enum.find_value(state.pending_ops, fn
+        {r, %{kind: :rehydrate, plan: %{rehydrate_key: ^key}}} -> r
+        _ -> nil
+      end)
+
+    state =
+      if is_reference(ref) do
+        %{state | rehydrate_keys: Map.put(state.rehydrate_keys, key, ref)}
+      else
+        state
+      end
+
+    {:noreply, state}
+  end
+
+  # --- registration build / store ---------------------------------------------
+
+  defp build_registration(attrs) do
     pane_id = string_param(attrs, :pane_id)
     workspace_id = string_param(attrs, :workspace_id)
 
     with {:ok, pane_id} <- require_binary(pane_id, :missing_pane_id),
          {:ok, workspace_id} <- require_binary(workspace_id, :missing_workspace_id) do
-      # Displace any existing file pane on the same tmux window (one per window).
-      tmux_session = string_param(attrs, :tmux_session)
-      window_id = string_param(attrs, :pane_window_id)
-
-      state =
-        case window_id && tmux_session && Map.get(state.window_index, {tmux_session, window_id}) do
-          existing when is_binary(existing) and existing != pane_id ->
-            case do_deregister(existing, state) do
-              {:ok, reg, next} ->
-                broadcast(:removed, reg)
-                next
-
-              {:error, _, next} ->
-                next
-            end
-
-          _ ->
-            state
-        end
-
       open_files = normalize_open_files(attrs)
 
-      registration = %{
-        id: pane_id,
-        pane_id: pane_id,
-        workspace_id: workspace_id,
-        tmux_session: tmux_session,
-        pane_window_id: window_id,
-        placement: string_param(attrs, :placement),
-        anchor_pane_id: string_param(attrs, :anchor_pane_id),
-        anchor_window_id: string_param(attrs, :anchor_window_id),
-        open_files: open_files,
-        active_path: string_param(attrs, :active_path) || first_path(open_files),
-        status: :open
-      }
-
-      state = persist_and_store(registration, state)
-      {:ok, registration, state}
-    else
-      {:error, reason} -> {:error, reason}
+      {:ok,
+       %{
+         id: pane_id,
+         pane_id: pane_id,
+         workspace_id: workspace_id,
+         tmux_session: string_param(attrs, :tmux_session),
+         pane_window_id: string_param(attrs, :pane_window_id),
+         placement: string_param(attrs, :placement),
+         anchor_pane_id: string_param(attrs, :anchor_pane_id),
+         anchor_window_id: string_param(attrs, :anchor_window_id),
+         open_files: open_files,
+         active_path: string_param(attrs, :active_path) || first_path(open_files),
+         status: :open
+       }}
     end
   end
 
-  defp do_deregister(pane_id, state, opts \\ []) do
-    case get_by_pane(pane_id) do
-      nil ->
-        {:error, :not_found, state}
-
-      reg ->
-        :ets.delete(@table, pane_id)
-
-        state =
-          if Keyword.get(opts, :persist?, true) do
-            enqueue_write(state, {:close, [pane_id]})
-          else
-            state
-          end
-
-        state =
-          state
-          |> enqueue_write({:kill, reg})
-          |> drop_workspace_index(pane_id, reg.workspace_id)
-          |> drop_window_index(reg)
-
-        {:ok, reg, state}
-    end
-  end
-
-  # Mutate a stored registration in place, persist, and reply with the new value.
-  defp reply_with_mutation(state, pane_id, fun) do
-    case get_by_pane(pane_id) do
-      nil ->
-        {:reply, {:error, :not_found}, state}
-
-      reg ->
-        updated = fun.(reg)
-        state = persist_and_store(updated, state)
-        {:reply, {:ok, updated}, state}
-    end
-  end
-
-  defp persist_and_store(registration, state) do
+  # Atomic in-server commit of ETS + both indexes + topology subscription.
+  defp store_registration(registration, state) do
     :ets.insert(@table, {registration.pane_id, registration})
 
     state
-    |> enqueue_write({:persist, registration})
     |> put_workspace_index(registration.pane_id, registration.workspace_id)
     |> put_window_index(registration)
     |> maybe_subscribe_topology(registration.tmux_session)
@@ -745,22 +1359,31 @@ defmodule DevIDE.FilePanes do
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        case get_by_pane(pane_id) do
+        case lookup_by_pane(pane_id) do
           %{tmux_session: ^session} = reg -> not MapSet.member?(live_ids, reg.pane_id)
           _ -> false
         end
       end)
 
-    Enum.reduce(stale, state, fn pane_id, acc ->
-      case do_deregister(pane_id, acc) do
-        {:ok, reg, next} ->
-          broadcast(:removed, reg)
-          next
+    if stale == [] do
+      state
+    else
+      # Batch Repo close off-server (frequent path), then state-first deregisters.
+      {:noreply, next} =
+        offload_op(
+          nil,
+          :session_terminated_persist,
+          nil,
+          %{pane_ids: stale},
+          fn ->
+            _ = close_persisted_many(stale)
+            {:session_terminated_persist_done, stale}
+          end,
+          state
+        )
 
-        {:error, _, next} ->
-          next
-      end
-    end)
+      next
+    end
   end
 
   defp refresh_window_index(state, session, panes) do
@@ -787,56 +1410,15 @@ defmodule DevIDE.FilePanes do
     %{state | window_index: window_index}
   end
 
-  # --- rehydration --------------------------------------------------------------
-
-  defp get_or_rehydrate_by_pane(pane_id, state) do
-    case lookup_by_pane(pane_id) do
-      nil ->
-        case load_open_persisted(pane_id) do
-          nil -> {nil, state}
-          persisted -> rehydrate(persisted, state)
-        end
-
-      reg ->
-        {reg, state}
-    end
-  end
-
-  defp rehydrate_workspaces(workspace_ids, state) do
+  defp list_workspace_registrations(workspace_index, workspace_ids) do
     workspace_ids
-    |> load_open_persisted_for_workspaces()
-    |> Enum.reduce(state, fn persisted, acc ->
-      {_reg, next} = rehydrate(persisted, acc)
-      next
-    end)
+    |> Enum.flat_map(&Map.get(workspace_index, &1, []))
+    |> Enum.uniq()
+    |> Enum.map(&lookup_by_pane/1)
+    |> Enum.reject(&is_nil/1)
   end
 
-  defp rehydrate(%FilePaneRegistration{} = persisted, state) do
-    reg = persisted_to_map(persisted)
-
-    cond do
-      lookup_by_pane(reg.pane_id) ->
-        {lookup_by_pane(reg.pane_id), state}
-
-      not pane_live?(reg) ->
-        close_persisted(reg.pane_id)
-
-        {nil,
-         state |> drop_workspace_index(reg.pane_id, reg.workspace_id) |> drop_window_index(reg)}
-
-      true ->
-        :ets.insert(@table, {reg.pane_id, reg})
-
-        state =
-          state
-          |> put_workspace_index(reg.pane_id, reg.workspace_id)
-          |> put_window_index(reg)
-          |> maybe_subscribe_topology(reg.tmux_session)
-
-        {reg, state}
-    end
-  end
-
+  # pane_live? runs only in offload tasks (rehydrate I/O) — never in the GenServer.
   defp pane_live?(%{tmux_session: session, pane_id: pane_id})
        when is_binary(session) and session != "" do
     session
@@ -847,124 +1429,6 @@ defmodule DevIDE.FilePanes do
   end
 
   defp pane_live?(_), do: false
-
-  defp list_workspace_registrations(workspace_index, workspace_ids) do
-    workspace_ids
-    |> Enum.flat_map(&Map.get(workspace_index, &1, []))
-    |> Enum.uniq()
-    |> Enum.map(&get_by_pane/1)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  # --- deferred persistence worker ----------------------------------------------
-  #
-  # Repo writes and tmux pane kills are side-effects whose results never gate a
-  # reply (callers read the fresh registration from ETS). Running them inline in
-  # handle_call blocked the singleton on IO and serialized every caller behind a
-  # DB/tmux round-trip. Instead we enqueue them and drain the queue one op at a
-  # time through a supervised task, so ordering is preserved (open-then-close for
-  # a pane can never reorder) while the GenServer stays responsive. `flush/0`
-  # awaits the drain for read-after-write callers.
-
-  defp enqueue_write(state, op) do
-    %{state | persist_queue: :queue.in(op, state.persist_queue)}
-    |> start_next_write()
-  end
-
-  # Idempotent kick: starts the next queued op only when the worker is idle.
-  defp start_next_write(%{persist_inflight: ref} = state) when is_reference(ref), do: state
-
-  defp start_next_write(state) do
-    case :queue.out(state.persist_queue) do
-      {:empty, _} ->
-        notify_flush_waiters(state)
-
-      {{:value, op}, rest} ->
-        # Prepend the GenServer's callers so Repo sandbox ownership resolves to
-        # the test process under a non-shared (async) sandbox; harmless in shared.
-        callers = [self() | List.wrap(Process.get(:"$callers"))]
-
-        task =
-          Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
-            Process.put(:"$callers", callers)
-            run_write(op)
-          end)
-
-        grant_repo_sandbox(task.pid, callers)
-
-        %{state | persist_queue: rest, persist_inflight: task.ref, persist_inflight_pid: task.pid}
-    end
-  end
-
-  defp run_write({:persist, registration}), do: persist_registration(registration)
-  defp run_write({:close, pane_ids}), do: close_persisted_many(pane_ids)
-  defp run_write({:kill, registration}), do: kill_pane(registration)
-
-  defp write_completed(state, ref) do
-    Process.demonitor(ref, [:flush])
-    start_next_write(%{state | persist_inflight: nil, persist_inflight_pid: nil})
-  end
-
-  defp idle_writes?(state) do
-    is_nil(state.persist_inflight) and :queue.is_empty(state.persist_queue)
-  end
-
-  defp notify_flush_waiters(%{flush_waiters: []} = state), do: state
-
-  defp notify_flush_waiters(%{flush_waiters: waiters} = state) do
-    Enum.each(waiters, &GenServer.reply(&1, :ok))
-    %{state | flush_waiters: []}
-  end
-
-  # Synchronously wait out the single in-flight write task (used by clear/0 so a
-  # late insert cannot land after close_all wipes the table). Bounded so a wedged
-  # task can never hang the singleton.
-  defp await_inflight_write(%{persist_inflight: ref, persist_inflight_pid: pid} = state)
-       when is_reference(ref) do
-    receive do
-      {^ref, _result} ->
-        Process.demonitor(ref, [:flush])
-        %{state | persist_inflight: nil, persist_inflight_pid: nil}
-
-      {:DOWN, ^ref, :process, ^pid, _reason} ->
-        %{state | persist_inflight: nil, persist_inflight_pid: nil}
-    after
-      5_000 -> %{state | persist_inflight: nil, persist_inflight_pid: nil}
-    end
-  end
-
-  defp await_inflight_write(state), do: state
-
-  # Fully drain the write queue synchronously: await the in-flight task, then run
-  # any remaining ops inline. Used by DB-reading handlers so persistence is
-  # consistent before a rehydrate (and by nothing on the hot write path). Cheap
-  # no-op when the worker is already idle.
-  defp drain_writes_sync(state) do
-    if idle_writes?(state) do
-      state
-    else
-      state = await_inflight_write(state)
-
-      case :queue.out(state.persist_queue) do
-        {:empty, _} ->
-          notify_flush_waiters(state)
-
-        {{:value, op}, rest} ->
-          run_write(op)
-          drain_writes_sync(%{state | persist_queue: rest})
-      end
-    end
-  end
-
-  defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
-    Enum.each(parents, fn parent ->
-      try do
-        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
-      catch
-        _, _ -> :ok
-      end
-    end)
-  end
 
   # --- persistence --------------------------------------------------------------
 
@@ -1127,12 +1591,38 @@ defmodule DevIDE.FilePanes do
     end
   end
 
+  # State-only host-loc resolution for the in-server broadcast payload build.
+  # `broadcast/2` fires inside `commit_op` (the singleton process). Resolving the
+  # workspace via `Workspaces.get/1` there routes to the Manager over HTTP on a
+  # cold `State` cache; if that call hangs it backs up the singleton mailbox —
+  # the broadcast-fan-out cascade root PR #314 closes for PreviewPanes. Offload
+  # already moved register/rehydrate I/O off the callbacks; this closes the
+  # remaining in-server HTTP. Mirror `Aliases.expanded_host_path`: folder-attach
+  # id, then the `State` record's `host_path`, never a remote resolve. Cold-cache
+  # / source-only / remote workspaces degrade to `:workspace_not_found` (the
+  # payload omits active content; the viewer's on-demand hydrate path fills it) —
+  # the not-found branch already handles this shape.
   defp workspace_loc(workspace_id) do
-    with {:ok, workspace} <- Workspaces.get(workspace_id),
-         {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
-      {:ok, loc}
-    else
-      _ -> {:error, :workspace_not_found}
+    case state_only_host_path(workspace_id) do
+      path when is_binary(path) and path != "" ->
+        expanded = Path.expand(path)
+        if File.dir?(expanded), do: {:ok, {:local, expanded}}, else: {:error, :not_found}
+
+      _ ->
+        {:error, :workspace_not_found}
+    end
+  end
+
+  defp state_only_host_path(workspace_id) do
+    case Workspaces.decode_folder_id(workspace_id) do
+      path when is_binary(path) ->
+        path
+
+      _ ->
+        case Workspaces.State.get(workspace_id) do
+          {:ok, %{host_path: path}} when is_binary(path) and path != "" -> path
+          _ -> nil
+        end
     end
   end
 
