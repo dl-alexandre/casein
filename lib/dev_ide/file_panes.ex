@@ -65,12 +65,24 @@ defmodule DevIDE.FilePanes do
       write_concurrency: true
     ])
 
-    {:ok,
-     %{
-       subscriptions: MapSet.new(),
-       workspace_index: %{},
-       window_index: %{}
-     }}
+    {:ok, fresh_state()}
+  end
+
+  # In-memory state. `persist_queue`/`persist_inflight`/`flush_waiters` back the
+  # deferred-write worker (see "deferred persistence" below): Repo + tmux
+  # side-effects run in a supervised task off the GenServer's reply path so the
+  # singleton is never blocked on IO. ETS + the indexes stay authoritative and
+  # are updated synchronously, so live reads never wait on persistence.
+  defp fresh_state do
+    %{
+      subscriptions: MapSet.new(),
+      workspace_index: %{},
+      window_index: %{},
+      persist_queue: :queue.new(),
+      persist_inflight: nil,
+      persist_inflight_pid: nil,
+      flush_waiters: []
+    }
   end
 
   # --- public API ---------------------------------------------------------------
@@ -252,6 +264,16 @@ defmodule DevIDE.FilePanes do
   @spec clear() :: :ok
   def clear, do: GenServer.call(__MODULE__, :clear)
 
+  @doc """
+  Blocks until every deferred persistence/tmux side-effect has drained.
+
+  Registration mutations reply as soon as ETS is updated and enqueue their Repo
+  and tmux work to a background worker. Callers (and tests) that must observe the
+  persisted row immediately after a mutation call this to await that worker.
+  """
+  @spec flush() :: :ok
+  def flush, do: GenServer.call(__MODULE__, :flush)
+
   # --- GenServer callbacks ------------------------------------------------------
 
   @impl true
@@ -321,6 +343,9 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:get_by_pane, pane_id}, _from, state) do
+    # ETS hits skip the drain; a miss falls through to the DB, which must first
+    # reflect any pending close so a just-deregistered pane isn't rehydrated.
+    state = if lookup_by_pane(pane_id), do: state, else: drain_writes_sync(state)
     {reg, state} = get_or_rehydrate_by_pane(pane_id, state)
     {:reply, reg, state}
   end
@@ -336,14 +361,28 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:list_for_workspace, workspace_ids}, _from, state) do
-    state = rehydrate_workspaces(workspace_ids, state)
+    # Reads the DB for cold panes — drain pending closes first so a just-removed
+    # pane's still-open row can't be rehydrated back into the list.
+    state = rehydrate_workspaces(workspace_ids, drain_writes_sync(state))
     {:reply, list_workspace_registrations(state.workspace_index, workspace_ids), state}
   end
 
-  def handle_call(:clear, _from, _state) do
+  def handle_call(:clear, _from, state) do
+    # Lifecycle boundary: await any in-flight write so its insert can't land
+    # after close_all, then close everything synchronously for a clean slate.
+    state = await_inflight_write(state)
     close_all_persisted()
     :ets.delete_all_objects(@table)
-    {:reply, :ok, %{subscriptions: MapSet.new(), workspace_index: %{}, window_index: %{}}}
+    Enum.each(state.flush_waiters, &GenServer.reply(&1, :ok))
+    {:reply, :ok, fresh_state()}
+  end
+
+  def handle_call(:flush, from, state) do
+    if idle_writes?(state) do
+      {:reply, :ok, state}
+    else
+      {:noreply, %{state | flush_waiters: [from | state.flush_waiters]}}
+    end
   end
 
   @impl true
@@ -361,7 +400,7 @@ defmodule DevIDE.FilePanes do
       end)
 
     # One UPDATE for all vanished panes — avoid N+1 close_persisted/1 in the reduce.
-    _ = close_persisted_many(stale)
+    state = if stale == [], do: state, else: enqueue_write(state, {:close, stale})
 
     state =
       Enum.reduce(stale, state, fn pane_id, acc ->
@@ -376,6 +415,26 @@ defmodule DevIDE.FilePanes do
       end)
 
     {:noreply, state}
+  end
+
+  # Deferred-write worker finished: run the next queued side-effect (or satisfy
+  # flush waiters once the queue empties). A ref that isn't the current inflight
+  # one is a straggler from a cleared/superseded worker — just tidy its monitor.
+  def handle_info({ref, _result}, state) when is_reference(ref) do
+    if ref == state.persist_inflight do
+      {:noreply, write_completed(state, ref)}
+    else
+      Process.demonitor(ref, [:flush])
+      {:noreply, state}
+    end
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state) when is_reference(ref) do
+    if ref == state.persist_inflight do
+      {:noreply, start_next_write(%{state | persist_inflight: nil, persist_inflight_pid: nil})}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -439,14 +498,16 @@ defmodule DevIDE.FilePanes do
       reg ->
         :ets.delete(@table, pane_id)
 
-        if Keyword.get(opts, :persist?, true) do
-          close_persisted(pane_id)
-        end
-
-        _ = kill_pane(reg)
+        state =
+          if Keyword.get(opts, :persist?, true) do
+            enqueue_write(state, {:close, [pane_id]})
+          else
+            state
+          end
 
         state =
           state
+          |> enqueue_write({:kill, reg})
           |> drop_workspace_index(pane_id, reg.workspace_id)
           |> drop_window_index(reg)
 
@@ -469,9 +530,9 @@ defmodule DevIDE.FilePanes do
 
   defp persist_and_store(registration, state) do
     :ets.insert(@table, {registration.pane_id, registration})
-    _ = persist_registration(registration)
 
     state
+    |> enqueue_write({:persist, registration})
     |> put_workspace_index(registration.pane_id, registration.workspace_id)
     |> put_window_index(registration)
     |> maybe_subscribe_topology(registration.tmux_session)
@@ -793,6 +854,116 @@ defmodule DevIDE.FilePanes do
     |> Enum.uniq()
     |> Enum.map(&get_by_pane/1)
     |> Enum.reject(&is_nil/1)
+  end
+
+  # --- deferred persistence worker ----------------------------------------------
+  #
+  # Repo writes and tmux pane kills are side-effects whose results never gate a
+  # reply (callers read the fresh registration from ETS). Running them inline in
+  # handle_call blocked the singleton on IO and serialized every caller behind a
+  # DB/tmux round-trip. Instead we enqueue them and drain the queue one op at a
+  # time through a supervised task, so ordering is preserved (open-then-close for
+  # a pane can never reorder) while the GenServer stays responsive. `flush/0`
+  # awaits the drain for read-after-write callers.
+
+  defp enqueue_write(state, op) do
+    %{state | persist_queue: :queue.in(op, state.persist_queue)}
+    |> start_next_write()
+  end
+
+  # Idempotent kick: starts the next queued op only when the worker is idle.
+  defp start_next_write(%{persist_inflight: ref} = state) when is_reference(ref), do: state
+
+  defp start_next_write(state) do
+    case :queue.out(state.persist_queue) do
+      {:empty, _} ->
+        notify_flush_waiters(state)
+
+      {{:value, op}, rest} ->
+        # Prepend the GenServer's callers so Repo sandbox ownership resolves to
+        # the test process under a non-shared (async) sandbox; harmless in shared.
+        callers = [self() | List.wrap(Process.get(:"$callers"))]
+
+        task =
+          Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+            Process.put(:"$callers", callers)
+            run_write(op)
+          end)
+
+        grant_repo_sandbox(task.pid, callers)
+
+        %{state | persist_queue: rest, persist_inflight: task.ref, persist_inflight_pid: task.pid}
+    end
+  end
+
+  defp run_write({:persist, registration}), do: persist_registration(registration)
+  defp run_write({:close, pane_ids}), do: close_persisted_many(pane_ids)
+  defp run_write({:kill, registration}), do: kill_pane(registration)
+
+  defp write_completed(state, ref) do
+    Process.demonitor(ref, [:flush])
+    start_next_write(%{state | persist_inflight: nil, persist_inflight_pid: nil})
+  end
+
+  defp idle_writes?(state) do
+    is_nil(state.persist_inflight) and :queue.is_empty(state.persist_queue)
+  end
+
+  defp notify_flush_waiters(%{flush_waiters: []} = state), do: state
+
+  defp notify_flush_waiters(%{flush_waiters: waiters} = state) do
+    Enum.each(waiters, &GenServer.reply(&1, :ok))
+    %{state | flush_waiters: []}
+  end
+
+  # Synchronously wait out the single in-flight write task (used by clear/0 so a
+  # late insert cannot land after close_all wipes the table). Bounded so a wedged
+  # task can never hang the singleton.
+  defp await_inflight_write(%{persist_inflight: ref, persist_inflight_pid: pid} = state)
+       when is_reference(ref) do
+    receive do
+      {^ref, _result} ->
+        Process.demonitor(ref, [:flush])
+        %{state | persist_inflight: nil, persist_inflight_pid: nil}
+
+      {:DOWN, ^ref, :process, ^pid, _reason} ->
+        %{state | persist_inflight: nil, persist_inflight_pid: nil}
+    after
+      5_000 -> %{state | persist_inflight: nil, persist_inflight_pid: nil}
+    end
+  end
+
+  defp await_inflight_write(state), do: state
+
+  # Fully drain the write queue synchronously: await the in-flight task, then run
+  # any remaining ops inline. Used by DB-reading handlers so persistence is
+  # consistent before a rehydrate (and by nothing on the hot write path). Cheap
+  # no-op when the worker is already idle.
+  defp drain_writes_sync(state) do
+    if idle_writes?(state) do
+      state
+    else
+      state = await_inflight_write(state)
+
+      case :queue.out(state.persist_queue) do
+        {:empty, _} ->
+          notify_flush_waiters(state)
+
+        {{:value, op}, rest} ->
+          run_write(op)
+          drain_writes_sync(%{state | persist_queue: rest})
+      end
+    end
+  end
+
+  defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
+    Enum.each(parents, fn parent ->
+      try do
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
+      catch
+        _, _ -> :ok
+      end
+    end)
   end
 
   # --- persistence --------------------------------------------------------------
