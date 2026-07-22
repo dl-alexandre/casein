@@ -104,7 +104,8 @@ defmodule DevIDE.FilePanesTest do
     assert [%{path: "lib/foo.ex", line: 2}] = reg.open_files
     assert_receive {:pane_event, %{reason: :registered, type: :file, pane_id: ^pane_id}}
 
-    # Persisted for reconnect.
+    # Persisted for reconnect (persistence is deferred; await the write worker).
+    FilePanes.flush()
     assert Repo.get_by(FilePaneRegistration, pane_id: pane_id, status: :open)
   end
 
@@ -190,6 +191,32 @@ defmodule DevIDE.FilePanesTest do
       )
 
     assert {:ok, :closed} = FilePanes.close_tab(pane_id, "only.ex")
+    assert FilePanes.get_by_pane(pane_id) == nil
+  end
+
+  test "deferred persistence survives register→deregister ordering and never resurrects" do
+    {root, workspace} = seed_workspace!()
+    session = "devide_ws_defer"
+    seed_session!(session, "%1")
+    write_file!(root, "d.ex", "x")
+
+    {:ok, %{pane_id: pane_id}} =
+      FilePanes.open_file_in_pane(workspace, "d.ex", tmux_session: session, anchor_pane_id: "%1")
+
+    # The open row is durable once the write worker drains.
+    FilePanes.flush()
+    assert %{status: :open} = Repo.get_by(FilePaneRegistration, pane_id: pane_id)
+
+    :ok = FilePanes.deregister(pane_id)
+
+    # The close is queued after the open; draining leaves the row closed, not
+    # stuck open and not deleted — proving per-pane write ordering is preserved.
+    FilePanes.flush()
+    assert %{status: :closed} = Repo.get_by(FilePaneRegistration, pane_id: pane_id)
+
+    # A read that hits the DB must not rehydrate the just-removed pane, even
+    # before an explicit flush (the read path drains pending closes itself).
+    assert FilePanes.list_for_workspace(workspace.id) == []
     assert FilePanes.get_by_pane(pane_id) == nil
   end
 
