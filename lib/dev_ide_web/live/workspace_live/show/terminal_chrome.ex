@@ -1156,6 +1156,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <div
             data-file-pane-tab
             data-path={tab.path}
+            data-ctx-menu="file_pane_tab"
+            data-ctx-path={tab.path}
+            data-ctx-target-id={"file-pane-" <> dom_fragment(@pane.id)}
             class={[
               "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
               if(tab.path == file_pane_active_path(@file_pane),
@@ -1205,6 +1208,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       <div
         id={"file-pane-editor-" <> dom_fragment(@pane.id)}
         data-file-pane-editor
+        data-ctx-menu="file_pane_editor"
         phx-update="ignore"
         class="file-pane-editor absolute inset-x-0 bottom-0 top-7 z-10 overflow-hidden bg-zinc-950"
       >

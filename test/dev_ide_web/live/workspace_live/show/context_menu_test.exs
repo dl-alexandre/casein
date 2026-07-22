@@ -234,6 +234,83 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
       refute Enum.find(viewer, &(&1[:id] == "copy")).disabled
     end
 
+    test "file pane editor menu scopes clipboard/save to the pane and copies the path" do
+      base = %{
+        "targetId" => "file-pane-abc",
+        "hasFile" => "true",
+        "hasSelection" => "true",
+        "path" => "lib/foo.ex"
+      }
+
+      assert ContextMenu.items(
+               "file_pane_editor",
+               %{base | "hasFile" => "false"},
+               owner_assigns()
+             ) ==
+               []
+
+      full = ContextMenu.items("file_pane_editor", base, owner_assigns(mutations()))
+
+      assert item_ids(full) ==
+               [
+                 "cut",
+                 "copy",
+                 "paste",
+                 "select-all",
+                 "save",
+                 "copy-path",
+                 "send-agent",
+                 "explain"
+               ]
+
+      # Client actions target the pane overlay root by quoted attribute selector,
+      # never a bare #id (pane ids carry "%").
+      assert Enum.find(full, &(&1[:id] == "copy")).target == "[id='file-pane-abc']"
+      assert Enum.find(full, &(&1[:id] == "copy-path")).copy == "lib/foo.ex"
+
+      # Viewer: no save, no agent items; clipboard cut/paste disabled.
+      viewer = ContextMenu.items("file_pane_editor", base, viewer_assigns())
+      assert item_ids(viewer) == ["cut", "copy", "paste", "select-all", "copy-path"]
+      assert Enum.find(viewer, &(&1[:id] == "cut")).disabled
+      assert Enum.find(viewer, &(&1[:id] == "paste")).disabled
+
+      # No agent items without a selection.
+      no_sel =
+        ContextMenu.items(
+          "file_pane_editor",
+          %{base | "hasSelection" => "false"},
+          owner_assigns(mutations())
+        )
+
+      refute "send-agent" in item_ids(no_sel)
+    end
+
+    test "file pane tab menu carries the tab path in close actions and copy" do
+      items =
+        ContextMenu.items(
+          "file_pane_tab",
+          %{"path" => "lib/foo.ex", "targetId" => "file-pane-abc"},
+          owner_assigns()
+        )
+
+      assert item_ids(items) == ["close", "close-others", "copy-path"]
+
+      close = Enum.find(items, &(&1[:id] == "close"))
+      assert close.action == "close_tab"
+      assert close.target == "[id='file-pane-abc']"
+      assert close.detail == %{path: "lib/foo.ex"}
+
+      assert Enum.find(items, &(&1[:id] == "close-others")).detail == %{path: "lib/foo.ex"}
+      assert Enum.find(items, &(&1[:id] == "copy-path")).copy == "lib/foo.ex"
+
+      # A malformed target id builds nothing.
+      assert ContextMenu.items(
+               "file_pane_tab",
+               %{"path" => "lib/foo.ex", "targetId" => "bad id!"},
+               owner_assigns()
+             ) == []
+    end
+
     test "run entry menu offers rerun only when a command id exists" do
       with_command =
         ContextMenu.items(

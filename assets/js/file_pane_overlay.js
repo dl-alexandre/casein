@@ -19,7 +19,13 @@
 //     (loop-guarded); Ghostty never attaches to the holder pane.
 
 import { EditorView } from "@codemirror/view"
-import { makeEditorState, revealLine, fileErrorMessage } from "./editor_core"
+import {
+  makeEditorState,
+  revealLine,
+  fileErrorMessage,
+  runEditorCtxAction,
+  SEND_AGENT_MAX_BYTES,
+} from "./editor_core"
 import {
   applyOverlayRect,
   bindPaneSectionGeometryObserver,
@@ -76,6 +82,44 @@ export const FilePaneOverlay = {
     // dirty, so the tab strip dispatches here and we confirm before pushing.
     this._onCloseTab = (event) => this.closeTab(event.detail?.path)
     this.el.addEventListener("devide:file-pane:close-tab", this._onCloseTab)
+
+    // Right-click menus (shared ContextMenu hook). The editor body carries
+    // data-ctx-menu="file_pane_editor"; refresh its dynamic ctx (selection,
+    // active path) just before the menu opens, and execute the client actions
+    // the menu dispatches back — the editor clipboard/save actions plus the
+    // tab close/close-others and send-to-agent actions.
+    this._onCtxBeforeOpen = () => {
+      const sel = this.view.state.selection.main
+      this._ctxSelection = this.view.state.sliceDoc(sel.from, sel.to)
+      this.editorEl.dataset.ctxTargetId = this.el.id
+      this.editorEl.dataset.ctxHasFile = this.activePath ? "true" : "false"
+      this.editorEl.dataset.ctxHasSelection = this._ctxSelection ? "true" : "false"
+      this.editorEl.dataset.ctxPath = this.activePath || ""
+    }
+    this.editorEl.addEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
+
+    this._onCtxAction = (e) => {
+      const { action, path } = e.detail || {}
+      switch (action) {
+        case "close_tab":
+          this.closeTab(path)
+          return
+        case "close_others":
+          this.closeOthers(path)
+          return
+        case "send_to_agent":
+          this.sendSelectionToAgent("send")
+          return
+        case "explain":
+          this.sendSelectionToAgent("explain")
+          return
+      }
+      runEditorCtxAction(this.view, action, {
+        ctxSelection: this._ctxSelection,
+        onSave: () => this.save()
+      })
+    }
+    this.el.addEventListener("devide:ctx-action", this._onCtxAction)
   },
 
   updated() {
@@ -91,6 +135,8 @@ export const FilePaneOverlay = {
     this._sectionGeometryObserver = null
     this.el.removeEventListener("focusin", this._onFocusIn)
     this.el.removeEventListener("devide:file-pane:close-tab", this._onCloseTab)
+    this.editorEl.removeEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
+    this.el.removeEventListener("devide:ctx-action", this._onCtxAction)
     this.placeholderEl?.remove()
     this.placeholderEl = null
     this.view?.destroy()
@@ -211,6 +257,40 @@ export const FilePaneOverlay = {
 
     this.tabCache.delete(path)
     this.pushEvent("pane:input", { "pane-id": this.paneId, type: "close_tab", path })
+  },
+
+  // Close every tab except `keepPath`. Tab paths come from the DOM (the
+  // authoritative LV-rendered strip), not tabCache — a tab never visited has
+  // no cache entry. One combined confirm if any of them is dirty.
+  closeOthers(keepPath) {
+    const others = Array.from(this.el.querySelectorAll("[data-file-pane-tab]"))
+      .map((t) => t.dataset.path)
+      .filter((p) => p && p !== keepPath)
+    if (!others.length) return
+
+    if (
+      others.some((p) => this.tabCache.get(p)?.dirty) &&
+      !confirm("Discard unsaved changes in the other tabs?")
+    ) {
+      return
+    }
+
+    for (const p of others) {
+      this.tabCache.delete(p)
+      this.pushEvent("pane:input", { "pane-id": this.paneId, type: "close_tab", path: p })
+    }
+  },
+
+  sendSelectionToAgent(intent) {
+    const text = this._ctxSelection || ""
+    if (!text) return
+
+    if (new Blob([text]).size > SEND_AGENT_MAX_BYTES) {
+      showClipboardToast("Selection too large to send to the agent (32 KB max)", { kind: "error" })
+      return
+    }
+
+    this.pushEvent("terminal:send_agent_text", { text, path: this.activePath || "", intent })
   },
 
   syncDirty() {
