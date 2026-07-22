@@ -2,7 +2,7 @@ defmodule DevIDE.Agents.PreviewTools.Interactions do
   @moduledoc false
 
   alias DevIDE.Agents.PreviewTools.ControlSession
-  alias DevIDE.Agents.BrowserControl
+  alias DevIDE.Agents.PreviewTools.BrowserControl
   alias DevIDE.PreviewControl
 
   def navigate(params) when is_map(params) do

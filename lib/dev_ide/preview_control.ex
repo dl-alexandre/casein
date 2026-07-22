@@ -7,6 +7,7 @@ defmodule DevIDE.PreviewControl do
   context boundary.
   """
 
+  alias DevIDE.PreviewControl.Registry
   alias DevIDE.Previews.Control
 
   defdelegate open_session(workspace, surface_name, opts \\ []), to: Control
@@ -34,4 +35,11 @@ defmodule DevIDE.PreviewControl do
   defdelegate open_localhost_session(workspace, port, opts \\ []), to: Control
   defdelegate open_for_preview(workspace, preview, opts \\ []), to: Control
   defdelegate close_sessions_for_preview(preview_id), to: Control
+
+  # Registry lookups (slice 2) — mcp/scope and similar callers use the facade
+  defdelegate put(session_id, entry), to: Registry
+  defdelegate get(session_id), to: Registry
+  defdelegate update(session_id, fun), to: Registry
+  defdelegate delete(session_id), to: Registry
+  defdelegate clear(), to: Registry
 end

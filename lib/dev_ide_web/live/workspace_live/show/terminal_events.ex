@@ -15,7 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIDE.Workspaces.Scratch
   alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIDE.Previews.Url, as: PreviewUrl
+  alias DevIDE.Previews
   alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
@@ -715,7 +715,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   def handle_event("terminal:open_web_link_preview", %{"url" => url}, socket)
       when is_binary(url) do
     cond do
-      not PreviewUrl.http_url?(url) ->
+      not Previews.http_url?(url) ->
         {:noreply, socket}
 
       embeddability_checker().frame_blocked_url?(url) ->
@@ -1052,6 +1052,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   # Config seam so tests can stub the (network-touching) embeddability probe.
   defp embeddability_checker do
-    Application.get_env(:dev_ide, :embeddability_checker, DevIDE.Previews.Embeddability)
+    Application.get_env(:dev_ide, :embeddability_checker, DevIDE.Previews)
   end
 end

@@ -8,7 +8,7 @@ defmodule DevIDE.Links.Resolver do
   """
 
   alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Previews.Url
+  alias DevIDE.Previews
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.FileAccess
 
@@ -58,7 +58,7 @@ defmodule DevIDE.Links.Resolver do
   end
 
   defp resolve_http_uri(target, ctx) do
-    normalized = Url.normalize_localhost(target)
+    normalized = Previews.normalize_localhost(target)
 
     case URI.parse(normalized) do
       %URI{scheme: scheme, host: host} = uri

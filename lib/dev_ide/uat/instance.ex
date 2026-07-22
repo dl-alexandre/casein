@@ -12,7 +12,7 @@ defmodule DevIDE.UAT.Instance do
   the temp root.
   """
 
-  alias DevIDE.Previews.EnvPorts
+  alias DevIDE.Previews
   alias DevIDE.UAT.Instance.SystemRunner
   alias DevIDE.UAT.Manifest
 
@@ -138,7 +138,7 @@ defmodule DevIDE.UAT.Instance do
   end
 
   defp configured_range do
-    EnvPorts.port_range()
+    Previews.port_range()
   end
 
   defp find_free_port({lo, hi}) do

@@ -15,7 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIDE.Signals.EntryContext
 
   alias DevIDE.Agents.PaneEnv
-  alias DevIDE.Agents.BrowserControl
+  alias DevIDE.Agents.PreviewTools.BrowserControl
   alias DevIDE.Audit
   alias DevIDE.Labels
   alias DevIDE.Links.Open

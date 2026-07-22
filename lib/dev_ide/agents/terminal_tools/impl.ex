@@ -11,7 +11,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   alias DevIDE.Files.BrowserViewable
   alias DevIDE.Labels
   alias DevIDE.Operator.SituationServer
-  alias DevIDE.Previews.FileServer
+  alias DevIDE.Previews
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
   alias DevIDE.Terminals.AgentState
@@ -514,7 +514,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   end
 
   defp open_file_preview_surface(workspace, session, rel, params) do
-    with {:ok, port} <- FileServer.ensure_started(workspace, tmux_session: session) do
+    with {:ok, port} <- Previews.ensure_started(workspace, tmux_session: session) do
       url = "http://127.0.0.1:#{port}/" <> URI.encode(rel)
 
       opts =

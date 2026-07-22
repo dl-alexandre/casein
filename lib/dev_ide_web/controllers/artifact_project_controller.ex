@@ -167,7 +167,7 @@ defmodule DevIdeWeb.ArtifactProjectController do
     artifacts = Application.get_env(:dev_ide, :artifact_public_url)
 
     if is_binary(artifacts) and artifacts != "" and is_binary(cockpit) and cockpit != "" do
-      "'self' " <> DevIDE.Previews.Url.origin_of(cockpit)
+      "'self' " <> DevIDE.Previews.origin_of(cockpit)
     else
       "'self'"
     end
