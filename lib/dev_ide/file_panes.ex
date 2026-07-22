@@ -82,7 +82,8 @@ defmodule DevIDE.FilePanes do
       pending_ops: %{},
       inflight_panes: %{},
       op_queue: %{},
-      rehydrate_keys: %{}
+      rehydrate_keys: %{},
+      flush_waiters: []
     }
   end
 
@@ -253,6 +254,16 @@ defmodule DevIDE.FilePanes do
   @spec clear() :: :ok
   def clear, do: GenServer.call(__MODULE__, :clear, @lifecycle_call_timeout)
 
+  @doc """
+  Blocks until all previously queued Repo and tmux side effects have drained.
+
+  Most lifecycle calls already wait for their own offloaded work. Tab mutations
+  reply after their in-memory commit, so callers that require persistence before
+  continuing can use this compatibility boundary.
+  """
+  @spec flush() :: :ok
+  def flush, do: GenServer.call(__MODULE__, :flush, @lifecycle_call_timeout)
+
   # --- GenServer callbacks ------------------------------------------------------
 
   @impl true
@@ -417,8 +428,16 @@ defmodule DevIDE.FilePanes do
         close_all_persisted()
         :ok
       end,
-      %{empty_state() | pending_ops: %{}}
+      %{empty_state() | pending_ops: %{}, flush_waiters: state.flush_waiters}
     )
+  end
+
+  def handle_call(:flush, from, state) do
+    if idle_ops?(state) do
+      {:reply, :ok, state}
+    else
+      {:noreply, %{state | flush_waiters: [from | state.flush_waiters]}}
+    end
   end
 
   @impl true
@@ -430,7 +449,7 @@ defmodule DevIDE.FilePanes do
       {op, pending} ->
         state = %{state | pending_ops: pending}
         state = commit_op(op, result, state)
-        {:noreply, state}
+        {:noreply, maybe_notify_flush_waiters(state)}
     end
   end
 
@@ -458,7 +477,7 @@ defmodule DevIDE.FilePanes do
 
         state = clear_inflight(state, op.pane_id, ref)
         state = drain_op_queue(state, op.pane_id)
-        {:noreply, state}
+        {:noreply, maybe_notify_flush_waiters(state)}
     end
   end
 
@@ -583,6 +602,24 @@ defmodule DevIDE.FilePanes do
   end
 
   defp reply_rehydrate_waiters(_op, _result), do: :ok
+
+  defp idle_ops?(state) do
+    map_size(state.pending_ops) == 0 and
+      map_size(state.inflight_panes) == 0 and
+      map_size(state.op_queue) == 0 and
+      map_size(state.rehydrate_keys) == 0
+  end
+
+  defp maybe_notify_flush_waiters(%{flush_waiters: []} = state), do: state
+
+  defp maybe_notify_flush_waiters(state) do
+    if idle_ops?(state) do
+      Enum.each(state.flush_waiters, &GenServer.reply(&1, :ok))
+      %{state | flush_waiters: []}
+    else
+      state
+    end
+  end
 
   defp clear_inflight(state, pane_id, ref) when is_binary(pane_id) do
     case Map.get(state.inflight_panes, pane_id) do

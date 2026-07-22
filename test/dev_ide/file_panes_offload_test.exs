@@ -477,6 +477,35 @@ defmodule DevIDE.FilePanesOffloadTest do
     assert_receive {:lookup_result, nil}, 2_000
   end
 
+  test "flush waits for an acknowledged tab mutation to persist" do
+    {_path, workspace} = seed_workspace!()
+    session = "devide_ws_fp_flush"
+    pane_id = "%flush"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _} =
+             FilePanes.register(%{
+               pane_id: pane_id,
+               workspace_id: workspace.id,
+               tmux_session: session,
+               pane_window_id: "@1",
+               open_files: [%{path: "first.ex", line: nil}],
+               active_path: "first.ex"
+             })
+
+    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 300)
+    assert {:ok, _} = FilePanes.open_tab(pane_id, "second.ex")
+
+    parent = self()
+    spawn(fn -> send(parent, {:flush_result, FilePanes.flush()}) end)
+
+    wait_until(fn -> :sys.get_state(FilePanes).flush_waiters != [] end)
+    assert_receive {:flush_result, :ok}, 2_000
+
+    persisted = Repo.get_by!(FilePaneRegistration, pane_id: pane_id)
+    assert Enum.any?(persisted.open_files, &(&1["path"] == "second.ex"))
+  end
+
   test "clear replies file_cleared to queued (not yet started) op waiters" do
     {_path, workspace} = seed_workspace!()
     session = "devide_ws_fp_clear_queue"
