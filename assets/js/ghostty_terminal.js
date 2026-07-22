@@ -1254,10 +1254,17 @@ function renderPatched(hook, payload, upstreamRender) {
 // --- Terminal file links -------------------------------------------------------
 //
 // Server-detected file paths in terminal output (payload.file_links, scanned
-// in PaneWorker). Interaction model is selection-first: plain click and
-// drag-select are untouched; only Cmd/Ctrl reveals links (pointer cursor +
-// underline overlay) and Cmd/Ctrl+Click — handled in capture phase ahead of
-// the selection mousedown — opens the file in a file pane.
+// in PaneWorker). Same "web-like" interaction as web links below: the path
+// underlines on plain hover, and a plain click opens it on the server's
+// default surface for the file type. Drag-select is preserved — the click
+// only fires on a mouseup that never dragged past the slop and released on
+// the same link. Cmd/Ctrl+Click (resolved on mousedown, ahead of the
+// selection handler) also opens; Cmd/Ctrl+Shift+Click forces the other
+// surface.
+
+// Shared by file- and web-link plain clicks: a mousedown-to-mouseup drift
+// beyond this many pixels is a drag-select, not a click.
+const LINK_DRAG_SLOP_PX = 4
 
 function ensureFileLinkLayer(hook) {
   if (hook.__fileLinkLayer?.isConnected) return hook.__fileLinkLayer
@@ -1288,10 +1295,9 @@ function fileLinkAtEvent(hook, event) {
   return link ? {link, point} : null
 }
 
-// Underline the hovered link and show a pointer cursor — but only while
-// Cmd/Ctrl is held. Drawn as a pointer-events-none overlay positioned from
-// cell metrics (same approach as renderCellSelection), so it works in both
-// the DOM and canvas renderers.
+// Underline the hovered link and show a pointer cursor. Drawn as a
+// pointer-events-none overlay positioned from cell metrics (same approach as
+// renderCellSelection), so it works in both the DOM and canvas renderers.
 function setFileLinkHover(hook, hover) {
   const layer = ensureFileLinkLayer(hook)
   if (!layer) return
@@ -1320,18 +1326,14 @@ function refreshFileLinkHover(hook, event) {
   if (event) hook.__fileLinkPointerEvent = event
 
   const pointer = hook.__fileLinkPointerEvent
-  if (!pointer || !hook.__fileLinkModifier) {
+  // Suppress the hover affordance mid drag-select: the user is selecting text,
+  // not aiming at a link.
+  if (!pointer || hook.__nativeSelecting) {
     setFileLinkHover(hook, null)
     return
   }
 
   setFileLinkHover(hook, fileLinkAtEvent(hook, pointer))
-}
-
-function setFileLinkModifier(hook, held) {
-  if (hook.__fileLinkModifier === held) return
-  hook.__fileLinkModifier = held
-  refreshFileLinkHover(hook)
 }
 
 // Frame pane identity: the render stream is keyed "ghostty-<pane_id>" and the
@@ -1342,39 +1344,68 @@ function fileLinkPaneId(hook) {
   return id.startsWith("ghostty-") ? id.slice("ghostty-".length) : id
 }
 
+function openFileLink(hook, hover, mode) {
+  hook.pushEvent("terminal:open_file_link", {
+    path: hover.link.path,
+    line: hover.link.line ?? null,
+    pane_id: fileLinkPaneId(hook),
+    row: hover.point.row,
+    col: hover.point.col,
+    mode
+  })
+}
+
 function installTerminalFileLinks(hook) {
   hook.__fileLinks = new Map()
-  hook.__fileLinkModifier = false
   hook.__fileLinkPointerEvent = null
+  hook.__fileLinkPendingClick = null
 
-  // Capture phase, registered before the selection mousedown handler: a
-  // Cmd/Ctrl+Click on a link cell is consumed here (suppressing selection
-  // start and the vendor's focus handling for this event only). Everything
-  // else falls through to the selection-first mouse model unchanged.
+  // Capture phase, registered before the selection mousedown handler.
+  // Cmd/Ctrl+Click on a link cell is consumed here immediately (suppressing
+  // selection start and the vendor's focus handling for this event only).
+  // A plain mousedown on a link is only *recorded* — the native selection
+  // handler still runs, so a drag that begins on a link selects text as
+  // usual; the pending click resolves on mouseup (see below) and is
+  // cancelled the moment the pointer drags past the slop.
   hook.__onFileLinkMouseDown = (e) => {
+    if (e.button !== 0) {
+      hook.__fileLinkPendingClick = null
+      return
+    }
+
     // Cmd/Ctrl+Click → open on the server's default surface for the file type.
     // Cmd/Ctrl+Shift+Click → force the other surface. Alt still falls through.
-    if (e.button !== 0 || !(e.metaKey || e.ctrlKey) || e.altKey) return
+    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+      hook.__fileLinkPendingClick = null
+      const hover = fileLinkAtEvent(hook, e)
+      if (!hover) return
+
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      setFileLinkHover(hook, null)
+      openFileLink(hook, hover, e.shiftKey ? "flip" : "default")
+      return
+    }
+
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      hook.__fileLinkPendingClick = null
+      return
+    }
 
     const hover = fileLinkAtEvent(hook, e)
-    if (!hover) return
-
-    e.preventDefault()
-    e.stopImmediatePropagation()
-    setFileLinkHover(hook, null)
-
-    hook.pushEvent("terminal:open_file_link", {
-      path: hover.link.path,
-      line: hover.link.line ?? null,
-      pane_id: fileLinkPaneId(hook),
-      row: hover.point.row,
-      col: hover.point.col,
-      mode: e.shiftKey ? "flip" : "default"
-    })
+    hook.__fileLinkPendingClick = hover
+      ? {path: hover.link.path, line: hover.link.line ?? null, x: e.clientX, y: e.clientY}
+      : null
   }
 
   hook.__onFileLinkMouseMove = (e) => {
-    hook.__fileLinkModifier = e.metaKey || e.ctrlKey
+    const pending = hook.__fileLinkPendingClick
+    if (
+      pending &&
+      Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > LINK_DRAG_SLOP_PX
+    ) {
+      hook.__fileLinkPendingClick = null
+    }
     refreshFileLinkHover(hook, e)
   }
 
@@ -1383,22 +1414,26 @@ function installTerminalFileLinks(hook) {
     setFileLinkHover(hook, null)
   }
 
-  // Modifier transitions while the pointer rests on a link: reveal/hide the
-  // underline without waiting for the next mousemove.
-  hook.__onFileLinkModifierKey = (e) => {
-    if (e.key === "Meta" || e.key === "Control") {
-      setFileLinkModifier(hook, e.type === "keydown" || (e.metaKey || e.ctrlKey))
-    }
-  }
+  // Window-level (capture) so a release that drifts off the <pre> still
+  // resolves the pending click. Opens only when the release lands back on the
+  // same link and the pointer never dragged past the slop.
+  hook.__onFileLinkMouseUp = (e) => {
+    const pending = hook.__fileLinkPendingClick
+    hook.__fileLinkPendingClick = null
+    if (!pending || e.button !== 0) return
+    if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > LINK_DRAG_SLOP_PX) return
 
-  hook.__onFileLinkWindowBlur = () => setFileLinkModifier(hook, false)
+    const hover = fileLinkAtEvent(hook, e)
+    if (!hover || hover.link.path !== pending.path) return
+    if ((hover.link.line ?? null) !== pending.line) return
+
+    openFileLink(hook, hover, "default")
+  }
 
   hook.el.addEventListener("mousedown", hook.__onFileLinkMouseDown, true)
   hook.el.addEventListener("mousemove", hook.__onFileLinkMouseMove)
   hook.el.addEventListener("mouseleave", hook.__onFileLinkMouseLeave)
-  window.addEventListener("keydown", hook.__onFileLinkModifierKey)
-  window.addEventListener("keyup", hook.__onFileLinkModifierKey)
-  window.addEventListener("blur", hook.__onFileLinkWindowBlur)
+  window.addEventListener("mouseup", hook.__onFileLinkMouseUp, true)
 }
 
 function teardownTerminalFileLinks(hook) {
@@ -1406,21 +1441,18 @@ function teardownTerminalFileLinks(hook) {
     hook.el.removeEventListener("mousedown", hook.__onFileLinkMouseDown, true)
     hook.el.removeEventListener("mousemove", hook.__onFileLinkMouseMove)
     hook.el.removeEventListener("mouseleave", hook.__onFileLinkMouseLeave)
-    window.removeEventListener("keydown", hook.__onFileLinkModifierKey)
-    window.removeEventListener("keyup", hook.__onFileLinkModifierKey)
-    window.removeEventListener("blur", hook.__onFileLinkWindowBlur)
+    window.removeEventListener("mouseup", hook.__onFileLinkMouseUp, true)
     hook.__onFileLinkMouseDown = null
     hook.__onFileLinkMouseMove = null
     hook.__onFileLinkMouseLeave = null
-    hook.__onFileLinkModifierKey = null
-    hook.__onFileLinkWindowBlur = null
+    hook.__onFileLinkMouseUp = null
   }
 
   hook.__fileLinkLayer?.remove()
   hook.__fileLinkLayer = null
   hook.__fileLinks = null
   hook.__fileLinkPointerEvent = null
-  hook.__fileLinkModifier = false
+  hook.__fileLinkPendingClick = null
   hook.__fileLinkHoverActive = false
   applyLinkCursor(hook)
 }
@@ -1437,17 +1469,15 @@ function applyLinkCursor(hook) {
 // --- Terminal web links --------------------------------------------------------
 //
 // Server-detected http(s) URLs in terminal output (payload.web_links, scanned
-// in PaneWorker). Unlike file links (Cmd/Ctrl-gated, selection-first), web
-// links are "web-like": the URL underlines on plain hover and a plain click
-// opens it in a new browser tab. Drag-select is preserved — the click only
-// fires on a mouseup that never dragged past a few pixels from the mousedown,
-// and the release must land on the same link.
+// in PaneWorker). Same interaction model as file links above: the URL
+// underlines on plain hover and a plain click opens it in a new browser tab.
+// Drag-select is preserved — the click only fires on a mouseup that never
+// dragged past a few pixels from the mousedown, and the release must land on
+// the same link.
 //
 // Cmd/Ctrl+Click opens the URL in the workspace preview pane instead
 // (terminal:open_web_link_preview), resolved on mousedown like the file-link
 // handler. Shift/Alt combos remain a no-op.
-
-const WEB_LINK_DRAG_SLOP_PX = 4
 
 function ensureWebLinkLayer(hook) {
   if (hook.__webLinkLayer?.isConnected) return hook.__webLinkLayer
@@ -1588,7 +1618,7 @@ function installTerminalWebLinks(hook) {
     const pending = hook.__webLinkPendingClick
     if (
       pending &&
-      Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > WEB_LINK_DRAG_SLOP_PX
+      Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > LINK_DRAG_SLOP_PX
     ) {
       hook.__webLinkPendingClick = null
     }
@@ -1607,7 +1637,7 @@ function installTerminalWebLinks(hook) {
     const pending = hook.__webLinkPendingClick
     hook.__webLinkPendingClick = null
     if (!pending || e.button !== 0) return
-    if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > WEB_LINK_DRAG_SLOP_PX) return
+    if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > LINK_DRAG_SLOP_PX) return
 
     const hover = webLinkAtEvent(hook, e)
     if (!hover || hover.link.url !== pending.url) return

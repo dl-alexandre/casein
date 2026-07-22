@@ -12,9 +12,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   #   * "tree:open_in_pane" — the context-menu entry point that splits/reuses a
   #     file pane next to the active plain-terminal pane, falling back to
   #     today's "tree:open" (files tab) when no live tmux pane exists;
-  #   * "terminal:open_file_link" — Cmd/Ctrl+Click on a scanner-detected path
-  #     in terminal output (delegated through TerminalEvents). Re-validates
-  #     the path via DevIDE.FilePanes.LinkResolver (never trusts the client),
+  #   * "terminal:open_file_link" — click (or Cmd/Ctrl+Click; Shift flips the
+  #     surface) on a scanner-detected path in terminal output (delegated
+  #     through TerminalEvents). Re-validates the path via
+  #     DevIDE.FilePanes.LinkResolver (never trusts the client),
   #     anchors on the emitting pane, and opens the file at :line in a file
   #     pane; unresolvable links fall back to the files tab;
   #   * {:pane_event, evt} PubSub (DevIDE.Panes.Events) — maintains the

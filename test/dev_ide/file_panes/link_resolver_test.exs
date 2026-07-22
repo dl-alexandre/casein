@@ -2,6 +2,7 @@ defmodule DevIDE.FilePanes.LinkResolverTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.FilePanes.LinkResolver
+  alias DevIDE.FilePanes.SuffixIndex
 
   setup do
     root =
@@ -11,6 +12,9 @@ defmodule DevIDE.FilePanes.LinkResolverTest do
     File.write!(Path.join(root, "lib/foo.ex"), "defmodule Foo do\nend\n")
     File.write!(Path.join(root, "mix.exs"), "# mix\n")
 
+    # Index the root synchronously so misses are terminal :not_found rather
+    # than :pending (the async-build path is covered in SuffixIndexTest).
+    SuffixIndex.rebuild(root)
     LinkResolver.clear_cache()
 
     on_exit(fn ->
@@ -76,6 +80,56 @@ defmodule DevIDE.FilePanes.LinkResolverTest do
 
       Process.sleep(60)
       assert {:ok, "lib/new.ex"} = LinkResolver.resolve(root, "lib/new.ex")
+    end
+  end
+
+  describe "suffix-index fallback" do
+    test "bare file names resolve when unique in the workspace", %{root: root} do
+      assert {:ok, "lib/foo.ex"} = LinkResolver.resolve(root, "foo.ex")
+    end
+
+    test "subdir-relative paths resolve by trailing segments", %{root: root} do
+      File.mkdir_p!(Path.join(root, "assets/js"))
+      File.write!(Path.join(root, "assets/js/app.js"), "// app\n")
+      SuffixIndex.rebuild(root)
+
+      assert {:ok, "assets/js/app.js"} = LinkResolver.resolve(root, "js/app.js")
+    end
+
+    test "absolute paths outside the root (worktrees) resolve by suffix", %{root: root} do
+      assert {:ok, "lib/foo.ex"} =
+               LinkResolver.resolve(root, "/tmp/some-agent-worktree/lib/foo.ex")
+    end
+
+    test "ambiguous bare names stay unresolved", %{root: root} do
+      File.mkdir_p!(Path.join(root, "other"))
+      File.write!(Path.join(root, "other/foo.ex"), "x")
+      SuffixIndex.rebuild(root)
+      LinkResolver.clear_cache()
+
+      assert {:error, :not_found} = LinkResolver.resolve(root, "foo.ex")
+      # A directory-qualified suffix still disambiguates.
+      assert {:ok, "other/foo.ex"} = LinkResolver.resolve(root, "other/foo.ex")
+    end
+
+    test "misses while the index is still building are not cached", %{root: root} do
+      fresh = Path.join(root, "fresh-subroot")
+      File.mkdir_p!(Path.join(fresh, "lib"))
+      File.write!(Path.join(fresh, "lib/solo.ex"), "x")
+
+      # First touch reports the plain miss and schedules a background build —
+      # but must not negatively cache, or the link stays dead for a TTL.
+      assert {:error, :not_found} = LinkResolver.resolve(fresh, "solo.ex")
+
+      SuffixIndex.rebuild(fresh)
+      assert {:ok, "lib/solo.ex"} = LinkResolver.resolve(fresh, "solo.ex")
+    end
+
+    test "outside-root misses keep their refusal while the index builds", %{root: root} do
+      fresh = Path.join(root, "refusal-subroot")
+      File.mkdir_p!(fresh)
+
+      assert {:error, :outside_root} = LinkResolver.resolve(fresh, "/etc/passwd")
     end
   end
 
