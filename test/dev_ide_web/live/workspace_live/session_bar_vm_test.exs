@@ -355,4 +355,133 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
                SessionBarVM.sort_window_tree(nodes, :liveness)
     end
   end
+
+  describe "session_tab attention classification" do
+    defp shell_info_with_windows(sid, windows) do
+      SessionInfo.new_shell("ws-a", sid, metadata: %{windows: windows})
+    end
+
+    test "blocked agent window classifies :needs_you/:blocked with a count" do
+      [tab] =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("blocked", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :blocked},
+            %{id: "@2", index: 1, name: "agent2", agent_state: :blocked},
+            %{id: "@3", index: 2, name: "shell"}
+          ])
+        ])
+
+      assert tab.attention_section == :needs_you
+      assert tab.attention_reason == :blocked
+      assert tab.agent_blocked_count == 2
+    end
+
+    test "done agent window classifies :needs_you/:completed" do
+      [tab] =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("done", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :done}
+          ])
+        ])
+
+      assert tab.attention_section == :needs_you
+      assert tab.attention_reason == :completed
+      assert tab.agent_blocked_count == 0
+    end
+
+    test "quiet window reaches :needs_you despite the tab's quiet? key shape" do
+      # Attention.classify reads :quiet from directory maps; the tab builder must
+      # map its :quiet? windows back so quiet sessions still triage as needs_you.
+      [tab] =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("quiet", [%{id: "@1", index: 0, name: "agent", quiet: true}])
+        ])
+
+      assert tab.attention_section == :needs_you
+      assert tab.attention_reason == :quiet
+
+      assert [{:needs_you, [_]}] = SessionBarVM.session_attention_groups([tab])
+    end
+
+    test "working and plain sessions classify :working and :recent" do
+      [working, plain] =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("working", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :working}
+          ]),
+          shell_info_with_windows("plain", [%{id: "@1", index: 0, name: "shell"}])
+        ])
+
+      assert working.attention_section == :working
+      assert plain.attention_section == :recent
+    end
+  end
+
+  describe "workspace_session_tree needs_you_count rollup" do
+    test "counts needs-you sessions on the current workspace node" do
+      tabs =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("blocked", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :blocked}
+          ]),
+          shell_info("calm")
+        ])
+
+      [node] =
+        workspace_nodes(
+          SessionBarVM.workspace_session_tree(
+            [%{id: "ws-a", name: "alpha", session_count: 2, live?: true, sessions: []}],
+            "ws-a",
+            expanded_workspaces: MapSet.new(["ws-a"]),
+            current_session_tabs: tabs,
+            sidebar_ws_sessions: %{}
+          )
+        )
+
+      assert node.needs_you_count == 1
+    end
+
+    test "collapsed other workspace still rolls up from cached sidebar sessions" do
+      cached =
+        SessionBarVM.session_tabs([
+          shell_info_with_windows("blocked", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :blocked}
+          ]),
+          shell_info_with_windows("done", [
+            %{id: "@1", index: 0, name: "agent", agent_state: :done}
+          ])
+        ])
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-a", name: "alpha", session_count: 1, live?: true, sessions: []},
+            %{id: "ws-b", name: "beta", session_count: 2, live?: true, sessions: []}
+          ],
+          "ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{"ws-b" => cached}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      refute other.expanded?
+      assert other.sessions == nil
+      assert other.needs_you_count == 2
+    end
+
+    test "workspaces with no cache report zero without enumerating sessions" do
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-b", name: "beta", session_count: 3, live?: true, sessions: []}],
+          "ws-a",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{}
+        )
+
+      other = Enum.find(tree, &(&1.workspace_id == "ws-b"))
+      assert other.needs_you_count == 0
+    end
+  end
 end

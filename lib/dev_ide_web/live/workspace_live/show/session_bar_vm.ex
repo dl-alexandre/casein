@@ -78,6 +78,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           quiet_count: non_neg_integer(),
           unseen_quiet_count: non_neg_integer(),
           attention: String.t(),
+          attention_section: Attention.section(),
+          attention_reason: Attention.reason(),
+          agent_blocked_count: non_neg_integer(),
           preview_count: non_neg_integer(),
           pane_ids: [String.t()]
         }
@@ -125,6 +128,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     activity_state = session_activity_state(windows)
     quiet_count = Enum.count(windows, & &1.quiet?)
     unseen_quiet_count = Enum.count(windows, & &1.unseen_quiet?)
+    attention_cls = tab_attention_classification(info, windows)
     detail = session_tab_detail(info, ordinal)
     branch = session_branch(info) || ""
 
@@ -148,6 +152,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       quiet_count: quiet_count,
       unseen_quiet_count: unseen_quiet_count,
       attention: session_quiet_attention(quiet_count, unseen_quiet_count),
+      attention_section: attention_cls.section,
+      attention_reason: attention_cls.reason,
+      agent_blocked_count: Enum.count(windows, &(&1.agent_state == :blocked)),
       pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
       preview_count: 0,
       activity_state: activity_state,
@@ -430,6 +437,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           openable?: boolean(),
           group: :this | :other,
           session_count: non_neg_integer(),
+          needs_you_count: non_neg_integer(),
           expanded?: boolean(),
           flat_session?: boolean(),
           session: tab() | workspace_tab() | nil,
@@ -494,12 +502,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   @doc "Stable-partitions session rows for attention-first rendering."
   @spec session_attention_groups([map()]) :: [{Attention.section(), [map()]}]
   def session_attention_groups(sessions) when is_list(sessions) do
-    grouped = Attention.group(sessions)
+    grouped = Enum.group_by(sessions, &tab_attention_section/1)
 
     for section <- [:needs_you, :working, :recent],
-        rows = Map.fetch!(grouped, section),
+        rows = Map.get(grouped, section, []),
         rows != [],
         do: {section, rows}
+  end
+
+  @doc """
+  Attention section for a rendered session tab.
+
+  Prefers the section precomputed by `session_tab/3` (whose classifier input
+  maps tab windows back to the directory shape, so `quiet?` windows count);
+  falls back to classifying raw directory maps that never passed through the
+  tab builder.
+  """
+  @spec tab_attention_section(map()) :: Attention.section()
+  def tab_attention_section(session) when is_map(session) do
+    Map.get(session, :attention_section) || Attention.classify(session).section
   end
 
   @doc "Stable-partitions workspace tree nodes by their strongest contained session state."
@@ -522,7 +543,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       end
 
     sessions
-    |> Enum.map(&Attention.classify(&1).section)
+    |> Enum.map(&tab_attention_section/1)
     |> Enum.min_by(&attention_rank/1, fn -> :recent end)
   end
 
@@ -555,6 +576,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       openable?: true,
       group: :this,
       session_count: 1,
+      needs_you_count: 0,
       expanded?: false,
       flat_session?: true,
       session: session,
@@ -595,6 +617,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       quiet_count: 0,
       unseen_quiet_count: 0,
       attention: "none",
+      attention_section: :recent,
+      attention_reason: :recent,
+      agent_blocked_count: 0,
       activity_state: :idle,
       activity_class: window_activity_class(:idle),
       activity_label: window_activity_label(:idle)
@@ -637,6 +662,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
     flat_session? = is_list(sessions) and length(sessions) == 1
 
+    # Rollup for the header chip: collapsed rows may not enumerate `sessions`,
+    # but counting over the already-cached tab list stays a cheap summary badge
+    # — so a folded workspace can still show how many sessions need you.
+    rollup_sessions = sessions || Map.get(sidebar_ws, workspace_id, [])
+
+    needs_you_count =
+      Enum.count(rollup_sessions, &(tab_attention_section(&1) == :needs_you))
+
     %{
       id: workspace_id,
       dom_id: "sidebar-ws-" <> dom_fragment(workspace_id),
@@ -649,6 +682,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       openable?: workspace_openable?(summary, viewer, current?),
       group: node_group(current?),
       session_count: session_count,
+      needs_you_count: needs_you_count,
       expanded?: expanded? and not flat_session?,
       flat_session?: flat_session?,
       session: if(flat_session?, do: List.first(sessions), else: nil),
@@ -1018,6 +1052,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalized_agent_state("done"), do: :done
   defp normalized_agent_state("idle"), do: :idle
   defp normalized_agent_state(_state), do: nil
+
+  # `Attention.classify/1` consumes directory-shaped windows (`:quiet`), while
+  # tab windows carry `:quiet?` — map them back so quiet sessions reach
+  # :needs_you the same way SessionDirectory-side callers do.
+  defp tab_attention_classification(info, windows) do
+    Attention.classify(%{
+      status: Map.get(info, :status),
+      windows: Enum.map(windows, &%{agent_state: &1.agent_state, quiet: &1.quiet?})
+    })
+  end
 
   # When an explicit semantic state is present it drives the window's activity
   # dot and tooltip: `blocked` is loud, `done`/`idle` calm, `working` matches the

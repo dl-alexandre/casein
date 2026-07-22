@@ -916,10 +916,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :node, :map, required: true
 
   defp sessions_sidebar_workspace_labels(assigns) do
+    assigns = assign(assigns, :needs_you_count, Map.get(assigns.node, :needs_you_count, 0))
+
     ~H"""
     <span class="flex min-w-0 flex-1 flex-col items-start gap-0.5 overflow-hidden text-left">
       <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
         <span data-picker-label class="truncate font-medium">{@node.label}</span>
+        <span
+          :if={@needs_you_count > 0}
+          id={"sidebar-ws-needs-you-" <> @node.dom_id}
+          data-needs-you-count={@needs_you_count}
+          class="shrink-0 rounded-full bg-rose-500/15 px-1.5 font-mono text-[9px] font-semibold text-rose-500 dark:text-rose-300"
+          title={needs_you_chip_title(@needs_you_count)}
+          aria-label={needs_you_chip_title(@needs_you_count)}
+        >
+          {@needs_you_count}
+        </span>
         <span
           :if={not @node.live?}
           class="size-1.5 shrink-0 rounded-full bg-base-content/25"
@@ -1145,6 +1157,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :default_sid, :string, default: nil
 
   defp sessions_sidebar_session_labels(assigns) do
+    assigns = assign(assigns, :agent_badge, session_agent_badge(assigns.session))
+
     ~H"""
     <%!-- nowrap sizes the free-expand rail; nav overflow clips past max-width. --%>
     <span class="flex max-w-full items-center gap-1.5 overflow-hidden">
@@ -1163,6 +1177,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         id={"sidebar-session-preview-" <> @session.dom_id}
         scope="session"
       />
+      <span
+        :if={@agent_badge}
+        id={"session-agent-badge-" <> @session.dom_id}
+        data-agent-attention={@agent_badge.reason}
+        class={["shrink-0 rounded-full px-1.5 text-[9px] font-semibold", @agent_badge.class]}
+        title={@agent_badge.title}
+        aria-label={@agent_badge.title}
+      >
+        {@agent_badge.text}
+      </span>
       <span
         :if={@session.quiet_count > 0}
         data-attention={@session.attention}
@@ -1871,4 +1895,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp quiet_badge_label(1, _unseen_count), do: "1 quiet agent window"
   defp quiet_badge_label(count, _unseen_count), do: "#{count} quiet agent windows"
+
+  # Textual triage badge for a session row's semantic agent state. Quiet-only
+  # attention keeps its existing dot badge; nil means nothing extra to render.
+  defp session_agent_badge(session) do
+    if Map.get(session, :attention_section) == :needs_you do
+      agent_badge_for_reason(Map.get(session, :attention_reason), session)
+    end
+  end
+
+  defp agent_badge_for_reason(:blocked, session) do
+    count = Map.get(session, :agent_blocked_count, 0)
+
+    %{
+      reason: :blocked,
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: if(count > 1, do: "needs input ×#{count}", else: "needs input"),
+      title:
+        if(count > 1,
+          do: "#{count} agent windows are blocked on input",
+          else: "Agent is blocked on input"
+        )
+    }
+  end
+
+  defp agent_badge_for_reason(:completed, _session) do
+    %{
+      reason: :completed,
+      class: "bg-sky-400/15 text-sky-600 dark:text-sky-300",
+      text: "done",
+      title: "Agent finished — review its result"
+    }
+  end
+
+  defp agent_badge_for_reason(:error, _session) do
+    %{
+      reason: :error,
+      class: "bg-rose-500/15 text-rose-500 dark:text-rose-300",
+      text: "error",
+      title: "Session hit an error"
+    }
+  end
+
+  defp agent_badge_for_reason(_reason, _session), do: nil
+
+  defp needs_you_chip_title(1), do: "1 session needs you"
+  defp needs_you_chip_title(count), do: "#{count} sessions need you"
 end

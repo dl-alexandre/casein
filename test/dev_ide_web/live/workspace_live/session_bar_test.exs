@@ -834,6 +834,82 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-picker-group="needs_you")
     end
 
+    test "renders agent triage badges on session rows and a workspace rollup chip" do
+      tabs =
+        SessionBarVM.session_tabs([
+          agent_info("blocked", "tmux-blocked")
+          |> Map.put(:metadata, %{windows: [%{id: "@1", agent_state: :blocked}]}),
+          agent_info("finished", "tmux-finished")
+          |> Map.put(:metadata, %{windows: [%{id: "@2", agent_state: :done}]}),
+          agent_info("shell", "tmux-shell")
+        ])
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [%{id: "ws-1", name: "alpha", session_count: 3, live?: true, sessions: []}],
+          "ws-1",
+          expanded_workspaces: MapSet.new(["ws-1"]),
+          current_session_tabs: tabs,
+          sidebar_ws_sessions: %{}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: "agent_blocked",
+          session_tabs: tabs
+        )
+
+      # Session-row badges carry the semantic reason and human text.
+      assert html =~ ~s(id="session-agent-badge-active_sessions-agent_blocked")
+      assert html =~ ~s(data-agent-attention="blocked")
+      assert html =~ "needs input"
+      assert html =~ ~s(id="session-agent-badge-active_sessions-agent_finished")
+      assert html =~ ~s(data-agent-attention="completed")
+
+      # Workspace header rolls the needs-you sessions up into a count chip.
+      assert html =~ ~s(id="sidebar-ws-needs-you-sidebar-ws-ws-1")
+      assert html =~ ~s(data-needs-you-count="2")
+      assert html =~ "2 sessions need you"
+    end
+
+    test "rolls needs-you count onto a collapsed other-workspace header" do
+      cached =
+        SessionBarVM.session_tabs([
+          agent_info("blocked", "tmux-blocked")
+          |> Map.put(:metadata, %{windows: [%{id: "@1", agent_state: :blocked}]}),
+          agent_info("calm", "tmux-calm")
+        ])
+        |> Enum.map(&Map.put(&1, :workspace_id, "ws-2"))
+
+      tree =
+        SessionBarVM.workspace_session_tree(
+          [
+            %{id: "ws-1", name: "alpha", session_count: 1, live?: true, sessions: []},
+            %{id: "ws-2", name: "beta", session_count: 2, live?: true, sessions: []}
+          ],
+          "ws-1",
+          expanded_workspaces: MapSet.new(),
+          current_session_tabs: [],
+          sidebar_ws_sessions: %{"ws-2" => cached}
+        )
+
+      html =
+        render_component(&SessionBar.sessions_sidebar/1,
+          workspace_id: "ws-1",
+          tree: tree,
+          active_id: nil,
+          session_tabs: []
+        )
+
+      # The fold hides the session rows but not the triage signal.
+      assert html =~ ~s(id="sidebar-ws-needs-you-sidebar-ws-ws-2")
+      assert html =~ ~s(data-needs-you-count="1")
+      assert html =~ "1 session needs you"
+      refute html =~ "session-agent-badge-active_sessions-agent_blocked"
+    end
+
     test "renders focus mode control and quiet badge from session tabs" do
       tabs =
         SessionBarVM.session_tabs([
