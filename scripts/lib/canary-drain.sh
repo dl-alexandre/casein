@@ -118,6 +118,64 @@ stop_canary_unit() {
   return 0
 }
 
+# --- orphaned dev-server reaping ---------------------------------------------
+# Leaked `mix phx.server` dev/verify servers — spawned inside an agent worktree
+# (e.g. .claude/worktrees/agent-*) that was later removed — keep running with a
+# now-deleted working directory. They hold prod-DB connections and, because they
+# share the host tmux server, their SessionOwners fight the live instance over
+# tmux window sizes (the "screen keeps flashing" reports). They are NOT
+# deployment canaries, so the drain loop above never sees them; nothing marks
+# them draining, so the SessionOwner drain-guard never fires either. Reap them
+# on every deploy. Root-caused 2026-07-21 (8 leaked beams from 2026-07-15 found
+# still pinning prod-DB connections).
+#
+# /proc access is behind seam functions so test-canary-drain.sh drives the
+# decision without a real /proc.
+
+# Command line of a pid (NUL-joined argv rendered space-separated), or empty.
+proc_cmdline() { tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null || true; }
+
+# Working-directory symlink target of a pid, or empty. A removed directory reads
+# as "<path> (deleted)".
+proc_cwd() { readlink "/proc/$1/cwd" 2>/dev/null || true; }
+
+# True when pid is a leaked dev_ide beam that is safe to reap: one of our beams
+# (a mix phx.server dev server or a release node), with a DELETED working
+# directory. The live release and running canaries run from /opt/devide with
+# cwd /opt/devide (never deleted), so the deleted-cwd gate alone already spares
+# them; the explicit release-path exclusion is belt-and-suspenders.
+orphaned_dev_server() {
+  od_pid="$1"
+  [ -n "${od_pid}" ] || return 1
+  od_cmdline="$(proc_cmdline "${od_pid}")"
+  case "${od_cmdline}" in
+    */opt/devide/release/*) return 1 ;;
+    *phx.server*) : ;;
+    *dev_ide_*@*) : ;;
+    *) return 1 ;;
+  esac
+  case "$(proc_cwd "${od_pid}")" in
+    *"(deleted)") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Reap every orphaned dev server in the pid list ($@). The deploy passes
+# `pgrep -x beam.smp`; the hermetic test passes a fixed list with shadowed
+# proc_cmdline/proc_cwd/kill.
+reap_orphaned_dev_servers() {
+  reaped=0
+  for od_pid in "$@"; do
+    if orphaned_dev_server "${od_pid}"; then
+      log "reaping orphaned dev server pid ${od_pid} (cwd $(proc_cwd "${od_pid}"))"
+      kill "${od_pid}" 2>/dev/null || true
+      reaped=$((reaped + 1))
+    fi
+  done
+  [ "${reaped}" -gt 0 ] && log "reaped ${reaped} orphaned dev server(s)"
+  return 0
+}
+
 # Drain one instance. Reachable → graceful /api/drain (200 counted, 409 left
 # alone). Unreachable but its unit is still running → a zombie that will never
 # drain itself, so stop it directly. Increments the caller's drain_count on a

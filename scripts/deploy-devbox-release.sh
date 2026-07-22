@@ -668,6 +668,14 @@ if [ "${drain_count}" = "0" ]; then
   log "no old instances found to drain"
 fi
 
+# Reap leaked non-canary dev servers (mix phx.server from removed agent
+# worktrees) — they are invisible to the drain loop above but share the host
+# tmux server and fight the live instance over window sizes. Safe: only beams
+# with a DELETED cwd, which never matches the live release or a canary.
+# Word-splitting is intended — each pid becomes a separate positional arg.
+# shellcheck disable=SC2046
+reap_orphaned_dev_servers $(pgrep -x beam.smp 2>/dev/null || true)
+
 # Old instances call System.stop(0) when their connection count hits zero;
 # the systemd unit (devide.service) will then show as inactive until next boot.
 
