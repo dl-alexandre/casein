@@ -36,11 +36,11 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Records activity feed + `Audit.emit!` for mutating tools |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalizes `{:error, reason}` into MCP `tool_result` content |
 | `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Advertises terminal MCP URL + tool names in capability detection |
-| `DevIDE.Agents.PreviewMCPCapability` | `lib/dev_ide/agents/preview_mcp_capability.ex` | Advertises preview MCP URL + tool names |
+| `DevIDE.Agents.PreviewTools.MCPCapability` | `lib/dev_ide/agents/preview_tools/mcp_capability.ex` | Advertises preview MCP URL + tool names |
 | `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
 | `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
-| `DevIDE.Agents.BrowserControl` | `lib/dev_ide/agents/browser_control.ex` | Backs `preview_reload_iframe` / `devide_reload_page` viewer broadcasts |
+| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/dev_ide/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `devide_reload_page` viewer broadcasts |
 | `McpCtl.Tool` / `McpCtl.Params` | (in-repo `mcp_ctl` boundary) | `Tool.define/3`, `Tool.object/1,2`, shared param schemas used by every definition |
 
 ## Endpoints

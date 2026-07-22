@@ -47,14 +47,14 @@ compile-time-fixed argv.
 | `DevIDE.Agents.Capability` | `lib/dev_ide/agents/capability.ex` | Struct for one observed capability (`kind`, `status`, `source`, `url`, `details`). |
 | `DevIDE.Agents.Artifact` | `lib/dev_ide/agents/artifact.ex` | Read-only file pointer (e.g. transcript) returned by detection. |
 | `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Detect the terminal-control MCP endpoint; advertises URL + tool names. |
-| `DevIDE.Agents.PreviewMCPCapability` | `lib/dev_ide/agents/preview_mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
+| `DevIDE.Agents.PreviewTools.MCPCapability` | `lib/dev_ide/agents/preview_tools/mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
 | `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
 | `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
 | `DevIDE.Agents.TerminalTools` | `lib/dev_ide/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `devide_`-prefix and workspace scoping. |
 | `DevIDE.Agents.PreviewTools` | `lib/dev_ide/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
 | `DevIDE.Agents.ArtifactTools` | `lib/dev_ide/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
 | `DevIDE.Agents.AnnotationTools` | `lib/dev_ide/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
-| `DevIDE.Agents.BrowserControl` | `lib/dev_ide/agents/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
+| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/dev_ide/agents/preview_tools/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
 | `DevIDE.Agents.TerminalOutputFormat` | `lib/dev_ide/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
 | `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
