@@ -17,6 +17,18 @@
 # passing tests nothing (assert_receive returns as soon as the message lands)
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
+# `DEVIDE_GROK_BUNDLE_ROOT` / `DEVIDE_GROK_LEADER_ROOT` are production operator
+# overrides that `GrokCapabilityBundle` honors ahead of the `:dev_ide` app env.
+# A paired-agent shell (which launches Grok) exports them, so running the suite
+# from such a shell leaks the live `/home/devbox/.devide/grok-*` roots into
+# GrokCapabilityBundle/GrokACP tests — overriding the tmp roots those tests set
+# via app env and failing them with `:unsafe_leader_directory` /
+# `:invalid_grok_attachment_metadata`. CI never sets these (hence green there);
+# clear them so local + precommit runs isolate from ambient env the same way.
+for var <- ~w(DEVIDE_GROK_BUNDLE_ROOT DEVIDE_GROK_LEADER_ROOT) do
+  System.delete_env(var)
+end
+
 ExUnit.start(
   exclude: [:pty, :tmux, :tidewave_available, :preview_e2e],
   max_cases: 4,
