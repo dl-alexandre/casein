@@ -1874,17 +1874,19 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   describe "authoritative size debouncing" do
-    # The suite disables debouncing globally (config/test.exs leading_ms: 0);
-    # these tests opt back in with compressed timings. quiet_ms is kept well
-    # above the assertion windows so an immediate apply and a settled apply
-    # are distinguishable.
+    # Deterministic, not timing-based. The windows are set enormous so (a) every
+    # post-leading change is guaranteed to coalesce regardless of CI scheduling
+    # latency, and (b) the settle timer never self-fires during the test. The
+    # coalesced apply is driven explicitly by sending :settle_authoritative_size,
+    # and "nothing applied yet" is proven with refute_received after syncing both
+    # GenServers (no wall-clock windows, no Process.sleep).
     setup do
       prev = Application.get_env(:dev_ide, :terminal_owner_size_debounce)
 
       Application.put_env(:dev_ide, :terminal_owner_size_debounce,
-        leading_ms: 200,
-        quiet_ms: 300,
-        max_defer_ms: 900
+        leading_ms: 3_600_000,
+        quiet_ms: 3_600_000,
+        max_defer_ms: 3_600_000
       )
 
       on_exit(fn ->
@@ -1894,6 +1896,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       end)
 
       :ok
+    end
+
+    # Force both GenServers to process everything queued so far. The resize path
+    # is owner-cast → fake-session-cast → send(test_pid), so draining the owner
+    # then the fake session guarantees any resize message is already in our
+    # mailbox — making the subsequent refute_received sound.
+    defp drain_owner_and_session(owner_pid, fake_session) do
+      _ = :sys.get_state(owner_pid)
+      _ = :sys.get_state(fake_session)
     end
 
     test "a focus-flap burst coalesces to one apply of the final winner" do
@@ -1908,23 +1919,26 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.cast(owner_pid, {:resize, self(), 200, 60})
       assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
 
-      # Two viewers alternating focus inside the leading window — the storm
-      # that used to reflow tmux on every flip. No intermediate size applies...
+      # Two viewers alternating focus after the leading apply — the storm that
+      # used to reflow tmux on every flip. Every change coalesces (no apply).
       GenServer.cast(owner_pid, {:resize, other, 120, 40})
       GenServer.cast(owner_pid, {:viewer_active, other, true})
       GenServer.cast(owner_pid, {:viewer_active, self(), true})
       GenServer.cast(owner_pid, {:viewer_active, other, true})
-      refute_receive {:fake_session_resize, ^fake_session, _, _}, 150
+      drain_owner_and_session(owner_pid, fake_session)
+      refute_received {:fake_session_resize, ^fake_session, _, _}
 
-      # ...and exactly the final winner lands once the burst goes quiet.
+      # The settle fires (driven, not waited): exactly the final winner lands.
+      send(owner_pid, :settle_authoritative_size)
       assert_receive {:fake_session_resize, ^fake_session, 120, 40}, 1_000
-      refute_receive {:fake_session_resize, ^fake_session, _, _}, 150
+      drain_owner_and_session(owner_pid, fake_session)
+      refute_received {:fake_session_resize, ^fake_session, _, _}
 
       Process.exit(other, :kill)
       GenServer.stop(owner_pid, :normal)
     end
 
-    test "a lone change outside the leading window applies immediately" do
+    test "a lone change past the leading window applies on its own leading edge" do
       {owner_pid, fake_session} = start_owner_with_fake_session("size-lone")
 
       register_subscriber(owner_pid, self(), :raw)
@@ -1932,11 +1946,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.cast(owner_pid, {:resize, self(), 200, 60})
       assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
 
-      # Past the leading window this is a calm, ordinary resize — it must not
-      # wait out the quiet period (300ms here; assert well under it).
-      Process.sleep(250)
+      # Simulate "the leading window has elapsed" deterministically by clearing
+      # the last-apply stamp, rather than sleeping past a wall-clock threshold.
+      # The next lone change is then itself a leading edge and applies at once.
+      :sys.replace_state(owner_pid, fn state -> %{state | last_size_apply_at: nil} end)
+
       GenServer.cast(owner_pid, {:resize, self(), 150, 50})
-      assert_receive {:fake_session_resize, ^fake_session, 150, 50}, 150
+      assert_receive {:fake_session_resize, ^fake_session, 150, 50}, 1_000
 
       GenServer.stop(owner_pid, :normal)
     end
@@ -1952,12 +1968,14 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.cast(owner_pid, {:resize, self(), 200, 60})
       assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
 
-      # Flap away and back: the settle recompute sees the applied size winning
-      # again and applies nothing at all.
+      # Flap away and back within the (huge) leading window: the coalesced
+      # winner is the original applied size, so the driven settle applies nothing.
       GenServer.cast(owner_pid, {:resize, other, 120, 40})
       GenServer.cast(owner_pid, {:viewer_active, other, true})
       GenServer.cast(owner_pid, {:viewer_active, self(), true})
-      refute_receive {:fake_session_resize, ^fake_session, _, _}, 600
+      send(owner_pid, :settle_authoritative_size)
+      drain_owner_and_session(owner_pid, fake_session)
+      refute_received {:fake_session_resize, ^fake_session, _, _}
 
       Process.exit(other, :kill)
       GenServer.stop(owner_pid, :normal)

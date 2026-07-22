@@ -105,4 +105,53 @@ mapfile -t uuids < <(running_canary_uuids)
 [ "${uuids[1]}" = "bbbbbbbbbbbbbbbb" ] || fail "second uuid '${uuids[1]}'"
 ok
 
+# ── orphaned_dev_server / reap_orphaned_dev_servers ──────────────────────────
+# Shadow the /proc seams: pid → cmdline and pid → cwd fixtures.
+declare -A FIX_CMDLINE FIX_CWD
+proc_cmdline() { printf '%s' "${FIX_CMDLINE[$1]:-}"; }
+proc_cwd() { printf '%s' "${FIX_CWD[$1]:-}"; }
+
+# A leaked mix phx.server with a deleted worktree cwd → reapable.
+FIX_CMDLINE[100]="/home/devbox/.../elixir/bin/mix phx.server"
+FIX_CWD[100]="/tmp/devide-agent-worktrees/agent-x (deleted)"
+orphaned_dev_server 100 || fail "leaked phx.server with deleted cwd must be orphaned"
+ok
+
+# A leaked release-node beam (dev_ide_*@host) with deleted cwd → reapable.
+FIX_CMDLINE[101]="/erts/bin/beam.smp -- ... -name dev_ide_abc@host ..."
+FIX_CWD[101]="/data/workspaces/x/.claude/worktrees/agent-y (deleted)"
+orphaned_dev_server 101 || fail "leaked release node with deleted cwd must be orphaned"
+ok
+
+# The LIVE release: cwd is /opt/devide (not deleted) → never reaped. Also guarded
+# by the explicit release-path exclusion.
+FIX_CMDLINE[200]="/opt/devide/release/erts-16.4/bin/beam.smp -- ... "
+FIX_CWD[200]="/opt/devide"
+orphaned_dev_server 200 && fail "live release must never be orphaned" || ok
+
+# A canary boot from the release path but (implausibly) a deleted cwd is still
+# spared by the release-path exclusion — defense in depth.
+FIX_CMDLINE[201]="/opt/devide/release/bin/beam.smp -- -name dev_ide_ccc@host"
+FIX_CWD[201]="/opt/devide (deleted)"
+orphaned_dev_server 201 && fail "release-path beam must never be orphaned even if cwd deleted" || ok
+
+# A legitimate dev server in a LIVE worktree (cwd not deleted) → not reaped.
+FIX_CMDLINE[300]="/home/devbox/.../mix phx.server"
+FIX_CWD[300]="/data/workspaces/alice/proj"
+orphaned_dev_server 300 && fail "dev server in a live worktree must not be orphaned" || ok
+
+# A non-dev-ide beam (some other Elixir app) with deleted cwd → not ours, skip.
+FIX_CMDLINE[400]="/erts/bin/beam.smp -- -name other_app@host"
+FIX_CWD[400]="/tmp/whatever (deleted)"
+orphaned_dev_server 400 && fail "a non-dev_ide beam must not be reaped" || ok
+
+# reap_orphaned_dev_servers kills exactly the orphaned pids from a mixed list.
+# The lib calls `kill "${od_pid}"` (single arg), so the stub captures $1.
+killed=""
+kill() { killed="${killed}$1 "; }
+reap_orphaned_dev_servers 100 101 200 201 300 400
+[ "${killed}" = "100 101 " ] || fail "reap must kill only orphaned pids, killed='${killed}'"
+ok
+unset -f proc_cmdline proc_cwd kill
+
 echo "OK: canary-drain checks passed (${pass} assertions)"
