@@ -8,9 +8,53 @@
 import { EditorState } from "@codemirror/state"
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view"
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands"
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language"
+import { tags } from "@lezer/highlight"
 import { copyTextWithFallback, showClipboardToast } from "./terminal_copy"
 import { pickLang, languageIdForPath } from "./editor_lang.mjs"
 export { pickLang, languageIdForPath }
+
+// Dark editor theme for surfaces on dark chrome (the file-pane overlay's
+// zinc-950 wrapper). Without an explicit theme CodeMirror falls back to its
+// light defaults — near-black tokens that vanish on the dark pane. The
+// files-tab viewer sits on light chrome and keeps the light defaults.
+const darkTheme = EditorView.theme(
+  {
+    "&": { backgroundColor: "transparent", color: "#e4e4e7" },
+    ".cm-content": { caretColor: "#f4f4f5" },
+    ".cm-cursor, .cm-dropCursor": { borderLeftColor: "#f4f4f5" },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground":
+      { backgroundColor: "#2d3f5e" },
+    ".cm-activeLine": { backgroundColor: "#27272a66" },
+    ".cm-gutters": {
+      backgroundColor: "transparent",
+      color: "#52525b",
+      border: "none"
+    },
+    ".cm-activeLineGutter": { backgroundColor: "#27272a66", color: "#a1a1aa" }
+  },
+  { dark: true }
+)
+
+// One-dark-ish token palette, picked for contrast on zinc-950.
+const darkHighlight = HighlightStyle.define([
+  { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: "#c678dd" },
+  { tag: [tags.string, tags.special(tags.string), tags.inserted], color: "#98c379" },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "#7f848e", fontStyle: "italic" },
+  { tag: [tags.number, tags.bool, tags.atom, tags.null], color: "#d19a66" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "#61afef" },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: "#e5c07b" },
+  { tag: [tags.definition(tags.variableName), tags.propertyName], color: "#e06c75" },
+  { tag: [tags.tagName, tags.deleted], color: "#e06c75" },
+  { tag: [tags.attributeName], color: "#d19a66" },
+  { tag: [tags.heading], color: "#61afef", fontWeight: "bold" },
+  { tag: [tags.link, tags.url], color: "#61afef", textDecoration: "underline" },
+  { tag: [tags.emphasis], fontStyle: "italic" },
+  { tag: [tags.strong], fontWeight: "bold" },
+  { tag: [tags.meta, tags.processingInstruction], color: "#7f848e" }
+])
+
+export const darkEditorExtensions = [darkTheme, syntaxHighlighting(darkHighlight)]
 
 export const SEND_AGENT_MAX_BYTES = 32 * 1024
 
@@ -21,8 +65,9 @@ export function copyEditorText(text) {
 }
 
 // Base extension set shared by every editor instance. `onUpdate` is a CodeMirror
-// updateListener extension; `onSave` (if given) is bound to Mod-s (Cmd/Ctrl+S).
-export function editorExtensions({ onUpdate, onSave } = {}) {
+// updateListener extension; `onSave` (if given) is bound to Mod-s (Cmd/Ctrl+S);
+// `dark` (if true) applies the dark theme + token palette above.
+export function editorExtensions({ onUpdate, onSave, dark } = {}) {
   const saveBinding = onSave
     ? [{ key: "Mod-s", preventDefault: true, run: () => (onSave(), true) }]
     : []
@@ -34,6 +79,7 @@ export function editorExtensions({ onUpdate, onSave } = {}) {
     keymap.of([...saveBinding, ...defaultKeymap, ...historyKeymap])
   ]
 
+  if (dark) exts.push(...darkEditorExtensions)
   if (onUpdate) exts.push(onUpdate)
   return exts
 }
