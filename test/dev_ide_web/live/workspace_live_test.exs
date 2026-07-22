@@ -2541,7 +2541,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     assert {:ok, %{request_id: page_request_id}} =
-             DevIDE.Agents.PreviewTools.BrowserControl.reload_page(%{id: "ws-1"}, actor_id: "agent-1")
+             DevIDE.Agents.PreviewTools.BrowserControl.reload_page(%{id: "ws-1"},
+               actor_id: "agent-1"
+             )
 
     assert_push_event(view, "devide:reload_page", %{
       "action" => "reload_page",
