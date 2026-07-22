@@ -14,7 +14,7 @@ defmodule DevIDE.Previews do
   import Ecto.Query
 
   alias DevIDE.Audit
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias DevIDE.Previews.Deps
   alias DevIDE.Repo
 
   alias DevIDE.Previews.{
@@ -370,7 +370,7 @@ defmodule DevIDE.Previews do
   defp mirror_linked_preview(id, workspace) do
     workspace_id = workspace.id || workspace[:id]
 
-    allowed_ids = WorkspaceAliases.viewer_ids(workspace_id)
+    allowed_ids = Deps.impl(:workspaces).viewer_ids(workspace_id)
 
     source =
       Repo.one(
@@ -380,7 +380,7 @@ defmodule DevIDE.Previews do
 
     case source do
       %Preview{} = source ->
-        if WorkspaceAliases.linked?(source.workspace_id, workspace_id) do
+        if Deps.impl(:workspaces).linked?(source.workspace_id, workspace_id) do
           safe_metadata =
             Map.drop(source.metadata || %{}, [
               "allowed_origins",

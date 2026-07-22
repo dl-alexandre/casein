@@ -1,8 +1,7 @@
 defmodule DevIDE.Previews.TerminalOutput do
   @moduledoc false
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspaces
+  alias DevIDE.Previews.Deps
 
   @session_prefix "devide_"
   @max_lines 300
@@ -20,7 +19,7 @@ defmodule DevIDE.Previews.TerminalOutput do
     if prefixes == [] do
       ""
     else
-      Tmux.list_sessions()
+      terminals().list_sessions()
       |> Enum.filter(&workspace_session?(&1.session, prefixes))
       |> Enum.flat_map(&capture_session/1)
       |> Enum.reject(&(&1 == ""))
@@ -47,10 +46,10 @@ defmodule DevIDE.Previews.TerminalOutput do
 
   defp capture_session(%{session: session}) do
     session
-    |> Tmux.list_session_panes()
+    |> terminals().list_session_panes()
     |> Enum.take(@max_panes)
     |> Enum.map(fn pane ->
-      Tmux.capture_scrollback(session,
+      terminals().capture_scrollback(session,
         target: pane.id,
         ansi: false,
         lines: @max_lines
@@ -64,15 +63,15 @@ defmodule DevIDE.Previews.TerminalOutput do
 
     prefixes =
       for candidate <- [id, name], is_binary(candidate), candidate != "" do
-        Tmux.workspace_session_prefix(candidate)
+        terminals().workspace_session_prefix(candidate)
       end
 
     case id do
       id when is_binary(id) ->
-        case Workspaces.get(id) do
+        case workspaces().get(id) do
           {:ok, ws} ->
             for candidate <- [ws.id, ws.name], is_binary(candidate), candidate != "" do
-              Tmux.workspace_session_prefix(candidate)
+              terminals().workspace_session_prefix(candidate)
             end
             |> Kernel.++(prefixes)
 
@@ -93,4 +92,7 @@ defmodule DevIDE.Previews.TerminalOutput do
   defp workspace_name(%{name: name}) when is_binary(name), do: name
   defp workspace_name(%{"name" => name}) when is_binary(name), do: name
   defp workspace_name(_), do: nil
+
+  defp workspaces, do: Deps.impl(:workspaces)
+  defp terminals, do: Deps.impl(:terminals)
 end

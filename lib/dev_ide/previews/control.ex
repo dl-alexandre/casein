@@ -13,7 +13,7 @@ defmodule DevIDE.Previews.Control do
   alias DevIDE.PreviewPanes
   alias PreviewCtl.{Runtime, Session}
   alias DevIDE.Previews
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias DevIDE.Previews.Deps
 
   alias DevIDE.Previews.{
     Artifacts,
@@ -1150,7 +1150,7 @@ defmodule DevIDE.Previews.Control do
       current_url: session.current_url || preview.url
     }
 
-    for workspace_id <- WorkspaceAliases.viewer_ids(preview.workspace_id) do
+    for workspace_id <- Deps.impl(:workspaces).viewer_ids(preview.workspace_id) do
       Phoenix.PubSub.broadcast(
         DevIDE.PubSub,
         "preview:" <> workspace_id,
@@ -1174,7 +1174,7 @@ defmodule DevIDE.Previews.Control do
         observation: observation
       }
 
-      for workspace_id <- WorkspaceAliases.viewer_ids(entry.preview.workspace_id) do
+      for workspace_id <- Deps.impl(:workspaces).viewer_ids(entry.preview.workspace_id) do
         Phoenix.PubSub.broadcast(
           DevIDE.PubSub,
           "preview:" <> workspace_id,

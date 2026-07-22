@@ -9,8 +9,8 @@ defmodule DevIDE.Previews.TidewaveProbe do
 
   require Logger
 
-  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
-  alias DevIDE.Workspaces
+  alias DevIDE.HostMode
+  alias DevIDE.Previews.Deps
 
   @max_probes 3
   @probe_timeout_ms 1_200
@@ -78,7 +78,7 @@ defmodule DevIDE.Previews.TidewaveProbe do
   def tidewave_response?(_), do: false
 
   defp host_cwd(workspace) do
-    case Workspaces.safe_host_path(workspace) do
+    case Deps.impl(:workspaces).safe_host_path(workspace) do
       {:ok, path} -> {:ok, path}
       _ -> {:error, :no_host_path}
     end
@@ -89,7 +89,7 @@ defmodule DevIDE.Previews.TidewaveProbe do
     script =
       "curl -s -o /dev/null -w '%{http_code}' --max-time #{div(@probe_timeout_ms, 1000)} http://127.0.0.1:#{port}/tidewave 2>/dev/null || echo 000"
 
-    case WorkspaceSource.prepare_local_argv(["sh", "-c", script]) do
+    case HostMode.prepare_local_argv(["sh", "-c", script]) do
       [cmd | args] ->
         {out, _code} =
           System.cmd(cmd, args, cd: cwd, stderr_to_stdout: true, env: [{"TERM", "dumb"}])

@@ -1,7 +1,7 @@
 defmodule DevIDE.Previews.Url do
   @moduledoc false
 
-  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
+  alias DevIDE.HostMode
   alias PreviewCtl.Origin
 
   @doc "True when the URL targets loopback (browser-local only)."
@@ -101,7 +101,7 @@ defmodule DevIDE.Previews.Url do
   defdelegate resolve_against(path_or_url, base_url), to: Origin
 
   defp host_app_origins do
-    if WorkspaceSource.on_host?() do
+    if HostMode.on_host?() do
       case Application.get_env(:dev_ide, :preview_app_url) do
         url when is_binary(url) and url != "" ->
           case Origin.origin_of(url) do

@@ -8,11 +8,8 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews
+  alias DevIDE.Previews.Deps
   alias DevIDE.Previews.Url
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology, as: TerminalTmuxTopology
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
   # Unified entry point for the preview_open tool. Routes by `mode` to the
   # existing per-surface handlers, which each validate their own required
@@ -376,7 +373,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
     with origin when is_binary(origin) <- Url.origin_of(url),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            Keyword.get(opts, :tmux_session) || resolve_tmux_session(workspace, opts) do
-      panes = tmux_adapter().list_session_panes(tmux_session)
+      panes = terminals().list_session_panes(tmux_session)
 
       find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) ||
         single_preview_holder_candidate(tmux_session, panes)
@@ -391,7 +388,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
       with pane_id when is_binary(pane_id) <- pane_id,
            scrollback when is_binary(scrollback) and scrollback != "" <-
-             tmux_adapter().capture_scrollback(tmux_session,
+             terminals().capture_scrollback(tmux_session,
                target: pane_id,
                ansi: false,
                lines: 20
@@ -943,7 +940,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   defp preview_activity_workspace_ids(workspace, registration) do
     [workspace_id(workspace), Map.get(registration, :workspace_id)]
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
-    |> Enum.flat_map(&WorkspaceAliases.viewer_ids/1)
+    |> Enum.flat_map(fn id -> workspaces().viewer_ids(id) end)
     |> Enum.uniq()
   end
 
@@ -982,14 +979,14 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
          {:ok, split_target_pane_id} <- split_target_pane_id(tmux_session, opts),
          command <- preview_command(url, opts),
          {:ok, pane_id} <-
-           tmux_adapter().split_pane(tmux_session, split_target_pane_id, "h",
+           terminals().split_pane(tmux_session, split_target_pane_id, "h",
              cwd: Keyword.get(opts, :cwd) || workspace_host_path(workspace),
              command: command
            ),
          :ok <- ensure_tmux_pane_exists(tmux_session, pane_id),
          # tmux focuses the new preview holder; restore the operator pane so
          # Ghostty keeps streaming shell output instead of devide-preview text.
-         :ok <- tmux_adapter().select_pane(tmux_session, split_target_pane_id),
+         :ok <- terminals().select_pane(tmux_session, split_target_pane_id),
          {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts),
          :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
       session =
@@ -1644,7 +1641,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   defp kill_preview_pane(tmux_session, pane_id)
        when is_binary(tmux_session) and tmux_session != "" and is_binary(pane_id) and
               pane_id != "" do
-    tmux_adapter().kill_pane(tmux_session, pane_id)
+    terminals().kill_pane(tmux_session, pane_id)
   end
 
   defp kill_preview_pane(_tmux_session, _pane_id), do: {:error, :tmux_session_required}
@@ -1720,7 +1717,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
   defp tmux_pane_exists?(tmux_session, pane_id) do
     tmux_session
-    |> tmux_adapter().list_session_panes()
+    |> terminals().list_session_panes()
     |> Enum.any?(&(Map.get(&1, :id) == pane_id))
   end
 
@@ -1735,7 +1732,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   end
 
   defp active_split_target_pane_id(tmux_session) do
-    topology = TerminalTmuxTopology.get(tmux_session, tmux: tmux_adapter())
+    topology = terminals().topology_get(tmux_session, tmux: terminals().adapter())
     active_pane_id = topology.active_pane_id
 
     cond do
@@ -2018,7 +2015,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
     workspace
     |> workspace_session_prefixes()
     |> then(fn prefixes ->
-      tmux_adapter().list_sessions()
+      terminals().list_sessions()
       |> Enum.filter(fn %{session: name} ->
         Enum.any?(prefixes, &String.starts_with?(name, &1))
       end)
@@ -2069,7 +2066,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
   defp pane_visibility_rank(workspace_id, %{pane_id: pane_id}) when is_binary(pane_id) do
     workspace_id
-    |> WorkspaceAliases.viewer_ids()
+    |> workspaces().viewer_ids()
     |> Enum.flat_map(&PreviewActivity.recent_pane(&1, pane_id, 5))
     |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
     |> Enum.find(&fresh_loaded_visibility?/1)
@@ -2129,15 +2126,15 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
     prefixes =
       if is_binary(id) and id != "" do
-        [Tmux.workspace_session_prefix(id)]
+        [terminals().workspace_session_prefix(id)]
       else
         []
       end
 
-    case Workspaces.get(id) do
+    case workspaces().get(id) do
       {:ok, ws} ->
         for candidate <- [ws.name, ws.id], is_binary(candidate), candidate != "" do
-          Tmux.workspace_session_prefix(candidate)
+          terminals().workspace_session_prefix(candidate)
         end
         |> Enum.concat(prefixes)
         |> Enum.uniq()
@@ -2148,7 +2145,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   end
 
   defp workspace_host_path(workspace) do
-    case Workspaces.safe_host_path(workspace) do
+    case workspaces().safe_host_path(workspace) do
       {:ok, path} -> path
       _ -> nil
     end
@@ -2177,9 +2174,8 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
     end
   end
 
-  defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
-  end
+  defp workspaces, do: Deps.impl(:workspaces)
+  defp terminals, do: Deps.impl(:terminals)
 
   defp shell_quote(value) when is_binary(value) do
     if String.match?(value, ~r"^[A-Za-z0-9_.,:/%@+-]+$") do
@@ -2203,7 +2199,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
     |> workspace_id()
     |> case do
       id when is_binary(id) and id != "" ->
-        if registration_workspace_id in WorkspaceAliases.viewer_ids(id),
+        if registration_workspace_id in workspaces().viewer_ids(id),
           do: :ok,
           else: {:error, :not_found}
 
@@ -2523,7 +2519,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
   defp workspace_viewer_route(workspace) do
     case workspace_id(workspace) do
-      id when is_binary(id) and id != "" -> WorkspaceAliases.viewer_route_id(id)
+      id when is_binary(id) and id != "" -> workspaces().viewer_route_id(id)
       _ -> "/workspaces"
     end
   end
@@ -2586,7 +2582,7 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
 
       _ ->
         case workspace do
-          ws when is_map(ws) -> Workspaces.forward_auth_headers(ws)
+          ws when is_map(ws) -> workspaces().forward_auth_headers(ws)
           _ -> nil
         end
     end

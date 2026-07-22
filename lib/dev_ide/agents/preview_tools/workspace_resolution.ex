@@ -1,8 +1,8 @@
 defmodule DevIDE.Agents.PreviewTools.WorkspaceResolution do
   @moduledoc false
 
+  alias DevIDE.Previews.Deps
   alias DevIDE.Previews.WorkspaceContext
-  alias DevIDE.Workspaces
 
   def prepare(workspace), do: WorkspaceContext.prepare(workspace)
 
@@ -13,7 +13,7 @@ defmodule DevIDE.Agents.PreviewTools.WorkspaceResolution do
 
       path = workspace_path(params) ->
         path
-        |> Workspaces.attach_folder()
+        |> Deps.impl(:workspaces).attach_folder()
         |> case do
           {:ok, workspace} -> {:ok, workspace_resolution_payload(workspace)}
           {:error, reason} -> {:error, workspace_path_error(path, reason)}
@@ -31,7 +31,7 @@ defmodule DevIDE.Agents.PreviewTools.WorkspaceResolution do
   end
 
   defp workspace_payload(id) when is_binary(id) do
-    case Workspaces.get(id) do
+    case Deps.impl(:workspaces).get(id) do
       {:ok, workspace} -> {:ok, workspace_resolution_payload(workspace)}
       {:error, reason} -> {:error, workspace_id_error(id, reason)}
     end

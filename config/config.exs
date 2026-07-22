@@ -59,6 +59,16 @@ config :dev_ide,
     priv_app: :dev_ide,
     registry_table: :preview_ctl_sessions
   ],
+  # Preview-domain outbound seams (extraction slice 3). Preview modules resolve
+  # core impls at runtime via DevIDE.Previews.Deps.impl/1 — never compile-time
+  # module defaults (those re-create the xref edges this map severs). Test env
+  # may repoint individual keys at fakes via Application.put_env.
+  preview_deps: [
+    workspaces: DevIDE.Workspaces.PreviewDeps,
+    terminals: DevIDE.Terminals.PreviewDeps,
+    runtimes: DevIDE.Runtimes.PreviewDeps,
+    pane_sink: DevIDE.Panes.PreviewDeps
+  ],
   git_ctl: [
     cache_table: :devide_git_inspector_cache,
     cache_ttl_ms: 10_000,

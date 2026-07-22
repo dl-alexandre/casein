@@ -20,12 +20,12 @@ defmodule DevIDE.Previews.FileServer do
   use GenServer
   require Logger
 
+  alias DevIDE.Previews.Deps
   alias DevIDE.Previews.FileServer.Plug, as: FileServerPlug
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces
 
-  @topology_tag DevIDE.Terminals.TmuxTopology
+  # Topology PubSub messages use this atom tag; resolved at runtime so this
+  # module never names DevIDE.Terminals.TmuxTopology at compile time.
+  @topology_tag :"Elixir.DevIDE.Terminals.TmuxTopology"
   # Belt-and-suspenders: stop after this long with no ensure_started / HTTP
   # activity even if the topology signal is missed.
   @idle_ms 15 * 60 * 1000
@@ -238,7 +238,7 @@ defmodule DevIDE.Previews.FileServer do
   end
 
   defp resolve_loc(workspace) do
-    case Workspaces.safe_host_loc(workspace) do
+    case Deps.impl(:workspaces).safe_host_loc(workspace) do
       {:ok, {:local, _root} = loc} -> {:ok, loc}
       {:ok, {:remote, _, _} = loc} -> {:ok, loc}
       {:error, reason} -> {:error, reason}
@@ -247,7 +247,7 @@ defmodule DevIDE.Previews.FileServer do
   end
 
   defp maybe_subscribe_topology(session) when is_binary(session) and session != "" do
-    _ = TmuxTopology.subscribe(session)
+    _ = Deps.impl(:terminals).topology_subscribe(session)
     :ok
   end
 
@@ -255,11 +255,11 @@ defmodule DevIDE.Previews.FileServer do
 
   defp default_tmux_session(%{name: name}) when is_binary(name) and name != "" do
     # Default sid used by the primary workspace terminal attachment.
-    Tmux.session_name(name, "main")
+    Deps.impl(:terminals).session_name(name, "main")
   end
 
   defp default_tmux_session(%{"name" => name}) when is_binary(name) and name != "" do
-    Tmux.session_name(name, "main")
+    Deps.impl(:terminals).session_name(name, "main")
   end
 
   defp default_tmux_session(_), do: nil

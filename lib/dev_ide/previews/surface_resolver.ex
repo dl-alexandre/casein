@@ -11,12 +11,12 @@ defmodule DevIDE.Previews.SurfaceResolver do
   """
 
   alias DevIDE.Agents.MCPUrls
-  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
+  alias DevIDE.HostMode
+  alias DevIDE.Previews.Deps
   alias DevIDE.Previews.Surface
   alias DevIDE.Previews.Url
-  alias DevIDE.Runtimes
+  # Struct-only leaf (not in the runtime SCC).
   alias DevIDE.Runtimes.Runtime
-  alias DevIDE.Workspaces
 
   @v3_surface_order ~w(app http tidewave api milc-platform-server opencode)
   @port_aliases %{"http" => "app", "milc-platform-server" => "app"}
@@ -272,7 +272,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
     case workspace_id do
       id when is_binary(id) and id != "" ->
         %{"workspace_id" => id}
-        |> Runtimes.list_runtimes()
+        |> Deps.impl(:runtimes).list_runtimes()
         |> Enum.reject(&(&1.status in @inactive_runtime_statuses))
         |> Enum.filter(fn %Runtime{} = runtime ->
           is_nil(tmux_session) or runtime.tmux_session_id == tmux_session
@@ -285,7 +285,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
 
   defp runtime_surface_structs(%Runtime{} = runtime) do
     runtime
-    |> Runtimes.runtime_preview_surfaces()
+    |> Deps.impl(:runtimes).runtime_preview_surfaces()
     |> Enum.flat_map(&runtime_surface_struct(&1, runtime))
   end
 
@@ -557,7 +557,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp host_surfaces_enabled?(workspace) do
-    WorkspaceSource.on_host?() and resolvable_host_path?(workspace) and
+    HostMode.on_host?() and resolvable_host_path?(workspace) and
       not v3_workspace_with_domain?(workspace)
   end
 
@@ -570,7 +570,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp resolvable_host_path?(workspace) do
-    case Workspaces.safe_host_path(workspace) do
+    case Deps.impl(:workspaces).safe_host_path(workspace) do
       {:ok, _} -> true
       _ -> false
     end

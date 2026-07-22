@@ -16,22 +16,20 @@ defmodule DevIDE.PreviewPanes do
   import Ecto.Query
 
   alias DevIDE.Audit
-  alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIDE.Previews.Pane, as: PreviewPane
   alias DevIDE.PreviewActivity
   alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
+  alias DevIDE.Previews.Deps
   alias DevIDE.PreviewPanes.PreviewPaneRegistration
   alias DevIDE.Previews.Url
   alias DevIDE.Previews.WorkspaceContext
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Repo
 
   @table :dev_ide_preview_panes
-  @topology_tag DevIDE.Terminals.TmuxTopology
+  # Topology PubSub tag; atom form avoids a compile-time core-module edge.
+  @topology_tag :"Elixir.DevIDE.Terminals.TmuxTopology"
   # Register/deregister wait on offloaded I/O that can include a 15s browser
   # navigate; the 5s GenServer default was the timeout-while-server-still-blocked trap.
   @lifecycle_call_timeout 30_000
@@ -155,7 +153,10 @@ defmodule DevIDE.PreviewPanes do
 
   @spec list_for_workspace(String.t()) :: [registration()]
   def list_for_workspace(workspace_id) when is_binary(workspace_id) do
-    GenServer.call(__MODULE__, {:list_for_workspace, WorkspaceAliases.viewer_ids(workspace_id)})
+    GenServer.call(
+      __MODULE__,
+      {:list_for_workspace, Deps.impl(:workspaces).viewer_ids(workspace_id)}
+    )
   end
 
   @doc """
@@ -1718,7 +1719,7 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp ensure_shared_source_scope(workspace, %{workspace_id: workspace_id}) do
-    if workspace_id in WorkspaceAliases.viewer_ids(workspace.id) do
+    if workspace_id in Deps.impl(:workspaces).viewer_ids(workspace.id) do
       :ok
     else
       {:error, :no_shared_preview_found}
@@ -1802,7 +1803,7 @@ defmodule DevIDE.PreviewPanes do
   defp pane_still_exists?(session, pane_id, pane_ids) do
     MapSet.member?(pane_ids, pane_id) or
       session
-      |> tmux_adapter().list_session_panes()
+      |> terminals().list_session_panes()
       |> Enum.any?(&(Map.get(&1, :id) == pane_id))
   end
 
@@ -1822,7 +1823,7 @@ defmodule DevIDE.PreviewPanes do
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            registration.tmux_session do
       tmux_session
-      |> tmux_adapter().list_session_panes()
+      |> terminals().list_session_panes()
       |> Enum.any?(&(Map.get(&1, :id) == registration.pane_id))
     else
       _ -> false
@@ -1992,16 +1993,16 @@ defmodule DevIDE.PreviewPanes do
     }
   end
 
-  defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
-  end
+  defp workspaces, do: Deps.impl(:workspaces)
+  defp terminals, do: Deps.impl(:terminals)
+  defp pane_sink, do: Deps.impl(:pane_sink)
 
   defp maybe_subscribe_topology(state, tmux_session)
        when is_binary(tmux_session) and tmux_session != "" do
     if MapSet.member?(state.subscriptions, tmux_session) do
       state
     else
-      _ = TmuxTopology.subscribe(tmux_session)
+      _ = terminals().topology_subscribe(tmux_session)
       %{state | subscriptions: MapSet.put(state.subscriptions, tmux_session)}
     end
   end
@@ -2009,7 +2010,7 @@ defmodule DevIDE.PreviewPanes do
   defp maybe_subscribe_topology(state, _), do: state
 
   defp refresh_topology(tmux_session) when is_binary(tmux_session) and tmux_session != "" do
-    _ = TmuxTopology.refresh(tmux_session)
+    _ = terminals().topology_refresh(tmux_session)
     :ok
   end
 
@@ -2069,7 +2070,7 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp workspace_registrations_direct(workspace_id) when is_binary(workspace_id) do
-    workspace_ids = WorkspaceAliases.viewer_ids(workspace_id)
+    workspace_ids = workspaces().viewer_ids(workspace_id)
 
     @table
     |> :ets.tab2list()
@@ -2096,7 +2097,7 @@ defmodule DevIDE.PreviewPanes do
   defp pane_default_headers(workspace, attrs) do
     case Map.get(attrs, "default_headers") || Map.get(attrs, :default_headers) do
       headers when is_map(headers) and map_size(headers) > 0 -> headers
-      _ -> Workspaces.forward_auth_headers(workspace) || %{}
+      _ -> workspaces().forward_auth_headers(workspace) || %{}
     end
   end
 
@@ -2107,7 +2108,7 @@ defmodule DevIDE.PreviewPanes do
         {:ok, WorkspaceContext.prepare(ws)}
 
       id = string_param(attrs, "workspace_id") || string_param(attrs, :workspace_id) ->
-        case Workspaces.get(id) do
+        case workspaces().get(id) do
           {:ok, workspace} ->
             {:ok, workspace}
 
@@ -2116,7 +2117,7 @@ defmodule DevIDE.PreviewPanes do
         end
 
       cwd = string_param(attrs, "cwd") || string_param(attrs, :cwd) ->
-        case Workspaces.attach_folder(cwd) do
+        case workspaces().attach_folder(cwd) do
           {:ok, workspace} -> {:ok, workspace}
           {:error, :not_a_directory} -> {:error, :workspace_not_found}
           {:error, _} = error -> error
@@ -2249,7 +2250,7 @@ defmodule DevIDE.PreviewPanes do
   defp broadcast_registered(registration, reason \\ :registered) do
     payload = broadcast_payload(registration)
 
-    for workspace_id <- WorkspaceAliases.viewer_ids(registration.workspace_id) do
+    for workspace_id <- workspaces().viewer_ids(registration.workspace_id) do
       Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_registered,
         payload
@@ -2264,7 +2265,7 @@ defmodule DevIDE.PreviewPanes do
   defp broadcast_removed(registration) do
     payload = Map.take(broadcast_payload(registration), [:pane_id, :workspace_id, :preview_id])
 
-    for workspace_id <- WorkspaceAliases.viewer_ids(registration.workspace_id) do
+    for workspace_id <- workspaces().viewer_ids(registration.workspace_id) do
       Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_removed,
         payload
@@ -2277,7 +2278,7 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp broadcast_pane_event(registration, reason, payload) do
-    PaneEvents.broadcast(%{
+    pane_sink().broadcast(%{
       reason: reason,
       type: :preview,
       pane_id: registration.pane_id,

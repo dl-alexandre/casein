@@ -97,7 +97,12 @@ defmodule DevIDE.Agents.MCPMaterializer do
   end
 
   defp home_dir do
-    System.get_env("HOME") || System.get_env("USERPROFILE") ||
+    # Tests may set `:agent_home_dir` to a writable tmp path when the host
+    # `~/.devide/agent-mcp` tree is locked (mode 000 / RO). Production leaves
+    # this unset and uses $HOME.
+    Application.get_env(:dev_ide, :agent_home_dir) ||
+      System.get_env("HOME") ||
+      System.get_env("USERPROFILE") ||
       raise ArgumentError, "HOME or USERPROFILE is required to materialize agent MCP configs"
   end
 
