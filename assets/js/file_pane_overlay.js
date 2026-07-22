@@ -19,7 +19,7 @@
 //     (loop-guarded); Ghostty never attaches to the holder pane.
 
 import { EditorView } from "@codemirror/view"
-import { makeEditorState, revealLine } from "./editor_core"
+import { makeEditorState, revealLine, fileErrorMessage } from "./editor_core"
 import {
   applyOverlayRect,
   bindPaneSectionGeometryObserver,
@@ -91,6 +91,8 @@ export const FilePaneOverlay = {
     this._sectionGeometryObserver = null
     this.el.removeEventListener("focusin", this._onFocusIn)
     this.el.removeEventListener("devide:file-pane:close-tab", this._onCloseTab)
+    this.placeholderEl?.remove()
+    this.placeholderEl = null
     this.view?.destroy()
   },
 
@@ -100,17 +102,26 @@ export const FilePaneOverlay = {
     const { path, content, version, line, error } = payload
     if (!path) return
 
-    if (error) {
-      showClipboardToast(`Could not load ${path}: ${error}`, { kind: "error" })
-      return
-    }
-    if (typeof content !== "string") return
-
-    // Park the outgoing tab's state (undo history + unsaved edits) first.
+    // Park the outgoing tab's live state (undo history + unsaved edits) before
+    // switching away — whether the incoming tab is a real buffer or an error
+    // placeholder. Must run before the error branch, or edits to the tab we're
+    // leaving would be dropped when we later return to it.
     if (this.activePath && this.activePath !== path) {
       const parked = this.tabCache.get(this.activePath)
       if (parked) parked.state = this.view.state
     }
+
+    if (error) {
+      // Unopenable file (binary, too large, vanished): show a calm in-pane
+      // placeholder over the editor rather than a transient error toast.
+      this.showPlaceholder(path, error)
+      this.activePath = path
+      return
+    }
+    if (typeof content !== "string") return
+
+    // A good load supersedes any placeholder from a prior unopenable tab.
+    this.hidePlaceholder()
 
     const cached = this.tabCache.get(path)
     const switching = this.activePath !== path
@@ -226,6 +237,46 @@ export const FilePaneOverlay = {
     for (const [path, entry] of this.tabCache) {
       if (entry.dirty) this.setTabDot(path, true)
     }
+  },
+
+  // --- unopenable-file placeholder ----------------------------------------------
+
+  // Lazily create an opaque panel covering the editor region (below the 7-unit
+  // tab strip). Client-owned — appended to the hook root, not LV-rendered — so
+  // LV tab-strip diffs never clobber it.
+  ensurePlaceholder() {
+    if (this.placeholderEl?.isConnected) return this.placeholderEl
+
+    const el = document.createElement("div")
+    el.dataset.filePanePlaceholder = ""
+    el.className =
+      "absolute inset-x-0 bottom-0 top-7 z-20 flex flex-col items-center justify-center " +
+      "gap-1 bg-zinc-950 px-6 text-center text-zinc-400"
+    el.hidden = true
+
+    const name = document.createElement("div")
+    name.dataset.placeholderName = ""
+    name.className = "font-mono text-sm text-zinc-200"
+
+    const msg = document.createElement("div")
+    msg.dataset.placeholderMessage = ""
+    msg.className = "max-w-md text-xs leading-relaxed"
+
+    el.append(name, msg)
+    this.el.appendChild(el)
+    this.placeholderEl = el
+    return el
+  },
+
+  showPlaceholder(path, error) {
+    const el = this.ensurePlaceholder()
+    el.querySelector("[data-placeholder-name]").textContent = path.split("/").pop()
+    el.querySelector("[data-placeholder-message]").textContent = fileErrorMessage(error)
+    el.hidden = false
+  },
+
+  hidePlaceholder() {
+    if (this.placeholderEl) this.placeholderEl.hidden = true
   },
 
   // --- geometry (borrowed from preview_pane_overlay.js) --------------------------
