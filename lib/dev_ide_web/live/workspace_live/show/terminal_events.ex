@@ -343,31 +343,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  def handle_event("tmux:split_pane", %{"pane-id" => pane_id, "direction" => direction}, socket)
-      when direction in ["h", "v"] do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      case TerminalState.tmux_adapter().split_pane(
-             socket.assigns.tmux_session,
-             pane_id,
-             direction
-           ) do
-        {:ok, new_pane_id} ->
-          socket =
-            socket
-            |> TerminalState.refresh_tmux_topology()
-            |> assign(:ui_highlight_pane_id, new_pane_id)
-
-          {:noreply,
-           TerminalState.focus_active_terminal(socket, %{"reason" => "tmux:split_pane"})}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
-      end
-    else
-      TerminalState.deny_tmux_mutation(socket)
-    end
-  end
-
   def handle_event(
         "tmux:resize_pane",
         %{"pane-id" => pane_id, "direction" => direction} = params,

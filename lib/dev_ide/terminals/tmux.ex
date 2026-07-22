@@ -38,6 +38,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate select_pane(session, pane_id), to: TmuxCtl.Client
   defdelegate navigate_pane(session, dir), to: TmuxCtl.Client
   defdelegate zoom_pane(session, pane_id), to: TmuxCtl.Client
+  defdelegate swap_pane(session, pane_id, direction), to: TmuxCtl.Client
   defdelegate ensure_zoomed(session, pane_id, desired?), to: TmuxCtl.Client
   defdelegate kill_other_panes(session, pane_id), to: TmuxCtl.Client
   defdelegate select_layout(session, layout), to: TmuxCtl.Client

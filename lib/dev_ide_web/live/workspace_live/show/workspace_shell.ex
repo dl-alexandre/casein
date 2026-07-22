@@ -389,6 +389,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
               data-leader-action="zoom"
               phx-click="pane:zoom_focused"
             ></button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-swap-previous"
+              phx-click="pane:swap_previous"
+            ></button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-swap-next"
+              phx-click="pane:swap_next"
+            ></button>
           <% end %>
         </div>
       <% end %>
@@ -585,6 +597,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :active_window_pane_count,
       :tmux_window_tabs,
       :tmux_topology_structure_version,
+      :tmux_topology_layout_version,
       :tmux_rename_window_id,
       :tmux_rename_session_id,
       :window_sidebar_open?,

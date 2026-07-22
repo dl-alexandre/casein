@@ -351,13 +351,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
 
+    split_layout_version =
+      :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
     render_click(view, "tmux:split_pane", %{"pane-id" => "%3", "direction" => "v"})
+
+    render_hook(view, "pane:commit_split", %{
+      "pane_id" => "%3",
+      "direction" => "v",
+      "base_layout_version" => split_layout_version
+    })
 
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%3", "v", "%4"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
 
     assert_push_event(view, "terminal:focus_active", %{
-      "reason" => "tmux:split_pane",
+      "reason" => "split_pane",
       "tmux_pane_id" => "%4"
     })
 
@@ -435,6 +444,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
                "button[data-leader-action='#{action}'][phx-click='pane:navigate']"
              )
     end
+
+    assert has_element?(
+             view,
+             "button[data-leader-action='pane-swap-previous'][phx-click='pane:swap_previous']"
+           )
+
+    assert has_element?(
+             view,
+             "button[data-leader-action='pane-swap-next'][phx-click='pane:swap_next']"
+           )
 
     assert has_element?(view, "#leader-cheatsheet")
     help_html = render(view)
@@ -660,6 +679,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              )
     end
 
+    assert has_element?(
+             view,
+             "button[data-leader-action='pane-swap-previous'][phx-click='pane:swap_previous']"
+           )
+
+    assert has_element?(
+             view,
+             "button[data-leader-action='pane-swap-next'][phx-click='pane:swap_next']"
+           )
+
     assert has_element?(view, "button[data-leader-action='kill-window'][phx-value-window-id]")
     assert has_element?(view, "button[data-leader-action='rename-window'][phx-value-window-id]")
 
@@ -685,6 +714,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end
 
     for action <- ~w(pane-left pane-down pane-up pane-right pane-next) do
+      assert has_element?(view, "button[data-leader-action='#{action}']")
+    end
+
+    for action <- ~w(pane-swap-previous pane-swap-next) do
       assert has_element?(view, "button[data-leader-action='#{action}']")
     end
 

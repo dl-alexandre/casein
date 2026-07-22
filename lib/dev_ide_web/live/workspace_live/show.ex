@@ -76,7 +76,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @pane_layout_events ~w(
     split_right split_down pane:close_focused pane:close_others pane:focus_next
-    pane:focus_previous pane:zoom_focused pane:ensure_focus_zoom retry_pane
+    pane:focus_previous pane:zoom_focused pane:commit_zoom pane:ensure_focus_zoom retry_pane
+    pane:swap_previous pane:swap_next pane:commit_swap pane:commit_split
     equalize_layout pane:cycle_layout ghostty:snapshot snapshot_all nav:dir
   )
 
@@ -126,7 +127,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
-    pane:zoom_focused pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
+    pane:zoom_focused pane:commit_zoom pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
+    pane:swap_previous pane:swap_next pane:commit_swap pane:commit_split
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     notifications:toggle notifications:close notifications:refresh
@@ -250,6 +252,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
         |> assign(:tmux_topology_structure_version, 0)
+        |> assign(:tmux_topology_layout_version, 0)
         |> assign(:tmux_topology_generation, nil)
         |> assign(:tmux_rename_window_id, nil)
         |> assign(:tmux_rename_session_id, nil)
@@ -701,6 +704,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # Structural split requests need the browser transition coordinator before
+  # tmux is mutated, so route this one tmux:* event through PaneLayoutEvents.
+  def handle_event("tmux:split_pane" = event, params, socket),
+    do: PaneLayoutEvents.handle_event(event, params, socket)
+
   def handle_event("tmux:" <> _ = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
@@ -1019,6 +1027,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
         |> assign(:tmux_topology_structure_version, 0)
+        |> assign(:tmux_topology_layout_version, 0)
       else
         socket
       end
@@ -2049,6 +2058,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:ui_highlight_pane_id, pane_id)
     |> assign(:tmux_topology_version, 1)
     |> assign(:tmux_topology_structure_version, 1)
+    |> assign(:tmux_topology_layout_version, 1)
     |> TerminalState.assign_tmux_window_tabs()
     |> TerminalState.assign_session_tabs([session_info])
   end

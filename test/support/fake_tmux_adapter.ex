@@ -324,6 +324,35 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
+  def swap_pane(session, pane_id, direction) when direction in ["U", "D"] do
+    panes = Map.get(fake_panes(), session, [])
+
+    with %{window_id: window_id} = source <- Enum.find(panes, &(&1.id == pane_id)),
+         window_panes when length(window_panes) > 1 <-
+           panes |> Enum.filter(&(&1.window_id == window_id)) |> Enum.sort_by(& &1.index),
+         source_position when is_integer(source_position) <-
+           Enum.find_index(window_panes, &(&1.id == source.id)) do
+      offset = if direction == "U", do: -1, else: 1
+      target = Enum.at(window_panes, Integer.mod(source_position + offset, length(window_panes)))
+      target_id = target.id
+      send_to_test({:fake_tmux_swap_pane, session, pane_id, direction})
+
+      update_fake_panes(session, fn panes ->
+        Enum.map(panes, fn
+          %{id: ^pane_id} = pane -> swap_pane_position(pane, target)
+          %{id: ^target_id} = pane -> swap_pane_position(pane, source)
+          pane -> pane
+        end)
+      end)
+
+      :ok
+    else
+      _ -> {:error, :pane_not_found}
+    end
+  end
+
+  def swap_pane(_session, _pane_id, _direction), do: {:error, :invalid_direction}
+
   def ensure_zoomed(session, pane_id, desired?) when is_boolean(desired?) do
     actual? = pane_zoomed?(session, pane_id)
 
@@ -954,6 +983,10 @@ defmodule TmuxCtl.Test.FakeAdapter do
   defp ranges_overlap?(start_a, size_a, start_b, size_b) do
     start_a < start_b + size_b and start_b < start_a + size_a
   end
+
+  defp swap_pane_position(pane, position) do
+    Map.merge(pane, Map.take(position, [:window_id, :index, :left, :top, :width, :height]))
+  end
 end
 
 defmodule DevIDE.Test.FakeTmuxAdapter do
@@ -994,6 +1027,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate navigate_pane(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate consolidate_sessions(target_session, source_sessions), to: TmuxCtl.Test.FakeAdapter
   defdelegate zoom_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate swap_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter
   defdelegate ensure_zoomed(session, pane_id, desired?), to: TmuxCtl.Test.FakeAdapter
   defdelegate pane_zoomed?(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_other_panes(session, pane_id), to: TmuxCtl.Test.FakeAdapter

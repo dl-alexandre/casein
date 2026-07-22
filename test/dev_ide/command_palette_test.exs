@@ -267,6 +267,8 @@ defmodule DevIDE.CommandPaletteTest do
     assert "tmux:split_down" in ids
     assert "tmux:next_pane" in ids
     assert "tmux:previous_pane" in ids
+    assert "tmux:swap_previous" in ids
+    assert "tmux:swap_next" in ids
     assert "tmux:zoom" in ids
     assert "tmux:cycle_layout" in ids
     assert "tmux:equalize" in ids
@@ -301,6 +303,12 @@ defmodule DevIDE.CommandPaletteTest do
     {:ok, %{event: "pane:focus_previous", params: %{}}} =
       CommandPalette.resolve(nil, "tmux:previous_pane")
 
+    {:ok, %{event: "pane:swap_previous", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:swap_previous")
+
+    {:ok, %{event: "pane:swap_next", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:swap_next")
+
     {:ok, %{event: "pane:zoom_focused", params: %{}}} =
       CommandPalette.resolve(nil, "tmux:zoom")
 
@@ -330,6 +338,8 @@ defmodule DevIDE.CommandPaletteTest do
     assert "pane:cycle_layout" in allowed
     assert "pane:focus_next" in allowed
     assert "pane:focus_previous" in allowed
+    assert "pane:swap_previous" in allowed
+    assert "pane:swap_next" in allowed
     assert "pane:zoom_focused" in allowed
   end
 
@@ -342,6 +352,8 @@ defmodule DevIDE.CommandPaletteTest do
     assert by_id["tmux:split_down"] == "Split Vertical"
     assert by_id["tmux:next_pane"] == "Next Pane"
     assert by_id["tmux:previous_pane"] == "Previous Pane"
+    assert by_id["tmux:swap_previous"] == "Swap Pane Backward"
+    assert by_id["tmux:swap_next"] == "Swap Pane Forward"
     assert by_id["tmux:zoom"] == "Zoom / Unzoom"
     assert by_id["tmux:cycle_layout"] == "Cycle Pane Layout"
     assert by_id["tmux:close_pane"] == "Close Pane"

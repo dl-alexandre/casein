@@ -42,6 +42,8 @@ const LEADER_ACTIONS = {
   y: "copy-link",
   d: "detach",
   o: "pane-next",
+  "{": "pane-swap-previous",
+  "}": "pane-swap-next",
   ";": "last-pane",
   ":": "palette",
   "?": "help",

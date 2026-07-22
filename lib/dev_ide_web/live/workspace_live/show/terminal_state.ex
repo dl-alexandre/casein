@@ -116,6 +116,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :tmux_topology_structure_version,
       Map.get(topology, :structure_version, topology.version)
     )
+    # Layout-only version for optimistic pane mutations. Unlike the full
+    # topology version it ignores terminal activity/command churn, but it
+    # changes for geometry, selection, pane identity, and zoom changes.
+    |> assign(
+      :tmux_topology_layout_version,
+      Map.get(topology, :layout_version, topology.version)
+    )
     # Direct snapshot reads carry no generation; keep the stored one then.
     |> assign(
       :tmux_topology_generation,

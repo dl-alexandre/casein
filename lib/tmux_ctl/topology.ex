@@ -48,6 +48,7 @@ defmodule TmuxCtl.Topology do
           :active_pane_id => String.t() | nil,
           :version => non_neg_integer(),
           :structure_version => non_neg_integer(),
+          :layout_version => non_neg_integer(),
           optional(:generation) => pos_integer()
         }
 
@@ -73,7 +74,8 @@ defmodule TmuxCtl.Topology do
       active_window_id: active && active.id,
       active_pane_id: active_pane && active_pane.id,
       version: :erlang.phash2(version_projection(windows, panes)),
-      structure_version: structure_version(windows, panes)
+      structure_version: structure_version(windows, panes),
+      layout_version: layout_version(windows, panes)
     }
   end
 
@@ -94,6 +96,24 @@ defmodule TmuxCtl.Topology do
         panes,
         &{&1.id, &1.window_id, &1.index, &1.active, Map.get(&1, :role), Map.get(&1, :paired)}
       )
+    })
+  end
+
+  @doc """
+  Hash of pane-layout state used as an optimistic mutation precondition.
+
+  Unlike the full topology version, this deliberately ignores activity,
+  commands, paths, labels, and alert metadata. Terminal output may therefore
+  continue while a pointer interaction is in flight without making the layout
+  stale. Geometry, pane/window identity and ordering, active selection, and
+  tmux zoom state remain part of the hash so a concurrent layout mutation is
+  still detected.
+  """
+  @spec layout_version([map()], [map()]) :: non_neg_integer()
+  def layout_version(windows, panes) do
+    :erlang.phash2({
+      Enum.map(windows, &layout_window_projection/1),
+      Enum.map(panes, &layout_pane_projection/1)
     })
   end
 
@@ -162,6 +182,29 @@ defmodule TmuxCtl.Topology do
       _ ->
         entity
     end
+  end
+
+  defp layout_window_projection(window) do
+    {
+      Map.get(window, :id),
+      Map.get(window, :index),
+      Map.get(window, :active),
+      Map.get(window, :panes)
+    }
+  end
+
+  defp layout_pane_projection(pane) do
+    {
+      Map.get(pane, :id),
+      Map.get(pane, :window_id),
+      Map.get(pane, :index),
+      Map.get(pane, :active),
+      Map.get(pane, :left),
+      Map.get(pane, :top),
+      Map.get(pane, :width),
+      Map.get(pane, :height),
+      Map.get(pane, :zoomed?, false)
+    }
   end
 
   defp active_pane_for_snapshot(%{id: window_id}, panes) do

@@ -11,7 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
   # calls TerminalState.* / Show.* / Tmux adapter IO on a non-no-op path —
   # tmux:refresh_windows, tmux:refresh_topology, tmux:resize_pane_finish,
   # tmux:new_window(_tab), tmux:select_window, tmux:select_pane, tmux:kill_pane,
-  # tmux:split_pane, tmux:resize_pane(_step ok path), tmux:rename_window,
+  # tmux:resize_pane(_step ok path), tmux:rename_window,
   # terminal:rename_session, tmux:last_window, tmux:cycle_window, pane:navigate (ok path),
   # tmux:kill_window, terminal:set_mode (Ghostty restart), attach_terminal_session,
   # terminal:switch_to_shell, terminal:refresh_sessions, terminal:kill_session,

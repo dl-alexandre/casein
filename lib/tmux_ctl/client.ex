@@ -941,6 +941,22 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc "Swap a pane backward or forward in layout order while keeping it active."
+  @spec swap_pane(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  def swap_pane(session, pane_id, direction)
+      when is_binary(session) and is_binary(pane_id) and direction in ["U", "D"] do
+    if managed_session?(session) do
+      case run(["swap-pane", "-#{direction}", "-t", pane_target(session, pane_id)]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
+  def swap_pane(_session, _pane_id, _direction), do: {:error, :invalid_direction}
+
   @doc """
   Idempotently set zoom on a pane — toggles only when tmux state differs.
   """

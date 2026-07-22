@@ -47,6 +47,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback zoom_pane(session(), pane_id()) :: :ok | {:error, term()}
 
+  @callback swap_pane(session(), pane_id(), String.t()) :: :ok | {:error, term()}
+
   @callback ensure_zoomed(session(), pane_id(), boolean()) :: :ok | {:error, term()}
 
   @callback kill_other_panes(session(), pane_id()) :: :ok | {:error, term()}

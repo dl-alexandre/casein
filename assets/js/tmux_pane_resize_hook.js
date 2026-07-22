@@ -9,6 +9,16 @@ import {
   sameLayoutStructure,
   signedCells,
 } from "./tmux_pane_geometry.mjs"
+import {
+  captureLayoutFrame,
+  cleanupCapturedLayoutFrame,
+  readLayoutProjection,
+} from "./terminal_capture.mjs"
+import {waitForConfirmedLayout} from "./tmux_layout_transition.mjs"
+import {TmuxTransitionCoordinator} from "./tmux_transition_coordinator.mjs"
+import {animateSplitTransition} from "./tmux_split_transition.mjs"
+import {animateSwapTransition} from "./tmux_swap_transition.mjs"
+import {animateZoomTransition} from "./tmux_zoom_transition.mjs"
 
 function renderGeometries(geos, bounds) {
   for (const pane of geos.values()) {
@@ -44,6 +54,28 @@ function collectPaneGeometries(layout) {
 export const TmuxPaneResize = {
   mounted() {
     this._drag = null
+    this._transitionCoordinator = new TmuxTransitionCoordinator()
+    this._layoutTransition = null
+    this._zoomTransitionEventRef = this.handleEvent(
+      "tmux:zoom_transition_requested",
+      (payload) => this._startZoomTransition(payload),
+    )
+    this._swapTransitionEventRef = this.handleEvent(
+      "tmux:swap_transition_requested",
+      (payload) => this._startSwapTransition(payload),
+    )
+    this._splitTransitionEventRef = this.handleEvent(
+      "tmux:split_transition_requested",
+      (payload) => this._startSplitTransition(payload),
+    )
+    this._onTransitionVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        this._transitionCoordinator.cancel("document_hidden")
+      }
+    }
+    this._onTransitionPageHide = () => this._transitionCoordinator.cancel("page_hidden")
+    document.addEventListener("visibilitychange", this._onTransitionVisibilityChange)
+    window.addEventListener("pagehide", this._onTransitionPageHide)
 
     this._onPointerDown = (e) => {
       // One drag at a time, primary button/touch only — a second pointer or a
@@ -218,6 +250,7 @@ export const TmuxPaneResize = {
   // base geometry is meaningless: end the drag and let server truth stand.
   updated() {
     this._maybeEnsureMobileFocusZoom()
+    this._maybeCancelStaleLayoutTransition()
 
     const drag = this._drag
     if (!drag || drag.ended) return
@@ -261,6 +294,112 @@ export const TmuxPaneResize = {
 
     renderGeometries(previewGeos, drag.bounds)
     return deltaPx
+  },
+
+  _startZoomTransition(payload = {}) {
+    this._startLayoutTransition({
+      payload,
+      commitEvent: "pane:commit_zoom",
+      animate: animateZoomTransition,
+    })
+  },
+
+  _startSwapTransition(payload = {}) {
+    const direction = payload.direction
+    if (!["U", "D"].includes(direction)) return
+
+    this._startLayoutTransition({
+      payload,
+      commitEvent: "pane:commit_swap",
+      commitParams: {direction},
+      animate: animateSwapTransition,
+    })
+  },
+
+  _startSplitTransition(payload = {}) {
+    const direction = payload.direction
+    if (!["h", "v"].includes(direction)) return
+
+    this._startLayoutTransition({
+      payload,
+      commitEvent: "pane:commit_split",
+      commitParams: {direction},
+      animate: animateSplitTransition,
+    })
+  },
+
+  _startLayoutTransition({payload, commitEvent, commitParams = {}, animate}) {
+    const base = readLayoutProjection(this.el)
+    const paneId = payload.pane_id || payload.paneId || base.activePaneId
+    if (!paneId || !Number.isFinite(base.version) || base.panes.length === 0) return
+
+    // The server request identifies the real tmux-active pane. A feature-pane
+    // UI highlight may own data-active-pane-id without being the pane tmux will
+    // mutate, so animation targeting must use the request payload here.
+    base.activePaneId = paneId
+    const transition = {
+      baseVersion: base.version,
+      confirmedVersion: null,
+      commitInFlight: false,
+    }
+    this._layoutTransition = transition
+
+    void this._transitionCoordinator.run({
+      base,
+      capture: () => captureLayoutFrame(this.el, base),
+      preview: () => {
+        this.el.dataset.transitionPhase = "committing"
+      },
+      commit: (captured) => {
+        transition.commitInFlight = true
+
+        return new Promise((resolve) => {
+          this.pushEvent(
+            commitEvent,
+            {
+              pane_id: paneId,
+              base_layout_version: captured.version,
+              ...commitParams,
+            },
+            (reply) => {
+              transition.commitInFlight = false
+              transition.confirmedVersion = Number(reply?.layout_version)
+              resolve(reply || {ok: false, error: "empty_reply"})
+            },
+          )
+        })
+      },
+      applyConfirmed: (confirmed, signal) => {
+        this.el.dataset.transitionPhase = "reconciling"
+        return waitForConfirmedLayout(this.el, confirmed, signal)
+      },
+      animate: (args) => {
+        this.el.dataset.transitionPhase = "animating"
+        return animate(args)
+      },
+      rollback: () => {
+        // Layout previews do not rewrite live pane geometry; removing the
+        // frozen layer is sufficient to reveal current tmux truth.
+        this.el.dataset.transitionPhase = "rollback"
+      },
+      cleanup: (frozen) => {
+        cleanupCapturedLayoutFrame(frozen)
+        delete this.el.dataset.transitionPhase
+        if (this._layoutTransition === transition) this._layoutTransition = null
+      },
+    })
+  },
+
+  _maybeCancelStaleLayoutTransition() {
+    const transition = this._layoutTransition
+    if (!transition || transition.commitInFlight) return
+
+    const current = Number(this.el.dataset.layoutVersion)
+    const allowed = [transition.baseVersion, transition.confirmedVersion].filter(Number.isFinite)
+
+    if (Number.isFinite(current) && !allowed.includes(current)) {
+      this._transitionCoordinator.cancel("layout_changed")
+    }
   },
 
   _maybeCommitResize(drag, deltaPx) {
@@ -344,6 +483,25 @@ export const TmuxPaneResize = {
   },
 
   destroyed() {
+    this._transitionCoordinator?.cancel("hook_destroyed")
+    document.removeEventListener("visibilitychange", this._onTransitionVisibilityChange)
+    window.removeEventListener("pagehide", this._onTransitionPageHide)
+
+    if (this._zoomTransitionEventRef) {
+      this.removeHandleEvent?.(this._zoomTransitionEventRef)
+      this._zoomTransitionEventRef = null
+    }
+
+    if (this._swapTransitionEventRef) {
+      this.removeHandleEvent?.(this._swapTransitionEventRef)
+      this._swapTransitionEventRef = null
+    }
+
+    if (this._splitTransitionEventRef) {
+      this.removeHandleEvent?.(this._splitTransitionEventRef)
+      this._splitTransitionEventRef = null
+    }
+
     if (this._drag) {
       this._releaseDragPointer(this._drag)
       this._endDrag(this._drag, {restore: false})

@@ -8,6 +8,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
 
   def terminal_tab(assigns) do
+    assigns =
+      assign_new(assigns, :tmux_topology_layout_version, fn ->
+        assigns[:tmux_topology_version] || 0
+      end)
+
     ~H"""
     <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -88,6 +93,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
                       ui_highlight_pane_id={@ui_highlight_pane_id}
                       tmux_active_pane_id={@tmux_active_pane_id}
                       window_zoomed?={@window_zoomed?}
+                      topology_layout_version={@tmux_topology_layout_version}
                       tmux_mutations_enabled?={@tmux_mutations_enabled?}
                       entered_preview_pane_id={@entered_preview_pane_id}
                       terminal_surface_pane_id={@terminal_surface_pane_id}

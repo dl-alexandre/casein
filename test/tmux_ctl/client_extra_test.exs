@@ -709,7 +709,7 @@ defmodule TmuxCtl.ClientExtraTest do
     assert {:error, {1, "boom"}} = Client.navigate_pane(@session, "n")
   end
 
-  # --- zoom_pane/2 & kill_other_panes/2 ---------------------------------------
+  # --- zoom_pane/2, swap_pane/3 & kill_other_panes/2 --------------------------
 
   test "zoom_pane toggles zoom for a managed session, bare pane id passthrough" do
     script("", 0)
@@ -731,6 +731,31 @@ defmodule TmuxCtl.ClientExtraTest do
   test "zoom_pane propagates failure" do
     script("nope", 4)
     assert {:error, {4, "nope"}} = Client.zoom_pane(@session, "%1")
+  end
+
+  test "swap_pane moves the pane in layout order and keeps its identity active" do
+    for {direction, flag} <- [{"U", "-U"}, {"D", "-D"}] do
+      script("", 0)
+      assert :ok = Client.swap_pane(@session, "%1", direction)
+      assert_receive {:tmux_runner, ["swap-pane", ^flag, "-t", "%1"]}
+    end
+  end
+
+  test "swap_pane scopes non-% targets to the managed session" do
+    script("", 0)
+    assert :ok = Client.swap_pane(@session, "0", "D")
+    assert_receive {:tmux_runner, ["swap-pane", "-D", "-t", target]}
+    assert target == "#{@session}:0"
+  end
+
+  test "swap_pane refuses non-devide sessions and invalid directions" do
+    assert {:error, :refused_non_devide_session} = Client.swap_pane("other", "%1", "D")
+    assert {:error, :invalid_direction} = Client.swap_pane(@session, "%1", "left")
+  end
+
+  test "swap_pane propagates failure" do
+    script("nope", 4)
+    assert {:error, {4, "nope"}} = Client.swap_pane(@session, "%1", "U")
   end
 
   test "kill_other_panes kills siblings for managed session" do

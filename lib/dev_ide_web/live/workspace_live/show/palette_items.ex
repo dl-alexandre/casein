@@ -15,6 +15,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   @single_pane_hidden_ids ~w(
     tmux:next_pane
     tmux:previous_pane
+    tmux:swap_previous
+    tmux:swap_next
     tmux:close_other_panes
     tmux:cycle_layout
     tmux:equalize
@@ -26,6 +28,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   @mutation_gated_ids ~w(
     tmux:new_window
     tmux:consolidate_sessions
+    tmux:swap_previous
+    tmux:swap_next
     agents:apply_pair
   )
 

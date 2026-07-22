@@ -23,7 +23,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   alias DevIDE.CommandPalette
   alias DevIDE.CommandPalette.Actions
   alias DevIDE.CommandPalette.Usage
-  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
 
@@ -235,7 +234,26 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      base_layout_version =
+        :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
       Phoenix.LiveViewTest.render_click(view, "split_right")
+      refute_receive {:fake_tmux_split_pane, ^session, "%0", "h", _}, 50
+
+      render_hook(view, "pane:commit_split", %{
+        "pane_id" => "%0",
+        "direction" => "h",
+        "base_layout_version" => base_layout_version + 1
+      })
+
+      refute_receive {:fake_tmux_split_pane, ^session, "%0", "h", _}, 50
+
+      render_hook(view, "pane:commit_split", %{
+        "pane_id" => "%0",
+        "direction" => "h",
+        "base_layout_version" => base_layout_version
+      })
+
       assert_receive {:fake_tmux_split_pane, ^session, "%0", "h", new_pane_id}
 
       assigns = :sys.get_state(view.pid).socket.assigns
@@ -248,7 +266,17 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert has_element?(view, ~s([data-pane-id="#{new_pane_id}"]))
 
       # tmux focuses the new pane after a split; split_down targets it.
+      second_layout_version =
+        :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
       Phoenix.LiveViewTest.render_click(view, "split_down")
+
+      render_hook(view, "pane:commit_split", %{
+        "pane_id" => new_pane_id,
+        "direction" => "v",
+        "base_layout_version" => second_layout_version
+      })
+
       assert_receive {:fake_tmux_split_pane, ^session, ^new_pane_id, "v", _}
     end
 
@@ -318,9 +346,81 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_tmux_select_pane, ^session, "%1"}
       assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
 
+      # Swap is also compare-and-commit: the focused pane keeps its identity
+      # while tmux moves it backward in layout order.
+      swap_layout_version =
+        :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
+      Phoenix.LiveViewTest.render_click(view, "pane:swap_previous")
+
+      render_hook(view, "pane:commit_swap", %{
+        "pane_id" => "%1",
+        "direction" => "U",
+        "base_layout_version" => swap_layout_version + 1
+      })
+
+      refute_receive {:fake_tmux_swap_pane, ^session, "%1", "U"}, 50
+
+      render_hook(view, "pane:commit_swap", %{
+        "pane_id" => "%1",
+        "direction" => "U",
+        "base_layout_version" => swap_layout_version
+      })
+
+      assert_receive {:fake_tmux_swap_pane, ^session, "%1", "U"}
+      assert has_element?(view, "#tmux-pane--1[data-pane-left='0']")
+      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
+
       # Zoom toggles tmux resize-pane -Z on the active pane (C-b z).
+      base_layout_version = :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
+      assert has_element?(
+               view,
+               "#tmux-pane-layout-ws-1[data-layout-version='#{base_layout_version}']"
+             )
+
       Phoenix.LiveViewTest.render_click(view, "pane:zoom_focused")
+
+      # A concurrent layout mutation makes the captured frame stale. The
+      # compare-and-commit boundary must reject it before touching tmux.
+      render_hook(view, "pane:commit_zoom", %{
+        "pane_id" => "%1",
+        "base_layout_version" => base_layout_version + 1
+      })
+
+      refute_receive {:fake_tmux_zoom_pane, ^session, "%1"}, 50
+
+      render_hook(view, "pane:commit_zoom", %{
+        "pane_id" => "%1",
+        "base_layout_version" => base_layout_version
+      })
+
       assert_receive {:fake_tmux_zoom_pane, ^session, "%1"}
+
+      # Swapping a zoomed layout is ambiguous, so the authoritative commit
+      # rejects it before invoking tmux.
+      zoomed_layout_version =
+        :sys.get_state(view.pid).socket.assigns.tmux_topology_layout_version
+
+      Phoenix.LiveViewTest.render_click(view, "split_right")
+
+      render_hook(view, "pane:commit_split", %{
+        "pane_id" => "%1",
+        "direction" => "h",
+        "base_layout_version" => zoomed_layout_version
+      })
+
+      refute_receive {:fake_tmux_split_pane, ^session, "%1", "h", _}, 50
+
+      Phoenix.LiveViewTest.render_click(view, "pane:swap_next")
+
+      render_hook(view, "pane:commit_swap", %{
+        "pane_id" => "%1",
+        "direction" => "D",
+        "base_layout_version" => zoomed_layout_version
+      })
+
+      refute_receive {:fake_tmux_swap_pane, ^session, "%1", "D"}, 50
 
       # focus_next / nav:dir are tmux select-pane.
       Phoenix.LiveViewTest.render_click(view, "pane:focus_next")
@@ -1415,6 +1515,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       ids = Enum.map(st.palette_items, & &1.id)
 
       refute "tmux:next_pane" in ids
+      refute "tmux:swap_previous" in ids
+      refute "tmux:swap_next" in ids
       refute "tmux:equalize" in ids
       refute Enum.any?(ids, &String.starts_with?(&1, "pane:focus:"))
       refute Enum.any?(ids, &String.starts_with?(&1, "template:"))

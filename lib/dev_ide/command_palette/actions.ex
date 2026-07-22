@@ -163,6 +163,26 @@ defmodule DevIDE.CommandPalette.Actions do
         payload: %{event: "pane:focus_previous", params: %{}}
       },
       %Item{
+        id: "tmux:swap_previous",
+        kind: :action,
+        category: :tmux,
+        label: "Swap Pane Backward",
+        detail: "Move the focused pane backward in layout order",
+        keywords: ~w(move reorder),
+        hint: "C-b {",
+        payload: %{event: "pane:swap_previous", params: %{}}
+      },
+      %Item{
+        id: "tmux:swap_next",
+        kind: :action,
+        category: :tmux,
+        label: "Swap Pane Forward",
+        detail: "Move the focused pane forward in layout order",
+        keywords: ~w(move reorder),
+        hint: "C-b }",
+        payload: %{event: "pane:swap_next", params: %{}}
+      },
+      %Item{
         id: "tmux:zoom",
         kind: :action,
         category: :tmux,
@@ -352,6 +372,8 @@ defmodule DevIDE.CommandPalette.Actions do
       "pane:cycle_layout",
       "pane:focus_next",
       "pane:focus_previous",
+      "pane:swap_previous",
+      "pane:swap_next",
       "pane:zoom_focused",
       "preview:open"
     ])

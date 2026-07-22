@@ -698,6 +698,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   attr :ui_highlight_pane_id, :any, default: nil
   attr :tmux_active_pane_id, :any, default: nil
   attr :window_zoomed?, :boolean, default: false
+  attr :topology_layout_version, :integer, default: 0
   attr :tmux_mutations_enabled?, :boolean, required: true
   attr :entered_preview_pane_id, :any, default: nil
   attr :terminal_surface_pane_id, :any, default: nil
@@ -767,6 +768,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-mobile-focus-layout={to_string(@mobile_multi_pane?)}
       data-mobile-focus-pane-id={@mobile_focus_pane_id}
       data-window-zoomed={to_string(@window_zoomed?)}
+      data-layout-version={@topology_layout_version}
       data-bounds-cols={@tmux_pane_bounds.width}
       data-bounds-rows={@tmux_pane_bounds.height}
       data-resize-max={Terminals.tmux_resize_amount_max()}

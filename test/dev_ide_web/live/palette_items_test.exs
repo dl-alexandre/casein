@@ -169,6 +169,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
 
     refute "tmux:new_window" in denied_ids
     assert "tmux:new_window" in allowed_ids
+
+    denied_swap_ids = PaletteItems.query(denied, "swap") |> Enum.map(& &1.id)
+    allowed_swap_ids = PaletteItems.query(allowed, "swap") |> Enum.map(& &1.id)
+
+    refute "tmux:swap_previous" in denied_swap_ids
+    refute "tmux:swap_next" in denied_swap_ids
+    assert "tmux:swap_previous" in allowed_swap_ids
+    assert "tmux:swap_next" in allowed_swap_ids
   end
 
   defp rename_socket(root, workspace_id, mutations?: mutations?) do

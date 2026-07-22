@@ -56,6 +56,8 @@ defmodule DevIDE.CommandPalette.ActionsTest do
 
       assert "split_right" in events
       assert "pane:zoom_focused" in events
+      assert "pane:swap_previous" in events
+      assert "pane:swap_next" in events
       assert "equalize_layout" in events
     end
 
@@ -80,6 +82,8 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       by_id = Map.new(items, &{&1.id, &1})
 
       assert by_id["tmux:zoom"].hint == "C-b z"
+      assert by_id["tmux:swap_previous"].hint == "C-b {"
+      assert by_id["tmux:swap_next"].hint == "C-b }"
       assert by_id["tmux:split_right"].hint == "C-b %"
       assert by_id["tmux:new_window"].hint == "C-b c"
       # No leader binding — no hint.

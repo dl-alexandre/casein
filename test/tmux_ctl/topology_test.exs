@@ -116,6 +116,71 @@ defmodule TmuxCtl.TopologyTest do
              Topology.structure_version(windows, panes_b)
   end
 
+  test "layout_version ignores terminal churn but changes for geometry and zoom" do
+    windows = [
+      %{id: "@1", index: 0, name: "shell", active: true, panes: 2, activity: 1}
+    ]
+
+    panes = [
+      %{
+        id: "%1",
+        window_id: "@1",
+        index: 0,
+        active: true,
+        left: 0,
+        top: 0,
+        width: 40,
+        height: 24,
+        zoomed?: false,
+        current_command: "bash",
+        activity: 1
+      },
+      %{
+        id: "%2",
+        window_id: "@1",
+        index: 1,
+        active: false,
+        left: 40,
+        top: 0,
+        width: 40,
+        height: 24,
+        zoomed?: false,
+        current_command: "mix",
+        activity: 1
+      }
+    ]
+
+    churned =
+      Enum.map(
+        panes,
+        &Map.merge(&1, %{activity: 999, current_command: "changed", current_path: "/tmp"})
+      )
+
+    resized =
+      Enum.map(panes, fn
+        %{id: "%1"} = pane -> %{pane | width: 50}
+        %{id: "%2"} = pane -> %{pane | left: 50, width: 30}
+      end)
+
+    zoomed =
+      Enum.map(panes, fn
+        %{id: "%1"} = pane -> %{pane | zoomed?: true}
+        pane -> pane
+      end)
+
+    selected =
+      Enum.map(panes, fn
+        %{id: "%1"} = pane -> %{pane | active: false}
+        %{id: "%2"} = pane -> %{pane | active: true}
+      end)
+
+    base = Topology.layout_version(windows, panes)
+    assert Topology.layout_version(windows, churned) == base
+    refute Topology.layout_version(windows, resized) == base
+    refute Topology.layout_version(windows, zoomed) == base
+    refute Topology.layout_version(windows, selected) == base
+  end
+
   test "version is stable for activity ticks within the same 15s bucket" do
     session = "topology-activity-bucket-#{System.unique_integer([:positive])}"
     put_fake_topology(session, activity: 30, current_command: "bash")

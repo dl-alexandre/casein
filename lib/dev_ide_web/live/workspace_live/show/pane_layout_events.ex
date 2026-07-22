@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents do
 
   alias DevIDE.{Audit, Terminals}
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
@@ -76,7 +77,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents do
     TerminalEvents.handle_event("pane:navigate", %{"dir" => "prev"}, socket)
   end
 
-  def handle_event("pane:zoom_focused", _params, socket), do: tmux_zoom_active_pane(socket)
+  def handle_event("pane:zoom_focused", _params, socket),
+    do: request_tmux_zoom_transition(socket)
+
+  def handle_event("pane:commit_zoom", params, socket), do: commit_tmux_zoom(params, socket)
+
+  def handle_event("pane:swap_previous", _params, socket),
+    do: request_tmux_swap_transition(socket, "U")
+
+  def handle_event("pane:swap_next", _params, socket),
+    do: request_tmux_swap_transition(socket, "D")
+
+  def handle_event("pane:commit_swap", params, socket), do: commit_tmux_swap(params, socket)
+
+  def handle_event(
+        "tmux:split_pane",
+        %{"pane-id" => pane_id, "direction" => direction},
+        socket
+      )
+      when direction in ["h", "v"],
+      do: request_tmux_split_transition(socket, pane_id, direction)
+
+  def handle_event("pane:commit_split", params, socket), do: commit_tmux_split(params, socket)
 
   def handle_event("pane:ensure_focus_zoom", _params, socket),
     do: ensure_mobile_focus_zoom(socket)
@@ -216,21 +238,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents do
         socket.assigns[:tmux_active_pane_id] ||
           Terminals.tmux_topology_snapshot(session).active_pane_id
 
-      with pane_id when is_binary(pane_id) <- target_pane,
-           {:ok, _new_pane_id} <-
-             TerminalState.tmux_adapter().split_pane(session, pane_id, flag,
-               cwd: Show.terminal_window_cwd(socket)
-             ) do
-        {:noreply,
-         socket
-         |> TerminalState.refresh_tmux_topology()
-         |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})}
-      else
-        nil ->
-          {:noreply, put_flash(socket, :error, "No active tmux pane to split.")}
+      case target_pane do
+        pane_id when is_binary(pane_id) ->
+          request_tmux_split_transition(socket, pane_id, flag)
 
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+        _ ->
+          {:noreply, put_flash(socket, :error, "No active tmux pane to split.")}
       end
     else
       {:noreply, socket}
@@ -255,22 +268,358 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents do
     end
   end
 
-  defp tmux_zoom_active_pane(socket) do
+  # Every operator zoom entry point (header, context menu, palette, C-b z)
+  # reaches this request event first. The browser captures the last painted
+  # terminal frame, then calls pane:commit_zoom with the layout version it
+  # actually captured. Mobile's automatic focus zoom intentionally stays on
+  # the direct idempotent path above: it is viewport correction, not an
+  # operator animation.
+  defp request_tmux_zoom_transition(socket) do
     with session when is_binary(session) <- socket.assigns[:tmux_session],
-         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
-         :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id) do
-      {:noreply,
-       socket
-       |> TerminalState.refresh_tmux_topology()
-       |> TerminalState.patch_current_session()
-       |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})}
+         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
+      if TerminalState.tmux_mutations_allowed?(socket) do
+        {:noreply,
+         push_event(socket, "tmux:zoom_transition_requested", %{
+           pane_id: pane_id,
+           layout_version: socket.assigns[:tmux_topology_layout_version] || 0
+         })}
+      else
+        TerminalState.deny_tmux_mutation(socket)
+      end
     else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not zoom tmux pane: #{inspect(reason)}")}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  # Like zoom, a swap is a two-step browser/server transaction. The request
+  # names the tmux-active pane and direction, but performs no mutation; the
+  # browser first freezes the projection it actually painted, then commits
+  # against that projection's layout version.
+  defp request_tmux_swap_transition(socket, direction) when direction in ["U", "D"] do
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
+      if TerminalState.tmux_mutations_allowed?(socket) do
+        {:noreply,
+         push_event(socket, "tmux:swap_transition_requested", %{
+           pane_id: pane_id,
+           direction: direction,
+           layout_version: socket.assigns[:tmux_topology_layout_version] || 0
+         })}
+      else
+        TerminalState.deny_tmux_mutation(socket)
+      end
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  # Splits use the same optimistic boundary as zoom and swap, but the target
+  # may be a context-menu pane rather than the currently active pane. The
+  # browser freezes the painted topology before asking the server to add the
+  # new identity, so the confirmed pane can be uncovered from its shared edge.
+  defp request_tmux_split_transition(socket, pane_id, direction)
+       when is_binary(pane_id) and direction in ["h", "v"] do
+    with session when is_binary(session) <- socket.assigns[:tmux_session] do
+      if TerminalState.tmux_mutations_allowed?(socket) do
+        {:noreply,
+         push_event(socket, "tmux:split_transition_requested", %{
+           pane_id: pane_id,
+           direction: direction,
+           layout_version: socket.assigns[:tmux_topology_layout_version] || 0
+         })}
+      else
+        TerminalState.deny_tmux_mutation(socket)
+      end
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  defp commit_tmux_zoom(params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      with session when is_binary(session) <- socket.assigns[:tmux_session],
+           pane_id when is_binary(pane_id) <- event_pane_id(params),
+           {:ok, base_layout_version} <- parse_layout_version(params),
+           current <- Terminals.tmux_topology_snapshot(session),
+           :ok <- validate_zoom_precondition(current, pane_id, base_layout_version),
+           :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id),
+           confirmed <- Terminals.tmux_topology_snapshot(session) do
+        socket =
+          socket
+          |> TerminalState.assign_tmux_topology(confirmed, skip_idle_patch: true)
+          |> TerminalState.patch_current_session()
+          |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})
+
+        {:reply, Map.put(layout_transition_projection(confirmed), :ok, true), socket}
+      else
+        {:error, :stale_layout, current} ->
+          socket =
+            socket
+            |> TerminalState.assign_tmux_topology(current, skip_idle_patch: true)
+            |> put_flash(:info, "Pane layout changed before zoom; try again.")
+
+          {:reply,
+           %{
+             ok: false,
+             error: "stale_layout",
+             layout_version: Map.get(current, :layout_version, current.version)
+           }, socket}
+
+        {:error, :invalid_layout_version} ->
+          {:reply, %{ok: false, error: "invalid_layout_version"},
+           put_flash(socket, :error, "Could not verify the pane layout for zoom.")}
+
+        {:error, reason} ->
+          {:reply, %{ok: false, error: "zoom_failed"},
+           put_flash(socket, :error, "Could not zoom tmux pane: #{inspect(reason)}")}
+
+        _ ->
+          {:reply, %{ok: false, error: "zoom_unavailable"},
+           put_flash(socket, :error, "No active tmux pane is available to zoom.")}
+      end
+    else
+      {:reply, %{ok: false, error: "mutations_disabled"},
+       put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
+    end
+  end
+
+  defp commit_tmux_swap(params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      with session when is_binary(session) <- socket.assigns[:tmux_session],
+           pane_id when is_binary(pane_id) <- event_pane_id(params),
+           {:ok, direction} <- parse_swap_direction(params),
+           {:ok, base_layout_version} <- parse_layout_version(params),
+           current <- Terminals.tmux_topology_snapshot(session),
+           :ok <- validate_swap_precondition(current, pane_id, base_layout_version),
+           :ok <- TerminalState.tmux_adapter().swap_pane(session, pane_id, direction),
+           confirmed <- Terminals.tmux_topology_snapshot(session) do
+        socket =
+          socket
+          |> TerminalState.assign_tmux_topology(confirmed, skip_idle_patch: true)
+          |> TerminalState.patch_current_session()
+          |> TerminalState.focus_active_terminal(%{"reason" => "swap_pane"})
+
+        {:reply, Map.put(layout_transition_projection(confirmed), :ok, true), socket}
+      else
+        {:error, :stale_layout, current} ->
+          socket =
+            socket
+            |> TerminalState.assign_tmux_topology(current, skip_idle_patch: true)
+            |> put_flash(:info, "Pane layout changed before swap; try again.")
+
+          {:reply,
+           %{
+             ok: false,
+             error: "stale_layout",
+             layout_version: Map.get(current, :layout_version, current.version)
+           }, socket}
+
+        {:error, :invalid_layout_version} ->
+          {:reply, %{ok: false, error: "invalid_layout_version"},
+           put_flash(socket, :error, "Could not verify the pane layout for swap.")}
+
+        {:error, :invalid_direction} ->
+          {:reply, %{ok: false, error: "invalid_direction"},
+           put_flash(socket, :error, "Could not determine which way to swap the pane.")}
+
+        {:error, :window_zoomed} ->
+          {:reply, %{ok: false, error: "window_zoomed"},
+           put_flash(socket, :info, "Unzoom the window before swapping panes.")}
+
+        {:error, :single_pane} ->
+          {:reply, %{ok: false, error: "single_pane"}, socket}
+
+        {:error, reason} ->
+          {:reply, %{ok: false, error: "swap_failed"},
+           put_flash(socket, :error, "Could not swap tmux pane: #{inspect(reason)}")}
+
+        _ ->
+          {:reply, %{ok: false, error: "swap_unavailable"},
+           put_flash(socket, :error, "No active tmux pane is available to swap.")}
+      end
+    else
+      {:reply, %{ok: false, error: "mutations_disabled"},
+       put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
+    end
+  end
+
+  defp commit_tmux_split(params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      with session when is_binary(session) <- socket.assigns[:tmux_session],
+           pane_id when is_binary(pane_id) <- event_pane_id(params),
+           {:ok, direction} <- parse_split_direction(params),
+           {:ok, base_layout_version} <- parse_layout_version(params),
+           current <- Terminals.tmux_topology_snapshot(session),
+           :ok <- validate_split_precondition(current, pane_id, base_layout_version),
+           {:ok, new_pane_id} <-
+             TerminalState.tmux_adapter().split_pane(session, pane_id, direction,
+               cwd: Show.terminal_window_cwd(socket)
+             ),
+           confirmed <- Terminals.tmux_topology_snapshot(session) do
+        socket =
+          socket
+          |> TerminalState.assign_tmux_topology(confirmed, skip_idle_patch: true)
+          |> assign(:ui_highlight_pane_id, new_pane_id)
+          |> TerminalState.patch_current_session()
+          |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})
+
+        {:reply,
+         layout_transition_projection(confirmed)
+         |> Map.put(:ok, true)
+         |> Map.put(:new_pane_id, new_pane_id), socket}
+      else
+        {:error, :stale_layout, current} ->
+          socket =
+            socket
+            |> TerminalState.assign_tmux_topology(current, skip_idle_patch: true)
+            |> put_flash(:info, "Pane layout changed before split; try again.")
+
+          {:reply,
+           %{
+             ok: false,
+             error: "stale_layout",
+             layout_version: Map.get(current, :layout_version, current.version)
+           }, socket}
+
+        {:error, :invalid_layout_version} ->
+          {:reply, %{ok: false, error: "invalid_layout_version"},
+           put_flash(socket, :error, "Could not verify the pane layout for split.")}
+
+        {:error, :invalid_direction} ->
+          {:reply, %{ok: false, error: "invalid_direction"},
+           put_flash(socket, :error, "Could not determine how to split the pane.")}
+
+        {:error, :window_zoomed} ->
+          {:reply, %{ok: false, error: "window_zoomed"},
+           put_flash(socket, :info, "Unzoom the window before splitting a pane.")}
+
+        {:error, reason} ->
+          {:reply, %{ok: false, error: "split_failed"},
+           put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+
+        _ ->
+          {:reply, %{ok: false, error: "split_unavailable"},
+           put_flash(socket, :error, "No tmux pane is available to split.")}
+      end
+    else
+      {:reply, %{ok: false, error: "mutations_disabled"},
+       put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
+    end
+  end
+
+  defp validate_zoom_precondition(topology, pane_id, base_layout_version) do
+    current_layout_version = Map.get(topology, :layout_version, topology.version)
+
+    cond do
+      current_layout_version != base_layout_version ->
+        {:error, :stale_layout, topology}
+
+      topology.active_pane_id != pane_id ->
+        {:error, :stale_layout, topology}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_swap_precondition(topology, pane_id, base_layout_version) do
+    current_layout_version = Map.get(topology, :layout_version, topology.version)
+    active_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
+
+    cond do
+      current_layout_version != base_layout_version ->
+        {:error, :stale_layout, topology}
+
+      topology.active_pane_id != pane_id ->
+        {:error, :stale_layout, topology}
+
+      Enum.any?(active_panes, &(Map.get(&1, :zoomed?) == true)) ->
+        {:error, :window_zoomed}
+
+      length(active_panes) < 2 ->
+        {:error, :single_pane}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_split_precondition(topology, pane_id, base_layout_version) do
+    current_layout_version = Map.get(topology, :layout_version, topology.version)
+    active_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
+
+    cond do
+      current_layout_version != base_layout_version ->
+        {:error, :stale_layout, topology}
+
+      not Enum.any?(active_panes, &(&1.id == pane_id)) ->
+        {:error, :stale_layout, topology}
+
+      Enum.any?(active_panes, &(Map.get(&1, :zoomed?) == true)) ->
+        {:error, :window_zoomed}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp parse_layout_version(params) do
+    case params["base_layout_version"] || params["base-layout-version"] do
+      version when is_integer(version) and version >= 0 ->
+        {:ok, version}
+
+      version when is_binary(version) ->
+        case Integer.parse(version) do
+          {parsed, ""} when parsed >= 0 -> {:ok, parsed}
+          _ -> {:error, :invalid_layout_version}
+        end
 
       _ ->
-        {:noreply, socket}
+        {:error, :invalid_layout_version}
     end
+  end
+
+  defp parse_swap_direction(params) do
+    case params["direction"] do
+      direction when direction in ["U", "D"] -> {:ok, direction}
+      _ -> {:error, :invalid_direction}
+    end
+  end
+
+  defp parse_split_direction(params) do
+    case params["direction"] do
+      direction when direction in ["h", "v"] -> {:ok, direction}
+      _ -> {:error, :invalid_direction}
+    end
+  end
+
+  defp event_pane_id(params), do: params["pane_id"] || params["pane-id"]
+
+  defp layout_transition_projection(topology) do
+    full_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
+    bounds = TerminalChrome.tmux_pane_bounds(full_panes)
+
+    pane_rects =
+      full_panes
+      |> TerminalChrome.renderable_tmux_window_panes()
+      |> Enum.map(fn pane ->
+        %{
+          id: pane.id,
+          left: TerminalChrome.tmux_dimension(pane.left),
+          top: TerminalChrome.tmux_dimension(pane.top),
+          width: TerminalChrome.tmux_dimension(pane.width),
+          height: TerminalChrome.tmux_dimension(pane.height)
+        }
+      end)
+
+    %{
+      version: topology.version,
+      layout_version: Map.get(topology, :layout_version, topology.version),
+      zoomed: Enum.any?(full_panes, &(Map.get(&1, :zoomed?) == true)),
+      active_pane_id: topology.active_pane_id,
+      bounds: %{width: bounds.width, height: bounds.height},
+      pane_rects: pane_rects
+    }
   end
 
   defp tmux_active_window_pane_count(socket) do

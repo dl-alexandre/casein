@@ -137,10 +137,10 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
       assert has_element?(view, "[data-leader-action='#{action}']")
     end
 
-    # Split/zoom keep their hidden C-b dispatch targets; the visible % / z
+    # Split/zoom/swap keep their hidden C-b dispatch targets; the visible % / z
     # highlight controls now live inside the selected window tab (rendered only
     # when a window is active), not the header cluster.
-    for action <- ~w(split-right split-down zoom) do
+    for action <- ~w(split-right split-down zoom pane-swap-previous pane-swap-next) do
       assert has_element?(view, "[data-leader-action='#{action}']")
     end
 

@@ -108,6 +108,38 @@ empty server; existing sessions on the old server become invisible).
 The raw tmux escape hatch remains available. Operators can still use tmux
 prefix keys, command mode, or external tmux clients when needed.
 
+### Animated layout transactions
+
+Operator zoom, pane-swap, and pane-split commands use a browser transition
+coordinator while tmux remains authoritative. LiveView first pushes a transition request; the
+`TmuxPaneResize` hook synchronously freezes renderer-aware slices of the current
+single Ghostty surface, then replies with the operation-specific commit and the
+layout version it actually captured. The server re-reads tmux, rejects a stale
+version or invalid target, performs `resize-pane -Z`, `swap-pane -U/-D`, or
+`split-window -h/-v`, and returns a compact confirmed projection. Swaps preserve
+the moved pane's active identity; splits return the new pane identity and focus
+it. Swap and split commits are rejected while zoomed. During a split, the frozen
+source pane clips toward its tmux-confirmed rectangle, uncovering the newly live
+pane from their shared divider without scaling terminal glyphs. The live terminal
+redraws underneath the frozen layer before the Web Animations API uncovers it.
+Cancellation, LiveView patches, failed commits, tab teardown, and
+`prefers-reduced-motion` all converge through the same cleanup path, which
+restores terminal input.
+
+Topology snapshots expose three hashes for different consistency boundaries:
+
+- `version` includes user-visible activity and command metadata.
+- `structure_version` tracks pane/window identity and ordering for structural
+  DOM consumers.
+- `layout_version` tracks identity, ordering, selection, geometry, and zoom but
+  ignores terminal output/activity churn. Optimistic layout commits must use
+  this value so unrelated shell output cannot invalidate a short interaction.
+
+The coordinator is intentionally operation-agnostic; zoom, layout-order swap,
+and split creation are its first consumers. Future close and docking work should
+preserve the same capture → versioned commit → confirmed redraw → frozen-frame
+animation boundary.
+
 DevIDE configures `:tmux_ctl, :terminal_env` at boot from
 `DevIDE.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
 `new-session`, `new-window`, `split-window`, and `set-environment` defaults so
