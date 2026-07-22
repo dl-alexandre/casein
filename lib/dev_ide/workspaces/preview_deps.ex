@@ -30,6 +30,9 @@ defmodule DevIDE.Workspaces.PreviewDeps do
   def viewer_ids(workspace_id), do: Aliases.viewer_ids(workspace_id)
 
   @impl true
+  def viewer_ids(workspace_id, opts), do: Aliases.viewer_ids(workspace_id, opts)
+
+  @impl true
   def linked?(left, right), do: Aliases.linked?(left, right)
 
   @impl true

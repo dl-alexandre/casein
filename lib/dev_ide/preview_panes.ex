@@ -2250,7 +2250,12 @@ defmodule DevIDE.PreviewPanes do
   defp broadcast_registered(registration, reason \\ :registered) do
     payload = broadcast_payload(registration)
 
-    for workspace_id <- workspaces().viewer_ids(registration.workspace_id) do
+    # resolve_remote?: false — this runs inline in the singleton (heartbeat
+    # short-circuit, register/deregister commit in handle_info) where a
+    # cold-State HTTP resolve has no test-owner $callers bridge and would crash
+    # the named process, cascading unrelated work. Fan-out is best-effort; a
+    # cold cache degrades to the canonical id, which self-heals on next poll.
+    for workspace_id <- workspaces().viewer_ids(registration.workspace_id, resolve_remote?: false) do
       Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_registered,
         payload
@@ -2265,7 +2270,9 @@ defmodule DevIDE.PreviewPanes do
   defp broadcast_removed(registration) do
     payload = Map.take(broadcast_payload(registration), [:pane_id, :workspace_id, :preview_id])
 
-    for workspace_id <- workspaces().viewer_ids(registration.workspace_id) do
+    # resolve_remote?: false — see broadcast_registered/2; this also runs inline
+    # in the singleton via the deregister commit path.
+    for workspace_id <- workspaces().viewer_ids(registration.workspace_id, resolve_remote?: false) do
       Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
         :preview_pane_removed,
         payload
