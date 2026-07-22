@@ -250,10 +250,15 @@ export function terminalForegroundRgb() {
 }
 
 export function readableTerminalColor(fg, bg) {
-  if (!fg) return fg
+  // TUIs commonly paint a per-cell background while leaving the foreground
+  // unspecified. In that case the browser would inherit the terminal's
+  // default foreground, which can be illegible when a light terminal hosts a
+  // dark input/composer surface (and vice versa). Contrast-check the inherited
+  // color exactly as we do an explicit cell color.
+  const foreground = fg || terminalForegroundRgb()
 
   const background = bg || terminalBackgroundRgb()
-  if (!background || contrastRatio(fg, background) >= 3) return fg
+  if (!background || contrastRatio(foreground, background) >= 3) return foreground
 
   const candidates = [
     terminalForegroundRgb(),
@@ -263,7 +268,7 @@ export function readableTerminalColor(fg, bg) {
 
   return candidates
     .filter(Boolean)
-    .sort((a, b) => contrastRatio(b, background) - contrastRatio(a, background))[0] || fg
+    .sort((a, b) => contrastRatio(b, background) - contrastRatio(a, background))[0] || foreground
 }
 
 export function termVar(name) {

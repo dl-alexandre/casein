@@ -149,16 +149,17 @@ defmodule Scripts.LaunchDevideAgentTest do
     refute refresh =~ "export DEV_IDE_ADMIN_API_TOKEN="
   end
 
-  test "codex defaults to sandboxed, approval-aware modes and scrubs bearer credentials" do
+  test "codex defaults to full access, preserves explicit policies, and scrubs bearer credentials" do
     text = File.read!(@script)
 
-    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-0)
+    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
+    assert text =~ "codex_arg_sets_execution_policy"
+    assert text =~ ~S(--dangerously-bypass-approvals-and-sandbox)
     assert text =~ "codex_workspace_mode"
     assert text =~ "/api/workspaces/${workspace_id}/status"
     assert text =~ ~S(--sandbox workspace-write --ask-for-approval on-request)
     assert text =~ ~S(--sandbox read-only --ask-for-approval never)
     assert text =~ ~S(shell_environment_policy.exclude)
-    refute text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
   end
 
   test "managed Codex tabs prefer the thread title while allowing an explicit override" do
