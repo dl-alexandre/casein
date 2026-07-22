@@ -19,6 +19,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
   attr :selected_run_failure_reason, :any, default: nil
   attr :selected_run_can_retry, :boolean, default: false
   attr :selected_run_artifacts, :list, required: true
+  attr :codex_exec_form, :any, default: nil
+  attr :codex_exec_run, :map, default: nil
 
   def run_panel(assigns) do
     ~H"""
@@ -60,6 +62,83 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
           <% else %>
             <p class="text-xs text-zinc-500">No runs yet.</p>
           <% end %>
+
+          <section
+            :if={@codex_exec_form}
+            id="read-only-agent-task"
+            class="mt-3 rounded-xl border border-base-300 bg-base-100 p-3 shadow-sm"
+          >
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-xs font-semibold text-base-content">Read-only agent task</h3>
+                  <span class="rounded bg-base-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-base-content/50">
+                    Codex
+                  </span>
+                </div>
+                <p class="mt-0.5 text-[11px] text-base-content/55">
+                  Start a sandboxed background review without leaving the Run workflow.
+                </p>
+              </div>
+              <span
+                :if={@codex_exec_run}
+                class={[
+                  "rounded-full px-2 py-1 text-[10px] font-semibold",
+                  codex_run_status_class(@codex_exec_run.status)
+                ]}
+              >
+                {@codex_exec_run.status}
+              </span>
+            </div>
+
+            <div
+              :if={@codex_exec_run}
+              id="read-only-agent-task-status"
+              class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-base-300 bg-base-200/30 px-2.5 py-2 font-mono text-[10px] text-base-content/55"
+            >
+              <span title={Map.get(@codex_exec_run, :run_id)}>
+                run {short_id(Map.get(@codex_exec_run, :run_id))}
+              </span>
+              <span :if={not is_nil(Map.get(@codex_exec_run, :exit_code))}>
+                exit={Map.get(@codex_exec_run, :exit_code)}
+              </span>
+            </div>
+
+            <.form for={@codex_exec_form} phx-submit="codex:start_exec" class="mt-3 space-y-2">
+              <.input
+                field={@codex_exec_form[:prompt]}
+                type="textarea"
+                label="Task"
+                placeholder="Review the current changes and summarize risks…"
+                rows="3"
+                disabled={@codex_exec_run && @codex_exec_run.status == :running}
+                class="min-h-20 w-full rounded-lg border border-base-300 bg-base-100 px-3 py-2 text-xs leading-5 text-base-content outline-none transition placeholder:text-base-content/35 focus:border-primary/50 focus:ring-2 focus:ring-primary/10 disabled:opacity-60"
+              />
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[10px] text-base-content/45">sandbox: read-only · approvals: never</span>
+                <button
+                  :if={is_nil(@codex_exec_run) or @codex_exec_run.status != :running}
+                  type="submit"
+                  class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-content transition hover:-translate-y-px hover:shadow-sm"
+                >
+                  <.icon name="hero-play" class="size-3.5" /> Run task
+                </button>
+                <button
+                  :if={@codex_exec_run && @codex_exec_run.status == :running}
+                  type="button"
+                  phx-click="codex:cancel_exec"
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-error/35 px-3 py-1.5 text-[11px] font-semibold text-error transition hover:bg-error/10"
+                >
+                  <.icon name="hero-stop" class="size-3.5" /> Cancel
+                </button>
+              </div>
+            </.form>
+
+            <pre
+              :if={@codex_exec_run && Map.get(@codex_exec_run, :stderr, "") != ""}
+              class="mt-2 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-zinc-950 p-2.5 font-mono text-[10px] text-zinc-200"
+            >{Map.get(@codex_exec_run, :stderr, "")}</pre>
+          </section>
 
           <%= if @review_commands != [] do %>
             <div id="review-runs" class="border-t pt-3 mt-3">
@@ -310,6 +389,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
       _ -> "text-zinc-500"
     end
   end
+
+  defp codex_run_status_class(:running), do: "bg-primary/10 text-primary"
+  defp codex_run_status_class(:succeeded), do: "bg-emerald-100 text-emerald-800"
+
+  defp codex_run_status_class(status) when status in [:failed, :cancelled],
+    do: "bg-error/10 text-error"
+
+  defp codex_run_status_class(_status), do: "bg-base-200 text-base-content/60"
+
+  defp short_id(nil), do: "—"
+  defp short_id(value) when is_binary(value), do: String.slice(value, 0, 8)
+  defp short_id(value), do: value |> to_string() |> short_id()
 
   defp run_button_label(id, ["mix" | _]), do: "mix " <> id
   defp run_button_label(id, _argv), do: id

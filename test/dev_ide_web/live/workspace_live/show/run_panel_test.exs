@@ -18,7 +18,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanelTest do
       selected_run_summary: nil,
       selected_run_failure_reason: nil,
       selected_run_can_retry: false,
-      selected_run_artifacts: []
+      selected_run_artifacts: [],
+      codex_exec_form: nil,
+      codex_exec_run: nil
     }
   end
 
@@ -36,8 +38,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanelTest do
       selected_run_failure_reason={@selected_run_failure_reason}
       selected_run_can_retry={@selected_run_can_retry}
       selected_run_artifacts={@selected_run_artifacts}
+      codex_exec_form={@codex_exec_form}
+      codex_exec_run={@codex_exec_run}
     />
     """)
+  end
+
+  describe "run_panel/1 read-only agent task" do
+    test "renders the Codex launcher inside Run" do
+      form = to_form(%{"prompt" => ""}, as: :codex_exec)
+      html = render_panel(codex_exec_form: form)
+
+      assert html =~ ~s(id="read-only-agent-task")
+      assert html =~ "Read-only agent task"
+      assert html =~ ~s(phx-submit="codex:start_exec")
+      assert html =~ "sandbox: read-only"
+    end
+
+    test "renders running state, cancellation, and bounded process feedback" do
+      form = to_form(%{"prompt" => "review"}, as: :codex_exec)
+
+      html =
+        render_panel(
+          codex_exec_form: form,
+          codex_exec_run: %{run_id: "run-1", status: :running, stderr: "checking…"}
+        )
+
+      assert html =~ "running"
+      assert html =~ "run run-1"
+      assert html =~ ~s(phx-click="codex:cancel_exec")
+      assert html =~ "checking…"
+      refute html =~ "Run task</button>"
+    end
   end
 
   describe "run_panel/1 host_loc gate" do

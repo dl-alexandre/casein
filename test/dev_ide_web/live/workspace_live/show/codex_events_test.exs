@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
 
   alias DevIDE.Codex.Event
   alias DevIDE.Codex.Store
+  alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.CodexEvents
 
   # Pure / memory-store: assign_defaults, disconnected open/subscribe,
@@ -58,7 +59,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
     )
   end
 
-  test "assign_defaults seeds the Agent Operations panel assigns" do
+  test "assign_defaults seeds shared Notifications, History, and Run assigns" do
     s = CodexEvents.assign_defaults(socket())
 
     assert s.assigns.codex_loaded? == false
@@ -86,6 +87,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
     s = panel()
     s2 = CodexEvents.open(s)
     assert s2.assigns.codex_loaded? == false
+  end
+
+  test "after-mount agent setup subscribes outside History so global approvals stay live" do
+    s = panel(%{tab: "terminal"})
+    s = %{s | transport_pid: self()}
+
+    assert {:noreply, s2} = Show.handle_info(:after_mount_agents, s)
+    assert s2.assigns.codex_loaded?
+    assert s2.assigns.codex_subscribed?
   end
 
   test "codex:select_thread selects a known thread and loads its timeline" do
@@ -222,6 +232,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
   test "handle_info agent_message_delta buffers for the selected thread and arms a timer" do
     s =
       panel(%{
+        tab: "history",
         codex_selected_thread_id: "thr-1",
         codex_delta_buffer: [],
         codex_delta_timer: nil
@@ -251,6 +262,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
   test "handle_info agent_message_delta for another thread is ignored" do
     s =
       panel(%{
+        tab: "history",
         codex_selected_thread_id: "thr-1",
         codex_delta_buffer: ["keep"],
         codex_delta_timer: nil
@@ -266,6 +278,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
     assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
     assert s2.assigns.codex_delta_buffer == ["keep"]
     assert s2.assigns.codex_delta_timer == nil
+  end
+
+  test "handle_info agent_message_delta stays dormant outside History" do
+    s =
+      panel(%{
+        tab: "terminal",
+        codex_selected_thread_id: "thr-1",
+        codex_delta_buffer: [],
+        codex_delta_timer: nil
+      })
+
+    ev =
+      event(:agent_message_delta,
+        workspace_id: s.assigns.workspace.id,
+        thread_id: "thr-1",
+        payload: %{delta: "hidden"}
+      )
+
+    assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
+    assert s2.assigns.codex_delta_buffer == []
+    assert s2.assigns.codex_delta_timer == nil
+  end
+
+  test "approval events refresh the global projection outside History" do
+    s = panel(%{tab: "terminal"})
+
+    ev =
+      event(:approval_requested,
+        workspace_id: s.assigns.workspace.id,
+        thread_id: "thr-approval",
+        payload: %{
+          approval_id: "approval-global",
+          approval_kind: :command_execution,
+          command: "mix test"
+        }
+      )
+
+    assert :ok = Store.record(ev)
+    assert {:noreply, s2} = CodexEvents.handle_info(ev, s)
+    assert s2.assigns.codex_pending_approval_count == 1
+    assert [%{id: "approval-global", status: "pending"}] = s2.assigns.codex_approvals
   end
 
   test "handle_info :flush_codex_deltas concatenates the buffer into live delta" do

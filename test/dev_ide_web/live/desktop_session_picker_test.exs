@@ -111,6 +111,31 @@ defmodule DevIdeWeb.DesktopSessionPickerTest do
     refute html =~ "Panes"
   end
 
+  test "overflow exposes a persistent accessible agent approval announcement" do
+    html =
+      render_component(&WorkspaceHeader.header_overflow_menu/1,
+        desktop_terminal?: true,
+        workspace: %{id: Scratch.id(), status: :running, branch: nil},
+        workspace_start_error: nil,
+        tab: "terminal",
+        host_loc: {:ok, {:local, System.user_home!()}},
+        tmux_mutations_enabled?: false,
+        tmux_window_tabs: [],
+        terminal_mode: :raw_ghostty,
+        tmux_session: "desktop",
+        terminal_sid: Scratch.id(),
+        active_window_pane_count: 1,
+        notif_unread_count: 1,
+        agent_approval_count: 2
+      )
+
+    assert html =~ ~s(id="agent-approval-announcer-__scratch__")
+    assert html =~ ~s(aria-live="assertive")
+    assert html =~ "2 agent approvals waiting in Notifications."
+    assert html =~ ~s(id="notifications-open-__scratch__-count")
+    assert html =~ ~r/id="notifications-open-__scratch__-count"[^>]*>\s*3\s*<\/span>/
+  end
+
   defp desktop_socket do
     sid = Scratch.id()
 

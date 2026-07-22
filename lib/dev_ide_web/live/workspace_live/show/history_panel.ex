@@ -11,6 +11,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.HistoryPanel do
 
   use DevIdeWeb, :html
 
+  alias DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivity
+
   @limit_options [
     {"10", "10"},
     {"20", "20"},
@@ -32,6 +34,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.HistoryPanel do
   attr :history_payload, :map, required: true
   attr :history_error, :string, default: nil
   attr :history_loaded?, :boolean, required: true
+  attr :agent_activity_loaded?, :boolean, default: false
+  attr :agent_threads, :list, default: []
+  attr :selected_agent_thread_id, :string, default: nil
+  attr :agent_timeline, :list, default: []
+  attr :agent_live_delta, :string, default: ""
+  attr :agent_activity_error, :string, default: nil
 
   def history_panel(assigns) do
     assigns =
@@ -76,6 +84,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.HistoryPanel do
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto p-3">
+        <StructuredAgentActivity.structured_agent_activity
+          loaded?={@agent_activity_loaded?}
+          threads={@agent_threads}
+          selected_thread_id={@selected_agent_thread_id}
+          timeline={@agent_timeline}
+          live_delta={@agent_live_delta}
+          error={@agent_activity_error}
+        />
+
         <.form
           id="history-search"
           for={@history_form}

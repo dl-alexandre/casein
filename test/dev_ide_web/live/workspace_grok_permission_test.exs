@@ -53,18 +53,24 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
 
     {:ok, view, html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
 
-    assert html =~ ~s(id="grok-permission-center")
-    assert html =~ "Agent approval"
+    assert html =~ ~s(id="agent-terminal-approval-banner-#{@workspace_id}")
+    assert html =~ ~s(id="header-agent-approval-count-#{@workspace_id}")
+    refute html =~ ~s(id="agent-approval-center")
+
+    html = view |> element("#notifications-open-#{@workspace_id}") |> render_click()
+
+    assert html =~ ~s(id="agent-approval-center")
+    assert html =~ "Agent approvals"
     assert html =~ "Execute test suite"
     assert html =~ "Allow once"
     assert html =~ "Reject once"
     refute html =~ "Deny request"
     refute html =~ "mix test --include private_token"
-    assert has_element?(view, "button[phx-value-option-id='reject-once'].text-error")
+    assert has_element?(view, "button[phx-value-option-id='reject-once']")
 
     # The surface is global, not coupled to History or another cockpit tab.
     html = render_click(view, "switch_tab", %{"tab" => "files"})
-    assert html =~ ~s(id="grok-permission-center")
+    assert html =~ ~s(id="agent-approval-center")
 
     # Client-supplied attachment keys cannot escape the mounted workspace's
     # manager projection or reach an unrelated ACP process.
@@ -77,7 +83,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
 
     assert html =~ "Grok could not accept that response."
     refute_receive {:grok_acp_transport_write, ^pid, _line}, 30
-    assert has_element?(view, "#grok-permission-center")
+    assert has_element?(view, "#agent-approval-center")
 
     dom_id = Base.url_encode64(attachment_key <> ":77", padding: false)
 
@@ -102,7 +108,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
                event.metadata[:option_id] == "allow-once"
            end)
 
-    refute has_element?(view, "#grok-permission-center")
+    refute has_element?(view, "#agent-approval-center")
 
     send_permission(pid, "permission-78", [
       %{optionId: "allow-once", name: "Allow once", kind: "allow_once"}
@@ -116,7 +122,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
     assert render(view) =~ "Deny request"
 
     view
-    |> element("#grok-permission-center button[phx-click='grok_permission:cancel']")
+    |> element("#agent-approval-center button[phx-click='grok_permission:cancel']")
     |> render_click()
 
     assert_receive {:grok_acp_transport_write, ^pid, cancel_line}
@@ -130,7 +136,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
                not Map.has_key?(event.metadata, :option_id)
            end)
 
-    refute has_element?(view, "#grok-permission-center")
+    refute has_element?(view, "#agent-approval-center")
   end
 
   defp start_ready_attachment!(attachment_key, session_id) do

@@ -66,18 +66,22 @@ bounded stderr/JSONL buffers, the canonical event model, and the existing run
 ledger. Workspace-write is available only when an explicit trusted caller asks
 for it.
 
-## Agent Operations UI
+## Operator surfaces
 
-The workspace header opens the Agent Operations panel. It includes:
+Codex remains a structured runtime, but it does not own a separate cockpit
+screen. Its primitives are distributed into the existing operator workflows:
 
-- a globally pinned approval queue;
-- runtime/thread rows with subagent parent links and attention badges;
-- a selected-thread lifecycle/item timeline with 150 ms delta batching;
-- per-thread and workspace token totals;
-- a read-only `codex exec` task launcher and cancellation state.
+- Notifications contains the actionable approval queue alongside other agent
+  permission requests;
+- History contains runtime/thread rows, subagent relationships, lifecycle and
+  item events, streamed deltas, and token totals;
+- Run contains the read-only `codex exec` task launcher and cancellation state;
+- the terminal and header show attention-only approval signals that open
+  Notifications.
 
-The terminal shows a compact banner when any workspace approval is pending, so
-an inactive or collapsed child thread cannot hide operator attention.
+This keeps the protocol boundary provider-specific while the workspace
+navigation remains task-oriented. An inactive or collapsed child thread still
+cannot hide an approval that requires operator attention.
 
 ## Security profiles
 

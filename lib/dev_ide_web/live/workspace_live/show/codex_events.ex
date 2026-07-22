@@ -10,7 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEvents do
   @delta_flush_ms 150
   @max_live_delta_bytes 32_000
 
-  @doc "Seed the Agent Operations panel without performing domain reads."
+  @doc "Seed Codex state shared by Notifications, History, and Run without domain reads."
   def assign_defaults(socket) do
     socket
     |> assign(:codex_loaded?, false)
@@ -161,7 +161,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEvents do
 
   @doc "Apply a canonical PubSub event, batching only high-frequency message deltas."
   def handle_info(%Event{type: :agent_message_delta} = event, socket) do
-    if event.thread_id == socket.assigns.codex_selected_thread_id do
+    if history_active?(socket) and event.thread_id == socket.assigns.codex_selected_thread_id do
       delta = payload_value(event.payload, :delta)
       buffer = if is_binary(delta), do: [delta | socket.assigns.codex_delta_buffer], else: []
 
@@ -180,7 +180,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEvents do
 
   def handle_info(%Event{} = event, socket) do
     socket =
-      if event.workspace_id == socket.assigns.workspace.id do
+      if event.workspace_id == socket.assigns.workspace.id and
+           (history_active?(socket) or approval_event?(event)) do
         socket
         |> maybe_clear_completed_delta(event)
         |> refresh()
@@ -241,6 +242,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CodexEvents do
 
   defp pending_approval?(approval, id),
     do: approval.id == id and approval.status == "pending"
+
+  defp history_active?(socket), do: socket.assigns[:tab] == "history"
+
+  defp approval_event?(%Event{type: type}),
+    do: type in [:approval_requested, :approval_resolved]
 
   defp safe_resolve(runtime_id, approval_id, decision) do
     if Runtime.whereis_component(runtime_id, :approval_broker) do

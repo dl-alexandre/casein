@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AgentOperationsPanelTest do
+defmodule DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivityTest do
   use DevIDE.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
   alias DevIDE.Codex.Event
-  alias DevIdeWeb.WorkspaceLive.Show.AgentOperationsPanel
+  alias DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivity
 
-  test "renders globally pinned approvals, a nested thread tree, timeline, and usage" do
+  test "renders nested threads, lifecycle events, streaming output, and usage in History" do
     threads = [
       thread("root", nil, "active", %{
         total: %{input_tokens: 100, output_tokens: 20, total_tokens: 120}
@@ -16,21 +16,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentOperationsPanelTest do
         "root",
         "active",
         %{total: %{input_tokens: 30, output_tokens: 5, total_tokens: 35}},
-        [
-          "waiting_on_approval"
-        ]
+        ["waiting_on_approval"]
       )
     ]
-
-    approval = %{
-      id: "approval-ui",
-      runtime_id: "runtime-ui",
-      thread_id: "child",
-      kind: "command_execution",
-      status: "pending",
-      requested_at: ~U[2026-07-16 09:30:00Z],
-      payload: %{"command" => "mix test", "reason" => "Verify the change"}
-    }
 
     event =
       Event.new!(
@@ -48,27 +36,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentOperationsPanelTest do
       )
 
     html =
-      render_component(&AgentOperationsPanel.agent_operations_panel/1, %{
-        workspace: %{id: "ws-ui"},
+      render_component(&StructuredAgentActivity.structured_agent_activity/1, %{
         loaded?: true,
         threads: threads,
-        approvals: [approval],
         selected_thread_id: "child",
         timeline: [event],
         live_delta: "Working through the tests…",
-        exec_form: Phoenix.Component.to_form(%{"prompt" => ""}, as: :codex_exec),
-        exec_run: nil,
         error: nil
       })
 
-    assert html =~ "Agent Operations"
-    assert html =~ "Pending approvals stay visible"
-    assert html =~ "mix test"
-    assert html =~ "Thread tree"
+    assert html =~ "Structured agent activity"
+    assert html =~ "Codex lifecycle"
     assert html =~ "Turn started"
-    assert html =~ "Streaming response"
+    assert html =~ "Streaming"
     assert html =~ "155"
-    assert html =~ ~s(phx-value-approval-id="approval-ui")
+    assert html =~ "130 input"
+    assert html =~ "25 output"
+    assert html =~ "turn turn-ui"
+    assert html =~ "App server"
+    assert html =~ ~s(id="structured-agent-refresh-button")
+    assert html =~ ~s(phx-click="codex:refresh")
+    assert html =~ ~s(phx-value-thread-id="child")
+    refute html =~ ~r/<details[^>]*id="structured-agent-activity"[^>]*\sopen(?:=|\s|>)/
+    refute html =~ "Approve once"
+    refute html =~ "Read-only background task"
   end
 
   defp thread(id, parent, status, usage, flags \\ []) do

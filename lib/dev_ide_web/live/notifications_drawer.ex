@@ -12,6 +12,8 @@ defmodule DevIdeWeb.NotificationsDrawer do
 
   use DevIdeWeb, :html
 
+  alias DevIdeWeb.WorkspaceLive.Show.AgentApprovals
+
   @event_types [
     {"Needs review", "needs_review"},
     {"Policy blocked", "policy_blocked"},
@@ -98,6 +100,8 @@ defmodule DevIdeWeb.NotificationsDrawer do
   attr :update_available, :boolean, default: false
   attr :deploy_drift, :any, default: nil
   attr :update_commits_behind, :integer, default: 0
+  attr :codex_approvals, :list, default: []
+  attr :grok_permission_requests, :list, default: []
 
   def notifications_drawer(assigns) do
     assigns =
@@ -106,6 +110,11 @@ defmodule DevIdeWeb.NotificationsDrawer do
       |> assign(:channels, @channels)
       |> assign(:deploy_system_visible?, deploy_system_visible?(assigns))
       |> assign(:drift_visible?, drift_visible?(assigns))
+      |> assign(
+        :pending_agent_approval_count,
+        pending_codex_approval_count(assigns.codex_approvals) +
+          length(assigns.grok_permission_requests)
+      )
 
     ~H"""
     <div :if={@open} id="notifications-drawer" class="fixed inset-0 z-40 pointer-events-none">
@@ -121,6 +130,12 @@ defmodule DevIdeWeb.NotificationsDrawer do
             <h2 class="text-sm font-semibold tracking-tight text-zinc-950">Notifications</h2>
             <p id="notifications-drawer-count" class="font-mono text-[11px] text-zinc-500">
               {@unread_count} unread for {@user_id}
+              <span :if={@pending_agent_approval_count > 0}>
+                · {@pending_agent_approval_count} agent approval{if @pending_agent_approval_count ==
+                                                                      1,
+                                                                    do: "",
+                                                                    else: "s"}
+              </span>
             </p>
           </div>
           <div class="flex items-center gap-1">
@@ -166,6 +181,11 @@ defmodule DevIdeWeb.NotificationsDrawer do
         </div>
 
         <div class="min-h-0 flex-1 space-y-4 overflow-auto px-3 py-3">
+          <AgentApprovals.agent_approvals
+            codex_approvals={@codex_approvals}
+            grok_requests={@grok_permission_requests}
+          />
+
           <section :if={@deploy_system_visible?} id="deploy-system-section" class="space-y-2">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">System</h3>
 
@@ -438,6 +458,12 @@ defmodule DevIdeWeb.NotificationsDrawer do
       </aside>
     </div>
     """
+  end
+
+  defp pending_codex_approval_count(approvals) do
+    Enum.count(approvals, fn approval ->
+      Map.get(approval, :status, Map.get(approval, "status")) == "pending"
+    end)
   end
 
   defp deploy_severity(assigns) do
