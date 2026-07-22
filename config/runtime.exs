@@ -34,6 +34,16 @@ release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 desktop_mode? = System.get_env("DEV_IDE_PROFILE") == "desktop"
 portable_mode? = System.get_env("DEV_IDE_PROFILE") == "portable"
 
+operator_config_path = System.get_env("DEV_IDE_OPERATOR_CONFIG_FILE")
+operator_overlay? = is_binary(operator_config_path) and operator_config_path != ""
+
+operator_config =
+  if operator_overlay? do
+    DevIDE.Deployment.OperatorConfig.load!(operator_config_path)
+  else
+    []
+  end
+
 config :dev_ide,
        :desktop_terminal_backend,
        DevIDE.Desktop.TerminalBackend.default(:os.type())
@@ -149,6 +159,12 @@ if config_env() != :test do
 
   if portable_mode? or lan_mode? do
     config :dev_ide, deployment_capabilities: []
+  else
+    if operator_overlay? do
+      config :dev_ide,
+        deployment_capabilities:
+          DevIDE.Deployment.OperatorConfig.deployment_capabilities(operator_config)
+    end
   end
 
   if desktop_mode? do
@@ -640,6 +656,13 @@ if config_env() == :prod and not release_cli? do
   deployment_config =
     :dev_ide
     |> Application.get_env(:deployment, [])
+    |> then(fn config ->
+      if operator_overlay? do
+        DevIDE.Deployment.OperatorConfig.deployment(config, operator_config)
+      else
+        config
+      end
+    end)
     |> then(fn config ->
       case System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET") do
         secret when is_binary(secret) and secret != "" ->

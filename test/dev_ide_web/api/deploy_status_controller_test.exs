@@ -46,19 +46,18 @@ defmodule DevIdeWeb.API.DeployStatusControllerTest do
     assert json_response(conn, 403) == %{"error" => "workspace_forbidden"}
   end
 
-  test "returns 503 with deploy check payload when health is not ok", %{conn: conn} do
+  test "returns a neutral 200 when no operator diagnostics are configured", %{conn: conn} do
     conn =
       conn
       |> put_req_header("authorization", "Bearer " <> @token)
       |> get(~p"/api/deploy_status")
 
-    body = json_response(conn, 503)
-    assert body["ok"] == false
-    assert is_map(body["checks"])
-    assert Map.has_key?(body["checks"], "socket_exists")
-    assert Map.has_key?(body["checks"], "caddy_devide_upstream")
-    assert Map.has_key?(body["checks"], "deploy_revision_current")
-    assert is_binary(body["version"])
+    body = json_response(conn, 200)
+    assert body["ok"] == true
+
+    assert get_in(body, ["checks", "socket_exists", "status"]) == "not_configured"
+    assert get_in(body, ["checks", "caddy_devide_upstream", "status"]) == "not_configured"
+    assert get_in(body, ["checks", "deploy_revision_current", "status"]) == "not_configured"
   end
 
   test "returns 200 when injected health checks pass", %{conn: conn} do
@@ -85,6 +84,7 @@ defmodule DevIdeWeb.API.DeployStatusControllerTest do
 
   defp healthy_opts(socket_path) do
     [
+      capabilities: [:socket, :reverse_proxy, :deploy_drift, :deploy_status],
       version: @revision,
       socket_path: socket_path,
       current_target: socket_path,

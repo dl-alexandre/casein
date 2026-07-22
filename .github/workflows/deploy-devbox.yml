@@ -111,7 +111,7 @@ jobs:
           npm ci --include=dev
           npm run lint
 
-      - name: Run precommit checks (compile, audit, sobelow, credo, format, deploy-sync, test+coverage)
+      - name: Run precommit checks (compile, audit, sobelow, credo, format, test+coverage)
         run: mix precommit.ci
 
   deploy:

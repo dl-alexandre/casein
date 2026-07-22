@@ -19,6 +19,7 @@ REVISION="${2:-manual}"
 APP_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
 SERVICE="${DEV_IDE_SYSTEMD_SERVICE:-devide}"
 ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+OPERATOR_CONFIG_FILE="${DEV_IDE_OPERATOR_CONFIG_FILE:-/etc/devide/operator.json}"
 USER_NAME="${DEV_IDE_DEPLOY_USER:-devbox}"
 GROUP_NAME="${DEV_IDE_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -223,7 +224,6 @@ rollback() {
     else
       log "restoring previous release to ${ACTIVE_RELEASE}"
       sudo mv "${PREVIOUS_RELEASE}" "${ACTIVE_RELEASE}" || true
-      sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy" || true
     fi
   elif ! sudo test -e "${ACTIVE_RELEASE}"; then
     log "warning: no ${PREVIOUS_RELEASE} exists and ${ACTIVE_RELEASE} is missing"
@@ -248,8 +248,6 @@ sudo tar -xzf "${TARBALL}" -C "${STAGING}"
 
 sudo test -x "${STAGING}/bin/dev_ide"
 sudo test -x "${STAGING}/bin/migrate"
-sudo test -f "${STAGING}/deploy/devide.service"
-sudo test -f "${STAGING}/deploy/docker-compose.postgres.yml"
 
 log "placing release under ${ACTIVE_RELEASE}"
 if sudo test -e "${PREVIOUS_RELEASE}"; then
@@ -263,9 +261,6 @@ fi
 DEPLOY_STARTED=1
 sudo mv "${STAGING}" "${ACTIVE_RELEASE}"
 sudo chown -R "${USER_NAME}:${GROUP_NAME}" "${ACTIVE_RELEASE}"
-
-log "activating deploy artifacts"
-sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy"
 
 scripts_dir="$(
   sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type d -path '*/priv/scripts' -print -quit 2>/dev/null
@@ -388,12 +383,22 @@ HOST_SHORT="$(hostname -s)"
 NEW_RELEASE_NODE="dev_ide_${NEW_UUID}@${HOST_SHORT}"
 
 log "starting new instance ${NEW_UUID} on ${NEW_SOCKET} (node ${NEW_RELEASE_NODE})"
+
+operator_property=()
+if sudo -u "${USER_NAME}" test -r "${OPERATOR_CONFIG_FILE}"; then
+  log "using operator profile ${OPERATOR_CONFIG_FILE}"
+  operator_property+=(--property="Environment=DEV_IDE_OPERATOR_CONFIG_FILE=${OPERATOR_CONFIG_FILE}")
+else
+  log "operator profile not installed; deployment capabilities remain disabled"
+fi
+
 sudo systemd-run \
   --unit="devide-${NEW_UUID}" \
   --description="DevIDE canary ${REVISION} (${NEW_UUID})" \
   --property="User=${USER_NAME}" \
   --property="Group=${GROUP_NAME}" \
   --property="EnvironmentFile=${ENV_FILE}" \
+  "${operator_property[@]}" \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
