@@ -30,6 +30,7 @@ import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {ChromeWidth} from "./chrome_width"
 import {WorkspaceLeader} from "./workspace_leader"
+import {GestureCoach} from "./gesture_coach"
 import {TerminalActivity} from "./terminal_activity"
 import {SessionPicker, wantsBrowserNavigation} from "./session_picker"
 import {RenameInput} from "./rename_input"
@@ -229,7 +230,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
   rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
+  hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, GestureCoach, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
 })
 
 installPickerLinkCopy()
