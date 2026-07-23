@@ -30,9 +30,16 @@ defmodule DevIDE.Audit.EctoAdapterTest do
   end
 
   test "recent_for filters by workspace and orders newest first" do
-    {:ok, _} = Audit.emit(%{action: "command.started", workspace_id: "a"})
-    Process.sleep(2)
-    {:ok, _} = Audit.emit(%{action: "command.finished", workspace_id: "a"})
+    base = DateTime.utc_now()
+    {:ok, _} = Audit.emit(%{action: "command.started", workspace_id: "a", inserted_at: base})
+
+    {:ok, _} =
+      Audit.emit(%{
+        action: "command.finished",
+        workspace_id: "a",
+        inserted_at: DateTime.add(base, 1, :second)
+      })
+
     {:ok, _} = Audit.emit(%{action: "command.started", workspace_id: "b"})
 
     actions_a = Audit.recent_for("a", 10) |> Enum.map(& &1.action)
@@ -42,11 +49,32 @@ defmodule DevIDE.Audit.EctoAdapterTest do
   end
 
   test "recent_with_action_prefix returns only matching-prefix rows, newest first" do
-    {:ok, _} = Audit.emit(%{action: "run.started", workspace_id: "wp", target_ref: "r1"})
-    Process.sleep(2)
-    {:ok, _} = Audit.emit(%{action: "file.saved", workspace_id: "wp", target_ref: "f1"})
-    Process.sleep(2)
-    {:ok, _} = Audit.emit(%{action: "run.succeeded", workspace_id: "wp", target_ref: "r1"})
+    base = DateTime.utc_now()
+
+    {:ok, _} =
+      Audit.emit(%{
+        action: "run.started",
+        workspace_id: "wp",
+        target_ref: "r1",
+        inserted_at: base
+      })
+
+    {:ok, _} =
+      Audit.emit(%{
+        action: "file.saved",
+        workspace_id: "wp",
+        target_ref: "f1",
+        inserted_at: DateTime.add(base, 1, :second)
+      })
+
+    {:ok, _} =
+      Audit.emit(%{
+        action: "run.succeeded",
+        workspace_id: "wp",
+        target_ref: "r1",
+        inserted_at: DateTime.add(base, 2, :second)
+      })
+
     # Same prefix, different workspace — must be excluded.
     {:ok, _} = Audit.emit(%{action: "run.started", workspace_id: "other", target_ref: "r9"})
 
@@ -108,9 +136,16 @@ defmodule DevIDE.Audit.EctoAdapterTest do
   test "list_by_correlation returns only the chain, ascending" do
     cid =
       DevIDE.Signals.Context.with_new(fn ->
-        {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wcor"})
-        Process.sleep(2)
-        {:ok, _} = Audit.emit(%{action: "chain.second", workspace_id: "wcor"})
+        base = DateTime.utc_now()
+        {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wcor", inserted_at: base})
+
+        {:ok, _} =
+          Audit.emit(%{
+            action: "chain.second",
+            workspace_id: "wcor",
+            inserted_at: DateTime.add(base, 1, :second)
+          })
+
         DevIDE.Signals.Context.current().trace_id
       end)
 
