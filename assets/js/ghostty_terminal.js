@@ -68,6 +68,7 @@ import {
   latchMobileAuthority,
   rowPinOffsets,
   scaledContentOffsets,
+  strandedFitReheal,
   viewportActiveForClient
 } from "./terminal_display_layout.mjs"
 import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
@@ -326,6 +327,11 @@ const LONGPRESS_MS = 400
 // How long a mobile viewer keeps size authority after its last active signal,
 // absorbing iOS's rapid hasFocus/soft-keyboard flapping. See reportViewportActive.
 const AUTHORITY_LATCH_GRACE_MS = 1200
+// Cadence of the stranded-fit self-heal (see maybeRehealStrandedFit). Low
+// frequency: one cheap measurement per visible authoritative terminal, only
+// acting when the grid is stuck small, so a stranded fit recovers within a
+// couple seconds without any per-frame cost.
+const FIT_REHEAL_INTERVAL_MS = 2000
 
 // Touch-scroll tuning. A TWO-finger drag translates into the terminal's own
 // wheel routing (emulator scrollback vs tmux/alt-screen PTY bytes) so direction
@@ -2261,6 +2267,48 @@ function applyTerminalLayout(hook) {
   }
 }
 
+// Level-triggered self-heal for a stranded authoritative fit. The fit path is
+// otherwise purely edge-triggered (ResizeObserver / window resize / refit
+// event) and early-returns silently when metrics are unavailable or the
+// container is momentarily tiny; a fit that "took" while the pane was narrow
+// mid-transition then reports a too-small grid that nothing re-corrects, since
+// the client's local view is already self-consistent. This periodic check
+// re-runs the fit only when the container can now hold a materially LARGER grid
+// than we last reported (strandedFitReheal) — growth-only, so it can never
+// shrink the shared grid or start a size-fight. Steady state (grid matches the
+// container) measures and does nothing.
+function maybeRehealStrandedFit(hook) {
+  if (!hook.fitEnabled) return
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+  // Observers scale-to-fit and re-converge on every render; only the
+  // authoritative viewer can strand the shared grid at a too-small size.
+  if (!isSizeAuthoritative(hook)) return
+
+  const m = terminalCellMetrics(hook)
+  const viewport = terminalViewportMetrics(hook)
+  if (!m || !viewport) return
+
+  if (
+    !strandedFitReheal({
+      availableW: viewport.availableW,
+      availableH: viewport.availableH,
+      cellW: m.width,
+      cellH: m.height,
+      lastFitCols: hook.__lastFitCols,
+      lastFitRows: hook.__lastFitRows
+    })
+  ) {
+    return
+  }
+
+  terminalFrameEvent(hook, "fit_reheal", {
+    from: `${hook.__lastFitCols}x${hook.__lastFitRows}`,
+    availableW: Math.round(viewport.availableW),
+    availableH: Math.round(viewport.availableH)
+  })
+  applyTerminalLayout(hook)
+}
+
 function syncDisplayZoomBadge(hook) {
   const badge = hook.__displayZoomBadge
   if (!badge) return
@@ -2363,6 +2411,13 @@ function installScaleFitLayout(hook) {
   if (typeof ResizeObserver !== "undefined") {
     hook.resizeObserver = new ResizeObserver(scheduleLayout)
     hook.resizeObserver.observe(hook.el)
+  }
+
+  // Level-triggered backstop for the edge-triggered fit above: recover a grid
+  // stranded small when no resize/refit event landed after the container grew.
+  if (hook.fitEnabled && typeof setInterval === "function") {
+    if (hook.__fitRehealTimer) clearInterval(hook.__fitRehealTimer)
+    hook.__fitRehealTimer = setInterval(() => maybeRehealStrandedFit(hook), FIT_REHEAL_INTERVAL_MS)
   }
 }
 
@@ -3286,6 +3341,10 @@ const GhosttyTerminal = {
     if (this.__authorityLatchTimer) {
       clearTimeout(this.__authorityLatchTimer)
       this.__authorityLatchTimer = null
+    }
+    if (this.__fitRehealTimer) {
+      clearInterval(this.__fitRehealTimer)
+      this.__fitRehealTimer = null
     }
     if (this.__paintRaf != null) {
       cancelAnimationFrame(this.__paintRaf)

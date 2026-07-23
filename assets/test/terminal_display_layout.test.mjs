@@ -7,6 +7,7 @@ import {
   latchMobileAuthority,
   rowPinOffsets,
   scaledContentOffsets,
+  strandedFitReheal,
   viewportActiveForClient
 } from "../js/terminal_display_layout.mjs"
 
@@ -178,4 +179,93 @@ test("fitBaseScale uses the limiting axis", () => {
   assert.equal(fitBaseScale(400, 200, 200, 100), 2)
   assert.equal(fitBaseScale(100, 200, 200, 100), 0.5)
   assert.equal(fitBaseScale(0, 200, 200, 100), 1)
+})
+
+test("strandedFitReheal: heals when the container can hold a much wider grid", () => {
+  // Stranded at 62 cols (fit ran while the container was ~620px); container is
+  // now full-width (~1950px) → ~195 cols available → heal.
+  assert.equal(
+    strandedFitReheal({
+      availableW: 1950,
+      availableH: 800,
+      cellW: 10,
+      cellH: 20,
+      lastFitCols: 62,
+      lastFitRows: 40
+    }),
+    true
+  )
+})
+
+test("strandedFitReheal: heals on a stranded row count too", () => {
+  assert.equal(
+    strandedFitReheal({
+      availableW: 620,
+      availableH: 800, // 40 rows available vs 22 reported
+      cellW: 10,
+      cellH: 20,
+      lastFitCols: 62,
+      lastFitRows: 22
+    }),
+    true
+  )
+})
+
+test("strandedFitReheal: steady state (grid already matches) does not heal", () => {
+  // 1950/10 = 195 cols, 800/20 = 40 rows — exactly what we reported.
+  assert.equal(
+    strandedFitReheal({
+      availableW: 1950,
+      availableH: 800,
+      cellW: 10,
+      cellH: 20,
+      lastFitCols: 195,
+      lastFitRows: 40
+    }),
+    false
+  )
+})
+
+test("strandedFitReheal: sub-hysteresis growth does not heal (no ±1 jitter)", () => {
+  // 1 extra column/row available — within the default 2-cell margin.
+  assert.equal(
+    strandedFitReheal({
+      availableW: 1959,
+      availableH: 819,
+      cellW: 10,
+      cellH: 20,
+      lastFitCols: 195,
+      lastFitRows: 40
+    }),
+    false
+  )
+})
+
+test("strandedFitReheal: never fires on shrink (leave that to the event path)", () => {
+  // Container is now smaller than what we reported — growth-only, so no heal.
+  assert.equal(
+    strandedFitReheal({
+      availableW: 620,
+      availableH: 400,
+      cellW: 10,
+      cellH: 20,
+      lastFitCols: 195,
+      lastFitRows: 40
+    }),
+    false
+  )
+})
+
+test("strandedFitReheal: guards missing metrics and unseeded fit", () => {
+  const ok = { availableW: 1950, availableH: 800, cellW: 10, cellH: 20 }
+  // No prior fit reported yet → the normal fit path owns the first report.
+  assert.equal(strandedFitReheal({ ...ok, lastFitCols: NaN, lastFitRows: NaN }), false)
+  assert.equal(strandedFitReheal({ ...ok, lastFitCols: undefined, lastFitRows: 40 }), false)
+  // Degenerate metrics (hidden container mid-layout) → no decision.
+  assert.equal(strandedFitReheal({ ...ok, cellW: 0, lastFitCols: 62, lastFitRows: 40 }), false)
+  assert.equal(
+    strandedFitReheal({ ...ok, availableW: 0, lastFitCols: 62, lastFitRows: 40 }),
+    false
+  )
+  assert.equal(strandedFitReheal(), false)
 })
