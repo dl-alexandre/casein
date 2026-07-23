@@ -115,6 +115,26 @@ export function latchMobileAuthority({
   return false
 }
 
+/**
+ * Row-pinning geometry (trial, flag-gated by `?rowpin=1`).
+ *
+ * When the soft keyboard opens, the naive path recomputes rows from the smaller
+ * viewport → the shared PTY resizes → tmux reflows/rewraps the whole screen (the
+ * residual "flash"). Row-pinning instead keeps the PTY at its keyboard-closed
+ * row count and scrolls the fixed grid up so its bottom rows (cursor / prompt /
+ * TUI input line) stay visible above the keyboard — zero reflow. The hidden top
+ * rows scroll off and clip; closing the keyboard scrolls them back.
+ *
+ * @param {{availableH: number, cellH: number, pinnedRows: number, minRows?: number}} input
+ * @returns {{visibleRows: number, hiddenRows: number, offsetY: number, pinnedRows: number} | null}
+ */
+export function rowPinOffsets({availableH, cellH, pinnedRows, minRows = 2} = {}) {
+  if (!(availableH > 0) || !(cellH > 0) || !(pinnedRows > 0)) return null
+  const visibleRows = Math.max(minRows, Math.floor(availableH / cellH))
+  const hiddenRows = Math.max(0, pinnedRows - visibleRows)
+  return {visibleRows, hiddenRows, offsetY: hiddenRows * cellH, pinnedRows}
+}
+
 export function fitBaseScale(availableW, availableH, contentW, contentH) {
   if (!(contentW > 0) || !(contentH > 0) || !(availableW > 0) || !(availableH > 0)) {
     return 1

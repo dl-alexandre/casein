@@ -65,6 +65,7 @@ import {
   fitBaseScale,
   isMobileTerminalLayout,
   latchMobileAuthority,
+  rowPinOffsets,
   scaledContentOffsets,
   viewportActiveForClient
 } from "./terminal_display_layout.mjs"
@@ -2030,6 +2031,11 @@ function authoritativeFitToContainer(hook) {
 
   const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
   const rows = Math.max(2, Math.floor(viewport.availableH / m.height))
+  // Remember the natural fit as the row-pin anchor. This path only runs when
+  // NOT row-pinning (keyboard closed, or flag off), so it captures the
+  // keyboard-closed row count that row-pinning holds the PTY at. See
+  // applyRowPinLayout / rowPinOffsets.
+  hook.__pinnedRows = rows
   const userZoom = userDisplayZoom(hook)
   const fitUnchanged = cols === hook.__lastFitCols && rows === hook.__lastFitRows
   const zoomUnchanged = userZoom === hook.__lastAppliedUserZoom
@@ -2085,10 +2091,127 @@ function authoritativeOverflowGuard(hook) {
   }
 }
 
+// Row-pinning trial (flag: `?rowpin=1`, persisted to localStorage; `?rowpin=0`
+// disables). Default OFF — when off, rowPinActive() is false and applyTerminalLayout
+// is byte-for-byte the prior behavior, so this cannot affect anyone until flipped.
+function rowPinEnabled() {
+  try {
+    if (typeof location !== "undefined" && typeof location.search === "string") {
+      const m = /(?:\?|&)rowpin=([01])(?:&|$)/.exec(location.search)
+      if (m) {
+        try {
+          localStorage.setItem("devide:rowpin", m[1])
+        } catch (_) {
+          /* localStorage unavailable */
+        }
+        return m[1] === "1"
+      }
+    }
+    if (typeof localStorage !== "undefined") {
+      return localStorage.getItem("devide:rowpin") === "1"
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return false
+}
+
+function keyboardOpenNow() {
+  return (
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("devide-keyboard-open")
+  )
+}
+
+function rowPinActive(hook) {
+  return (
+    rowPinEnabled() &&
+    isMobileTerminalLayout() &&
+    keyboardOpenNow() &&
+    userDisplayZoom(hook) === 1
+  )
+}
+
+// Keep the PTY at its keyboard-closed row count and scroll the fixed grid up so
+// the bottom rows (cursor / prompt / TUI input) stay above the keyboard — no
+// tmux reflow. The vertical translate rides the scale-frame transition (see the
+// [data-terminal-scale-frame] rule in app.css), so opening/closing the keyboard
+// glides the grid into place. Returns false to fall back to the fit path.
+function applyRowPinLayout(hook) {
+  if (!hook.pre || !hook.fitEnabled) return false
+  const m = terminalCellMetrics(hook)
+  const viewport = terminalViewportMetrics(hook)
+  if (!m || !viewport) return false
+  if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return false
+
+  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
+  const pinnedRows = Math.max(
+    2,
+    hook.__pinnedRows || Math.floor(viewport.availableH / m.height)
+  )
+  const pin = rowPinOffsets({
+    availableH: viewport.availableH,
+    cellH: m.height,
+    pinnedRows
+  })
+  if (!pin) return false
+
+  const frame = ensureScaleFrame(hook)
+  if (!frame) return false
+
+  // Hold the PTY at the pinned rows: only push when the shape genuinely changed
+  // (rotation / font), so opening the keyboard never triggers a reflow.
+  if (cols !== hook.__lastFitCols || pinnedRows !== hook.__lastFitRows) {
+    hook.__lastFitCols = cols
+    hook.__lastFitRows = pinnedRows
+    hook.__lastAppliedUserZoom = 1
+    pushResizeEvent(hook, cols, pinnedRows)
+  }
+
+  const contentW = cols * m.width
+  const contentH = pinnedRows * m.height
+  hook.el.dataset.displayMode = "rowpin"
+  hook.el.style.setProperty("--devide-term-display-scale", "1")
+  if (hook.screen) hook.screen.style.overflow = "hidden"
+
+  Object.assign(frame.style, {
+    left: `${viewport.padL}px`,
+    top: `${viewport.padT}px`,
+    width: `${contentW}px`,
+    height: `${contentH}px`,
+    transform: `translateY(-${pin.offsetY}px)`,
+    transformOrigin: "top left"
+  })
+  Object.assign(hook.pre.style, {
+    transform: "",
+    transformOrigin: "",
+    left: "0",
+    top: "0",
+    width: "100%",
+    height: "100%",
+    inset: "auto"
+  })
+
+  hook.__rowPinnedApplied = true
+  syncDisplayZoomBadge(hook)
+  return true
+}
+
 function applyTerminalLayout(hook) {
   if (!hook.fitEnabled) return
 
   if (isSizeAuthoritative(hook)) {
+    if (rowPinActive(hook) && applyRowPinLayout(hook)) return
+
+    // Leaving row-pin (keyboard closed / flag off after being on): undo the
+    // scroll translate and container clip before the normal fit pass. Guarded
+    // by __rowPinnedApplied so the default-off path is untouched.
+    if (hook.__rowPinnedApplied) {
+      hook.__rowPinnedApplied = false
+      if (hook.screen) hook.screen.style.overflow = ""
+      if (hook.el?.dataset?.displayMode === "rowpin") clearDisplayScale(hook)
+    }
+
     authoritativeFitToContainer(hook)
     authoritativeOverflowGuard(hook)
   } else {
