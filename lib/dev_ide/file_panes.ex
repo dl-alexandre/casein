@@ -28,7 +28,7 @@ defmodule DevIDE.FilePanes do
   alias DevIDE.FilePanes.Index
   alias DevIDE.FilePanes.Payload
   alias DevIDE.FilePanes.Persistence
-  alias DevIDE.Files.PathSafety
+  alias DevIDE.FilePanes.Registration
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -107,11 +107,11 @@ defmodule DevIDE.FilePanes do
           {:ok, %{pane_id: String.t(), registration: registration(), reused: boolean()}}
           | {:error, term()}
   def open_file_in_pane(workspace, path, opts \\ []) when is_map(workspace) and is_binary(path) do
-    workspace_id = workspace_id(workspace)
-    line = normalize_line(opts[:line])
+    workspace_id = Registration.workspace_id(workspace)
+    line = Registration.normalize_line(opts[:line])
 
     with {:ok, loc} <- Workspaces.safe_host_loc(workspace),
-         {:ok, rel} <- to_rel(loc, path),
+         {:ok, rel} <- Registration.to_rel(loc, path),
          {:ok, _preflight} <- FileAccess.read_text(loc, rel),
          {:ok, session} <- resolve_session(workspace, opts),
          {:ok, {anchor, window_id}} <- resolve_anchor_window(session, opts) do
@@ -184,8 +184,8 @@ defmodule DevIDE.FilePanes do
   def save_tab(pane_id, path, content, expected_version)
       when is_binary(pane_id) and is_binary(path) and is_binary(content) do
     with reg when is_map(reg) <- get_by_pane(pane_id),
-         {:ok, loc} <- workspace_loc(reg.workspace_id),
-         {:ok, rel} <- to_rel(loc, path),
+         {:ok, loc} <- Registration.workspace_loc(reg.workspace_id),
+         {:ok, rel} <- Registration.to_rel(loc, path),
          {:ok, result} <- FileAccess.write_text(loc, rel, content, expected_version) do
       Payload.broadcast(:updated, reg)
       {:ok, result}
@@ -199,8 +199,8 @@ defmodule DevIDE.FilePanes do
   @spec reload_tab(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def reload_tab(pane_id, path) when is_binary(pane_id) and is_binary(path) do
     with reg when is_map(reg) <- get_by_pane(pane_id),
-         {:ok, loc} <- workspace_loc(reg.workspace_id),
-         {:ok, rel} <- to_rel(loc, path) do
+         {:ok, loc} <- Registration.workspace_loc(reg.workspace_id),
+         {:ok, rel} <- Registration.to_rel(loc, path) do
       FileAccess.read_text(loc, rel)
     else
       nil -> {:error, :not_found}
@@ -266,7 +266,7 @@ defmodule DevIDE.FilePanes do
 
   @impl true
   def handle_call({:register, attrs}, from, state) do
-    pane_id = string_param(attrs, :pane_id)
+    pane_id = Registration.string_param(attrs, :pane_id)
     enqueue_or_start_register(attrs, pane_id, from, state)
   end
 
@@ -281,7 +281,7 @@ defmodule DevIDE.FilePanes do
 
       reg ->
         activate? = Keyword.get(opts, :activate, true) != false
-        line = normalize_line(opts[:line])
+        line = Registration.normalize_line(opts[:line])
         tab = %{path: path, line: line}
 
         open_files =
@@ -290,7 +290,11 @@ defmodule DevIDE.FilePanes do
               reg.open_files ++ [tab]
 
             idx ->
-              List.replace_at(reg.open_files, idx, merge_tab(Enum.at(reg.open_files, idx), line))
+              List.replace_at(
+                reg.open_files,
+                idx,
+                Registration.merge_tab(Enum.at(reg.open_files, idx), line)
+              )
           end
 
         updated = %{
@@ -337,7 +341,9 @@ defmodule DevIDE.FilePanes do
           enqueue_or_start_deregister(pane_id, from, state, persist?: true, reply: :closed)
         else
           active_path =
-            if reg.active_path == path, do: last_path(remaining), else: reg.active_path
+            if reg.active_path == path,
+              do: Registration.last_path(remaining),
+              else: reg.active_path
 
           updated = %{reg | open_files: remaining, active_path: active_path}
           state = store_registration(updated, state)
@@ -679,7 +685,7 @@ defmodule DevIDE.FilePanes do
   defp drain_op_queue(state, _pane_id), do: state
 
   defp start_queued_op(:register, attrs, from, state) do
-    pane_id = string_param(attrs, :pane_id)
+    pane_id = Registration.string_param(attrs, :pane_id)
     start_register(attrs, pane_id, from, state)
   end
 
@@ -701,7 +707,7 @@ defmodule DevIDE.FilePanes do
   end
 
   defp start_register(attrs, pane_id, from, state) do
-    case build_registration(attrs) do
+    case Registration.build(attrs) do
       {:ok, registration} ->
         # Displace any existing file pane on the same tmux window (one per window).
         state = maybe_displace_window_peer(registration, pane_id, state)
@@ -1069,7 +1075,7 @@ defmodule DevIDE.FilePanes do
   # pane_live? runs only in offload tasks. Closing dead rows is deferred to the
   # GenServer commit so we never close_persisted a pane still live in ETS.
   defp rehydrate_io_result(%FilePaneRegistration{} = persisted) do
-    reg = persisted_to_map(persisted)
+    reg = Registration.from_persisted(persisted)
 
     if pane_live?(reg) do
       {:commit, reg}
@@ -1121,32 +1127,7 @@ defmodule DevIDE.FilePanes do
     {:noreply, state}
   end
 
-  # --- registration build / store ---------------------------------------------
-
-  defp build_registration(attrs) do
-    pane_id = string_param(attrs, :pane_id)
-    workspace_id = string_param(attrs, :workspace_id)
-
-    with {:ok, pane_id} <- require_binary(pane_id, :missing_pane_id),
-         {:ok, workspace_id} <- require_binary(workspace_id, :missing_workspace_id) do
-      open_files = normalize_open_files(attrs)
-
-      {:ok,
-       %{
-         id: pane_id,
-         pane_id: pane_id,
-         workspace_id: workspace_id,
-         tmux_session: string_param(attrs, :tmux_session),
-         pane_window_id: string_param(attrs, :pane_window_id),
-         placement: string_param(attrs, :placement),
-         anchor_pane_id: string_param(attrs, :anchor_pane_id),
-         anchor_window_id: string_param(attrs, :anchor_window_id),
-         open_files: open_files,
-         active_path: string_param(attrs, :active_path) || first_path(open_files),
-         status: :open
-       }}
-    end
-  end
+  # --- registration store -----------------------------------------------------
 
   # Atomic in-server commit of ETS + both indexes + topology subscription.
   defp store_registration(registration, state) do
@@ -1173,7 +1154,7 @@ defmodule DevIDE.FilePanes do
 
     with {:ok, pane_id} <-
            tmux_adapter().split_pane(session, anchor, direction,
-             cwd: loc_root(loc),
+             cwd: Registration.loc_root(loc),
              command: holder_command()
            ) do
       # tmux focuses the new holder pane; restore the anchor so Ghostty keeps
@@ -1199,7 +1180,7 @@ defmodule DevIDE.FilePanes do
   end
 
   defp resolve_session(workspace, opts) do
-    case opts[:tmux_session] || workspace_tmux_session(workspace) do
+    case opts[:tmux_session] || Registration.workspace_tmux_session(workspace) do
       session when is_binary(session) and session != "" -> {:ok, session}
       _ -> {:error, :no_tmux_session}
     end
@@ -1303,89 +1284,7 @@ defmodule DevIDE.FilePanes do
 
   defp pane_live?(_), do: false
 
-  defp persisted_to_map(%FilePaneRegistration{} = r) do
-    open_files = normalize_open_files(%{open_files: r.open_files})
-
-    %{
-      id: r.pane_id,
-      pane_id: r.pane_id,
-      workspace_id: r.workspace_id,
-      tmux_session: r.tmux_session,
-      pane_window_id: r.pane_window_id,
-      placement: r.placement,
-      anchor_pane_id: r.anchor_pane_id,
-      anchor_window_id: r.anchor_window_id,
-      open_files: open_files,
-      active_path: r.active_path || first_path(open_files),
-      status: :open
-    }
-  end
-
-  # --- small helpers ------------------------------------------------------------
-
-  defp normalize_open_files(attrs) do
-    (Map.get(attrs, :open_files) || Map.get(attrs, "open_files") || [])
-    |> Enum.map(&normalize_tab/1)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp normalize_tab(%{path: path} = tab) when is_binary(path),
-    do: %{path: path, line: normalize_line(Map.get(tab, :line))}
-
-  defp normalize_tab(%{"path" => path} = tab) when is_binary(path),
-    do: %{path: path, line: normalize_line(Map.get(tab, "line"))}
-
-  defp normalize_tab(_), do: nil
-
-  defp merge_tab(tab, nil), do: tab
-  defp merge_tab(tab, line), do: %{tab | line: line}
-
-  defp normalize_line(line) when is_integer(line) and line > 0, do: line
-  defp normalize_line(_), do: nil
-
-  defp first_path([%{path: path} | _]), do: path
-  defp first_path(_), do: nil
-
-  defp last_path(tabs) do
-    case List.last(tabs) do
-      %{path: path} -> path
-      _ -> nil
-    end
-  end
-
-  # Full workspace host-loc resolution for CALLER-SIDE file read/write
-  # (save_tab/reload_tab). These run in the caller process, not the singleton,
-  # so the Manager resolve is fine here — and it is REQUIRED to produce
-  # `{:remote, host, path}` locs for remote workspaces (manager.ex:150), which
-  # the state-only Payload variant cannot. Do NOT call this from the in-server
-  # broadcast path (that uses Payload.workspace_loc_state_only via active_payload).
-  defp workspace_loc(workspace_id) do
-    with {:ok, workspace} <- Workspaces.get(workspace_id),
-         {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
-      {:ok, loc}
-    else
-      _ -> {:error, :workspace_not_found}
-    end
-  end
-
-  defp to_rel(loc, path) do
-    root = loc_root(loc)
-
-    rel =
-      if String.starts_with?(path, "/") do
-        Path.relative_to(path, root)
-      else
-        path
-      end
-
-    case PathSafety.resolve(root, rel) do
-      {:ok, _abs} -> {:ok, rel}
-      {:error, _} = err -> err
-    end
-  end
-
-  defp loc_root({:local, root}), do: root
-  defp loc_root({:remote, _host, root}), do: root
+  # --- tmux helpers (stay here; used by split_and_register / run_deregister_io) --
 
   defp holder_command do
     Application.app_dir(:dev_ide, "priv/scripts/devide-file-pane")
@@ -1401,26 +1300,6 @@ defmodule DevIDE.FilePanes do
   end
 
   defp kill_pane(_), do: :ok
-
-  defp workspace_tmux_session(workspace) do
-    Map.get(workspace, :tmux_session) || Map.get(workspace, "tmux_session")
-  end
-
-  defp workspace_id(%{id: id}) when is_binary(id), do: id
-  defp workspace_id(%{"id" => id}) when is_binary(id), do: id
-  defp workspace_id(_), do: nil
-
-  defp string_param(attrs, key) when is_atom(key) do
-    value = Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))
-
-    case value do
-      v when is_binary(v) and v != "" -> v
-      _ -> nil
-    end
-  end
-
-  defp require_binary(value, _error) when is_binary(value) and value != "", do: {:ok, value}
-  defp require_binary(_value, error), do: {:error, error}
 
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
