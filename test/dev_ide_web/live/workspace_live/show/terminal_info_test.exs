@@ -177,67 +177,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
     refute_receive :pane_worker_resynced, 50
   end
 
-  describe "resize hold while the nav rail is open" do
-    test "terminal_resize is held (freshest wins) instead of resizing", %{
-      socket: socket,
-      pane_id: pane_id
-    } do
-      socket = put_assigns(socket, %{sidebar_mode: :both, held_pane_resizes: %{}})
+  test "terminal_resize remains live while the picker overlay is open", %{
+    socket: socket,
+    pane_id: pane_id
+  } do
+    socket = %{socket | assigns: Map.put(socket.assigns, :sidebar_mode, :both)}
 
-      assert {:noreply, held} =
-               TerminalInfo.handle_info({:terminal_resize, "ghostty-#{pane_id}", 163, 50}, socket)
+    assert {:noreply, updated} =
+             TerminalInfo.handle_info({:terminal_resize, "ghostty-#{pane_id}", 163, 50}, socket)
 
-      assert held.assigns.held_pane_resizes == %{pane_id => {163, 50}}
-
-      assert {:noreply, held} =
-               TerminalInfo.handle_info({:terminal_resize, "ghostty-#{pane_id}", 170, 52}, held)
-
-      assert held.assigns.held_pane_resizes == %{pane_id => {170, 52}}
-      # The pane grid and worker were left untouched.
-      assert Show.get_pane_data(held, pane_id).cols == 80
-      refute_receive {:pane_worker_resized, _, _}, 50
-    end
-
-    test "terminal_ready still applies immediately with the rail open", %{
-      socket: socket,
-      pane_id: pane_id
-    } do
-      socket = put_assigns(socket, %{sidebar_mode: :both, held_pane_resizes: %{}})
-
-      assert {:noreply, updated} =
-               TerminalInfo.handle_info({:terminal_ready, "ghostty-#{pane_id}", 190, 55}, socket)
-
-      assert Show.get_pane_data(updated, pane_id).cols == 190
-      assert_receive {:pane_worker_resized, 190, 55}, 1_000
-    end
-
-    test "flush_held_pane_resizes applies each held size once and clears", %{
-      socket: socket,
-      pane_id: pane_id
-    } do
-      socket =
-        put_assigns(socket, %{
-          sidebar_mode: :closed,
-          held_pane_resizes: %{pane_id => {226, 60}, "gone" => {100, 30}}
-        })
-
-      flushed = TerminalInfo.flush_held_pane_resizes(socket)
-
-      assert flushed.assigns.held_pane_resizes == %{}
-      assert Show.get_pane_data(flushed, pane_id).cols == 226
-      assert_receive {:pane_worker_resized, 226, 60}, 1_000
-      # The dead pane is skipped without error, and nothing else resizes.
-      refute_receive {:pane_worker_resized, _, _}, 50
-    end
-
-    test "flush with nothing held is a no-op", %{socket: socket} do
-      socket = put_assigns(socket, %{held_pane_resizes: %{}})
-      assert TerminalInfo.flush_held_pane_resizes(socket) == socket
-    end
-  end
-
-  defp put_assigns(socket, assigns) do
-    %{socket | assigns: Map.merge(socket.assigns, assigns)}
+    assert Show.get_pane_data(updated, pane_id).cols == 163
+    assert_receive {:pane_worker_resized, 163, 50}, 1_000
   end
 
   defp base_socket(assigns) do

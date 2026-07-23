@@ -1231,16 +1231,23 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
       changed_rows: Array.isArray(payload.rows) ? payload.rows.length : payload.cells?.length || 0
     })
     termLatOnApply(payload)
+
+    // Only refit when the grid SHAPE changed (accepted payloads always carry the
+    // full hydrated grid, so cols×rows is exact). During pure output the
+    // dimensions are stable, so the previous unconditional post-paint layout ran
+    // a forced reflow (getBoundingClientRect + getComputedStyle) ~13×/s for
+    // nothing. Viewport changes still refit independently via the ResizeObserver.
+    const shapeKey = `${payload.cells?.[0]?.length || 0}x${payload.cells?.length || 0}`
+    if (shapeKey !== hook.__lastPaintShapeKey) {
+      hook.__lastPaintShapeKey = shapeKey
+      hook.__scheduleTerminalLayout?.()
+    }
   }
   const delay = termLatHalfDelay()
   if (delay > 0) {
-    window.setTimeout(() => {
-      paint()
-      hook.__scheduleTerminalLayout?.()
-    }, delay)
+    window.setTimeout(paint, delay)
   } else {
     paint()
-    hook.__scheduleTerminalLayout?.()
   }
 }
 
@@ -1310,6 +1317,11 @@ function fileLinkAtEvent(hook, event) {
 // pointer-events-none overlay positioned from cell metrics (same approach as
 // renderCellSelection), so it works in both the DOM and canvas renderers.
 function setFileLinkHover(hook, hover) {
+  // No-op fast path: clearing when already cleared. On a phone there's no hover
+  // pointer, so every accepted frame asks to clear — without this guard that's a
+  // per-frame layer build + innerHTML wipe + cursor recompute for nothing.
+  if (!hover && !hook.__fileLinkHoverActive) return
+
   const layer = ensureFileLinkLayer(hook)
   if (!layer) return
 
@@ -1523,6 +1535,9 @@ function webLinkAtEvent(hook, event) {
 // Drawn as a pointer-events-none overlay positioned from cell metrics, same as
 // setFileLinkHover.
 function setWebLinkHover(hook, hover) {
+  // No-op fast path: clearing when already cleared (see setFileLinkHover).
+  if (!hover && !hook.__webLinkHoverActive) return
+
   const layer = ensureWebLinkLayer(hook)
   if (!layer) return
 
