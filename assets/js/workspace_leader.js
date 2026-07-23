@@ -883,6 +883,15 @@ export const WorkspaceLeader = {
 
   _updateSwipeBar(edge, progress, ready) {
     const bar = this._ensureSwipeBar()
+    // A single haptic tick the moment the pull crosses the commit threshold, so
+    // you feel that releasing now will switch windows without watching the bar.
+    if (ready && bar.dataset.ready !== "true" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(8)
+      } catch (_) {
+        /* vibrate unsupported / blocked */
+      }
+    }
     bar.dataset.edge = edge
     bar.dataset.ready = ready ? "true" : "false"
     bar.dataset.active = "true"

@@ -506,6 +506,25 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   opacity: 1;
 }
 
+/* Ease the scale-to-fit transform so viewport adjustments — soft-keyboard
+   open/close, the brief overflow-guard borrow while a tmux reflow converges,
+   and display-zoom steps — glide instead of snapping. This is the residual
+   "flash" on mobile resize: the grid momentarily shrinks to fit the smaller
+   viewport, then restores once tmux catches up; easing turns that snap into a
+   short zoom. Steady state never touches the transform, so the rule is inert
+   until an actual adjustment. See ghostty_terminal.js applyScaledLayout /
+   authoritativeOverflowGuard. */
+[data-terminal-scale-frame="true"] {
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-terminal-scale-frame="true"] {
+    transition: none;
+  }
+}
+
 /* Per-interface display zoom badge (see ghostty_terminal.js / terminal_display_zoom.mjs) */
 .devide-term-zoom-badge {
   position: absolute;
