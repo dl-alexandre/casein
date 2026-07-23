@@ -42,6 +42,15 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
     |> put_req_header("x-forwarded-for", xff)
   end
 
+  defp unix_socket_conn(path, xff \\ nil) do
+    conn =
+      :post
+      |> conn(path)
+      |> Map.put(:remote_ip, {:error, :einval})
+
+    if xff, do: put_req_header(conn, "x-forwarded-for", xff), else: conn
+  end
+
   test "allows requests under the default 30/min limit and denies the 31st" do
     path = path("default-30")
     # Explicit scale/limit matches the plug defaults so the assertion is stable
@@ -128,6 +137,26 @@ defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
       |> TrustedProxyRemoteIp.call([])
 
     assert external.remote_ip == {8, 8, 8, 8}
+  end
+
+  test "resolves Caddy's client IP when Bandit accepts a Unix-socket peer" do
+    resolved =
+      unix_socket_conn(
+        "/api/device-links/exchange",
+        "198.51.100.44"
+      )
+      |> TrustedProxyRemoteIp.call([])
+
+    assert resolved.remote_ip == {198, 51, 100, 44}
+  end
+
+  test "does not crash when a Unix-socket request has no forwarded client IP" do
+    result =
+      unix_socket_conn(path("unix-without-xff"))
+      |> call_limited(scale_ms: 60_000, limit: 1)
+
+    refute result.halted
+    refute result.status == 429
   end
 
   test "TrustedProxyRemoteIp ignores client-prepended XFF spoof (rightmost non-loopback wins)" do
