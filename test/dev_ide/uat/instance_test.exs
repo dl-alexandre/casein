@@ -54,7 +54,7 @@ defmodule DevIDE.UAT.InstanceTest do
   end
 
   test "skips seeding when no seed_cmd and stages fixtures from scenario_dir" do
-    scenario_dir = Path.join(System.tmp_dir!(), "uat-scn-#{System.unique_integer([:positive])}")
+    scenario_dir = DevIDE.TmpWorkspace.root!("uat-scn")
     File.mkdir_p!(Path.join(scenario_dir, "fixtures"))
     File.write!(Path.join(scenario_dir, "fixtures/seed.txt"), "hi")
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily DevIDE ephemeral /tmp cleanup
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=devide-tmp-cleanup.service
+
+[Install]
+WantedBy=timers.target

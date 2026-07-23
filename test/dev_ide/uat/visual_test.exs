@@ -6,6 +6,7 @@ defmodule DevIDE.UAT.VisualTest do
   defp tmp(content) do
     path = Path.join(System.tmp_dir!(), "uat-vis-#{System.unique_integer([:positive])}")
     File.write!(path, content)
+    on_exit(fn -> File.rm_rf(path) end)
     path
   end
 
