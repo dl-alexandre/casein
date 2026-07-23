@@ -24,8 +24,8 @@ Mounted on the persistent workspace container so it survives tab switches.
   `<button>` in a dispatch div in the workspace LiveView, rendered outside
   the chrome block — so bindings keep working in focus mode (chrome hidden).
   Visible chrome buttons share the `phx-click` handlers but carry no
-  `data-leader-action`. Exceptions: `C-b s` opens the sessions sidebar;
-  `C-b w` opens the transient window sidebar beside the terminal; and
+  `data-leader-action`. Exceptions: `C-b s` toggles the sessions sidebar;
+  `C-b w` toggles the transient window sidebar beside the terminal; and
   `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
@@ -71,7 +71,7 @@ on its own:
 | `r`      | Rename the focused entry inline — a top-level window row renames the window, a session row renames the session. Nested child rows (windows under a non-active session) are skipped, since rename targets the active session's tmux session |
 | `&`      | In the window picker, kill the focused top-level window after confirmation. Pane rows are ignored |
 | `Enter`  | Attach the focused item (native button click)                        |
-| `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
+| `Escape` | Close the picker from anywhere, including when focus has returned to the terminal |
 
 Each picker menu shows a footer hint: `↑↓ move · o open · l copy link · r rename`.
 The window picker adds `· & kill` when a focused window can be killed.
@@ -91,8 +91,8 @@ All of these require the `C-b` prefix first (except where noted).
 
 | Keys      | tmux meaning      | DevIDE action (`data-leader-action`) |
 | --------- | ----------------- | ------------------------------------ |
-| `s`       | choose session    | `session-picker` — opens the session dropdown |
-| `w`       | choose window     | `window-picker` — opens the transient window sidebar |
+| `s`       | choose session    | `session-picker` — toggles the sessions sidebar |
+| `w`       | choose window     | `window-picker` — toggles the transient window sidebar |
 | `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
 | `c`       | new window        | `new-window`                         |
 | `C`       | (custom)          | `new-window-tab` — new window in a new browser tab |
