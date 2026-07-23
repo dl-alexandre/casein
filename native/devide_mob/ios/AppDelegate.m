@@ -129,6 +129,18 @@ static NSString* MobNotificationJSONFromReviewURL(NSURL* url) {
         @"deep_link": url.absoluteString
     } mutableCopy];
 
+    NSSet* allowedLocatorKeys = [NSSet setWithArray:@[
+        @"origin_id", @"workspace_id", @"session_id", @"task_type", @"task_id",
+        @"tmux_session", @"window", @"pane", @"tab", @"artifact"
+    ]];
+
+    NSURLComponents* components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem* item in components.queryItems ?: @[]) {
+        if ([allowedLocatorKeys containsObject:item.name] && item.value.length > 0) {
+            data[item.name] = item.value;
+        }
+    }
+
     NSMutableDictionary* payload = [@{
         @"id": [NSString stringWithFormat:@"deep-link-%@", cardID],
         @"title": @"Review requested",

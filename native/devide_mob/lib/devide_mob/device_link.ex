@@ -6,7 +6,15 @@ defmodule DevideMob.DeviceLink do
 
   @exchange_client_env :device_link_exchange_client
 
-  @type pairing :: %{url: String.t(), token: String.t(), workspace_id: String.t()}
+  alias DevideMob.OriginIdentity
+
+  @type pairing :: %{
+          url: String.t(),
+          token: String.t(),
+          workspace_id: String.t(),
+          origin_id: String.t(),
+          display_name: String.t()
+        }
 
   @doc """
   Return the credential the session client should store.
@@ -115,15 +123,28 @@ defmodule DevideMob.DeviceLink do
   end
 
   defp legacy_pairing(payload) do
+    url = first_text([value(payload, :url), nested_value(payload, [:origin, :base_url])])
+
     pairing = %{
-      url: first_text([value(payload, :url), nested_value(payload, [:origin, :base_url])]),
+      url: url,
       token: value(payload, :token),
       workspace_id:
         first_text([
           value(payload, :workspace_id),
           value(payload, :resource_id),
           first_resource_id(payload, "workspace")
-        ])
+        ]),
+      origin_id:
+        first_text([
+          nested_value(payload, [:origin, :id]),
+          value(payload, :origin_id)
+        ]) || legacy_origin_id(url),
+      display_name:
+        first_text([
+          nested_value(payload, [:origin, :display_name]),
+          nested_value(payload, [:origin, :name]),
+          value(payload, :display_name)
+        ]) || origin_display_name(url)
     }
 
     if usable_pairing?(pairing) and allowed_transport?(pairing.url),
@@ -144,8 +165,10 @@ defmodule DevideMob.DeviceLink do
   end
 
   defp normalize_exchange_response(body) when is_map(body) do
+    url = first_text([value(body, :url), nested_value(body, [:origin, :base_url])])
+
     pairing = %{
-      url: first_text([value(body, :url), nested_value(body, [:origin, :base_url])]),
+      url: url,
       token:
         first_text([
           nested_value(body, [:credential, :token]),
@@ -156,7 +179,18 @@ defmodule DevideMob.DeviceLink do
           value(body, :workspace_id),
           value(body, :resource_id),
           first_resource_id(body, "workspace")
-        ])
+        ]),
+      origin_id:
+        first_text([
+          nested_value(body, [:origin, :id]),
+          value(body, :origin_id)
+        ]) || legacy_origin_id(url),
+      display_name:
+        first_text([
+          nested_value(body, [:origin, :display_name]),
+          nested_value(body, [:origin, :name]),
+          value(body, :display_name)
+        ]) || origin_display_name(url)
     }
 
     if usable_pairing?(pairing) and allowed_transport?(pairing.url),
@@ -219,6 +253,12 @@ defmodule DevideMob.DeviceLink do
   defp usable_pairing?(%{url: url, token: token, workspace_id: workspace_id}) do
     usable_text?(url) and usable_text?(token) and usable_text?(workspace_id)
   end
+
+  defp legacy_origin_id(url) when is_binary(url), do: OriginIdentity.legacy_id(url)
+  defp legacy_origin_id(_url), do: nil
+
+  defp origin_display_name(url) when is_binary(url), do: OriginIdentity.display_name(url)
+  defp origin_display_name(_url), do: nil
 
   defp usable_text?(value), do: is_binary(value) and String.trim(value) != ""
 

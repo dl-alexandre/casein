@@ -138,7 +138,18 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
     assert data["workspace_id"] == workspace_id
     assert data["session_id"] == "run-1"
     assert data["card_id"] == "needs_review:#{workspace_id}:run-1"
-    assert data["deep_link"] == "devide://review/needs_review%3A#{workspace_id}%3Arun-1"
+    assert is_binary(data["origin_id"])
+
+    deep_link = URI.parse(data["deep_link"])
+    assert deep_link.scheme == "devide"
+    assert deep_link.host == "review"
+    assert deep_link.path == "/needs_review%3A#{workspace_id}%3Arun-1"
+
+    assert URI.decode_query(deep_link.query) == %{
+             "origin_id" => data["origin_id"],
+             "session_id" => "run-1",
+             "workspace_id" => workspace_id
+           }
   end
 
   test "run.approval_requested audit events do not double-push (cards own that path)" do

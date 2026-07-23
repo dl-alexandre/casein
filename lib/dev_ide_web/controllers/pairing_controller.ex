@@ -11,6 +11,7 @@ defmodule DevIdeWeb.PairingController do
   use DevIdeWeb, :controller
 
   alias DevIdeWeb.ChannelAuth
+  alias DevIDE.Origin
   alias DevIDE.Workspaces
 
   # Every interpolation in page/4 is Plug.HTML.html_escape'd (workspace_id, base,
@@ -38,14 +39,7 @@ defmodule DevIdeWeb.PairingController do
           expires_in: ChannelAuth.pairing_token_max_age_seconds(),
           workspace_id: workspace_id,
           token_exchange_url: base <> "/api/device-links/exchange",
-          origin: %{
-            id: "dev_ide",
-            name: "DevIDE",
-            base_url: base,
-            socket_url: base <> "/socket/websocket",
-            token_exchange_url: base <> "/api/device-links/exchange",
-            audience: "dev_ide"
-          },
+          origin: Origin.pairing_descriptor(base),
           resources: [
             %{
               kind: "workspace",

@@ -1,6 +1,7 @@
 defmodule DevideMob.SessionConfigTest do
   use ExUnit.Case, async: false
 
+  alias DevideMob.OriginIdentity
   alias DevideMob.SessionConfig
 
   @env_names ~w(
@@ -63,14 +64,18 @@ defmodule DevideMob.SessionConfigTest do
 
     assert SessionConfig.host_profiles() == [
              %{
-               url: "http://192.168.1.72:57585",
-               active?: false,
-               last_workspace_id: "mac-ws"
-             },
-             %{
+               origin_id: OriginIdentity.legacy_id("https://devide.devbox.test"),
+               display_name: "Devbox",
                url: "https://devide.devbox.test",
                active?: true,
                last_workspace_id: "devbox-ws"
+             },
+             %{
+               origin_id: OriginIdentity.legacy_id("http://192.168.1.72:57585"),
+               display_name: "Local Mac",
+               url: "http://192.168.1.72:57585",
+               active?: false,
+               last_workspace_id: "mac-ws"
              }
            ]
 
@@ -101,7 +106,13 @@ defmodule DevideMob.SessionConfigTest do
     assert SessionConfig.pairing() == :error
 
     assert SessionConfig.host_profiles() == [
-             %{url: "https://mac.test", active?: false, last_workspace_id: nil}
+             %{
+               origin_id: OriginIdentity.legacy_id("https://mac.test"),
+               display_name: "mac.test",
+               url: "https://mac.test",
+               active?: false,
+               last_workspace_id: nil
+             }
            ]
 
     assert SessionConfig.activate_host("https://mac.test") ==
@@ -146,6 +157,125 @@ defmodule DevideMob.SessionConfigTest do
 
     SessionConfig.unpin_workspace("ws-1")
     assert SessionConfig.resume_context() == nil
+  end
+
+  test "stable origin identity updates URL without duplicating the profile" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "http://192.168.1.10:4000",
+      token: "old-token"
+    })
+
+    SessionConfig.pin_workspace("mac-ws")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "https://macbook.local:4443",
+      token: "new-token"
+    })
+
+    assert SessionConfig.pairing() == {:ok, "https://macbook.local:4443", "new-token"}
+    assert SessionConfig.pinned_workspaces() == ["mac-ws"]
+
+    assert [%{origin_id: "origin-mac", url: "https://macbook.local:4443"}] =
+             SessionConfig.host_profiles()
+  end
+
+  test "authoritative descriptor upgrades legacy identity and rejects stable mismatches" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    assert {:ok, %{origin_id: "origin-1", display_name: "Devbox"}} =
+             SessionConfig.reconcile_active_origin(%{
+               "id" => "origin-1",
+               "display_name" => "Devbox"
+             })
+
+    assert {:error, :origin_mismatch} =
+             SessionConfig.reconcile_active_origin(%{
+               "id" => "tampered-origin",
+               "display_name" => "Other"
+             })
+  end
+
+  test "URL-keyed profile storage migrates without losing credentials or resume context" do
+    url = "https://legacy.test"
+
+    Mob.State.put(:session_host_profiles, %{
+      url => %{
+        url: url,
+        token: "legacy-token",
+        pinned_workspaces: ["legacy-ws"],
+        resume_context: %{workspace_id: "legacy-ws", session_id: "legacy-session"}
+      }
+    })
+
+    Mob.State.put(:session_active_host, url)
+
+    origin_id = OriginIdentity.legacy_id(url)
+    assert {:ok, ^url, "legacy-token"} = SessionConfig.pairing()
+    assert [%{origin_id: ^origin_id, active?: true}] = SessionConfig.host_profiles()
+    assert SessionConfig.pinned_workspaces() == ["legacy-ws"]
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "legacy-ws",
+             session_id: "legacy-session"
+           }
+  end
+
+  test "inactive cache is bounded, minimal, origin-qualified, and read-only" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "https://mac.test",
+      token: "mac-token"
+    })
+
+    cards =
+      for index <- 1..35 do
+        %{
+          "id" => "card-#{index}",
+          "workspace_id" => "mac-ws",
+          "title" => "Card #{index}",
+          "actions" => [%{"id" => "approve"}],
+          "token" => "must-not-cache",
+          "resume" => %{
+            "state" => "working",
+            "token" => "nested-token",
+            "actions" => [%{"id" => "approve"}],
+            "locator" => %{
+              "workspace_id" => "mac-ws",
+              "origin_id" => "tampered-origin",
+              "token" => "nested-token"
+            }
+          }
+        }
+      end
+
+    assert :ok = SessionConfig.cache_cards("origin-mac", cards, "2026-07-23T12:00:00Z")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    cached = SessionConfig.inactive_cached_cards()
+    assert Enum.count(cached) == 30
+    assert Enum.all?(cached, &(&1["_cached"] == true))
+    assert Enum.all?(cached, &(&1["origin"]["id"] == "origin-mac"))
+    refute Enum.any?(cached, &Map.has_key?(&1, "actions"))
+    refute Enum.any?(cached, &Map.has_key?(&1, "token"))
+    assert hd(cached)["resume"]["freshness"]["kind"] == "cached"
+    refute Map.has_key?(hd(cached)["resume"], "actions")
+    refute Map.has_key?(hd(cached)["resume"], "token")
+
+    assert hd(cached)["resume"]["locator"] == %{
+             "origin_id" => "origin-mac",
+             "workspace_id" => "mac-ws"
+           }
   end
 
   defp restore_app_env(nil), do: Application.delete_env(:devide_mob, :session)

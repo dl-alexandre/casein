@@ -109,6 +109,10 @@ devide_endpoint_config = [
   ]
 ]
 
+config :dev_ide,
+       :origin_identity_secret,
+       "IG4EOlcBEwImKOlB6OwEc8r/O1dn4NjtGBJU7VV0w0iQv8v839fWk7PZLzP39/86"
+
 devide_endpoint_config =
   if devide_lan? do
     Keyword.put(devide_endpoint_config, :url,

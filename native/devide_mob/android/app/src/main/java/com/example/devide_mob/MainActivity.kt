@@ -337,6 +337,12 @@ class MainActivity : ComponentActivity() {
                 put("card_type", "needs_review")
                 put("card_id", cardId)
                 put("deep_link", uri.toString())
+                listOf(
+                    "origin_id", "workspace_id", "session_id", "task_type", "task_id",
+                    "tmux_session", "window", "pane", "tab", "artifact"
+                ).forEach { key ->
+                    uri.getQueryParameter(key)?.takeIf { it.isNotBlank() }?.let { put(key, it) }
+                }
             })
         }.toString()
     }

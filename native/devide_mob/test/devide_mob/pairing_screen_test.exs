@@ -56,8 +56,20 @@ defmodule DevideMob.PairingScreenTest do
     assert SessionConfig.pinned_workspaces() == ["ws-1"]
 
     assert SessionConfig.host_profiles() == [
-             %{url: "https://devide.test", active?: true, last_workspace_id: "ws-1"},
-             %{url: "https://old.test", active?: false, last_workspace_id: "old-ws"}
+             %{
+               origin_id: DevideMob.OriginIdentity.legacy_id("https://devide.test"),
+               display_name: "devide.test",
+               url: "https://devide.test",
+               active?: true,
+               last_workspace_id: "ws-1"
+             },
+             %{
+               origin_id: DevideMob.OriginIdentity.legacy_id("https://old.test"),
+               display_name: "old.test",
+               url: "https://old.test",
+               active?: false,
+               last_workspace_id: "old-ws"
+             }
            ]
 
     assert assigns(view).state == :success

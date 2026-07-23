@@ -38,7 +38,7 @@ defmodule DevIdeWeb.PairingControllerTest do
     assert payload["token_type"] == "mobile_pairing"
     assert payload["expires_in"] == ChannelAuth.pairing_token_max_age_seconds()
     assert payload["token_exchange_url"] == "http://www.example.com/api/device-links/exchange"
-    assert payload["origin"]["id"] == "dev_ide"
+    assert payload["origin"]["id"] == DevIDE.Origin.id()
     assert payload["origin"]["base_url"] == "http://www.example.com"
     assert payload["resources"] == [%{"kind" => "workspace", "id" => "ws-1", "label" => "ws-1"}]
     assert "dev_ide.session" in payload["capabilities"]

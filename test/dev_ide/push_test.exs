@@ -59,6 +59,8 @@ defmodule DevIDE.PushTest do
     assert notification.workspace_id == "pw-1"
     assert notification.title == "Blocked by policy"
     assert notification.reason == "not_allowlisted"
+    assert notification.origin_id == DevIDE.Origin.id()
+    assert is_binary(notification.origin_name)
 
     assert eventually(fn ->
              case Notifications.list_for_user("dev") do
@@ -124,7 +126,12 @@ defmodule DevIDE.PushTest do
     assert notification.user_id == user_id
     assert notification.session_id == "run-1"
     assert notification.card_id == "needs_review:pw-1:run-1"
-    assert notification.deep_link == "devide://review/needs_review%3Apw-1%3Arun-1"
+    assert notification.origin_id == DevIDE.Origin.id()
+    assert notification.locator.origin_id == DevIDE.Origin.id()
+    assert notification.locator.workspace_id == "pw-1"
+    assert notification.locator.session_id == "run-1"
+    assert notification.deep_link =~ "devide://review/needs_review%3Apw-1%3Arun-1?"
+    assert notification.deep_link =~ "origin_id=#{URI.encode_www_form(DevIDE.Origin.id())}"
     refute_receive {:pushed, "tok-other", "ios", _notification}, 300
 
     assert eventually(fn ->

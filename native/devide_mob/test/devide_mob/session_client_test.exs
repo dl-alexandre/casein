@@ -228,6 +228,24 @@ defmodule DevideMob.SessionClientTest do
     assert_receive {:card_action_result, "needs_review:old-ws:run-1", {:error, :host_switched}}
   end
 
+  test "explicitly activating the current origin preserves watchers and requests fresh connection" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "http://127.0.0.1:1")
+      |> Socket.assign(:token, "same-token")
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:activate_origin, "http://127.0.0.1:1", "same-token"},
+               socket
+             )
+
+    assert socket.assigns.subscribers["mobile:user:me"] == MapSet.new([self()])
+    assert socket.assigns.url == "http://127.0.0.1:1"
+    assert socket.assigns.token == "same-token"
+    assert socket.assigns.connecting?
+  end
+
   test "a card action reply notifies subscribers with the result" do
     socket =
       socket_with_subscriber("mobile:user:me", self())

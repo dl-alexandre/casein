@@ -11,6 +11,9 @@ defmodule DevIDE.Push.APNSProviderTest do
     card_id: "needs_review:ws-7:run-1",
     card_type: "needs_review",
     session_id: "run-1",
+    origin_id: "origin-local-mac",
+    origin_name: "Local Mac",
+    locator: %{origin_id: "origin-local-mac", workspace_id: "ws-7", session_id: "run-1"},
     deep_link: "devide://review/needs_review%3Aws-7%3Arun-1"
   }
 
@@ -71,6 +74,14 @@ defmodule DevIDE.Push.APNSProviderTest do
     assert body["card_id"] == "needs_review:ws-7:run-1"
     assert body["card_type"] == "needs_review"
     assert body["session_id"] == "run-1"
+    assert body["origin_id"] == "origin-local-mac"
+    assert body["origin_name"] == "Local Mac"
+
+    assert body["locator"] == %{
+             origin_id: "origin-local-mac",
+             workspace_id: "ws-7",
+             session_id: "run-1"
+           }
   end
 
   test "reports readiness for configured iOS/APNs delivery" do
