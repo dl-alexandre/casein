@@ -24,16 +24,14 @@ defmodule DevIDE.FilePanes do
 
   use GenServer
 
-  import Ecto.Query
-
   alias DevIDE.FilePanes.FilePaneRegistration
+  alias DevIDE.FilePanes.Persistence
   alias DevIDE.Files.PathSafety
   alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
-  alias DevIDE.Repo
 
   @table :dev_ide_file_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
@@ -360,7 +358,7 @@ defmodule DevIDE.FilePanes do
           from,
           state,
           fn ->
-            case load_open_persisted(pane_id) do
+            case Persistence.load_open(pane_id) do
               nil -> {:rehydrate_done, []}
               persisted -> {:rehydrate_done, [rehydrate_io_result(persisted)]}
             end
@@ -389,7 +387,7 @@ defmodule DevIDE.FilePanes do
       fn ->
         results =
           workspace_ids
-          |> load_open_persisted_for_workspaces()
+          |> Persistence.load_open_for_workspaces()
           |> Enum.map(&rehydrate_io_result/1)
 
         {:rehydrate_done, results}
@@ -425,7 +423,7 @@ defmodule DevIDE.FilePanes do
       nil,
       nil,
       fn ->
-        close_all_persisted()
+        Persistence.close_all()
         :ok
       end,
       %{empty_state() | pending_ops: %{}, flush_waiters: state.flush_waiters}
@@ -505,7 +503,7 @@ defmodule DevIDE.FilePanes do
         nil,
         %{pane_ids: pane_ids},
         fn ->
-          _ = close_persisted_many(pane_ids)
+          _ = Persistence.close_many(pane_ids)
           {:session_terminated_persist_done, pane_ids}
         end,
         state
@@ -716,7 +714,7 @@ defmodule DevIDE.FilePanes do
           pane_id,
           plan,
           fn ->
-            case persist_registration(registration) do
+            case Persistence.upsert(registration) do
               {:ok, _} -> {:register_done, registration}
               {:error, reason} -> {:error, reason}
             end
@@ -817,7 +815,7 @@ defmodule DevIDE.FilePanes do
          persist?: persist?
        }) do
     if persist? do
-      close_persisted(registration.pane_id)
+      Persistence.close(registration.pane_id)
     end
 
     _ = kill_pane(registration)
@@ -839,7 +837,7 @@ defmodule DevIDE.FilePanes do
       pane_id,
       %{registration: registration},
       fn ->
-        _ = persist_registration(registration)
+        _ = Persistence.upsert(registration)
         {:tab_persist_done, registration.pane_id}
       end,
       state
@@ -936,7 +934,7 @@ defmodule DevIDE.FilePanes do
                     nil,
                     %{pane_ids: pane_ids},
                     fn ->
-                      _ = close_persisted_many(pane_ids)
+                      _ = Persistence.close_many(pane_ids)
                       :ok
                     end,
                     state
@@ -1378,7 +1376,7 @@ defmodule DevIDE.FilePanes do
           nil,
           %{pane_ids: stale},
           fn ->
-            _ = close_persisted_many(stale)
+            _ = Persistence.close_many(stale)
             {:session_terminated_persist_done, stale}
           end,
           state
@@ -1431,117 +1429,6 @@ defmodule DevIDE.FilePanes do
   end
 
   defp pane_live?(_), do: false
-
-  # --- persistence --------------------------------------------------------------
-
-  defp persistence_enabled? do
-    Application.get_env(:dev_ide, :file_pane_persistence, true)
-  end
-
-  defp persist_registration(reg) do
-    if persistence_enabled?() do
-      attrs = %{
-        workspace_id: reg.workspace_id,
-        tmux_session: reg.tmux_session,
-        pane_id: reg.pane_id,
-        pane_window_id: reg.pane_window_id,
-        placement: reg.placement,
-        anchor_pane_id: reg.anchor_pane_id,
-        anchor_window_id: reg.anchor_window_id,
-        open_files: Enum.map(reg.open_files, &%{"path" => &1.path, "line" => &1.line}),
-        active_path: reg.active_path,
-        status: :open
-      }
-
-      # Partial unique index file_pane_registrations_open_pane_id_index
-      # (pane_id WHERE status = 'open') — single round-trip upsert.
-      case %FilePaneRegistration{}
-           |> FilePaneRegistration.changeset(attrs)
-           |> Repo.insert(
-             on_conflict:
-               {:replace,
-                [
-                  :workspace_id,
-                  :tmux_session,
-                  :pane_window_id,
-                  :placement,
-                  :anchor_pane_id,
-                  :anchor_window_id,
-                  :open_files,
-                  :active_path,
-                  :status,
-                  :updated_at
-                ]},
-             conflict_target: {:unsafe_fragment, "(pane_id) WHERE (status = 'open')"}
-           ) do
-        {:ok, row} -> {:ok, row}
-        {:error, _} = err -> err
-      end
-    else
-      {:ok, reg}
-    end
-  rescue
-    _ -> {:ok, reg}
-  end
-
-  defp close_persisted(pane_id) when is_binary(pane_id) do
-    close_persisted_many([pane_id])
-  end
-
-  defp close_persisted_many(pane_ids) when is_list(pane_ids) do
-    pane_ids =
-      pane_ids
-      |> Enum.filter(&(is_binary(&1) and &1 != ""))
-      |> Enum.uniq()
-
-    if pane_ids != [] and persistence_enabled?() do
-      from(r in FilePaneRegistration, where: r.pane_id in ^pane_ids and r.status == :open)
-      |> Repo.update_all(set: [status: :closed])
-    end
-
-    :ok
-  rescue
-    _ -> :ok
-  end
-
-  defp close_all_persisted do
-    if persistence_enabled?() do
-      from(r in FilePaneRegistration, where: r.status == :open)
-      |> Repo.update_all(set: [status: :closed])
-    end
-
-    :ok
-  rescue
-    _ -> :ok
-  end
-
-  defp load_open_persisted(pane_id) do
-    if persistence_enabled?() do
-      Repo.one(
-        from r in FilePaneRegistration,
-          where: r.pane_id == ^pane_id and r.status == :open,
-          limit: 1
-      )
-    end
-  rescue
-    _ -> nil
-  end
-
-  defp load_open_persisted_for_workspaces(workspace_ids) do
-    ids = Enum.reject(workspace_ids, &(&1 in [nil, ""]))
-
-    if ids == [] or not persistence_enabled?() do
-      []
-    else
-      Repo.all(
-        from r in FilePaneRegistration,
-          where: r.workspace_id in ^ids and r.status == :open,
-          order_by: [asc: r.inserted_at]
-      )
-    end
-  rescue
-    _ -> []
-  end
 
   defp persisted_to_map(%FilePaneRegistration{} = r) do
     open_files = normalize_open_files(%{open_files: r.open_files})
