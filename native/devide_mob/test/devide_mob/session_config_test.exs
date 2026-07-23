@@ -62,8 +62,16 @@ defmodule DevideMob.SessionConfigTest do
     SessionConfig.pin_workspace("devbox-ws")
 
     assert SessionConfig.host_profiles() == [
-             %{url: "http://192.168.1.72:57585", active?: false},
-             %{url: "https://devide.devbox.test", active?: true}
+             %{
+               url: "http://192.168.1.72:57585",
+               active?: false,
+               last_workspace_id: "mac-ws"
+             },
+             %{
+               url: "https://devide.devbox.test",
+               active?: true,
+               last_workspace_id: "devbox-ws"
+             }
            ]
 
     assert {:ok, "http://192.168.1.72:57585", "mac-token"} =
@@ -91,7 +99,10 @@ defmodule DevideMob.SessionConfigTest do
     SessionConfig.clear_pairing()
 
     assert SessionConfig.pairing() == :error
-    assert SessionConfig.host_profiles() == [%{url: "https://mac.test", active?: false}]
+
+    assert SessionConfig.host_profiles() == [
+             %{url: "https://mac.test", active?: false, last_workspace_id: nil}
+           ]
 
     assert SessionConfig.activate_host("https://mac.test") ==
              {:ok, "https://mac.test", "mac-token"}

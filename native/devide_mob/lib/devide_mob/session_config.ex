@@ -32,13 +32,21 @@ defmodule DevideMob.SessionConfig do
   end
 
   @doc "Saved host profiles, with credentials omitted."
-  @spec host_profiles() :: [%{url: String.t(), active?: boolean()}]
+  @spec host_profiles() :: [
+          %{url: String.t(), active?: boolean(), last_workspace_id: String.t() | nil}
+        ]
   def host_profiles do
     active_url = active_profile_url()
 
     profiles()
     |> Map.values()
-    |> Enum.map(&%{url: &1.url, active?: &1.url == active_url})
+    |> Enum.map(fn profile ->
+      %{
+        url: profile.url,
+        active?: profile.url == active_url,
+        last_workspace_id: last_workspace_id(profile)
+      }
+    end)
     |> Enum.sort_by(& &1.url)
   end
 
@@ -262,6 +270,14 @@ defmodule DevideMob.SessionConfig do
     url
     |> String.trim()
     |> String.trim_trailing("/")
+  end
+
+  defp last_workspace_id(profile) do
+    case Map.get(profile, :resume_context) do
+      %{workspace_id: workspace_id} when is_binary(workspace_id) -> workspace_id
+      %{"workspace_id" => workspace_id} when is_binary(workspace_id) -> workspace_id
+      _ -> profile |> Map.get(:pinned_workspaces, []) |> List.first()
+    end
   end
 
   defp config_default_pinned do

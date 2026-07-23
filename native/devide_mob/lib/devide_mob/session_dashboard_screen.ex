@@ -426,12 +426,17 @@ defmodule DevideMob.SessionDashboardScreen do
        push_status_banner(assigns) ++
        observer_section(assigns) ++
        Enum.map(assigns.pinned, fn wid ->
-         card(wid, Map.get(assigns.snapshots, wid), Map.get(assigns.statuses, wid, :connecting))
+         card(
+           wid,
+           Map.get(assigns.snapshots, wid),
+           Map.get(assigns.statuses, wid, :connecting),
+           assigns.host_name
+         )
        end))
     |> Enum.reject(&is_nil/1)
   end
 
-  defp paired_summary(%{paired?: true, host_url: host_url} = assigns) do
+  defp paired_summary(%{paired?: true, host_url: host_url, host_name: host_name} = assigns) do
     %{
       type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
@@ -444,14 +449,15 @@ defmodule DevideMob.SessionDashboardScreen do
               %{
                 type: :text,
                 props: %{
-                  text: "Paired to #{host_url}",
-                  text_color: :muted,
-                  text_size: :sm,
+                  text: "#{host_name} · Connected",
+                  text_color: :on_surface,
+                  text_size: :lg,
+                  font_weight: "bold",
                   weight: 1
                 },
                 children: []
               },
-              resume_button(assigns[:resume_context]),
+              resume_button(assigns[:resume_context], host_name),
               %{
                 type: :button,
                 props: %{
@@ -466,6 +472,7 @@ defmodule DevideMob.SessionDashboardScreen do
             ]
             |> Enum.reject(&is_nil/1)
         },
+        muted_line(host_url),
         %{
           type: :text,
           props: %{
@@ -496,33 +503,44 @@ defmodule DevideMob.SessionDashboardScreen do
           },
           children: []
         }
-        | Enum.map(profiles, &saved_host_button/1)
+        | Enum.map(profiles, &saved_host_row/1)
       ]
     }
   end
 
   defp saved_hosts_section(_profiles), do: nil
 
-  defp saved_host_button(%{url: url, active?: active?}) do
+  defp saved_host_row(%{
+         url: url,
+         active?: active?,
+         last_workspace_id: last_workspace_id
+       }) do
     %{
-      type: :button,
-      props: %{
-        text: "#{if(active?, do: "Connected", else: "Switch")} · #{display_host(url)}",
-        fill_width: true,
-        background: if(active?, do: :surface_raised, else: :primary),
-        text_color: if(active?, do: :on_surface, else: :on_primary),
-        padding: :space_sm,
-        on_tap: {self(), {:switch_host, url}}
-      },
-      children: []
+      type: :column,
+      props: %{fill_width: true, gap: 2},
+      children: [
+        %{
+          type: :button,
+          props: %{
+            text: "#{if(active?, do: "Connected", else: "Switch to")} · #{host_identity(url)}",
+            fill_width: true,
+            background: if(active?, do: :surface_raised, else: :primary),
+            text_color: if(active?, do: :on_surface, else: :on_primary),
+            padding: :space_sm,
+            on_tap: {self(), {:switch_host, url}}
+          },
+          children: []
+        },
+        muted_line(host_context_line(url, last_workspace_id))
+      ]
     }
   end
 
-  defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
+  defp resume_button(%{workspace_id: workspace_id}, host_name) when is_binary(workspace_id) do
     %{
       type: :button,
       props: %{
-        text: "Resume",
+        text: "Resume #{host_name} work",
         background: :surface_raised,
         text_color: :on_surface,
         padding: :space_sm,
@@ -532,7 +550,7 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp resume_button(_context), do: nil
+  defp resume_button(_context, _host_name), do: nil
 
   defp push_debug_line(assigns) do
     token? = if assigns[:push_token], do: "yes", else: "no"
@@ -835,7 +853,7 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp card(wid, snap, status) do
+  defp card(wid, snap, status, host_name) do
     state = card_state(snap, status)
     pending = pending_count(snap)
 
@@ -850,6 +868,7 @@ defmodule DevideMob.SessionDashboardScreen do
       },
       children:
         [
+          muted_line("#{host_name} · #{display_workspace(wid)}"),
           card_header(wid, status),
           primary_status(state, snap, status),
           review_callout(wid, pending),
@@ -870,7 +889,7 @@ defmodule DevideMob.SessionDashboardScreen do
     body =
       case filtered_sorted_cards(assigns, active) do
         [] -> [filter_empty_state(active)]
-        cards -> Enum.map(cards, &observer_card/1)
+        cards -> Enum.map(cards, &observer_card(&1, assigns.host_name))
       end
 
     [filter_segments(active) | body]
@@ -971,7 +990,7 @@ defmodule DevideMob.SessionDashboardScreen do
   defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
   defp humanize_reason(reason), do: inspect(reason)
 
-  defp observer_card(card) do
+  defp observer_card(card, host_name) do
     workspace_id = get(card, "workspace_id")
     card_id = get(card, "id")
     tappable? = is_binary(card_id) and not is_nil(card_action_tap(card))
@@ -1000,7 +1019,8 @@ defmodule DevideMob.SessionDashboardScreen do
             ]
           },
           card_body(card),
-          workspace_id && muted_line("Workspace #{display_workspace(workspace_id)}"),
+          workspace_id &&
+            muted_line("#{host_name} · Workspace #{display_workspace(workspace_id)}"),
           action_button(
             action_label(card),
             {:mobile_card_action, card_id},
@@ -1394,11 +1414,13 @@ defmodule DevideMob.SessionDashboardScreen do
         socket
         |> Mob.Socket.assign(:paired?, true)
         |> Mob.Socket.assign(:host_url, display_host(url))
+        |> Mob.Socket.assign(:host_name, host_identity(url))
 
       :error ->
         socket
         |> Mob.Socket.assign(:paired?, false)
         |> Mob.Socket.assign(:host_url, nil)
+        |> Mob.Socket.assign(:host_name, nil)
     end
   end
 
@@ -1444,6 +1466,39 @@ defmodule DevideMob.SessionDashboardScreen do
       _ ->
         url
     end
+  end
+
+  defp host_identity(url) do
+    case URI.parse(url) do
+      %URI{host: host, scheme: "http"} when is_binary(host) ->
+        if private_or_local_host?(host), do: "Local Mac", else: host
+
+      %URI{host: host} when is_binary(host) ->
+        if String.contains?(String.downcase(host), "devbox"), do: "Devbox", else: host
+
+      _ ->
+        "Saved host"
+    end
+  end
+
+  defp private_or_local_host?(host) do
+    host == "localhost" or private_ipv4?(host)
+  end
+
+  defp private_ipv4?(host) do
+    case :inet.parse_address(String.to_charlist(host)) do
+      {:ok, {10, _, _, _}} -> true
+      {:ok, {127, _, _, _}} -> true
+      {:ok, {172, second, _, _}} when second in 16..31 -> true
+      {:ok, {192, 168, _, _}} -> true
+      _ -> false
+    end
+  end
+
+  defp host_context_line(url, nil), do: display_host(url)
+
+  defp host_context_line(url, workspace_id) do
+    "#{display_host(url)} · Last work: #{display_workspace(workspace_id)}"
   end
 
   defp retry_workspace(socket, wid) do
