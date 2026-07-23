@@ -316,11 +316,15 @@ if config_env() != :test do
     push_provider in ["fcm", "firebase"] ->
       config :dev_ide, :push_provider, DevIDE.Push.FCMProvider
 
-    push_provider in ["web"] or web_push_enabled? ->
-      config :dev_ide, :push_provider, DevIDE.Push.WebPushProvider
-
+    # Native wins when explicitly selected or any native transport is configured:
+    # NativeProvider now also routes "web" → WebPushProvider (its config is set
+    # above whenever VAPID keys are present), so APNs/FCM and Web Push coexist.
     push_provider in ["native"] or fcm_enabled? or apns_enabled? ->
       config :dev_ide, :push_provider, DevIDE.Push.NativeProvider
+
+    # Web-only: no native transport configured, just VAPID keys.
+    push_provider in ["web"] or web_push_enabled? ->
+      config :dev_ide, :push_provider, DevIDE.Push.WebPushProvider
 
     true ->
       :ok

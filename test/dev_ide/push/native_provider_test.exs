@@ -67,6 +67,15 @@ defmodule DevIDE.Push.NativeProviderTest do
              NativeProvider.push("token", "webos", @notification)
   end
 
+  test "routes web tokens to Web Push (unconfigured here → passes the error through)" do
+    # No VAPID config in test, so WebPushProvider is inert — proving the route
+    # reaches it (rather than the unsupported-platform fallthrough).
+    assert {:error, :push_provider_unconfigured} = NativeProvider.configured_for?("web")
+
+    assert {:error, :push_provider_unconfigured} =
+             NativeProvider.push("https://push/endpoint", "web", @notification)
+  end
+
   defp private_key_pem do
     key = :public_key.generate_key({:namedCurve, :secp256r1})
     :public_key.pem_encode([:public_key.pem_entry_encode(:PrivateKeyInfo, key)])
