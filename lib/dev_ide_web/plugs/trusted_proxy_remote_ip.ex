@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.Plugs.TrustedProxyRemoteIp do
   @moduledoc """
   Rewrites `conn.remote_ip` from a reverse-proxy forwarded header **only** when
-  the direct peer is loopback.
+  the direct peer is loopback or the endpoint's local Unix socket.
 
   DevIDE binds loopback behind oauth2-proxy/Caddy, so every external client
   appears as `127.0.0.1` at Bandit. Without this plug, IP-keyed rate limits
@@ -9,7 +9,8 @@ defmodule DevIdeWeb.Plugs.TrustedProxyRemoteIp do
 
   Trust model (fail closed):
 
-    * Direct peer must be loopback (`127.0.0.0/8` or `::1`).
+    * Direct peer must be loopback (`127.0.0.0/8` or `::1`) or Bandit's
+      `{:error, :einval}` sentinel for a Unix-domain socket peer.
     * Only then is `x-forwarded-for` (rightmost non-loopback hop) or `x-real-ip` used.
     * Proxy-appended XFF entries are trustworthy from the right; client-prepended
       entries are not — so we walk right-to-left, skip our own loopback hops, and
@@ -25,7 +26,7 @@ defmodule DevIdeWeb.Plugs.TrustedProxyRemoteIp do
 
   @impl Plug
   def call(conn, _opts) do
-    if loopback?(conn.remote_ip) do
+    if trusted_proxy_peer?(conn.remote_ip) do
       case forwarded_client_ip(conn) do
         {:ok, ip} -> %{conn | remote_ip: ip}
         :error -> conn
@@ -103,4 +104,7 @@ defmodule DevIdeWeb.Plugs.TrustedProxyRemoteIp do
   defp loopback?({127, _, _, _}), do: true
   defp loopback?({0, 0, 0, 0, 0, 0, 0, 1}), do: true
   defp loopback?(_), do: false
+
+  defp trusted_proxy_peer?({:error, :einval}), do: true
+  defp trusted_proxy_peer?(ip), do: loopback?(ip)
 end
