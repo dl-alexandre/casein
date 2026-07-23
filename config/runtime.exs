@@ -266,12 +266,43 @@ if config_env() != :test do
     config :dev_ide, DevIDE.Push.APNSProvider, apns_provider_config
   end
 
+  # Web Push (VAPID) for the installed PWA. Keys are base64url; decode at boot so
+  # a malformed value fails fast instead of at first push. Provider stays inert
+  # (unconfigured) unless BOTH keys decode.
+  decode_vapid = fn
+    nil ->
+      nil
+
+    value ->
+      case Base.url_decode64(value, padding: false) do
+        {:ok, bin} -> bin
+        :error -> nil
+      end
+  end
+
+  vapid_public = decode_vapid.(present_env.("DEV_IDE_VAPID_PUBLIC_KEY"))
+  vapid_private = decode_vapid.(present_env.("DEV_IDE_VAPID_PRIVATE_KEY"))
+  vapid_subject = present_env.("DEV_IDE_VAPID_SUBJECT") || "mailto:admin@localhost"
+
+  web_push_enabled? = not is_nil(vapid_public) and not is_nil(vapid_private)
+
+  if web_push_enabled? do
+    config :dev_ide, DevIDE.Push.WebPushProvider, %{
+      public_key: vapid_public,
+      private_key: vapid_private,
+      subject: vapid_subject
+    }
+  end
+
   cond do
     push_provider in ["apns"] ->
       config :dev_ide, :push_provider, DevIDE.Push.APNSProvider
 
     push_provider in ["fcm", "firebase"] ->
       config :dev_ide, :push_provider, DevIDE.Push.FCMProvider
+
+    push_provider in ["web"] or web_push_enabled? ->
+      config :dev_ide, :push_provider, DevIDE.Push.WebPushProvider
 
     push_provider in ["native"] or fcm_enabled? or apns_enabled? ->
       config :dev_ide, :push_provider, DevIDE.Push.NativeProvider
