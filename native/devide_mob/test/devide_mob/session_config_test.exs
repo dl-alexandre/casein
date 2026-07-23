@@ -53,6 +53,61 @@ defmodule DevideMob.SessionConfigTest do
     assert SessionConfig.pinned_workspaces() == ["ws-1", "ws-2"]
   end
 
+  test "saved hosts retain independent pins and resume context" do
+    SessionConfig.put_pairing("http://192.168.1.72:57585/", "mac-token")
+    SessionConfig.pin_workspace("mac-ws")
+    SessionConfig.put_resume_context("mac-ws", session_id: "mac-run")
+
+    SessionConfig.put_pairing("https://devide.devbox.test", "devbox-token")
+    SessionConfig.pin_workspace("devbox-ws")
+
+    assert SessionConfig.host_profiles() == [
+             %{
+               url: "http://192.168.1.72:57585",
+               active?: false,
+               last_workspace_id: "mac-ws"
+             },
+             %{
+               url: "https://devide.devbox.test",
+               active?: true,
+               last_workspace_id: "devbox-ws"
+             }
+           ]
+
+    assert {:ok, "http://192.168.1.72:57585", "mac-token"} =
+             SessionConfig.activate_host("http://192.168.1.72:57585/")
+
+    assert SessionConfig.pinned_workspaces() == ["mac-ws"]
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "mac-ws",
+             session_id: "mac-run",
+             source: :workspace
+           }
+
+    assert {:ok, "https://devide.devbox.test", "devbox-token"} =
+             SessionConfig.activate_host("https://devide.devbox.test")
+
+    assert SessionConfig.pinned_workspaces() == ["devbox-ws"]
+    assert SessionConfig.resume_context() == nil
+  end
+
+  test "clearing the active pairing preserves other saved hosts" do
+    SessionConfig.put_pairing("https://mac.test", "mac-token")
+    SessionConfig.put_pairing("https://devbox.test", "devbox-token")
+
+    SessionConfig.clear_pairing()
+
+    assert SessionConfig.pairing() == :error
+
+    assert SessionConfig.host_profiles() == [
+             %{url: "https://mac.test", active?: false, last_workspace_id: nil}
+           ]
+
+    assert SessionConfig.activate_host("https://mac.test") ==
+             {:ok, "https://mac.test", "mac-token"}
+  end
+
   test "resume context persists the last workspace and optional session id" do
     assert SessionConfig.resume_context() == nil
 

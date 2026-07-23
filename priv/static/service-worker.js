@@ -75,6 +75,27 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_error) {
+    data = {};
+  }
+
+  const title = data.title || "DevIDE";
+  const options = {
+    body: data.body || "",
+    icon: "/images/pwa-icon-192.png",
+    badge: "/images/pwa-icon-192.png",
+    tag: data.tag || "devide",
+    renotify: true,
+    data: { url: data.url || "/", ...data }
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 

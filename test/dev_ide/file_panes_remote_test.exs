@@ -149,4 +149,24 @@ defmodule DevIDE.FilePanesRemoteTest do
     assert_receive {:pane_event, %{type: :file, pane_id: ^pane_id, payload: payload}}, 2_000
     assert %{active: %{error: :workspace_not_found}} = payload
   end
+
+  test "save_tab on a remote workspace writes over ssh (caller-side loc stays remote-capable)" do
+    # save_tab -> workspace_loc/1 must resolve {:remote, host, path} so
+    # FileAccess.write_text can optimistic-concurrency-read then write via ssh.
+    # Under the #313 state-only bug this degraded to :workspace_not_found.
+    pane_id = open_remote_pane!("lib/foo.ex")
+
+    assert {:ok, %{version: version}} = FilePanes.reload_tab(pane_id, "lib/foo.ex")
+
+    test = self()
+
+    FakeSshRunner.set_stdin(fn host, _argv, stdin ->
+      send(test, {:ssh_stdin, host, stdin})
+      :ok
+    end)
+
+    assert {:ok, %{size: size}} = FilePanes.save_tab(pane_id, "lib/foo.ex", "UPDATED\n", version)
+    assert size == byte_size("UPDATED\n")
+    assert_received {:ssh_stdin, "boxhost", "UPDATED\n"}
+  end
 end

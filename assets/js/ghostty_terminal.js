@@ -61,6 +61,7 @@ import {
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
 import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
+import {pingWakeLock} from "./wake_lock"
 import {
   fitBaseScale,
   isMobileTerminalLayout,
@@ -1222,39 +1223,65 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
   }
 
   hook.__lastRenderPayload = payload
-  const paint = () => {
+
+  // The actual paint work, bound to whichever payload is freshest at flush time
+  // (so a coalesced trailing flush repaints the NEWEST frame, not a stale one).
+  const doPaint = (p) => {
     const started = typeof performance !== "undefined" ? performance.now() : 0
-    upstreamRender(payload)
+    upstreamRender(p)
     alignCursorPosition(hook)
-    updateScrollbarChrome(hook, payload.scrollbar)
+    updateScrollbarChrome(hook, p.scrollbar)
     const durationMs = typeof performance !== "undefined" ? performance.now() - started : 0
     markTerminalPerf(hook, "paint", {
       duration_ms: Number(durationMs.toFixed(3)),
       renderer: hook.__terminalRenderer || "dom",
-      full_frame: fullFramePayload(payload),
-      rows: payload.cells?.length || 0,
-      cols: payload.cells?.[0]?.length || 0,
-      changed_rows: Array.isArray(payload.rows) ? payload.rows.length : payload.cells?.length || 0
+      full_frame: fullFramePayload(p),
+      rows: p.cells?.length || 0,
+      cols: p.cells?.[0]?.length || 0,
+      changed_rows: Array.isArray(p.rows) ? p.rows.length : p.cells?.length || 0
     })
-    termLatOnApply(payload)
+    termLatOnApply(p)
+
+    // Agent output is arriving → keep the screen awake (mobile only; self-
+    // releases after a quiet spell or when hidden). See wake_lock.js.
+    pingWakeLock()
 
     // Only refit when the grid SHAPE changed (accepted payloads always carry the
     // full hydrated grid, so cols×rows is exact). During pure output the
     // dimensions are stable, so the previous unconditional post-paint layout ran
     // a forced reflow (getBoundingClientRect + getComputedStyle) ~13×/s for
     // nothing. Viewport changes still refit independently via the ResizeObserver.
-    const shapeKey = `${payload.cells?.[0]?.length || 0}x${payload.cells?.length || 0}`
+    const shapeKey = `${p.cells?.[0]?.length || 0}x${p.cells?.length || 0}`
     if (shapeKey !== hook.__lastPaintShapeKey) {
       hook.__lastPaintShapeKey = shapeKey
       hook.__scheduleTerminalLayout?.()
     }
   }
+
   const delay = termLatHalfDelay()
   if (delay > 0) {
-    window.setTimeout(paint, delay)
-  } else {
-    paint()
+    window.setTimeout(() => doPaint(payload), delay)
+    return
   }
+
+  // rAF-coalesce the DOM full-<pre> repaint. The leading frame of an idle→active
+  // burst paints immediately, so a single keystroke echo has zero added latency;
+  // frames that pile up within one animation frame (bulk output / an LTE burst)
+  // collapse to a single trailing repaint of the newest, instead of N full
+  // innerHTML rebuilds in one frame.
+  hook.__pendingPaintPayload = payload
+  if (hook.__paintRaf != null) return
+
+  const lead = hook.__pendingPaintPayload
+  hook.__pendingPaintPayload = null
+  doPaint(lead)
+
+  hook.__paintRaf = requestAnimationFrame(() => {
+    hook.__paintRaf = null
+    const trailing = hook.__pendingPaintPayload
+    hook.__pendingPaintPayload = null
+    if (trailing) doPaint(trailing)
+  })
 }
 
 function renderPatched(hook, payload, upstreamRender) {
@@ -3318,6 +3345,10 @@ const GhosttyTerminal = {
     if (this.__fitRehealTimer) {
       clearInterval(this.__fitRehealTimer)
       this.__fitRehealTimer = null
+    }
+    if (this.__paintRaf != null) {
+      cancelAnimationFrame(this.__paintRaf)
+      this.__paintRaf = null
     }
     stopTouchInertia(this)
     if (this.__onTouchStart) {

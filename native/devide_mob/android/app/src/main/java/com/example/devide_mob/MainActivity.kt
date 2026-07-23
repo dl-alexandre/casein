@@ -94,10 +94,11 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "onCreate: MOB_DIST_PORT=$port")
         }
 
-        // Check if launched from a notification tap or review deep link.
-        notificationJsonFromIntent(intent)?.let { json ->
-            MobBridge.setLaunchNotification(json)
-        }
+        // Capture before the BEAM starts, but do not write it into the native
+        // bridge until nativeSetActivity has initialized that bridge below.
+        // Writing it earlier is lost when bridge initialization resets the
+        // launch-notification slot.
+        val launchNotificationJson = notificationJsonFromIntent(intent)
 
         setContent {
             val state by MobBridge.rootState
@@ -172,6 +173,17 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "onCreate — handing off to BEAM")
         nativeSetActivity(this)
         Thread({ nativeStartBeam() }, "beam-main").start()
+
+        // mob_set_launch_notification is unavailable until mob_nif's on_load
+        // creates its mutex. The root screen starts after app migrations, so
+        // queue the payload after NIF load and before Mob.Screen consumes it.
+        launchNotificationJson?.let { json ->
+            Thread({
+                Thread.sleep(750)
+                Log.i(TAG, "onCreate: queued launch notification (${json.length} chars)")
+                MobBridge.setLaunchNotification(json)
+            }, "launch-notification").start()
+        }
     }
 
     private fun initFirebaseFallbackIfNeeded() {
@@ -308,6 +320,7 @@ class MainActivity : ComponentActivity() {
             ?.let { return it }
 
         return notificationJsonFromReviewDeepLink(intent?.data)
+            ?: notificationJsonFromPairDeepLink(intent?.data)
     }
 
     private fun notificationJsonFromReviewDeepLink(uri: android.net.Uri?): String? {
@@ -323,6 +336,25 @@ class MainActivity : ComponentActivity() {
             put("data", org.json.JSONObject().apply {
                 put("card_type", "needs_review")
                 put("card_id", cardId)
+                put("deep_link", uri.toString())
+            })
+        }.toString()
+    }
+
+    private fun notificationJsonFromPairDeepLink(uri: android.net.Uri?): String? {
+        if (uri?.scheme != "devide" || uri.host != "pair") return null
+
+        val code = uri.pathSegments.firstOrNull()?.takeIf { it.isNotBlank() }
+            ?: uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        return org.json.JSONObject().apply {
+            put("id", "pairing-deep-link")
+            put("title", "Pair DevIDE")
+            put("source", "deep_link")
+            put("data", org.json.JSONObject().apply {
+                put("action", "mobile.pair")
+                put("pairing_code", code)
                 put("deep_link", uri.toString())
             })
         }.toString()

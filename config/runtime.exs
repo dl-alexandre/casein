@@ -32,6 +32,7 @@ lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
 release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 desktop_mode? = System.get_env("DEV_IDE_PROFILE") == "desktop"
+desktop_lan? = desktop_mode? and truthy_env?.("DEV_IDE_DESKTOP_LAN")
 portable_mode? = System.get_env("DEV_IDE_PROFILE") == "portable"
 
 operator_config_path = System.get_env("DEV_IDE_OPERATOR_CONFIG_FILE")
@@ -143,6 +144,14 @@ lan_http_host = fn ->
   end
 end
 
+lan_http_ips = fn ->
+  (System.get_env("DEV_IDE_LAN_IPS") || System.get_env("DEV_IDE_LAN_IP") || "")
+  |> String.split(",", trim: true)
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+  |> Enum.uniq()
+end
+
 if config_env() != :test do
   if System.get_env("PHX_SERVER") do
     config :dev_ide, DevIdeWeb.Endpoint, server: true
@@ -178,6 +187,12 @@ if config_env() != :test do
 
     config :dev_ide,
       desktop_mode: true,
+      desktop_lan: desktop_lan?,
+      desktop_lan_hosts:
+        if(desktop_lan?,
+          do: [lan_http_host.() | lan_http_ips.()],
+          else: []
+        ),
       desktop_launch_token: desktop_launch_token,
       deployment_capabilities: [],
       tmux_host_anchor: false,
@@ -266,12 +281,43 @@ if config_env() != :test do
     config :dev_ide, DevIDE.Push.APNSProvider, apns_provider_config
   end
 
+  # Web Push (VAPID) for the installed PWA. Keys are base64url; decode at boot so
+  # a malformed value fails fast instead of at first push. Provider stays inert
+  # (unconfigured) unless BOTH keys decode.
+  decode_vapid = fn
+    nil ->
+      nil
+
+    value ->
+      case Base.url_decode64(value, padding: false) do
+        {:ok, bin} -> bin
+        :error -> nil
+      end
+  end
+
+  vapid_public = decode_vapid.(present_env.("DEV_IDE_VAPID_PUBLIC_KEY"))
+  vapid_private = decode_vapid.(present_env.("DEV_IDE_VAPID_PRIVATE_KEY"))
+  vapid_subject = present_env.("DEV_IDE_VAPID_SUBJECT") || "mailto:admin@localhost"
+
+  web_push_enabled? = not is_nil(vapid_public) and not is_nil(vapid_private)
+
+  if web_push_enabled? do
+    config :dev_ide, DevIDE.Push.WebPushProvider, %{
+      public_key: vapid_public,
+      private_key: vapid_private,
+      subject: vapid_subject
+    }
+  end
+
   cond do
     push_provider in ["apns"] ->
       config :dev_ide, :push_provider, DevIDE.Push.APNSProvider
 
     push_provider in ["fcm", "firebase"] ->
       config :dev_ide, :push_provider, DevIDE.Push.FCMProvider
+
+    push_provider in ["web"] or web_push_enabled? ->
+      config :dev_ide, :push_provider, DevIDE.Push.WebPushProvider
 
     push_provider in ["native"] or fcm_enabled? or apns_enabled? ->
       config :dev_ide, :push_provider, DevIDE.Push.NativeProvider
@@ -371,25 +417,34 @@ if config_env() == :prod and not release_cli? do
   end
 
   bind_ip =
-    case {desktop_mode?, System.get_env("PHX_IP")} do
-      {true, nil} ->
+    case {desktop_mode?, desktop_lan?, System.get_env("PHX_IP")} do
+      {true, false, nil} ->
         {127, 0, 0, 1}
 
-      {true, str} when str not in ["127.0.0.1", "::1"] ->
+      {true, false, str} when str not in ["127.0.0.1", "::1"] ->
         raise "DEV_IDE_PROFILE=desktop requires PHX_IP to be loopback"
 
-      {true, str} ->
+      {true, false, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
           {:ok, addr} -> addr
           {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
         end
 
-      {false, nil} ->
+      {true, true, nil} ->
+        {0, 0, 0, 0}
+
+      {true, true, str} ->
+        case str |> String.to_charlist() |> :inet.parse_address() do
+          {:ok, addr} -> addr
+          {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
+        end
+
+      {false, _desktop_lan, nil} ->
         if forward_auth? or lan_insecure_http?,
           do: {127, 0, 0, 1},
           else: {0, 0, 0, 0, 0, 0, 0, 0}
 
-      {false, str} ->
+      {false, _desktop_lan, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
           {:ok, addr} -> addr
           {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
@@ -417,6 +472,13 @@ if config_env() == :prod and not release_cli? do
   # are selected at install time.
   check_origin =
     cond do
+      desktop_lan? ->
+        DevIdeWeb.OriginOptions.desktop_lan(
+          DevIDE.Desktop.Runtime.requested_port(),
+          lan_http_host.(),
+          lan_http_ips.()
+        )
+
       desktop_mode? ->
         DevIdeWeb.OriginOptions.desktop(DevIDE.Desktop.Runtime.requested_port())
 
@@ -451,6 +513,13 @@ if config_env() == :prod and not release_cli? do
 
   endpoint_url =
     cond do
+      desktop_lan? ->
+        [
+          host: lan_http_host.(),
+          port: DevIDE.Desktop.Runtime.requested_port(),
+          scheme: "http"
+        ]
+
       desktop_mode? ->
         [host: "localhost", scheme: "http"]
 

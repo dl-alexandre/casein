@@ -56,6 +56,7 @@ public final class ServerMonitor {
     public private(set) var status: RuntimeStatus?
     public private(set) var health: HealthReport?
     public private(set) var lastError: String?
+    public private(set) var lanEnabled: Bool
     /// Countdown to the pending crash auto-restart, for the menu.
     public private(set) var pendingRestartSeconds: Int?
 
@@ -80,6 +81,8 @@ public final class ServerMonitor {
         self.releaseNode = releaseNode
         self.controller = paths.map { ReleaseController(paths: $0, releaseNode: releaseNode) }
         self.state = paths == nil ? .noRelease : .stopped
+        self.lanEnabled = paths.flatMap { HostSettings.load(at: $0.hostSettingsFile) }?.lanEnabled
+            ?? false
     }
 
     /// Adopt an operator-chosen release ("Choose Release…") without a
@@ -94,6 +97,7 @@ public final class ServerMonitor {
         status = nil
         health = nil
         lastError = nil
+        lanEnabled = HostSettings.load(at: newPaths.hostSettingsFile)?.lanEnabled ?? false
         state = .stopped
         startPolling()
     }
@@ -135,6 +139,28 @@ public final class ServerMonitor {
         perform(transition: .stopping) { try await $0.restart(status: status) }
     }
 
+    public func setLANEnabled(_ enabled: Bool) {
+        guard let controller else { return }
+        cancelAutoRestart()
+        lastError = nil
+        let currentStatus = status
+        let shouldRestart = currentStatus != nil && state != .stopped
+        state = shouldRestart ? .stopping : state
+
+        Task {
+            do {
+                try await controller.setLANEnabled(enabled)
+                lanEnabled = enabled
+                if shouldRestart {
+                    try await controller.restart(status: currentStatus)
+                }
+            } catch {
+                lastError = String(describing: error)
+            }
+            await tick()
+        }
+    }
+
     public func cockpitURL() async -> URL? {
         guard let controller, let status else { return nil }
         do {
@@ -149,6 +175,21 @@ public final class ServerMonitor {
         guard let controller, let status else { return nil }
         do {
             return try await controller.cleanCockpitURL(for: status).url
+        } catch {
+            lastError = String(describing: error)
+            return nil
+        }
+    }
+
+    public func lanURL() async -> URL? {
+        guard let controller, let status else { return nil }
+        return await controller.lanURL(for: status)
+    }
+
+    public func lanCockpitURL() async -> URL? {
+        guard let controller, let status else { return nil }
+        do {
+            return try await controller.lanCockpitURL(for: status)
         } catch {
             lastError = String(describing: error)
             return nil

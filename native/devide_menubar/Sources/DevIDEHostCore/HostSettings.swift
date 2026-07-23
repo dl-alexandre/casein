@@ -3,8 +3,23 @@ import Foundation
 
 public struct HostSettings: Sendable, Equatable, Codable {
     public var port: Int
+    public var lanEnabled: Bool
 
-    public init(port: Int) { self.port = port }
+    public init(port: Int, lanEnabled: Bool = false) {
+        self.port = port
+        self.lanEnabled = lanEnabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case port
+        case lanEnabled = "lan_enabled"
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        port = try values.decode(Int.self, forKey: .port)
+        lanEnabled = try values.decodeIfPresent(Bool.self, forKey: .lanEnabled) ?? false
+    }
 
     public static func loadOrSelect(at url: URL) throws -> HostSettings {
         try SecurePersistence.withLock(for: url) {
@@ -13,10 +28,43 @@ public struct HostSettings: Sendable, Equatable, Codable {
                (1024...65535).contains(saved.port), LoopbackPort.isAvailable(saved.port) {
                 return saved
             }
-            let settings = HostSettings(port: try LoopbackPort.select())
+            let previous = loadWithoutLock(at: url)
+            let settings = HostSettings(
+                port: try LoopbackPort.select(),
+                lanEnabled: previous?.lanEnabled ?? false
+            )
             try SecurePersistence.replace(JSONEncoder().encode(settings), at: url)
             return settings
         }
+    }
+
+    public static func load(at url: URL) -> HostSettings? {
+        try? SecurePersistence.withLock(for: url) {
+            loadWithoutLock(at: url)
+        }
+    }
+
+    public static func setLANEnabled(_ enabled: Bool, at url: URL) throws {
+        try SecurePersistence.withLock(for: url) {
+            let existing = loadWithoutLock(at: url)
+            let port: Int
+            if let existing {
+                port = existing.port
+            } else {
+                port = try LoopbackPort.select()
+            }
+            let settings = HostSettings(port: port, lanEnabled: enabled)
+            try SecurePersistence.replace(JSONEncoder().encode(settings), at: url)
+        }
+    }
+
+    private static func loadWithoutLock(at url: URL) -> HostSettings? {
+        guard
+            let data = try? SecurePersistence.readSecurely(at: url),
+            let settings = try? JSONDecoder().decode(HostSettings.self, from: data),
+            (1024...65535).contains(settings.port)
+        else { return nil }
+        return settings
     }
 }
 

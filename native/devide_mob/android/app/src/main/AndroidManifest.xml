@@ -77,6 +77,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="devide" android:host="review" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="devide" android:host="pair" />
+            </intent-filter>
         </activity>
 
         <!-- Full-screen QR scanner from the mob_scanner plugin. The Activity is
