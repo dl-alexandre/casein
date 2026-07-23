@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Allow cleartext HTTP to localhost for the local Phoenix LiveView endpoint -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+    <!--
+      DeviceLink rejects cleartext non-local origins before persisting a token.
+      Android's network security config cannot express RFC1918 address ranges,
+      so transport permission is broad here while the credential boundary stays
+      narrow in DevideMob.DeviceLink.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

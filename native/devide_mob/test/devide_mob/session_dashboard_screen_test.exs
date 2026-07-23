@@ -36,13 +36,32 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert find(view, :button, text: "+ Pair workspace")
   end
 
+  test "native pairing deep link opens the pairing screen with its code" do
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:notification,
+         %{
+           "data" => %{
+             "action" => "mobile.pair",
+             "pairing_code" => "opaque-pairing-code",
+             "deep_link" => "devide://pair/opaque-pairing-code"
+           }
+         }}
+      )
+
+    assert navigated_to(view) == DevideMob.PairingScreen
+  end
+
   test "paired empty state explains the missing workspace" do
     SessionConfig.put_pairing("https://devide.test", "token")
 
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
-    assert text(view) =~ "Paired to https://devide.test"
+    assert text(view) =~ "devide.test · Connected"
+    assert text(view) =~ "https://devide.test"
     assert text(view) =~ "Card stream connecting"
     assert text(view) =~ "No workspace pinned"
     assert text(view) =~ "Currently supports one workspace at a time."
@@ -63,7 +82,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
              source: :review
            }
 
-    assert find(view, :button, text: "Resume")
+    assert find(view, :button, text: "Resume devide.test work")
 
     view = render_info(view, {:tap, :resume_last_session})
 
@@ -74,6 +93,35 @@ defmodule DevideMob.SessionDashboardScreenTest do
              session_id: "run-1",
              source: :review
            }
+  end
+
+  test "saved host selector switches active origin and its scoped workspaces" do
+    SessionConfig.put_pairing("http://192.168.1.72:57585", "mac-token")
+    SessionConfig.pin_workspace("mac-ws")
+    SessionConfig.put_pairing("https://devide.test", "devbox-token")
+    SessionConfig.pin_workspace("devbox-ws")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token, :ios, "devbox-apns-token"})
+      |> render_info({:push_registration_status, "devbox-ws", :registered})
+
+    assert text(view) =~ "Saved hosts"
+    assert find(view, :button, text: "Switch to · Local Mac")
+    assert find(view, :button, text: "Connected · devide.test")
+    assert text(view) =~ "Last work: mac-ws"
+
+    view = render_info(view, {:tap, {:switch_host, "http://192.168.1.72:57585"}})
+
+    assert SessionConfig.pairing() ==
+             {:ok, "http://192.168.1.72:57585", "mac-token"}
+
+    assert assigns(view).pinned == ["mac-ws"]
+    assert assigns(view).push_token == nil
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Switched to http://192.168.1.72:57585"
+    assert find(view, :button, text: "Connected · Local Mac")
   end
 
   test "paired dashboard does not crash when native push APIs are unavailable on host" do
@@ -987,7 +1035,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     refute assigns(view).paired?
     assert assigns(view).mobile_cards_by_id == %{}
     assert assigns(view).mobile_cards == []
-    assert text(view) =~ "Device unpaired"
+    assert text(view) =~ "Host removed"
     refute text(view) =~ "1 item needs review"
   end
 

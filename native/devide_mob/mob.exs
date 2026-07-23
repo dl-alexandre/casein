@@ -7,6 +7,13 @@
 import Config
 
 config :mob_dev,
+  # Mob currently exposes one cross-platform bundle-id setting. Keep the iOS
+  # signing identifier as the default and let Android deploys select the
+  # generated Gradle applicationId explicitly:
+  #
+  #   MOB_BUNDLE_ID=com.example.devide_mob mix mob.deploy --native --device <serial>
+  bundle_id:
+    System.get_env("MOB_BUNDLE_ID") || "com.alexandrefamilyfarm.devide-mob",
   # Path to the mob library repo (native source files for iOS/Android builds).
   mob_dir: Path.join(File.cwd!(), "deps/mob"),
 
