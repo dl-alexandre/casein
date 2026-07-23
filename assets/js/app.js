@@ -209,11 +209,25 @@ function devideLongPollFallbackMs() {
   return 10000
 }
 
+// Jittered backoff for socket reconnect / channel rejoin. Phones background and
+// switch networks constantly; the defaults have no jitter, so a fleet resuming
+// together (or every tab after a deploy) hammers the server in lockstep. Quick
+// first attempts recover a resumed PWA fast; ±20% jitter spreads the herd; the
+// ~5s cap keeps a long offline stretch from draining the battery.
+function jitteredBackoff(steps, capMs) {
+  return (tries) => {
+    const base = steps[tries - 1] || capMs
+    return Math.round(base * (0.8 + Math.random() * 0.4))
+  }
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   // DevIDE runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: devideLongPollFallbackMs(),
+  reconnectAfterMs: jitteredBackoff([50, 150, 350, 750, 1500, 3000], 5000),
+  rejoinAfterMs: jitteredBackoff([400, 900, 1800], 5000),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
   hooks: {...colocatedHooks, DeployUpdateNow, DeploySyncNow, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, FilePaneOverlay, PaneHistoryDrawer, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerSidebar, SessionsPickerSidebar, WindowTabStrip, HeaderOverflow},
 })
