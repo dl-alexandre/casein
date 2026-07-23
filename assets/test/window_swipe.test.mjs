@@ -16,19 +16,41 @@ test("swipeWindowProgress: vertical-dominant locks out the swipe", () => {
   assert.equal(s.dir, null)
 })
 
-test("swipeWindowProgress: pull left → next window, left edge", () => {
+test("swipeWindowProgress: pull left → next window, enters from right edge", () => {
   const s = swipeWindowProgress(-70, 10, {threshold: 120})
   assert.equal(s.axis, "h")
   assert.equal(s.dir, "next")
-  assert.equal(s.edge, "left")
+  assert.equal(s.edge, "right")
   assert.ok(s.progress > 0 && s.progress < 1)
   assert.equal(s.ready, false)
 })
 
-test("swipeWindowProgress: pull right → prev window, right edge", () => {
+test("swipeWindowProgress: pull right → prev window, enters from left edge", () => {
   const s = swipeWindowProgress(80, -12, {threshold: 120})
   assert.equal(s.dir, "prev")
-  assert.equal(s.edge, "right")
+  assert.equal(s.edge, "left")
+})
+
+test("swipeWindowProgress: a fast flick commits before full travel", () => {
+  // Only ~58% of the threshold, but a quick fling in the same direction commits.
+  const s = swipeWindowProgress(-70, 8, {threshold: 120, velocity: -0.9})
+  assert.equal(s.axis, "h")
+  assert.equal(s.ready, true)
+  assert.equal(s.flick, true)
+  assert.ok(s.progress < 1)
+})
+
+test("swipeWindowProgress: a flick against the drag direction does not commit", () => {
+  // Velocity points right while the drag is leftward → not a real flick.
+  const s = swipeWindowProgress(-70, 8, {threshold: 120, velocity: 0.9})
+  assert.equal(s.ready, false)
+  assert.equal(s.flick, false)
+})
+
+test("swipeWindowProgress: a slow drag below threshold is not ready", () => {
+  const s = swipeWindowProgress(-70, 8, {threshold: 120, velocity: -0.1})
+  assert.equal(s.ready, false)
+  assert.equal(s.flick, false)
 })
 
 test("swipeWindowProgress: past threshold is ready and clamps at 1", () => {
