@@ -2139,9 +2139,11 @@ function authoritativeOverflowGuard(hook) {
   }
 }
 
-// Row-pinning trial (flag: `?rowpin=1`, persisted to localStorage; `?rowpin=0`
-// disables). Default OFF — when off, rowPinActive() is false and applyTerminalLayout
-// is byte-for-byte the prior behavior, so this cannot affect anyone until flipped.
+// Row-pinning. Default ON (mobile only, via rowPinActive's isMobileTerminalLayout
+// + keyboardOpen gates): keep the PTY at its keyboard-closed rows and scroll the
+// grid so the bottom (cursor / prompt / TUI input) stays above the keyboard,
+// instead of reflowing tmux on every keyboard toggle. Opt out with `?rowpin=0`
+// (persisted); `?rowpin=1` re-enables.
 function rowPinEnabled() {
   try {
     if (typeof location !== "undefined" && typeof location.search === "string") {
@@ -2155,13 +2157,13 @@ function rowPinEnabled() {
         return m[1] === "1"
       }
     }
-    if (typeof localStorage !== "undefined") {
-      return localStorage.getItem("devide:rowpin") === "1"
+    if (typeof localStorage !== "undefined" && localStorage.getItem("devide:rowpin") === "0") {
+      return false
     }
   } catch (_) {
     /* ignore */
   }
-  return false
+  return true
 }
 
 function keyboardOpenNow() {
