@@ -40,38 +40,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
         </button>
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
-            <div class="flex min-h-0 flex-1 overflow-hidden">
-              <%= if @sessions_sidebar_open? and @sessions_sidebar_tree != [] do %>
-                <SessionBar.sessions_sidebar
-                  workspace_id={@workspace.id}
-                  tree={@sessions_sidebar_tree}
-                  needs_you={@sessions_sidebar_needs_you}
-                  sort_mode={@sessions_sidebar_sort}
-                  active_id={@terminal_sid}
-                  default_sid={@default_terminal_sid}
-                  preview_panes={@preview_panes}
-                  path_base={@workspace_route}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_session_id={@tmux_rename_session_id}
-                  session_tabs={@session_tabs}
-                  chrome_visible?={@chrome_visible}
-                  class="pointer-coarse:hidden"
-                />
+            <div class="relative flex min-h-0 flex-1 overflow-hidden">
+              <%= if (@sessions_sidebar_open? and @sessions_sidebar_tree != []) or
+                      (@window_sidebar_open? and @windows_sidebar_tree != []) do %>
+                <%!-- Keep summoned pickers out of the terminal's flex sizing.
+                     Changing the terminal viewport retriggers its fit observer and
+                     tmux grid resize; an overlay leaves the grid untouched. --%>
+                <div
+                  id={"terminal-picker-overlay-" <> @workspace.id}
+                  data-terminal-picker-overlay="true"
+                  class="pointer-coarse:hidden absolute inset-y-0 left-0 z-20 flex max-w-full overflow-hidden shadow-2xl"
+                >
+                  <%= if @sessions_sidebar_open? and @sessions_sidebar_tree != [] do %>
+                    <SessionBar.sessions_sidebar
+                      workspace_id={@workspace.id}
+                      tree={@sessions_sidebar_tree}
+                      needs_you={@sessions_sidebar_needs_you}
+                      sort_mode={@sessions_sidebar_sort}
+                      active_id={@terminal_sid}
+                      default_sid={@default_terminal_sid}
+                      preview_panes={@preview_panes}
+                      path_base={@workspace_route}
+                      mutations_allowed?={@tmux_mutations_enabled?}
+                      rename_session_id={@tmux_rename_session_id}
+                      session_tabs={@session_tabs}
+                      chrome_visible?={@chrome_visible}
+                    />
+                  <% end %>
+                  <%= if @window_sidebar_open? and @windows_sidebar_tree != [] do %>
+                    <SessionBar.window_sidebar
+                      workspace_id={@workspace.id}
+                      path_base={@workspace_route}
+                      tree={@windows_sidebar_tree}
+                      sort_mode={@windows_sidebar_sort}
+                      terminal_sid={@terminal_sid}
+                      topology_version={@tmux_topology_structure_version}
+                      mutations_allowed?={@tmux_mutations_enabled?}
+                      rename_window_id={@tmux_rename_window_id}
+                    />
+                  <% end %>
+                </div>
               <% end %>
-              <%= if @window_sidebar_open? and @windows_sidebar_tree != [] do %>
-                <SessionBar.window_sidebar
-                  workspace_id={@workspace.id}
-                  path_base={@workspace_route}
-                  tree={@windows_sidebar_tree}
-                  sort_mode={@windows_sidebar_sort}
-                  terminal_sid={@terminal_sid}
-                  topology_version={@tmux_topology_structure_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                  class="pointer-coarse:hidden"
-                />
-              <% end %>
-              <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+              <div
+                id={"terminal-viewport-" <> @workspace.id}
+                data-terminal-viewport="true"
+                class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              >
                 <%= if @desktop_terminal? do %>
                   <.desktop_terminal_surface
                     term={@desktop_terminal_term}

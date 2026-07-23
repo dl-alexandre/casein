@@ -16,18 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
     do: {:noreply, socket}
 
   def handle_info({:terminal_resize, "ghostty-" <> pane_id, cols, rows}, socket) do
-    # While the nav rail is open the terminal viewport is squeezed; applying
-    # that transient size means a tmux reflow on open and another on close —
-    # and, with a second viewer attached, a visible resize fight. Hold the
-    # report instead (the client scales the frozen grid to fit) and flush the
-    # latest one when the rail closes. `:terminal_ready` below still applies
-    # immediately so a pane mounted while the rail is open gets a real size.
-    if socket.assigns[:sidebar_mode] in [nil, :closed] do
-      sync_ghostty_dimensions(socket, pane_id, cols, rows)
-    else
-      held = Map.put(socket.assigns[:held_pane_resizes] || %{}, pane_id, {cols, rows})
-      {:noreply, assign(socket, :held_pane_resizes, held)}
-    end
+    sync_ghostty_dimensions(socket, pane_id, cols, rows)
   end
 
   def handle_info({:terminal_resize, _other_id, _cols, _rows}, socket),
@@ -83,10 +72,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
   end
 
   defp sync_ghostty_dimensions(socket, pane_id, cols, rows) do
-    {:noreply, apply_ghostty_dimensions(socket, pane_id, cols, rows)}
-  end
-
-  defp apply_ghostty_dimensions(socket, pane_id, cols, rows) do
     case Show.get_pane_data(socket, pane_id) do
       %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
         # Resize this viewer's emulator grid. Only the focused viewer's resize
@@ -96,32 +81,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
 
         socket = Show.update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)
 
-        if tmux_session == socket.assigns.tmux_session,
-          do: TerminalState.refresh_tmux_topology(socket),
-          else: socket
+        socket =
+          if tmux_session == socket.assigns.tmux_session,
+            do: TerminalState.refresh_tmux_topology(socket),
+            else: socket
+
+        {:noreply, socket}
 
       _ ->
-        socket
-    end
-  end
-
-  @doc """
-  Apply the freshest viewer resize held per pane while the nav rail was open
-  (see the `:terminal_resize` hold above), then clear the held map. Called by
-  `Sidebar.close/1` so the terminal snaps back to its real viewport exactly
-  once per rail open/close cycle.
-  """
-  def flush_held_pane_resizes(socket) do
-    case socket.assigns[:held_pane_resizes] do
-      held when is_map(held) and map_size(held) > 0 ->
-        held
-        |> Enum.reduce(socket, fn {pane_id, {cols, rows}}, acc ->
-          apply_ghostty_dimensions(acc, pane_id, cols, rows)
-        end)
-        |> assign(:held_pane_resizes, %{})
-
-      _ ->
-        socket
+        {:noreply, socket}
     end
   end
 end
