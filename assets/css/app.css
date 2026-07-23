@@ -902,6 +902,97 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   transition: padding-bottom 120ms ease-out;
 }
 
+/* Interactive window-switch swipe affordance (assets/js/workspace_leader.js).
+   A vertical bar hugging the edge you pull toward; its width tracks drag
+   progress and it brightens once pulled far enough to commit on release. The
+   element only exists in the DOM during/after a swipe, so this rule is inert
+   otherwise. */
+.window-swipe-bar {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--window-swipe-width, 6px);
+  height: clamp(96px, 34vh, 320px);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  border-radius: 0 10px 10px 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 30%, transparent)
+  );
+  box-shadow: 0 0 18px color-mix(in oklch, var(--color-sky-400, #38bdf8) 40%, transparent);
+  transition:
+    opacity 120ms ease-out,
+    width 40ms linear,
+    filter 120ms ease-out;
+}
+
+.window-swipe-bar[data-edge="right"] {
+  right: 0;
+  left: auto;
+  border-radius: 10px 0 0 10px;
+  background: linear-gradient(
+    270deg,
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 30%, transparent)
+  );
+}
+
+.window-swipe-bar[data-edge="left"] {
+  left: 0;
+  right: auto;
+}
+
+.window-swipe-bar[data-active="true"] {
+  opacity: calc(0.35 + 0.55 * var(--window-swipe-progress, 0));
+}
+
+.window-swipe-bar[data-ready="true"] {
+  opacity: 1;
+  filter: brightness(1.25) saturate(1.15);
+}
+
+.window-swipe-bar[data-commit="true"] {
+  opacity: 1;
+  animation: window-swipe-commit 220ms ease-out;
+}
+
+.window-swipe-bar__chevron {
+  color: var(--color-white, #fff);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: var(--window-swipe-progress, 0);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+@keyframes window-swipe-commit {
+  0% {
+    transform: translateY(-50%) scaleX(1);
+  }
+  40% {
+    transform: translateY(-50%) scaleX(1.4);
+  }
+  100% {
+    transform: translateY(-50%) scaleX(0.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .window-swipe-bar {
+    transition: opacity 100ms ease-out;
+  }
+  .window-swipe-bar[data-commit="true"] {
+    animation: none;
+  }
+}
+
 @media (pointer: coarse) {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {
