@@ -43,6 +43,46 @@ defmodule DevIDE.Push.Registry do
     GenServer.call(__MODULE__, {:register_user, user_id, token, platform})
   end
 
+  @doc """
+  Register (or refresh) a browser Web Push subscription for a workspace. The
+  subscription endpoint is the device token; the full subscription JSON (endpoint
+  + p256dh/auth keys) is stored so `DevIDE.Push.WebPushProvider` can encrypt to it.
+  """
+  @spec register_web(%{
+          required(:workspace_id) => String.t(),
+          required(:subscription) => map(),
+          optional(:user_id) => String.t() | nil
+        }) :: :ok | {:error, term()}
+  def register_web(%{workspace_id: wid, subscription: sub} = attrs)
+      when is_binary(wid) and is_map(sub) do
+    case subscription_endpoint(sub) do
+      endpoint when is_binary(endpoint) and endpoint != "" ->
+        GenServer.call(
+          __MODULE__,
+          {:register_web, wid, endpoint, sub, Map.get(attrs, :user_id)}
+        )
+
+      _ ->
+        {:error, :invalid_subscription}
+    end
+  end
+
+  @doc "Fetch a stored Web Push subscription (endpoint + keys) by its endpoint token."
+  @spec web_subscription(String.t()) :: {:ok, map()} | {:error, :not_found}
+  def web_subscription(token) when is_binary(token) do
+    Device
+    |> where([d], d.token_hash == ^token_hash(token) and d.platform == "web")
+    |> Repo.one()
+    |> case do
+      %Device{push_subscription: sub} when is_map(sub) and map_size(sub) > 0 -> {:ok, sub}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp subscription_endpoint(%{"endpoint" => ep}) when is_binary(ep), do: ep
+  defp subscription_endpoint(%{endpoint: ep}) when is_binary(ep), do: ep
+  defp subscription_endpoint(_), do: nil
+
   @doc "Remove a token from every workspace (e.g. on unregister or invalidation)."
   @spec unregister(String.t()) :: :ok
   def unregister(token) when is_binary(token) do
@@ -106,6 +146,29 @@ defmodule DevIDE.Push.Registry do
       state
       |> watch_workspace(wid)
       |> put_workspace_entry(wid, entry(token, platform, user_id))
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:register_web, wid, endpoint, subscription, user_id}, _from, state) do
+    now = now()
+
+    :ok =
+      upsert_device(%{
+        token: endpoint,
+        platform: "web",
+        scope: "workspace",
+        scope_id: wid,
+        workspace_id: wid,
+        user_id: user_id,
+        push_subscription: subscription,
+        last_seen_at: now
+      })
+
+    state =
+      state
+      |> watch_workspace(wid)
+      |> put_workspace_entry(wid, entry(endpoint, "web", user_id))
 
     {:reply, :ok, state}
   end
@@ -349,6 +412,9 @@ defmodule DevIDE.Push.Registry do
   defp invalid_token_error?({:invalid_token, _reason}), do: true
   defp invalid_token_error?({:fcm_status, status}) when status in [404, 410], do: true
   defp invalid_token_error?({:apns_status, status, _reason}) when status in [400, 410], do: true
+  # Web Push: RFC 8030 — 404/410 mean the subscription is gone, so disable it.
+  defp invalid_token_error?(:subscription_gone), do: true
+  defp invalid_token_error?({:web_status, status}) when status in [404, 410], do: true
   defp invalid_token_error?(_reason), do: false
 
   defp emit(operation, metadata) do

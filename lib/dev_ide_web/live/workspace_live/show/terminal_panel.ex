@@ -143,6 +143,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
               aria-hidden="true"
             >
             </div>
+            <%!-- Web Push registration mount. Inert unless VAPID keys are
+                 configured (data-vapid-key empty) and the browser has already
+                 granted notification permission; the hook subscribes and posts
+                 the PushSubscription to /api/push/subscribe. --%>
+            <div
+              id={"web-push-" <> @workspace.id}
+              phx-hook="WebPush"
+              data-workspace-id={@workspace.id}
+              data-vapid-key={DevIDE.Push.WebPush.public_key_b64()}
+              class="hidden"
+              aria-hidden="true"
+            >
+            </div>
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
               Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
