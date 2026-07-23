@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   fitBaseScale,
   isMobileTerminalLayout,
+  latchMobileAuthority,
   scaledContentOffsets,
   viewportActiveForClient
 } from "../js/terminal_display_layout.mjs"
@@ -21,6 +22,54 @@ test("isMobileTerminalLayout matches coarse, standalone, or narrow media", () =>
   assert.equal(
     isMobileTerminalLayout((q) => ({ matches: q.includes("max-width: 639px") })),
     true
+  )
+})
+
+test("latchMobileAuthority: raw-active always wins upward", () => {
+  assert.equal(latchMobileAuthority({raw: true, mobileLayout: false}), true)
+  assert.equal(latchMobileAuthority({raw: true, mobileLayout: true}), true)
+})
+
+test("latchMobileAuthority: desktop never holds past a false raw signal", () => {
+  assert.equal(
+    latchMobileAuthority({raw: false, mobileLayout: false, wasActive: true, sinceActiveMs: 10}),
+    false
+  )
+})
+
+test("latchMobileAuthority: mobile holds through a brief blip then releases", () => {
+  // Within grace, still authoritative — absorbs the iOS hasFocus flap.
+  assert.equal(
+    latchMobileAuthority({
+      raw: false,
+      mobileLayout: true,
+      wasActive: true,
+      sinceActiveMs: 300,
+      graceMs: 1200
+    }),
+    true
+  )
+  // Past grace, authority settles to observer.
+  assert.equal(
+    latchMobileAuthority({
+      raw: false,
+      mobileLayout: true,
+      wasActive: true,
+      sinceActiveMs: 1500,
+      graceMs: 1200
+    }),
+    false
+  )
+  // Never active to begin with → nothing to hold.
+  assert.equal(
+    latchMobileAuthority({
+      raw: false,
+      mobileLayout: true,
+      wasActive: false,
+      sinceActiveMs: 5,
+      graceMs: 1200
+    }),
+    false
   )
 })
 

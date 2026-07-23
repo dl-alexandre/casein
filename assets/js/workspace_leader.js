@@ -1,5 +1,6 @@
 import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
+import {swipeThresholdPx, swipeWindowProgress} from "./window_swipe.mjs"
 import {
   pickerCloseEvent,
   pickerElementVisible,
@@ -120,6 +121,9 @@ export const WorkspaceLeader = {
     this._leaderCommandObserver = null
     this._paneOverlayActive = false
     this._touchStart = null
+    this._swipe = null
+    this._swipeBar = null
+    this._swipeBarTimer = null
 
     this._onKeydown = (e) => this._handleKeydown(e)
     this._onLeaderSecondKey = (e) => this._handleLeaderSecondKey(e.detail?.key)
@@ -160,10 +164,38 @@ export const WorkspaceLeader = {
         y: e.touches[0].clientY,
         fingers: e.touches.length,
       }
+      this._swipe = null
+    }
+    // Interactive single-finger horizontal swipe → an edge bar grows on the side
+    // you pull toward; release past the commit threshold switches to the
+    // adjacent tmux window (reusing the leader n/p dispatch targets so the
+    // server logic is shared). Vertical drags stay with the GhosttyTerminal hook
+    // (one finger scrolls the buffer, two fingers scroll scrollback), so this
+    // only ever engages once |dx| clearly leads |dy|. Passive: purely visual, we
+    // never preventDefault — nothing else consumes horizontal travel here.
+    this._onTouchMove = (e) => {
+      const start = this._touchStart
+      if (!start || start.fingers !== 1 || e.touches.length !== 1) return
+      // Already resolved as a vertical scroll — stay out of the way.
+      if (this._swipe && this._swipe.axis === "v") return
+
+      const dx = e.touches[0].clientX - start.x
+      const dy = e.touches[0].clientY - start.y
+      const threshold = swipeThresholdPx(window.innerWidth || 360)
+      const s = swipeWindowProgress(dx, dy, {threshold})
+      this._swipe = s
+
+      if (s.axis === "h") {
+        this._updateSwipeBar(s.edge, s.progress, s.ready)
+      } else {
+        this._hideSwipeBar(false)
+      }
     }
     this._onTouchEnd = (e) => {
       const start = this._touchStart
+      const swipe = this._swipe
       this._touchStart = null
+      this._swipe = null
       if (!start) return
 
       const dx = e.changedTouches[0].clientX - start.x
@@ -173,19 +205,20 @@ export const WorkspaceLeader = {
 
       // Two-finger tap (little travel) → toggle the soft keyboard.
       if (start.fingers >= 2 && adx < 30 && ady < 30) {
+        this._hideSwipeBar(false)
         this._toggleSoftKeyboard()
         return
       }
 
-      // Single-finger horizontal swipe → switch to the adjacent tmux window,
-      // reusing the leader n/p dispatch targets so the server logic is shared.
-      // (Vertical drags over a terminal are handled live by the GhosttyTerminal
-      // hook: one finger sends arrow keys, two fingers scroll the scrollback.)
-      if (start.fingers === 1 && adx >= 60 && adx > ady) {
-        const action = dx < 0 ? "next-window" : "prev-window"
+      // Committed horizontal swipe pulled past the threshold → switch window.
+      if (start.fingers === 1 && swipe && swipe.axis === "h" && swipe.ready) {
+        this._hideSwipeBar(true)
+        const action = swipe.dir === "next" ? "next-window" : "prev-window"
         this._dispatchLeaderAction(document.querySelector(`[data-leader-action="${action}"]`))
         return
       }
+
+      this._hideSwipeBar(false)
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
@@ -193,7 +226,9 @@ export const WorkspaceLeader = {
     this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
+    document.addEventListener("touchmove", this._onTouchMove, { passive: true })
     document.addEventListener("touchend", this._onTouchEnd, { passive: true })
+    document.addEventListener("touchcancel", this._onTouchEnd, { passive: true })
     this._renderLeaderButtons()
 
     setTerminalSchemeReporter((scheme) => {
@@ -232,7 +267,10 @@ export const WorkspaceLeader = {
     this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
+    document.removeEventListener("touchmove", this._onTouchMove)
     document.removeEventListener("touchend", this._onTouchEnd)
+    document.removeEventListener("touchcancel", this._onTouchEnd)
+    this._destroySwipeBar()
     document.body.removeAttribute("data-leader-active")
     document.body.removeAttribute("data-leader-command-active")
     this._clearLeaderCommandWatch()
@@ -823,6 +861,63 @@ export const WorkspaceLeader = {
     } else {
       window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
     }
+  },
+
+  // --- Interactive window-swipe affordance ------------------------------------
+  // A vertical bar hugging the edge you pull toward, growing with drag progress
+  // and brightening once you've pulled far enough to commit on release. Built
+  // lazily and reused; styled in app.css (.window-swipe-bar).
+  _ensureSwipeBar() {
+    if (this._swipeBar && this._swipeBar.isConnected) return this._swipeBar
+    const bar = document.createElement("div")
+    bar.className = "window-swipe-bar"
+    bar.setAttribute("aria-hidden", "true")
+    bar.dataset.edge = "left"
+    const chevron = document.createElement("div")
+    chevron.className = "window-swipe-bar__chevron"
+    bar.appendChild(chevron)
+    document.body.appendChild(bar)
+    this._swipeBar = bar
+    return bar
+  },
+
+  _updateSwipeBar(edge, progress, ready) {
+    const bar = this._ensureSwipeBar()
+    bar.dataset.edge = edge
+    bar.dataset.ready = ready ? "true" : "false"
+    bar.dataset.active = "true"
+    // Grow toward a comfortable max as progress → 1; the chevron points the way.
+    const width = Math.round(6 + progress * 46)
+    bar.style.setProperty("--window-swipe-width", `${width}px`)
+    bar.style.setProperty("--window-swipe-progress", String(progress))
+    bar.querySelector(".window-swipe-bar__chevron").textContent =
+      edge === "left" ? "›" : "‹"
+  },
+
+  _hideSwipeBar(commit) {
+    const bar = this._swipeBar
+    if (!bar) return
+    if (commit) {
+      // A brief confirm flash before it retracts.
+      bar.dataset.ready = "true"
+      bar.dataset.commit = "true"
+    }
+    bar.dataset.active = "false"
+    clearTimeout(this._swipeBarTimer)
+    this._swipeBarTimer = setTimeout(() => {
+      if (this._swipeBar) {
+        this._swipeBar.removeAttribute("data-commit")
+        this._swipeBar.removeAttribute("data-ready")
+      }
+    }, 220)
+  },
+
+  _destroySwipeBar() {
+    clearTimeout(this._swipeBarTimer)
+    if (this._swipeBar && this._swipeBar.parentNode) {
+      this._swipeBar.parentNode.removeChild(this._swipeBar)
+    }
+    this._swipeBar = null
   },
 
   _renderLeaderButtons(forceActive) {

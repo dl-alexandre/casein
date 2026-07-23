@@ -79,6 +79,42 @@ export function scaledContentOffsets({
   }
 }
 
+/**
+ * Hysteresis latch for mobile size-authority.
+ *
+ * iOS/PWA flips `document.hasFocus()` (and closes the soft keyboard) for a
+ * fraction of a second constantly — tapping the key bar, autocorrect, the home
+ * indicator. Each demote→observer→re-promote round-trip is a full tmux reflow +
+ * repaint on every viewer, which the operator sees as the terminal "resizing
+ * unstably" and flashing a letterboxed narrow column mid-transition.
+ *
+ * Once a mobile viewer is genuinely active, keep it authoritative through a
+ * brief inactive blip so a stray `hasFocus=false` can't bounce authority. The
+ * raw signal always wins upward (an active viewer is active immediately);
+ * downward it must stay quiet for `graceMs`. Desktop keeps the strict raw signal
+ * (`mobileLayout=false`) so a backgrounded tab never pins the shared PTY.
+ *
+ * @param {{
+ *   raw: boolean,            // viewportActiveForClient() this instant
+ *   mobileLayout?: boolean,
+ *   wasActive?: boolean,     // the last *latched* value we reported
+ *   sinceActiveMs?: number,  // ms since raw was last true
+ *   graceMs?: number
+ * }} input
+ */
+export function latchMobileAuthority({
+  raw,
+  mobileLayout = false,
+  wasActive = false,
+  sinceActiveMs = Infinity,
+  graceMs = 1200
+} = {}) {
+  if (raw) return true
+  if (!mobileLayout) return false
+  if (wasActive && Number.isFinite(sinceActiveMs) && sinceActiveMs < graceMs) return true
+  return false
+}
+
 export function fitBaseScale(availableW, availableH, contentW, contentH) {
   if (!(contentW > 0) || !(contentH > 0) || !(availableW > 0) || !(availableH > 0)) {
     return 1

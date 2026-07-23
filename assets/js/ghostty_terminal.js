@@ -64,6 +64,7 @@ import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
 import {
   fitBaseScale,
   isMobileTerminalLayout,
+  latchMobileAuthority,
   scaledContentOffsets,
   viewportActiveForClient
 } from "./terminal_display_layout.mjs"
@@ -320,6 +321,10 @@ const TOUCH_DEVICE =
 
 const LONGPRESS_MS = 400
 
+// How long a mobile viewer keeps size authority after its last active signal,
+// absorbing iOS's rapid hasFocus/soft-keyboard flapping. See reportViewportActive.
+const AUTHORITY_LATCH_GRACE_MS = 1200
+
 // Touch-scroll tuning. A TWO-finger drag translates into the terminal's own
 // wheel routing (emulator scrollback vs tmux/alt-screen PTY bytes) so direction
 // and per-program handling exactly match a trackpad. WHEEL_PX is one wheel
@@ -327,10 +332,6 @@ const LONGPRESS_MS = 400
 // accumulated, which keeps slow drags proportional instead of jumping a line
 // per touchmove event.
 const TOUCH_SCROLL_WHEEL_PX = 48
-// A SINGLE-finger vertical drag is a virtual d-pad instead: every STEP_PX of
-// travel sends one ArrowUp/ArrowDown to the PTY (finger down = ArrowDown,
-// matching direct manipulation of a cursor/menu highlight).
-const TOUCH_ARROW_STEP_PX = 36
 // Vertical travel before we commit the gesture to scrolling (and lock out the
 // horizontal pane-swipe / long-press-select paths for the rest of the touch).
 const TOUCH_SCROLL_START_PX = 8
@@ -581,6 +582,15 @@ function patchPreLayout(hook) {
     backgroundColor: termVar("--devide-term-bg") || "#0a0a0a",
     color: termVar("--devide-term-fg") || "#e4e4e7"
   })
+
+  // When a viewer scales the grid to fit (mobile observer / pinch-zoom out), the
+  // <pre> floats in a letterboxed frame inside hook.screen. Paint that container
+  // with the terminal theme background — via the live CSS var so it tracks theme
+  // changes — so the pillarbox bars match the terminal instead of reading as a
+  // broken near-black gutter beside a light-theme grid.
+  if (hook.screen) {
+    hook.screen.style.backgroundColor = "var(--devide-term-bg, #0a0a0a)"
+  }
 
   // Native browser text selection on the pre — desktop and touch alike. The
   // vendor disables it (user-select: none) and relies on its own cell-selection,
@@ -1745,13 +1755,46 @@ function pushKey(hook, key) {
 // with a caret stuck on the left. See terminal_display_layout.mjs.
 function reportViewportActive(hook, force = false) {
   if (!hook || !hook.el) return
-  const active = viewportActiveForClient({
+  const mobileLayout = isMobileTerminalLayout()
+  const raw = viewportActiveForClient({
     visibilityState: document.visibilityState,
     hasFocus: typeof document.hasFocus === "function" ? document.hasFocus() : true,
     keyboardOpen: document.documentElement.classList.contains("devide-keyboard-open"),
     terminalInputFocused: isTerminalInputFocused(),
-    mobileLayout: isMobileTerminalLayout()
+    mobileLayout
   })
+
+  const now = performance.now()
+  if (raw) hook.__lastActiveAtMs = now
+
+  // Hysteresis: hold mobile authority through a brief hasFocus/keyboard blip so
+  // it doesn't demote→observer→re-promote (each round-trip is a tmux reflow the
+  // user sees as unstable resizing). See latchMobileAuthority.
+  const active = latchMobileAuthority({
+    raw,
+    mobileLayout,
+    wasActive: hook.__lastViewportActive === true,
+    sinceActiveMs: now - (hook.__lastActiveAtMs ?? -Infinity),
+    graceMs: AUTHORITY_LATCH_GRACE_MS
+  })
+
+  if (hook.__authorityLatchTimer) {
+    clearTimeout(hook.__authorityLatchTimer)
+    hook.__authorityLatchTimer = null
+  }
+  // While the latch is holding active despite a false raw signal, re-check once
+  // the grace window elapses so authority can actually settle to observer if the
+  // blip was real (this handler is otherwise only event-driven).
+  if (!raw && active) {
+    const wait = Math.max(60, AUTHORITY_LATCH_GRACE_MS - (now - hook.__lastActiveAtMs) + 40)
+    hook.__authorityLatchTimer = setTimeout(() => {
+      hook.__authorityLatchTimer = null
+      const wasActive = hook.__lastViewportActive === true
+      reportViewportActive(hook)
+      onViewportAuthorityChanged(hook, wasActive)
+    }, wait)
+  }
+
   if (!force && hook.__lastViewportActive === active) return
   hook.__lastViewportActive = active
   if (hook.target && typeof hook.pushEventTo === "function") {
@@ -2695,7 +2738,6 @@ const GhosttyTerminal = {
         this.__scrollActive = false
         this.__scrollbackGesture = false
         this.__touchWheelAccum = 0
-        this.__arrowAccum = 0
         this.__scrollLastX = t.clientX
         this.__scrollLastY = t.clientY
         this.__scrollLastT = performance.now()
@@ -2735,9 +2777,9 @@ const GhosttyTerminal = {
           if (dy > dx && dy > TOUCH_SCROLL_START_PX) {
             this.__scrollActive = true
             // Latch gesture mode for its lifetime. Agent TUIs always use the
-            // wheel→PTY pipeline (never arrow-key spam). Shell: one-finger
-            // scrolls history when present; two fingers always scroll; otherwise
-            // arrow d-pad for menus.
+            // wheel→PTY pipeline. Shell: one finger scrolls the buffer (history
+            // when present, else a harmless no-op); two fingers always scroll
+            // scrollback.
             const {policy} = currentScrollContext(this)
             this.__scrollbackGesture = touchUsesWheelPipeline(
               policy,
@@ -2771,14 +2813,17 @@ const GhosttyTerminal = {
           // Scroll history (or PTY wheel bytes) via the wheel pipeline.
           feedTouchScroll(this, stepDy)
         } else {
-          // Shell, one finger, no scrollback: virtual d-pad.
-          this.__arrowAccum = (this.__arrowAccum || 0) + stepDy
-          const steps = Math.trunc(this.__arrowAccum / TOUCH_ARROW_STEP_PX)
-          if (steps !== 0) {
-            this.__arrowAccum -= steps * TOUCH_ARROW_STEP_PX
-            const key = steps > 0 ? "ArrowDown" : "ArrowUp"
-            const count = Math.min(Math.abs(steps), 8)
-            for (let i = 0; i < count; i += 1) pushKey(this, key)
+          // Shell, one finger, no scrollback: scroll the emulator buffer
+          // directly — a no-op when nothing is above the fold. Never the old
+          // arrow-key d-pad (an invisible modal surprise the operator couldn't
+          // predict) and never PTY wheel bytes (escape-sequence garbage at a
+          // bash prompt); explicit arrows live in the mobile key bar. Same sign
+          // mapping as feedTouchScroll: finger-down reveals older lines.
+          this.__touchWheelAccum = (this.__touchWheelAccum || 0) - stepDy
+          const notches = Math.trunc(this.__touchWheelAccum / TOUCH_SCROLL_WHEEL_PX)
+          if (notches !== 0) {
+            this.__touchWheelAccum -= notches * TOUCH_SCROLL_WHEEL_PX
+            pushScrollDelta(this, notches)
           }
         }
         // We own the gesture now — stop the page from rubber-band scrolling.
@@ -3050,6 +3095,10 @@ const GhosttyTerminal = {
     setDropActive(this, false)
 
     clearTimeout(this.__lpTimer)
+    if (this.__authorityLatchTimer) {
+      clearTimeout(this.__authorityLatchTimer)
+      this.__authorityLatchTimer = null
+    }
     stopTouchInertia(this)
     if (this.__onTouchStart) {
       this.el.removeEventListener("touchstart", this.__onTouchStart)
