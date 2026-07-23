@@ -300,10 +300,13 @@ defmodule DevideMob.SessionDashboardScreen do
     {:noreply, Mob.Socket.push_screen(socket, PairingScreen)}
   end
 
+  def handle_info({:tap, {:switch_host, url}}, socket) when is_binary(url) do
+    {:noreply, switch_host(socket, url)}
+  end
+
   def handle_info({:tap, :unpair}, socket) do
     Enum.each(socket.assigns.pinned, &SessionClient.unwatch(&1, self()))
     SessionClient.unwatch_mobile_cards(self())
-    SessionConfig.clear_all()
     SessionClient.clear_pairing()
 
     {:noreply,
@@ -315,7 +318,7 @@ defmodule DevideMob.SessionDashboardScreen do
      |> Mob.Socket.assign(:mobile_cards_status, :disconnected)
      |> Mob.Socket.assign(:resume_context, nil)
      |> reset_push_state()
-     |> Mob.Socket.assign(:notice, "Device unpaired")
+     |> Mob.Socket.assign(:notice, "Host removed")
      |> assign_pairing()}
   end
 
@@ -399,6 +402,7 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp dashboard_body(%{pinned: [], paired?: false}) do
     [
+      saved_hosts_section(SessionConfig.host_profiles()),
       empty_state(
         "Not paired yet",
         "Pair this phone with a workspace to watch runs, reviews, and agent activity from anywhere.",
@@ -409,7 +413,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    [paired_summary(assigns)] ++
+    [paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
       mobile_cards_status_banner(assigns) ++
       push_status_banner(assigns) ++
       observer_section(assigns) ++
@@ -417,7 +421,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(assigns) do
-    ([paired_summary(assigns)] ++
+    ([paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
        observer_section(assigns) ++
@@ -476,6 +480,43 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp paired_summary(_assigns), do: nil
+
+  defp saved_hosts_section([_ | _] = profiles) do
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 6},
+      children: [
+        %{
+          type: :text,
+          props: %{
+            text: "Saved hosts",
+            text_color: :on_surface,
+            text_size: :sm,
+            font_weight: "bold"
+          },
+          children: []
+        }
+        | Enum.map(profiles, &saved_host_button/1)
+      ]
+    }
+  end
+
+  defp saved_hosts_section(_profiles), do: nil
+
+  defp saved_host_button(%{url: url, active?: active?}) do
+    %{
+      type: :button,
+      props: %{
+        text: "#{if(active?, do: "Connected", else: "Switch")} · #{display_host(url)}",
+        fill_width: true,
+        background: if(active?, do: :surface_raised, else: :primary),
+        text_color: if(active?, do: :on_surface, else: :on_primary),
+        padding: :space_sm,
+        on_tap: {self(), {:switch_host, url}}
+      },
+      children: []
+    }
+  end
 
   defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
     %{
@@ -1346,6 +1387,8 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp assign_pairing(socket) do
+    socket = Mob.Socket.assign(socket, :host_profiles, SessionConfig.host_profiles())
+
     case SessionConfig.pairing() do
       {:ok, url, _token} ->
         socket
@@ -1356,6 +1399,32 @@ defmodule DevideMob.SessionDashboardScreen do
         socket
         |> Mob.Socket.assign(:paired?, false)
         |> Mob.Socket.assign(:host_url, nil)
+    end
+  end
+
+  defp switch_host(socket, url) do
+    Enum.each(socket.assigns.pinned, &SessionClient.unwatch(&1, self()))
+    SessionClient.unwatch_mobile_cards(self())
+
+    case SessionClient.activate_host(url) do
+      :ok ->
+        pinned = SessionConfig.pinned_workspaces()
+        Enum.each(pinned, &SessionClient.watch(&1, self()))
+        SessionClient.watch_mobile_cards(self())
+
+        socket
+        |> Mob.Socket.assign(:pinned, pinned)
+        |> Mob.Socket.assign(:snapshots, %{})
+        |> Mob.Socket.assign(:statuses, %{})
+        |> clear_mobile_cards()
+        |> Mob.Socket.assign(:mobile_cards_status, :connecting)
+        |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+        |> reset_push_state()
+        |> Mob.Socket.assign(:notice, "Switched to #{display_host(url)}")
+        |> assign_pairing()
+
+      :error ->
+        Mob.Socket.assign(socket, :notice, "Saved host is no longer available")
     end
   end
 
@@ -1721,6 +1790,7 @@ defmodule DevideMob.SessionDashboardScreen do
   defp handle_notification(socket, payload) do
     data = get(payload, "data", %{})
     card_id = get(data, "card_id") || review_card_id_from_deep_link(get(data, "deep_link"))
+
     pairing_code =
       get(data, "pairing_code") || pairing_code_from_deep_link(get(data, "deep_link"))
 

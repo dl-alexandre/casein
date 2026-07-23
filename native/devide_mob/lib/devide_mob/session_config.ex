@@ -1,8 +1,8 @@
 defmodule DevideMob.SessionConfig do
   @moduledoc """
-  Device-local settings for the session companion: the host pairing
-  (`{url, token}`), the set of pinned workspace ids the dashboard watches, and
-  the last workspace/session context the dashboard can offer to resume.
+  Device-local settings for the session companion. Multiple host profiles are
+  retained, while exactly one profile supplies the active `{url, token}`,
+  pinned workspaces, and resume context used by the live socket.
 
   Backed by `Mob.State` so it survives screen navigation. The pairing is
   provisioned by QR scan (web cockpit → camera bridge) or manual entry; see
@@ -19,47 +19,94 @@ defmodule DevideMob.SessionConfig do
   @pairing_key :session_pairing
   @pinned_key :session_pinned_workspaces
   @resume_key :session_resume_context
+  @profiles_key :session_host_profiles
+  @active_profile_key :session_active_host
 
   @doc "Returns `{:ok, url, token}` if a pairing exists, else `:error`."
   @spec pairing() :: {:ok, String.t(), String.t()} | :error
   def pairing do
-    case runtime_default_pairing() || Mob.State.get(@pairing_key, config_default_pairing()) do
+    case runtime_default_pairing() || active_profile() || legacy_pairing() do
       %{url: url, token: token} when is_binary(url) and is_binary(token) -> {:ok, url, token}
       _ -> :error
     end
   end
 
+  @doc "Saved host profiles, with credentials omitted."
+  @spec host_profiles() :: [%{url: String.t(), active?: boolean()}]
+  def host_profiles do
+    active_url = active_profile_url()
+
+    profiles()
+    |> Map.values()
+    |> Enum.map(&%{url: &1.url, active?: &1.url == active_url})
+    |> Enum.sort_by(& &1.url)
+  end
+
   @spec put_pairing(String.t(), String.t()) :: :ok
   def put_pairing(url, token) when is_binary(url) and is_binary(token) do
-    Mob.State.put(@pairing_key, %{url: url, token: token})
+    url = normalize_url(url)
+    existing = Map.get(profiles(), url, %{pinned_workspaces: [], resume_context: nil})
+    profile = Map.merge(existing, %{url: url, token: token})
+
+    Mob.State.put(@profiles_key, Map.put(profiles(), url, profile))
+    activate_profile(profile)
     :ok
+  end
+
+  @doc "Make a saved host the active profile."
+  @spec activate_host(String.t()) :: {:ok, String.t(), String.t()} | :error
+  def activate_host(url) when is_binary(url) do
+    case Map.get(profiles(), normalize_url(url)) do
+      %{url: active_url, token: token} = profile ->
+        activate_profile(profile)
+        {:ok, active_url, token}
+
+      _ ->
+        :error
+    end
   end
 
   @spec clear_pairing() :: :ok
   def clear_pairing do
+    active_url = active_profile_url()
+
+    if active_url do
+      Mob.State.put(@profiles_key, Map.delete(profiles(), active_url))
+    end
+
+    Mob.State.put(@active_profile_key, nil)
     Mob.State.put(@pairing_key, nil)
+    Mob.State.put(@pinned_key, [])
+    Mob.State.put(@resume_key, nil)
     :ok
   end
 
   @doc "Clear all session companion state stored on this device."
   @spec clear_all() :: :ok
   def clear_all do
-    clear_pairing()
+    Mob.State.put(@profiles_key, %{})
+    Mob.State.put(@active_profile_key, nil)
+    Mob.State.put(@pairing_key, nil)
     Mob.State.put(@pinned_key, [])
-    clear_resume_context()
+    Mob.State.put(@resume_key, nil)
     :ok
   end
 
   @doc "Workspace ids pinned to the dashboard."
   @spec pinned_workspaces() :: [String.t()]
   def pinned_workspaces do
-    runtime_default_pinned() || Mob.State.get(@pinned_key, config_default_pinned())
+    runtime_default_pinned() ||
+      profile_value(:pinned_workspaces, Mob.State.get(@pinned_key, config_default_pinned()))
   end
 
   @spec pin_workspace(String.t()) :: :ok
   def pin_workspace(workspace_id) when is_binary(workspace_id) do
     pinned = pinned_workspaces()
-    unless workspace_id in pinned, do: Mob.State.put(@pinned_key, pinned ++ [workspace_id])
+
+    unless workspace_id in pinned do
+      put_profile_value(:pinned_workspaces, pinned ++ [workspace_id])
+    end
+
     :ok
   end
 
@@ -70,7 +117,7 @@ defmodule DevideMob.SessionConfig do
 
   @spec unpin_workspace(String.t()) :: :ok
   def unpin_workspace(workspace_id) when is_binary(workspace_id) do
-    Mob.State.put(@pinned_key, pinned_workspaces() -- [workspace_id])
+    put_profile_value(:pinned_workspaces, pinned_workspaces() -- [workspace_id])
     clear_resume_context(workspace_id)
     :ok
   end
@@ -78,7 +125,7 @@ defmodule DevideMob.SessionConfig do
   @doc "Last workspace/session context the dashboard can offer to resume."
   @spec resume_context() :: map() | nil
   def resume_context do
-    case Mob.State.get(@resume_key, nil) do
+    case profile_value(:resume_context, Mob.State.get(@resume_key, nil)) do
       %{workspace_id: workspace_id} = context
       when is_binary(workspace_id) and workspace_id != "" ->
         context
@@ -106,14 +153,14 @@ defmodule DevideMob.SessionConfig do
         |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
         |> Map.new()
 
-      Mob.State.put(@resume_key, context)
+      put_profile_value(:resume_context, context)
       :ok
     end
   end
 
   @spec clear_resume_context() :: :ok
   def clear_resume_context do
-    Mob.State.put(@resume_key, nil)
+    put_profile_value(:resume_context, nil)
     :ok
   end
 
@@ -137,6 +184,84 @@ defmodule DevideMob.SessionConfig do
       _ ->
         nil
     end
+  end
+
+  defp active_profile do
+    Map.get(profiles(), active_profile_url())
+  end
+
+  defp active_profile_url do
+    Mob.State.get(@active_profile_key, nil)
+  end
+
+  defp profiles do
+    case Mob.State.get(@profiles_key, nil) do
+      profiles when is_map(profiles) and map_size(profiles) > 0 ->
+        profiles
+
+      _ ->
+        migrate_legacy_profile()
+    end
+  end
+
+  defp migrate_legacy_profile do
+    case legacy_pairing() do
+      %{url: url, token: token} ->
+        url = normalize_url(url)
+
+        profile = %{
+          url: url,
+          token: token,
+          pinned_workspaces: Mob.State.get(@pinned_key, config_default_pinned()),
+          resume_context: Mob.State.get(@resume_key, nil)
+        }
+
+        Mob.State.put(@profiles_key, %{url => profile})
+        Mob.State.put(@active_profile_key, url)
+        %{url => profile}
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp legacy_pairing do
+    Mob.State.get(@pairing_key, config_default_pairing())
+  end
+
+  defp activate_profile(profile) do
+    Mob.State.put(@active_profile_key, profile.url)
+    Mob.State.put(@pairing_key, %{url: profile.url, token: profile.token})
+    Mob.State.put(@pinned_key, Map.get(profile, :pinned_workspaces, []))
+    Mob.State.put(@resume_key, Map.get(profile, :resume_context))
+  end
+
+  defp profile_value(key, fallback) do
+    case active_profile() do
+      profile when is_map(profile) -> Map.get(profile, key, fallback)
+      _ -> fallback
+    end
+  end
+
+  defp put_profile_value(key, value) do
+    Mob.State.put(storage_key(key), value)
+
+    case active_profile() do
+      %{url: url} = profile ->
+        Mob.State.put(@profiles_key, Map.put(profiles(), url, Map.put(profile, key, value)))
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp storage_key(:pinned_workspaces), do: @pinned_key
+  defp storage_key(:resume_context), do: @resume_key
+
+  defp normalize_url(url) do
+    url
+    |> String.trim()
+    |> String.trim_trailing("/")
   end
 
   defp config_default_pinned do

@@ -37,10 +37,10 @@ defmodule DevideMob.PairingScreenTest do
     assert text(view) =~ "Have a pairing code?"
     assert find(view, :button, text: "Pair")
     assert find(view, :button, text: "Pair").props.height == 44.0
-    assert text(view) =~ "Pairs to one workspace at a time."
+    assert text(view) =~ "Each host is saved."
   end
 
-  test "valid pairing code stores credentials, replaces pins, and shows success before returning" do
+  test "valid pairing code saves the prior host and scopes pins to the new host" do
     SessionConfig.put_pairing("https://old.test", "old-token")
     SessionConfig.pin_workspace("old-ws")
 
@@ -54,6 +54,12 @@ defmodule DevideMob.PairingScreenTest do
 
     assert SessionConfig.pairing() == {:ok, "https://devide.test", "new-token"}
     assert SessionConfig.pinned_workspaces() == ["ws-1"]
+
+    assert SessionConfig.host_profiles() == [
+             %{url: "https://devide.test", active?: true},
+             %{url: "https://old.test", active?: false}
+           ]
+
     assert assigns(view).state == :success
     assert text(view) =~ "Paired successfully"
     assert text(view) =~ "Workspace ws-1 is ready"

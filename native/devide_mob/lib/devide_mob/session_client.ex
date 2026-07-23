@@ -50,6 +50,18 @@ defmodule DevideMob.SessionClient do
     cast({:configure, url, token})
   end
 
+  @doc "Switch the single live connection to a saved host profile."
+  @spec activate_host(String.t()) :: :ok | :error
+  def activate_host(url) when is_binary(url) do
+    case SessionConfig.activate_host(url) do
+      {:ok, active_url, token} ->
+        cast({:configure, active_url, token})
+
+      :error ->
+        :error
+    end
+  end
+
   @doc "Forget pairing credentials and disconnect the session channel client."
   @spec clear_pairing() :: :ok
   def clear_pairing do

@@ -154,7 +154,6 @@ defmodule DevideMob.PairingScreen do
 
     with {:ok, payload} <- decode_pairing_payload(code),
          {:ok, %{url: url, token: token, workspace_id: wid}} <- DeviceLink.pair(payload) do
-      SessionConfig.clear_all()
       SessionClient.configure(url, token)
       SessionConfig.pin_workspace(wid)
       Process.send_after(self(), :pairing_success_done, @success_delay_ms)
@@ -321,7 +320,7 @@ defmodule DevideMob.PairingScreen do
       qr_section(),
       paste_section(assigns),
       manual_section(assigns),
-      helper_line("Pairs to one workspace at a time.")
+      helper_line("Each host is saved. You can switch hosts from the Action Center.")
     ]
     |> Enum.reject(&is_nil/1)
   end

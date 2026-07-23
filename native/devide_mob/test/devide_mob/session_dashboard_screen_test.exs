@@ -94,6 +94,28 @@ defmodule DevideMob.SessionDashboardScreenTest do
            }
   end
 
+  test "saved host selector switches active origin and its scoped workspaces" do
+    SessionConfig.put_pairing("http://192.168.1.72:57585", "mac-token")
+    SessionConfig.pin_workspace("mac-ws")
+    SessionConfig.put_pairing("https://devide.test", "devbox-token")
+    SessionConfig.pin_workspace("devbox-ws")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert text(view) =~ "Saved hosts"
+    assert find(view, :button, text: "Switch · http://192.168.1.72:57585")
+    assert find(view, :button, text: "Connected · https://devide.test")
+
+    view = render_info(view, {:tap, {:switch_host, "http://192.168.1.72:57585"}})
+
+    assert SessionConfig.pairing() ==
+             {:ok, "http://192.168.1.72:57585", "mac-token"}
+
+    assert assigns(view).pinned == ["mac-ws"]
+    assert text(view) =~ "Switched to http://192.168.1.72:57585"
+    assert find(view, :button, text: "Connected · http://192.168.1.72:57585")
+  end
+
   test "paired dashboard does not crash when native push APIs are unavailable on host" do
     SessionConfig.put_pairing("https://devide.test", "token")
 
@@ -1005,7 +1027,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     refute assigns(view).paired?
     assert assigns(view).mobile_cards_by_id == %{}
     assert assigns(view).mobile_cards == []
-    assert text(view) =~ "Device unpaired"
+    assert text(view) =~ "Host removed"
     refute text(view) =~ "1 item needs review"
   end
 
