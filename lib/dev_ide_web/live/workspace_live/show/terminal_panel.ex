@@ -119,6 +119,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             </div>
             <.mobile_key_bar {assigns} />
             <.mobile_nav_sheet {assigns} />
+            <%!-- First-run gesture coach-marks. The hook decides (mobile + not
+                 yet seen) whether to render an overlay; the element itself is
+                 an inert mount point. --%>
+            <div
+              id={"gesture-coach-" <> @workspace.id}
+              phx-hook="GestureCoach"
+              class="hidden"
+              aria-hidden="true"
+            >
+            </div>
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
               Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
