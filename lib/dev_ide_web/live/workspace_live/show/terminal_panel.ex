@@ -227,6 +227,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
           >
             C-b
           </button>
+          <%!-- Arrow d-pad leads the row so ↑↓←→ are always reachable without
+               scrolling the bar (the most-used keys for cursor/history/menu nav
+               and the on-screen "send up" affordance). --%>
+          <button
+            type="button"
+            data-keybar-key="ArrowLeft"
+            class={mobile_key_class()}
+            aria-label="Left"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowDown"
+            class={mobile_key_class()}
+            aria-label="Down"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowUp"
+            class={mobile_key_class()}
+            aria-label="Up"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowRight"
+            class={mobile_key_class()}
+            aria-label="Right"
+          >
+            →
+          </button>
+          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
           <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
           <button
             type="button"
@@ -263,39 +299,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
             aria-label="Select and copy terminal text"
           >
             select
-          </button>
-          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-          <button
-            type="button"
-            data-keybar-key="ArrowLeft"
-            class={mobile_key_class()}
-            aria-label="Left"
-          >
-            ←
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowDown"
-            class={mobile_key_class()}
-            aria-label="Down"
-          >
-            ↓
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowUp"
-            class={mobile_key_class()}
-            aria-label="Up"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            data-keybar-key="ArrowRight"
-            class={mobile_key_class()}
-            aria-label="Right"
-          >
-            →
           </button>
         </div>
         <%!-- LiveView-updated pane/window action buttons. Current-window actions
