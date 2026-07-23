@@ -2873,7 +2873,30 @@ const GhosttyTerminal = {
             hud(`sel=${len} us=${us} ae=${ae} anc=${anc}`)
           }, 350)
         } else {
-          hud("touchend(tap)")
+          // Double-tap resets display zoom to fit — a one-gesture recovery if
+          // the grid ever ends up mis-scaled. Suppress this tap's keyboard-raise
+          // so the reset doesn't also pop the soft keyboard.
+          const nowT = Date.now()
+          const startXY = this.__touchXY
+          const prevXY = this.__lastTapXY
+          const isDoubleTap =
+            startXY &&
+            prevXY &&
+            nowT - (this.__lastTapAt || 0) < 320 &&
+            Math.abs(startXY.x - prevXY.x) < 44 &&
+            Math.abs(startXY.y - prevXY.y) < 44
+          if (isDoubleTap) {
+            this.__lastTapAt = 0
+            this.__lastTapXY = null
+            this.__suppressFocusUntil = Date.now() + 500
+            adjustUserDisplayZoom(this, {reset: true})
+            applyTerminalLayout(this)
+            hud("touchend(double-tap → fit)")
+          } else {
+            this.__lastTapAt = nowT
+            this.__lastTapXY = startXY ? {x: startXY.x, y: startXY.y} : null
+            hud("touchend(tap)")
+          }
         }
         this.__touchXY = null
       }

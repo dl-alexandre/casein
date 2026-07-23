@@ -1138,6 +1138,9 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
     min-height: 1.75rem;
     padding-inline: 0.45rem;
+    /* Give the (now leading) arrow d-pad + primary keys room while typing —
+       the wide session chip is the least-used control with the keyboard up. */
+    max-width: min(30vw, 7.5rem);
   }
 
   .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
