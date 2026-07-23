@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   SGR_WHEEL_DOWN,
   SGR_WHEEL_UP,
+  mouseReportPayload,
   mouseTrackingActive,
   sgrWheelSequence
 } from "../js/terminal_mouse_sgr.mjs"
@@ -41,4 +42,27 @@ test("mouseTrackingActive mirrors Ghostty mouse payload", () => {
   assert.equal(mouseTrackingActive({}), false)
   assert.equal(mouseTrackingActive({tracking: false}), false)
   assert.equal(mouseTrackingActive({tracking: true}), true)
+})
+
+test("mouseReportPayload encodes the cell like the vendor pushMouseEvent", () => {
+  // col*10+5 / row*20+10 is the vendor's pixel-in-cell convention the server
+  // decodes back to a cell; a tap-click must match a real desktop click.
+  assert.deepEqual(mouseReportPayload("press", 3, 7), {
+    action: "press",
+    button: "left",
+    x: 35,
+    y: 150,
+    shiftKey: false,
+    ctrlKey: false,
+    altKey: false,
+    metaKey: false
+  })
+  assert.equal(mouseReportPayload("release", 0, 0).x, 5)
+  assert.equal(mouseReportPayload("release", 0, 0).y, 10)
+})
+
+test("mouseReportPayload clamps invalid coords to the origin cell", () => {
+  const p = mouseReportPayload("press", -4, NaN)
+  assert.equal(p.x, 5)
+  assert.equal(p.y, 10)
 })
