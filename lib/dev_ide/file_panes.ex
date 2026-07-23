@@ -25,6 +25,7 @@ defmodule DevIDE.FilePanes do
   use GenServer
 
   alias DevIDE.FilePanes.FilePaneRegistration
+  alias DevIDE.FilePanes.Index
   alias DevIDE.FilePanes.Payload
   alias DevIDE.FilePanes.Persistence
   alias DevIDE.Files.PathSafety
@@ -210,7 +211,7 @@ defmodule DevIDE.FilePanes do
   @doc "Lookup a registration by tmux pane id (rehydrating from the DB on a miss)."
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         if Process.whereis(__MODULE__) == self() do
           nil
@@ -274,7 +275,7 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:open_tab, pane_id, path, opts}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -306,7 +307,7 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:activate_tab, pane_id, path}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -325,7 +326,7 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:close_tab, pane_id, path}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -347,7 +348,7 @@ defmodule DevIDE.FilePanes do
   end
 
   def handle_call({:get_by_pane, pane_id}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       %{} = registration ->
         {:reply, registration, state}
 
@@ -370,7 +371,7 @@ defmodule DevIDE.FilePanes do
     reg =
       case Map.get(state.window_index, {session, window_id}) do
         nil -> nil
-        pane_id -> lookup_by_pane(pane_id)
+        pane_id -> Index.lookup(pane_id)
       end
 
     {:reply, reg, state}
@@ -489,7 +490,7 @@ defmodule DevIDE.FilePanes do
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        match?(%{tmux_session: ^session}, lookup_by_pane(pane_id))
+        match?(%{tmux_session: ^session}, Index.lookup(pane_id))
       end)
 
     if pane_ids == [] do
@@ -776,7 +777,7 @@ defmodule DevIDE.FilePanes do
     persist? = Keyword.get(opts, :persist?, true)
     reply = Keyword.get(opts, :reply, :ok)
 
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         if from do
           {:reply, {:error, :not_found}, state}
@@ -787,10 +788,16 @@ defmodule DevIDE.FilePanes do
       registration ->
         :ets.delete(@table, pane_id)
 
-        state =
+        state = %{
           state
-          |> drop_workspace_index(pane_id, registration.workspace_id)
-          |> drop_window_index(registration)
+          | workspace_index:
+              Index.drop_workspace(
+                state.workspace_index,
+                pane_id,
+                registration.workspace_id
+              ),
+            window_index: Index.drop_window(state.window_index, registration)
+        }
 
         plan = %{
           registration: registration,
@@ -945,10 +952,10 @@ defmodule DevIDE.FilePanes do
           reply =
             case op.plan do
               %{list_reply: workspace_ids} when is_list(workspace_ids) ->
-                list_workspace_registrations(state.workspace_index, workspace_ids)
+                Index.list_registrations(state.workspace_index, workspace_ids)
 
               %{rehydrate_key: {:pane, pane_id}} ->
-                lookup_by_pane(pane_id)
+                Index.lookup(pane_id)
 
               _ ->
                 nil
@@ -1007,11 +1014,11 @@ defmodule DevIDE.FilePanes do
   # Shape-correct fallback for a rehydrate op whose IO failed or crashed.
   defp rehydrate_fallback_reply(%{plan: %{list_reply: workspace_ids}}, state)
        when is_list(workspace_ids) do
-    list_workspace_registrations(state.workspace_index, workspace_ids)
+    Index.list_registrations(state.workspace_index, workspace_ids)
   end
 
   defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:pane, pane_id}}}, _state) do
-    lookup_by_pane(pane_id)
+    Index.lookup(pane_id)
   end
 
   defp rehydrate_fallback_reply(_op, _state), do: nil
@@ -1024,7 +1031,7 @@ defmodule DevIDE.FilePanes do
         # Lifecycle op owns this pane — skip rehydrate commit.
         state
 
-      lookup_by_pane(pane_id) ->
+      Index.lookup(pane_id) ->
         state
 
       true ->
@@ -1041,14 +1048,16 @@ defmodule DevIDE.FilePanes do
       Map.has_key?(state.inflight_panes, pane_id) ->
         state
 
-      lookup_by_pane(pane_id) ->
+      Index.lookup(pane_id) ->
         state
 
       true ->
-        next =
+        next = %{
           state
-          |> drop_workspace_index(pane_id, reg.workspace_id)
-          |> drop_window_index(reg)
+          | workspace_index:
+              Index.drop_workspace(state.workspace_index, pane_id, reg.workspace_id),
+            window_index: Index.drop_window(state.window_index, reg)
+        }
 
         {:drop_close, pane_id, next}
     end
@@ -1143,9 +1152,16 @@ defmodule DevIDE.FilePanes do
   defp store_registration(registration, state) do
     :ets.insert(@table, {registration.pane_id, registration})
 
-    state
-    |> put_workspace_index(registration.pane_id, registration.workspace_id)
-    |> put_window_index(registration)
+    %{
+      state
+      | workspace_index:
+          Index.put_workspace(
+            state.workspace_index,
+            registration.pane_id,
+            registration.workspace_id
+          ),
+        window_index: Index.put_window(state.window_index, registration)
+    }
     |> maybe_subscribe_topology(registration.tmux_session)
   end
 
@@ -1222,56 +1238,6 @@ defmodule DevIDE.FilePanes do
 
   # --- indices / topology -------------------------------------------------------
 
-  defp lookup_by_pane(pane_id) when is_binary(pane_id) do
-    case :ets.lookup(@table, pane_id) do
-      [{^pane_id, registration}] -> registration
-      _ -> nil
-    end
-  rescue
-    ArgumentError -> nil
-  end
-
-  defp put_workspace_index(state, pane_id, workspace_id) do
-    ids =
-      state.workspace_index
-      |> Map.get(workspace_id, [])
-      |> then(&Enum.uniq([pane_id | &1]))
-
-    %{state | workspace_index: Map.put(state.workspace_index, workspace_id, ids)}
-  end
-
-  defp drop_workspace_index(state, pane_id, workspace_id) do
-    ids =
-      state.workspace_index
-      |> Map.get(workspace_id, [])
-      |> Enum.reject(&(&1 == pane_id))
-
-    workspace_index =
-      if ids == [],
-        do: Map.delete(state.workspace_index, workspace_id),
-        else: Map.put(state.workspace_index, workspace_id, ids)
-
-    %{state | workspace_index: workspace_index}
-  end
-
-  defp put_window_index(state, %{
-         tmux_session: session,
-         pane_window_id: window_id,
-         pane_id: pane_id
-       })
-       when is_binary(session) and is_binary(window_id) do
-    %{state | window_index: Map.put(state.window_index, {session, window_id}, pane_id)}
-  end
-
-  defp put_window_index(state, _reg), do: state
-
-  defp drop_window_index(state, %{tmux_session: session, pane_window_id: window_id})
-       when is_binary(session) and is_binary(window_id) do
-    %{state | window_index: Map.delete(state.window_index, {session, window_id})}
-  end
-
-  defp drop_window_index(state, _reg), do: state
-
   defp maybe_subscribe_topology(state, session) when is_binary(session) and session != "" do
     if MapSet.member?(state.subscriptions, session) do
       state
@@ -1288,14 +1254,17 @@ defmodule DevIDE.FilePanes do
 
     # Rebuild the window index from the fresh topology so move-pane/break-pane
     # can't leave a stale {session, window} => pane mapping.
-    state = refresh_window_index(state, session, panes || [])
+    state = %{
+      state
+      | window_index: Index.refresh_window(state.window_index, session, panes || [])
+    }
 
     stale =
       state.workspace_index
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        case lookup_by_pane(pane_id) do
+        case Index.lookup(pane_id) do
           %{tmux_session: ^session} = reg -> not MapSet.member?(live_ids, reg.pane_id)
           _ -> false
         end
@@ -1320,38 +1289,6 @@ defmodule DevIDE.FilePanes do
 
       next
     end
-  end
-
-  defp refresh_window_index(state, session, panes) do
-    by_id = Map.new(panes, &{&1.id, &1})
-
-    window_index =
-      state.window_index
-      |> Enum.reduce(%{}, fn
-        {{^session, _window_id}, pane_id} = entry, acc ->
-          case Map.get(by_id, pane_id) do
-            %{window_id: current_window} when is_binary(current_window) ->
-              Map.put(acc, {session, current_window}, pane_id)
-
-            _ ->
-              # pane gone — drop it; expire pass will deregister the registration
-              _ = entry
-              acc
-          end
-
-        {key, pane_id}, acc ->
-          Map.put(acc, key, pane_id)
-      end)
-
-    %{state | window_index: window_index}
-  end
-
-  defp list_workspace_registrations(workspace_index, workspace_ids) do
-    workspace_ids
-    |> Enum.flat_map(&Map.get(workspace_index, &1, []))
-    |> Enum.uniq()
-    |> Enum.map(&lookup_by_pane/1)
-    |> Enum.reject(&is_nil/1)
   end
 
   # pane_live? runs only in offload tasks (rehydrate I/O) — never in the GenServer.
