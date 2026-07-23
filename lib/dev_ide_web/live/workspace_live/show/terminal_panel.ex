@@ -486,6 +486,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
       phx-hook="MobileNavSheet"
       data-mobile-nav-focus={@mobile_nav_focus}
       data-mobile-nav-view={@mnav_view}
+      data-mobile-nav-sheet="true"
       class="mobile-nav-sheet fixed inset-0 z-40 hidden"
       role="dialog"
       aria-modal="true"
