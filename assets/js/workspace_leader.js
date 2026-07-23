@@ -23,6 +23,11 @@ import {
 //   - Escape cancels it explicitly
 //   - double C-b cancels it
 
+// Screen-edge dead-zone (px). Touches that start this close to the left/right
+// edge are left to the OS back/forward swipe gestures rather than hijacked into
+// a window switch — starting our affordance there fights iOS/Android.
+const SWIPE_EDGE_GUARD_PX = 16
+
 const INTERACTIVE_SELECTOR =
   'input, textarea, button, select, a[href], [contenteditable="true"], summary, [role="textbox"], [role="button"], [role="combobox"]'
 
@@ -124,6 +129,10 @@ export const WorkspaceLeader = {
     this._swipe = null
     this._swipeBar = null
     this._swipeBarTimer = null
+    this._swipeVel = 0
+    this._swipeLastX = 0
+    this._swipeLastT = 0
+    this._swipeReady = false
 
     this._onKeydown = (e) => this._handleKeydown(e)
     this._onLeaderSecondKey = (e) => this._handleLeaderSecondKey(e.detail?.key)
@@ -159,12 +168,23 @@ export const WorkspaceLeader = {
       const el = e.target
       if (el.closest('button, input, textarea, select, details, [role="button"]')) return
       if (el.closest(".workspace-main-header, .mobile-key-bar")) return
+      const t = e.touches[0]
+      const vw = window.innerWidth || 360
+      // Leave the screen edges to the OS back/forward gestures.
+      const edgeBlocked =
+        e.touches.length === 1 &&
+        (t.clientX <= SWIPE_EDGE_GUARD_PX || t.clientX >= vw - SWIPE_EDGE_GUARD_PX)
       this._touchStart = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
+        x: t.clientX,
+        y: t.clientY,
         fingers: e.touches.length,
+        edgeBlocked,
       }
       this._swipe = null
+      this._swipeVel = 0
+      this._swipeLastX = t.clientX
+      this._swipeLastT = e.timeStamp
+      this._swipeReady = false
     }
     // Interactive single-finger horizontal swipe → an edge bar grows on the side
     // you pull toward; release past the commit threshold switches to the
@@ -176,18 +196,31 @@ export const WorkspaceLeader = {
     this._onTouchMove = (e) => {
       const start = this._touchStart
       if (!start || start.fingers !== 1 || e.touches.length !== 1) return
+      if (start.edgeBlocked) return
       // Already resolved as a vertical scroll — stay out of the way.
       if (this._swipe && this._swipe.axis === "v") return
 
-      const dx = e.touches[0].clientX - start.x
+      const x = e.touches[0].clientX
+      const dx = x - start.x
       const dy = e.touches[0].clientY - start.y
+
+      // Signed horizontal velocity (px/ms) over the last move → flick-to-commit.
+      const dt = e.timeStamp - this._swipeLastT
+      if (dt > 0) this._swipeVel = (x - this._swipeLastX) / dt
+      this._swipeLastX = x
+      this._swipeLastT = e.timeStamp
+
       const threshold = swipeThresholdPx(window.innerWidth || 360)
-      const s = swipeWindowProgress(dx, dy, {threshold})
+      const s = swipeWindowProgress(dx, dy, {threshold, velocity: this._swipeVel})
       this._swipe = s
 
       if (s.axis === "h") {
-        this._updateSwipeBar(s.edge, s.progress, s.ready)
+        // Haptic tick the instant the gesture crosses into commit range.
+        if (s.ready && !this._swipeReady && navigator.vibrate) navigator.vibrate(10)
+        this._swipeReady = s.ready
+        this._updateSwipeBar(s.edge, s.dir, s.progress, s.ready)
       } else {
+        this._swipeReady = false
         this._hideSwipeBar(false)
       }
     }
@@ -196,6 +229,7 @@ export const WorkspaceLeader = {
       const swipe = this._swipe
       this._touchStart = null
       this._swipe = null
+      this._swipeReady = false
       if (!start) return
 
       const dx = e.changedTouches[0].clientX - start.x
@@ -864,34 +898,84 @@ export const WorkspaceLeader = {
   },
 
   // --- Interactive window-swipe affordance ------------------------------------
-  // A vertical bar hugging the edge you pull toward, growing with drag progress
-  // and brightening once you've pulled far enough to commit on release. Built
-  // lazily and reused; styled in app.css (.window-swipe-bar).
+  // A full-height bar hugging the edge the incoming window slides in from,
+  // labelled with that window (index, name, activity dot), growing with drag
+  // progress and brightening once pulled/flicked far enough to commit on
+  // release. Built lazily and reused; styled in app.css (.window-swipe-bar).
   _ensureSwipeBar() {
     if (this._swipeBar && this._swipeBar.isConnected) return this._swipeBar
     const bar = document.createElement("div")
     bar.className = "window-swipe-bar"
     bar.setAttribute("aria-hidden", "true")
-    bar.dataset.edge = "left"
+    bar.dataset.edge = "right"
     const chevron = document.createElement("div")
     chevron.className = "window-swipe-bar__chevron"
-    bar.appendChild(chevron)
+    const label = document.createElement("div")
+    label.className = "window-swipe-bar__label"
+    const dot = document.createElement("span")
+    dot.className = "window-swipe-bar__dot"
+    const idx = document.createElement("span")
+    idx.className = "window-swipe-bar__index"
+    const name = document.createElement("span")
+    name.className = "window-swipe-bar__name"
+    label.append(dot, idx, name)
+    bar.append(chevron, label)
     document.body.appendChild(bar)
     this._swipeBar = bar
     return bar
   },
 
-  _updateSwipeBar(edge, progress, ready) {
+  // Resolve the window a `next`/`prev` switch would land on, reading the live
+  // WindowTabStrip DOM (index order = tab order; tmux wraps at the ends). Null
+  // when there's no other window to switch to.
+  _adjacentWindow(dir) {
+    const scroller = document.querySelector('[phx-hook="WindowTabStrip"] [data-tab-scroller]')
+    if (!scroller) return null
+    const tabs = Array.from(scroller.querySelectorAll("[data-ctx-window-id]"))
+    if (tabs.length < 2) return null
+    const activeIdx = tabs.findIndex((t) => t.hasAttribute("data-active-window"))
+    if (activeIdx < 0) return null
+    const step = dir === "next" ? 1 : -1
+    const adj = tabs[(activeIdx + step + tabs.length) % tabs.length]
+    if (!adj || adj === tabs[activeIdx]) return null
+    return {
+      index: adj.getAttribute("data-window-index") || "",
+      name: adj.getAttribute("data-window-name") || "",
+      activity: adj.getAttribute("data-window-activity") || "",
+      attention: adj.getAttribute("data-window-attention") || "",
+    }
+  },
+
+  _updateSwipeBar(edge, dir, progress, ready) {
     const bar = this._ensureSwipeBar()
     bar.dataset.edge = edge
     bar.dataset.ready = ready ? "true" : "false"
     bar.dataset.active = "true"
-    // Grow toward a comfortable max as progress → 1; the chevron points the way.
-    const width = Math.round(6 + progress * 46)
+    // Grow toward a viewport-relative max as progress → 1; the chevron points
+    // the direction of travel (toward where the content is sliding).
+    const vw = window.innerWidth || 360
+    const width = Math.round(10 + progress * Math.min(150, vw * 0.5))
     bar.style.setProperty("--window-swipe-width", `${width}px`)
     bar.style.setProperty("--window-swipe-progress", String(progress))
     bar.querySelector(".window-swipe-bar__chevron").textContent =
-      edge === "left" ? "›" : "‹"
+      edge === "right" ? "‹" : "›"
+
+    const adj = this._adjacentWindow(dir)
+    bar.dataset.disabled = adj ? "false" : "true"
+    const idxEl = bar.querySelector(".window-swipe-bar__index")
+    const nameEl = bar.querySelector(".window-swipe-bar__name")
+    const dotEl = bar.querySelector(".window-swipe-bar__dot")
+    if (adj) {
+      idxEl.textContent = adj.index
+      nameEl.textContent = adj.name
+      dotEl.dataset.activity = adj.activity
+      dotEl.dataset.attention = adj.attention
+    } else {
+      idxEl.textContent = ""
+      nameEl.textContent = "No other window"
+      dotEl.dataset.activity = ""
+      dotEl.dataset.attention = ""
+    }
   },
 
   _hideSwipeBar(commit) {

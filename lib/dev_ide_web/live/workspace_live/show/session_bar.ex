@@ -314,6 +314,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
             data-active-window={window.active? || nil}
             data-window-leader-key={window_leader_key(@windows, window, tab_idx)}
+            data-window-index={window.index}
+            data-window-name={window.display_name}
+            data-window-activity={window.activity_state}
+            data-window-attention={window.attention}
             class={[
               "group relative flex min-w-24 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
