@@ -5,9 +5,31 @@ import {
   fitBaseScale,
   isMobileTerminalLayout,
   latchMobileAuthority,
+  rowPinOffsets,
   scaledContentOffsets,
   viewportActiveForClient
 } from "../js/terminal_display_layout.mjs"
+
+test("rowPinOffsets: scrolls a pinned grid to show its bottom rows", () => {
+  // 40-row grid pinned; keyboard leaves room for 22 → hide the top 18.
+  const r = rowPinOffsets({availableH: 22 * 17, cellH: 17, pinnedRows: 40})
+  assert.equal(r.visibleRows, 22)
+  assert.equal(r.hiddenRows, 18)
+  assert.equal(r.offsetY, 18 * 17)
+  assert.equal(r.pinnedRows, 40)
+})
+
+test("rowPinOffsets: no offset when everything already fits", () => {
+  const r = rowPinOffsets({availableH: 40 * 17, cellH: 17, pinnedRows: 40})
+  assert.equal(r.hiddenRows, 0)
+  assert.equal(r.offsetY, 0)
+})
+
+test("rowPinOffsets: guards bad input", () => {
+  assert.equal(rowPinOffsets({availableH: 0, cellH: 17, pinnedRows: 40}), null)
+  assert.equal(rowPinOffsets({availableH: 100, cellH: 0, pinnedRows: 40}), null)
+  assert.equal(rowPinOffsets({availableH: 100, cellH: 17, pinnedRows: 0}), null)
+})
 
 test("isMobileTerminalLayout matches coarse, standalone, or narrow media", () => {
   assert.equal(isMobileTerminalLayout(() => ({ matches: false })), false)
