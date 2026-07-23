@@ -25,7 +25,11 @@ import {
   effectiveCellFlags,
   resolveInverseColors
 } from "./terminal_cell_flags.mjs"
-import {mouseTrackingActive, sgrWheelSequence} from "./terminal_mouse_sgr.mjs"
+import {
+  mouseReportPayload,
+  mouseTrackingActive,
+  sgrWheelSequence
+} from "./terminal_mouse_sgr.mjs"
 import {
   BACKEND_KEYS_PAGE,
   POLICY_AGENT,
@@ -828,6 +832,30 @@ function pushWheelToPty(hook, deltaY, point) {
 
 function mouseModeActive(hook) {
   return mouseTrackingActive(hook.mouse)
+}
+
+// Synthesize a mouse report at a specific cell. Mirrors the vendor's
+// pushMouseEvent payload shape (x/y are the cell encoded as col*10+5 /
+// row*20+10) so the server's mode-aware Ghostty.input_mouse encoding is shared.
+// Rides the same wrapped pushEventTo/pushEvent as real mouse events, so the
+// shouldDropMouseEvent gate (forward only while mouse.tracking is on and we are
+// not selecting) still applies.
+function pushMouseReport(hook, action, col, row) {
+  const payload = mouseReportPayload(action, col, row)
+  if (hook.target) hook.pushEventTo(hook.target, "mouse", payload)
+  else hook.pushEvent("mouse", payload)
+}
+
+// Forward a touch tap as a click (press then release at the tapped cell) so
+// mouse-only TUI hotspots — agent login screens, lazygit, htop, menus — are
+// reachable on mobile, where the browser never delivers a reliable
+// synthesized mouse click. Returns false if the cell can't be resolved.
+function forwardTapAsClick(hook, clientX, clientY) {
+  const point = terminalCellPointFromEvent(hook, { clientX, clientY })
+  if (!point) return false
+  pushMouseReport(hook, "press", point.col, point.row)
+  pushMouseReport(hook, "release", point.col, point.row)
+  return true
 }
 
 function currentScrollContext(hook) {
@@ -3092,6 +3120,18 @@ const GhosttyTerminal = {
                 : "-"
             hud(`sel=${len} us=${us} ae=${ae} anc=${anc}`)
           }, 350)
+        } else if (mouseModeActive(this) && this.__touchXY) {
+          // The foreground app enabled mouse tracking (agent login, lazygit,
+          // htop, menu TUIs). Forward this tap as a click at the tapped cell so
+          // mouse-only hotspots work on touch — the same reports a desktop click
+          // sends. Suppress the tap's keyboard-raise: the synthesized mousedown
+          // that follows would otherwise pop the soft keyboard on every hotspot
+          // tap, and swallowing it also keeps the vendor from emitting a
+          // duplicate press (and its window mouseup then early-returns on
+          // !pointerActive, so there is no stray release either).
+          this.__suppressFocusUntil = Date.now() + 700
+          forwardTapAsClick(this, this.__touchXY.x, this.__touchXY.y)
+          hud("touchend(tap → click)")
         } else {
           // Double-tap resets display zoom to fit — a one-gesture recovery if
           // the grid ever ends up mis-scaled. Suppress this tap's keyboard-raise
