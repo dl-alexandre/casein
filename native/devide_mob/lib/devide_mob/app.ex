@@ -29,6 +29,10 @@ defmodule DevideMob.App do
     _ = resolve_session_hosts()
 
     {:ok, _} = Application.ensure_all_started(:castore)
+    # Mob invokes this callback directly on-device instead of starting the
+    # Mix application tree, so Req's shared Finch registry is not otherwise
+    # guaranteed to exist before a pairing-token exchange.
+    {:ok, _} = Application.ensure_all_started(:req)
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
     {:ok, _} = Application.ensure_all_started(:slipstream)
     start_device_bridge()

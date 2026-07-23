@@ -50,8 +50,13 @@
         <integer>1</integer>
         <integer>2</integer>
     </array>
-    <key>UIRequiresFullScreen</key>
-    <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>DevideMob connects to DevIDE hosts you explicitly pair on your trusted local network.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>

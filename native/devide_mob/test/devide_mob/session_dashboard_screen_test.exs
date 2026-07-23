@@ -36,6 +36,24 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert find(view, :button, text: "+ Pair workspace")
   end
 
+  test "native pairing deep link opens the pairing screen with its code" do
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:notification,
+         %{
+           "data" => %{
+             "action" => "mobile.pair",
+             "pairing_code" => "opaque-pairing-code",
+             "deep_link" => "devide://pair/opaque-pairing-code"
+           }
+         }}
+      )
+
+    assert navigated_to(view) == DevideMob.PairingScreen
+  end
+
   test "paired empty state explains the missing workspace" do
     SessionConfig.put_pairing("https://devide.test", "token")
 

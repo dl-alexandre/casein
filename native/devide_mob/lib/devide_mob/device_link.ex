@@ -51,6 +51,14 @@ defmodule DevideMob.DeviceLink do
   end
 
   defp exchange_or_fallback(url, legacy) do
+    if allowed_transport?(url) do
+      do_exchange_or_fallback(url, legacy)
+    else
+      {:error, :insecure_transport}
+    end
+  end
+
+  defp do_exchange_or_fallback(url, legacy) do
     case exchange_client().(url, exchange_request(legacy)) do
       {:ok, pairing} ->
         {:ok, pairing}
@@ -118,7 +126,9 @@ defmodule DevideMob.DeviceLink do
         ])
     }
 
-    if usable_pairing?(pairing), do: {:ok, pairing}, else: {:error, :invalid_payload}
+    if usable_pairing?(pairing) and allowed_transport?(pairing.url),
+      do: {:ok, pairing},
+      else: {:error, :invalid_payload}
   end
 
   defp exchange_request(legacy) do
@@ -149,7 +159,9 @@ defmodule DevideMob.DeviceLink do
         ])
     }
 
-    if usable_pairing?(pairing), do: {:ok, pairing}, else: {:error, :invalid_response}
+    if usable_pairing?(pairing) and allowed_transport?(pairing.url),
+      do: {:ok, pairing},
+      else: {:error, :invalid_response}
   end
 
   defp normalize_exchange_response(_body), do: {:error, :invalid_response}
@@ -209,6 +221,42 @@ defmodule DevideMob.DeviceLink do
   end
 
   defp usable_text?(value), do: is_binary(value) and String.trim(value) != ""
+
+  defp allowed_transport?(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{scheme: "https", host: host} when is_binary(host) ->
+        true
+
+      %URI{scheme: "http", host: host} when is_binary(host) ->
+        local_host?(String.downcase(host))
+
+      _ ->
+        false
+    end
+  end
+
+  defp allowed_transport?(_url), do: false
+
+  defp local_host?(host) when host in ["localhost", "127.0.0.1", "::1"], do: true
+  defp local_host?(host), do: String.ends_with?(host, ".local") or private_ipv4?(host)
+
+  defp private_ipv4?(host) do
+    case host |> String.split(".") |> Enum.map(&Integer.parse/1) do
+      [{10, ""}, {b, ""}, {c, ""}, {d, ""}] ->
+        valid_octets?([10, b, c, d])
+
+      [{172, ""}, {b, ""}, {c, ""}, {d, ""}] when b in 16..31 ->
+        valid_octets?([172, b, c, d])
+
+      [{192, ""}, {168, ""}, {c, ""}, {d, ""}] ->
+        valid_octets?([192, 168, c, d])
+
+      _ ->
+        false
+    end
+  end
+
+  defp valid_octets?(octets), do: Enum.all?(octets, &(&1 in 0..255))
 
   defp device_name do
     case :inet.gethostname() do

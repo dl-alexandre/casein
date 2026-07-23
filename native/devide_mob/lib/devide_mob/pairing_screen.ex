@@ -20,15 +20,22 @@ defmodule DevideMob.PairingScreen do
   @success_delay_ms 900
 
   def mount(params, _session, socket) do
+    code = pairing_code_param(params)
+
     socket =
       socket
-      |> Mob.Socket.assign(:code, "")
-      |> Mob.Socket.assign(:state, initial_state(params))
+      |> Mob.Socket.assign(:code, code)
+      |> Mob.Socket.assign(:state, if(code == "", do: initial_state(params), else: :pairing))
       |> Mob.Socket.assign(:message, nil)
       |> Mob.Socket.assign(:paired_workspace, nil)
 
+    if code != "", do: send(self(), {:pair_code, code})
     {:ok, socket}
   end
+
+  defp pairing_code_param(%{code: code}) when is_binary(code), do: String.trim(code)
+  defp pairing_code_param(%{"code" => code}) when is_binary(code), do: String.trim(code)
+  defp pairing_code_param(_params), do: ""
 
   defp initial_state(%{state: state})
        when state in [:ready, :scanning, :pairing, :success, :error],
@@ -51,6 +58,10 @@ defmodule DevideMob.PairingScreen do
 
   def handle_info({:tap, :pair}, socket) do
     {:noreply, pair_with(socket, socket.assigns.code)}
+  end
+
+  def handle_info({:pair_code, code}, socket) when is_binary(code) do
+    {:noreply, pair_with(socket, code)}
   end
 
   def handle_info({:tap, :paste_clipboard}, socket) do

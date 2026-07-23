@@ -98,6 +98,19 @@ defmodule DevideMob.PairingScreenTest do
     assert assigns(view).state == :success
   end
 
+  test "pairing code passed by a native deep link pairs without synthetic typing" do
+    code = pairing_code("https://devide.test", "native-link-token", "ws-native")
+
+    view =
+      PairingScreen
+      |> mount_screen(%{code: code})
+      |> render_info({:pair_code, code})
+
+    assert SessionConfig.pairing() == {:ok, "https://devide.test", "native-link-token"}
+    assert SessionConfig.pinned_workspaces() == ["ws-native"]
+    assert assigns(view).state == :success
+  end
+
   test "success confirmation can continue immediately" do
     view =
       PairingScreen

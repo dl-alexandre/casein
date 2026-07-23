@@ -1721,8 +1721,13 @@ defmodule DevideMob.SessionDashboardScreen do
   defp handle_notification(socket, payload) do
     data = get(payload, "data", %{})
     card_id = get(data, "card_id") || review_card_id_from_deep_link(get(data, "deep_link"))
+    pairing_code =
+      get(data, "pairing_code") || pairing_code_from_deep_link(get(data, "deep_link"))
 
     cond do
+      get(data, "action") == "mobile.pair" and present?(pairing_code) ->
+        Mob.Socket.push_screen(socket, PairingScreen, %{code: pairing_code})
+
       mobile_review_notification?(data) and present?(card_id) ->
         open_review_from_notification(socket, card_id)
 
@@ -1793,6 +1798,12 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp review_card_id_from_deep_link(_deep_link), do: nil
+
+  defp pairing_code_from_deep_link("devide://pair/" <> encoded_code) do
+    URI.decode(encoded_code)
+  end
+
+  defp pairing_code_from_deep_link(_deep_link), do: nil
 
   defp card_state(snap, status) do
     case status_state(status) do
