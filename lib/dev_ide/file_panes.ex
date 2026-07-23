@@ -25,9 +25,9 @@ defmodule DevIDE.FilePanes do
   use GenServer
 
   alias DevIDE.FilePanes.FilePaneRegistration
+  alias DevIDE.FilePanes.Payload
   alias DevIDE.FilePanes.Persistence
   alias DevIDE.Files.PathSafety
-  alias DevIDE.Panes.Events, as: PaneEvents
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -35,7 +35,6 @@ defmodule DevIDE.FilePanes do
 
   @table :dev_ide_file_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
-  @pane_type :file
   # Register/deregister/clear wait on offloaded Repo/tmux I/O.
   @lifecycle_call_timeout 30_000
 
@@ -146,13 +145,13 @@ defmodule DevIDE.FilePanes do
   @doc "Add-or-activate a tab. Opts: `:line`, `:activate` (default true)."
   @spec open_tab(String.t(), String.t(), keyword()) :: {:ok, registration()} | {:error, term()}
   def open_tab(pane_id, path, opts \\ []) when is_binary(pane_id) and is_binary(path) do
-    broadcast_after(GenServer.call(__MODULE__, {:open_tab, pane_id, path, opts}))
+    Payload.broadcast_after(GenServer.call(__MODULE__, {:open_tab, pane_id, path, opts}))
   end
 
   @doc "Activate an already-open tab."
   @spec activate_tab(String.t(), String.t()) :: {:ok, registration()} | {:error, term()}
   def activate_tab(pane_id, path) when is_binary(pane_id) and is_binary(path) do
-    broadcast_after(GenServer.call(__MODULE__, {:activate_tab, pane_id, path}))
+    Payload.broadcast_after(GenServer.call(__MODULE__, {:activate_tab, pane_id, path}))
   end
 
   @doc """
@@ -166,7 +165,7 @@ defmodule DevIDE.FilePanes do
         {:ok, :closed}
 
       {:ok, reg} ->
-        broadcast(:updated, reg)
+        Payload.broadcast(:updated, reg)
         {:ok, reg}
 
       err ->
@@ -187,7 +186,7 @@ defmodule DevIDE.FilePanes do
          {:ok, loc} <- workspace_loc(reg.workspace_id),
          {:ok, rel} <- to_rel(loc, path),
          {:ok, result} <- FileAccess.write_text(loc, rel, content, expected_version) do
-      broadcast(:updated, reg)
+      Payload.broadcast(:updated, reg)
       {:ok, result}
     else
       nil -> {:error, :not_found}
@@ -245,7 +244,7 @@ defmodule DevIDE.FilePanes do
   def render_state(pane_id) when is_binary(pane_id) do
     case get_by_pane(pane_id) do
       nil -> %{}
-      reg -> build_payload(reg)
+      reg -> Payload.build(reg)
     end
   end
 
@@ -857,7 +856,7 @@ defmodule DevIDE.FilePanes do
         {:register_done, registration} ->
           # Atomic commit: ETS + workspace_index + window_index + subscription.
           state = store_registration(registration, state)
-          broadcast(:registered, registration)
+          Payload.broadcast(:registered, registration)
           reply_op(op, {:ok, registration})
           state
 
@@ -883,7 +882,7 @@ defmodule DevIDE.FilePanes do
 
     case result do
       {:deregister_done, _} ->
-        broadcast(:removed, registration)
+        Payload.broadcast(:removed, registration)
 
         case plan.reply do
           :closed -> reply_op(op, {:ok, :closed, registration})
@@ -1221,69 +1220,6 @@ defmodule DevIDE.FilePanes do
     end
   end
 
-  # --- payload / broadcast ------------------------------------------------------
-
-  defp build_payload(reg) do
-    %{
-      tabs:
-        Enum.map(reg.open_files, &%{path: &1.path, title: Path.basename(&1.path), line: &1.line}),
-      active_path: reg.active_path,
-      active: active_payload(reg),
-      workspace_id: reg.workspace_id,
-      tmux_session: reg.tmux_session
-    }
-  end
-
-  defp active_payload(%{active_path: nil}), do: nil
-
-  defp active_payload(%{active_path: path} = reg) do
-    line = active_line(reg, path)
-
-    # State-only: this builds the broadcast payload inside the singleton's
-    # commit_op — must never block on a Manager HTTP resolve.
-    case workspace_loc_state_only(reg.workspace_id) do
-      {:ok, loc} ->
-        case FileAccess.read_text(loc, path) do
-          {:ok, %{content: content, version: version}} ->
-            %{path: path, content: content, version: version, line: line}
-
-          {:error, reason} ->
-            %{path: path, error: reason, line: line}
-        end
-
-      _ ->
-        %{path: path, error: :workspace_not_found, line: line}
-    end
-  end
-
-  defp active_line(reg, path) do
-    case Enum.find(reg.open_files, &(&1.path == path)) do
-      %{line: line} -> line
-      _ -> nil
-    end
-  end
-
-  # broadcast_after: wrap a GenServer mutation reply, emitting `:updated`.
-  defp broadcast_after({:ok, reg}) do
-    broadcast(:updated, reg)
-    {:ok, reg}
-  end
-
-  defp broadcast_after(other), do: other
-
-  defp broadcast(reason, reg) do
-    payload = if reason == :removed, do: %{}, else: build_payload(reg)
-
-    PaneEvents.broadcast(%{
-      reason: reason,
-      type: @pane_type,
-      pane_id: reg.pane_id,
-      workspace_id: reg.workspace_id,
-      tmux_session: reg.tmux_session,
-      payload: payload
-    })
-  end
-
   # --- indices / topology -------------------------------------------------------
 
   defp lookup_by_pane(pane_id) when is_binary(pane_id) do
@@ -1484,47 +1420,14 @@ defmodule DevIDE.FilePanes do
   # (save_tab/reload_tab). These run in the caller process, not the singleton,
   # so the Manager resolve is fine here — and it is REQUIRED to produce
   # `{:remote, host, path}` locs for remote workspaces (manager.ex:150), which
-  # the state-only variant below cannot. Do NOT call this from the in-server
-  # broadcast path.
+  # the state-only Payload variant cannot. Do NOT call this from the in-server
+  # broadcast path (that uses Payload.workspace_loc_state_only via active_payload).
   defp workspace_loc(workspace_id) do
     with {:ok, workspace} <- Workspaces.get(workspace_id),
          {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
       {:ok, loc}
     else
       _ -> {:error, :workspace_not_found}
-    end
-  end
-
-  # State-only host-loc for the IN-SERVER broadcast payload build only. See
-  # active_payload: `broadcast/2` fires in `commit_op` (the singleton), so
-  # resolving via `workspace_loc/1` -> `Workspaces.get/1` -> Manager HTTP on a
-  # cold `State` cache could hang and back up the singleton mailbox (the
-  # broadcast-fan-out cascade root #314 closes for the PreviewPanes twin). Mirror
-  # `Aliases.expanded_host_path`: folder-attach id, then the `State` record's
-  # host_path, never a remote resolve. Remote/cold-cache workspaces yield
-  # `:workspace_not_found` (payload omits active content; the viewer's on-demand
-  # hydrate path — which uses the caller-side full resolver — fills it).
-  defp workspace_loc_state_only(workspace_id) do
-    case state_only_host_path(workspace_id) do
-      path when is_binary(path) and path != "" ->
-        expanded = Path.expand(path)
-        if File.dir?(expanded), do: {:ok, {:local, expanded}}, else: {:error, :not_found}
-
-      _ ->
-        {:error, :workspace_not_found}
-    end
-  end
-
-  defp state_only_host_path(workspace_id) do
-    case Workspaces.decode_folder_id(workspace_id) do
-      path when is_binary(path) ->
-        path
-
-      _ ->
-        case Workspaces.State.get(workspace_id) do
-          {:ok, %{host_path: path}} when is_binary(path) and path != "" -> path
-          _ -> nil
-        end
     end
   end
 
