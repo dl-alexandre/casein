@@ -198,6 +198,36 @@ defmodule DevideMob.SessionClientTest do
     assert socket.assigns.connecting?
   end
 
+  test "switching origins clears old topics and pending origin-owned work" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:url, "https://old.example")
+      |> Socket.assign(:token, "old-token")
+      |> Socket.assign(:push_registration_refs, %{
+        "push-ref" => %{scope: :user, topic: "mobile:user:me"}
+      })
+      |> Socket.assign(:card_action_refs, %{
+        "action-ref" => %{card_id: "needs_review:old-ws:run-1"}
+      })
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast(
+               {:configure, "http://127.0.0.1:1", "new-token"},
+               socket
+             )
+
+    assert socket.assigns.url == "http://127.0.0.1:1"
+    assert socket.assigns.token == "new-token"
+    assert socket.assigns.subscribers == %{}
+    assert socket.assigns.push_registration_refs == %{}
+    assert socket.assigns.card_action_refs == %{}
+
+    assert_receive {:mobile_cards_status, :disconnected}
+    assert_receive {:push_registration_status, :user, {:error, :host_switched}}
+
+    assert_receive {:card_action_result, "needs_review:old-ws:run-1", {:error, :host_switched}}
+  end
+
   test "a card action reply notifies subscribers with the result" do
     socket =
       socket_with_subscriber("mobile:user:me", self())
@@ -240,5 +270,6 @@ defmodule DevideMob.SessionClientTest do
     |> Socket.assign(:token, nil)
     |> Socket.assign(:connecting?, false)
     |> Socket.assign(:push_registration_refs, %{})
+    |> Socket.assign(:card_action_refs, %{})
   end
 end

@@ -61,6 +61,16 @@ object MobNotifyBridge : io.mob.plugin.MobActivityAware {
         activityRef = WeakReference(activity)
     }
 
+    private fun deliverPushTokenError(pid: Long, reason: String) {
+        android.util.Log.w("MobNotify", "Push token fetch failed: $reason")
+        com.example.devide_mob.MobBridge.nativeDeliverAtom3(
+            pid,
+            "push_token_error",
+            "android",
+            reason
+        )
+    }
+
     // Parse the opts JSON and delegate to MobNotifySchedules.schedule, which
     // ensures the channel, arms an AlarmManager broadcast at trigger_at
     // targeting the HOST's NotificationReceiver (exact-alarm guard + inexact
@@ -97,14 +107,28 @@ object MobNotifyBridge : io.mob.plugin.MobActivityAware {
     @JvmStatic
     fun notify_register_push(pid: Long) {
         MobNotifyHub.notifyPid = pid
-        MobNotifyHub.pendingToken?.let { token ->
+        MobNotifyHub.pendingToken?.let { cached ->
             MobNotifyHub.pendingToken = null
-            nativeDeliverNotifyPushToken(pid, token)
+            if (cached.isNotBlank()) {
+                nativeDeliverNotifyPushToken(pid, cached)
+            } else {
+                deliverPushTokenError(pid, "cached_token_blank")
+            }
             return
         }
         com.google.firebase.messaging.FirebaseMessaging.getInstance().token
             .addOnCompleteListener { task ->
-                if (task.isSuccessful) nativeDeliverNotifyPushToken(pid, task.result)
+                if (task.isSuccessful) {
+                    val token = task.result
+                    if (!token.isNullOrBlank()) {
+                        nativeDeliverNotifyPushToken(pid, token)
+                    } else {
+                        deliverPushTokenError(pid, "firebase_token_blank")
+                    }
+                } else {
+                    val reason = task.exception?.javaClass?.simpleName ?: "firebase_token_fetch_failed"
+                    deliverPushTokenError(pid, reason)
+                }
             }
     }
 }

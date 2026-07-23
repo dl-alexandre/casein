@@ -388,6 +388,7 @@ defmodule DevideMob.SessionClient do
 
   defp do_configure(socket, url, token) do
     changed? = socket.assigns.url != url or socket.assigns.token != token
+    origin_changed? = different_origin?(socket.assigns.url, url)
 
     socket =
       if changed? and (connected?(socket) or socket.assigns.connecting?) do
@@ -398,9 +399,54 @@ defmodule DevideMob.SessionClient do
         socket
       end
 
+    socket = if origin_changed?, do: clear_origin_state(socket), else: socket
+    _ = resolve_host(url)
     socket = socket |> assign(:url, url) |> assign(:token, token)
 
     if changed?, do: request_connect(socket), else: ensure_connection_requested(socket)
+  end
+
+  # Pairing a second host can happen while the previous dashboard is still
+  # mounted behind the pairing screen. Drop every origin-owned in-memory
+  # reference before the new socket connects so old workspace topics, push
+  # acknowledgements, and card actions cannot cross into the new origin.
+  defp clear_origin_state(socket) do
+    notify_all_status(socket, :disconnected)
+    notify_pending_push_registrations(socket, {:error, :host_switched})
+    notify_pending_card_actions(socket, {:error, :host_switched})
+
+    socket
+    |> assign(:subscribers, %{})
+    |> assign(:push_registration_refs, %{})
+    |> assign(:card_action_refs, %{})
+  end
+
+  defp different_origin?(nil, _url), do: false
+
+  defp different_origin?(current_url, next_url) do
+    normalize_origin(current_url) != normalize_origin(next_url)
+  end
+
+  defp normalize_origin(url) do
+    url
+    |> String.trim()
+    |> String.trim_trailing("/")
+  end
+
+  # iOS needs its native resolver for some public and VPN-provided hostnames.
+  # Resolve each configured origin, not only the profile that happened to be
+  # active when the app booted.
+  defp resolve_host(url) do
+    with host when is_binary(host) <- URI.parse(url).host,
+         {:error, _reason} <- :inet.parse_address(String.to_charlist(host)) do
+      Mob.DNS.resolve(host)
+    else
+      _ -> :ok
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   defp ensure_connection_requested(socket) do
