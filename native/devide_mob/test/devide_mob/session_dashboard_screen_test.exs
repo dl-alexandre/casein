@@ -112,7 +112,8 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert find(view, :button, text: "Connected · devide.test")
     assert text(view) =~ "Last work: mac-ws"
 
-    view = render_info(view, {:tap, {:switch_host, "http://192.168.1.72:57585"}})
+    mac_origin_id = DevideMob.OriginIdentity.legacy_id("http://192.168.1.72:57585")
+    view = render_info(view, {:tap, {:switch_host, mac_origin_id}})
 
     assert SessionConfig.pairing() ==
              {:ok, "http://192.168.1.72:57585", "mac-token"}
@@ -120,7 +121,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).pinned == ["mac-ws"]
     assert assigns(view).push_token == nil
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
-    assert text(view) =~ "Switched to http://192.168.1.72:57585"
+    assert text(view) =~ "Switched origin; refreshing authoritative state"
     assert find(view, :button, text: "Connected · Local Mac")
   end
 
@@ -754,6 +755,184 @@ defmodule DevideMob.SessionDashboardScreenTest do
       )
 
     assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "cached inactive-origin card switches, refreshes, then opens authoritative review" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "https://mac.test",
+      token: "mac-token"
+    })
+
+    cached_card = %{
+      "id" => "needs_review:mac-ws:run-1",
+      "type" => "needs_review",
+      "kind" => "approval_required",
+      "priority" => "high",
+      "workspace_id" => "mac-ws",
+      "session_id" => "run-1",
+      "title" => "Mac work needs review",
+      "resume" => %{
+        "state" => "needs_attention",
+        "locator" => %{
+          "origin_id" => "origin-mac",
+          "workspace_id" => "mac-ws",
+          "session_id" => "run-1"
+        }
+      }
+    }
+
+    assert :ok =
+             SessionConfig.cache_cards("origin-mac", [cached_card], "2026-07-23T12:00:00Z")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    view = mount_screen(SessionDashboardScreen)
+    assert text(view) =~ "Mac work needs review"
+    assert text(view) =~ "Read-only"
+
+    qualified_id = "origin-mac:needs_review:mac-ws:run-1"
+    view = render_info(view, {:tap, {:mobile_card_action, qualified_id}})
+
+    assert {:ok, %{origin_id: "origin-mac"}} = SessionConfig.connection()
+    assert assigns(view).pending_origin_resume.origin_id == "origin-mac"
+    refute navigated_to(view) == DevideMob.ReviewDecisionScreen
+
+    view =
+      render_info(
+        view,
+        {:mobile_cards_snapshot,
+         %{
+           "origin" => %{"id" => "origin-mac", "display_name" => "Local Mac"},
+           "cards" => [cached_card]
+         }}
+      )
+
+    assert assigns(view).pending_origin_resume == nil
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "unknown push origin never switches or opens a card" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:notification,
+         %{
+           data: %{
+             action: "mobile.needs_review",
+             origin_id: "tampered-origin",
+             card_id: "needs_review:ws-1:run-1",
+             workspace_id: "ws-1"
+           }
+         }}
+      )
+
+    assert {:ok, %{origin_id: "origin-devbox"}} = SessionConfig.connection()
+    assert assigns(view).pending_origin_resume == nil
+    assert text(view) =~ "Unknown origin; nothing was opened"
+    refute navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "missing refreshed card falls back to its session and workspace locator" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-mac",
+      display_name: "Local Mac",
+      url: "https://mac.test",
+      token: "mac-token"
+    })
+
+    cached_card = %{
+      "id" => "completed:mac-ws:session-9",
+      "type" => "workspace_idle",
+      "kind" => "workspace_idle",
+      "priority" => "low",
+      "workspace_id" => "mac-ws",
+      "session_id" => "session-9",
+      "title" => "Resume Mac work",
+      "resume" => %{
+        "state" => "completed",
+        "locator" => %{
+          "origin_id" => "origin-mac",
+          "workspace_id" => "mac-ws",
+          "session_id" => "session-9",
+          "tab" => "diff"
+        }
+      }
+    }
+
+    :ok = SessionConfig.cache_cards("origin-mac", [cached_card], "2026-07-23T12:00:00Z")
+
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:tap, {:mobile_card_action, "origin-mac:completed:mac-ws:session-9"}})
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "origin" => %{"id" => "origin-mac", "display_name" => "Local Mac"},
+           "cards" => []
+         }}
+      )
+
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "mac-ws",
+             session_id: "session-9",
+             source: :origin_resume
+           }
+  end
+
+  test "mismatched authoritative snapshot is rejected without replacing live cards" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-devbox",
+      display_name: "Devbox",
+      url: "https://devbox.test",
+      token: "devbox-token"
+    })
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "origin" => %{"id" => "tampered-origin", "display_name" => "Other"},
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "workspace_id" => "ws-1",
+               "title" => "Must not render"
+             }
+           ]
+         }}
+      )
+
+    assert assigns(view).mobile_cards == []
+    assert text(view) =~ "Origin mismatch; state was not accepted"
+    refute text(view) =~ "Must not render"
   end
 
   test "dev notification JSON can inject a pending review notification at launch" do

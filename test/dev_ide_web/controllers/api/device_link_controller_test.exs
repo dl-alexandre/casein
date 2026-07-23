@@ -33,7 +33,11 @@ defmodule DevIdeWeb.API.DeviceLinkControllerTest do
     payload = json_response(conn, 200)
     device_token = payload["credential"]["token"]
 
-    assert payload["origin"]["id"] == "dev_ide"
+    assert payload["origin"]["id"] == DevIDE.Origin.id()
+
+    assert payload["origin"]["display_name"] ==
+             DevIDE.Origin.display_name(payload["origin"]["base_url"])
+
     assert payload["origin"]["base_url"] == "http://www.example.com"
 
     assert payload["origin"]["token_exchange_url"] ==

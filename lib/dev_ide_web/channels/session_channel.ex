@@ -27,6 +27,7 @@ defmodule DevIdeWeb.SessionChannel do
   alias DevIDE.Alerts
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Notifications
+  alias DevIDE.Origin
   alias DevIDE.Push
   alias DevIDE.Scope
   alias DevIDE.Session.Snapshot
@@ -231,6 +232,7 @@ defmodule DevIdeWeb.SessionChannel do
 
   defp render(%Snapshot{} = s) do
     %{
+      origin: Origin.public_descriptor(),
       workspace_id: s.workspace_id,
       mode: s.mode,
       mode_source: s.mode_source,

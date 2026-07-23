@@ -395,6 +395,8 @@ if config_env() == :prod and not release_cli? do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  config :dev_ide, :origin_identity_secret, secret_key_base
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :dev_ide, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

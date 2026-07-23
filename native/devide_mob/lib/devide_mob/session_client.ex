@@ -22,9 +22,9 @@ defmodule DevideMob.SessionClient do
 
   Connection credentials (`url`, `token`) are provisioned out-of-band — the
   device cannot mint its own token (it has no `secret_key_base`). The intended
-  flow is QR/paste pairing: the web cockpit renders a code with `{url, token,
-  workspace_id}` from `DevIdeWeb.ChannelAuth.sign_pairing_token/2`; the device
-  consumes it and calls `configure/2`. `DevideMob.SessionConfig` persists the
+  flow is QR/paste pairing: the web cockpit renders a code with a stable origin
+  descriptor plus `{url, token, workspace_id}`. The device consumes it and
+  calls `configure/1`. `DevideMob.SessionConfig` persists the
   last pairing so the client auto-connects on boot.
   """
 
@@ -44,10 +44,30 @@ defmodule DevideMob.SessionClient do
   end
 
   @doc "Provision/refresh connection credentials (from QR pairing) and connect."
+  @spec configure(map()) :: :ok
+  def configure(%{url: url, token: token} = pairing)
+      when is_binary(url) and is_binary(token) do
+    SessionConfig.put_pairing(pairing)
+    cast({:configure, url, token})
+  end
+
+  @doc false
   @spec configure(String.t(), String.t()) :: :ok
   def configure(url, token) when is_binary(url) and is_binary(token) do
     SessionConfig.put_pairing(url, token)
     cast({:configure, url, token})
+  end
+
+  @doc "Switch the single live connection to a trusted saved origin."
+  @spec activate_origin(String.t()) :: :ok | :error
+  def activate_origin(origin_id) when is_binary(origin_id) do
+    case SessionConfig.activate_origin(origin_id) do
+      {:ok, %{url: active_url, token: token}} ->
+        cast({:activate_origin, active_url, token})
+
+      :error ->
+        :error
+    end
   end
 
   @doc "Switch the single live connection to a saved host profile."
@@ -252,6 +272,12 @@ defmodule DevideMob.SessionClient do
   @impl Slipstream
   def handle_cast({:configure, url, token}, socket) do
     {:noreply, do_configure(socket, url, token)}
+  end
+
+  def handle_cast({:activate_origin, url, token}, socket) do
+    # Explicit origin resume always establishes a fresh authoritative channel,
+    # even when the requested origin is already active.
+    {:noreply, socket |> assign(:token, nil) |> do_configure(url, token)}
   end
 
   def handle_cast(:clear_pairing, socket) do

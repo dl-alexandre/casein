@@ -46,4 +46,21 @@ defmodule DevideMob.DeviceLinkTest do
                token_exchange_url: "http://example.com/api/device-links/exchange"
              })
   end
+
+  test "preserves the server origin descriptor without treating URL as identity" do
+    assert {:ok, pairing} =
+             DeviceLink.pair(%{
+               url: "https://old-host.test",
+               token: "token",
+               workspace_id: "workspace",
+               origin: %{
+                 id: "installation-1",
+                 display_name: "Local Mac",
+                 base_url: "https://new-host.test"
+               }
+             })
+
+    assert pairing.origin_id == "installation-1"
+    assert pairing.display_name == "Local Mac"
+  end
 end

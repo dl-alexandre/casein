@@ -11,7 +11,9 @@ defmodule DevIdeWeb.MobileUserChannel do
   use Phoenix.Channel
 
   alias DevIDE.Mobile.Actions
+  alias DevIDE.Mobile.ResumeCard
   alias DevIDE.Mobile.UserObserver
+  alias DevIDE.Origin
   alias DevIDE.Push
   alias DevIDE.Workspaces
 
@@ -42,7 +44,7 @@ defmodule DevIdeWeb.MobileUserChannel do
       :ok ->
         :ok = UserObserver.watch_workspace(user_id, workspace_id)
         :ok = UserObserver.connection_live(user_id, workspace_id)
-        {:reply, {:ok, render_snapshot(UserObserver.snapshot(user_id))}, socket}
+        {:reply, {:ok, render_snapshot(UserObserver.snapshot(user_id), socket)}, socket}
 
       {:error, reason} ->
         report_connection_issue(user_id, workspace_id, reason)
@@ -62,7 +64,7 @@ defmodule DevIdeWeb.MobileUserChannel do
             status: "accepted",
             idempotent: result.idempotent,
             result: result.result,
-            snapshot: render_snapshot(UserObserver.snapshot(user_id))
+            snapshot: render_snapshot(UserObserver.snapshot(user_id), socket)
           }}, socket}
 
       {:error, reason} ->
@@ -115,7 +117,7 @@ defmodule DevIdeWeb.MobileUserChannel do
 
   @impl true
   def handle_info({:mobile_cards_snapshot, payload}, socket) do
-    push(socket, "cards_snapshot", render_snapshot(payload))
+    push(socket, "cards_snapshot", render_snapshot(payload, socket))
     {:noreply, socket}
   end
 
@@ -205,7 +207,7 @@ defmodule DevIdeWeb.MobileUserChannel do
     :ok = UserObserver.subscribe(user_id)
     :ok = watch_paired_workspace(socket, user_id)
 
-    {:ok, render_snapshot(UserObserver.snapshot(user_id)),
+    {:ok, render_snapshot(UserObserver.snapshot(user_id), socket),
      assign(socket, :mobile_user_id, user_id)}
   end
 
@@ -227,17 +229,25 @@ defmodule DevIdeWeb.MobileUserChannel do
     }
   end
 
-  defp render_snapshot(%{user_id: user_id, version: version, cards: cards}) do
+  defp render_snapshot(%{user_id: user_id, version: version, cards: cards}, socket) do
     %{
       user_id: user_id,
       version: version,
+      origin: %{
+        id: socket.assigns[:mobile_origin_id] || Origin.id(),
+        display_name: socket.assigns[:mobile_origin_name] || Origin.display_name()
+      },
       cards: Enum.map(cards, &render_card/1)
     }
   end
 
   defp render_card(card) do
+    resume = ResumeCard.project(card)
+
     %{
       id: card.id,
+      origin: render_value(resume.origin),
+      resume: render_value(resume),
       type: Atom.to_string(card.type),
       # Normalized contract (v1). Legacy keys below remain for existing native
       # consumers until the native client migrates to `actions`.

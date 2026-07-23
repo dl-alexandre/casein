@@ -8,6 +8,7 @@ defmodule DevIdeWeb.UserSocket do
   use Phoenix.Socket
 
   alias DevIDE.DeviceLinks
+  alias DevIDE.Origin
 
   channel "terminal:*", DevIdeWeb.TerminalChannel
   channel "session:*", DevIdeWeb.SessionChannel
@@ -40,7 +41,9 @@ defmodule DevIdeWeb.UserSocket do
         {:ok,
          socket
          |> assign(:current_user, user)
-         |> assign(:pairing_workspace_id, workspace_id)}
+         |> assign(:pairing_workspace_id, workspace_id)
+         |> assign(:mobile_origin_id, Origin.id())
+         |> assign(:mobile_origin_name, Origin.display_name())}
 
       _ ->
         connect_device_link_token(token, socket)
@@ -57,7 +60,9 @@ defmodule DevIdeWeb.UserSocket do
          |> assign(:current_user, user)
          |> assign(:pairing_workspace_id, workspace_id)
          |> assign(:device_link_id, claims.device_link_id)
-         |> assign(:mobile_platform, Map.get(claims, :platform))}
+         |> assign(:mobile_platform, Map.get(claims, :platform))
+         |> assign(:mobile_origin_id, claims.origin_id)
+         |> assign(:mobile_origin_name, claims.origin_name)}
 
       _ ->
         :error

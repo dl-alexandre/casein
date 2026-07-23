@@ -6,10 +6,12 @@ defmodule DevIdeWeb.API.DeviceLinkController do
   use DevIdeWeb, :controller
 
   alias DevIDE.DeviceLinks
+  alias DevIDE.Origin
   alias DevIdeWeb.ChannelAuth
 
   def exchange(conn, params) do
     token = params["token"] || params["pairing_token"]
+    params = Map.put(params, "origin_name", Origin.display_name(base_url(conn)))
 
     with {:ok, claims} <- ChannelAuth.verify_pairing_token(token),
          {:ok, result} <- DeviceLinks.create_from_pairing_claims(claims, params) do
@@ -103,14 +105,7 @@ defmodule DevIdeWeb.API.DeviceLinkController do
   end
 
   defp origin_payload(base) do
-    %{
-      id: "dev_ide",
-      name: "DevIDE",
-      base_url: base,
-      socket_url: base <> "/socket/websocket",
-      token_exchange_url: base <> "/api/device-links/exchange",
-      audience: "dev_ide"
-    }
+    Origin.pairing_descriptor(base)
   end
 
   defp workspace_id(workspace, link) do

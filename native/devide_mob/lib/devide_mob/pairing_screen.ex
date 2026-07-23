@@ -153,8 +153,8 @@ defmodule DevideMob.PairingScreen do
       |> Mob.Socket.assign(:message, nil)
 
     with {:ok, payload} <- decode_pairing_payload(code),
-         {:ok, %{url: url, token: token, workspace_id: wid}} <- DeviceLink.pair(payload) do
-      SessionClient.configure(url, token)
+         {:ok, %{workspace_id: wid} = pairing} <- DeviceLink.pair(payload) do
+      SessionClient.configure(pairing)
       SessionConfig.pin_workspace(wid)
       Process.send_after(self(), :pairing_success_done, @success_delay_ms)
 

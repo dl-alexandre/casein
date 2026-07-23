@@ -109,6 +109,9 @@ defmodule DevIDE.Push.FCMProviderTest do
         card_id: "needs_review:ws-7:run-1",
         card_type: "needs_review",
         session_id: "run-1",
+        origin_id: "origin-devbox",
+        origin_name: "Devbox",
+        locator: %{origin_id: "origin-devbox", workspace_id: "ws-7", session_id: "run-1"},
         deep_link: "devide://review/needs_review%3Aws-7%3Arun-1"
       })
 
@@ -121,6 +124,14 @@ defmodule DevIDE.Push.FCMProviderTest do
     assert data["card_id"] == "needs_review:ws-7:run-1"
     assert data["card_type"] == "needs_review"
     assert data["session_id"] == "run-1"
+    assert data["origin_id"] == "origin-devbox"
+    assert data["origin_name"] == "Devbox"
+
+    assert Jason.decode!(data["locator_json"]) == %{
+             "origin_id" => "origin-devbox",
+             "workspace_id" => "ws-7",
+             "session_id" => "run-1"
+           }
 
     mob_payload = Jason.decode!(data["mob_notification_json"])
     assert mob_payload["id"] == "needs_review:ws-7:run-1"
