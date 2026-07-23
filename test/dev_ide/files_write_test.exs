@@ -19,11 +19,10 @@ defmodule DevIDE.FilesWriteTest do
 
   test "write_text returns :conflict when version is stale", %{root: root} do
     {:ok, %{version: v}} = Files.read_text(root, "hello.txt")
-    # External edit invalidates version.
-    File.write!(Path.join(root, "hello.txt"), "external\n")
-    # mtime resolution is 1s on some FS; ensure separation.
-    :timer.sleep(1100)
-    File.write!(Path.join(root, "hello.txt"), "external2\n")
+    path = Path.join(root, "hello.txt")
+    # Same bytes as read so only mtime differs — version token is size:mtime_hex:sha256.
+    File.write!(path, "alpha\n")
+    File.touch!(path, {{2000, 1, 1}, {0, 0, 0}})
     assert {:error, :conflict} = Files.write_text(root, "hello.txt", "client\n", v)
   end
 
