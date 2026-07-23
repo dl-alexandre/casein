@@ -471,6 +471,23 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # Both rails advertise leader second-keys while open (C-b s / C-b w).
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+    # Pickers layer over the terminal instead of becoming flex siblings that
+    # shrink its viewport and trigger a Ghostty/tmux resize cycle.
+    assert has_element?(
+             view,
+             "[data-terminal-picker-overlay].absolute.inset-y-0.left-0 > [data-sessions-picker-sidebar]"
+           )
+
+    assert has_element?(
+             view,
+             "[data-terminal-picker-overlay] > [data-window-picker-sidebar]"
+           )
+
+    assert has_element?(
+             view,
+             "[data-terminal-picker-overlay] + [data-terminal-viewport]"
+           )
+
     # Focus mode lives on the sessions rail (not the header).
     assert has_element?(view, "#sessions-focus-mode-ws-1")
 
