@@ -22,7 +22,7 @@ defmodule DevIDE.Previews.FileServerTest do
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 
   defp seed_workspace! do
-    root = Path.join(System.tmp_dir!(), "file-server-#{System.unique_integer([:positive])}")
+    root = DevIDE.TmpWorkspace.root!("file-server")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)

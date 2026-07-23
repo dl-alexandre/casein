@@ -193,6 +193,6 @@ defmodule DevIDE.UAT.VerdictTest do
   end
 
   defp tmp_root do
-    Path.join(System.tmp_dir!(), "uat-artifacts-#{System.unique_integer([:positive])}")
+    DevIDE.TmpWorkspace.root!("uat-artifacts")
   end
 end

@@ -12,6 +12,12 @@ defmodule DevIDE.Terminals.GhosttySnapshot do
   @formats [{:html, ".html"}, {:plain, ".txt"}, {:vt, ".vt"}]
   @preview_bytes 400
 
+  # Snapshots are diagnostic dumps consumed immediately by the caller; they were
+  # never cleaned up and leaked into `/tmp` indefinitely (thousands of
+  # `ghostty_snapshot_*` files observed on the devbox). Keep only the newest few
+  # per workspace so the directory stays bounded regardless of capture volume.
+  @keep_per_workspace 9
+
   @type capture :: %{
           required(String.t()) => term()
         }
@@ -23,6 +29,7 @@ defmodule DevIDE.Terminals.GhosttySnapshot do
         }
 
   @spec capture(pid(), String.t()) :: result()
+  # sobelow_skip ["Traversal.FileModule"]
   def capture(term, workspace_id) when is_pid(term) and is_binary(workspace_id) do
     ts = System.system_time(:millisecond)
     base = Path.join(snapshot_dir(), "ghostty_snapshot_#{workspace_id}_#{ts}")
@@ -48,6 +55,8 @@ defmodule DevIDE.Terminals.GhosttySnapshot do
         end
       end)
 
+    prune_old_snapshots(workspace_id)
+
     files = Enum.map(captures, fn {_f, meta, _data} -> meta end)
 
     preview =
@@ -63,4 +72,26 @@ defmodule DevIDE.Terminals.GhosttySnapshot do
   end
 
   defp snapshot_dir, do: Application.get_env(:dev_ide, :ghostty_snapshot_dir, "/tmp")
+
+  # Best-effort retention: keep only the newest @keep_per_workspace snapshot files
+  # for this workspace and delete the rest, so repeated captures cannot accumulate
+  # unbounded diagnostic dumps in the snapshot directory.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp prune_old_snapshots(workspace_id) do
+    snapshot_dir()
+    |> Path.join("ghostty_snapshot_#{workspace_id}_*")
+    |> Path.wildcard()
+    |> Enum.sort_by(&file_mtime/1, :desc)
+    |> Enum.drop(@keep_per_workspace)
+    |> Enum.each(&File.rm/1)
+  rescue
+    _ -> :ok
+  end
+
+  defp file_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, %File.Stat{mtime: mtime}} -> mtime
+      _ -> 0
+    end
+  end
 end

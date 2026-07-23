@@ -54,11 +54,7 @@ defmodule DevIDE.PreviewPanesExtraTest do
   defp wait_until(_fun, 0), do: flunk("condition not met before timeout")
 
   defp seed_workspace! do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "preview-panes-extra-#{System.unique_integer([:positive])}"
-      )
+    root = DevIDE.TmpWorkspace.root!("preview-panes-extra")
 
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
