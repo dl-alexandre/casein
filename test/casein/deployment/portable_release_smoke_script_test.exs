@@ -33,4 +33,13 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ "HOME=/home/dev_ide"
     refute text =~ "HOME=/app"
   end
+
+  test "production builder copies the current local path dependencies" do
+    text = File.read!(@dockerfile)
+
+    assert text =~ "COPY casein_core casein_core"
+    assert text =~ "COPY casein_preview_browser casein_preview_browser"
+    refute text =~ "COPY dev_ide_core dev_ide_core"
+    refute text =~ "COPY dev_ide_preview_browser dev_ide_preview_browser"
+  end
 end

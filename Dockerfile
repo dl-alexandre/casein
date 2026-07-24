@@ -85,8 +85,8 @@ COPY mix.exs mix.lock ./
 COPY config config
 # Local path dependencies must be present before deps.get/compile can resolve
 # them.
-COPY dev_ide_core dev_ide_core
-COPY dev_ide_preview_browser dev_ide_preview_browser
+COPY casein_core casein_core
+COPY casein_preview_browser casein_preview_browser
 RUN mix deps.get --only prod && mix deps.compile
 
 # Application code first — esbuild reads compile-time artifacts from
