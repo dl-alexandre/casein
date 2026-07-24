@@ -8,6 +8,8 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   """
   use Phoenix.LiveComponent
 
+  require Logger
+
   @impl true
   def update(assigns, socket) do
     first_mount? = not Map.has_key?(socket.assigns, :term)
@@ -207,6 +209,39 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   # viewer's own grid, which the 16ms PTY flush loop already repaints.
   def handle_event("viewport_active", %{"active" => active}, socket) do
     send(self(), {:terminal_active, socket.assigns.id, active == true})
+    {:noreply, socket}
+  end
+
+  @impl true
+  # The viewer's half of the size negotiation. SessionOwner already logs what
+  # the shared grid became and why (`terminal owner size -> ...`), precisely
+  # because this bug class is otherwise reconstructed from screenshots — but
+  # that says nothing about what each viewer asked for. This records the other
+  # half: the layout mode a client chose, the grid it proposed, and the trigger
+  # that caused it. Emitted only when the mode or grid actually changes, so it
+  # is a handful of lines per session, not per frame.
+  def handle_event("layout_change", params, socket) do
+    %{"mode" => mode, "reason" => reason} = params
+    cols = params["cols"]
+    rows = params["rows"]
+
+    Logger.info(
+      "terminal viewer layout -> #{cols}x#{rows} #{mode} (#{reason}); " <>
+        "authority=#{params["authority"] == true} requested=#{params["requested"] == true}",
+      id: socket.assigns.id
+    )
+
+    :telemetry.execute(
+      [:dev_ide, :terminals, :viewer, :layout_change],
+      %{cols: cols || 0, rows: rows || 0},
+      %{
+        mode: mode,
+        reason: reason,
+        authority: params["authority"] == true,
+        requested: params["requested"] == true
+      }
+    )
+
     {:noreply, socket}
   end
 

@@ -64,15 +64,12 @@ import {
   saveStoredDisplayZoom
 } from "./terminal_display_zoom.mjs"
 import {fileLinkAt, updateFileLinkStore} from "./terminal_file_links.mjs"
-import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
 import {pingWakeLock} from "./wake_lock"
+import {computeTerminalLayout} from "./terminal_layout_model.mjs"
 import {
-  fitBaseScale,
   isMobileTerminalLayout,
   latchMobileAuthority,
-  rowPinOffsets,
-  scaledContentOffsets,
-  strandedFitReheal,
+  rowPinAnchorRow,
   viewportActiveForClient
 } from "./terminal_display_layout.mjs"
 import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
@@ -331,7 +328,7 @@ const LONGPRESS_MS = 400
 // How long a mobile viewer keeps size authority after its last active signal,
 // absorbing iOS's rapid hasFocus/soft-keyboard flapping. See reportViewportActive.
 const AUTHORITY_LATCH_GRACE_MS = 1200
-// Cadence of the stranded-fit self-heal (see maybeRehealStrandedFit). Low
+// Cadence of the level-triggered layout backstop (see reconcilePeriodically). Low
 // frequency: one cheap measurement per visible authoritative terminal, only
 // acting when the grid is stuck small, so a stranded fit recovers within a
 // couple seconds without any per-frame cost.
@@ -966,7 +963,20 @@ function terminalCellMetrics(hook) {
     width,
     height: lineHeight,
     paddingLeft: parseFloat(styles.paddingLeft) || 0,
-    paddingTop: parseFloat(styles.paddingTop) || 0
+    paddingTop: parseFloat(styles.paddingTop) || 0,
+    paddingRight: parseFloat(styles.paddingRight) || 0,
+    paddingBottom: parseFloat(styles.paddingBottom) || 0
+  }
+}
+
+// The <pre> the cells paint into is `inset: 0; box-sizing: border-box` with its
+// own padding (vendor: 8px), so its text box is smaller than the container
+// terminalViewportMetrics measures. Every cols/rows derivation must subtract
+// this, and every scaled content box must add it back.
+function preContentPadding(m) {
+  return {
+    padX: (m?.paddingLeft || 0) + (m?.paddingRight || 0),
+    padY: (m?.paddingTop || 0) + (m?.paddingBottom || 0)
   }
 }
 
@@ -1282,7 +1292,9 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
     const shapeKey = `${p.cells?.[0]?.length || 0}x${p.cells?.length || 0}`
     if (shapeKey !== hook.__lastPaintShapeKey) {
       hook.__lastPaintShapeKey = shapeKey
-      hook.__scheduleTerminalLayout?.()
+      reconcileLayout(hook, "grid_shape_changed")
+    } else if (rowPinNeedsFollow(hook)) {
+      reconcileLayout(hook, "row_pin_follow")
     }
   }
 
@@ -1314,6 +1326,14 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
 
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
+
+  // Normal vs alternate screen, folded server-side out of the PTY stream
+  // (DevIDE.Terminals.ScreenMode). The layout model branches on it: only a
+  // scrolling shell may be row-pinned when the soft keyboard opens, because a
+  // full-screen TUI draws to the whole grid and must be told its real size.
+  // Carried on every frame, so it is read before the payload is accepted —
+  // even a dropped frame reports the current mode correctly.
+  if (payload.screen_mode) hook.__screenMode = payload.screen_mode
 
   const accepted = acceptRenderPayload(hook, payload)
   if (!accepted?.ok) return
@@ -1947,12 +1967,6 @@ function ensureScaleFrame(hook) {
     transformOrigin: "top left"
   })
 
-  const move = [hook.pre, hook.selectionLayer, hook.measure, hook.input, hook.cursorEl]
-  for (const node of move) {
-    if (node) frame.appendChild(node)
-  }
-  if (hook.__glyphCanvas) frame.appendChild(hook.__glyphCanvas)
-
   // Keep scrollbar chrome as a direct child of screen (viewport-fixed, unscaled).
   const track = hook.__scrollbarTrack
   if (track && track.parentNode === hook.screen) {
@@ -1962,7 +1976,37 @@ function ensureScaleFrame(hook) {
   }
 
   hook.__scaleFrame = frame
+  adoptTransformChildren(hook)
   return frame
+}
+
+// Everything that paints cells or marks a position inside the grid, in paint
+// order: the glyph canvas sits behind the (transparent, in canvas mode) <pre>.
+function transformSetNodes(hook) {
+  return [hook.__glyphCanvas, hook.pre, hook.selectionLayer, hook.measure, hook.input, hook.cursorEl]
+}
+
+/**
+ * Pull the whole transform set inside the frame.
+ *
+ * The frame is the transform host: anything left outside stays put while the
+ * grid scales or scrolls — the "caret parked on the left edge of the letterbox"
+ * class of bug. This used to be a one-shot snapshot taken when the frame was
+ * built, which quietly did nothing for the glyph canvas: the frame is created
+ * during the transient scale beat at mount, BEFORE the first paint creates the
+ * canvas, so the canvas was always left behind. Adopt on every layout instead,
+ * so a lazily-created child cannot miss the boat.
+ */
+function adoptTransformChildren(hook) {
+  const frame = hook.__scaleFrame
+  if (!frame?.isConnected) return
+
+  for (const node of transformSetNodes(hook)) {
+    if (node && node.parentNode !== frame) frame.appendChild(node)
+  }
+  // Restore paint order for anything that was already inside.
+  const canvas = hook.__glyphCanvas
+  if (canvas && frame.firstChild !== canvas) frame.insertBefore(canvas, frame.firstChild)
 }
 
 function clearDisplayScale(hook) {
@@ -1988,190 +2032,17 @@ function clearDisplayScale(hook) {
   Object.assign(hook.pre.style, { left: "", top: "", width: "", height: "" })
   patchPreLayout(hook)
 }
+// ---------------------------------------------------------------------------
+// Layout: gather → compute → apply.
+//
+// The decision lives in terminal_layout_model.mjs and NOTHING here re-derives
+// it. These functions only read the DOM into plain numbers, hand them to the
+// model, and write the model's answer back out.
+// ---------------------------------------------------------------------------
 
-function applyScaledLayout(hook, baseScale, cols, rows, displayMode) {
-  if (!hook.pre || !hook.fitEnabled) return
-
-  const m = terminalCellMetrics(hook)
-  const viewport = terminalViewportMetrics(hook)
-  if (!m || !viewport) return
-
-  const userZoom = userDisplayZoom(hook)
-  const scale = baseScale * userZoom
-  const contentW = cols * m.width
-  const contentH = rows * m.height
-
-  if (
-    viewport.availableW < m.width * 2 ||
-    viewport.availableH < m.height * 2 ||
-    contentW <= 0 ||
-    contentH <= 0
-  ) {
-    return
-  }
-
-  if (Math.abs(scale - 1) < 0.001 && displayMode === "fit") {
-    clearDisplayScale(hook)
-    hook.el.dataset.displayMode = "fit"
-    syncDisplayZoomBadge(hook)
-    return
-  }
-
-  const align = isMobileTerminalLayout() ? "top-center" : "center"
-  const {offsetX, offsetY} = scaledContentOffsets({
-    availableW: viewport.availableW,
-    availableH: viewport.availableH,
-    padL: viewport.padL,
-    padT: viewport.padT,
-    contentW,
-    contentH,
-    scale,
-    align
-  })
-
-  const frame = ensureScaleFrame(hook)
-  hook.el.style.setProperty("--devide-term-display-scale", String(scale))
-  hook.el.style.setProperty("--devide-term-display-zoom", String(userZoom))
-  hook.el.dataset.displayMode = displayMode
-
-  if (frame) {
-    Object.assign(frame.style, {
-      left: `${offsetX}px`,
-      top: `${offsetY}px`,
-      width: `${contentW}px`,
-      height: `${contentH}px`,
-      transform: `scale(${scale})`,
-      transformOrigin: "top left"
-    })
-    // Pre fills the frame; cell metrics stay unscaled inside the frame box.
-    Object.assign(hook.pre.style, {
-      transform: "",
-      transformOrigin: "",
-      left: "0",
-      top: "0",
-      width: "100%",
-      height: "100%",
-      inset: "auto"
-    })
-  } else {
-    // Fallback if screen isn't ready yet (should be rare).
-    hook.pre.style.transform = `scale(${scale})`
-    hook.pre.style.transformOrigin = "top left"
-    hook.pre.style.left = `${offsetX}px`
-    hook.pre.style.top = `${offsetY}px`
-    hook.pre.style.width = `${contentW}px`
-    hook.pre.style.height = `${contentH}px`
-  }
-  syncDisplayZoomBadge(hook)
-}
-
-function scaleToContainer(hook) {
-  if (!hook.pre || !hook.fitEnabled) return
-
-  const m = terminalCellMetrics(hook)
-  if (!m) return
-
-  const cols = Math.max(1, hook.cols || parseInt(hook.el.dataset.cols, 10) || 80)
-  const rows = Math.max(1, hook.rows || parseInt(hook.el.dataset.rows, 10) || 24)
-  const contentW = cols * m.width
-  const contentH = rows * m.height
-  const viewport = terminalViewportMetrics(hook)
-  if (!viewport) return
-
-  if (
-    viewport.availableW < m.width * 2 ||
-    viewport.availableH < m.height * 2 ||
-    contentW <= 0 ||
-    contentH <= 0
-  ) {
-    return
-  }
-
-  const baseScale = fitBaseScale(
-    viewport.availableW,
-    viewport.availableH,
-    contentW,
-    contentH
-  )
-  applyScaledLayout(hook, baseScale, cols, rows, "scale")
-}
-
-function authoritativeFitToContainer(hook) {
-  if (!hook.fitEnabled) return
-
-  const m = terminalCellMetrics(hook)
-  const viewport = terminalViewportMetrics(hook)
-  if (!m || !viewport) return
-
-  if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return
-
-  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
-  const rows = Math.max(2, Math.floor(viewport.availableH / m.height))
-  // Remember the natural fit as the row-pin anchor. This path only runs when
-  // NOT row-pinning (keyboard closed, or flag off), so it captures the
-  // keyboard-closed row count that row-pinning holds the PTY at. See
-  // applyRowPinLayout / rowPinOffsets.
-  hook.__pinnedRows = rows
-  const userZoom = userDisplayZoom(hook)
-  const fitUnchanged = cols === hook.__lastFitCols && rows === hook.__lastFitRows
-  const zoomUnchanged = userZoom === hook.__lastAppliedUserZoom
-
-  if (fitUnchanged && zoomUnchanged) return
-
-  if (fitUnchanged) {
-    if (userZoom === 1) clearDisplayScale(hook)
-    else applyScaledLayout(hook, 1, cols, rows, "zoom")
-    hook.el.dataset.displayMode = userZoom === 1 ? "fit" : "zoom"
-    hook.__lastAppliedUserZoom = userZoom
-    syncDisplayZoomBadge(hook)
-    return
-  }
-
-  if (userZoom === 1) clearDisplayScale(hook)
-
-  hook.__lastFitCols = cols
-  hook.__lastFitRows = rows
-  hook.__lastAppliedUserZoom = userZoom
-  hook.el.dataset.displayMode = userZoom === 1 ? "fit" : "zoom"
-  pushResizeEvent(hook, cols, rows)
-
-  if (userZoom !== 1) applyScaledLayout(hook, 1, cols, rows, "zoom")
-  else syncDisplayZoomBadge(hook)
-}
-
-// After the authoritative fit pass: the tmux grid can still be taller/wider
-// than the fitted grid (resize not landed yet, or another writer resized the
-// window). authoritativeFitToContainer early-returns in that steady state, so
-// the oversize rows would clip at the container's bottom/right edge. Borrow
-// the observer's scale-to-fit rendering while the grids disagree, and restore
-// plain fit/zoom once the resize converges (every render re-runs this via
-// scheduleLayout, so restoration is prompt).
-function authoritativeOverflowGuard(hook) {
-  const action = fitOverflowAction({
-    cols: hook.cols,
-    rows: hook.rows,
-    fitCols: hook.__lastFitCols,
-    fitRows: hook.__lastFitRows,
-    displayMode: hook.el?.dataset?.displayMode,
-    userZoom: userDisplayZoom(hook)
-  })
-
-  if (action === "scale") {
-    scaleToContainer(hook)
-  } else if (action === "restore-fit") {
-    clearDisplayScale(hook)
-    hook.el.dataset.displayMode = "fit"
-    syncDisplayZoomBadge(hook)
-  } else if (action === "restore-zoom") {
-    applyScaledLayout(hook, 1, hook.__lastFitCols, hook.__lastFitRows, "zoom")
-  }
-}
-
-// Row-pinning. Default ON (mobile only, via rowPinActive's isMobileTerminalLayout
-// + keyboardOpen gates): keep the PTY at its keyboard-closed rows and scroll the
-// grid so the bottom (cursor / prompt / TUI input) stays above the keyboard,
-// instead of reflowing tmux on every keyboard toggle. Opt out with `?rowpin=0`
-// (persisted); `?rowpin=1` re-enables.
+// Row-pinning is default ON (mobile + keyboard-open gates live in the model).
+// Opt out with `?rowpin=0` (persisted); `?rowpin=1` re-enables. This stays the
+// runtime rollback for the whole row-pin behaviour.
 function rowPinEnabled() {
   try {
     if (typeof location !== "undefined" && typeof location.search === "string") {
@@ -2201,142 +2072,252 @@ function keyboardOpenNow() {
   )
 }
 
-function rowPinActive(hook) {
-  return (
-    rowPinEnabled() &&
-    isMobileTerminalLayout() &&
-    keyboardOpenNow() &&
-    userDisplayZoom(hook) === 1
-  )
+// While row-pinned, the grid is scrolled to a fixed window but the cursor keeps
+// moving as output arrives. The post-paint refit only fires on a grid SHAPE
+// change, which pure output never triggers — so a cursor walking past the bottom
+// of the pinned window would leave the operator typing into rows they cannot
+// see. Re-run the layout only when the anchor actually leaves the window.
+function rowPinNeedsFollow(hook) {
+  if (!hook.__rowPinnedApplied) return false
+  const win = hook.__rowPinWindow
+  if (!win) return false
+
+  const anchor = rowPinAnchorRow({
+    cursor: hook.cursor,
+    rowsData: hook.rowsData,
+    pinnedRows: win.pinnedRows
+  })
+  return anchor < win.firstRow || anchor > win.lastRow
 }
 
-// Keep the PTY at its keyboard-closed row count and scroll the fixed grid up so
-// the bottom rows (cursor / prompt / TUI input) stay above the keyboard — no
-// tmux reflow. The vertical translate rides the scale-frame transition (see the
-// [data-terminal-scale-frame] rule in app.css), so opening/closing the keyboard
-// glides the grid into place. Returns false to fall back to the fit path.
-function applyRowPinLayout(hook) {
-  if (!hook.pre || !hook.fitEnabled) return false
+// Read every input the layout decision needs. Returns null when the pane isn't
+// measurable yet, which the model would reject anyway.
+function gatherLayoutInput(hook, trigger) {
   const m = terminalCellMetrics(hook)
   const viewport = terminalViewportMetrics(hook)
-  if (!m || !viewport) return false
-  if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return false
+  if (!m || !viewport) return null
 
-  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
-  const pinnedRows = Math.max(
-    2,
-    hook.__pinnedRows || Math.floor(viewport.availableH / m.height)
-  )
-  const pin = rowPinOffsets({
-    availableH: viewport.availableH,
-    cellH: m.height,
-    pinnedRows
-  })
-  if (!pin) return false
+  const {padX, padY} = preContentPadding(m)
 
-  const frame = ensureScaleFrame(hook)
-  if (!frame) return false
-
-  // Hold the PTY at the pinned rows: only push when the shape genuinely changed
-  // (rotation / font), so opening the keyboard never triggers a reflow.
-  if (cols !== hook.__lastFitCols || pinnedRows !== hook.__lastFitRows) {
-    hook.__lastFitCols = cols
-    hook.__lastFitRows = pinnedRows
-    hook.__lastAppliedUserZoom = 1
-    pushResizeEvent(hook, cols, pinnedRows)
-  }
-
-  const contentW = cols * m.width
-  const contentH = pinnedRows * m.height
-  hook.el.dataset.displayMode = "rowpin"
-  hook.el.style.setProperty("--devide-term-display-scale", "1")
-  if (hook.screen) hook.screen.style.overflow = "hidden"
-
-  Object.assign(frame.style, {
-    left: `${viewport.padL}px`,
-    top: `${viewport.padT}px`,
-    width: `${contentW}px`,
-    height: `${contentH}px`,
-    transform: `translateY(-${pin.offsetY}px)`,
-    transformOrigin: "top left"
-  })
-  Object.assign(hook.pre.style, {
-    transform: "",
-    transformOrigin: "",
-    left: "0",
-    top: "0",
-    width: "100%",
-    height: "100%",
-    inset: "auto"
-  })
-
-  hook.__rowPinnedApplied = true
-  syncDisplayZoomBadge(hook)
-  return true
-}
-
-function applyTerminalLayout(hook) {
-  if (!hook.fitEnabled) return
-
-  if (isSizeAuthoritative(hook)) {
-    if (rowPinActive(hook) && applyRowPinLayout(hook)) return
-
-    // Leaving row-pin (keyboard closed / flag off after being on): undo the
-    // scroll translate and container clip before the normal fit pass. Guarded
-    // by __rowPinnedApplied so the default-off path is untouched.
-    if (hook.__rowPinnedApplied) {
-      hook.__rowPinnedApplied = false
-      if (hook.screen) hook.screen.style.overflow = ""
-      if (hook.el?.dataset?.displayMode === "rowpin") clearDisplayScale(hook)
-    }
-
-    authoritativeFitToContainer(hook)
-    authoritativeOverflowGuard(hook)
-  } else {
-    scaleToContainer(hook)
-  }
-}
-
-// Level-triggered self-heal for a stranded authoritative fit. The fit path is
-// otherwise purely edge-triggered (ResizeObserver / window resize / refit
-// event) and early-returns silently when metrics are unavailable or the
-// container is momentarily tiny; a fit that "took" while the pane was narrow
-// mid-transition then reports a too-small grid that nothing re-corrects, since
-// the client's local view is already self-consistent. This periodic check
-// re-runs the fit only when the container can now hold a materially LARGER grid
-// than we last reported (strandedFitReheal) — growth-only, so it can never
-// shrink the shared grid or start a size-fight. Steady state (grid matches the
-// container) measures and does nothing.
-function maybeRehealStrandedFit(hook) {
-  if (!hook.fitEnabled) return
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") return
-  // Observers scale-to-fit and re-converge on every render; only the
-  // authoritative viewer can strand the shared grid at a too-small size.
-  if (!isSizeAuthoritative(hook)) return
-
-  const m = terminalCellMetrics(hook)
-  const viewport = terminalViewportMetrics(hook)
-  if (!m || !viewport) return
-
-  if (
-    !strandedFitReheal({
+  return {
+    container: {
       availableW: viewport.availableW,
       availableH: viewport.availableH,
-      cellW: m.width,
-      cellH: m.height,
-      lastFitCols: hook.__lastFitCols,
-      lastFitRows: hook.__lastFitRows
-    })
-  ) {
+      padL: viewport.padL,
+      padT: viewport.padT
+    },
+    cell: {w: m.width, h: m.height, padX, padY},
+    renderedGrid: {
+      cols: hook.cols || parseInt(hook.el.dataset.cols, 10) || 80,
+      rows: hook.rows || parseInt(hook.el.dataset.rows, 10) || 24
+    },
+    lastFit:
+      Number.isFinite(hook.__lastFitCols) && Number.isFinite(hook.__lastFitRows)
+        ? {cols: hook.__lastFitCols, rows: hook.__lastFitRows}
+        : null,
+    lastAppliedUserZoom: hook.__lastAppliedUserZoom,
+    pinnedRows: hook.__pinnedRows ?? null,
+    cursor: hook.cursor ?? null,
+    rowsData: hook.rowsData ?? null,
+    authority: isSizeAuthoritative(hook),
+    mobile: isMobileTerminalLayout(),
+    keyboardOpen: keyboardOpenNow(),
+    rowPinAllowed: rowPinEnabled(),
+    screenMode: hook.__screenMode ?? "normal",
+    userZoom: userDisplayZoom(hook),
+    trigger
+  }
+}
+
+// Write the model's answer to the DOM. The only place that mutates layout.
+function applyLayoutResult(hook, result) {
+  if (!result || result.noop) return
+
+  // Leaving row-pin: undo the container clip before anything else re-lays out.
+  if (hook.__rowPinnedApplied && !result.clipScreen) {
+    hook.__rowPinnedApplied = false
+    hook.__rowPinWindow = null
+    if (hook.screen) hook.screen.style.overflow = ""
+  }
+
+  // The canvas renderer draws glyphs at unscaled cell metrics into its own
+  // element, so it is only correct while the frame carries no transform. This
+  // comes from the model rather than a mode list kept by hand next to the
+  // painter — that list was written before row-pinning existed and never grew.
+  hook.__canvasSafe = result.canvasSafe !== false
+
+  if (result.frame) {
+    const frame = ensureScaleFrame(hook)
+    if (frame) {
+      Object.assign(frame.style, {
+        left: `${result.frame.left}px`,
+        top: `${result.frame.top}px`,
+        width: `${result.frame.width}px`,
+        height: `${result.frame.height}px`,
+        transform: result.frame.transform,
+        transformOrigin: "top left"
+      })
+      // The pre fills the frame; cell metrics stay unscaled inside the frame box.
+      Object.assign(hook.pre.style, {
+        transform: "",
+        transformOrigin: "",
+        left: "0",
+        top: "0",
+        width: "100%",
+        height: "100%",
+        inset: "auto"
+      })
+    } else {
+      // Fallback if screen isn't ready yet (should be rare).
+      Object.assign(hook.pre.style, {
+        transform: result.frame.transform,
+        transformOrigin: "top left",
+        left: `${result.frame.left}px`,
+        top: `${result.frame.top}px`,
+        width: `${result.frame.width}px`,
+        height: `${result.frame.height}px`
+      })
+    }
+  } else {
+    clearDisplayScale(hook)
+  }
+
+  if (result.cssScale == null) hook.el.style.removeProperty("--devide-term-display-scale")
+  else hook.el.style.setProperty("--devide-term-display-scale", String(result.cssScale))
+
+  if (result.cssZoom == null) hook.el.style.removeProperty("--devide-term-display-zoom")
+  else hook.el.style.setProperty("--devide-term-display-zoom", String(result.cssZoom))
+
+  if (result.clipScreen) {
+    if (hook.screen) hook.screen.style.overflow = "hidden"
+    hook.__rowPinnedApplied = true
+    hook.__rowPinWindow = result.rowPinWindow
+  }
+
+  hook.el.dataset.displayMode = result.mode
+  adoptTransformChildren(hook)
+
+  if (result.fitAnchor) {
+    hook.__lastFitCols = result.fitAnchor.cols
+    hook.__lastFitRows = result.fitAnchor.rows
+  }
+  if (result.pinnedRows != null) hook.__pinnedRows = result.pinnedRows
+  if (result.appliedUserZoom != null) hook.__lastAppliedUserZoom = result.appliedUserZoom
+
+  if (result.requestedGrid) {
+    pushResizeEvent(hook, result.requestedGrid.cols, result.requestedGrid.rows)
+  }
+
+  reportLayoutChange(hook, result)
+  syncDisplayZoomBadge(hook)
+}
+
+/**
+ * The client half of the size-negotiation breadcrumb.
+ *
+ * SessionOwner already logs `terminal owner size -> WxH (reason)` at info,
+ * explicitly because every recurrence of the "my terminal is a narrow column"
+ * class had to be reconstructed from a screenshot. But that only records what
+ * the SERVER decided; what each viewer asked for, and why, was invisible — the
+ * existing client instrumentation goes to console.debug behind `?termdebug`,
+ * which is never on when the bug happens.
+ *
+ * So push it. Only on an actual change of mode or proposed grid, which is rare
+ * (a resize, a keyboard toggle, an authority flip) — steady state and the
+ * row-pin follow are silent, so this cannot become per-frame chatter.
+ */
+function reportLayoutChange(hook, result) {
+  const grid = result.requestedGrid ?? result.fitAnchor
+  const signature = `${result.mode}:${grid?.cols ?? "?"}x${grid?.rows ?? "?"}`
+  if (signature === hook.__lastLayoutSignature) return
+  hook.__lastLayoutSignature = signature
+
+  const detail = {
+    mode: result.mode,
+    cols: grid?.cols ?? null,
+    rows: grid?.rows ?? null,
+    reason: hook.__layoutReason || result.reason,
+    authority: isSizeAuthoritative(hook),
+    requested: !!result.requestedGrid
+  }
+
+  terminalFrameEvent(hook, "layout_change", detail)
+
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "layout_change", detail)
+  } else if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("layout_change", detail)
+  }
+}
+
+function applyTerminalLayout(hook, trigger = "event") {
+  if (!hook.fitEnabled || !hook.pre) return
+
+  const input = gatherLayoutInput(hook, trigger)
+  if (!input) return
+
+  applyLayoutResult(hook, computeTerminalLayout(input))
+}
+
+/**
+ * The single way to ask for a layout.
+ *
+ * Every trigger funnels through here — the ResizeObserver, a window resize, the
+ * soft keyboard opening, an authority flip, a paint that changed the grid shape
+ * or scrolled the cursor out of the row-pin window, a zoom step, and the
+ * periodic backstop. Previously each of those reached the layout by its own
+ * route (some debounced, some direct, one only via an authority-change
+ * early-return that could swallow it), which is how "the keyboard opened" ended
+ * up depending on a CSS padding change reaching a ResizeObserver.
+ *
+ * Coalesced by default: bursts collapse into one pass 75ms later. `immediate`
+ * is for triggers that are already rate-limited (the periodic tick) or that
+ * must not be deferred behind a pending burst.
+ *
+ * `reason` is carried into the layout so a size change can be traced — the
+ * client half of the server's "terminal owner size -> WxH (reason)" breadcrumb.
+ */
+function reconcileLayout(hook, reason, {trigger = "event", immediate = false} = {}) {
+  if (!hook.fitEnabled) return
+
+  hook.__layoutReason = reason
+
+  if (immediate) {
+    if (hook.__layoutTimer !== null) {
+      clearTimeout(hook.__layoutTimer)
+      hook.__layoutTimer = null
+    }
+    applyTerminalLayout(hook, trigger)
     return
   }
 
-  terminalFrameEvent(hook, "fit_reheal", {
-    from: `${hook.__lastFitCols}x${hook.__lastFitRows}`,
-    availableW: Math.round(viewport.availableW),
-    availableH: Math.round(viewport.availableH)
-  })
-  applyTerminalLayout(hook)
+  if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
+  hook.__layoutTimer = setTimeout(() => {
+    hook.__layoutTimer = null
+    applyTerminalLayout(hook, trigger)
+  }, 75)
+}
+
+// Level-triggered backstop. Every other trigger is edge-driven (ResizeObserver,
+// window resize, a paint, an authority flip) and each one can silently miss:
+// metrics unavailable, the container momentarily tiny, a pane mounting
+// mid-transition, a growth that fires no event at all. A fit that "took" while
+// the pane was narrow then reports a too-small grid that nothing re-corrects,
+// because the client's own view is self-consistent — the recurring
+// "narrow column in the corner" class.
+//
+// This used to need its own growth-only heuristic (strandedFitReheal) to decide
+// whether re-running the fit was safe. It no longer does: the model is a fixed
+// point (contract I4), so reconciling when nothing changed is a no-op, and the
+// model itself refuses to propose a shrink on a "periodic" trigger. So the tick
+// just reconciles.
+function reconcilePeriodically(hook) {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+  // Observers re-converge on every render; only the authoritative viewer can
+  // strand the SHARED grid at a too-small size.
+  if (!isSizeAuthoritative(hook)) return
+
+  reconcileLayout(hook, "periodic_reconcile", {trigger: "periodic", immediate: true})
 }
 
 function syncDisplayZoomBadge(hook) {
@@ -2396,7 +2377,7 @@ function installTerminalDisplayZoom(hook) {
     if (!detail.hookId && !detail.surfaceId && !activeTerminal(hook)) return
 
     adjustUserDisplayZoom(hook, detail)
-    applyTerminalLayout(hook)
+    reconcileLayout(hook, "display_zoom", {immediate: true})
   }
 
   window.addEventListener("devide:terminal-display-zoom", hook.__onDisplayZoom)
@@ -2426,20 +2407,11 @@ function installScaleFitLayout(hook) {
     hook.pendingFitTimer = null
   }
 
-  const scheduleLayout = () => {
-    if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
-    hook.__layoutTimer = setTimeout(() => {
-      hook.__layoutTimer = null
-      applyTerminalLayout(hook)
-    }, 75)
-  }
-
-  hook.__scheduleTerminalLayout = scheduleLayout
   hook.__layoutTimer = null
-  hook.onWindowResize = scheduleLayout
+  hook.onWindowResize = () => reconcileLayout(hook, "window_resize")
 
   if (typeof ResizeObserver !== "undefined") {
-    hook.resizeObserver = new ResizeObserver(scheduleLayout)
+    hook.resizeObserver = new ResizeObserver(() => reconcileLayout(hook, "container_resize"))
     hook.resizeObserver.observe(hook.el)
   }
 
@@ -2447,7 +2419,7 @@ function installScaleFitLayout(hook) {
   // stranded small when no resize/refit event landed after the container grew.
   if (hook.fitEnabled && typeof setInterval === "function") {
     if (hook.__fitRehealTimer) clearInterval(hook.__fitRehealTimer)
-    hook.__fitRehealTimer = setInterval(() => maybeRehealStrandedFit(hook), FIT_REHEAL_INTERVAL_MS)
+    hook.__fitRehealTimer = setInterval(() => reconcilePeriodically(hook), FIT_REHEAL_INTERVAL_MS)
   }
 }
 
@@ -2455,7 +2427,7 @@ function onViewportAuthorityChanged(hook, wasActive) {
   const nowActive = hook.__lastViewportActive === true
   if (wasActive === nowActive) return
 
-  applyTerminalLayout(hook)
+  reconcileLayout(hook, nowActive ? "became_authority" : "became_observer", {immediate: true})
 
   if (nowActive) {
     requestTerminalResync(hook, "became_size_authority")
@@ -2721,10 +2693,16 @@ const GhosttyTerminal = {
     window.addEventListener("focus", this.__onViewportActive)
     window.addEventListener("blur", this.__onViewportActive)
     window.addEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+    // ...and straight to the layout. Routing it only through the authority
+    // handler meant an unchanged-authority keyboard toggle never reached the
+    // layout on its own, leaving row-pin engagement to depend on the keybar's
+    // inset commit changing CSS padding and that reaching the ResizeObserver.
+    this.__onKeyboardToggle = () => reconcileLayout(this, "keyboard_toggle", {immediate: true})
+    window.addEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
     document.addEventListener("focusin", this.__onViewportActive)
     document.addEventListener("focusout", this.__onViewportActive)
     reportViewportActive(this, true)
-    applyTerminalLayout(this)
+    reconcileLayout(this, "mount", {immediate: true})
 
     // Registered before the selection mousedown below so the capture-phase
     // Cmd/Ctrl+Click link handler sees the event first.
@@ -2913,7 +2891,7 @@ const GhosttyTerminal = {
         e.preventDefault()
         const delta = e.deltaY < 0 ? DISPLAY_ZOOM_STEP : -DISPLAY_ZOOM_STEP
         adjustUserDisplayZoom(this, {delta})
-        applyTerminalLayout(this)
+        reconcileLayout(this, "wheel_zoom", {immediate: true})
         return
       }
 
@@ -3152,7 +3130,7 @@ const GhosttyTerminal = {
             this.__lastTapXY = null
             this.__suppressFocusUntil = Date.now() + 500
             adjustUserDisplayZoom(this, {reset: true})
-            applyTerminalLayout(this)
+            reconcileLayout(this, "zoom_reset", {immediate: true})
             hud("touchend(double-tap → fit)")
           } else {
             this.__lastTapAt = nowT
@@ -3322,6 +3300,7 @@ const GhosttyTerminal = {
       window.removeEventListener("focus", this.__onViewportActive)
       window.removeEventListener("blur", this.__onViewportActive)
       window.removeEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+      window.removeEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
       document.removeEventListener("focusin", this.__onViewportActive)
       document.removeEventListener("focusout", this.__onViewportActive)
       this.__onViewportActive = null

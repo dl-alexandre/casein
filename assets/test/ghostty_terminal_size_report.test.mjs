@@ -158,7 +158,16 @@ test("first fitted report is sent as ready, later fits as resize", async () => {
 
   // Make the container measurable: 1600x900 viewport, 10px-advance monospace
   // cells (measure span holds 10 chars), 17px line height from the pre's
-  // inline style. Expected grid: floor(1600/10) x floor(900/17) = 160x52.
+  // inline style.
+  //
+  // The reported grid is derived from the <pre>'s TEXT box, not the container:
+  // the vendor gives the <pre> `padding: 8px` with `box-sizing: border-box`, so
+  // 16px of each axis is unavailable to cells. Sizing off the container alone
+  // reported floor(1600/10)=160 cols, of which the last two overhung the text
+  // box and were silently clipped by the <pre>'s `overflow: hidden` — the
+  // "characters vanish off the right edge" bug (mobile PWA screenshot, where
+  // one lost column ate a character out of every wrapped path).
+  // Expected grid: floor((1600-16)/10) x floor((900-16)/17) = 158x52.
   el.getBoundingClientRect = () =>
     ({ width: 1600, height: 900, left: 0, top: 0, right: 1600, bottom: 900 })
   hook.measure.getBoundingClientRect = () => ({ width: 100 })
@@ -169,10 +178,13 @@ test("first fitted report is sent as ready, later fits as resize", async () => {
   let reports = sizeReports(hook)
   assert.equal(reports.length, 1, JSON.stringify(hook.pushes))
   assert.equal(reports[0].event, "ready", "first fitted report plays the vendor ready role")
-  assert.deepEqual(reports[0].payload, { cols: 160, rows: 52 })
+  assert.deepEqual(reports[0].payload, { cols: 158, rows: 52 })
+  // Every reported cell fits inside the text box, with none overhanging it.
+  assert.ok(reports[0].payload.cols * 10 <= 1600 - 16, "no column overhangs the pre's text box")
+  assert.ok(reports[0].payload.rows * 17 <= 900 - 16, "no row overhangs the pre's text box")
 
   // Container shrinks: subsequent fits are plain resizes, and the ready is
-  // never re-sent.
+  // never re-sent. floor((1200-16)/10) x floor((600-16)/17) = 118x34.
   el.getBoundingClientRect = () =>
     ({ width: 1200, height: 600, left: 0, top: 0, right: 1200, bottom: 600 })
   hook.onWindowResize()
@@ -181,7 +193,7 @@ test("first fitted report is sent as ready, later fits as resize", async () => {
   reports = sizeReports(hook)
   assert.equal(reports.length, 2, JSON.stringify(hook.pushes))
   assert.equal(reports[1].event, "resize")
-  assert.deepEqual(reports[1].payload, { cols: 120, rows: 35 })
+  assert.deepEqual(reports[1].payload, { cols: 118, rows: 34 })
 
   hook.destroyed()
 })

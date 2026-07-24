@@ -3,13 +3,22 @@ import test from "node:test"
 
 import {preIsScaled, releaseCanvasToDom} from "../js/terminal_canvas_scale.mjs"
 
-const hookWith = (displayMode) => ({ el: { dataset: displayMode ? {displayMode} : {} } })
+// The gate now reads the verdict the layout model published on the hook, rather
+// than matching mode strings itself. That hand-kept list never learned about
+// "rowpin" and left the canvas painting under a translated frame; deriving it
+// from the model means a new mode cannot forget to declare itself. See
+// terminal_layout_contract.test.mjs I6 for the end-to-end wiring.
+const hookWith = (canvasSafe) => ({ __canvasSafe: canvasSafe })
 
-test("preIsScaled is true only for transformed display modes", () => {
-  assert.equal(preIsScaled(hookWith("scale")), true) // non-authoritative observer
-  assert.equal(preIsScaled(hookWith("zoom")), true) // user display zoom
-  assert.equal(preIsScaled(hookWith("fit")), false) // authoritative, 1:1
-  assert.equal(preIsScaled(hookWith(undefined)), false) // initial, pre-layout
+test("preIsScaled follows the model's canvasSafe verdict", () => {
+  assert.equal(preIsScaled(hookWith(false)), true) // scale / zoom / rowpin
+  assert.equal(preIsScaled(hookWith(true)), false) // identity fit
+})
+
+test("preIsScaled defaults to safe before the first layout", () => {
+  // No transform has been applied yet, so there is nothing to be wrong about.
+  assert.equal(preIsScaled(hookWith(undefined)), false)
+  assert.equal(preIsScaled({}), false)
   assert.equal(preIsScaled(undefined), false)
 })
 

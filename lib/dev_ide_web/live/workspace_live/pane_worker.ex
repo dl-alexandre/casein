@@ -46,6 +46,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   alias DevIDE.FilePanes.LinkResolver
   alias DevIDE.Terminals
   alias DevIDE.Terminals.FileLinkScanner
+  alias DevIDE.Terminals.ScreenMode
   alias DevIDE.Terminals.WebLinkScanner
   alias DevIdeWeb.TerminalRender
   alias DevIdeWeb.TerminalTelemetry
@@ -170,6 +171,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          # Local workspace root for terminal file-link detection; nil (remote
          # or unknown loc) disables the frame scanner entirely.
          link_root: link_root(opts),
+         # Normal vs alternate screen, folded from the PTY byte stream. The
+         # client's layout needs it: a scrolling shell can be row-pinned when
+         # the soft keyboard opens, but a full-screen TUI must be told its real
+         # size so it can redraw. See DevIDE.Terminals.ScreenMode.
+         screen_mode: ScreenMode.new(),
          # Output draining state (see moduledoc). `out_buffer` is a reversed
          # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
          # `last_cells` is the diff baseline for the next frame. frame_epoch/seq
@@ -423,6 +429,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         # keep flowing even when the term is gone.
         send(state.parent, {:pty_data, state.pane_id, binary})
 
+        # Fold the alternate-screen switch out of the same coalesced binary the
+        # term is about to consume, so the flag the client receives describes
+        # the frame it is about to be sent.
+        state = %{state | screen_mode: ScreenMode.scan(state.screen_mode, binary)}
+
         # Write + render here so the synchronous term GenServer.calls run on
         # this worker, never on the LiveView process. One write per frame
         # regardless of how many chunks were coalesced.
@@ -525,7 +536,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            previous_cells: state.last_cells,
            force_full?: force_full?,
            frame_seq: frame_seq,
-           frame_epoch: frame_epoch
+           frame_epoch: frame_epoch,
+           screen_mode: ScreenMode.mode(state.screen_mode)
          ) do
       {payload, cells} ->
         frame_state = frame_state(payload)
@@ -571,7 +583,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       cursor: Map.get(payload, :cursor),
       mouse: Map.get(payload, :mouse),
       scrollbar: Map.get(payload, :scrollbar),
-      focus_reporting: Map.get(payload, :focus_reporting)
+      focus_reporting: Map.get(payload, :focus_reporting),
+      screen_mode: Map.get(payload, :screen_mode)
     }
   end
 
