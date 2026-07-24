@@ -30,8 +30,11 @@ ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
 RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
-INST_DIR="/run/devide/instances"
-CURRENT_SYMLINK="/run/devide/current.sock"
+# Keep the run directory and active socket aligned with the Casein runtime.
+# Frozen DEVIDE_* overrides preserve an explicit legacy-host cutover when needed.
+RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}"
+INST_DIR="${RUN_ROOT}/instances"
+CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}"
 OLD_CURRENT_TARGET=""
 CURRENT_SYMLINK_SWAPPED=0
 CADDY_UPSTREAM_PATCHED=0
@@ -98,7 +101,7 @@ neutralize_legacy_service() {
   sudo mkdir -p "${dropin_dir}"
   sudo tee "${dropin_dir}/90-devide-canary-noop.conf" >/dev/null <<EOF
 # Managed by Casein deploy-devbox-release.sh.
-# Traffic is served by transient devide-<uuid> units via /run/devide/current.sock.
+# Traffic is served by transient devide-<uuid> units via /run/casein/current.sock.
 # Keep the legacy enabled unit harmless on boot instead of binding the active socket.
 [Service]
 Type=oneshot
@@ -562,18 +565,18 @@ for i, route in enumerate(routes):
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
   case "${CADDY_PREVIOUS_DIAL}" in
-    unix//run/devide/current.sock)
+    unix//run/casein/current.sock)
       log "Caddy upstream for ${CADDY_HOST} already points at current.sock — skipping migration"
       ;;
     127.0.0.1:4000)
       log "Caddy upstream for ${CADDY_HOST} uses loopback proxy — skipping unix migration"
       ;;
     *)
-      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
+      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/casein/current.sock"
       if sudo curl -fsS -X PATCH \
         "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
         -H "content-type: application/json" \
-        -d '"unix//run/devide/current.sock"' >/dev/null; then
+        -d '"unix//run/casein/current.sock"' >/dev/null; then
         CADDY_UPSTREAM_PATCHED=1
         log "Caddy upstream patched (persists across Caddy restarts via autosave)"
       else

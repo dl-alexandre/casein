@@ -1307,7 +1307,7 @@ defmodule Casein.Terminals.SessionOwner do
     end
   end
 
-  @current_socket "/run/devide/current.sock"
+  @current_socket "/run/casein/current.sock"
 
   # True when a newer instance owns the shared traffic socket — `current.sock`
   # no longer resolves to ours. A superseded instance that never received (or
