@@ -19,7 +19,7 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -41,6 +41,6 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.set_agent_label(Helpers.to_impl_args(params))
+    Agent.set_agent_label(Helpers.to_impl_args(params))
   end
 end

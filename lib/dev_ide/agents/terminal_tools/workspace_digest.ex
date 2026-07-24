@@ -14,7 +14,7 @@ defmodule DevIDE.Agents.TerminalTools.WorkspaceDigest do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Session}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -25,6 +25,6 @@ defmodule DevIDE.Agents.TerminalTools.WorkspaceDigest do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.workspace_digest(Helpers.to_impl_args(params))
+    Session.workspace_digest(Helpers.to_impl_args(params))
   end
 end

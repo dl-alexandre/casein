@@ -7,12 +7,14 @@ defmodule DevIDE.Previews.FileServerTest do
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_idle = Application.get_env(:dev_ide, :file_server_idle_ms)
+    prev_clock = Application.get_env(:dev_ide, :file_server_clock)
     # Keep idle high so tests are not interrupted by the belt-and-suspenders timer.
     Application.put_env(:dev_ide, :file_server_idle_ms, 60_000)
 
     on_exit(fn ->
       restore(:workspaces_root, prev_root)
       restore(:file_server_idle_ms, prev_idle)
+      restore(:file_server_clock, prev_clock)
     end)
 
     :ok
@@ -170,26 +172,46 @@ defmodule DevIDE.Previews.FileServerTest do
   test "HTTP hits reset the idle timer so an open preview is not reaped mid-use" do
     {ws_root, workspace} = seed_workspace!()
     File.write!(Path.join(ws_root, "keep.png"), <<137, 80, 78, 71>>)
-    # Short idle so the test stays fast, but wide enough that a single request
-    # round-trip cannot race the timer.
-    Application.put_env(:dev_ide, :file_server_idle_ms, 150)
+    # Logical idle window (ms). Wall send_after still uses this delay, but the
+    # stop decision compares injectable clock time against last_activity.
+    idle_ms = 150
+    Application.put_env(:dev_ide, :file_server_idle_ms, idle_ms)
+
+    {:ok, clock} = Agent.start_link(fn -> 1_000_000 end)
+
+    Application.put_env(:dev_ide, :file_server_clock, fn ->
+      Agent.get(clock, & &1)
+    end)
+
+    on_exit(fn ->
+      if Process.alive?(clock), do: Agent.stop(clock)
+    end)
 
     assert {:ok, port} = FileServer.ensure_started(workspace)
     assert {:ok, pid} = FileServer.whereis(workspace.id)
     ref = Process.monitor(pid)
 
-    # Without HTTP activity the server would die by ~150ms. Hitting it every
-    # ~60ms across several cycles proves the plug's touch cast resets the timer.
+    # Without a touch the server would expire after idle_ms of logical time.
+    # Hitting it every +60ms (still inside the idle window of the prior touch)
+    # and delivering the current idle_timeout message proves the plug's touch
+    # cast renews last_activity so the server stays alive.
     for _ <- 1..5 do
-      Process.sleep(60)
+      Agent.update(clock, &(&1 + 60))
       assert get!(port, "keep.png").status == 200
-      # Drain the :touch cast so the idle ref is definitely renewed before the
-      # next sleep window.
+      # Drain the :touch cast so last_activity / idle_ref are renewed.
+      _ = :sys.get_state(pid)
+      %{idle_ref: idle_ref} = :sys.get_state(pid)
+      send(pid, {:idle_timeout, idle_ref})
       _ = :sys.get_state(pid)
       assert Process.alive?(pid)
     end
 
-    # After the last hit, silence reaps the original process.
+    # Advance past the idle window with no further touch; the matching
+    # idle_timeout then reaps the original process.
+    Agent.update(clock, &(&1 + idle_ms))
+    %{idle_ref: idle_ref} = :sys.get_state(pid)
+    send(pid, {:idle_timeout, idle_ref})
+
     assert_receive {:DOWN, ^ref, :process, ^pid, _}, 500
     refute Process.alive?(pid)
   end

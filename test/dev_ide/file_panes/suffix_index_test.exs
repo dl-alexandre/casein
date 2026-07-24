@@ -93,23 +93,18 @@ defmodule DevIDE.FilePanes.SuffixIndexTest do
   end
 
   # Bounded poll for a background build; generous ceiling, no fixed sleeps.
+  # Retries while lookup is still :pending; other results return immediately.
+  # Backoff is receive-after via DevIDE.Test.Eventually (never Process.sleep).
   defp await(fun, deadline_ms \\ 5_000) do
-    deadline = System.monotonic_time(:millisecond) + deadline_ms
-    poll(fun, deadline)
-  end
-
-  defp poll(fun, deadline) do
-    case fun.() do
-      {:error, :pending} ->
-        if System.monotonic_time(:millisecond) > deadline do
-          {:error, :pending}
-        else
-          Process.sleep(10)
-          poll(fun, deadline)
+    DevIDE.Test.Eventually.await(
+      fn ->
+        case fun.() do
+          {:error, :pending} -> false
+          result -> result
         end
-
-      result ->
-        result
-    end
+      end,
+      timeout_ms: deadline_ms,
+      interval_ms: 10
+    )
   end
 end

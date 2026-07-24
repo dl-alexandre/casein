@@ -223,4 +223,10 @@ import_config "#{config_env()}.exs"
 
 config :dev_ide, :capability_detector, DevIDE.Agents.LocalAdapter
 
+# Injectable clocks for idle/TTL logic (tests swap these for deterministic time).
+# `{mod, fun}` is applied as `apply(mod, fun, [:millisecond])`; a 0-arity fun
+# is called directly. Default is real monotonic time — zero prod behavior change.
+config :dev_ide, :file_server_clock, {System, :monotonic_time}
+config :dev_ide, :link_resolver_clock, {System, :monotonic_time}
+
 config :dev_ide, :preview_tools, DevIDE.Agents.PreviewTools

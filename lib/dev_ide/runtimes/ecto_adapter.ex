@@ -6,7 +6,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
   import Ecto.Query
 
   alias DevIDE.Runtimes.{
-    HostRow,
     LifecycleEvent,
     LifecycleEventRow,
     Runtime,
@@ -110,7 +109,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
   def clear do
     Repo.delete_all(LifecycleEventRow)
     Repo.delete_all(RuntimeRow)
-    Repo.delete_all(HostRow)
     :ok
   end
 

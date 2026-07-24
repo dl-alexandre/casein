@@ -9,8 +9,17 @@
 //
 // The OS releases a wake lock automatically when the page is hidden, so we
 // re-acquire on return to the foreground if we're still within an active window.
+//
+// Pure acquire / release / visibility decisions live in wake_lock_retry.mjs.
 
-const HOLD_MS = 45_000
+import {
+  HOLD_MS,
+  isPreferredWakeLockSurface,
+  isWakeLockSupported,
+  shouldAcquireWakeLock,
+  shouldHandleWakeLockPing,
+  wakeLockVisibilityDecision,
+} from "./wake_lock_retry.mjs"
 
 let sentinel = null
 let releaseTimer = null
@@ -18,22 +27,29 @@ let lastPingAt = 0
 let listenerBound = false
 
 function supported() {
-  return typeof navigator !== "undefined" && "wakeLock" in navigator
+  return isWakeLockSupported(typeof navigator !== "undefined" ? navigator : null)
 }
 
 function preferredSurface() {
   try {
-    return (
-      window.matchMedia("(pointer: coarse)").matches ||
-      window.matchMedia("(display-mode: standalone)").matches
-    )
+    return isPreferredWakeLockSurface({
+      coarsePointer: window.matchMedia("(pointer: coarse)").matches,
+      standalone: window.matchMedia("(display-mode: standalone)").matches,
+    })
   } catch (_) {
     return false
   }
 }
 
 async function acquire() {
-  if (sentinel || document.visibilityState !== "visible") return
+  if (
+    !shouldAcquireWakeLock({
+      hasSentinel: !!sentinel,
+      visibilityState: document.visibilityState,
+    })
+  ) {
+    return
+  }
   try {
     sentinel = await navigator.wakeLock.request("screen")
     // The API auto-releases on hide; clear our handle so the next ping re-acquires.
@@ -61,9 +77,15 @@ function bindOnce() {
   if (listenerBound || typeof document === "undefined") return
   listenerBound = true
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && Date.now() - lastPingAt < HOLD_MS) {
+    const action = wakeLockVisibilityDecision({
+      visibilityState: document.visibilityState,
+      lastPingAt,
+      now: Date.now(),
+      holdMs: HOLD_MS,
+    })
+    if (action === "acquire") {
       acquire()
-    } else if (document.visibilityState !== "visible") {
+    } else if (action === "release") {
       release()
     }
   })
@@ -71,7 +93,14 @@ function bindOnce() {
 
 // Signal that the agent is producing output right now. Cheap to call per frame.
 export function pingWakeLock() {
-  if (!supported() || !preferredSurface()) return
+  if (
+    !shouldHandleWakeLockPing({
+      supported: supported(),
+      preferredSurface: preferredSurface(),
+    })
+  ) {
+    return
+  }
   bindOnce()
   lastPingAt = Date.now()
   acquire()

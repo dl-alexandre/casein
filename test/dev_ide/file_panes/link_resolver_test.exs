@@ -17,10 +17,18 @@ defmodule DevIDE.FilePanes.LinkResolverTest do
     SuffixIndex.rebuild(root)
     LinkResolver.clear_cache()
 
+    prev_clock = Application.get_env(:dev_ide, :link_resolver_clock)
+
     on_exit(fn ->
       LinkResolver.clear_cache()
       File.rm_rf(root)
       Application.delete_env(:dev_ide, :file_link_cache_ttl_ms)
+
+      if prev_clock do
+        Application.put_env(:dev_ide, :link_resolver_clock, prev_clock)
+      else
+        Application.delete_env(:dev_ide, :link_resolver_clock)
+      end
     end)
 
     {:ok, root: root}
@@ -75,10 +83,25 @@ defmodule DevIDE.FilePanes.LinkResolverTest do
     test "entries expire after the TTL", %{root: root} do
       Application.put_env(:dev_ide, :file_link_cache_ttl_ms, 30)
 
+      {:ok, clock} = Agent.start_link(fn -> 0 end)
+
+      Application.put_env(:dev_ide, :link_resolver_clock, fn ->
+        Agent.get(clock, & &1)
+      end)
+
+      on_exit(fn ->
+        if Process.alive?(clock), do: Agent.stop(clock)
+      end)
+
       assert {:error, :not_found} = LinkResolver.resolve(root, "lib/new.ex")
       File.write!(Path.join(root, "lib/new.ex"), "x")
 
-      Process.sleep(60)
+      # Still inside the TTL window — negative cache keeps answering :not_found.
+      Agent.update(clock, fn _ -> 29 end)
+      assert {:error, :not_found} = LinkResolver.resolve(root, "lib/new.ex")
+
+      # At/after expires_at (0 + 30) the entry is a miss and the file resolves.
+      Agent.update(clock, fn _ -> 30 end)
       assert {:ok, "lib/new.ex"} = LinkResolver.resolve(root, "lib/new.ex")
     end
   end

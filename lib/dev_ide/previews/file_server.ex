@@ -134,6 +134,8 @@ defmodule DevIDE.Previews.FileServer do
       tmux_session = Keyword.get(opts, :tmux_session) || default_tmux_session(workspace)
       maybe_subscribe_topology(tmux_session)
 
+      last_activity = now()
+
       {:ok,
        %{
          workspace_id: id,
@@ -141,6 +143,7 @@ defmodule DevIDE.Previews.FileServer do
          bandit_pid: bandit_pid,
          port: port,
          tmux_session: tmux_session,
+         last_activity: last_activity,
          idle_ref: schedule_idle()
        }}
     else
@@ -174,7 +177,18 @@ defmodule DevIDE.Previews.FileServer do
 
   # Match the current idle generation so a cancelled timer that already
   # delivered its message cannot reap a server that was touched afterward.
-  def handle_info({:idle_timeout, ref}, %{idle_ref: ref} = state), do: {:stop, :normal, state}
+  # Under the default real clock, send_after(idle_ms) fires only after the
+  # idle window has elapsed since last_activity, so the comparison stops —
+  # same as an unconditional stop. An injectable clock lets tests deliver
+  # this message early and keep the server alive until logical time expires.
+  def handle_info({:idle_timeout, ref}, %{idle_ref: ref} = state) do
+    if now() - state.last_activity >= idle_ms() do
+      {:stop, :normal, state}
+    else
+      {:noreply, %{state | idle_ref: schedule_idle()}}
+    end
+  end
+
   def handle_info({:idle_timeout, _stale}, state), do: {:noreply, state}
 
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{bandit_pid: pid} = state) do
@@ -272,11 +286,23 @@ defmodule DevIDE.Previews.FileServer do
 
   defp touch_idle(%{idle_ref: ref} = state) do
     if is_reference(ref), do: Process.cancel_timer(ref)
-    %{state | idle_ref: schedule_idle()}
+    %{state | last_activity: now(), idle_ref: schedule_idle()}
   end
 
   defp idle_ms do
     Application.get_env(:dev_ide, :file_server_idle_ms, @idle_ms)
+  end
+
+  # Injectable clock (config :dev_ide, :file_server_clock). Default is
+  # `{System, :monotonic_time}` in config.exs — real wall/monotonic time.
+  # Tests may put a 0-arity fun (or `{mod, fun}`) that returns ms.
+  defp now do
+    case Application.get_env(:dev_ide, :file_server_clock) do
+      {mod, fun} when is_atom(mod) and is_atom(fun) -> apply(mod, fun, [:millisecond])
+      fun when is_function(fun, 0) -> fun.()
+      fun when is_function(fun, 1) -> fun.(:millisecond)
+      _ -> System.monotonic_time(:millisecond)
+    end
   end
 
   defp workspace_id(%{id: id}) when is_binary(id), do: id

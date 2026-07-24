@@ -16,7 +16,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentPane do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -34,6 +34,6 @@ defmodule DevIDE.Agents.TerminalTools.AgentPane do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.agent_pane(Helpers.to_impl_args(params))
+    Agent.agent_pane(Helpers.to_impl_args(params))
   end
 end

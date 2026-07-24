@@ -21,7 +21,7 @@ defmodule DevIDE.Agents.TerminalTools.CaptureAgent do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -41,6 +41,6 @@ defmodule DevIDE.Agents.TerminalTools.CaptureAgent do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.capture_agent(Helpers.to_impl_args(params))
+    Agent.capture_agent(Helpers.to_impl_args(params))
   end
 end

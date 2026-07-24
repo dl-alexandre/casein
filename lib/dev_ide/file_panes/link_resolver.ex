@@ -250,7 +250,7 @@ defmodule DevIDE.FilePanes.LinkResolver do
   defp cache_get(key) do
     case :ets.lookup(@table, key) do
       [{^key, result, expires_at}] ->
-        if System.monotonic_time(:millisecond) < expires_at do
+        if now() < expires_at do
           {:hit, result}
         else
           :miss
@@ -271,10 +271,22 @@ defmodule DevIDE.FilePanes.LinkResolver do
       :ets.delete_all_objects(@table)
     end
 
-    expires_at = System.monotonic_time(:millisecond) + ttl_ms()
+    expires_at = now() + ttl_ms()
     :ets.insert(@table, {key, result, expires_at})
     :ok
   catch
     :error, :badarg -> :ok
+  end
+
+  # Injectable clock (config :dev_ide, :link_resolver_clock). Default is
+  # `{System, :monotonic_time}` in config.exs — real monotonic ms. Tests may
+  # put a 0-arity fun (or `{mod, fun}`) that returns integer milliseconds.
+  defp now do
+    case Application.get_env(:dev_ide, :link_resolver_clock) do
+      {mod, fun} when is_atom(mod) and is_atom(fun) -> apply(mod, fun, [:millisecond])
+      fun when is_function(fun, 0) -> fun.()
+      fun when is_function(fun, 1) -> fun.(:millisecond)
+      _ -> System.monotonic_time(:millisecond)
+    end
   end
 end
