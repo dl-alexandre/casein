@@ -3,13 +3,18 @@ import test from "node:test"
 
 import {
   fitBaseScale,
+  fitGridForViewport,
   isMobileTerminalLayout,
   latchMobileAuthority,
+  rowPinAnchorRow,
   rowPinOffsets,
   scaledContentOffsets,
   strandedFitReheal,
   viewportActiveForClient
 } from "../js/terminal_display_layout.mjs"
+
+const row = (text, cols = 40) =>
+  Array.from({length: cols}, (_, i) => [text[i] ?? " "])
 
 test("rowPinOffsets: scrolls a pinned grid to show its bottom rows", () => {
   // 40-row grid pinned; keyboard leaves room for 22 → hide the top 18.
@@ -24,6 +29,107 @@ test("rowPinOffsets: no offset when everything already fits", () => {
   const r = rowPinOffsets({availableH: 40 * 17, cellH: 17, pinnedRows: 40})
   assert.equal(r.hiddenRows, 0)
   assert.equal(r.offsetY, 0)
+})
+
+// The keyboard-open blank-screen bug: a fresh session paints ~16 rows at the
+// top of a 46-row grid and leaves the rest unwritten. Scrolling to the grid
+// bottom put the 15-row keyboard-open window entirely inside blank rows.
+test("rowPinOffsets: keeps the anchor row visible instead of a blank tail", () => {
+  const r = rowPinOffsets({availableH: 15 * 17, cellH: 17, pinnedRows: 46, anchorRow: 15})
+  assert.equal(r.visibleRows, 15)
+  assert.equal(r.hiddenRows, 1)
+  assert.equal(r.offsetY, 17)
+})
+
+test("rowPinOffsets: a bottom anchor still scrolls to the bottom", () => {
+  const bottom = rowPinOffsets({availableH: 15 * 17, cellH: 17, pinnedRows: 46, anchorRow: 45})
+  const implicit = rowPinOffsets({availableH: 15 * 17, cellH: 17, pinnedRows: 46})
+  assert.equal(bottom.hiddenRows, 31)
+  assert.deepEqual(implicit, bottom)
+})
+
+test("rowPinOffsets: never scrolls past the end of the grid", () => {
+  const r = rowPinOffsets({availableH: 15 * 17, cellH: 17, pinnedRows: 46, anchorRow: 999})
+  assert.equal(r.hiddenRows, 31)
+})
+
+test("rowPinOffsets: an anchor already on screen needs no scroll", () => {
+  const r = rowPinOffsets({availableH: 15 * 17, cellH: 17, pinnedRows: 46, anchorRow: 3})
+  assert.equal(r.hiddenRows, 0)
+  assert.equal(r.offsetY, 0)
+})
+
+test("rowPinAnchorRow: prefers the live cursor", () => {
+  assert.equal(rowPinAnchorRow({cursor: {y: 12, visible: true}, pinnedRows: 46}), 12)
+})
+
+test("rowPinAnchorRow: clamps a cursor past the pinned grid", () => {
+  assert.equal(rowPinAnchorRow({cursor: {y: 99, visible: true}, pinnedRows: 46}), 45)
+})
+
+test("rowPinAnchorRow: falls back to the last painted row when the cursor is hidden", () => {
+  const rowsData = [row("hello"), row("world"), row(""), row("")]
+  assert.equal(rowPinAnchorRow({cursor: {y: 1, visible: false}, rowsData, pinnedRows: 46}), 1)
+})
+
+test("rowPinAnchorRow: falls back to the grid bottom with nothing to go on", () => {
+  assert.equal(rowPinAnchorRow({pinnedRows: 46}), 45)
+  assert.equal(rowPinAnchorRow({cursor: {visible: false}, rowsData: [], pinnedRows: 46}), 45)
+})
+
+// The vanishing-characters bug: the <pre> carries `padding: 8px` inside its
+// border box, so a grid sized from the container alone overhangs the text box
+// and the overflow-hidden <pre> clips the last column/row.
+test("fitGridForViewport: subtracts the pre's own padding", () => {
+  const bare = fitGridForViewport({
+    availableW: 390,
+    availableH: 800,
+    cellW: 8.5,
+    cellH: 17
+  })
+  const padded = fitGridForViewport({
+    availableW: 390,
+    availableH: 800,
+    cellW: 8.5,
+    cellH: 17,
+    padX: 16,
+    padY: 16
+  })
+
+  assert.equal(bare.cols, 45)
+  assert.equal(padded.cols, 44)
+  assert.equal(padded.rows, 46)
+  // The whole grid fits inside the text box, with no column overhanging it.
+  assert.ok(padded.cols * 8.5 <= padded.textW)
+  assert.ok(bare.cols * 8.5 > padded.textW)
+})
+
+test("fitGridForViewport: floors at a usable grid and guards bad metrics", () => {
+  assert.equal(fitGridForViewport({availableW: 100, availableH: 100, cellW: 0, cellH: 17}), null)
+  const tiny = fitGridForViewport({
+    availableW: 10,
+    availableH: 10,
+    cellW: 8.5,
+    cellH: 17,
+    padX: 16,
+    padY: 16
+  })
+  assert.equal(tiny.cols, 2)
+  assert.equal(tiny.rows, 2)
+})
+
+test("strandedFitReheal: padding-aware measure stays quiet in steady state", () => {
+  // 44x46 is the correct padded fit for this container; without padX/padY the
+  // raw measure reads 45x47 and would re-fire the reheal forever.
+  const args = {
+    availableW: 390,
+    availableH: 800,
+    cellW: 8.5,
+    cellH: 17,
+    lastFitCols: 44,
+    lastFitRows: 46
+  }
+  assert.equal(strandedFitReheal({...args, padX: 16, padY: 16}), false)
 })
 
 test("rowPinOffsets: guards bad input", () => {

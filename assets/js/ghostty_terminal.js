@@ -68,8 +68,10 @@ import {fitOverflowAction} from "./terminal_fit_overflow.mjs"
 import {pingWakeLock} from "./wake_lock"
 import {
   fitBaseScale,
+  fitGridForViewport,
   isMobileTerminalLayout,
   latchMobileAuthority,
+  rowPinAnchorRow,
   rowPinOffsets,
   scaledContentOffsets,
   strandedFitReheal,
@@ -966,7 +968,20 @@ function terminalCellMetrics(hook) {
     width,
     height: lineHeight,
     paddingLeft: parseFloat(styles.paddingLeft) || 0,
-    paddingTop: parseFloat(styles.paddingTop) || 0
+    paddingTop: parseFloat(styles.paddingTop) || 0,
+    paddingRight: parseFloat(styles.paddingRight) || 0,
+    paddingBottom: parseFloat(styles.paddingBottom) || 0
+  }
+}
+
+// The <pre> the cells paint into is `inset: 0; box-sizing: border-box` with its
+// own padding (vendor: 8px), so its text box is smaller than the container
+// terminalViewportMetrics measures. Every cols/rows derivation must subtract
+// this, and every scaled content box must add it back.
+function preContentPadding(m) {
+  return {
+    padX: (m?.paddingLeft || 0) + (m?.paddingRight || 0),
+    padY: (m?.paddingTop || 0) + (m?.paddingBottom || 0)
   }
 }
 
@@ -1282,6 +1297,8 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
     const shapeKey = `${p.cells?.[0]?.length || 0}x${p.cells?.length || 0}`
     if (shapeKey !== hook.__lastPaintShapeKey) {
       hook.__lastPaintShapeKey = shapeKey
+      hook.__scheduleTerminalLayout?.()
+    } else if (rowPinNeedsFollow(hook)) {
       hook.__scheduleTerminalLayout?.()
     }
   }
@@ -1998,8 +2015,10 @@ function applyScaledLayout(hook, baseScale, cols, rows, displayMode) {
 
   const userZoom = userDisplayZoom(hook)
   const scale = baseScale * userZoom
-  const contentW = cols * m.width
-  const contentH = rows * m.height
+  // The frame is the <pre>'s border box: cells plus the <pre>'s own padding.
+  const {padX, padY} = preContentPadding(m)
+  const contentW = cols * m.width + padX
+  const contentH = rows * m.height + padY
 
   if (
     viewport.availableW < m.width * 2 ||
@@ -2073,8 +2092,9 @@ function scaleToContainer(hook) {
 
   const cols = Math.max(1, hook.cols || parseInt(hook.el.dataset.cols, 10) || 80)
   const rows = Math.max(1, hook.rows || parseInt(hook.el.dataset.rows, 10) || 24)
-  const contentW = cols * m.width
-  const contentH = rows * m.height
+  const {padX, padY} = preContentPadding(m)
+  const contentW = cols * m.width + padX
+  const contentH = rows * m.height + padY
   const viewport = terminalViewportMetrics(hook)
   if (!viewport) return
 
@@ -2105,8 +2125,17 @@ function authoritativeFitToContainer(hook) {
 
   if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return
 
-  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
-  const rows = Math.max(2, Math.floor(viewport.availableH / m.height))
+  const {padX, padY} = preContentPadding(m)
+  const grid = fitGridForViewport({
+    availableW: viewport.availableW,
+    availableH: viewport.availableH,
+    cellW: m.width,
+    cellH: m.height,
+    padX,
+    padY
+  })
+  if (!grid) return
+  const {cols, rows} = grid
   // Remember the natural fit as the row-pin anchor. This path only runs when
   // NOT row-pinning (keyboard closed, or flag off), so it captures the
   // keyboard-closed row count that row-pinning holds the PTY at. See
@@ -2222,15 +2251,30 @@ function applyRowPinLayout(hook) {
   if (!m || !viewport) return false
   if (viewport.availableW < m.width * 2 || viewport.availableH < m.height * 2) return false
 
-  const cols = Math.max(2, Math.floor(viewport.availableW / m.width))
-  const pinnedRows = Math.max(
-    2,
-    hook.__pinnedRows || Math.floor(viewport.availableH / m.height)
-  )
-  const pin = rowPinOffsets({
+  const {padX, padY} = preContentPadding(m)
+  const grid = fitGridForViewport({
+    availableW: viewport.availableW,
     availableH: viewport.availableH,
+    cellW: m.width,
     cellH: m.height,
-    pinnedRows
+    padX,
+    padY
+  })
+  if (!grid) return false
+
+  const cols = grid.cols
+  const pinnedRows = Math.max(2, hook.__pinnedRows || grid.rows)
+  const pin = rowPinOffsets({
+    availableH: grid.textH,
+    cellH: m.height,
+    pinnedRows,
+    // Keep the operator's cursor (or, failing that, the last painted row) on
+    // screen instead of scrolling to a blank tail. See rowPinAnchorRow.
+    anchorRow: rowPinAnchorRow({
+      cursor: hook.cursor,
+      rowsData: hook.rowsData,
+      pinnedRows
+    })
   })
   if (!pin) return false
 
@@ -2246,8 +2290,8 @@ function applyRowPinLayout(hook) {
     pushResizeEvent(hook, cols, pinnedRows)
   }
 
-  const contentW = cols * m.width
-  const contentH = pinnedRows * m.height
+  const contentW = cols * m.width + padX
+  const contentH = pinnedRows * m.height + padY
   hook.el.dataset.displayMode = "rowpin"
   hook.el.style.setProperty("--devide-term-display-scale", "1")
   if (hook.screen) hook.screen.style.overflow = "hidden"
@@ -2271,8 +2315,34 @@ function applyRowPinLayout(hook) {
   })
 
   hook.__rowPinnedApplied = true
+  hook.__rowPinWindow = {
+    pinnedRows,
+    firstRow: pin.hiddenRows,
+    lastRow: pin.hiddenRows + pin.visibleRows - 1
+  }
   syncDisplayZoomBadge(hook)
   return true
+}
+
+// While row-pinned, the grid is scrolled to a fixed window but the cursor keeps
+// moving as output arrives. The post-paint refit above only fires on a grid
+// SHAPE change, which pure output never triggers — so a cursor walking past the
+// bottom of the pinned window would leave the operator typing into rows they
+// cannot see (the same class of blindness as the original blank-screen bug,
+// just reached by scrolling instead of by opening the keyboard). Re-run the
+// layout only when the anchor actually leaves the window: at most once per
+// scrolled line, and only on mobile with the keyboard open.
+function rowPinNeedsFollow(hook) {
+  if (!hook.__rowPinnedApplied) return false
+  const win = hook.__rowPinWindow
+  if (!win) return false
+
+  const anchor = rowPinAnchorRow({
+    cursor: hook.cursor,
+    rowsData: hook.rowsData,
+    pinnedRows: win.pinnedRows
+  })
+  return anchor < win.firstRow || anchor > win.lastRow
 }
 
 function applyTerminalLayout(hook) {
@@ -2286,6 +2356,7 @@ function applyTerminalLayout(hook) {
     // by __rowPinnedApplied so the default-off path is untouched.
     if (hook.__rowPinnedApplied) {
       hook.__rowPinnedApplied = false
+      hook.__rowPinWindow = null
       if (hook.screen) hook.screen.style.overflow = ""
       if (hook.el?.dataset?.displayMode === "rowpin") clearDisplayScale(hook)
     }
@@ -2324,6 +2395,7 @@ function maybeRehealStrandedFit(hook) {
       availableH: viewport.availableH,
       cellW: m.width,
       cellH: m.height,
+      ...preContentPadding(m),
       lastFitCols: hook.__lastFitCols,
       lastFitRows: hook.__lastFitRows
     })

@@ -121,18 +121,100 @@ export function latchMobileAuthority({
  * When the soft keyboard opens, the naive path recomputes rows from the smaller
  * viewport → the shared PTY resizes → tmux reflows/rewraps the whole screen (the
  * residual "flash"). Row-pinning instead keeps the PTY at its keyboard-closed
- * row count and scrolls the fixed grid up so its bottom rows (cursor / prompt /
- * TUI input line) stay visible above the keyboard — zero reflow. The hidden top
- * rows scroll off and clip; closing the keyboard scrolls them back.
+ * row count and scrolls the fixed grid up so the rows that matter (cursor /
+ * prompt / TUI input line) stay visible above the keyboard — zero reflow. The
+ * hidden top rows scroll off and clip; closing the keyboard scrolls them back.
  *
- * @param {{availableH: number, cellH: number, pinnedRows: number, minRows?: number}} input
+ * `anchorRow` is the row that must stay visible. Scrolling blindly to the grid
+ * BOTTOM (the original behaviour, still the fallback) assumes the live content
+ * sits at the last row. That holds for a scrolled shell, but not for a grid
+ * whose written rows stop well short of the bottom — a fresh session, or a TUI
+ * that draws from the top and leaves the tail blank. There the bottom window is
+ * entirely unwritten rows, so opening the keyboard blanked the terminal.
+ *
+ * @param {{
+ *   availableH: number, cellH: number, pinnedRows: number,
+ *   anchorRow?: number, minRows?: number
+ * }} input
  * @returns {{visibleRows: number, hiddenRows: number, offsetY: number, pinnedRows: number} | null}
  */
-export function rowPinOffsets({availableH, cellH, pinnedRows, minRows = 2} = {}) {
+export function rowPinOffsets({availableH, cellH, pinnedRows, anchorRow, minRows = 2} = {}) {
   if (!(availableH > 0) || !(cellH > 0) || !(pinnedRows > 0)) return null
   const visibleRows = Math.max(minRows, Math.floor(availableH / cellH))
-  const hiddenRows = Math.max(0, pinnedRows - visibleRows)
+  const maxHidden = Math.max(0, pinnedRows - visibleRows)
+  const anchor = Number.isFinite(anchorRow)
+    ? Math.max(0, Math.min(pinnedRows - 1, Math.round(anchorRow)))
+    : pinnedRows - 1
+  // Scroll just far enough to bring the anchor onto the last visible row, never
+  // past the end of the grid.
+  const hiddenRows = Math.min(maxHidden, Math.max(0, anchor - visibleRows + 1))
   return {visibleRows, hiddenRows, offsetY: hiddenRows * cellH, pinnedRows}
+}
+
+/**
+ * The row row-pinning must keep on screen.
+ *
+ * Preference order: the live cursor (where the operator is typing), then the
+ * last row with any painted content (TUIs that hide the cursor), then the grid
+ * bottom (a scrolled shell — the historical assumption).
+ *
+ * @param {{cursor?: {x?: number, y?: number, visible?: boolean}, rowsData?: any[][], pinnedRows: number}} input
+ */
+export function rowPinAnchorRow({cursor, rowsData, pinnedRows} = {}) {
+  const lastRow = Number.isFinite(pinnedRows) && pinnedRows > 0 ? pinnedRows - 1 : 0
+
+  const cy = cursor?.y
+  if (cursor?.visible !== false && Number.isFinite(cy) && cy >= 0) {
+    return Math.min(lastRow, cy)
+  }
+
+  if (Array.isArray(rowsData)) {
+    for (let row = Math.min(lastRow, rowsData.length - 1); row >= 0; row -= 1) {
+      if (rowHasContent(rowsData[row])) return row
+    }
+  }
+
+  return lastRow
+}
+
+function rowHasContent(row) {
+  if (!Array.isArray(row)) return false
+  return row.some((cell) => {
+    const ch = Array.isArray(cell) ? cell[0] : null
+    return typeof ch === "string" && ch.trim() !== ""
+  })
+}
+
+/**
+ * Cols/rows a viewport can actually show.
+ *
+ * `padX`/`padY` are the *inner* padding of the element the cells paint into —
+ * the vendor <pre> carries its own `padding: 8px` with `box-sizing: border-box`,
+ * so its text box is that much smaller than the container we measure. Deriving
+ * the grid from the container alone over-reports by ceil(pad / cell) cells,
+ * which tmux then paints into columns/rows that fall outside the visible box
+ * and get clipped by the <pre>'s `overflow: hidden` (characters silently
+ * vanishing off the right edge).
+ */
+export function fitGridForViewport({
+  availableW,
+  availableH,
+  cellW,
+  cellH,
+  padX = 0,
+  padY = 0,
+  minCols = 2,
+  minRows = 2
+} = {}) {
+  if (!(cellW > 0) || !(cellH > 0)) return null
+  const textW = Math.max(0, availableW - padX)
+  const textH = Math.max(0, availableH - padY)
+  return {
+    cols: Math.max(minCols, Math.floor(textW / cellW)),
+    rows: Math.max(minRows, Math.floor(textH / cellH)),
+    textW,
+    textH
+  }
 }
 
 /**
@@ -171,6 +253,8 @@ export function strandedFitReheal({
   availableH,
   cellW,
   cellH,
+  padX = 0,
+  padY = 0,
   lastFitCols,
   lastFitRows,
   minColDelta = 2,
@@ -181,8 +265,10 @@ export function strandedFitReheal({
   // No prior fit on record: the normal fit path reports the first size itself.
   if (!Number.isFinite(lastFitCols) || !Number.isFinite(lastFitRows)) return false
 
-  const measuredCols = Math.floor(availableW / cellW)
-  const measuredRows = Math.floor(availableH / cellH)
+  // Same padding-aware measure the fit path uses, so a steady state can't read
+  // as "we could grow by 2" forever and re-fire the reheal on every tick.
+  const measuredCols = Math.floor(Math.max(0, availableW - padX) / cellW)
+  const measuredRows = Math.floor(Math.max(0, availableH - padY) / cellH)
 
   return (
     measuredCols >= lastFitCols + minColDelta || measuredRows >= lastFitRows + minRowDelta
