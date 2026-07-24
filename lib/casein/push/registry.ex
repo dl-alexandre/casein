@@ -72,6 +72,8 @@ defmodule Casein.Push.Registry do
   def web_subscription(token) when is_binary(token) do
     Device
     |> where([d], d.token_hash == ^token_hash(token) and d.platform == "web")
+    |> order_by([d], desc: d.last_seen_at, desc: d.inserted_at)
+    |> limit(1)
     |> Repo.one()
     |> case do
       %Device{push_subscription: sub} when is_map(sub) and map_size(sub) > 0 -> {:ok, sub}
