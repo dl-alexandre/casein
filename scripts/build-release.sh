@@ -13,7 +13,7 @@
 #   OUTPUT_DIR=/some/path ./scripts/build-release.sh # extract elsewhere
 #
 # The final builder image is also tagged with CASEIN_BUILDER_CACHE_TAG
-# (default: dev_ide:builder) and kept as a cache anchor for future builds.
+# (default: casein:builder) and kept as a cache anchor for future builds.
 # Extraction still uses a per-run tag so concurrent builds cannot retag the
 # image out from under a running extraction.
 
@@ -29,8 +29,8 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
-BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-dev_ide:builder}"
+BUILDER_TAG="casein:builder-$(date +%s)-$$"
+BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-casein:builder}"
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
 
@@ -76,31 +76,31 @@ fi
 echo ">>> extracting release tree to ${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
 docker run --rm "${BUILDER_TAG}" \
-  sh -c 'cd /app/_build/prod/rel/dev_ide && tar -cf - .' |
+  sh -c 'cd /app/_build/prod/rel/casein && tar -cf - .' |
   tar -C "${OUTPUT_DIR}" -xf -
 
 # Sanity-check the release looks right.
-if [ ! -x "${OUTPUT_DIR}/bin/dev_ide" ]; then
-  echo "error: extracted tree missing bin/dev_ide — build did not produce a usable release" >&2
+if [ ! -x "${OUTPUT_DIR}/bin/casein" ]; then
+  echo "error: extracted tree missing bin/casein — build did not produce a usable release" >&2
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/devide" ]; then
   echo "error: extracted tree missing bin/devide (rel/overlays/bin/devide) — required by release LAN commands" >&2
   exit 1
 fi
-if [ ! -f "${OUTPUT_DIR}/releases/dev_ide.relmeta.json" ]; then
-  echo "error: extracted tree missing releases/dev_ide.relmeta.json — required for LAN update checks" >&2
+if [ ! -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ]; then
+  echo "error: extracted tree missing releases/casein.relmeta.json — required for LAN update checks" >&2
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
-  echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by devide.service ExecStartPre" >&2
+  echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by casein.service ExecStartPre" >&2
   exit 1
 fi
-if [ ! -x "${OUTPUT_DIR}/bin/clean_devide_socket" ]; then
-  echo "error: extracted tree missing bin/clean_devide_socket — required by devide.service ExecStartPre" >&2
+if [ ! -x "${OUTPUT_DIR}/bin/clean_casein_socket" ]; then
+  echo "error: extracted tree missing bin/clean_casein_socket — required by casein.service ExecStartPre" >&2
   exit 1
 fi
-STATIC_DIR="$(find "${OUTPUT_DIR}/lib" -path '*/priv/static' -type d | grep '/dev_ide-' | head -n 1 || true)"
+STATIC_DIR="$(find "${OUTPUT_DIR}/lib" -path '*/priv/static' -type d | grep '/casein-' | head -n 1 || true)"
 if [ "${STATIC_DIR}" = "" ]; then
   echo "error: extracted tree missing Casein priv/static directory" >&2
   exit 1
@@ -115,10 +115,10 @@ fi
 
 echo
 echo "release ready at: ${OUTPUT_DIR}"
-echo "  bin/dev_ide   $(file -b "${OUTPUT_DIR}/bin/dev_ide" 2>/dev/null || echo 'script')"
+echo "  bin/casein   $(file -b "${OUTPUT_DIR}/bin/casein" 2>/dev/null || echo 'script')"
 echo "  bin/devide    present (release operator helper)"
 echo "  bin/migrate   present"
-echo "  bin/clean_devide_socket  present"
+echo "  bin/clean_casein_socket  present"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"
 echo
 echo "LAN activation from this release:"

@@ -10,14 +10,14 @@
 #
 # Usage:
 #   DEVIDE_URL=https://devide.devbox.milcgroup.com bash scripts/setup-github-deploy-webhook.sh
-#   DEVIDE_URL=... GITHUB_REPO=dl-alexandre/dev_ide bash scripts/setup-github-deploy-webhook.sh --dry-run
+#   DEVIDE_URL=... GITHUB_REPO=dl-alexandre/casein bash scripts/setup-github-deploy-webhook.sh --dry-run
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 DEVIDE_URL="${DEVIDE_URL:-https://devide.devbox.milcgroup.com}"
-GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/dev_ide}"
+GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/casein}"
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do

@@ -3,7 +3,7 @@ defmodule CaseinPreviewBrowser.Adapter do
   Adapter-shaped boundary for host preview orchestration.
 
   This module intentionally does not declare `@behaviour PreviewCtl.Adapter`:
-  `dev_ide_preview_browser` is a standalone sibling library and must not depend
+  `casein_preview_browser` is a standalone sibling library and must not depend
   back on the host Casein application. It implements the same callback-shaped
   functions so the host can wire it into `PreviewCtl` later without exposing
   browser backend details.

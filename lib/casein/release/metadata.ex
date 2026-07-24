@@ -8,7 +8,7 @@ defmodule Casein.Release.Metadata do
 
   @metadata_version 1
   @default_app "devide"
-  @default_manifest_url "https://github.com/dl-alexandre/dev_ide/releases/latest/download/devide-canary.json"
+  @default_manifest_url "https://github.com/dl-alexandre/casein/releases/latest/download/devide-canary.json"
 
   @type t :: %{
           metadata_version: pos_integer(),

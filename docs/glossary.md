@@ -11,10 +11,11 @@
 > - **§Core concepts** onward — the relationships between authority, clients,
 >   sessions, policy, and evidence.
 >
-> **Naming stability:** Casein is the public product name. The stable
-> implementation family remains `Casein.*`, `:casein`, and `CASEIN_*`; the
-> public-name decision in [`naming-gate.md`](naming-gate.md) does not rename
-> those compatibility surfaces.
+> **Naming:** Casein is both the public product name and the implementation
+> family — `Casein.*`, `:casein`, `CASEIN_*`. The former `DevIDE.*` / `:dev_ide`
+> / `DEV_IDE_*` names were migrated; the frozen `DEVIDE_*` env namespace and the
+> `X-DevIDE-Caller-Pane` header are deliberate exceptions. See
+> [`naming-gate.md`](naming-gate.md).
 >
 > **History:** delegated-execution terms such as assignment, lease, runner,
 > fleet, and governed command described a removed subsystem. They are not part

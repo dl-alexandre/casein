@@ -3,7 +3,7 @@ defmodule Casein.Deployment.WebhookTriggerTest do
 
   alias Casein.Deployment.WebhookTrigger
 
-  @repo "dl-alexandre/dev_ide"
+  @repo "dl-alexandre/casein"
 
   setup do
     prev_trigger = Application.get_env(:casein, :deploy_poller_trigger)

@@ -861,7 +861,7 @@ write_units() {
   cat >"${UNIT_DIR}/${BACKEND_SERVICE}" <<EOF
 [Unit]
 Description=Casein managed LAN backend
-Documentation=https://github.com/dl-alexandre/dev_ide
+Documentation=https://github.com/dl-alexandre/casein
 After=network-online.target
 Wants=network-online.target
 
@@ -887,7 +887,7 @@ EOF
   cat >"${UNIT_DIR}/${EDGE_SOCKET}" <<EOF
 [Unit]
 Description=Casein managed LAN HTTP edge socket
-Documentation=https://github.com/dl-alexandre/dev_ide
+Documentation=https://github.com/dl-alexandre/casein
 
 [Socket]
 ListenStream=${CASEIN_LAN_INSECURE_HTTP_PORT}

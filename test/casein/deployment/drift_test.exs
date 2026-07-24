@@ -222,7 +222,7 @@ defmodule Casein.Deployment.DriftTest do
     prev_deploy = Application.get_env(:casein, :deployment)
 
     Application.put_env(:casein, :deployment,
-      git_remote: "https://github.com/dl-alexandre/dev_ide.git",
+      git_remote: "https://github.com/dl-alexandre/casein.git",
       git_branch: "master",
       ls_remote_timeout_ms: 1,
       remote_head_cache_ttl_ms: 0

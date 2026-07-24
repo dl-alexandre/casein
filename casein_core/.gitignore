@@ -6,4 +6,4 @@
 /.fetch
 erl_crash.dump
 *.ez
-dev_ide_core-*.tar
+casein_core-*.tar

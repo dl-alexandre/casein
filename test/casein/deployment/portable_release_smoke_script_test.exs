@@ -30,7 +30,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
   test "production container uses the writable runtime user's home" do
     text = File.read!(@dockerfile)
 
-    assert text =~ "HOME=/home/dev_ide"
+    assert text =~ "HOME=/home/casein"
     refute text =~ "HOME=/app"
   end
 end

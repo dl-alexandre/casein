@@ -16,11 +16,45 @@ checks below remain the evidence register, with unresolved items recorded as
 accepted or deferred instead of silently marked `PASS`. This document is not
 legal clearance, and the collision evidence is not a legal conclusion.
 
-The public-brand decision is deliberately separate from implementation
-identity. Keep `Casein.*`, `:casein`, `dev_ide`, and `CASEIN_*` unchanged.
-Existing commands, package coordinates, repository paths, release artifacts,
-URLs, and deployment configuration remain compatibility surfaces unless a
-separate migration is approved.
+> ### AMENDMENT — implementation identity migrated (2026-07-24)
+>
+> The paragraph below (and the "Initial launch scope" exclusions that follow)
+> recorded the **initial** 2026-07-22 scope, which deliberately kept the
+> implementation identifiers unchanged. The product owner has since directed
+> the separate migration that scope anticipated, and it has been executed:
+>
+> - **Migrated to Casein:** module namespace (`DevIDE.*` → `Casein.*`), OTP app
+>   atom (`:dev_ide` → `:casein`), environment variables (`DEV_IDE_*` →
+>   `CASEIN_*`), source directories, the release + `bin/casein`, `mix casein.*`
+>   tasks, systemd units, infra scripts, docker identity, Windows desktop
+>   identity, the MCP server, frontend event/CSS namespaces, and DB + private
+>   package names.
+> - **Frozen by design:** the `DEVIDE_*` env namespace (a separate namespace
+>   that now coexists with `CASEIN_*`), the `X-DevIDE-Caller-Pane` wire header,
+>   and the `:ghostty` app atom.
+> - **N4 updated:** the canonical repository was renamed
+>   `dl-alexandre/dev_ide` → **`dl-alexandre/casein`** (still private). GitHub
+>   redirects the former URL.
+> - **Still deferred**, because each needs an external registration or a
+>   running-system re-provisioning that a source-only rename would break: the
+>   public host name (`devide.devbox.milcgroup.com` — needs DNS + Caddy in
+>   milc-devbox), the Apple bundle id `com.alexandrefamilyfarm.devide-mob`
+>   (needs an Apple App ID + provisioning profile), and the workspace slug
+>   `dalexandre-devide` together with the tmux session prefix and MCP server
+>   slugs derived from it (needs workspace re-provisioning). The live host also
+>   still uses the `/opt/devide`, `/etc/devide`, `/run/devide` paths; the deploy
+>   scripts target those, with `casein` aliases symlinked on the box.
+> - **N3 unchanged:** no unqualified `casein` package coordinate is claimed or
+>   published. The renamed package names are private and unpublished.
+> - **Before making the repository public**, its history must be scrubbed of
+>   devbox/internal infrastructure detail (hostnames, paths, tokens). That is a
+>   separate, not-yet-performed step.
+
+The public-brand decision was deliberately separate from implementation
+identity. *(Superseded by the amendment above.)* Keep `DevIDE.*`, `:dev_ide`,
+`dev_ide`, and `DEV_IDE_*` unchanged. Existing commands, package coordinates,
+repository paths, release artifacts, URLs, and deployment configuration remain
+compatibility surfaces unless a separate migration is approved.
 
 ## Initial launch scope
 
@@ -41,7 +75,7 @@ separate migration is approved.
 | **N1 — Legal clearance** | Review the exact name, close spellings, and phonetic equivalents for intended software and SaaS goods/services in launch jurisdictions. | Dated search exports and qualified written review for relevant jurisdictions and classes. | **DEFERRED / ACCEPTED RISK** — no qualified clearance is recorded. This remains a follow-up and is not represented as complete. |
 | **N2 — Product collision** | Identify active exact-name software and decide whether it creates an unacceptable mistaken-identity risk. | Exact-name searches across source hosts, registries, app stores, product directories, and the general web. | **ACCEPTED RISK** — the owner has chosen to launch despite the Rails CMS and other exact-name repositories. |
 | **N3 — Install namespace** | Control every advertised install coordinate, or use a qualified coordinate that cannot be confused with an existing package. | Registry ownership records and the exact proposed install command. | **NOT IN INITIAL SCOPE** — existing `casein` packages are not ours, so the launch will not advertise that unqualified coordinate. |
-| **N4 — Web and source identity** | Publish one canonical source location. A dedicated domain is optional and must not be implied as controlled without evidence. | Link to the controlled canonical repository or site; ownership proof for any additional identity claimed later. | **PASS FOR INITIAL SCOPE** — the existing `dl-alexandre/dev_ide` repository remains canonical; no dedicated domain is required or claimed. |
+| **N4 — Web and source identity** | Publish one canonical source location. A dedicated domain is optional and must not be implied as controlled without evidence. | Link to the controlled canonical repository or site; ownership proof for any additional identity claimed later. | **PASS FOR INITIAL SCOPE** — the existing `dl-alexandre/casein` repository remains canonical; no dedicated domain is required or claimed. |
 | **N5 — Search distinction** | Measure whether target users can distinguish this product from protein-related and existing software results. | Dated, signed-out result captures for `Casein software` and `Casein developer tool`. | **DEFERRED / ACCEPTED RISK** — current search results are not distinctive. Treat search position as a post-launch acquisition risk, not a launch gate. |
 | **N6 — Spoken and written comprehension** | With at least 10 target users, measure spelling after hearing, pronunciation after reading, and unaided 24-hour recall. | Participant script, anonymized first responses, totals, and date. | **DEFERRED** — no test is recorded. |
 | **N7 — Positioning fit** | After reading only the hero, at least 8 of 10 target users identify a durable workspace for people and coding agents; no more than 2 identify food, nutrition, or biotechnology as the primary product category. | Anonymized comprehension responses using the fixed prompt below. | **DEFERRED** — no test is recorded. |

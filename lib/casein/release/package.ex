@@ -9,7 +9,7 @@ defmodule Casein.Release.Package do
   alias Casein.Release.Update.Manifest
 
   @default_channel "canary"
-  @github_repo "dl-alexandre/dev_ide"
+  @github_repo "dl-alexandre/casein"
 
   @type write_opts :: [
           release_root: Path.t(),

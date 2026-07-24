@@ -14,7 +14,7 @@
 
 [Unit]
 Description=Casein loopback HTTP proxy (127.0.0.1:4000 → current Unix socket)
-Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/casein/integrations/manager/deploy/README.md
+Documentation=https://github.com/dl-alexandre/casein/blob/master/lib/casein/integrations/manager/deploy/README.md
 After=network-online.target
 Wants=network-online.target
 
