@@ -437,7 +437,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
       }
     ]
 
-    controls ++ url_items ++ close
+    controls ++ viewport_items(pane_id, ctx["viewport"]) ++ url_items ++ close
   end
 
   def items("run_entry", %{"runId" => run_id} = ctx, _assigns) when is_binary(run_id) do
@@ -593,6 +593,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
   # relative session/window hrefs, so this accepts http(s) only — the scheme
   # check is what keeps a crafted ctx from smuggling a javascript:/data: URL
   # into the anchor's href.
+  # Device presets for a preview pane's locked viewport. The overlay sizes the
+  # iframe to these exact CSS pixels and scales it to fit the pane, so the
+  # embedded app lays out at a real device width instead of the pane's.
+  #
+  # "" clears the lock. The entry matching the pane's current viewport is
+  # disabled rather than check-marked — the menu renderer has no checked state,
+  # and a dimmed row reads as "already applied" without inventing one.
+  @preview_viewports [
+    {"phone", "Phone · 390×844", "390x844"},
+    {"tablet", "Tablet · 820×1180", "820x1180"},
+    {"desktop", "Desktop · 1280×900", "1280x900"},
+    {"fit", "Fit pane", ""}
+  ]
+
+  defp viewport_items(pane_id, current) do
+    current = if is_binary(current), do: current, else: ""
+
+    [%{divider: true}] ++
+      Enum.map(@preview_viewports, fn {id, label, viewport} ->
+        %{
+          id: "viewport-" <> id,
+          label: label,
+          event: "pane:input",
+          params: %{
+            "pane-id" => pane_id,
+            "type" => "set_viewport",
+            "viewport" => viewport
+          },
+          disabled: String.downcase(current) == viewport
+        }
+      end)
+  end
+
   defp preview_open_in_tab_item(url) do
     if is_binary(url) and String.match?(url, ~r{^https?://}) do
       [%{id: "open-tab", label: "Open in new tab", href: url}]
