@@ -83,18 +83,30 @@ defmodule PreviewCtl.Playwright.BridgeTest do
     Application.put_env(:preview_ctl, :playwright_script, @fake_script)
     restart_bridge!()
 
-    parent = self()
+    # The daemon parks the first request until we touch this sentinel, so the
+    # in-flight window is held open deterministically rather than racing the
+    # daemon's reply. Without it, the fake daemon answers instantly and the
+    # second command can arrive after `pending` has already cleared.
+    release =
+      Path.join(System.tmp_dir!(), "pw-bridge-release-#{System.unique_integer([:positive])}")
+
+    on_exit(fn -> File.rm_rf(release) end)
 
     task =
       Task.async(fn ->
-        send(parent, :first_started)
-        Bridge.command(%{action: "observe_live", url: "http://example.test/one"})
+        Bridge.command(%{action: "block", url: "http://example.test/one", release_path: release})
       end)
 
-    assert_receive :first_started, 5_000
+    # Wait until the first command actually owns the Bridge's pending slot —
+    # only then is a second command guaranteed to see it as busy. This replaces
+    # the previous send-before-call handshake, which signalled "task started"
+    # rather than "request in flight".
+    wait_until(fn -> match?(%{pending: pending} when not is_nil(pending), bridge_state()) end)
 
     assert {:error, :playwright_busy} =
              Bridge.command(%{action: "click", url: "http://example.test/two"})
+
+    File.touch!(release)
 
     assert {:ok, _} = Task.await(task, 5_000)
   end
@@ -124,6 +136,24 @@ defmodule PreviewCtl.Playwright.BridgeTest do
   defp restart_bridge! do
     _ = Supervisor.terminate_child(DevIDE.Supervisor, Bridge)
     {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, Bridge)
+  end
+
+  defp bridge_state, do: :sys.get_state(Bridge)
+
+  defp wait_until(fun, attempts \\ 200) do
+    cond do
+      fun.() ->
+        :ok
+
+      attempts <= 0 ->
+        flunk("condition not met in time")
+
+      true ->
+        receive do
+        after
+          10 -> wait_until(fun, attempts - 1)
+        end
+    end
   end
 
   defp put_or_delete_env(nil), do: Application.delete_env(:preview_ctl, :playwright_script)

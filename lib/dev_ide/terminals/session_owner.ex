@@ -11,6 +11,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   alias DevIDE.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
   alias DevIDE.Terminals.ScrollbackArchive
+  alias DevIDE.Terminals.SessionOwner.{Payload, ResponseClassifier, SizeMath}
   alias DevIDE.Terminals.SessionRecovery
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Theme
@@ -49,15 +50,6 @@ defmodule DevIDE.Terminals.SessionOwner do
   # query fans out to N viewer emulators; answers of the same class arriving
   # within this window are duplicates of one underlying query, not new answers.
   @query_response_dedupe_ms 100
-
-  @cpr_response ~r/\A\e\[\??\d+;\d+R/
-  @da_response ~r/\A\e\[(?:\?|>)[0-9;]*c/
-  @decrpm_response ~r/\A\e\[\?[0-9;]*\$y/
-  @kitty_response ~r/\A\e\[\?[0-9;]*u/
-  @osc_color_response ~r/\A\e\](?:10|11|12);/
-  @osc_palette_response ~r/\A\e\]4;/
-  @xtversion_response ~r/\A\eP>\|/
-  @theme_report_response ~r/\A\e\[\?997;[12]n/
 
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
@@ -1194,7 +1186,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
       all_sizes ->
         case active_sized_viewers(state) do
-          [] -> {largest_size(all_sizes), :largest_fallback}
+          [] -> {SizeMath.largest_size(all_sizes), :largest_fallback}
           actives -> {actives |> Enum.max_by(fn {seq, _size} -> seq end) |> elem(1), :focused}
         end
     end
@@ -1208,13 +1200,6 @@ defmodule DevIDE.Terminals.SessionOwner do
         size = Map.get(state.subscriber_sizes, subscriber),
         not is_nil(size),
         do: {seq, size}
-  end
-
-  # No viewer is focused: pick the LARGEST viewport by area, so the shared grid is
-  # a real shape some viewer actually requested rather than an independent per-axis
-  # max (which could synthesize a {cols, rows} nobody asked for).
-  defp largest_size(sizes) do
-    Enum.max_by(sizes, fn {cols, rows} -> {cols * rows, cols} end)
   end
 
   # Observability: this size policy has been a recurring, hard-to-diagnose source
@@ -1591,7 +1576,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # answers, and every PaneWorker forwards its answer here — N responses (with
   # per-viewer theme colors for OSC) into one PTY. Exactly one must win.
   defp handle_query_response(state, from, data) do
-    class = classify_query_response(data)
+    class = ResponseClassifier.classify_query_response(data)
 
     {forwarded?, state} =
       if from == current_responder(state) do
@@ -1645,20 +1630,6 @@ defmodule DevIDE.Terminals.SessionOwner do
     do: Theme.rewrite_theme_reports(data, scheme)
 
   defp maybe_rewrite_theme_reports(data, _class, _scheme), do: data
-
-  defp classify_query_response(data) do
-    cond do
-      Regex.match?(@cpr_response, data) -> :cpr
-      Regex.match?(@da_response, data) -> :device_attrs
-      Regex.match?(@decrpm_response, data) -> :decrpm
-      Regex.match?(@kitty_response, data) -> :kitty_keyboard
-      Regex.match?(@osc_color_response, data) -> :osc_color
-      Regex.match?(@osc_palette_response, data) -> :osc_palette
-      Regex.match?(@xtversion_response, data) -> :xtversion
-      Regex.match?(@theme_report_response, data) -> :theme_report
-      true -> :other
-    end
-  end
 
   # The responder is DERIVED per message, never stored: a stored responder pid
   # would need explicit handoff on every detach/DOWN/focus flip and could go
@@ -1832,7 +1803,12 @@ defmodule DevIDE.Terminals.SessionOwner do
       normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
 
       payload =
-        build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil), state.gen)
+        Payload.build_data_payload(
+          normalized,
+          replay,
+          if(replay, do: state.cursor, else: nil),
+          state.gen
+        )
 
       for pid <- state.raw_subscribers do
         send(pid, {:terminal_payload, :data, payload})
@@ -1847,7 +1823,12 @@ defmodule DevIDE.Terminals.SessionOwner do
       normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
 
       payload =
-        build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil), state.gen)
+        Payload.build_data_payload(
+          normalized,
+          replay,
+          if(replay, do: state.cursor, else: nil),
+          state.gen
+        )
 
       for {pid, _mode} <- state.subscribers do
         send(pid, {:terminal_payload, :data, payload})
@@ -1913,7 +1894,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     data = replay_data(state)
 
     if should_replay?(state) and byte_size(data) > 0 do
-      payload = build_data_payload(data, true, state.cursor, state.gen)
+      payload = Payload.build_data_payload(data, true, state.cursor, state.gen)
 
       # Deliver the replay buffer synchronously from within the raw attach
       # handle_call (via ensure_attachment). GenServer serialization ensures
@@ -1963,29 +1944,6 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp should_replay?(%__MODULE__{info: %Info{kind: :shell}}), do: true
 
   defp should_replay?(_state), do: false
-
-  # Enriched replay payload with state marker for raw channel reconnect UX.
-  # `replay_frame: true` + `state_marker` let TerminalChannel clients
-  # distinguish buffered scrollback from live PTY output. Cursor metadata is
-  # opportunistic: if a backend emits a cursor report, it is captured and
-  # stripped before broadcast/buffering; otherwise clients get the pending
-  # placeholder.
-  defp build_data_payload(data, true, cursor, gen) when is_binary(data) do
-    %{
-      data: data,
-      gen: gen,
-      replay: true,
-      replay_frame: true,
-      state_marker: %{
-        kind: "replay",
-        cursor: cursor || %{row: nil, col: nil, pending: true},
-        ts: System.system_time(:millisecond)
-      }
-    }
-  end
-
-  defp build_data_payload(data, _replay, _cursor, gen) when is_binary(data),
-    do: %{data: data, gen: gen}
 
   # --- backpressure / burst protection + cursor capture helpers (item 4/5) ---
 
