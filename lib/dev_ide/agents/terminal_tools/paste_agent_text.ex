@@ -18,7 +18,7 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -39,6 +39,6 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.paste_agent_text(Helpers.to_impl_args(params))
+    Agent.paste_agent_text(Helpers.to_impl_args(params))
   end
 end

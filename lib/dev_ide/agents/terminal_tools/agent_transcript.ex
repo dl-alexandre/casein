@@ -20,7 +20,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -42,6 +42,6 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.agent_transcript(Helpers.to_impl_args(params))
+    Agent.agent_transcript(Helpers.to_impl_args(params))
   end
 end
