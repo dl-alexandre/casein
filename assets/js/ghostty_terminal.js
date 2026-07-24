@@ -1328,6 +1328,14 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
 
+  // Normal vs alternate screen, folded server-side out of the PTY stream
+  // (DevIDE.Terminals.ScreenMode). The layout model branches on it: only a
+  // scrolling shell may be row-pinned when the soft keyboard opens, because a
+  // full-screen TUI draws to the whole grid and must be told its real size.
+  // Carried on every frame, so it is read before the payload is accepted —
+  // even a dropped frame reports the current mode correctly.
+  if (payload.screen_mode) hook.__screenMode = payload.screen_mode
+
   const accepted = acceptRenderPayload(hook, payload)
   if (!accepted?.ok) return
 
@@ -2116,6 +2124,7 @@ function gatherLayoutInput(hook, trigger) {
     mobile: isMobileTerminalLayout(),
     keyboardOpen: keyboardOpenNow(),
     rowPinAllowed: rowPinEnabled(),
+    screenMode: hook.__screenMode ?? "normal",
     userZoom: userDisplayZoom(hook),
     trigger
   }

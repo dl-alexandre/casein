@@ -320,3 +320,78 @@ test("I6: the hook publishes the model's verdict for the painter", async (t) => 
   assert.equal(displayMode(hook), DisplayMode.ROWPIN)
   assert.equal(hook.__canvasSafe, false, "a translated frame must release the canvas")
 })
+
+// ---------------------------------------------------------------------------
+// Screen mode — row-pinning must not crop a full-screen TUI
+// ---------------------------------------------------------------------------
+
+// A scrolling shell keeps its live content on the last written row, so holding
+// the PTY size and scrolling the grid is right. An alternate-screen TUI draws to
+// the whole grid and pins its UI to the bottom row; cropping it to a
+// keyboard-sized window shows a slice of a layout built for a taller screen and
+// the program never learns to redraw. This was the originally reported bug:
+// "clauded was not adhering to the keyboard showing up".
+test("screen mode: a normal-screen shell is row-pinned on keyboard open", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+  const { cols, rows } = expectedFit(390, 800)
+
+  render(hook, { ...gridPayload({ cols, rows, painted: 16, cursorRow: 15 }), screen_mode: "normal" })
+  await wait(150)
+
+  const before = sizeReports(hook).length
+  openKeyboard(hook, el)
+  await wait(150)
+
+  assert.equal(displayMode(hook), DisplayMode.ROWPIN)
+  assert.equal(sizeReports(hook).length, before, "a shell is held at its keyboard-closed size")
+})
+
+test("screen mode: an alternate-screen TUI is resized instead of cropped", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+  const { cols, rows } = expectedFit(390, 800)
+
+  render(hook, { ...gridPayload({ cols, rows, painted: rows, cursorRow: rows - 1 }), screen_mode: "alternate" })
+  await wait(150)
+
+  openKeyboard(hook, el)
+  await wait(150)
+
+  assert.notEqual(displayMode(hook), DisplayMode.ROWPIN, "a full-screen TUI must not be row-pinned")
+
+  const report = lastSizeReport(hook)
+  assert.deepEqual(
+    report.payload,
+    expectedFit(390, 280),
+    "the TUI is told the real keyboard-open size so it can reflow"
+  )
+})
+
+test("screen mode: a pane that has not painted yet behaves as before", () => {
+  // No frame has arrived, so no screen mode is known. Default to the
+  // shell-shaped assumption rather than suppressing row-pinning entirely.
+  const input = {
+    container: {availableW: 390, availableH: 280, padL: 0, padT: 0},
+    cell: {w: CELL_W, h: CELL_H, padX: PRE_PAD, padY: PRE_PAD},
+    renderedGrid: {cols: 37, rows: 46},
+    lastFit: {cols: 37, rows: 46},
+    lastAppliedUserZoom: 1,
+    pinnedRows: 46,
+    cursor: {x: 0, y: 45, visible: true},
+    authority: true,
+    mobile: true,
+    keyboardOpen: true,
+    rowPinAllowed: true,
+    userZoom: 1,
+  }
+
+  assert.equal(computeTerminalLayout(input).mode, DisplayMode.ROWPIN)
+  assert.equal(computeTerminalLayout({...input, screenMode: "normal"}).mode, DisplayMode.ROWPIN)
+
+  // Alternate screen: no row-pin, and a real resize is proposed. The mode is
+  // SCALE rather than FIT only because the 46-row grid still on screen
+  // overflows the new 15-row fit — the letterbox is borrowed until the resize
+  // lands, which is exactly the convergence path.
+  const alt = computeTerminalLayout({...input, screenMode: "alternate"})
+  assert.notEqual(alt.mode, DisplayMode.ROWPIN)
+  assert.deepEqual(alt.requestedGrid, {cols: 37, rows: 15})
+})

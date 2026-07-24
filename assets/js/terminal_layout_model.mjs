@@ -69,6 +69,7 @@ const NOOP = Object.freeze({noop: true, reason: "unmeasurable"})
  * @param {boolean} input.mobile
  * @param {boolean} input.keyboardOpen
  * @param {boolean} input.rowPinAllowed       the ?rowpin= flag
+ * @param {"normal"|"alternate"} [input.screenMode]  from DevIDE.Terminals.ScreenMode
  * @param {number} input.userZoom
  * @param {"event"|"periodic"} [input.trigger]
  * @returns {{
@@ -112,8 +113,30 @@ export function computeTerminalLayout(input = {}) {
   return authoritativeLayout(input, grid)
 }
 
-function rowPinApplies({authority, rowPinAllowed, mobile, keyboardOpen, userZoom}) {
-  return !!(authority && rowPinAllowed && mobile && keyboardOpen && userZoom === 1)
+/**
+ * Row-pinning suits a scrolling shell and actively harms a full-screen TUI.
+ *
+ * A shell's live content is the last written row, so holding the PTY size and
+ * scrolling the grid shows the prompt above the keyboard with no reflow. An
+ * alternate-screen TUI instead draws to the WHOLE grid and pins its own UI to
+ * the bottom row; it never scrolls, so cropping it to a keyboard-sized window
+ * just shows a slice of a layout built for a taller screen, and the program
+ * never learns it should redraw. Those panes get a real resize, which they
+ * handle by reflowing above the keyboard.
+ *
+ * `screenMode` is undefined until the first frame arrives. Default to the
+ * shell-shaped assumption so a pane that has not painted yet behaves as it did
+ * before this signal existed.
+ */
+function rowPinApplies({authority, rowPinAllowed, mobile, keyboardOpen, userZoom, screenMode}) {
+  return !!(
+    authority &&
+    rowPinAllowed &&
+    mobile &&
+    keyboardOpen &&
+    userZoom === 1 &&
+    screenMode !== "alternate"
+  )
 }
 
 // A viewer that doesn't own the shared size renders whatever grid arrives,
