@@ -1,10 +1,10 @@
 import Foundation
 import Testing
 
-@testable import DevIDEHostCore
+@testable import CaseinHostCore
 
 /// End-to-end lifecycle test against a real desktop release — the same loop
-/// devide-host-cli drives by hand, but self-asserting, so it can run as a
+/// casein-host-cli drives by hand, but self-asserting, so it can run as a
 /// regression gate: start → contract file appears → health confirms the
 /// published identity → graceful stop removes the file → epmd drops the
 /// node name → restart comes up with a fresh pid.
@@ -12,11 +12,11 @@ import Testing
 /// Gated on DEVIDE_RELEASE_ROOT so `swift test` stays green without a
 /// release. Run it with:
 ///
-///     DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
+///     DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/casein \
 ///       /usr/bin/swift test --filter LifecycleIntegration
 ///
 /// Uses a throwaway data dir, so the operator's real
-/// ~/Library/Application Support/DevIDE (and its secrets) are untouched.
+/// ~/Library/Application Support/Casein (and its secrets) are untouched.
 @Suite(
     .enabled(
         if: ProcessInfo.processInfo.environment["DEVIDE_RELEASE_ROOT"]?.isEmpty == false,

@@ -46,10 +46,28 @@ public struct HostPaths: Sendable, Equatable {
 
         let dataDir =
             environment["CASEIN_DESKTOP_DATA_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appending(path: "Library/Application Support/DevIDE")
+            ?? defaultDataDir()
 
         return HostPaths(dataDir: dataDir, releaseRoot: URL(filePath: root).standardizedFileURL)
+    }
+
+    static func defaultDataDir(
+        home: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> URL {
+        let applicationSupport = home.appending(path: "Library/Application Support")
+        let current = applicationSupport.appending(path: "Casein")
+        let legacy = applicationSupport.appending(path: "DevIDE")
+
+        // Existing installs keep their data and Keychain account path. Fresh
+        // installs use the Casein product identity.
+        if !fileManager.fileExists(atPath: current.path),
+           fileManager.fileExists(atPath: legacy.path)
+        {
+            return legacy
+        }
+
+        return current
     }
 
     /// Persist an operator-chosen release directory and return the resulting

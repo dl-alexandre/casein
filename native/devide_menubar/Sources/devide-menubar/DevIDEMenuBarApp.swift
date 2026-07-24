@@ -1,9 +1,9 @@
 import AppKit
-import DevIDEHostCore
+import CaseinHostCore
 import SwiftUI
 
 @main
-struct DevIDEMenuBarApp: App {
+struct CaseinMenuBarApp: App {
     @State private var monitor: ServerMonitor
 
     init() {
@@ -13,7 +13,7 @@ struct DevIDEMenuBarApp: App {
         let monitor = ServerMonitor()
         monitor.startPolling()
         // A packaged desktop host owns its embedded release. Launching it —
-        // including through SMAppService at login — restores DevIDE without a
+        // including through SMAppService at login — restores Casein without a
         // second manual "Start Server" action after every reboot.
         if monitor.paths?.releaseRoot.path.contains(".app/Contents/Resources/release") == true {
             Task { @MainActor in

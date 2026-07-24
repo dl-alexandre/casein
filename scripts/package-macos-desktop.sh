@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a self-contained, signed macOS DevIDE application archive.
+# Build a self-contained, signed macOS Casein application archive.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -21,7 +21,7 @@ else
 fi
 version="$("${MIX[@]}" run --no-start -e 'IO.write(Mix.Project.config()[:version])')"
 build_number="${DEVIDE_BUILD_NUMBER:-$(git rev-list --count HEAD)}"
-release_root="$(pwd)/_build/prod/rel/dev_ide"
+release_root="$(pwd)/_build/prod/rel/casein"
 tmux_runtime="$(pwd)/native/devide_menubar/build/tmux-runtime"
 artifact_dir="$(pwd)/native/devide_menubar/build/artifacts"
 case "$architecture" in
@@ -34,8 +34,8 @@ bash native/devide_menubar/scripts/build-tmux-runtime.sh "$tmux_runtime"
 MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite DEVIDE_RELEASE_PROFILE=desktop \
   DEVIDE_RELEASE_TARGET="$release_target" "${MIX[@]}" casein.release.lan
 
-app_priv="$(find "$release_root/lib" -maxdepth 2 -type d -path '*/dev_ide-*/priv' -print -quit)"
-[[ -n "$app_priv" ]] || { echo "assembled release has no DevIDE priv directory" >&2; exit 1; }
+app_priv="$(find "$release_root/lib" -maxdepth 2 -type d -path '*/casein-*/priv' -print -quit)"
+[[ -n "$app_priv" ]] || { echo "assembled release has no Casein priv directory" >&2; exit 1; }
 mkdir -p "$app_priv/bin" "$app_priv/lib" "$app_priv/licenses"
 ditto "$tmux_runtime/bin" "$app_priv/bin"
 ditto "$tmux_runtime/lib" "$app_priv/lib"
@@ -51,11 +51,11 @@ ditto "$tmux_runtime/licenses" "$app_priv/licenses"
 )
 
 mkdir -p "$artifact_dir"
-artifact_base="DevIDE-${version}-macos-${architecture}"
+artifact_base="Casein-${version}-macos-${architecture}"
 archive="$artifact_dir/$artifact_base.zip"
 rm -f "$archive" "$archive.sha256" "$artifact_dir/$artifact_base.manifest.plist"
 ditto -c -k --sequesterRsrc --keepParent \
-  "native/devide_menubar/build/DevIDE MenuBar.app" "$archive"
+  "native/devide_menubar/build/Casein MenuBar.app" "$archive"
 shasum -a 256 "$archive" > "$archive.sha256"
 
 manifest="$artifact_dir/$artifact_base.manifest.plist"

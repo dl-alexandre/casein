@@ -2,13 +2,13 @@
 # Static validation for the self-contained macOS desktop package.
 set -euo pipefail
 
-APP="${1:-native/devide_menubar/build/DevIDE MenuBar.app}"
+APP="${1:-native/devide_menubar/build/Casein MenuBar.app}"
 APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 RELEASE="$APP/Contents/Resources/release"
 
-[[ -x "$APP/Contents/MacOS/devide-menubar" ]]
+[[ -x "$APP/Contents/MacOS/casein-menubar" ]]
 [[ -x "$RELEASE/bin/casein" ]]
-tmux_bin="$(find "$RELEASE/lib" -path '*/dev_ide-*/priv/bin/tmux' -print -quit)"
+tmux_bin="$(find "$RELEASE/lib" -path '*/casein-*/priv/bin/tmux' -print -quit)"
 [[ -x "$tmux_bin" ]]
 metadata="$RELEASE/releases/casein.relmeta.json"
 [[ -f "$metadata" ]]
@@ -47,7 +47,7 @@ chmod 600 "$legacy_secrets"
 cleanup() {
   if [[ "$host_pid" =~ ^[0-9]+$ ]]; then
     host_command="$(ps -p "$host_pid" -o command= 2>/dev/null || true)"
-    if [[ "$host_command" == "$APP/Contents/MacOS/devide-menubar" ]]; then
+    if [[ "$host_command" == "$APP/Contents/MacOS/casein-menubar" ]]; then
       kill -TERM "$host_pid" 2>/dev/null || true
       for _ in $(seq 1 20); do kill -0 "$host_pid" 2>/dev/null || break; sleep 0.1; done
     fi
@@ -95,7 +95,7 @@ done
 # path as Finder and Start at Login. No release or Homebrew path is injected.
 CASEIN_DESKTOP_DATA_DIR="$smoke_dir" open -n "$APP"
 for _ in $(seq 1 15); do
-  host_pid="$(pgrep -f "^$APP/Contents/MacOS/devide-menubar$" | tail -n 1 || true)"
+  host_pid="$(pgrep -f "^$APP/Contents/MacOS/casein-menubar$" | tail -n 1 || true)"
   [[ -n "$host_pid" ]] && break
   sleep 1
 done
