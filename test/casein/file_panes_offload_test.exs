@@ -366,7 +366,7 @@ defmodule Casein.FilePanesOffloadTest do
     end
 
     ets_panes =
-      :ets.tab2list(:casein_file_panes)
+      :ets.tab2list(:dev_ide_file_panes)
       |> Enum.map(fn {pane_id, _} -> pane_id end)
       |> Enum.sort()
 

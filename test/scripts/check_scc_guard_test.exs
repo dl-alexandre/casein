@@ -26,8 +26,8 @@ defmodule Scripts.CheckSccGuardTest do
     fixture = """
     Cycle of length 2:
 
-        lib/dev_ide/previews/pane.ex
-        lib/dev_ide/terminals/session_directory.ex
+        lib/casein/previews/pane.ex
+        lib/casein/terminals/session_directory.ex
     """
 
     {output, status} = run_guard(tmp, fixture)
@@ -40,8 +40,8 @@ defmodule Scripts.CheckSccGuardTest do
     fixture = """
     Cycle of length 2:
 
-        lib/dev_ide/previews/pane.ex
-        lib/dev_ide/preview_panes.ex
+        lib/casein/previews/pane.ex
+        lib/casein/preview_panes.ex
     """
 
     {output, status} = run_guard(tmp, fixture)
@@ -54,8 +54,8 @@ defmodule Scripts.CheckSccGuardTest do
     fixture = """
     Cycle of length 2:
 
-        lib/dev_ide/terminals/session_directory.ex
-        lib/dev_ide/workspaces/manager.ex
+        lib/casein/terminals/session_directory.ex
+        lib/casein/workspaces/manager.ex
     """
 
     {output, status} = run_guard(tmp, fixture)

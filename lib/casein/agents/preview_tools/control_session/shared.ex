@@ -49,7 +49,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
 
   def preview_api_token do
     System.get_env("CASEIN_API_TOKEN") ||
-      Application.get_env(:casein, :dev_ide_api_token)
+      Application.get_env(:casein, :casein_api_token)
   end
 
   def preview_api_base_url do

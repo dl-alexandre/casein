@@ -49,7 +49,7 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
 
     staging = env["DEVIDE_AGENT_MCP_HOME"]
     config = File.read!(Path.join(staging, ".mcp.json"))
-    assert config =~ "casein-terminal-desktop-workspace"
+    assert config =~ "devide-terminal-desktop-workspace"
     assert config =~ "Bearer ${CASEIN_API_TOKEN}"
     refute config =~ env["CASEIN_API_TOKEN"]
 

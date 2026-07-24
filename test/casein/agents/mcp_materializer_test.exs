@@ -14,6 +14,8 @@ defmodule Casein.Agents.MCPMaterializerTest do
     prev_token = Application.get_env(:casein, :api_token)
     prev_base = Application.get_env(:casein, :agent_mcp_base_url)
     prev_auth_root = Application.get_env(:casein, :agent_auth_profile_root)
+    prev_bundle_root = Application.get_env(:casein, :grok_capability_bundle_root)
+    prev_leader_root = Application.get_env(:casein, :grok_leader_root)
     prev_env_token = System.get_env("CASEIN_API_TOKEN")
     prev_ws_tokens = Application.get_env(:casein, :workspace_api_tokens)
     prev_env_ws_tokens = System.get_env("CASEIN_WORKSPACE_API_TOKENS")
@@ -30,12 +32,16 @@ defmodule Casein.Agents.MCPMaterializerTest do
       |> Path.join("mcp-materializer-auth-#{System.unique_integer([:positive])}")
 
     Application.put_env(:casein, :agent_auth_profile_root, auth_root)
+    Application.put_env(:casein, :grok_capability_bundle_root, Path.join(tmp, "grok-bundles"))
+    Application.put_env(:casein, :grok_leader_root, Path.join(tmp, "grok-leaders"))
 
     on_exit(fn ->
       Application.put_env(:casein, :api_token, prev_token)
       Application.put_env(:casein, :agent_mcp_base_url, prev_base)
       restore_workspace_tokens(prev_ws_tokens)
       restore_auth_root(prev_auth_root)
+      restore_bundle_root(prev_bundle_root)
+      restore_leader_root(prev_leader_root)
 
       if prev_env_token,
         do: System.put_env("CASEIN_API_TOKEN", prev_env_token),
@@ -59,13 +65,13 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
-    assert grok =~ "casein-terminal"
+    assert grok =~ "devide-terminal"
     assert grok =~ "devide-artifact"
     assert grok =~ "workspace_id=ws-abc"
     assert grok =~ "${CASEIN_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
-    assert mcp_json =~ "casein-terminal-test-ws"
+    assert mcp_json =~ "devide-terminal-test-ws"
     assert mcp_json =~ "devide-artifact-test-ws"
     assert mcp_json =~ "/api/artifacts/mcp?workspace_id=ws-abc"
     assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
@@ -74,12 +80,12 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
 
     grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
-    assert grok_mcp_json =~ "casein-terminal-test-ws"
+    assert grok_mcp_json =~ "devide-terminal-test-ws"
     assert grok_mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute grok_mcp_json =~ "secret-token"
 
     codex = File.read!(Path.join(staging, "codex/config.toml"))
-    refute codex =~ "casein-terminal"
+    refute codex =~ "devide-terminal"
     refute codex =~ "casein-preview"
     refute codex =~ "devide-artifact"
     refute codex =~ "CASEIN_API_TOKEN"
@@ -262,7 +268,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute File.exists?(Path.join(other_workspace_staging, ".mcp.json"))
 
     mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
-    assert mcp_json =~ "casein-terminal-test-ws"
+    assert mcp_json =~ "devide-terminal-test-ws"
     assert mcp_json =~ "devide-artifact-test-ws"
   end
 
@@ -290,7 +296,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     merged = Jason.decode!(File.read!(Path.join(checkout, ".mcp.json")))
     assert merged["projectSetting"]
     assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
-    refute merged["mcpServers"]["casein-terminal-test-ws"]
+    refute merged["mcpServers"]["devide-terminal-test-ws"]
     refute merged["mcpServers"]["casein-preview-test-ws"]
     refute merged["mcpServers"]["devide-artifact-test-ws"]
 
@@ -319,4 +325,13 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
   defp restore_auth_root(value),
     do: Application.put_env(:casein, :agent_auth_profile_root, value)
+
+  defp restore_bundle_root(nil),
+    do: Application.delete_env(:casein, :grok_capability_bundle_root)
+
+  defp restore_bundle_root(value),
+    do: Application.put_env(:casein, :grok_capability_bundle_root, value)
+
+  defp restore_leader_root(nil), do: Application.delete_env(:casein, :grok_leader_root)
+  defp restore_leader_root(value), do: Application.put_env(:casein, :grok_leader_root, value)
 end
