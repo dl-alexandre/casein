@@ -63,3 +63,11 @@ rotation. Changing network interfaces or listener coordinates therefore
 updates reachability for the same origin rather than manufacturing another
 identity. Non-desktop deployments continue to use the shared `Casein.Origin`
 identity derivation.
+
+## Acceptance direction
+
+The literal Windows/mobile acceptance gate is maintained in
+[`windows_mobile_acceptance.md`](windows_mobile_acceptance.md) and GitHub issue
+#371. Production signing evidence (#376), the physical-device matrix (#377),
+and authenticated post-deploy verification (#378) are focused evidence tasks;
+they do not replace or independently redefine the parent checklist.

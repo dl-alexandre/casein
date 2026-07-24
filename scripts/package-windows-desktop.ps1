@@ -135,50 +135,69 @@ function Remove-DesktopTree {
 function Write-ReleaseTrustManifest {
     param([string]$PackagePath, [string]$Revision, [string]$Version)
 
-    $relativeFiles = @(
-        'bin\casein.bat',
-        'releases\casein.relmeta.json',
-        'windows\Casein.Tray.ps1',
-        'windows\Casein.Launcher.ps1',
-        'windows\Install-Casein.ps1',
-        'windows\Repair-Casein.ps1',
-        'windows\Rollback-Casein.ps1',
-        'windows\New-CaseinSupportBundle.ps1'
-    )
-    if (-not $SkipPreviewRuntime) {
-        $relativeFiles += @('windows\Start-Casein.cmd')
-        $scripts = Get-ChildItem -LiteralPath (Join-Path $PackagePath 'lib') -Directory |
-            ForEach-Object { Join-Path $_.FullName 'priv\scripts' } |
-            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'preview_playwright.mjs') } |
-            Select-Object -First 1
+    $certificate = $null
+    $signedRelativeFiles = @()
+    if ($SigningCertificateThumbprint) {
+        $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$SigningCertificateThumbprint" -ErrorAction Stop
+        $signable = Get-ChildItem -LiteralPath $PackagePath -Recurse -File |
+            Where-Object { $_.Extension.ToLowerInvariant() -in @('.exe', '.dll', '.ps1', '.psm1') }
+        foreach ($file in $signable) {
+            $signature = Set-AuthenticodeSignature -FilePath $file.FullName -Certificate $certificate -HashAlgorithm SHA256
+            if ($signature.Status -ne 'Valid') {
+                throw "Executable signing failed for $($file.FullName): $($signature.StatusMessage)"
+            }
+        }
         $packagePrefixLength = $PackagePath.TrimEnd('\').Length + 1
-        $relativeFiles += (Join-Path $scripts 'preview_playwright.mjs').Substring($packagePrefixLength)
-        $relativeFiles += (Join-Path $scripts 'runtime\node.exe').Substring($packagePrefixLength)
+        $signedRelativeFiles = @($signable | ForEach-Object { $_.FullName.Substring($packagePrefixLength) } | Sort-Object)
+    } elseif ($RequireSigned) {
+        throw 'A signing certificate thumbprint is required when -RequireSigned is set.'
     }
 
+    $packagePrefixLength = $PackagePath.TrimEnd('\').Length + 1
+    $relativeFiles = Get-ChildItem -LiteralPath $PackagePath -Recurse -File |
+        Where-Object { $_.FullName -ne (Join-Path $PackagePath 'windows\Casein.Release.psd1') } |
+        ForEach-Object { $_.FullName.Substring($packagePrefixLength) } |
+        Sort-Object
     $entries = foreach ($relative in $relativeFiles) {
         $path = Join-Path $PackagePath $relative
-        if (-not (Test-Path -LiteralPath $path)) { throw "Trust manifest input is missing: $relative" }
         "        '$($relative.Replace("'", "''"))' = '$((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant())'"
     }
     $manifest = Join-Path $PackagePath 'windows\Casein.Release.psd1'
+    $signedEntries = @($signedRelativeFiles | ForEach-Object { "        '$($_.Replace("'", "''"))'" })
     @"
 @{
     Schema = 1
     Version = '$Version'
     Revision = '$Revision'
+    SignedFiles = @(
+$($signedEntries -join "`r`n")
+    )
     Files = @{
 $($entries -join "`r`n")
     }
 }
 "@ | Set-Content -LiteralPath $manifest -Encoding UTF8
 
-    if ($SigningCertificateThumbprint) {
-        $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$SigningCertificateThumbprint" -ErrorAction Stop
+    if ($certificate) {
         $signature = Set-AuthenticodeSignature -FilePath $manifest -Certificate $certificate -HashAlgorithm SHA256
         if ($signature.Status -ne 'Valid') { throw "Release manifest signing failed: $($signature.StatusMessage)" }
-    } elseif ($RequireSigned) {
-        throw 'A signing certificate thumbprint is required when -RequireSigned is set.'
+    }
+}
+
+function Write-SignedUpdateCatalog {
+    param([string]$ManifestPath)
+
+    if (-not $SigningCertificateThumbprint) {
+        if ($RequireSigned) { throw 'Signed update metadata requires a signing certificate.' }
+        return
+    }
+    $certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$SigningCertificateThumbprint" -ErrorAction Stop
+    $catalogPath = "$ManifestPath.cat"
+    New-FileCatalog -Path $ManifestPath -CatalogFilePath $catalogPath -CatalogVersion 2.0 | Out-Null
+    $signature = Set-AuthenticodeSignature -FilePath $catalogPath -Certificate $certificate -HashAlgorithm SHA256
+    if ($signature.Status -ne 'Valid') { throw "Update catalog signing failed: $($signature.StatusMessage)" }
+    if ((Test-FileCatalog -Path $ManifestPath -CatalogFilePath $catalogPath -Detailed).Status -ne 'Valid') {
+        throw 'Signed update catalog does not match the emitted update manifest.'
     }
 }
 
@@ -269,6 +288,7 @@ if (-not $SkipPreviewRuntime) {
 New-Item -ItemType Directory -Force -Path (Join-Path $outputPath 'windows') | Out-Null
 Copy-Item -Force -LiteralPath @(
     (Join-Path $root 'windows\Casein.Tray.ps1'),
+    (Join-Path $root 'windows\Casein.TrustedLan.ps1'),
     (Join-Path $root 'windows\Casein.Launcher.ps1'),
     (Join-Path $root 'windows\Install-Casein.ps1'),
     (Join-Path $root 'windows\Uninstall-Casein.ps1'),
@@ -307,6 +327,7 @@ $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.T
     bytes = (Get-Item -LiteralPath $archivePath).Length
     built_at_utc = [DateTime]::UtcNow.ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+Write-SignedUpdateCatalog -ManifestPath $manifestPath
 Set-Content -LiteralPath $shaPath -Value "$archiveHash *$([IO.Path]::GetFileName($archivePath))" -Encoding ascii
 
 Write-Host "Packaged Casein Windows desktop runtime: $outputPath"

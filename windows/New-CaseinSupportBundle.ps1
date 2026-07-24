@@ -22,7 +22,7 @@ try {
     }
     $summary | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'system.json') -Encoding UTF8
 
-    foreach ($name in @('desktop-host.log', 'runtime.json', 'desktop-host.json')) {
+    foreach ($name in @('desktop-host.log', 'runtime.json', 'desktop-host.json', 'trusted-lan.json')) {
         $source = Join-Path $DataRoot $name
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $stage -Force }
     }

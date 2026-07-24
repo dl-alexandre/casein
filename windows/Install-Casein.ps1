@@ -48,6 +48,21 @@ function Test-ReleaseTrust {
             throw "Release integrity check failed: $($entry.Key)"
         }
     }
+    if ($signatureRequired) {
+        if (-not $manifest.SignedFiles -or $manifest.SignedFiles.Count -eq 0) {
+            throw 'Signed release manifest does not declare its signed executables.'
+        }
+        foreach ($relative in @($manifest.SignedFiles)) {
+            $path = [IO.Path]::GetFullPath((Join-Path $Root ([string]$relative)))
+            if (-not $path.StartsWith($rootPath, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Signed executable list contains an unsafe path: $relative"
+            }
+            $fileSignature = Get-AuthenticodeSignature -FilePath $path
+            if ($fileSignature.Status -ne 'Valid') {
+                throw "Packaged executable is not trusted: $relative ($($fileSignature.Status))."
+            }
+        }
+    }
     $manifest
 }
 

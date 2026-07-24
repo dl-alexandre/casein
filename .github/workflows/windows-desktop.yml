@@ -71,3 +71,4 @@ jobs:
             dist/*.zip
             dist/*.zip.sha256
             dist/*.manifest.json
+            dist/*.manifest.json.cat
