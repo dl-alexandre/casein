@@ -1,18 +1,18 @@
 ---
 name: Design partner
-about: Tell us how your team runs agents so we can tune DevIDE to your workflow
+about: Tell us how your team runs agents so we can tune Casein to your workflow
 title: "design-partner: <team or your name>"
 labels: ["design-partner"]
 ---
 
-DevIDE is early, and we work closely with a small number of agent-heavy Elixir
-teams. The more concrete you are below, the faster we can tell whether DevIDE
+Casein is early, and we work closely with a small number of agent-heavy Elixir
+teams. The more concrete you are below, the faster we can tell whether Casein
 removes real friction for you. Skip anything that doesn't apply.
 
 ## Who you are
 - Team / company (or solo):
 - Stack (Elixir/Phoenix? other repos in the mix?):
-- How many people would touch DevIDE:
+- How many people would touch Casein:
 
 ## How you run agents today
 - Which agents/tools (Claude Code, Cursor, custom, etc.):
@@ -25,7 +25,7 @@ removes real friction for you. Skip anything that doesn't apply.
 - **Anything else** that makes agent-driven work fragile for you:
 
 ## What "this is worth adopting" looks like
-- The single outcome that would make DevIDE a clear win for your team:
+- The single outcome that would make Casein a clear win for your team:
 
 ## Logistics
 - Deployment you'd want: local / remote / fleet (see `docs/product.md`)
