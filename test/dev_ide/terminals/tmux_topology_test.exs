@@ -336,17 +336,17 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   end
 
   defp await_unregistered(session, attempts \\ 50) do
-    case Registry.lookup(DevIDE.Terminals.TopologyRegistry, session) do
-      [] ->
-        :ok
-
-      _ when attempts > 0 ->
-        Process.sleep(10)
-        await_unregistered(session, attempts - 1)
-
-      _ ->
-        flunk("topology watcher for #{session} never unregistered")
-    end
+    DevIDE.Test.Eventually.await(
+      fn ->
+        case Registry.lookup(DevIDE.Terminals.TopologyRegistry, session) do
+          [] -> :ok
+          _ -> false
+        end
+      end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "topology watcher for #{session} never unregistered"
+    )
   end
 
   defp restore_env(:tmux_adapter, nil), do: Application.delete_env(:dev_ide, :tmux_adapter)

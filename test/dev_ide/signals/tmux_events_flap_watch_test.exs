@@ -174,7 +174,12 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatchTest do
 
     feed(pid, :down)
     feed(pid, :up)
-    Process.sleep(150)
+    # Wall-clock settle past down_ms (80); receive-after, not Process.sleep.
+    receive do
+    after
+      150 -> :ok
+    end
+
     _ = :sys.get_state(pid)
 
     assert audits(TmuxEventsFlapWatch.degraded_action()) == []
@@ -221,22 +226,16 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatchTest do
   end
 
   defp assert_receive_audit(action, timeout) do
-    deadline = System.monotonic_time(:millisecond) + timeout
-
-    Stream.repeatedly(fn ->
-      case audits(action) do
-        [_ | _] = list ->
-          list
-
-        [] ->
-          if System.monotonic_time(:millisecond) > deadline do
-            flunk("expected audit action #{action} within #{timeout}ms")
-          end
-
-          Process.sleep(10)
-          []
-      end
-    end)
-    |> Enum.find(&(&1 != []))
+    DevIDE.Test.Eventually.await(
+      fn ->
+        case audits(action) do
+          [_ | _] = list -> list
+          [] -> false
+        end
+      end,
+      timeout_ms: timeout,
+      interval_ms: 10,
+      message: "expected audit action #{action} within #{timeout}ms"
+    )
   end
 end

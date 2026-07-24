@@ -53,7 +53,14 @@ defmodule DevIDE.Test.ToolActionFixtures.SlowAction do
 
   @impl Jido.Action
   def run(_params, _context) do
-    Process.sleep(200)
+    # Block until released (or safety timeout). Timeout tests kill this task
+    # via Task.shutdown after timeout_ms; no caller needs to send :release today.
+    receive do
+      :release -> :ok
+    after
+      5_000 -> :ok
+    end
+
     {:ok, %{}}
   end
 end

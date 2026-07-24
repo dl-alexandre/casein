@@ -953,7 +953,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       parent = self()
 
       spawn(fn ->
-        Process.sleep(50)
+        await_blocked(parent)
         DevIDE.Terminals.AgentState.report("alpha", session, "%2", :done, nil)
         send(parent, :reported)
       end)
@@ -1065,4 +1065,21 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)
+
+  # Poll until `pid` is blocked in receive (status :waiting), using receive-based
+  # backoff instead of Process.sleep so the mid-wait report cannot race the waiter.
+  defp await_blocked(pid) do
+    case Process.info(pid, :status) do
+      {:status, :waiting} ->
+        :ok
+
+      _ ->
+        receive do
+        after
+          2 -> :ok
+        end
+
+        await_blocked(pid)
+    end
+  end
 end

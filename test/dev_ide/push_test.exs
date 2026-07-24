@@ -216,18 +216,14 @@ defmodule DevIDE.PushTest do
     assert eventually(fn -> Push.tokens_for("pw-1") == [] end) == :ok
   end
 
-  defp eventually(fun, attempts \\ 50)
-
-  defp eventually(fun, attempts) when attempts > 0 do
-    if fun.() do
-      :ok
-    else
-      Process.sleep(10)
-      eventually(fun, attempts - 1)
-    end
+  defp eventually(fun, attempts \\ 50) do
+    DevIDE.Test.Eventually.await(
+      fn -> if fun.(), do: :ok, else: false end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "condition not met before timeout"
+    )
   end
-
-  defp eventually(_fun, 0), do: :timeout
 
   defp unique_user(prefix) do
     user_id = "#{prefix}-#{System.unique_integer([:positive])}"
