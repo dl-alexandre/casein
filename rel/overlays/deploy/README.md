@@ -285,12 +285,12 @@ DevIDE's state — including the audit log, a security record — lives in the
 `casein_pgdata` Docker volume. Snapshot it before risky updates:
 
 ```sh
-docker exec devide-postgres-1 pg_dump -U dev_ide dev_ide_prod \
+docker exec devide-postgres-1 pg_dump -U casein casein_prod \
   | gzip > /opt/casein/backup-$(date +%F).sql.gz
 ```
 
 Restore into a fresh container with `gunzip -c … | docker exec -i
-devide-postgres-1 psql -U dev_ide dev_ide_prod`.
+devide-postgres-1 psql -U casein casein_prod`.
 
 ## Reconcile current broken DevBox (post-7204683, 4c308b8 / cd0aed5 era)
 

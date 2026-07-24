@@ -17,16 +17,16 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DEVIDE_PG_USER:-dev_ide}
+      POSTGRES_USER: ${DEVIDE_PG_USER:-casein}
       POSTGRES_PASSWORD: ${DEVIDE_PG_PASSWORD:?DEVIDE_PG_PASSWORD is required}
-      POSTGRES_DB: ${DEVIDE_PG_DB:-dev_ide_prod}
+      POSTGRES_DB: ${DEVIDE_PG_DB:-casein_prod}
     volumes:
       - casein_pgdata:/var/lib/postgresql/data
     ports:
       # Loopback only — DevIDE connects over 127.0.0.1, nothing else should.
       - "127.0.0.1:15432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DEVIDE_PG_USER:-dev_ide} -d ${DEVIDE_PG_DB:-dev_ide_prod}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DEVIDE_PG_USER:-casein} -d ${DEVIDE_PG_DB:-casein_prod}"]
       interval: 5s
       timeout: 3s
       retries: 20

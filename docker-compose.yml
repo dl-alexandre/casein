@@ -16,13 +16,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dev_ide}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_ide_local_password}
-      POSTGRES_DB: ${POSTGRES_DB:-dev_ide_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-casein}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casein_local_password}
+      POSTGRES_DB: ${POSTGRES_DB:-casein_prod}
     volumes:
-      - dev_ide_pgdata:/var/lib/postgresql/data
+      - casein_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ide} -d ${POSTGRES_DB:-dev_ide_prod}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casein} -d ${POSTGRES_DB:-casein_prod}"]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -50,7 +50,7 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?SECRET_KEY_BASE is required (see .env.example)}
       CASEIN_API_TOKEN: ${CASEIN_API_TOKEN:?CASEIN_API_TOKEN is required (see .env.example)}
       CASEIN_WORKSPACES_ROOT: ${CASEIN_WORKSPACES_ROOT:-/workspaces}
-      DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
+      DATABASE_URL: ecto://${POSTGRES_USER:-casein}:${POSTGRES_PASSWORD:-casein_local_password}@postgres:5432/${POSTGRES_DB:-casein_prod}
     ports:
       - "127.0.0.1:${CASEIN_HOST_PORT:-4000}:${PORT:-4000}"
     volumes:
@@ -59,4 +59,4 @@ services:
       - "${CASEIN_WORKSPACES_HOST:-./workspaces-local}:${CASEIN_WORKSPACES_ROOT:-/workspaces}"
 
 volumes:
-  dev_ide_pgdata:
+  casein_pgdata:

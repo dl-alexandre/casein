@@ -94,11 +94,11 @@ Environment:
   DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
   DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/casein_workspaces
   CASEIN_HOME_WORKSPACE_PATH Default: service user's home directory
-  DATABASE_PATH              SQLite DB path. Default: /var/lib/casein/lan/devide.sqlite3
+  DATABASE_PATH              SQLite DB path. Default: /var/lib/casein/lan/casein.sqlite3
   CASEIN_LAN_HOST          Default: <hostname>.local
   PORT                      Backend loopback port. Default: 4000
   CASEIN_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
-  DATABASE_URL              Default: ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev
+  DATABASE_URL              Default: ecto://postgres:postgres@127.0.0.1:5432/casein_dev
 EOF
 }
 
@@ -819,8 +819,8 @@ ensure_env_file() {
   append_env_if_missing PHX_HOST "${PHX_HOST:-$(default_lan_host)}"
   append_env_if_missing HOME "${DEVIDE_LAN_HOME:-${lan_home}}"
   append_env_if_missing LANG "${LANG:-C.UTF-8}"
-  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/casein/lan/devide.sqlite3}"
-  append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev}"
+  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/casein/lan/casein.sqlite3}"
+  append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/casein_dev}"
   append_env_if_missing SECRET_KEY_BASE "${SECRET_KEY_BASE:-$(random_hex)}"
   append_env_if_missing CASEIN_API_TOKEN "${CASEIN_API_TOKEN:-$(random_hex)}"
   append_env_if_missing RELEASE_COOKIE "${RELEASE_COOKIE:-$(random_hex)}"

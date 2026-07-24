@@ -19,7 +19,7 @@ if sqlite_repo? do
   config :casein, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
-        Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
+        Path.expand("../casein_dev.sqlite3", System.tmp_dir!()),
     journal_mode: :delete,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
     busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000"),
@@ -33,7 +33,7 @@ else
       username: "postgres",
       password: "postgres",
       hostname: "localhost",
-      database: "dev_ide_dev",
+      database: "casein_dev",
       stacktrace: true,
       show_sensitive_data_on_connection_error: true,
       pool_size: 10

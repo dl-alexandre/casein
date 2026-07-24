@@ -15,7 +15,7 @@ if sqlite_repo? do
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
-          "../dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
+          "../casein_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
           System.tmp_dir!()
         ),
     pool: Ecto.Adapters.SQL.Sandbox,
@@ -27,7 +27,7 @@ else
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
-    database: "dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}",
+    database: "casein_test#{System.get_env("MIX_TEST_PARTITION")}",
     pool: Ecto.Adapters.SQL.Sandbox,
     # Capped: this devbox runs many agents' test suites concurrently against one
     # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections

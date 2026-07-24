@@ -1,5 +1,5 @@
 {
-  "name": "dev-ide-preview-browser-sidecars",
+  "name": "casein-preview-browser-sidecars",
   "private": true,
   "type": "module",
   "dependencies": {

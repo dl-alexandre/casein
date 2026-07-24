@@ -277,7 +277,7 @@ if config_env() == :prod and not release_cli? do
             Casein.Desktop.Runtime.database_path()
 
           lan_mode? ->
-            "/var/lib/casein/lan/devide.sqlite3"
+            "/var/lib/casein/lan/casein.sqlite3"
 
           true ->
             raise """
