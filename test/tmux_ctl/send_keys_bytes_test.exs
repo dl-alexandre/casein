@@ -2,6 +2,7 @@ defmodule TmuxCtl.SendKeysBytesTest do
   use DevIDE.TestCase, async: false
 
   alias TmuxCtl.Client
+  alias DevIDE.Test.Eventually
 
   @moduletag :tmux
 
@@ -25,7 +26,13 @@ defmodule TmuxCtl.SendKeysBytesTest do
                )
 
       assert {"", 0} = Client.send_keys(pane_id, "Enter", target: pane_id)
-      Process.sleep(300)
+
+      Eventually.await(
+        fn ->
+          match?({:ok, out} when byte_size(out) > 0, Client.capture_recent(pane_id, 50))
+        end,
+        timeout_ms: 2000
+      )
 
       {:ok, session: session, pane_id: pane_id}
     else
@@ -80,12 +87,20 @@ defmodule TmuxCtl.SendKeysBytesTest do
             if Regex.match?(pattern, output) do
               {:ok, output}
             else
-              Process.sleep(min(remaining, 50))
+              receive do
+              after
+                min(remaining, 50) -> :ok
+              end
+
               do_poll_capture(pane_id, pattern, deadline)
             end
 
           _ ->
-            Process.sleep(min(remaining, 50))
+            receive do
+            after
+              min(remaining, 50) -> :ok
+            end
+
             do_poll_capture(pane_id, pattern, deadline)
         end
     end
