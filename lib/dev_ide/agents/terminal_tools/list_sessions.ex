@@ -15,7 +15,7 @@ defmodule DevIDE.Agents.TerminalTools.ListSessions do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Session}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -27,6 +27,6 @@ defmodule DevIDE.Agents.TerminalTools.ListSessions do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.list_sessions(Helpers.to_impl_args(params))
+    Session.list_sessions(Helpers.to_impl_args(params))
   end
 end

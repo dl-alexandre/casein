@@ -20,7 +20,7 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -43,6 +43,6 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.wait_agent_state(Helpers.to_impl_args(params))
+    Agent.wait_agent_state(Helpers.to_impl_args(params))
   end
 end

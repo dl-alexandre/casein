@@ -17,7 +17,7 @@ defmodule DevIDE.Agents.TerminalTools.SendAgentCommand do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -37,6 +37,6 @@ defmodule DevIDE.Agents.TerminalTools.SendAgentCommand do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.send_agent_command(Helpers.to_impl_args(params))
+    Agent.send_agent_command(Helpers.to_impl_args(params))
   end
 end
