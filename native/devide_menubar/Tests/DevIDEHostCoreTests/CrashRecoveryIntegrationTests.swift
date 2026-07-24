@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import DevIDEHostCore
+@testable import CaseinHostCore
 
 /// Crash auto-restart against a real release: start via the monitor,
 /// SIGKILL the BEAM (leaving a stale contract), and assert the conservative
@@ -10,7 +10,7 @@ import Testing
 ///
 /// Same gate as LifecycleIntegrationTests:
 ///
-///     DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
+///     DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/casein \
 ///       /usr/bin/swift test --filter CrashRecovery
 @Suite(
     .enabled(

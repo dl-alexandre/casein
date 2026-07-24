@@ -57,16 +57,16 @@ jobs:
 
       - name: Build deterministic Windows package
         shell: pwsh
-        run: scripts/package-windows-desktop.ps1 -OutputPath dist/DevIDE-windows-x64-ci
+        run: scripts/package-windows-desktop.ps1 -OutputPath dist/Casein-windows-x64-ci
 
       - name: Smoke-test install, upgrade backup, and uninstall
         shell: pwsh
-        run: scripts/test-windows-desktop-package.ps1 -PackageRoot dist/DevIDE-windows-x64-ci
+        run: scripts/test-windows-desktop-package.ps1 -PackageRoot dist/Casein-windows-x64-ci
 
       - name: Upload package and integrity metadata
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: DevIDE-windows-x64
+          name: Casein-windows-x64
           path: |
             dist/*.zip
             dist/*.zip.sha256

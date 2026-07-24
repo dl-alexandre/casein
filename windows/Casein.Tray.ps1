@@ -27,6 +27,7 @@ function Get-CaseinPaths {
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
         RuntimeStatus = Join-Path $dataRoot 'runtime.json'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
+        OriginIdentity = Join-Path $dataRoot 'origin.json'
         StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
     }
 }
@@ -188,12 +189,39 @@ function Save-CaseinProtectedSecret {
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
+function Get-OrCreateCaseinOriginIdentity {
+    if (Test-Path -LiteralPath $script:Paths.OriginIdentity) {
+        try {
+            $saved = Get-Content -Raw -LiteralPath $script:Paths.OriginIdentity | ConvertFrom-Json
+            $savedId = [string]$saved.origin_id
+            $savedName = [string]$saved.origin_name
+            if ($savedId -and $savedName) {
+                return [pscustomobject]@{ origin_id = $savedId; origin_name = $savedName }
+            }
+        } catch {
+            Write-CaseinLog "Replacing invalid origin identity: $($_.Exception.Message)"
+        }
+    }
+
+    $machineName = [Environment]::MachineName
+    if (-not $machineName) { $machineName = 'Windows PC' }
+    $identity = [ordered]@{
+        origin_id = 'windows-' + [guid]::NewGuid().ToString('N')
+        origin_name = "$machineName (Windows)"
+    }
+    $temporary = "$($script:Paths.OriginIdentity).$PID.tmp"
+    $identity | ConvertTo-Json | Set-Content -LiteralPath $temporary -Encoding UTF8
+    Move-Item -LiteralPath $temporary -Destination $script:Paths.OriginIdentity -Force
+    return [pscustomobject]$identity
+}
+
 function Get-CaseinEnvironment {
     param([int]$Port)
 
     $secret = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'secret-key-base.txt') 64
     $apiToken = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'api-token.txt') 48
     $launchToken = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+    $origin = Get-OrCreateCaseinOriginIdentity
     New-Item -ItemType Directory -Force -Path $script:Paths.RuntimeTemp | Out-Null
 
     @{
@@ -206,7 +234,7 @@ function Get-CaseinEnvironment {
         'PHX_HOST' = 'localhost'
         'PHX_IP' = '127.0.0.1'
         'PORT' = [string]$Port
-        'RELEASE_NODE' = 'dev_ide_desktop'
+        'RELEASE_NODE' = 'casein_desktop'
         # The desktop host owns lifecycle locally. Never publish a BEAM node or
         # reuse the build-time COOKIE across machines.
         'RELEASE_DISTRIBUTION' = 'none'
@@ -214,6 +242,8 @@ function Get-CaseinEnvironment {
         'SECRET_KEY_BASE' = $secret
         'CASEIN_API_TOKEN' = $apiToken
         'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken
+        'CASEIN_ORIGIN_ID' = $origin.origin_id
+        'CASEIN_ORIGIN_DISPLAY_NAME' = $origin.origin_name
     }
 }
 

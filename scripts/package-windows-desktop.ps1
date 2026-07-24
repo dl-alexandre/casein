@@ -12,7 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if (-not $ReleasePath) { $ReleasePath = Join-Path $root '_build\prod\rel\dev_ide' }
+if (-not $ReleasePath) { $ReleasePath = Join-Path $root '_build\prod\rel\casein' }
 if (-not $OutputPath) { $OutputPath = Join-Path $root 'dist\Casein-windows-x64' }
 $releasePath = [IO.Path]::GetFullPath($ReleasePath)
 $outputPath = [IO.Path]::GetFullPath($OutputPath)
@@ -224,7 +224,7 @@ if (-not $SkipBuild) {
         # esbuild import missing merely because node_modules did not exist yet.
         & $runMix @('compile', '--force')
         & $runMix @('assets.deploy')
-        & $runMix @('release', 'dev_ide', '--overwrite')
+        & $runMix @('release', 'casein', '--overwrite')
     } finally {
         Pop-Location
     }
@@ -296,7 +296,7 @@ $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.T
 
 [ordered]@{
     metadata_version = 1
-    app = 'devide'
+    app = 'casein'
     version = $metadata.version
     revision = $sourceRevision
     profile = $metadata.profile

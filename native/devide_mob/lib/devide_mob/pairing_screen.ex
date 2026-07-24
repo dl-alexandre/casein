@@ -1,6 +1,6 @@
 defmodule DevideMob.PairingScreen do
   @moduledoc """
-  Pair this device to a dev_ide host's session feed.
+  Pair this device to a Casein host's session feed.
 
   The web cockpit's `/pair/<workspace_id>` page shows a QR and a copyable
   pairing code (Base64 of `{url, token, workspace_id}`). Paste that code here to

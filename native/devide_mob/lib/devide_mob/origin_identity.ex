@@ -19,7 +19,7 @@ defmodule DevideMob.OriginIdentity do
     cond do
       String.contains?(normalized, "devbox") -> "Devbox"
       local_host?(normalized) -> "Local Mac"
-      host == "" -> "DevIDE"
+      host == "" -> "Casein"
       true -> host
     end
   end

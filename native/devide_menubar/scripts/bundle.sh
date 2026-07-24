@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble "DevIDE MenuBar.app" from the SPM build. SPM executables have no
+# Assemble "Casein MenuBar.app" from the SPM build. SPM executables have no
 # bundle of their own, and LSUIElement + ATS keys only apply from a real
 # .app's Info.plist.
 #
@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIGURATION="${1:-release}"
-APP="build/DevIDE MenuBar.app"
+APP="build/Casein MenuBar.app"
 
 # /usr/bin/swift dispatches through xcrun to the xcode-select'd toolchain,
 # sidestepping broken package-manager Swift shims earlier on PATH.
@@ -21,12 +21,12 @@ SWIFT="${SWIFT:-/usr/bin/swift}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp ".build/$CONFIGURATION/devide-menubar" "$APP/Contents/MacOS/"
+cp ".build/$CONFIGURATION/casein-menubar" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
 
 if [[ -n "${DEVIDE_RELEASE_ROOT:-}" ]]; then
   [[ -x "$DEVIDE_RELEASE_ROOT/bin/casein" ]] || {
-    echo "DEVIDE_RELEASE_ROOT is not an assembled DevIDE release" >&2
+    echo "DEVIDE_RELEASE_ROOT is not an assembled Casein release" >&2
     exit 1
   }
   mkdir -p "$APP/Contents/Resources"

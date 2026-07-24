@@ -47,6 +47,11 @@ try {
 
     $desktopEnvironment = Get-CaseinEnvironment 54321
     Assert-Condition ($desktopEnvironment.DEVIDE_RELEASE_ROOT -eq $packageRoot) 'Release root was not injected into the desktop runtime'
+    Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_ID.StartsWith('windows-')) 'Windows origin id was not generated'
+    Assert-Condition ($desktopEnvironment.CASEIN_ORIGIN_DISPLAY_NAME.EndsWith(' (Windows)')) 'Windows origin name is not platform-distinct'
+    $firstOriginId = $desktopEnvironment.CASEIN_ORIGIN_ID
+    $secondDesktopEnvironment = Get-CaseinEnvironment 54322
+    Assert-Condition ($secondDesktopEnvironment.CASEIN_ORIGIN_ID -eq $firstOriginId) 'Windows origin id changed across host restarts'
     $vector = New-CaseinLaunchClaim -Secret 'fixed-desktop-launch-secret-0123456789' -Timestamp 1700000000 -Nonce 'AAECAwQFBgcICQoLDA0ODw'
     Assert-Condition ($vector -eq 'desktop_nonce=AAECAwQFBgcICQoLDA0ODw&desktop_timestamp=1700000000&desktop_proof=VqZtkYtl09-mO3ZBFxIqlavgcmz21EOxoMMqIwYpyg4') 'Windows HMAC claim differs from the shared vector'
 

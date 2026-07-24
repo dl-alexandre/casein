@@ -920,7 +920,7 @@ defmodule DevideMob.SessionDetailScreen do
   defp problem_body(status) do
     case {status_state(status), status_reason(status)} do
       {:disconnected, :network_unavailable} ->
-        "This phone cannot reach the DevIDE host. Check your connection and retry."
+        "This phone cannot reach the Casein host. Check your connection and retry."
 
       {:disconnected, _} ->
         "The workspace may be offline or the network changed. Retry when the host is reachable."

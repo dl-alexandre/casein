@@ -1,5 +1,5 @@
 import AppKit
-import DevIDEHostCore
+import CaseinHostCore
 import SwiftUI
 
 struct MenuContent: View {
@@ -54,7 +54,7 @@ struct MenuContent: View {
             }
 
             if monitor.lanEnabled {
-                Button("Open DevIDE on LAN") {
+                Button("Open Casein on LAN") {
                     Task {
                         if let url = await monitor.lanCockpitURL() {
                             NSWorkspace.shared.open(url)

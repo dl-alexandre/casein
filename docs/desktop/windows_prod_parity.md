@@ -11,6 +11,7 @@ tmux implementation details on Windows.
 |---|---|---|---|
 | Install and launch without language tooling | systemd release | packaged OTP release and tray host | Harden public signing and update channel |
 | Local security boundary | Caddy, scoped tokens | loopback binding and local bearer token | Add signed binaries and token rotation UX |
+| Mobile origin identity | Deployment-defined origin | installation-stable `windows-<uuid>` and `<machine> (Windows)` identity | Add trusted-LAN pairing transport |
 | Persistent product data | PostgreSQL | SQLite under LocalAppData | Backup/restore UI and migration recovery |
 | Interactive terminal | tmux PTY | PowerShell through ConPTY | Job Object containment and richer diagnostics |
 | Resize and reconnect | tmux capture/attach | ConPTY resize and application-owned session | Crash/reboot restoration |
@@ -47,3 +48,18 @@ tmux implementation details on Windows.
 The devbox implementation remains unchanged throughout this work. Shared MCP,
 workspace, audit, and LiveView contracts are reused; Windows receives native
 adapters and launch integration behind the desktop profile.
+
+## Mobile origin identity
+
+The Windows tray host persists `origin.json` under `%LOCALAPPDATA%\Casein` on
+first launch. Its opaque id is installation-scoped and is never derived from an
+IP address, hostname, port, or URL. The friendly name uses the Windows machine
+name with an explicit `(Windows)` suffix so a mobile client can distinguish it
+from local macOS and devbox profiles.
+
+The host injects that identity through `CASEIN_ORIGIN_ID` and
+`CASEIN_ORIGIN_DISPLAY_NAME`; Device Link credentials retain it across token
+rotation. Changing network interfaces or listener coordinates therefore
+updates reachability for the same origin rather than manufacturing another
+identity. Non-desktop deployments continue to use the shared `Casein.Origin`
+identity derivation.

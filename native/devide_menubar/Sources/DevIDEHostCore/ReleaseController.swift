@@ -11,9 +11,9 @@ public actor ReleaseController {
 
     public private(set) var phase: Phase = .idle
 
-    /// Distinct from the default `dev_ide` so a stray dev node or an older
+    /// Distinct from the default `casein` so a stray dev node or an older
     /// daemon on this machine can't collide with the hosted one.
-    public static let defaultReleaseNode = "devide_desktop"
+    public static let defaultReleaseNode = "casein_desktop"
 
     private let paths: HostPaths
     private let releaseNode: String
@@ -79,7 +79,7 @@ public actor ReleaseController {
             selectedPort = port
         }
 
-        // `bin/dev_ide stop` RPCs into the node. It can fail even against a
+        // `bin/casein stop` RPCs into the node. It can fail even against a
         // live server (release rebuilds regenerate the cookie), so fall back
         // to SIGTERM on the contract pid.
         do {

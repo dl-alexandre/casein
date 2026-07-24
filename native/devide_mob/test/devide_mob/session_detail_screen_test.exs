@@ -33,7 +33,7 @@ defmodule DevideMob.SessionDetailScreenTest do
 
     assert_renderable(view)
     assert text(view) =~ "Network unavailable"
-    assert text(view) =~ "cannot reach the DevIDE host"
+    assert text(view) =~ "cannot reach the Casein host"
     assert text(view) =~ "Network"
     assert find(view, :button, text: "Retry")
   end

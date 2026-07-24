@@ -576,6 +576,14 @@ if config_env() == :prod and not release_cli? do
     configured. Generate one with: mix phx.gen.secret
     """
 
+  if origin_id = System.get_env("CASEIN_ORIGIN_ID") do
+    config :casein, :origin_id, origin_id
+  end
+
+  if origin_name = System.get_env("CASEIN_ORIGIN_DISPLAY_NAME") do
+    config :casein, :origin_display_name, origin_name
+  end
+
   env_workspace_tokens =
     case System.get_env("CASEIN_WORKSPACE_API_TOKENS") do
       nil ->

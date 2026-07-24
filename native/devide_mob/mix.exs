@@ -32,14 +32,14 @@ defmodule DevideMob.MixProject do
       {:mob_dev, "~> 0.6.23", only: :dev, runtime: false, override: true},
       {:ecto_sqlite3, "~> 0.18"},
       # Phoenix Channel client for the session companion — connects to the
-      # dev_ide host's `/socket` UserSocket over WSS and joins `session:<id>`.
+      # Casein host's `/socket` UserSocket over WSS and joins `session:<id>`.
       # Pure Elixir over Mint (`:mint_web_socket`), no NIFs, so it cross-compiles
       # cleanly for the device build. Jason is the channel JSON serializer.
       {:slipstream, "~> 1.1"},
       {:req, "~> 0.6"},
       {:castore, "~> 1.0"},
       {:jason, "~> 1.4"},
-      # Terminal emulator (VT state machine + grid) — the dev_ide terminal
+      # Terminal emulator (VT state machine + grid) — the Casein terminal
       # contract. NIF (Zig); builds for the host today. On-device arm64
       # cross-compile is the open gate (see DevideMob.TerminalScreen moduledoc).
       {:ghostty, "~> 0.4"},

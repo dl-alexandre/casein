@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import DevIDEHostCore
+@testable import CaseinHostCore
 
 // Fixture: verbatim output of the first real desktop-profile boot
 // (2026-07-12 smoke run), so decoding is tested against what the release
@@ -21,7 +21,7 @@ private let smokeFixture = """
 
 private func temporaryFile(contents: String?) throws -> URL {
     let dir = FileManager.default.temporaryDirectory
-        .appending(path: "devide-menubar-tests-\(UUID().uuidString)")
+        .appending(path: "casein-menubar-tests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let url = dir.appending(path: "runtime.json")
     if let contents {
@@ -440,7 +440,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
 
 @Suite struct HostPathsTests {
     private func freshDefaults() throws -> UserDefaults {
-        let suite = "devide-menubar-tests-\(UUID().uuidString)"
+        let suite = "casein-menubar-tests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         return defaults
@@ -466,12 +466,23 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
     }
 
     @Test func defaultsDataDirToApplicationSupport() throws {
-        let paths = try #require(
-            HostPaths.detect(
-                environment: ["DEVIDE_RELEASE_ROOT": "/opt/casein/release"],
-                defaults: try freshDefaults(), bundleResources: nil))
+        let home = FileManager.default.temporaryDirectory
+            .appending(path: "casein-host-home-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: home) }
 
-        #expect(paths.dataDir.path.hasSuffix("Library/Application Support/DevIDE"))
+        #expect(
+            HostPaths.defaultDataDir(home: home).path
+                == home.appending(path: "Library/Application Support/Casein").path)
+    }
+
+    @Test func reusesLegacyDataDirWhenItAlreadyExists() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appending(path: "casein-host-home-\(UUID().uuidString)")
+        let legacy = home.appending(path: "Library/Application Support/DevIDE")
+        try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        #expect(HostPaths.defaultDataDir(home: home).path == legacy.path)
     }
 
     @Test func environmentOutranksPersistedChoice() throws {
@@ -496,7 +507,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
             .appending(path: "devide-bundle-\(UUID().uuidString)")
         let releaseBin = resources.appending(path: "release/bin")
         try FileManager.default.createDirectory(at: releaseBin, withIntermediateDirectories: true)
-        let executable = releaseBin.appending(path: "dev_ide")
+        let executable = releaseBin.appending(path: "casein")
         try "#!/bin/sh\n".write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         defer { try? FileManager.default.removeItem(at: resources) }
@@ -523,10 +534,10 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
             .appending(path: "fake-release-\(UUID().uuidString)")
         let bin = dir.appending(path: "bin")
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        let devIde = bin.appending(path: "dev_ide")
-        try "#!/bin/sh\n".write(to: devIde, atomically: true, encoding: .utf8)
+        let casein = bin.appending(path: "casein")
+        try "#!/bin/sh\n".write(to: casein, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: devIde.path)
+            [.posixPermissions: 0o755], ofItemAtPath: casein.path)
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let paths = try #require(HostPaths.choose(releaseRoot: dir, defaults: defaults))

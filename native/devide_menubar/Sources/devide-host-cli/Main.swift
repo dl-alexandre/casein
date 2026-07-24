@@ -1,4 +1,4 @@
-import DevIDEHostCore
+import CaseinHostCore
 import Foundation
 
 /// Headless exerciser for the host core — the same calls the menu buttons
@@ -38,7 +38,7 @@ struct HostCLI {
                 print("restart command chain returned after \(clock.now - t0)")
                 try await waitHealthy(paths: paths, since: t0, clock: clock)
             default:
-                fputs("usage: devide-host-cli [status|start|stop|restart]\n", stderr)
+                fputs("usage: casein-host-cli [status|start|stop|restart]\n", stderr)
                 exit(2)
             }
         } catch {

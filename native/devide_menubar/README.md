@@ -1,4 +1,4 @@
-# devide-menubar
+# Casein MenuBar
 
 macOS menu bar host described in
 `docs/desktop/platform_architecture.md` ("macOS desktop host: menu bar extra
@@ -9,13 +9,13 @@ product state.
 
 ## Layout
 
-- `DevIDEHostCore` — Foundation-only library: `RuntimeStatus` (schema-1
+- `CaseinHostCore` — Foundation-only library: `RuntimeStatus` (schema-1
   contract file + pid stale rule), `HealthProbe`, `HostSecrets`
   (SECRET_KEY_BASE / API / desktop-launch secret generation and Keychain migration),
   `ReleaseController` (actor owning migrate/daemon/stop/restart including the
   epmd name-drop wait), `ServerMonitor` (@MainActor state machine the menu
   renders from).
-- `devide-menubar` — SwiftUI `MenuBarExtra` shell over the core. Accessory
+- `casein-menubar` — SwiftUI `MenuBarExtra` shell over the core. Accessory
   activation policy (no Dock icon).
 
 ## Run
@@ -27,25 +27,26 @@ earlier on PATH:
 
 ```sh
 cd native/devide_menubar
-DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide /usr/bin/swift run
+DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/casein /usr/bin/swift run
 ```
 
 For a development-only host bundle without an embedded release:
 
 ```sh
-./scripts/bundle.sh          # -> build/DevIDE MenuBar.app
-open "build/DevIDE MenuBar.app"
+./scripts/bundle.sh          # -> build/Casein MenuBar.app
+open "build/Casein MenuBar.app"
 ```
 
 Release discovery: `DEVIDE_RELEASE_ROOT` wins; otherwise the persisted
 release embedded under the app's `Contents/Resources`, then the persisted
 "Choose Release…" pick (UserDefaults). `CASEIN_DESKTOP_DATA_DIR` overrides
-the default `~/Library/Application Support/DevIDE`. The host generates and
+the default `~/Library/Application Support/Casein` (with a legacy DevIDE
+directory reused when present). The host generates and
 persists boot secrets in the user's login Keychain on first start; an existing
 `host-secrets.json` is migrated once and removed only after the Keychain write
-succeeds. The release runs under `RELEASE_NODE=devide_desktop` so it cannot
-collide with stray `dev_ide` nodes. It also persists a loopback port in
-`desktop-host.json`; Open DevIDE exchanges a short-lived, single-use HMAC claim
+succeeds. The release runs under `RELEASE_NODE=casein_desktop` so it cannot
+collide with stray `casein` nodes. It also persists a loopback port in
+`desktop-host.json`; Open Casein exchanges a short-lived, single-use HMAC claim
 for an HttpOnly browser session while Copy URL intentionally copies the clean,
 unauthenticated URL. The reusable launch secret never enters browser history.
 
@@ -74,7 +75,7 @@ RELEASE_NODE each so they can boot releases concurrently) are gated on a
 real release being available:
 
 ```sh
-DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/dev_ide \
+DEVIDE_RELEASE_ROOT=$PWD/../../_build/prod/rel/casein \
   /usr/bin/swift test --filter "LifecycleIntegration|CrashRecovery"
 ```
 
@@ -86,7 +87,7 @@ stopped).
 
 ## Menu (v1)
 
-Status header (state, port, version/revision) · Open DevIDE / Copy URL ·
+Status header (state, port, version/revision) · Open Casein / Copy URL ·
 Start / Stop / Restart (restart waits for process exit and the epmd name
 drop) · Open Logs / Open Data Folder · Start at Login (`SMAppService`,
 bundled `.app` only — the registration binds to the bundle's path) · Quit

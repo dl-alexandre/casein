@@ -190,7 +190,7 @@ static NSString* MobNotificationJSONFromPairURL(NSURL* url) {
 
     NSDictionary* payload = @{
         @"id": @"pairing-deep-link",
-        @"title": @"Pair DevIDE",
+        @"title": @"Pair Casein",
         @"source": @"deep_link",
         @"data": data
     };
