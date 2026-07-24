@@ -2,17 +2,17 @@
 # One per line. Used by scripts/check-doc-citations.sh. Keep this short and justified.
 
 # Registered process / Registry / Supervisor names (started with `name:`, not defined as modules):
-DevIDE.Push.APNS.Finch
-DevIDE.TaskSupervisor
-DevIDE.Terminals.Registry
-DevIDE.Terminals.Supervisor
-DevIDE.Terminals.TopologyRegistry
-DevIDE.Terminals.SessionRegistry
+Casein.Push.APNS.Finch
+Casein.TaskSupervisor
+Casein.Terminals.Registry
+Casein.Terminals.Supervisor
+Casein.Terminals.TopologyRegistry
+Casein.Terminals.SessionRegistry
 Terminals.Registry
 
 # Nested modules (defined as `defmodule System do` inside a parent; the bare
 # defmodule line hides the parent namespace from the scanner):
-DevIDE.Workspaces.SshRunner.System
+Casein.Workspaces.SshRunner.System
 SshRunner.System
 
 # Adjacent native/mobile docs cite modules outside this Phoenix app's lib scan,

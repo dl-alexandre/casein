@@ -2,7 +2,7 @@
 #
 # Doc-citation guard. Keeps the code-derived docs (docs/subsystems/*, docs/reference/*)
 # from rotting: every `CamelCase.Dotted` module/type name cited in backticks must
-# resolve to a real `defmodule` in the tree (lib/, dev_ide_core/, test/support/),
+# resolve to a real `defmodule` in the tree (lib/, casein_core/, test/support/),
 # or be a registered process name / external module listed in the allowlist.
 #
 # Exit 0 = all citations resolve. Exit 1 = unresolved citations (printed).
@@ -27,7 +27,7 @@ SKIP_RE='^(GenServer|Task|System|File|Port|Req|String|DynamicSupervisor|Mix|Ghos
 real="$(mktemp)"; cited="$(mktemp)"
 trap 'rm -f "$real" "$cited"' EXIT
 
-grep -rhoE '^[[:space:]]*defmodule[[:space:]]+[A-Za-z0-9_.]+' lib dev_ide_core test/support --include='*.ex' 2>/dev/null \
+grep -rhoE '^[[:space:]]*defmodule[[:space:]]+[A-Za-z0-9_.]+' lib casein_core test/support --include='*.ex' 2>/dev/null \
   | sed -E 's/.*defmodule[[:space:]]+//' | sort -u > "$real"
 
 # Cited fully-capitalised dotted tokens inside backticks (each segment starts uppercase) -> excludes `.func` tails.
