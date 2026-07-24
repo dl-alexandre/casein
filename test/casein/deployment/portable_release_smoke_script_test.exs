@@ -44,11 +44,17 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ "*/priv/scripts/casein-preview"
     assert text =~ "*/priv/scripts/casein-curl.sh"
     assert text =~ "casein-agent-state.sh casein-codex-notify.sh"
+    assert text =~ ~s(RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}")
+    assert text =~ ~s(CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
+    assert text =~ "unix//run/casein/current.sock"
     refute text =~ ~s("${STAGING}/bin/dev_ide")
     refute text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket)
     refute text =~ ~s("${ACTIVE_RELEASE}/bin/dev_ide" start)
     refute text =~ "*/priv/scripts/devide-preview"
     refute text =~ "*/priv/scripts/devide-curl.sh"
     refute text =~ "devide-agent-state.sh devide-codex-notify.sh"
+    refute text =~ ~s(INST_DIR="/run/devide/instances")
+    refute text =~ ~s(CURRENT_SYMLINK="/run/devide/current.sock")
+    refute text =~ "unix//run/devide/current.sock"
   end
 end
