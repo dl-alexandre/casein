@@ -14,7 +14,7 @@ defmodule CaseinWeb.Plugs.DesktopAuth do
 
   @session_key "current_user"
   @desktop_user %{id: "desktop", username: "desktop", email: "desktop@local", role: :user}
-  @allowed_hosts MapSet.new(["localhost", "127.0.0.1", "::1"])
+  @loopback_hosts MapSet.new(["localhost", "127.0.0.1", "::1"])
 
   def init(opts), do: opts
 
@@ -92,8 +92,22 @@ defmodule CaseinWeb.Plugs.DesktopAuth do
   end
 
   defp allowed_host?(host) when is_binary(host) do
-    MapSet.member?(@allowed_hosts, String.downcase(host))
+    normalized = String.downcase(host)
+
+    MapSet.member?(@loopback_hosts, normalized) or
+      normalized in configured_lan_hosts()
   end
 
   defp allowed_host?(_), do: false
+
+  defp configured_lan_hosts do
+    if Application.get_env(:casein, :desktop_lan, false) do
+      :casein
+      |> Application.get_env(:desktop_lan_hosts, [])
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&String.downcase/1)
+    else
+      []
+    end
+  end
 end

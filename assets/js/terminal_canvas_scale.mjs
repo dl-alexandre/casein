@@ -1,26 +1,28 @@
-// Scale-to-fit guard for the canvas terminal renderer.
+// Canvas-renderer gate.
 //
-// The glyph canvas is a sibling of the <pre> (see ensureCanvas), so it does NOT
-// inherit the pre's scale-to-fit `transform` (applyScaledLayout in
-// ghostty_terminal.js). The canvas draws glyphs at *unscaled* cell metrics, so
-// a non-authoritative "scale" observer — or a user "zoom" — would paint the
-// grid oversized and clipped (the top-left cells fill the viewport, the rest
-// runs off the right/bottom edge; mid-resize it composites old+new pixels into
-// a mash). The DOM RLE painter has no such problem: the transform applies to
-// the pre's own text, so it scales correctly. So the canvas fast-path is only
-// safe in the identity "fit" mode; every other display mode is handed back to
-// the DOM renderer.
+// The glyph canvas is drawn at *unscaled* cell metrics, so it is only correct
+// while the frame carries no transform. Under a scaled observer, a user zoom,
+// or a row-pin scroll it would paint the grid in the wrong place (the top-left
+// cells fill the viewport and the rest runs off the edge; mid-resize it
+// composites old and new pixels into a mash). The DOM RLE painter has no such
+// problem — the transform applies to the pre's own text — so every non-identity
+// mode is handed back to it.
+//
+// This USED to be a hand-kept list of mode strings living next to the painter.
+// It was written before row-pinning existed and never grew, so row-pinned
+// viewers kept the canvas engaged while the frame was translated. The decision
+// now comes from the layout model (`canvasSafe`), stashed on the hook by
+// applyLayoutResult, so a new mode cannot forget to declare itself.
 
-// True while the pane is CSS-transformed to fit its viewport ("scale" observer
-// or user "zoom"). Only "fit" (and the unset initial state) is safe for canvas.
+// True while the pane is transformed and the canvas must not paint. Defaults to
+// safe: before the first layout there is no transform to be wrong about.
 export function preIsScaled(hook) {
-  const mode = hook?.el?.dataset?.displayMode
-  return mode === "scale" || mode === "zoom"
+  return hook?.__canvasSafe === false
 }
 
 // Hand rendering back to the DOM RLE painter: restore the pre's ink (undo
 // prepareTransparentPre), hide the stale canvas, and drop the paint caches so
-// re-entering "fit" mode repaints the canvas from scratch. Idempotent.
+// re-entering an identity mode repaints the canvas from scratch. Idempotent.
 export function releaseCanvasToDom(hook) {
   const pre = hook.pre
   if (hook.__preCanvasPrepared && pre) {

@@ -27,6 +27,7 @@ defmodule CaseinWeb.SessionChannel do
   alias Casein.Alerts
   alias Casein.Mobile.UserObserver
   alias Casein.Notifications
+  alias Casein.Origin
   alias Casein.Push
   alias Casein.Scope
   alias Casein.Session.Snapshot
@@ -231,6 +232,7 @@ defmodule CaseinWeb.SessionChannel do
 
   defp render(%Snapshot{} = s) do
     %{
+      origin: Origin.public_descriptor(),
       workspace_id: s.workspace_id,
       mode: s.mode,
       mode_source: s.mode_source,

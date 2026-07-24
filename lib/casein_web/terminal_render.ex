@@ -35,6 +35,9 @@ defmodule CaseinWeb.TerminalRender do
       forces a full frame.
     * `:force_full?` — always send the full grid (used on first mount / resize).
     * `:frame_seq` / `:frame_epoch` — optional per-terminal sequencing metadata.
+    * `:screen_mode` — `:normal` or `:alternate`, folded from the PTY stream by
+      `Casein.Terminals.ScreenMode`. The client's layout branches on it: only a
+      normal-screen pane may be row-pinned when the soft keyboard opens.
   """
   @spec frame_from_term(GenServer.server(), String.t(), keyword()) ::
           {payload(), cells()} | nil
@@ -83,7 +86,8 @@ defmodule CaseinWeb.TerminalRender do
       cursor: Map.update!(cursor, :color, &color_to_list/1),
       mouse: mouse,
       scrollbar: scrollbar,
-      focus_reporting: focus_reporting
+      focus_reporting: focus_reporting,
+      screen_mode: Keyword.get(opts, :screen_mode, :normal)
     }
 
     previous = Keyword.get(opts, :previous_cells)

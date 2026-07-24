@@ -29,7 +29,7 @@ workspace =
     nil
   end
 
-case DevIDE.Agents.TidewaveMCP.resolve_url(workspace) do
+case Casein.Agents.TidewaveMCP.resolve_url(workspace) do
   url when is_binary(url) and url != \"\" -> IO.puts(url)
   _ -> System.halt(1)
 end

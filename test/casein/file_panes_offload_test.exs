@@ -67,8 +67,7 @@ defmodule Casein.FilePanesOffloadTest do
   defp wait_until(_fun, 0), do: flunk("condition not met before timeout")
 
   defp seed_workspace! do
-    root =
-      Path.join(System.tmp_dir!(), "file-panes-offload-#{System.unique_integer([:positive])}")
+    root = Casein.TmpWorkspace.root!("file-panes-offload")
 
     path = Path.join(root, "ws")
     File.mkdir_p!(path)

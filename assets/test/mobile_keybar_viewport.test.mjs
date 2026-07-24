@@ -2,10 +2,14 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  CHROME_WOBBLE_MAX_GAP_PX,
   GAP_JITTER_PX,
+  INSET_ANIMATION_STEP_PX,
   KEYBOARD_OPEN_MIN_GAP_PX,
+  effectiveKeyboardOpen,
   keyboardGap,
   keyboardOpenForGap,
+  planViewportCommit,
   shouldCommitViewportInset
 } from "../js/mobile_keybar_viewport.mjs"
 
@@ -49,6 +53,18 @@ test("keyboardOpenForGap uses the open threshold", () => {
   assert.equal(keyboardOpenForGap(null), false)
 })
 
+test("effectiveKeyboardOpen ignores URL-bar wobble without terminal focus", () => {
+  const wobble = KEYBOARD_OPEN_MIN_GAP_PX + 20
+  assert.ok(wobble <= CHROME_WOBBLE_MAX_GAP_PX)
+  assert.equal(effectiveKeyboardOpen(wobble, {terminalFocused: false, wasOpen: false}), false)
+  assert.equal(effectiveKeyboardOpen(wobble, {terminalFocused: true, wasOpen: false}), true)
+  // Stay open once committed until the gap drops below the open floor.
+  assert.equal(effectiveKeyboardOpen(wobble, {terminalFocused: false, wasOpen: true}), true)
+  assert.equal(effectiveKeyboardOpen(0, {terminalFocused: false, wasOpen: true}), false)
+  // Large gaps always count as keyboard even without focus.
+  assert.equal(effectiveKeyboardOpen(CHROME_WOBBLE_MAX_GAP_PX + 1, {terminalFocused: false}), true)
+})
+
 test("shouldCommitViewportInset always commits the first measurement", () => {
   assert.equal(shouldCommitViewportInset({gap: 0, inset: 44}), true)
   assert.equal(shouldCommitViewportInset({gap: 0, inset: 44, lastGap: null, lastInset: null}), true)
@@ -73,4 +89,98 @@ test("shouldCommitViewportInset commits when only the bar height moved", () => {
 test("shouldCommitViewportInset rejects unusable measurements", () => {
   assert.equal(shouldCommitViewportInset({gap: NaN, inset: 44, lastGap: 0, lastInset: 44}), false)
   assert.equal(shouldCommitViewportInset({gap: 0, inset: NaN, lastGap: 0, lastInset: 44}), false)
+})
+
+test("planViewportCommit commits the first paint immediately without an open edge", () => {
+  assert.deepEqual(
+    planViewportCommit({gap: 0, inset: 44, keyboardOpen: false}),
+    {pinBar: true, commitInset: true, settle: false, openChanged: false}
+  )
+})
+
+test("planViewportCommit commits keyboard open/close edges immediately", () => {
+  assert.deepEqual(
+    planViewportCommit({
+      gap: 120,
+      inset: 148,
+      keyboardOpen: true,
+      lastGap: 0,
+      lastInset: 44,
+      lastKeyboardOpen: false
+    }),
+    {pinBar: true, commitInset: true, settle: false, openChanged: true}
+  )
+
+  assert.deepEqual(
+    planViewportCommit({
+      gap: 0,
+      inset: 44,
+      keyboardOpen: false,
+      lastGap: 300,
+      lastInset: 328,
+      lastKeyboardOpen: true
+    }),
+    {pinBar: true, commitInset: true, settle: false, openChanged: true}
+  )
+})
+
+test("planViewportCommit steps mid-animation instead of every frame", () => {
+  // Sub-step motion: pin bar, settle later — no terminal refit yet.
+  assert.deepEqual(
+    planViewportCommit({
+      gap: 10,
+      inset: 38,
+      keyboardOpen: true,
+      lastGap: 0,
+      lastInset: 28,
+      lastKeyboardOpen: true
+    }),
+    {pinBar: true, commitInset: false, settle: true, openChanged: false}
+  )
+
+  // Crossed a quanta: commit a stepped size and still settle for the exact end.
+  assert.deepEqual(
+    planViewportCommit({
+      gap: INSET_ANIMATION_STEP_PX,
+      inset: 28 + INSET_ANIMATION_STEP_PX,
+      keyboardOpen: true,
+      lastGap: 0,
+      lastInset: 28,
+      lastKeyboardOpen: true
+    }),
+    {pinBar: true, commitInset: true, settle: true, openChanged: false}
+  )
+})
+
+test("planViewportCommit ignores sub-pixel noise once settled", () => {
+  assert.deepEqual(
+    planViewportCommit({
+      gap: 300,
+      inset: 328,
+      keyboardOpen: true,
+      lastGap: 300,
+      lastInset: 328,
+      lastKeyboardOpen: true
+    }),
+    {pinBar: true, commitInset: false, settle: false, openChanged: false}
+  )
+
+  assert.deepEqual(
+    planViewportCommit({
+      gap: 301,
+      inset: 329,
+      keyboardOpen: true,
+      lastGap: 300,
+      lastInset: 328,
+      lastKeyboardOpen: true
+    }),
+    {pinBar: true, commitInset: false, settle: false, openChanged: false}
+  )
+})
+
+test("planViewportCommit rejects unusable measurements", () => {
+  assert.deepEqual(
+    planViewportCommit({gap: NaN, inset: 44, keyboardOpen: false}),
+    {pinBar: false, commitInset: false, settle: false, openChanged: false}
+  )
 })

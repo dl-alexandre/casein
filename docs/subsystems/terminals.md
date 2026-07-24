@@ -9,7 +9,7 @@ authority lives server-side), FP-2/FP-8 (durable sessions over tmux), and
 FP-9 (reattach replays scrollback). It does **not** own the browser renderer or
 the LiveView wiring — those live in `lib/casein_web/live/workspace_live/`
 (`PaneWorker`, the Ghostty hook). It does not own admission policy
-(`DevIDE.Policy.can_use_raw_terminal?/1`); `Terminals.Boundary` is the only call
+(`Casein.Policy.can_use_raw_terminal?/1`); `Terminals.Boundary` is the only call
 site into it.
 
 ## Responsibility
@@ -36,64 +36,64 @@ site into it.
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Terminals.Session` | `session.ex` | GenServer wrapping `tmux new-session -A` under an `erlexec` PTY; one per `{workspace, sid}` in `Terminals.Registry`. Multi-subscriber fan-out (`{:term_data, ref, bin}`), 64 KiB bounded replay buffer seeded from `Tmux.capture_scrollback/1`, resize clamps to `1..500`. |
-| `DevIDE.Terminals.SessionOwner` | `session_owner.ex` | Per-logical-session owner GenServer; attaches/detaches subscribers, broadcasts `{:terminal_payload, ...}`, owns the **focused-viewer resize policy** and the reconnect replay buffer. `:shell` owners are immortal; `:agent` owners stop on last detach. |
-| `DevIDE.Terminals.Attachment` | `attachment.ex` | Deterministic backend handle; `:shell` routes through `GhosttyRawAdapter`+`Session`, `:agent` returns `:agent_backend_unavailable`. Dispatches `send_input`/`resize`/`snapshot`/`close`. |
-| `DevIDE.Terminals.GhosttyRawAdapter` | `ghostty_raw_adapter.ex` | Migration bridge: ensures the canonical `Session` PTY for `(workspace, sid, loc)` so channel raw joins and LiveView panes share one `SessionOwner`. |
-| `DevIDE.Terminals.Session.Info` | `session/info.ex` | Uniform session struct (`:shell` / `:agent`), `owner_key` derivation source, `new_shell/3`, `new_agent/2`. |
-| `DevIDE.Terminals.SessionRegistry` | `session_registry.ex` | Discovers attachable shell sessions for a workspace from `Terminals.Registry`; `resolve/1` used by the channel on join. |
-| `DevIDE.Terminals.SyncOutput` | `sync_output.ex` | DEC 2026 synchronized-output (BSU/ESU) detection so a frame is held back mid-redraw (consumed by `PaneWorker`). |
-| `DevIDE.Terminals.CleanExec` | `clean_exec.ex` | Wraps non-tmux raw child argv to close inherited BEAM fds before exec; **tmux argv is passed through untouched** (wrapping breaks `new-session` attach). |
-| `DevIDE.Terminals.Telemetry` | `telemetry.ex` | O(1) ETS gauges for active owners / open attachments / subscribers-per-owner. |
+| `Casein.Terminals.Session` | `session.ex` | GenServer wrapping `tmux new-session -A` under an `erlexec` PTY; one per `{workspace, sid}` in `Terminals.Registry`. Multi-subscriber fan-out (`{:term_data, ref, bin}`), 64 KiB bounded replay buffer seeded from `Tmux.capture_scrollback/1`, resize clamps to `1..500`. |
+| `Casein.Terminals.SessionOwner` | `session_owner.ex` | Per-logical-session owner GenServer; attaches/detaches subscribers, broadcasts `{:terminal_payload, ...}`, owns the **focused-viewer resize policy** and the reconnect replay buffer. `:shell` owners are immortal; `:agent` owners stop on last detach. |
+| `Casein.Terminals.Attachment` | `attachment.ex` | Deterministic backend handle; `:shell` routes through `GhosttyRawAdapter`+`Session`, `:agent` returns `:agent_backend_unavailable`. Dispatches `send_input`/`resize`/`snapshot`/`close`. |
+| `Casein.Terminals.GhosttyRawAdapter` | `ghostty_raw_adapter.ex` | Migration bridge: ensures the canonical `Session` PTY for `(workspace, sid, loc)` so channel raw joins and LiveView panes share one `SessionOwner`. |
+| `Casein.Terminals.Session.Info` | `session/info.ex` | Uniform session struct (`:shell` / `:agent`), `owner_key` derivation source, `new_shell/3`, `new_agent/2`. |
+| `Casein.Terminals.SessionRegistry` | `session_registry.ex` | Discovers attachable shell sessions for a workspace from `Terminals.Registry`; `resolve/1` used by the channel on join. |
+| `Casein.Terminals.SyncOutput` | `sync_output.ex` | DEC 2026 synchronized-output (BSU/ESU) detection so a frame is held back mid-redraw (consumed by `PaneWorker`). |
+| `Casein.Terminals.CleanExec` | `clean_exec.ex` | Wraps non-tmux raw child argv to close inherited BEAM fds before exec; **tmux argv is passed through untouched** (wrapping breaks `new-session` attach). |
+| `Casein.Terminals.Telemetry` | `telemetry.ex` | O(1) ETS gauges for active owners / open attachments / subscribers-per-owner. |
 
 ### Session directory (tab list)
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Terminals.SessionDirectory` | `session_directory.ex` | Per-workspace GenServer: canonical tab list, 2 s tmux poll while watched, broadcasts `{:sessions_updated, workspace_id, tabs}`; slow tmux reads run off the GenServer. `read/2` is the processless fallback. |
-| `DevIDE.Terminals.SessionDirectory.Compose` | `session_directory/compose.ex` | Pure merge/dedup/staleness rules; `compose/2`, `visible_for/2`, `attach_id/1`, `stable_hash/1` (the re-broadcast gate). |
-| `DevIDE.Terminals.Activity` | `activity.ex` | `monitor-silence` analog: quantizes an agent window's activity timestamp into a boolean `quiet?` so only flips re-broadcast the tab list. |
+| `Casein.Terminals.SessionDirectory` | `session_directory.ex` | Per-workspace GenServer: canonical tab list, 2 s tmux poll while watched, broadcasts `{:sessions_updated, workspace_id, tabs}`; slow tmux reads run off the GenServer. `read/2` is the processless fallback. |
+| `Casein.Terminals.SessionDirectory.Compose` | `session_directory/compose.ex` | Pure merge/dedup/staleness rules; `compose/2`, `visible_for/2`, `attach_id/1`, `stable_hash/1` (the re-broadcast gate). |
+| `Casein.Terminals.Activity` | `activity.ex` | `monitor-silence` analog: quantizes an agent window's activity timestamp into a boolean `quiet?` so only flips re-broadcast the tab list. |
 
 ### tmux control plane
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Terminals.Tmux` | `tmux.ex` | Facade over `TmuxCtl.Client`; the `@behaviour TmuxCtl.Adapter` used as the product `:tmux_adapter`. |
-| `DevIDE.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `devide_<ws>_<sid>`, `workspace_session_prefix/1`. |
-| `DevIDE.Terminals.TmuxRunner` | `tmux_runner.ex` | `@behaviour TmuxCtl.Runner`; host-vs-container argv wrapping via `WorkspaceSource.prepare_local_argv/2`, container-tmux probe cached in `:persistent_term`. |
-| `DevIDE.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
-| `DevIDE.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so DevIDE never shares a socket with another env or with plain SSH tmux. |
-| `DevIDE.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
-| `DevIDE.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
+| `Casein.Terminals.Tmux` | `tmux.ex` | Facade over `TmuxCtl.Client`; the `@behaviour TmuxCtl.Adapter` used as the product `:tmux_adapter`. |
+| `Casein.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `devide_<ws>_<sid>`, `workspace_session_prefix/1`. |
+| `Casein.Terminals.TmuxRunner` | `tmux_runner.ex` | `@behaviour TmuxCtl.Runner`; host-vs-container argv wrapping via `WorkspaceSource.prepare_local_argv/2`, container-tmux probe cached in `:persistent_term`. |
+| `Casein.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
+| `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so DevIDE never shares a socket with another env or with plain SSH tmux. |
+| `Casein.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
+| `Casein.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
 
 ### Templates
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Terminals.SessionTemplate` | `session_template.ex` | Declarative built-in template type; `new/1`, `list/0,1`, `plan/2`, `dry_run/2`, `execute/3`, `export_topology/2`. |
-| `DevIDE.Terminals.SessionTemplate.Loader` | `session_template/loader.ex` | Resolves built-in (hard-coded) templates and merges saved exports for a workspace. |
-| `DevIDE.Terminals.SessionTemplate.Planner` | `session_template/planner.ex` | Builds dry-run tmux mutation plans from a template. |
-| `DevIDE.Terminals.SessionTemplate.Executor` | `session_template/executor.ex` | Plan/dry-run/execute boundary for built-in templates. |
-| `DevIDE.Terminals.SessionTemplate.Export` | `session_template/export.ex` | Exports live topology → template v2 map (conservative h/v split inference, `tiled` fallback). |
-| `DevIDE.Terminals.SessionTemplate.Window` / `.Pane` | `session_template/window.ex`, `pane.ex` | Window/pane sub-structs for the template tree. |
-| `DevIDE.Terminals.Templates` | `templates.ex` | Ecto persistence boundary for saved v2 exports (`saved_templates` table): save/list/get/update/duplicate/delete + `dry_run`/`execute`/`diff`/`execute_reconcile`. |
-| `DevIDE.Terminals.Templates.Executor` | `templates/executor.ex` | Imperative replay of a saved v2 export (creates windows/panes, sends commands, restores focus). |
-| `DevIDE.Terminals.Templates.Reconciler` | `templates/reconciler.ex` | Read-only diff of a saved export against current topology. |
-| `DevIDE.Terminals.Templates.ReconcileExecutor` | `templates/reconcile_executor.ex` | Additive/selective apply of a reconcile diff (reuse, create-missing, never delete/rename). |
+| `Casein.Terminals.SessionTemplate` | `session_template.ex` | Declarative built-in template type; `new/1`, `list/0,1`, `plan/2`, `dry_run/2`, `execute/3`, `export_topology/2`. |
+| `Casein.Terminals.SessionTemplate.Loader` | `session_template/loader.ex` | Resolves built-in (hard-coded) templates and merges saved exports for a workspace. |
+| `Casein.Terminals.SessionTemplate.Planner` | `session_template/planner.ex` | Builds dry-run tmux mutation plans from a template. |
+| `Casein.Terminals.SessionTemplate.Executor` | `session_template/executor.ex` | Plan/dry-run/execute boundary for built-in templates. |
+| `Casein.Terminals.SessionTemplate.Export` | `session_template/export.ex` | Exports live topology → template v2 map (conservative h/v split inference, `tiled` fallback). |
+| `Casein.Terminals.SessionTemplate.Window` / `.Pane` | `session_template/window.ex`, `pane.ex` | Window/pane sub-structs for the template tree. |
+| `Casein.Terminals.Templates` | `templates.ex` | Ecto persistence boundary for saved v2 exports (`saved_templates` table): save/list/get/update/duplicate/delete + `dry_run`/`execute`/`diff`/`execute_reconcile`. |
+| `Casein.Terminals.Templates.Executor` | `templates/executor.ex` | Imperative replay of a saved v2 export (creates windows/panes, sends commands, restores focus). |
+| `Casein.Terminals.Templates.Reconciler` | `templates/reconciler.ex` | Read-only diff of a saved export against current topology. |
+| `Casein.Terminals.Templates.ReconcileExecutor` | `templates/reconcile_executor.ex` | Additive/selective apply of a reconcile diff (reuse, create-missing, never delete/rename). |
 
 ### Policy, themes, input helpers
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Terminals.Boundary` | `boundary.ex` | Raw-admission gate: `raw_allowed?/2`/`authorize_raw/2` → `Policy.can_use_raw_terminal?/1` + `Runs.Ledger`; `interactive_command_ids/0`, `format_reason/1`. |
-| `DevIDE.Terminals.ModePolicy` | `mode_policy.ex` | Pure mode resolver; everything is `:raw`; `tmux_mutations_enabled?/1` true only for `:shell`. |
-| `DevIDE.Terminals.Theme` / `.Builtins` | `theme.ex`, `theme/builtins.ex` | Renderer-first themes (Catppuccin presets + `ghostty.conf` loading) and OSC 10/11/12/4 rewrite helpers for pane query responses. |
-| `DevIDE.Terminals.ClipboardPaste` | `clipboard_paste.ex` | Saves pasted/dropped images/files into `.casein/clipboard/` and pastes the path; git-exclude maintenance. |
-| `DevIDE.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.casein/terminal-shims/`, self-healing installers under `~/.casein/terminal-shims/install/`, managed tool binaries under `~/.casein/tools/bin/`, and pane capability env (`CASEIN_TERMINAL=1`, `CASEIN_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
-| `DevIDE.Terminals.GhosttySnapshot` | `ghostty_snapshot.ex` | Writes `Ghostty.Terminal` HTML/plain/VT grid dumps to `:ghostty_snapshot_dir` (kept out of the LiveView for the no-apply boundary guard). |
-| `DevIDE.Terminals.InspectionCommands` | `inspection_commands.ex` | Read-only governed argv registry (`pwd`/`ls`/`git status`/`rg`/`tidewave`/`preview …`) run in the workspace root with bounded output. |
-| `DevIDE.Terminals.Workflows` | `workflows.ex` | Repo-scoped Warp-subset workflow launchers; renders+revalidates argv, encodes a `workflow:` command id (never persists executable argv). |
-| `DevIDE.Terminals.WorkspaceAccessCache` | `workspace_access_cache.ex` | 60 s ETS cache of `Workspaces.get/2` to avoid manager round-trips on reconnect. |
+| `Casein.Terminals.Boundary` | `boundary.ex` | Raw-admission gate: `raw_allowed?/2`/`authorize_raw/2` → `Policy.can_use_raw_terminal?/1` + `Runs.Ledger`; `interactive_command_ids/0`, `format_reason/1`. |
+| `Casein.Terminals.ModePolicy` | `mode_policy.ex` | Pure mode resolver; everything is `:raw`; `tmux_mutations_enabled?/1` true only for `:shell`. |
+| `Casein.Terminals.Theme` / `.Builtins` | `theme.ex`, `theme/builtins.ex` | Renderer-first themes (Catppuccin presets + `ghostty.conf` loading) and OSC 10/11/12/4 rewrite helpers for pane query responses. |
+| `Casein.Terminals.ClipboardPaste` | `clipboard_paste.ex` | Saves pasted/dropped images/files into `.casein/clipboard/` and pastes the path; git-exclude maintenance. |
+| `Casein.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.casein/terminal-shims/`, self-healing installers under `~/.casein/terminal-shims/install/`, managed tool binaries under `~/.casein/tools/bin/`, and pane capability env (`CASEIN_TERMINAL=1`, `CASEIN_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
+| `Casein.Terminals.GhosttySnapshot` | `ghostty_snapshot.ex` | Writes `Ghostty.Terminal` HTML/plain/VT grid dumps to `:ghostty_snapshot_dir` (kept out of the LiveView for the no-apply boundary guard). |
+| `Casein.Terminals.InspectionCommands` | `inspection_commands.ex` | Read-only governed argv registry (`pwd`/`ls`/`git status`/`rg`/`tidewave`/`preview …`) run in the workspace root with bounded output. |
+| `Casein.Terminals.Workflows` | `workflows.ex` | Repo-scoped Warp-subset workflow launchers; renders+revalidates argv, encodes a `workflow:` command id (never persists executable argv). |
+| `Casein.Terminals.WorkspaceAccessCache` | `workspace_access_cache.ex` | 60 s ETS cache of `Workspaces.get/2` to avoid manager round-trips on reconnect. |
 
 ## Data flow / lifecycle
 
@@ -160,10 +160,10 @@ Functions/processes other subsystems and the web tier call:
   `Workflows.resolve_line/2`,
   `Theme` client bundle + OSC rewrites, `Telemetry` counters.
 
-Registries/supervisors: `DevIDE.Terminals.Registry` (sessions + owners +
-directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
-`DevIDE.Terminals.TopologyRegistry` / `TopologySupervisor` (watcher pool),
-`DevIDE.TaskSupervisor` (off-process tmux resize).
+Registries/supervisors: `Casein.Terminals.Registry` (sessions + owners +
+directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
+`Casein.Terminals.TopologyRegistry` / `TopologySupervisor` (watcher pool),
+`Casein.TaskSupervisor` (off-process tmux resize).
 
 ## Invariants & gotchas
 
@@ -207,7 +207,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   label also keeps the live integration tests off prod sessions. An unset label
   falls back to the host's *default* server, sharing it with plain SSH tmux.
   - **Per-server config.** On the host path, `TmuxRunner` appends `-f <file>`,
-    resolved by precedence: `:tmux_ctl, :config_file` → `:dev_ide,
+    resolved by precedence: `:tmux_ctl, :config_file` → `:casein,
     :tmux_config_file` → `$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`
     (`tmux_runner.ex:82-104`). Container sessions skip `-f` (the priv dir isn't
     mounted in arbitrary workspace images) and instead get the same options
@@ -227,7 +227,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
     for active users at the first deploy that sets the label. To preserve a
     live session, `tmux move-session`/relaunch it onto the new `-L` server, or
     cut over during a quiet window.
-- **Adapter selection.** The `:tmux_adapter` is selected from `:dev_ide`
+- **Adapter selection.** The `:tmux_adapter` is selected from `:casein`
   `:tmux_adapter` (see `docs/tmux_control_plane.md` for the two-key split).
 - **Tab list stability.** Only identity-stable fields belong in
   `metadata.windows` (it feeds `Compose.stable_hash/1`); volatile activity and
@@ -237,7 +237,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   the tmux read in the caller; the GenServer only stores+broadcasts, so cheap
   `tabs/2` reads from other viewers never queue behind a slow enumeration.
 - **`Boundary` is the only admission call site.** Raw admission policy itself
-  lives in `DevIDE.Policy` (outside this subsystem); the verdict is recorded as
+  lives in `Casein.Policy` (outside this subsystem); the verdict is recorded as
   `run.session_attached` / `run.session_denied` in `Runs.Ledger`.
 - **Clipboard copy-out is OSC52.** DevIDE terminal panes advertise
   `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; terminal apps should emit
@@ -250,7 +250,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   while keeping the highlight. Cmd/Ctrl+C, the context-menu Copy action, and
   OSC52 still work. Touch keeps the system long-press callout (no auto-copy).
 - **Agent TUI scroll is pointer-local SGR, not emulator history.** Focused-pane
-  `role` / `current_command` (via `DevIDE.Terminals.PaneInteraction`) sets
+  `role` / `current_command` (via `Casein.Terminals.PaneInteraction`) sets
   `data-scroll-policy` on pane tiles. Agent mode: wheel/touch → SGR mouse at the
   cell under the pointer (multi-pane hit-test); plain click reaches the PTY;
   Shift-drag selects; Alt+wheel opens the pane history drawer (tmux capture —
@@ -261,7 +261,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   files instead of printing a shell-quoted absolute path line.
 
 - **Terminal shims are scoped, lazy, and self-healing for known tools.**
-  `DevIDE.Terminals.Shims` materializes wrappers under
+  `Casein.Terminals.Shims` materializes wrappers under
   `~/.casein/terminal-shims/`, installer backends under
   `~/.casein/terminal-shims/install/`, and DevIDE-managed binaries under
   `~/.casein/tools/bin/`. DevIDE prepends the shim dir and tool bin dir only for
@@ -277,7 +277,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   and makes bypass/debugging straightforward. The first self-healing shim is
   `elio`, which installs the crates.io `elio` package into `~/.casein/tools/`
   and sets `ELIO_CLIPBOARD_OSC52=1` so Elio uses the OSC52 clipboard path inside
-  DevIDE.
+  Casein.
 
 ## See also
 

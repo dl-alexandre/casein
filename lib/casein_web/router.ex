@@ -200,6 +200,16 @@ defmodule CaseinWeb.Router do
     get "/workspaces/:id/files/*path", WorkspaceFileController, :show
   end
 
+  # Browser Web Push registration for the installed PWA (session + ForwardAuth +
+  # CSRF via :workspace_file). Inert unless VAPID keys are configured.
+  scope "/api", CaseinWeb.API do
+    pipe_through :workspace_file
+
+    get "/push/vapid-key", PushController, :vapid_key
+    post "/push/subscribe", PushController, :subscribe
+    post "/push/unsubscribe", PushController, :unsubscribe
+  end
+
   scope "/api", CaseinWeb.API do
     pipe_through :device_link_api
 

@@ -3,8 +3,8 @@ defmodule DevideMob.SessionClient do
   Phoenix Channel client for the mobile session companion.
 
   Runs on the device, holds a single WSS connection to the dev_ide host's
-  `/socket` (`DevIdeWeb.UserSocket`), joins one `session:<workspace_id>` topic
-  per watched workspace (`DevIdeWeb.SessionChannel`), and can also join the
+  `/socket` (`CaseinWeb.UserSocket`), joins one `session:<workspace_id>` topic
+  per watched workspace (`CaseinWeb.SessionChannel`), and can also join the
   authenticated user's `mobile:user:me` card stream.
 
   Screens are pure consumers — they call `watch/2` on mount and receive, on the
@@ -22,9 +22,9 @@ defmodule DevideMob.SessionClient do
 
   Connection credentials (`url`, `token`) are provisioned out-of-band — the
   device cannot mint its own token (it has no `secret_key_base`). The intended
-  flow is QR/paste pairing: the web cockpit renders a code with `{url, token,
-  workspace_id}` from `DevIdeWeb.ChannelAuth.sign_pairing_token/2`; the device
-  consumes it and calls `configure/2`. `DevideMob.SessionConfig` persists the
+  flow is QR/paste pairing: the web cockpit renders a code with a stable origin
+  descriptor plus `{url, token, workspace_id}`. The device consumes it and
+  calls `configure/1`. `DevideMob.SessionConfig` persists the
   last pairing so the client auto-connects on boot.
   """
 
@@ -44,10 +44,42 @@ defmodule DevideMob.SessionClient do
   end
 
   @doc "Provision/refresh connection credentials (from QR pairing) and connect."
+  @spec configure(map()) :: :ok
+  def configure(%{url: url, token: token} = pairing)
+      when is_binary(url) and is_binary(token) do
+    SessionConfig.put_pairing(pairing)
+    cast({:configure, url, token})
+  end
+
+  @doc false
   @spec configure(String.t(), String.t()) :: :ok
   def configure(url, token) when is_binary(url) and is_binary(token) do
     SessionConfig.put_pairing(url, token)
     cast({:configure, url, token})
+  end
+
+  @doc "Switch the single live connection to a trusted saved origin."
+  @spec activate_origin(String.t()) :: :ok | :error
+  def activate_origin(origin_id) when is_binary(origin_id) do
+    case SessionConfig.activate_origin(origin_id) do
+      {:ok, %{url: active_url, token: token}} ->
+        cast({:activate_origin, active_url, token})
+
+      :error ->
+        :error
+    end
+  end
+
+  @doc "Switch the single live connection to a saved host profile."
+  @spec activate_host(String.t()) :: :ok | :error
+  def activate_host(url) when is_binary(url) do
+    case SessionConfig.activate_host(url) do
+      {:ok, active_url, token} ->
+        cast({:configure, active_url, token})
+
+      :error ->
+        :error
+    end
   end
 
   @doc "Forget pairing credentials and disconnect the session channel client."
@@ -94,7 +126,7 @@ defmodule DevideMob.SessionClient do
   Register this device's OS push token for a workspace. Prefer the user-level
   mobile card stream when joined, with the workspace session channel retained as
   a fallback for older flows. The server stores it and pushes alerts even when
-  the app is backgrounded — see `DevIDE.Push`. The dashboard obtains `token`
+  the app is backgrounded — see `Casein.Push`. The dashboard obtains `token`
   from `mob_notify` after notification permission is granted.
   """
   @spec register_push(String.t(), String.t(), String.t()) :: :ok
@@ -242,6 +274,12 @@ defmodule DevideMob.SessionClient do
     {:noreply, do_configure(socket, url, token)}
   end
 
+  def handle_cast({:activate_origin, url, token}, socket) do
+    # Explicit origin resume always establishes a fresh authoritative channel,
+    # even when the requested origin is already active.
+    {:noreply, socket |> assign(:token, nil) |> do_configure(url, token)}
+  end
+
   def handle_cast(:clear_pairing, socket) do
     socket =
       socket.assigns.subscribers
@@ -376,6 +414,7 @@ defmodule DevideMob.SessionClient do
 
   defp do_configure(socket, url, token) do
     changed? = socket.assigns.url != url or socket.assigns.token != token
+    origin_changed? = different_origin?(socket.assigns.url, url)
 
     socket =
       if changed? and (connected?(socket) or socket.assigns.connecting?) do
@@ -386,9 +425,54 @@ defmodule DevideMob.SessionClient do
         socket
       end
 
+    socket = if origin_changed?, do: clear_origin_state(socket), else: socket
+    _ = resolve_host(url)
     socket = socket |> assign(:url, url) |> assign(:token, token)
 
     if changed?, do: request_connect(socket), else: ensure_connection_requested(socket)
+  end
+
+  # Pairing a second host can happen while the previous dashboard is still
+  # mounted behind the pairing screen. Drop every origin-owned in-memory
+  # reference before the new socket connects so old workspace topics, push
+  # acknowledgements, and card actions cannot cross into the new origin.
+  defp clear_origin_state(socket) do
+    notify_all_status(socket, :disconnected)
+    notify_pending_push_registrations(socket, {:error, :host_switched})
+    notify_pending_card_actions(socket, {:error, :host_switched})
+
+    socket
+    |> assign(:subscribers, %{})
+    |> assign(:push_registration_refs, %{})
+    |> assign(:card_action_refs, %{})
+  end
+
+  defp different_origin?(nil, _url), do: false
+
+  defp different_origin?(current_url, next_url) do
+    normalize_origin(current_url) != normalize_origin(next_url)
+  end
+
+  defp normalize_origin(url) do
+    url
+    |> String.trim()
+    |> String.trim_trailing("/")
+  end
+
+  # iOS needs its native resolver for some public and VPN-provided hostnames.
+  # Resolve each configured origin, not only the profile that happened to be
+  # active when the app booted.
+  defp resolve_host(url) do
+    with host when is_binary(host) <- URI.parse(url).host,
+         {:error, _reason} <- :inet.parse_address(String.to_charlist(host)) do
+      Mob.DNS.resolve(host)
+    else
+      _ -> :ok
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _reason -> :ok
   end
 
   defp ensure_connection_requested(socket) do

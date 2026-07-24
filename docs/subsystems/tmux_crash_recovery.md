@@ -21,7 +21,7 @@ describes the mitigations that keep the cockpit usable.
 2. **SessionOwner backend recover** — shell owners with live subscribers
    re-open the Session attachment on `term_exit` instead of stopping; up to
    5 attempts with backoff.
-3. **Scrollback archive** — `DevIDE.Terminals.ScrollbackArchive` spills a
+3. **Scrollback archive** — `Casein.Terminals.ScrollbackArchive` spills a
    bounded tail (default 256 KiB) to ETS + disk under
    `~/.casein/tmux-scrollback` (override via `CASEIN_TMUX_SCROLLBACK_DIR`);
    fresh creates reseed when archive has data. Intentional `Tmux.kill/1`

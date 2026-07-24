@@ -3,14 +3,14 @@
 # uat-tier-b.sh — post-deploy Tier B UAT smoke hook.
 #
 # Intended to be invoked AFTER a release is activated and the handoff is verified
-# (scripts/deploy-poller.sh -> scripts/verify_deploy_handoff.sh), gated by
-# scripts/check-deploy-sync.sh so we test the revision actually serving (avoid a
-# draining instance, per the canary-liveview-trace lesson).
+# (scripts/deploy-poller.sh -> scripts/verify_deploy_handoff.sh), after the
+# handoff confirms the revision actually serving (avoiding a draining instance,
+# per the canary-liveview-trace lesson).
 #
 # Tier B drives the LIVE release node over its real MCP surface
 # (POST /api/preview/mcp on /run/casein/current.sock) as the workspace owner's
 # forward-auth identity, runs a small read-mostly acceptance set, and persists
-# each run as a tier_b DevIDE.UAT.Run. See DevIDE.UAT.TierB.
+# each run as a tier_b Casein.UAT.Run. See Casein.UAT.TierB.
 #
 # NOTE: This is a scaffold. A real run needs the live MCP agent driver and a
 # disposable UAT workspace; both are live-only and not exercised in CI-of-this-

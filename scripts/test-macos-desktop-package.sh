@@ -27,7 +27,7 @@ resolver_secret="package-smoke-secret-package-smoke-secret-package-smoke-secret-
 resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/devide-resolver-$$.sqlite3" \
   SECRET_KEY_BASE="$resolver_secret" \
   CASEIN_API_TOKEN="$resolver_secret" \
-  "$RELEASE/bin/casein" eval 'IO.puts(DevIDE.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
+  "$RELEASE/bin/casein" eval 'IO.puts(Casein.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
 [[ "$resolved_tmux" == "$tmux_bin" ]]
 
 smoke_label="devide_package_$$"

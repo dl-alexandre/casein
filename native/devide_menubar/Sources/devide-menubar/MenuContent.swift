@@ -52,6 +52,25 @@ struct MenuContent: View {
                     }
                 }
             }
+
+            if monitor.lanEnabled {
+                Button("Open DevIDE on LAN") {
+                    Task {
+                        if let url = await monitor.lanCockpitURL() {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                }
+
+                Button("Copy LAN URL") {
+                    Task {
+                        if let url = await monitor.lanURL() {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        }
+                    }
+                }
+            }
             Divider()
         }
     }
@@ -98,6 +117,8 @@ struct MenuContent: View {
 
     @ViewBuilder
     private var utilitySection: some View {
+        Toggle("Allow Trusted LAN Access", isOn: lanAccessBinding)
+            .disabled(monitor.state == .starting || monitor.state == .stopping)
         if let paths = monitor.paths {
             Button("Open Logs") {
                 NSWorkspace.shared.open(paths.logsDir)
@@ -107,6 +128,13 @@ struct MenuContent: View {
             }
         }
         loginItemSection
+    }
+
+    private var lanAccessBinding: Binding<Bool> {
+        Binding(
+            get: { monitor.lanEnabled },
+            set: { monitor.setLANEnabled($0) }
+        )
     }
 
     @ViewBuilder

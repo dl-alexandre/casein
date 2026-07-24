@@ -1039,6 +1039,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       data-ctx-menu="preview_pane"
       data-ctx-pane-id={@pane.id}
       data-ctx-url={@preview.display_url}
+      data-ctx-viewport={preview_viewport_label(@preview)}
       data-pane-rect={pane_rect_json(@pane, @bounds)}
       data-display-url={@preview.display_url}
       data-playback-mode={preview_playback_mode?(@preview)}

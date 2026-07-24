@@ -98,7 +98,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.cheat_row keys="r" desc="rename the focused window or session" />
             <.cheat_row keys="&" desc="kill the focused window (window picker)" />
             <.cheat_row keys="Enter" desc="attach to the focused entry" />
-            <.cheat_row keys="Esc" desc="clear the filter, then close" />
+            <.cheat_row keys="Esc" desc="close the picker" />
             <div class="font-semibold text-base-content/60 col-span-2 mt-2">
               From anywhere (no Ctrl + B)
             </div>

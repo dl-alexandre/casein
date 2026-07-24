@@ -122,7 +122,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     # MCPMaterializer), so isolate this test's MCP staging dir via a fake
     # HOME rather than DEVIDE_AGENT_MCP_HOME directly.
     home = tmp_dir!("report-worktree-home")
-    staging = Path.join([home, ".casein", "agent-mcp", "runtime"])
+    staging = Path.join([home, ".devide", "agent-mcp", "runtime"])
     previous_home = System.get_env("HOME")
 
     System.put_env("HOME", home)
@@ -715,7 +715,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "casein-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
     make_tree_writable(path)
     File.rm_rf!(path)
     File.mkdir_p!(path)
@@ -953,7 +953,7 @@ defmodule Casein.Agents.TerminalToolsTest do
       parent = self()
 
       spawn(fn ->
-        Process.sleep(50)
+        await_blocked(parent)
         Casein.Terminals.AgentState.report("alpha", session, "%2", :done, nil)
         send(parent, :reported)
       end)
@@ -1065,4 +1065,21 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)
+
+  # Poll until `pid` is blocked in receive (status :waiting), using receive-based
+  # backoff instead of Process.sleep so the mid-wait report cannot race the waiter.
+  defp await_blocked(pid) do
+    case Process.info(pid, :status) do
+      {:status, :waiting} ->
+        :ok
+
+      _ ->
+        receive do
+        after
+          2 -> :ok
+        end
+
+        await_blocked(pid)
+    end
+  end
 end

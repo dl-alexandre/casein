@@ -40,7 +40,7 @@ config :casein,
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).
   session_directory_reconcile_ms: 5_000,
-  tmux_events_anchor_session: "__casein_keepalive",
+  tmux_events_anchor_session: "__devide_keepalive",
   # Listener-flap degradation thresholds (Slice 3).
   tmux_events_flap_watch: [
     threshold: 3,
@@ -75,16 +75,9 @@ config :casein,
     agent_inference: {Casein.Git.Inspector, :infer_agent}
   ],
   deployment: [
-    default_host: "devide.devbox.milcgroup.com",
-    git_remote: "https://github.com/dl-alexandre/dev_ide.git",
     git_branch: "master",
-    github_repo: "dl-alexandre/dev_ide",
-    git_credential_helper:
-      "!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential",
-    deploy_service: "casein-deploy.service",
     remote_head_cache_ttl_ms: 60_000,
     ls_remote_timeout_ms: 5_000,
-    last_deploy_path: "/run/casein/last-deploy.json",
     poller_watch_interval_ms: 30_000,
     stale_in_progress_ms: 2_700_000,
     phase_stale_in_progress_ms: %{"activate" => 600_000}
@@ -127,7 +120,7 @@ config :casein, Casein.Mailer, adapter: Swoosh.Adapters.Local
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
-  casein: [
+  dev_ide: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
@@ -137,7 +130,7 @@ config :esbuild,
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.1.12",
-  casein: [
+  dev_ide: [
     args: ~w(
       --input=assets/css/app.css
       --output=priv/static/assets/css/app.css
@@ -227,3 +220,13 @@ config :casein, :preview_proxy_hmr,
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+config :casein, :capability_detector, Casein.Agents.LocalAdapter
+
+# Injectable clocks for idle/TTL logic (tests swap these for deterministic time).
+# `{mod, fun}` is applied as `apply(mod, fun, [:millisecond])`; a 0-arity fun
+# is called directly. Default is real monotonic time — zero prod behavior change.
+config :casein, :file_server_clock, {System, :monotonic_time}
+config :casein, :link_resolver_clock, {System, :monotonic_time}
+
+config :casein, :preview_tools, Casein.Agents.PreviewTools

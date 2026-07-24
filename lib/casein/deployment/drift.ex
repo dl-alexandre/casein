@@ -1,16 +1,15 @@
 defmodule Casein.Deployment.Drift do
   @moduledoc """
-  Detects when the running devbox release is not the revision on `origin/master`.
+  Detects when the running release is not the revision on its configured branch.
 
-  Manual local deploys are useful for hotfix validation, but GitHub's canonical
-  deploy replaces `/opt/casein/release` from `master`. If the running revision is
-  a manual label or a SHA that differs from the remote branch head, surface that
-  fact immediately so the operator knows the fix is not durable yet.
+  Manual local deploys are useful for hotfix validation, but an operator's
+  canonical deploy may replace them. If the running revision is a manual label
+  or a SHA that differs from the remote branch head, surface that fact
+  immediately so the operator knows the fix is not durable yet.
   """
 
   require Logger
 
-  @default_remote "https://github.com/dl-alexandre/dev_ide.git"
   @default_branch "master"
 
   @type status ::
@@ -93,7 +92,7 @@ defmodule Casein.Deployment.Drift do
            remote: remote_sha,
            branch: branch,
            message:
-             "Running revision differs from origin/#{branch}; the next GitHub deploy will replace it."
+             "Running revision differs from the configured #{branch} branch; the next canonical deploy may replace it."
          }}
 
       true ->
@@ -104,7 +103,7 @@ defmodule Casein.Deployment.Drift do
            remote: remote_sha,
            branch: branch,
            message:
-             "Running revision is a manual label, not origin/#{branch}; commit and push before relying on it."
+             "Running revision is a manual label, not the configured #{branch} branch; publish it before relying on it."
          }}
     end
   end
@@ -158,14 +157,19 @@ defmodule Casein.Deployment.Drift do
   defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp fetch_remote_head(branch) do
-    remote = remote()
-    timeout = config(:ls_remote_timeout_ms, 5_000)
-    task = Task.async(fn -> ls_remote(remote, branch) end)
+    case remote() do
+      remote when is_binary(remote) and remote != "" ->
+        timeout = config(:ls_remote_timeout_ms, 5_000)
+        task = Task.async(fn -> ls_remote(remote, branch) end)
 
-    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} -> result
-      {:exit, reason} -> {:error, {:ls_remote_exit, reason}}
-      nil -> {:error, :ls_remote_timeout}
+        case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+          {:ok, result} -> result
+          {:exit, reason} -> {:error, {:ls_remote_exit, reason}}
+          nil -> {:error, :ls_remote_timeout}
+        end
+
+      _ ->
+        {:error, :not_configured}
     end
   end
 
@@ -217,7 +221,7 @@ defmodule Casein.Deployment.Drift do
   defp normalize(nil), do: nil
   defp normalize(value), do: value |> to_string() |> String.trim()
 
-  defp remote, do: System.get_env("CASEIN_GIT_REMOTE") || config(:git_remote, @default_remote)
+  defp remote, do: System.get_env("CASEIN_GIT_REMOTE") || config(:git_remote, nil)
 
   defp config(key, default) do
     :casein

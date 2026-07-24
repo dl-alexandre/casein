@@ -6,7 +6,7 @@ Worktree off `master`; **not pushed**, no PR opened.
 ## Items
 
 ### 1. Fix N+1 on "mark all read" — **done**
-- Added `DevIDE.Notifications.mark_all_read/1` using a single `Repo.update_all` for unread+unresolved rows.
+- Added `Casein.Notifications.mark_all_read/1` using a single `Repo.update_all` for unread+unresolved rows.
 - Drawer `notifications:mark_all_read` calls it once (no list+per-row loop).
 - Test in `test/casein/notifications_test.exs` covers count, read-only targeting, resolved untouched, other users untouched.
 - Broadcasts one `{:notification_updated, :mark_all_read}` for LiveView badge/list refresh.

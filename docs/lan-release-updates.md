@@ -208,16 +208,16 @@ making the dynamic probe mandatory.
 
 | Module | Role |
 |--------|------|
-| `DevIDE.Release.Metadata` | Read/write `casein.relmeta.json`; assemble-time writer. |
-| `DevIDE.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
-| `DevIDE.Release.Update.Check` | Compare installed revision vs manifest artifact. |
-| `DevIDE.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
-| `DevIDE.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
+| `Casein.Release.Metadata` | Read/write `casein.relmeta.json`; assemble-time writer. |
+| `Casein.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
+| `Casein.Release.Update.Check` | Compare installed revision vs manifest artifact. |
+| `Casein.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
+| `Casein.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
 | `mix.exs` `write_release_metadata/1` | Release assemble step emitting metadata. |
 | `rel/overlays/bin/devide` | Release-local CLI wrapper, LAN systemd install, update install, rollback. |
 | `scripts/devide` | Checkout CLI wrapper (`mix run --no-start`). |
 | `scripts/package-release.sh` | Build + tarball + sha256 + local manifest generation (Phase 3). |
-| `DevIDE.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
+| `Casein.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
 
 ## Rollout targets
 

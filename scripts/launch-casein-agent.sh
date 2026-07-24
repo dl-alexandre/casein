@@ -1149,14 +1149,14 @@ case "$RUNTIME" in
         --leader-socket)
           [[ $# -ge 2 ]] || { echo "error: --leader-socket requires a path" >&2; exit 2; }
           if [[ "$(realpath -m "$2")" != "$grok_socket" ]]; then
-            echo "error: managed Grok must use DevIDE's private leader socket" >&2
+            echo "error: managed Grok must use Casein's private leader socket" >&2
             exit 2
           fi
           shift 2
           ;;
         --leader-socket=*)
           if [[ "$(realpath -m "${1#*=}")" != "$grok_socket" ]]; then
-            echo "error: managed Grok must use DevIDE's private leader socket" >&2
+            echo "error: managed Grok must use Casein's private leader socket" >&2
             exit 2
           fi
           shift

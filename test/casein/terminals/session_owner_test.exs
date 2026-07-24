@@ -1688,8 +1688,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
 
       Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
 
-      # Outwait the same-class duplicate window so the flip is observable.
-      Process.sleep(150)
+      # Clear same-class dedup memory so the flip is observable without wall-clock wait.
+      :sys.replace_state(owner_pid, fn s -> %{s | last_response: nil} end)
 
       # Latte bg #eff1f5 — the answering viewer's own theme no longer matters.
       GenServer.cast(owner_pid, {:query_response, self(), "\e]11;#000000\a"})
@@ -1747,7 +1747,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
       assert_receive {:fake_session_input, ^fake_session, "\e[?997;1n"}, 1_000
 
       Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
-      Process.sleep(150)
+      # Clear same-class dedup memory so the flip is observable without wall-clock wait.
+      :sys.replace_state(owner_pid, fn s -> %{s | last_response: nil} end)
 
       GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
       assert_receive {:fake_session_input, ^fake_session, "\e[?997;2n"}, 1_000
@@ -2194,7 +2195,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
         :ok
 
       _in_flight ->
-        Process.sleep(10)
+        # Synchronous :sys.get_state drains the owner's mailbox (incl. async-task
+        # completion that clears the slot); no fixed wall-clock sleep needed.
         await_resize_settled(owner_pid, attempts - 1)
     end
   end
@@ -2208,7 +2210,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
         :ok
 
       _in_flight ->
-        Process.sleep(10)
+        # Synchronous :sys.get_state drains the owner's mailbox (incl. async-task
+        # completion that clears the slot); no fixed wall-clock sleep needed.
         await_window_size_probe_settled(owner_pid, attempts - 1)
     end
   end

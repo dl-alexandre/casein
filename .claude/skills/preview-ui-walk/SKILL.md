@@ -14,7 +14,7 @@ description: >
 
 # Preview UI walk
 
-A **generic** UI walk engine for product apps on DevIDE. Default is **read-only**
+A **generic** UI walk engine for product apps on Casein. Default is **read-only**
 (navigate + assert + screenshot). Product workflows may opt into **gated
 interactions** (`safety.allow_interactions`) when env_check is non-prod.
 

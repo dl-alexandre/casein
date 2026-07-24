@@ -14,7 +14,7 @@ defmodule CaseinWeb.TerminalChannelTest do
   @endpoint CaseinWeb.Endpoint
 
   setup do
-    workspace_root = Path.join(System.tmp_dir!(), "casein-terminal-channel")
+    workspace_root = Path.join(System.tmp_dir!(), "devide-terminal-channel")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
@@ -462,7 +462,7 @@ defmodule CaseinWeb.TerminalChannelTest do
       System.system_time(:millisecond) + 60_000
     }
 
-    :ets.insert(:casein_terminal_fast_path_cache, [stale_claims, wildcard_claims])
+    :ets.insert(:dev_ide_terminal_fast_path_cache, [stale_claims, wildcard_claims])
 
     case join_raw(socket, "terminal:ws-1:#{sid}") do
       {:ok, reply, _socket} ->
@@ -508,8 +508,8 @@ defmodule CaseinWeb.TerminalChannelTest do
 
         {:ok, claims} = ChannelAuth.verify_terminal_capability(capability)
         # Force the exact-key ETS entry to look expired (expires_at in the past).
-        :ets.insert(:casein_terminal_fast_path_cache, {cache_key, claims, 0})
-        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) != []
+        :ets.insert(:dev_ide_terminal_fast_path_cache, {cache_key, claims, 0})
+        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) != []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply, _socket} ->
@@ -688,7 +688,7 @@ defmodule CaseinWeb.TerminalChannelTest do
       }
     ]
 
-    :ets.insert(:casein_terminal_fast_path_cache, stale_claims)
+    :ets.insert(:dev_ide_terminal_fast_path_cache, stale_claims)
 
     reconnect_socket =
       CaseinWeb.UserSocket
@@ -702,12 +702,12 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         assert :ets.lookup(
-                 :casein_terminal_fast_path_cache,
+                 :dev_ide_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
                ) != []
 
         assert :ets.lookup(
-                 :casein_terminal_fast_path_cache,
+                 :dev_ide_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :any)
                ) != []
 
@@ -759,7 +759,7 @@ defmodule CaseinWeb.TerminalChannelTest do
         System.system_time(:millisecond) + 60_000
       }
 
-    :ets.insert(:casein_terminal_fast_path_cache, [stale_claim, wildcard_claim])
+    :ets.insert(:dev_ide_terminal_fast_path_cache, [stale_claim, wildcard_claim])
 
     socket =
       CaseinWeb.UserSocket
@@ -773,12 +773,12 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert joined_socket.assigns.terminal_fast_path
 
         assert :ets.lookup(
-                 :casein_terminal_fast_path_cache,
+                 :dev_ide_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
                ) != []
 
         assert :ets.lookup(
-                 :casein_terminal_fast_path_cache,
+                 :dev_ide_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :any)
                ) != []
 
@@ -1044,8 +1044,8 @@ defmodule CaseinWeb.TerminalChannelTest do
         # Drop the ETS exact entry: the socket-local fast-path cache must still
         # serve the reconnect without a fresh manager lookup.
         cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
-        :ets.delete(:casein_terminal_fast_path_cache, cache_key)
-        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) == []
+        :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
+        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply2, _socket2} ->
@@ -1093,8 +1093,8 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
-        :ets.delete(:casein_terminal_fast_path_cache, cache_key)
-        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) == []
+        :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
+        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply2, _socket2} ->
@@ -2116,53 +2116,57 @@ defmodule CaseinWeb.TerminalChannelTest do
     counter
   end
 
+  # Retries kill until no matching panes remain (or ~500ms elapses). Soft on
+  # timeout — cleanup must not flunk the suite. Backoff is receive-after via
+  # Casein.Test.Eventually (never Process.sleep).
   defp kill_tmux_sessions_under(root) do
-    kill_tmux_sessions_under(root, 10)
-  end
-
-  defp kill_tmux_sessions_under(_root, 0), do: :ok
-
-  defp kill_tmux_sessions_under(root, attempts) do
     root = canonical_path(root)
 
-    killed =
-      case System.cmd(
-             "tmux",
-             Casein.Terminals.TmuxServer.args() ++
-               ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
-             stderr_to_stdout: true
-           ) do
-        {output, 0} ->
-          output
-          |> String.split("\n", trim: true)
-          |> Enum.map(&String.split(&1, "\t", parts: 2))
-          |> Enum.reduce(false, fn
-            [session, path], acc ->
-              if String.starts_with?(canonical_path(path), root) do
-                System.cmd(
-                  "tmux",
-                  Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
-                  stderr_to_stdout: true
-                )
+    try do
+      Casein.Test.Eventually.await(
+        fn -> not kill_tmux_sessions_once(root) end,
+        timeout_ms: 10 * 50,
+        interval_ms: 50,
+        message: "tmux sessions under #{root} still present after cleanup"
+      )
+    rescue
+      ExUnit.AssertionError -> :ok
+    end
 
-                true
-              else
-                acc
-              end
+    :ok
+  end
 
-            _, acc ->
+  defp kill_tmux_sessions_once(root) do
+    case System.cmd(
+           "tmux",
+           Casein.Terminals.TmuxServer.args() ++
+             ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.map(&String.split(&1, "\t", parts: 2))
+        |> Enum.reduce(false, fn
+          [session, path], acc ->
+            if String.starts_with?(canonical_path(path), root) do
+              System.cmd(
+                "tmux",
+                Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+                stderr_to_stdout: true
+              )
+
+              true
+            else
               acc
-          end)
+            end
 
-        _ ->
-          false
-      end
+          _, acc ->
+            acc
+        end)
 
-    if killed do
-      kill_tmux_sessions_under(root, attempts - 1)
-    else
-      Process.sleep(50)
-      kill_tmux_sessions_under(root, attempts - 1)
+      _ ->
+        false
     end
   end
 
@@ -2200,8 +2204,8 @@ defmodule CaseinWeb.TerminalChannelTest do
   end
 
   defp reset_terminal_fast_path_cache! do
-    case :ets.whereis(:casein_terminal_fast_path_cache) do
-      :undefined -> :ets.new(:casein_terminal_fast_path_cache, [:named_table, :public, :set])
+    case :ets.whereis(:dev_ide_terminal_fast_path_cache) do
+      :undefined -> :ets.new(:dev_ide_terminal_fast_path_cache, [:named_table, :public, :set])
       table -> :ets.delete_all_objects(table)
     end
   end

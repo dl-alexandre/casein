@@ -159,7 +159,7 @@ master (protected; green pre-push gate)
   replaces it within ~2 min when `origin/master` advances. Use only for dogfooding;
   commit + push for durable deploys.
 - Non-SHA `DEVIDE_GIT_REVISION` values (manual labels) trigger the drift banner via
-  `DevIDE.Deployment.Drift`.
+  `Casein.Deployment.Drift`.
 
 **Future**
 

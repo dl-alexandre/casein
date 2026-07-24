@@ -38,7 +38,7 @@ defmodule Casein.Panes.EventsParityTest do
   defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
-    root = Path.join(System.tmp_dir!(), "pane-events-#{System.unique_integer([:positive])}")
+    root = Casein.TmpWorkspace.root!("pane-events")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:casein, :workspaces_root, root)

@@ -139,7 +139,7 @@ defmodule Casein.WorkspaceSource.Local do
 
   @impl true
   def detect_capabilities(workspace, root) do
-    base = Casein.Agents.LocalAdapter.detect_filesystem_only(root)
+    base = Casein.WorkspaceSource.capability_detector().detect_filesystem_only(root)
 
     # Enrich with Tidewave if the workspace provides explicit port info
     metadata = get_metadata(workspace)

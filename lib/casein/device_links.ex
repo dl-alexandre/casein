@@ -10,11 +10,10 @@ defmodule Casein.DeviceLinks do
   import Ecto.Query
 
   alias Casein.DeviceLinks.Token
+  alias Casein.Origin
   alias Casein.Repo
   alias Casein.Workspaces
 
-  @origin_id "dev_ide"
-  @origin_name "Casein"
   @resource_kind "workspace"
   @capabilities [
     "phoenix_socket",
@@ -51,8 +50,8 @@ defmodule Casein.DeviceLinks do
       now = DateTime.utc_now()
 
       token_attrs = %{
-        origin_id: @origin_id,
-        origin_name: @origin_name,
+        origin_id: Origin.id(),
+        origin_name: optional_string(attrs, :origin_name) || Origin.display_name(),
         subject_id: user.id,
         subject_email: user.email,
         subject_role: role_to_string(user.role),
@@ -263,6 +262,7 @@ defmodule Casein.DeviceLinks do
       email: token.subject_email,
       role: role_atom(token.subject_role),
       origin_id: token.origin_id,
+      origin_name: token.origin_name,
       device_link_id: token.id,
       platform: token.platform,
       resource_kind: token.resource_kind,

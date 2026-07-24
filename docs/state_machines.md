@@ -27,7 +27,7 @@ Rules:
    survives BEAM restarts.
 2. Reattaching any browser tab runs `tmux new-session -A` (attach if exists,
    else create) and rebuilds the grid from tmux history.
-3. `DevIDE.Terminals.TmuxJanitor` schedules `tmux kill-session` after
+3. `Casein.Terminals.TmuxJanitor` schedules `tmux kill-session` after
    `:tmux_idle_seconds` once a session has no subscribers; a new subscriber
    cancels the pending kill. Only `devide_`-prefixed sessions are killed.
 4. Raw input is admitted only when `Policy.can_use_raw_terminal?/1` allows; the
@@ -35,7 +35,7 @@ Rules:
 
 See [`terminal.md`](terminal.md) for the full subsystem and multi-pane model.
 
-## Review-agent run lifecycle (`DevIDE.Agents.Run`)
+## Review-agent run lifecycle (`Casein.Agents.Run`)
 
 ```
 :start ──► :running ──► :succeeded | :failed | :timed_out
@@ -51,7 +51,7 @@ See [`terminal.md`](terminal.md) for the full subsystem and multi-pane model.
 3. Hard timeout kills the OS process and sets `:timed_out`.
 4. Subscriber (LiveView) gets `{:cmd_data, ...}` and `{:cmd_exit, ...}` messages.
 5. Output buffer is capped at 256 KiB (`@max_buffer_bytes`).
-6. argv is fixed by `DevIDE.Agents.ReviewCommand` — there is no path to run an
+6. argv is fixed by `Casein.Agents.ReviewCommand` — there is no path to run an
    arbitrary command, send a prompt, or apply a patch.
 7. Runs emit `run.started` and one terminal run-ledger event (`run.succeeded`,
    `run.failed`, or `run.timed_out`) using a shared `run_id`.
@@ -78,14 +78,14 @@ DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded`/
 `:unsafe_db` denials for both checks, unconditionally — checked before mode
 or unlock state, and never overridable by an active unlock.
 
-`can_apply_proposal?/1` is the write path for `DevIDE.ProposalApply`
+`can_apply_proposal?/1` is the write path for `Casein.ProposalApply`
 (a human reviewing and applying a proposal diff, gated by workspace
 operator + `:manual` mode). `can_enable_agent_write?/1` is the *separate*,
-stricter gate for `DevIDE.Proposals.AutoApply` — a server-spawned
+stricter gate for `Casein.Proposals.AutoApply` — a server-spawned
 review-agent run self-applying its own proposal with no per-change human
 click, requiring `:manual` mode **and** a currently-active, human-granted,
 time-boxed unlock. A deployment-wide config kill switch
-(`DevIDE.Proposals.AutoApply` `enabled:`, default `false`) additionally
+(`Casein.Proposals.AutoApply` `enabled:`, default `false`) additionally
 gates the latter regardless of any per-workspace unlock.
 
 ## Audit event lifecycle
@@ -104,5 +104,5 @@ Events carry: `id`, `workspace_id`, `actor_id`, `action`, `target_type`,
 
 A blocked generic policy decision **must** produce an audit event with
 `action: "policy.blocked"`. Run-ledger events
-(`DevIDE.Runs.Ledger`) carry `metadata.ledger == "run"` and use the
+(`Casein.Runs.Ledger`) carry `metadata.ledger == "run"` and use the
 `run.*` actions documented in [`glossary.md`](glossary.md) §Event taxonomy.

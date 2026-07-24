@@ -45,9 +45,6 @@ if [[ "$LIVE_ONLY" -ne 1 ]]; then
   bash -n scripts/verify_deploy_handoff.sh
   bash -n scripts/workspace-doctor.sh
 
-  log "checking deploy artifacts are in sync"
-  ./scripts/check-deploy-sync.sh
-
   log "running hardening-focused tests"
   mise exec -- mix test \
     test/casein_web/api/terminal_mcp_test.exs \

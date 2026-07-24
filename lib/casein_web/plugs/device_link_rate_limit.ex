@@ -38,9 +38,18 @@ defmodule CaseinWeb.Plugs.DeviceLinkRateLimit do
   end
 
   defp rate_limit_key(conn) do
-    address = conn.remote_ip |> :inet.ntoa() |> to_string()
+    address = format_address(conn.remote_ip)
     "device_link:#{conn.request_path}:#{address}"
   end
+
+  defp format_address(ip) when is_tuple(ip) and tuple_size(ip) in [4, 8] do
+    case :inet.ntoa(ip) do
+      address when is_list(address) -> List.to_string(address)
+      _ -> "unresolved"
+    end
+  end
+
+  defp format_address(_ip), do: "unresolved"
 
   defp config(key, default) do
     Application.get_env(:casein, __MODULE__, [])

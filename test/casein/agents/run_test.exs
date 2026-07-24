@@ -49,14 +49,23 @@ defmodule Casein.Agents.RunTest do
     {ws, pid}
   end
 
-  defp await_status(pid, want, tries \\ 100)
-  defp await_status(_pid, _want, 0), do: :timeout
-
-  defp await_status(pid, want, tries) do
-    case Run.state(pid).status do
-      ^want -> :ok
-      :running -> Process.sleep(20) && await_status(pid, want, tries - 1)
-      other -> {:unexpected, other}
+  defp await_status(pid, want, tries \\ 100) do
+    try do
+      Casein.Test.Eventually.await(
+        fn ->
+          case Run.state(pid).status do
+            ^want -> :ok
+            :running -> false
+            other -> {:unexpected, other}
+          end
+        end,
+        timeout_ms: tries * 20,
+        interval_ms: 20,
+        message: "status #{inspect(want)} not reached"
+      )
+    rescue
+      # Soft timeout: original helper returned :timeout when tries exhausted.
+      ExUnit.AssertionError -> :timeout
     end
   end
 

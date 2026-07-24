@@ -7,7 +7,7 @@
       criteria: :safe_to_deploy,
       reviewer: "dalexandre@milcgroup.com",
       notes:
-        "2026-07-21 deps re-audit: promoted transitive (phoenix_live_reload/credo) to direct dep for DevIDE.Files.Watcher; same locked version, no new code fetched; pure-Elixir inotify wrapper.",
+        "2026-07-21 deps re-audit: promoted transitive (phoenix_live_reload/credo) to direct dep for Casein.Files.Watcher; same locked version, no new code fetched; pure-Elixir inotify wrapper.",
       reviewed_at: ~D[2026-07-21]
     }
   ],

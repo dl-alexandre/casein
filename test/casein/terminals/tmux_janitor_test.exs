@@ -18,20 +18,16 @@ defmodule Casein.Terminals.TmuxJanitorTest do
 
   # Polls a condition instead of blindly sleeping: returns as soon as it holds,
   # with a generous ceiling so a slow timer/shell-out under load can't flake.
-  defp eventually(fun, timeout_ms \\ 2_000, interval_ms \\ 20)
+  # Backoff is receive-after via Casein.Test.Eventually (never Process.sleep).
+  defp eventually(fun, timeout_ms \\ 2_000, interval_ms \\ 20) do
+    _ =
+      Casein.Test.Eventually.await(fun,
+        timeout_ms: timeout_ms,
+        interval_ms: interval_ms,
+        message: "condition was not met within the timeout"
+      )
 
-  defp eventually(fun, timeout_ms, interval_ms) do
-    cond do
-      fun.() ->
-        :ok
-
-      timeout_ms <= 0 ->
-        flunk("condition was not met within the timeout")
-
-      true ->
-        Process.sleep(interval_ms)
-        eventually(fun, timeout_ms - interval_ms, interval_ms)
-    end
+    :ok
   end
 
   test "subscribe registers the calling pid and clears any pending kill" do

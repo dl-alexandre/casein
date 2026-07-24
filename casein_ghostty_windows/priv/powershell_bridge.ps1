@@ -15,7 +15,7 @@ $commandLine = ($commandParts | ForEach-Object {
     '"{0}"' -f $_.Replace('"', '\"')
 }) -join ' '
 
-$exitCode = [DevIDE.ConPtyBridge]::Run(
+$exitCode = [Casein.ConPtyBridge]::Run(
     $dataPort,
     $controlPort,
     $bridgeToken,

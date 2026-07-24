@@ -70,19 +70,20 @@ defmodule Casein.Operator.SituationServerTest do
   # The boot rebuild kicks an async worktree sweep whose (empty) result would
   # clobber alarms injected before it lands — wait it out first.
   defp await_boot_sweep(pid, tries \\ 50) do
-    state = :sys.get_state(pid)
+    Casein.Test.Eventually.await(
+      fn ->
+        state = :sys.get_state(pid)
 
-    cond do
-      state.worktree_sweep_ref == nil and state.worktree_swept_at_ms != nil ->
-        :ok
-
-      tries == 0 ->
-        flunk("boot worktree sweep never finished")
-
-      true ->
-        Process.sleep(20)
-        await_boot_sweep(pid, tries - 1)
-    end
+        if state.worktree_sweep_ref == nil and state.worktree_swept_at_ms != nil do
+          :ok
+        else
+          false
+        end
+      end,
+      timeout_ms: tries * 20,
+      interval_ms: 20,
+      message: "boot worktree sweep never finished"
+    )
   end
 
   defp blocked_entry(ago_s, message \\ "waiting on permission") do

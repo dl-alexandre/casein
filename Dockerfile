@@ -140,18 +140,18 @@ ENV LANG=en_US.UTF-8 \
 RUN groupadd --gid 1000 dev_ide \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev_ide \
     && mkdir -p /workspaces \
-    && chown -R dev_ide:dev_ide /workspaces
+    && chown -R dev_ide:casein /workspaces
 
 WORKDIR /app
 
-COPY --from=builder --chown=dev_ide:dev_ide /app/_build/prod/rel/dev_ide ./
+COPY --from=builder --chown=dev_ide:casein /app/_build/prod/rel/dev_ide ./
 
 USER dev_ide
 
 EXPOSE 4000
 
 # Migrations are explicit, not at server boot — operator runs:
-#   docker run casein:latest /app/bin/casein eval "DevIDE.Release.migrate()"
+#   docker run casein:latest /app/bin/casein eval "Casein.Release.migrate()"
 # (or use the rel/overlays/bin/migrate helper) before bringing up the
 # server pool. This keeps zero-downtime upgrades sane: one task pod
 # migrates; the server pool then rolls.

@@ -2,7 +2,7 @@ import Foundation
 
 /// Filesystem layout the host cares about: the release it supervises and the
 /// data directory holding the status contract. Mirrors
-/// `DevIDE.Desktop.Runtime.data_dir/0` defaults on Darwin.
+/// `Casein.Desktop.Runtime.data_dir/0` defaults on Darwin.
 public struct HostPaths: Sendable, Equatable {
     public var dataDir: URL
     public var releaseRoot: URL

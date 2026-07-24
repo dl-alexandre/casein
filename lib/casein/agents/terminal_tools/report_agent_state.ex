@@ -26,7 +26,7 @@ defmodule Casein.Agents.TerminalTools.ReportAgentState do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -55,6 +55,6 @@ defmodule Casein.Agents.TerminalTools.ReportAgentState do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.report_agent_state(Helpers.to_impl_args(params))
+    Agent.report_agent_state(Helpers.to_impl_args(params))
   end
 end

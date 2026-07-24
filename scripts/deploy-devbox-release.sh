@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy a prebuilt DevIDE release tarball on the devbox host.
+# Deploy a prebuilt Casein release tarball on the devbox host.
 #
 # Intended caller: run as a FILE PATH from a repo checkout so the sibling
 # scripts/lib/canary-drain.sh is resolvable, e.g.
@@ -16,9 +16,10 @@ set -euo pipefail
 TARBALL="${1:?usage: deploy-devbox-release.sh /path/to/release.tgz [revision]}"
 REVISION="${2:-manual}"
 
-APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/casein}"
+APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
 SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+OPERATOR_CONFIG_FILE="${CASEIN_OPERATOR_CONFIG_FILE:-/etc/devide/operator.json}"
 USER_NAME="${CASEIN_DEPLOY_USER:-devbox}"
 GROUP_NAME="${CASEIN_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -29,12 +30,8 @@ ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
 RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
-# Run-dir + active socket are env-overridable (frozen DEVIDE_* namespace, matching
-# deploy-poller.sh) so a Casein release can serve the existing /run/devide socket
-# during cutover without a milc-devbox Caddy change. Defaults are the renamed paths.
-RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}"
-INST_DIR="${RUN_ROOT}/instances"
-CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}"
+INST_DIR="/run/devide/instances"
+CURRENT_SYMLINK="/run/devide/current.sock"
 OLD_CURRENT_TARGET=""
 CURRENT_SYMLINK_SWAPPED=0
 CADDY_UPSTREAM_PATCHED=0
@@ -76,7 +73,7 @@ cleanup_stale_instance_records() {
   done
 }
 
-# True if any recorded instance is a live DevIDE release process. Used to refuse
+# True if any recorded instance is a live Casein release process. Used to refuse
 # (re)generating a missing RELEASE_COOKIE while an instance is already running
 # under a cookie we can no longer see — regenerating a fresh one would diverge
 # from the live node and turn the next graceful drain into a hard SIGTERM.
@@ -100,8 +97,8 @@ neutralize_legacy_service() {
   log "installing no-op drop-in for legacy ${SERVICE}.service"
   sudo mkdir -p "${dropin_dir}"
   sudo tee "${dropin_dir}/90-devide-canary-noop.conf" >/dev/null <<EOF
-# Managed by DevIDE deploy-devbox-release.sh.
-# Traffic is served by transient devide-<uuid> units via /run/casein/current.sock.
+# Managed by Casein deploy-devbox-release.sh.
+# Traffic is served by transient devide-<uuid> units via /run/devide/current.sock.
 # Keep the legacy enabled unit harmless on boot instead of binding the active socket.
 [Service]
 Type=oneshot
@@ -227,7 +224,6 @@ rollback() {
     else
       log "restoring previous release to ${ACTIVE_RELEASE}"
       sudo mv "${PREVIOUS_RELEASE}" "${ACTIVE_RELEASE}" || true
-      sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy" || true
     fi
   elif ! sudo test -e "${ACTIVE_RELEASE}"; then
     log "warning: no ${PREVIOUS_RELEASE} exists and ${ACTIVE_RELEASE} is missing"
@@ -250,10 +246,8 @@ sudo rm -rf "${STAGING}"
 sudo mkdir -p "${STAGING}"
 sudo tar -xzf "${TARBALL}" -C "${STAGING}"
 
-sudo test -x "${STAGING}/bin/casein"
+sudo test -x "${STAGING}/bin/dev_ide"
 sudo test -x "${STAGING}/bin/migrate"
-sudo test -f "${STAGING}/deploy/casein.service"
-sudo test -f "${STAGING}/deploy/docker-compose.postgres.yml"
 
 log "placing release under ${ACTIVE_RELEASE}"
 if sudo test -e "${PREVIOUS_RELEASE}"; then
@@ -267,9 +261,6 @@ fi
 DEPLOY_STARTED=1
 sudo mv "${STAGING}" "${ACTIVE_RELEASE}"
 sudo chown -R "${USER_NAME}:${GROUP_NAME}" "${ACTIVE_RELEASE}"
-
-log "activating deploy artifacts"
-sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy"
 
 scripts_dir="$(
   sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type d -path '*/priv/scripts' -print -quit 2>/dev/null
@@ -289,7 +280,7 @@ fi
 log "ensuring RELEASE_COOKIE is pinned in ${ENV_FILE}"
 # Without a pinned RELEASE_COOKIE the release auto-generates a fresh cookie at
 # every boot (releases/COOKIE), so the running node's cookie diverges from the
-# on-disk file and peer commands (`bin/casein stop`, `rpc`, health probes) fail
+# on-disk file and peer commands (`bin/dev_ide stop`, `rpc`, health probes) fail
 # the distribution challenge (:noconnection). That makes the graceful ExecStop
 # fail and every deploy hard-SIGTERM the node mid-session, draining LiveView
 # sockets and killing live tmux terminals. Generate + persist one if absent, so
@@ -301,12 +292,12 @@ if ! sudo grep -qE '^RELEASE_COOKIE=.+' "${ENV_FILE}"; then
   # we can no longer read (e.g. the env file was rebuilt from devide.env.example
   # and silently dropped the key — see the template-rebuild warning below).
   # Minting a *fresh* cookie here would diverge from the running node, so the
-  # graceful peer `bin/casein stop` fails the distribution challenge
+  # graceful peer `bin/dev_ide stop` fails the distribution challenge
   # (:noconnection), ExecStop fails, and systemd hard-SIGTERMs the old node
   # mid-session — draining LiveView sockets and killing live tmux terminals.
   # Abort instead so the operator can restore the real cookie before redeploying.
   if cookie_dependent_instance_running; then
-    echo "error: RELEASE_COOKIE is missing from ${ENV_FILE} but a DevIDE instance" >&2
+    echo "error: RELEASE_COOKIE is missing from ${ENV_FILE} but a Casein instance" >&2
     echo "       is already running under a cookie this deploy can no longer read." >&2
     echo "       Regenerating it now would hard-kill that instance (and its tmux" >&2
     echo "       terminals) on handoff. The env file was likely rebuilt from" >&2
@@ -392,19 +383,29 @@ HOST_SHORT="$(hostname -s)"
 NEW_RELEASE_NODE="dev_ide_${NEW_UUID}@${HOST_SHORT}"
 
 log "starting new instance ${NEW_UUID} on ${NEW_SOCKET} (node ${NEW_RELEASE_NODE})"
+
+operator_property=()
+if sudo -u "${USER_NAME}" test -r "${OPERATOR_CONFIG_FILE}"; then
+  log "using operator profile ${OPERATOR_CONFIG_FILE}"
+  operator_property+=(--property="Environment=CASEIN_OPERATOR_CONFIG_FILE=${OPERATOR_CONFIG_FILE}")
+else
+  log "operator profile not installed; deployment capabilities remain disabled"
+fi
+
 sudo systemd-run \
   --unit="devide-${NEW_UUID}" \
-  --description="DevIDE canary ${REVISION} (${NEW_UUID})" \
+  --description="Casein canary ${REVISION} (${NEW_UUID})" \
   --property="User=${USER_NAME}" \
   --property="Group=${GROUP_NAME}" \
   --property="EnvironmentFile=${ENV_FILE}" \
+  "${operator_property[@]}" \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
-  --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
-  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket" \
+  --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
+  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
-  "${ACTIVE_RELEASE}/bin/casein" start
+  "${ACTIVE_RELEASE}/bin/dev_ide" start
 
 # ── Health-check the new instance via its Unix socket ───────────────────────
 log "waiting for new instance API readiness on ${NEW_SOCKET}"
@@ -446,29 +447,29 @@ printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -qE '"preview_close"|"invoke_tool"'
 
 preview_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-preview' -print -quit 2>/dev/null
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-preview' -print -quit 2>/dev/null
 )"
 if [ -z "${preview_script_dir}" ]; then
-  echo "error: casein-preview script missing from release priv/scripts" >&2
+  echo "error: devide-preview script missing from release priv/scripts" >&2
   exit 1
 fi
 if [ ! -x "${preview_script_dir}" ]; then
-  echo "error: casein-preview is not executable in release priv/scripts" >&2
+  echo "error: devide-preview is not executable in release priv/scripts" >&2
   exit 1
 fi
 
 devide_curl_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-curl.sh' -print -quit 2>/dev/null
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-curl.sh' -print -quit 2>/dev/null
 )"
 if [ -z "${devide_curl_script_dir}" ]; then
-  echo "error: casein-curl.sh missing from release priv/scripts" >&2
+  echo "error: devide-curl.sh missing from release priv/scripts" >&2
   exit 1
 fi
 
 # Agent hook scripts staged per-workspace by the materializer (copied out of the
 # release's priv/scripts). Missing here means non-dev_ide workspaces get no live
 # agent-state / codex notify hook.
-for hook_script in casein-agent-state.sh casein-codex-notify.sh; do
+for hook_script in devide-agent-state.sh devide-codex-notify.sh; do
   hook_script_path="$(
     sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path "*/priv/scripts/${hook_script}" -print -quit 2>/dev/null
   )"
@@ -512,7 +513,7 @@ sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
 CURRENT_SYMLINK_SWAPPED=1
 
-# ── One-time Caddy migration: switch DevIDE host from 127.0.0.1:4000 to the symlink ─
+# ── One-time Caddy migration: switch Casein host from 127.0.0.1:4000 to the symlink ─
 # Safe to re-run: if already pointing at the unix socket this is a no-op. Scope the
 # patch to PHX_HOST's app upstream; other devbox routes may legitimately dial 4000.
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
@@ -561,18 +562,18 @@ for i, route in enumerate(routes):
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
   case "${CADDY_PREVIOUS_DIAL}" in
-    unix//run/casein/current.sock)
+    unix//run/devide/current.sock)
       log "Caddy upstream for ${CADDY_HOST} already points at current.sock — skipping migration"
       ;;
     127.0.0.1:4000)
       log "Caddy upstream for ${CADDY_HOST} uses loopback proxy — skipping unix migration"
       ;;
     *)
-      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/casein/current.sock"
+      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
       if sudo curl -fsS -X PATCH \
         "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
         -H "content-type: application/json" \
-        -d '"unix//run/casein/current.sock"' >/dev/null; then
+        -d '"unix//run/devide/current.sock"' >/dev/null; then
         CADDY_UPSTREAM_PATCHED=1
         log "Caddy upstream patched (persists across Caddy restarts via autosave)"
       else
@@ -608,7 +609,7 @@ else
   exit 1
 fi
 
-# The historical enabled casein.service is no longer the process that should
+# The historical enabled devide.service is no longer the process that should
 # serve traffic. Leaving it enabled with DEVIDE_HTTP_SOCKET set lets boot or a
 # manual restart race the active canary and fail with Bandit :eaddrinuse.
 # sudo policy on the devbox intentionally forbids stop/disable/mask, so make
@@ -617,13 +618,13 @@ neutralize_legacy_service
 
 # ── Clean up stale instance records ─────────────────────────────────────────
 # JSON files from killed/rolled-back instances persist because terminate/2 only
-# runs on graceful shutdown. Drop records whose PID is gone or no longer DevIDE.
+# runs on graceful shutdown. Drop records whose PID is gone or no longer Casein.
 log "cleaning stale instance records under ${INST_DIR}"
 cleanup_stale_instance_records
 
 # ── Signal all old instances to drain ───────────────────────────────────────
 # Candidates come from running devide-<uuid> units (authoritative) UNIONed with
-# instance records (covers non-unit instances, e.g. the legacy casein.service).
+# instance records (covers non-unit instances, e.g. the legacy devide.service).
 # Records alone were not enough: a poisoned heartbeat pid made the live old
 # instance look stale, cleanup deleted its record, and this loop never saw it —
 # the zombie then ran for days, its SessionOwners fighting the new instance
@@ -681,7 +682,7 @@ fi
 reap_orphaned_dev_servers $(pgrep -x beam.smp 2>/dev/null || true)
 
 # Old instances call System.stop(0) when their connection count hits zero;
-# the systemd unit (casein.service) will then show as inactive until next boot.
+# the systemd unit (devide.service) will then show as inactive until next boot.
 
 log "recent ${SERVICE} and canary unit warnings/errors, if any"
 { sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager 2>/dev/null; \
@@ -693,8 +694,8 @@ DEPLOY_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEVIDE_CHECKOUT="${DEVIDE_CHECKOUT:-/data/workspaces/dalexandre/dev_ide}"
 ensure_ran=0
 for ensure_script in \
-  "${DEPLOY_SCRIPT_DIR}/ensure-casein-loopback-proxy.sh" \
-  "${DEVIDE_CHECKOUT}/scripts/ensure-casein-loopback-proxy.sh"; do
+  "${DEPLOY_SCRIPT_DIR}/ensure-devide-loopback-proxy.sh" \
+  "${DEVIDE_CHECKOUT}/scripts/ensure-devide-loopback-proxy.sh"; do
   if [ -x "${ensure_script}" ]; then
     bash "${ensure_script}"
     ensure_ran=1
@@ -702,7 +703,7 @@ for ensure_script in \
   fi
 done
 if [ "${ensure_ran}" != "1" ]; then
-  log "warning: ensure-casein-loopback-proxy.sh not found — on-box :4000 may be down"
+  log "warning: ensure-devide-loopback-proxy.sh not found — on-box :4000 may be down"
 fi
 
 SUCCESS=1

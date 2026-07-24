@@ -114,7 +114,7 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
 
 
 def write_grok_config(path: Path) -> None:
-    # The `[ui].theme` line is owned by DevIDE.Terminals.ToolThemes now, which
+    # The `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, which
     # stamps groknight (dark) / tokyonight (light) — grokday is banned as
     # illegible in the DevIDE viewer. This helper only
     # strips stale devide-* MCP blocks and preserves everything else, theme

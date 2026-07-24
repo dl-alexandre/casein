@@ -46,7 +46,7 @@ The pre-push hook is the local stand-in for CI's check job while GitHub Actions 
 def write_artifact(id, bytes), do: ...
 ```
 
-Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `DevIDE.Previews.Storage.LocalDisk.put/4`).
+Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `Casein.Previews.Storage.LocalDisk.put/4`).
 
 **PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). One-time setup per box:
 
@@ -92,7 +92,7 @@ The running release also performs a deploy-drift check at boot. If `/etc/casein/
 |----|-------|
 | Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/casein/release` |
 | Use `bash scripts/setup-devbox-agent-pairing.sh` only to **validate** an uncommitted build locally | Treat a manual local deploy as durable without pushing |
-| Keep scripts, templates, MCP behavior, and deploy assets in the checkout (`lib/`, `scripts/`, `rel/overlays/deploy/`, etc.) | Add one-off binaries or config only on the running release tree |
+| Keep product scripts and behavior in this checkout; keep MILC host configuration in the private `MILCGroup/milc-devbox/devide` overlay | Add one-off binaries or config only on the running release tree |
 
 **Workflow that survives auto-release CI:**
 
@@ -149,7 +149,7 @@ daily `casein-worktree-alarm-sweep` timer (install:
 `bash scripts/ensure-casein-worktree-alarm-sweep.sh`) emits
 `workspace.agent_worktree_stale` audit events for worktrees older than 24h that
 fail this protocol. Clean, reported worktrees are reaped separately by
-`DevIDE.Runtimes.Reaper`; dirty ones are alarm-only until a human resolves them.
+`Casein.Runtimes.Reaper`; dirty ones are alarm-only until a human resolves them.
 
 ### Quick start after checkout changes
 
@@ -250,7 +250,7 @@ servers without `CASEIN_API_TOKEN`.
 
 ### Raw terminal + workspace mode
 
-Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`DevIDE.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
+Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`Casein.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
 
 ```bash
 # DATABASE_URL from /etc/casein/devide.env — port 15432, not 5432

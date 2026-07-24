@@ -29,8 +29,8 @@ operators and agents — and nothing more. Three concerns live here:
 
 | Module / file | File | Role |
 | --- | --- | --- |
-| `DevIDE.Commands` | `lib/casein/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `DevIDE.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
-| `DevIDE.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
+| `Casein.Commands` | `lib/casein/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `Casein.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
+| `Casein.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
@@ -45,10 +45,10 @@ documented under AGENTS.md plus the terminal subsystem docs.
 
 ### Command allowlist gating
 
-`DevIDE.CommandPalette.Actions` / `WorkspaceLive.Show.RunPanel` enumerate ids via
-the `DevIDE.Commands.Allowlist.all/0` facade → `ExecCtl.Allowlist`. A run
+`Casein.CommandPalette.Actions` / `WorkspaceLive.Show.RunPanel` enumerate ids via
+the `Casein.Commands.Allowlist.all/0` facade → `ExecCtl.Allowlist`. A run
 request is checked with `allowed?/1` and resolved to argv with `argv_for/1`;
-unknown ids cannot reach `DevIDE.Commands.spawn/3`. The spawn path streams
+unknown ids cannot reach `Casein.Commands.spawn/3`. The spawn path streams
 `{:cmd_data, ref, :stdout|:stderr, bin}` and `{:cmd_exit, ref, code}` to the
 subscriber pid (no PTY, line-buffered).
 
@@ -67,9 +67,9 @@ or a second `C-b`. Full navigation/picker semantics: [`../leader_keys.md`](../le
 
 Functions and entrypoints other code (or operators) call:
 
-- **`DevIDE.Commands.allowlist/0`, `allowed?/1`, `argv_for/1`** — allowlist
+- **`Casein.Commands.allowlist/0`, `allowed?/1`, `argv_for/1`** — allowlist
   enumeration/lookup (delegate chain to `ExecCtl.Allowlist`).
-- **`DevIDE.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
+- **`Casein.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
   come from a resolved allowlist id.
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
 - **`scripts/devide tools ensure <tool>` / `ensure-installed <tool>`** —
@@ -129,7 +129,7 @@ first; full descriptions and tmux mapping live in
 
 ## Invariants & gotchas
 
-- **Allowlist is the only argv source.** `DevIDE.Commands.spawn/3` runs fixed
+- **Allowlist is the only argv source.** `Casein.Commands.spawn/3` runs fixed
   argv resolved from an allowlist id; there is no free-form / shell-interpolated
   path. Adding a runnable command means editing `ExecCtl.Allowlist` (FP-1:
   execution authority is server-side).
@@ -144,9 +144,9 @@ first; full descriptions and tmux mapping live in
   or double `C-b`. Double `C-b` cancels (deliberate deviation from tmux's
   prefix pass-through — see [`../leader_keys.md`](../leader_keys.md)).
 - **Mobile fallback.** On touch/narrow layouts the desktop pickers are
-  CSS-hidden; `C-b s`/`C-b w` push `mobile_nav:open` instead of opening the
-  session dropdown or transient window sidebar.
-- **`DevIDE.Commands.Allowlist` is a facade.** It only `defdelegate`s to
+  CSS-hidden; `C-b s`/`C-b w` toggle the shared mobile navigation sheet instead
+  of opening the desktop session or window sidebar.
+- **`Casein.Commands.Allowlist` is a facade.** It only `defdelegate`s to
   `ExecCtl.Allowlist`; edit the core module to change commands, not the facade.
 
 ## See also

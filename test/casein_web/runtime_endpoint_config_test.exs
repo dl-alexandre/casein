@@ -128,4 +128,18 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
              port: 8080
            )
   end
+
+  test "desktop LAN origin checks retain loopback and configured LAN origins" do
+    assert OriginOptions.desktop_lan(
+             54_321,
+             "DairyBookPro.local",
+             ["192.168.1.72", "192.168.1.27"]
+           ) == [
+             "http://DairyBookPro.local:54321",
+             "http://192.168.1.72:54321",
+             "http://192.168.1.27:54321",
+             "http://localhost:54321",
+             "http://127.0.0.1:54321"
+           ]
+  end
 end

@@ -17,7 +17,7 @@ accepted or deferred instead of silently marked `PASS`. This document is not
 legal clearance, and the collision evidence is not a legal conclusion.
 
 The public-brand decision is deliberately separate from implementation
-identity. Keep `DevIDE.*`, `:dev_ide`, `dev_ide`, and `CASEIN_*` unchanged.
+identity. Keep `Casein.*`, `:casein`, `dev_ide`, and `CASEIN_*` unchanged.
 Existing commands, package coordinates, repository paths, release artifacts,
 URLs, and deployment configuration remain compatibility surfaces unless a
 separate migration is approved.

@@ -265,7 +265,8 @@ defmodule Casein.CommandPalette.Actions do
         kind: :action,
         category: :tmux,
         label: "Terminal theme: " <> preset.label,
-        detail: preset.detail,
+        detail: preset.detail <> " — live preview on highlight; Enter keeps, Esc restores",
+        keywords: ~w(theme color palette appearance),
         payload: %{event: "terminal:set_preset", params: %{"preset" => preset.id}}
       }
     end)

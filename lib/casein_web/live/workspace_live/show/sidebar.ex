@@ -12,7 +12,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
   alias Casein.Workspaces.SessionSummary
   alias CaseinWeb.WorkspaceLive.Show.Browse
   alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
-  alias CaseinWeb.WorkspaceLive.Show.TerminalInfo
   alias CaseinWeb.WorkspaceRoutes
 
   @type sidebar_mode :: :closed | :windows_only | :both
@@ -29,9 +28,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
       sidebar_ws_sessions: %{},
       sidebar_ws_warm_pending?: false,
       sidebar_ws_subscriptions: MapSet.new(),
-      # Viewer resizes held while the nav rail is open; flushed on close.
-      # See TerminalInfo `:terminal_resize` / flush_held_pane_resizes/1.
-      held_pane_resizes: %{},
       sessions_sidebar_tree: [],
       sessions_sidebar_needs_you: [],
       windows_sidebar_tree: [],
@@ -93,7 +89,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
     socket
     |> unsubscribe_all_sidebar_workspaces()
     |> assign_sidebar_mode(:closed)
-    |> TerminalInfo.flush_held_pane_resizes()
     |> assign(:sidebar_expanded_workspaces, MapSet.new())
     |> assign(:sidebar_expanded_windows, MapSet.new())
     |> assign(:sidebar_expanded_dirs, MapSet.new())

@@ -319,7 +319,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
           owner_assigns()
         )
 
-      assert item_ids(full) == ["reload", "reopen", "copy-url", "open-tab", "close"]
+      assert item_ids(full) == [
+               "reload",
+               "reopen",
+               "viewport-phone",
+               "viewport-tablet",
+               "viewport-desktop",
+               "viewport-fit",
+               "copy-url",
+               "open-tab",
+               "close"
+             ]
 
       reload = Enum.find(full, &(&1[:id] == "reload"))
       assert reload.event == "preview-pane:refresh"
@@ -332,7 +342,16 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
 
     test "preview pane menu omits url items for a missing or non-http url" do
       no_url = ContextMenu.items("preview_pane", %{"paneId" => "%7"}, owner_assigns())
-      assert item_ids(no_url) == ["reload", "reopen", "close"]
+
+      assert item_ids(no_url) == [
+               "reload",
+               "reopen",
+               "viewport-phone",
+               "viewport-tablet",
+               "viewport-desktop",
+               "viewport-fit",
+               "close"
+             ]
 
       # A crafted javascript:/relative url still yields no anchor (scheme guard),
       # though the harmless clipboard copy is kept.
@@ -344,6 +363,67 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
       end
 
       assert ContextMenu.items("preview_pane", %{}, owner_assigns()) == []
+    end
+
+    test "preview pane viewport presets route through the authorized pane:input event" do
+      items = ContextMenu.items("preview_pane", %{"paneId" => "%7"}, owner_assigns())
+      phone = Enum.find(items, &(&1[:id] == "viewport-phone"))
+
+      # pane:input, not a new preview-pane:* name — it is the route that carries
+      # pane authorization (Casein.Panes.get_by_pane/1 + workspace match).
+      assert phone.event == "pane:input"
+
+      assert phone.params == %{
+               "pane-id" => "%7",
+               "type" => "set_viewport",
+               "viewport" => "390x844"
+             }
+
+      # "Fit pane" clears the lock rather than setting a size.
+      assert Enum.find(items, &(&1[:id] == "viewport-fit")).params["viewport"] == ""
+    end
+
+    test "preview pane viewport menu disables the preset already applied" do
+      items =
+        ContextMenu.items(
+          "preview_pane",
+          %{"paneId" => "%7", "viewport" => "390x844"},
+          owner_assigns()
+        )
+
+      assert Enum.find(items, &(&1[:id] == "viewport-phone"))[:disabled]
+      refute Enum.find(items, &(&1[:id] == "viewport-tablet"))[:disabled]
+      # No locked viewport yet, so "Fit pane" is the state already in effect.
+      refute Enum.find(items, &(&1[:id] == "viewport-fit"))[:disabled]
+
+      unlocked = ContextMenu.items("preview_pane", %{"paneId" => "%7"}, owner_assigns())
+      assert Enum.find(unlocked, &(&1[:id] == "viewport-fit"))[:disabled]
+      refute Enum.find(unlocked, &(&1[:id] == "viewport-phone"))[:disabled]
+    end
+
+    test "preview pane viewport menu tolerates a malformed current viewport" do
+      # data-ctx-viewport is rendered from the registration, but a stale or
+      # hand-crafted ctx must not disable everything or crash the build.
+      for bad <- ["garbage", "390X844", 390, nil] do
+        items =
+          ContextMenu.items(
+            "preview_pane",
+            %{"paneId" => "%7", "viewport" => bad},
+            owner_assigns()
+          )
+
+        assert "viewport-phone" in item_ids(items)
+      end
+
+      # Case-insensitive match still counts as "already applied".
+      upper =
+        ContextMenu.items(
+          "preview_pane",
+          %{"paneId" => "%7", "viewport" => "390X844"},
+          owner_assigns()
+        )
+
+      assert Enum.find(upper, &(&1[:id] == "viewport-phone"))[:disabled]
     end
 
     test "run entry menu offers rerun only when a command id exists" do

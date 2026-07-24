@@ -24,20 +24,18 @@ defmodule Casein.FilePanes do
 
   use GenServer
 
-  import Ecto.Query
-
   alias Casein.FilePanes.FilePaneRegistration
-  alias Casein.Files.PathSafety
-  alias Casein.Panes.Events, as: PaneEvents
+  alias Casein.FilePanes.Index
+  alias Casein.FilePanes.Payload
+  alias Casein.FilePanes.Persistence
+  alias Casein.FilePanes.Registration
   alias Casein.Terminals.TmuxTopology
   alias Casein.Workspaces
   alias Casein.Workspaces.Aliases, as: WorkspaceAliases
   alias Casein.Workspaces.FileAccess
-  alias Casein.Repo
 
-  @table :casein_file_panes
+  @table :dev_ide_file_panes
   @topology_tag Casein.Terminals.TmuxTopology
-  @pane_type :file
   # Register/deregister/clear wait on offloaded Repo/tmux I/O.
   @lifecycle_call_timeout 30_000
 
@@ -109,11 +107,11 @@ defmodule Casein.FilePanes do
           {:ok, %{pane_id: String.t(), registration: registration(), reused: boolean()}}
           | {:error, term()}
   def open_file_in_pane(workspace, path, opts \\ []) when is_map(workspace) and is_binary(path) do
-    workspace_id = workspace_id(workspace)
-    line = normalize_line(opts[:line])
+    workspace_id = Registration.workspace_id(workspace)
+    line = Registration.normalize_line(opts[:line])
 
     with {:ok, loc} <- Workspaces.safe_host_loc(workspace),
-         {:ok, rel} <- to_rel(loc, path),
+         {:ok, rel} <- Registration.to_rel(loc, path),
          {:ok, _preflight} <- FileAccess.read_text(loc, rel),
          {:ok, session} <- resolve_session(workspace, opts),
          {:ok, {anchor, window_id}} <- resolve_anchor_window(session, opts) do
@@ -148,13 +146,13 @@ defmodule Casein.FilePanes do
   @doc "Add-or-activate a tab. Opts: `:line`, `:activate` (default true)."
   @spec open_tab(String.t(), String.t(), keyword()) :: {:ok, registration()} | {:error, term()}
   def open_tab(pane_id, path, opts \\ []) when is_binary(pane_id) and is_binary(path) do
-    broadcast_after(GenServer.call(__MODULE__, {:open_tab, pane_id, path, opts}))
+    Payload.broadcast_after(GenServer.call(__MODULE__, {:open_tab, pane_id, path, opts}))
   end
 
   @doc "Activate an already-open tab."
   @spec activate_tab(String.t(), String.t()) :: {:ok, registration()} | {:error, term()}
   def activate_tab(pane_id, path) when is_binary(pane_id) and is_binary(path) do
-    broadcast_after(GenServer.call(__MODULE__, {:activate_tab, pane_id, path}))
+    Payload.broadcast_after(GenServer.call(__MODULE__, {:activate_tab, pane_id, path}))
   end
 
   @doc """
@@ -168,7 +166,7 @@ defmodule Casein.FilePanes do
         {:ok, :closed}
 
       {:ok, reg} ->
-        broadcast(:updated, reg)
+        Payload.broadcast(:updated, reg)
         {:ok, reg}
 
       err ->
@@ -186,10 +184,10 @@ defmodule Casein.FilePanes do
   def save_tab(pane_id, path, content, expected_version)
       when is_binary(pane_id) and is_binary(path) and is_binary(content) do
     with reg when is_map(reg) <- get_by_pane(pane_id),
-         {:ok, loc} <- workspace_loc(reg.workspace_id),
-         {:ok, rel} <- to_rel(loc, path),
+         {:ok, loc} <- Registration.workspace_loc(reg.workspace_id),
+         {:ok, rel} <- Registration.to_rel(loc, path),
          {:ok, result} <- FileAccess.write_text(loc, rel, content, expected_version) do
-      broadcast(:updated, reg)
+      Payload.broadcast(:updated, reg)
       {:ok, result}
     else
       nil -> {:error, :not_found}
@@ -201,8 +199,8 @@ defmodule Casein.FilePanes do
   @spec reload_tab(String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def reload_tab(pane_id, path) when is_binary(pane_id) and is_binary(path) do
     with reg when is_map(reg) <- get_by_pane(pane_id),
-         {:ok, loc} <- workspace_loc(reg.workspace_id),
-         {:ok, rel} <- to_rel(loc, path) do
+         {:ok, loc} <- Registration.workspace_loc(reg.workspace_id),
+         {:ok, rel} <- Registration.to_rel(loc, path) do
       FileAccess.read_text(loc, rel)
     else
       nil -> {:error, :not_found}
@@ -213,7 +211,7 @@ defmodule Casein.FilePanes do
   @doc "Lookup a registration by tmux pane id (rehydrating from the DB on a miss)."
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         if Process.whereis(__MODULE__) == self() do
           nil
@@ -247,7 +245,7 @@ defmodule Casein.FilePanes do
   def render_state(pane_id) when is_binary(pane_id) do
     case get_by_pane(pane_id) do
       nil -> %{}
-      reg -> build_payload(reg)
+      reg -> Payload.build(reg)
     end
   end
 
@@ -268,7 +266,7 @@ defmodule Casein.FilePanes do
 
   @impl true
   def handle_call({:register, attrs}, from, state) do
-    pane_id = string_param(attrs, :pane_id)
+    pane_id = Registration.string_param(attrs, :pane_id)
     enqueue_or_start_register(attrs, pane_id, from, state)
   end
 
@@ -277,13 +275,13 @@ defmodule Casein.FilePanes do
   end
 
   def handle_call({:open_tab, pane_id, path, opts}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
       reg ->
         activate? = Keyword.get(opts, :activate, true) != false
-        line = normalize_line(opts[:line])
+        line = Registration.normalize_line(opts[:line])
         tab = %{path: path, line: line}
 
         open_files =
@@ -292,7 +290,11 @@ defmodule Casein.FilePanes do
               reg.open_files ++ [tab]
 
             idx ->
-              List.replace_at(reg.open_files, idx, merge_tab(Enum.at(reg.open_files, idx), line))
+              List.replace_at(
+                reg.open_files,
+                idx,
+                Registration.merge_tab(Enum.at(reg.open_files, idx), line)
+              )
           end
 
         updated = %{
@@ -309,7 +311,7 @@ defmodule Casein.FilePanes do
   end
 
   def handle_call({:activate_tab, pane_id, path}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -328,7 +330,7 @@ defmodule Casein.FilePanes do
   end
 
   def handle_call({:close_tab, pane_id, path}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -339,7 +341,9 @@ defmodule Casein.FilePanes do
           enqueue_or_start_deregister(pane_id, from, state, persist?: true, reply: :closed)
         else
           active_path =
-            if reg.active_path == path, do: last_path(remaining), else: reg.active_path
+            if reg.active_path == path,
+              do: Registration.last_path(remaining),
+              else: reg.active_path
 
           updated = %{reg | open_files: remaining, active_path: active_path}
           state = store_registration(updated, state)
@@ -350,7 +354,7 @@ defmodule Casein.FilePanes do
   end
 
   def handle_call({:get_by_pane, pane_id}, from, state) do
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       %{} = registration ->
         {:reply, registration, state}
 
@@ -360,7 +364,7 @@ defmodule Casein.FilePanes do
           from,
           state,
           fn ->
-            case load_open_persisted(pane_id) do
+            case Persistence.load_open(pane_id) do
               nil -> {:rehydrate_done, []}
               persisted -> {:rehydrate_done, [rehydrate_io_result(persisted)]}
             end
@@ -373,7 +377,7 @@ defmodule Casein.FilePanes do
     reg =
       case Map.get(state.window_index, {session, window_id}) do
         nil -> nil
-        pane_id -> lookup_by_pane(pane_id)
+        pane_id -> Index.lookup(pane_id)
       end
 
     {:reply, reg, state}
@@ -389,7 +393,7 @@ defmodule Casein.FilePanes do
       fn ->
         results =
           workspace_ids
-          |> load_open_persisted_for_workspaces()
+          |> Persistence.load_open_for_workspaces()
           |> Enum.map(&rehydrate_io_result/1)
 
         {:rehydrate_done, results}
@@ -425,7 +429,7 @@ defmodule Casein.FilePanes do
       nil,
       nil,
       fn ->
-        close_all_persisted()
+        Persistence.close_all()
         :ok
       end,
       %{empty_state() | pending_ops: %{}, flush_waiters: state.flush_waiters}
@@ -492,7 +496,7 @@ defmodule Casein.FilePanes do
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        match?(%{tmux_session: ^session}, lookup_by_pane(pane_id))
+        match?(%{tmux_session: ^session}, Index.lookup(pane_id))
       end)
 
     if pane_ids == [] do
@@ -505,7 +509,7 @@ defmodule Casein.FilePanes do
         nil,
         %{pane_ids: pane_ids},
         fn ->
-          _ = close_persisted_many(pane_ids)
+          _ = Persistence.close_many(pane_ids)
           {:session_terminated_persist_done, pane_ids}
         end,
         state
@@ -681,7 +685,7 @@ defmodule Casein.FilePanes do
   defp drain_op_queue(state, _pane_id), do: state
 
   defp start_queued_op(:register, attrs, from, state) do
-    pane_id = string_param(attrs, :pane_id)
+    pane_id = Registration.string_param(attrs, :pane_id)
     start_register(attrs, pane_id, from, state)
   end
 
@@ -703,7 +707,7 @@ defmodule Casein.FilePanes do
   end
 
   defp start_register(attrs, pane_id, from, state) do
-    case build_registration(attrs) do
+    case Registration.build(attrs) do
       {:ok, registration} ->
         # Displace any existing file pane on the same tmux window (one per window).
         state = maybe_displace_window_peer(registration, pane_id, state)
@@ -716,7 +720,7 @@ defmodule Casein.FilePanes do
           pane_id,
           plan,
           fn ->
-            case persist_registration(registration) do
+            case Persistence.upsert(registration) do
               {:ok, _} -> {:register_done, registration}
               {:error, reason} -> {:error, reason}
             end
@@ -779,7 +783,7 @@ defmodule Casein.FilePanes do
     persist? = Keyword.get(opts, :persist?, true)
     reply = Keyword.get(opts, :reply, :ok)
 
-    case lookup_by_pane(pane_id) do
+    case Index.lookup(pane_id) do
       nil ->
         if from do
           {:reply, {:error, :not_found}, state}
@@ -790,10 +794,16 @@ defmodule Casein.FilePanes do
       registration ->
         :ets.delete(@table, pane_id)
 
-        state =
+        state = %{
           state
-          |> drop_workspace_index(pane_id, registration.workspace_id)
-          |> drop_window_index(registration)
+          | workspace_index:
+              Index.drop_workspace(
+                state.workspace_index,
+                pane_id,
+                registration.workspace_id
+              ),
+            window_index: Index.drop_window(state.window_index, registration)
+        }
 
         plan = %{
           registration: registration,
@@ -817,7 +827,7 @@ defmodule Casein.FilePanes do
          persist?: persist?
        }) do
     if persist? do
-      close_persisted(registration.pane_id)
+      Persistence.close(registration.pane_id)
     end
 
     _ = kill_pane(registration)
@@ -839,7 +849,7 @@ defmodule Casein.FilePanes do
       pane_id,
       %{registration: registration},
       fn ->
-        _ = persist_registration(registration)
+        _ = Persistence.upsert(registration)
         {:tab_persist_done, registration.pane_id}
       end,
       state
@@ -859,7 +869,7 @@ defmodule Casein.FilePanes do
         {:register_done, registration} ->
           # Atomic commit: ETS + workspace_index + window_index + subscription.
           state = store_registration(registration, state)
-          broadcast(:registered, registration)
+          Payload.broadcast(:registered, registration)
           reply_op(op, {:ok, registration})
           state
 
@@ -885,7 +895,7 @@ defmodule Casein.FilePanes do
 
     case result do
       {:deregister_done, _} ->
-        broadcast(:removed, registration)
+        Payload.broadcast(:removed, registration)
 
         case plan.reply do
           :closed -> reply_op(op, {:ok, :closed, registration})
@@ -936,7 +946,7 @@ defmodule Casein.FilePanes do
                     nil,
                     %{pane_ids: pane_ids},
                     fn ->
-                      _ = close_persisted_many(pane_ids)
+                      _ = Persistence.close_many(pane_ids)
                       :ok
                     end,
                     state
@@ -948,10 +958,10 @@ defmodule Casein.FilePanes do
           reply =
             case op.plan do
               %{list_reply: workspace_ids} when is_list(workspace_ids) ->
-                list_workspace_registrations(state.workspace_index, workspace_ids)
+                Index.list_registrations(state.workspace_index, workspace_ids)
 
               %{rehydrate_key: {:pane, pane_id}} ->
-                lookup_by_pane(pane_id)
+                Index.lookup(pane_id)
 
               _ ->
                 nil
@@ -1010,11 +1020,11 @@ defmodule Casein.FilePanes do
   # Shape-correct fallback for a rehydrate op whose IO failed or crashed.
   defp rehydrate_fallback_reply(%{plan: %{list_reply: workspace_ids}}, state)
        when is_list(workspace_ids) do
-    list_workspace_registrations(state.workspace_index, workspace_ids)
+    Index.list_registrations(state.workspace_index, workspace_ids)
   end
 
   defp rehydrate_fallback_reply(%{plan: %{rehydrate_key: {:pane, pane_id}}}, _state) do
-    lookup_by_pane(pane_id)
+    Index.lookup(pane_id)
   end
 
   defp rehydrate_fallback_reply(_op, _state), do: nil
@@ -1027,7 +1037,7 @@ defmodule Casein.FilePanes do
         # Lifecycle op owns this pane — skip rehydrate commit.
         state
 
-      lookup_by_pane(pane_id) ->
+      Index.lookup(pane_id) ->
         state
 
       true ->
@@ -1044,14 +1054,16 @@ defmodule Casein.FilePanes do
       Map.has_key?(state.inflight_panes, pane_id) ->
         state
 
-      lookup_by_pane(pane_id) ->
+      Index.lookup(pane_id) ->
         state
 
       true ->
-        next =
+        next = %{
           state
-          |> drop_workspace_index(pane_id, reg.workspace_id)
-          |> drop_window_index(reg)
+          | workspace_index:
+              Index.drop_workspace(state.workspace_index, pane_id, reg.workspace_id),
+            window_index: Index.drop_window(state.window_index, reg)
+        }
 
         {:drop_close, pane_id, next}
     end
@@ -1063,7 +1075,7 @@ defmodule Casein.FilePanes do
   # pane_live? runs only in offload tasks. Closing dead rows is deferred to the
   # GenServer commit so we never close_persisted a pane still live in ETS.
   defp rehydrate_io_result(%FilePaneRegistration{} = persisted) do
-    reg = persisted_to_map(persisted)
+    reg = Registration.from_persisted(persisted)
 
     if pane_live?(reg) do
       {:commit, reg}
@@ -1115,40 +1127,22 @@ defmodule Casein.FilePanes do
     {:noreply, state}
   end
 
-  # --- registration build / store ---------------------------------------------
-
-  defp build_registration(attrs) do
-    pane_id = string_param(attrs, :pane_id)
-    workspace_id = string_param(attrs, :workspace_id)
-
-    with {:ok, pane_id} <- require_binary(pane_id, :missing_pane_id),
-         {:ok, workspace_id} <- require_binary(workspace_id, :missing_workspace_id) do
-      open_files = normalize_open_files(attrs)
-
-      {:ok,
-       %{
-         id: pane_id,
-         pane_id: pane_id,
-         workspace_id: workspace_id,
-         tmux_session: string_param(attrs, :tmux_session),
-         pane_window_id: string_param(attrs, :pane_window_id),
-         placement: string_param(attrs, :placement),
-         anchor_pane_id: string_param(attrs, :anchor_pane_id),
-         anchor_window_id: string_param(attrs, :anchor_window_id),
-         open_files: open_files,
-         active_path: string_param(attrs, :active_path) || first_path(open_files),
-         status: :open
-       }}
-    end
-  end
+  # --- registration store -----------------------------------------------------
 
   # Atomic in-server commit of ETS + both indexes + topology subscription.
   defp store_registration(registration, state) do
     :ets.insert(@table, {registration.pane_id, registration})
 
-    state
-    |> put_workspace_index(registration.pane_id, registration.workspace_id)
-    |> put_window_index(registration)
+    %{
+      state
+      | workspace_index:
+          Index.put_workspace(
+            state.workspace_index,
+            registration.pane_id,
+            registration.workspace_id
+          ),
+        window_index: Index.put_window(state.window_index, registration)
+    }
     |> maybe_subscribe_topology(registration.tmux_session)
   end
 
@@ -1160,7 +1154,7 @@ defmodule Casein.FilePanes do
 
     with {:ok, pane_id} <-
            tmux_adapter().split_pane(session, anchor, direction,
-             cwd: loc_root(loc),
+             cwd: Registration.loc_root(loc),
              command: holder_command()
            ) do
       # tmux focuses the new holder pane; restore the anchor so Ghostty keeps
@@ -1186,7 +1180,7 @@ defmodule Casein.FilePanes do
   end
 
   defp resolve_session(workspace, opts) do
-    case opts[:tmux_session] || workspace_tmux_session(workspace) do
+    case opts[:tmux_session] || Registration.workspace_tmux_session(workspace) do
       session when is_binary(session) and session != "" -> {:ok, session}
       _ -> {:error, :no_tmux_session}
     end
@@ -1223,120 +1217,7 @@ defmodule Casein.FilePanes do
     end
   end
 
-  # --- payload / broadcast ------------------------------------------------------
-
-  defp build_payload(reg) do
-    %{
-      tabs:
-        Enum.map(reg.open_files, &%{path: &1.path, title: Path.basename(&1.path), line: &1.line}),
-      active_path: reg.active_path,
-      active: active_payload(reg),
-      workspace_id: reg.workspace_id,
-      tmux_session: reg.tmux_session
-    }
-  end
-
-  defp active_payload(%{active_path: nil}), do: nil
-
-  defp active_payload(%{active_path: path} = reg) do
-    line = active_line(reg, path)
-
-    # State-only: this builds the broadcast payload inside the singleton's
-    # commit_op — must never block on a Manager HTTP resolve.
-    case workspace_loc_state_only(reg.workspace_id) do
-      {:ok, loc} ->
-        case FileAccess.read_text(loc, path) do
-          {:ok, %{content: content, version: version}} ->
-            %{path: path, content: content, version: version, line: line}
-
-          {:error, reason} ->
-            %{path: path, error: reason, line: line}
-        end
-
-      _ ->
-        %{path: path, error: :workspace_not_found, line: line}
-    end
-  end
-
-  defp active_line(reg, path) do
-    case Enum.find(reg.open_files, &(&1.path == path)) do
-      %{line: line} -> line
-      _ -> nil
-    end
-  end
-
-  # broadcast_after: wrap a GenServer mutation reply, emitting `:updated`.
-  defp broadcast_after({:ok, reg}) do
-    broadcast(:updated, reg)
-    {:ok, reg}
-  end
-
-  defp broadcast_after(other), do: other
-
-  defp broadcast(reason, reg) do
-    payload = if reason == :removed, do: %{}, else: build_payload(reg)
-
-    PaneEvents.broadcast(%{
-      reason: reason,
-      type: @pane_type,
-      pane_id: reg.pane_id,
-      workspace_id: reg.workspace_id,
-      tmux_session: reg.tmux_session,
-      payload: payload
-    })
-  end
-
   # --- indices / topology -------------------------------------------------------
-
-  defp lookup_by_pane(pane_id) when is_binary(pane_id) do
-    case :ets.lookup(@table, pane_id) do
-      [{^pane_id, registration}] -> registration
-      _ -> nil
-    end
-  rescue
-    ArgumentError -> nil
-  end
-
-  defp put_workspace_index(state, pane_id, workspace_id) do
-    ids =
-      state.workspace_index
-      |> Map.get(workspace_id, [])
-      |> then(&Enum.uniq([pane_id | &1]))
-
-    %{state | workspace_index: Map.put(state.workspace_index, workspace_id, ids)}
-  end
-
-  defp drop_workspace_index(state, pane_id, workspace_id) do
-    ids =
-      state.workspace_index
-      |> Map.get(workspace_id, [])
-      |> Enum.reject(&(&1 == pane_id))
-
-    workspace_index =
-      if ids == [],
-        do: Map.delete(state.workspace_index, workspace_id),
-        else: Map.put(state.workspace_index, workspace_id, ids)
-
-    %{state | workspace_index: workspace_index}
-  end
-
-  defp put_window_index(state, %{
-         tmux_session: session,
-         pane_window_id: window_id,
-         pane_id: pane_id
-       })
-       when is_binary(session) and is_binary(window_id) do
-    %{state | window_index: Map.put(state.window_index, {session, window_id}, pane_id)}
-  end
-
-  defp put_window_index(state, _reg), do: state
-
-  defp drop_window_index(state, %{tmux_session: session, pane_window_id: window_id})
-       when is_binary(session) and is_binary(window_id) do
-    %{state | window_index: Map.delete(state.window_index, {session, window_id})}
-  end
-
-  defp drop_window_index(state, _reg), do: state
 
   defp maybe_subscribe_topology(state, session) when is_binary(session) and session != "" do
     if MapSet.member?(state.subscriptions, session) do
@@ -1354,14 +1235,17 @@ defmodule Casein.FilePanes do
 
     # Rebuild the window index from the fresh topology so move-pane/break-pane
     # can't leave a stale {session, window} => pane mapping.
-    state = refresh_window_index(state, session, panes || [])
+    state = %{
+      state
+      | window_index: Index.refresh_window(state.window_index, session, panes || [])
+    }
 
     stale =
       state.workspace_index
       |> Map.values()
       |> List.flatten()
       |> Enum.filter(fn pane_id ->
-        case lookup_by_pane(pane_id) do
+        case Index.lookup(pane_id) do
           %{tmux_session: ^session} = reg -> not MapSet.member?(live_ids, reg.pane_id)
           _ -> false
         end
@@ -1378,7 +1262,7 @@ defmodule Casein.FilePanes do
           nil,
           %{pane_ids: stale},
           fn ->
-            _ = close_persisted_many(stale)
+            _ = Persistence.close_many(stale)
             {:session_terminated_persist_done, stale}
           end,
           state
@@ -1386,38 +1270,6 @@ defmodule Casein.FilePanes do
 
       next
     end
-  end
-
-  defp refresh_window_index(state, session, panes) do
-    by_id = Map.new(panes, &{&1.id, &1})
-
-    window_index =
-      state.window_index
-      |> Enum.reduce(%{}, fn
-        {{^session, _window_id}, pane_id} = entry, acc ->
-          case Map.get(by_id, pane_id) do
-            %{window_id: current_window} when is_binary(current_window) ->
-              Map.put(acc, {session, current_window}, pane_id)
-
-            _ ->
-              # pane gone — drop it; expire pass will deregister the registration
-              _ = entry
-              acc
-          end
-
-        {key, pane_id}, acc ->
-          Map.put(acc, key, pane_id)
-      end)
-
-    %{state | window_index: window_index}
-  end
-
-  defp list_workspace_registrations(workspace_index, workspace_ids) do
-    workspace_ids
-    |> Enum.flat_map(&Map.get(workspace_index, &1, []))
-    |> Enum.uniq()
-    |> Enum.map(&lookup_by_pane/1)
-    |> Enum.reject(&is_nil/1)
   end
 
   # pane_live? runs only in offload tasks (rehydrate I/O) — never in the GenServer.
@@ -1432,236 +1284,10 @@ defmodule Casein.FilePanes do
 
   defp pane_live?(_), do: false
 
-  # --- persistence --------------------------------------------------------------
-
-  defp persistence_enabled? do
-    Application.get_env(:casein, :file_pane_persistence, true)
-  end
-
-  defp persist_registration(reg) do
-    if persistence_enabled?() do
-      attrs = %{
-        workspace_id: reg.workspace_id,
-        tmux_session: reg.tmux_session,
-        pane_id: reg.pane_id,
-        pane_window_id: reg.pane_window_id,
-        placement: reg.placement,
-        anchor_pane_id: reg.anchor_pane_id,
-        anchor_window_id: reg.anchor_window_id,
-        open_files: Enum.map(reg.open_files, &%{"path" => &1.path, "line" => &1.line}),
-        active_path: reg.active_path,
-        status: :open
-      }
-
-      # Partial unique index file_pane_registrations_open_pane_id_index
-      # (pane_id WHERE status = 'open') — single round-trip upsert.
-      case %FilePaneRegistration{}
-           |> FilePaneRegistration.changeset(attrs)
-           |> Repo.insert(
-             on_conflict:
-               {:replace,
-                [
-                  :workspace_id,
-                  :tmux_session,
-                  :pane_window_id,
-                  :placement,
-                  :anchor_pane_id,
-                  :anchor_window_id,
-                  :open_files,
-                  :active_path,
-                  :status,
-                  :updated_at
-                ]},
-             conflict_target: {:unsafe_fragment, "(pane_id) WHERE (status = 'open')"}
-           ) do
-        {:ok, row} -> {:ok, row}
-        {:error, _} = err -> err
-      end
-    else
-      {:ok, reg}
-    end
-  rescue
-    _ -> {:ok, reg}
-  end
-
-  defp close_persisted(pane_id) when is_binary(pane_id) do
-    close_persisted_many([pane_id])
-  end
-
-  defp close_persisted_many(pane_ids) when is_list(pane_ids) do
-    pane_ids =
-      pane_ids
-      |> Enum.filter(&(is_binary(&1) and &1 != ""))
-      |> Enum.uniq()
-
-    if pane_ids != [] and persistence_enabled?() do
-      from(r in FilePaneRegistration, where: r.pane_id in ^pane_ids and r.status == :open)
-      |> Repo.update_all(set: [status: :closed])
-    end
-
-    :ok
-  rescue
-    _ -> :ok
-  end
-
-  defp close_all_persisted do
-    if persistence_enabled?() do
-      from(r in FilePaneRegistration, where: r.status == :open)
-      |> Repo.update_all(set: [status: :closed])
-    end
-
-    :ok
-  rescue
-    _ -> :ok
-  end
-
-  defp load_open_persisted(pane_id) do
-    if persistence_enabled?() do
-      Repo.one(
-        from r in FilePaneRegistration,
-          where: r.pane_id == ^pane_id and r.status == :open,
-          limit: 1
-      )
-    end
-  rescue
-    _ -> nil
-  end
-
-  defp load_open_persisted_for_workspaces(workspace_ids) do
-    ids = Enum.reject(workspace_ids, &(&1 in [nil, ""]))
-
-    if ids == [] or not persistence_enabled?() do
-      []
-    else
-      Repo.all(
-        from r in FilePaneRegistration,
-          where: r.workspace_id in ^ids and r.status == :open,
-          order_by: [asc: r.inserted_at]
-      )
-    end
-  rescue
-    _ -> []
-  end
-
-  defp persisted_to_map(%FilePaneRegistration{} = r) do
-    open_files = normalize_open_files(%{open_files: r.open_files})
-
-    %{
-      id: r.pane_id,
-      pane_id: r.pane_id,
-      workspace_id: r.workspace_id,
-      tmux_session: r.tmux_session,
-      pane_window_id: r.pane_window_id,
-      placement: r.placement,
-      anchor_pane_id: r.anchor_pane_id,
-      anchor_window_id: r.anchor_window_id,
-      open_files: open_files,
-      active_path: r.active_path || first_path(open_files),
-      status: :open
-    }
-  end
-
-  # --- small helpers ------------------------------------------------------------
-
-  defp normalize_open_files(attrs) do
-    (Map.get(attrs, :open_files) || Map.get(attrs, "open_files") || [])
-    |> Enum.map(&normalize_tab/1)
-    |> Enum.reject(&is_nil/1)
-  end
-
-  defp normalize_tab(%{path: path} = tab) when is_binary(path),
-    do: %{path: path, line: normalize_line(Map.get(tab, :line))}
-
-  defp normalize_tab(%{"path" => path} = tab) when is_binary(path),
-    do: %{path: path, line: normalize_line(Map.get(tab, "line"))}
-
-  defp normalize_tab(_), do: nil
-
-  defp merge_tab(tab, nil), do: tab
-  defp merge_tab(tab, line), do: %{tab | line: line}
-
-  defp normalize_line(line) when is_integer(line) and line > 0, do: line
-  defp normalize_line(_), do: nil
-
-  defp first_path([%{path: path} | _]), do: path
-  defp first_path(_), do: nil
-
-  defp last_path(tabs) do
-    case List.last(tabs) do
-      %{path: path} -> path
-      _ -> nil
-    end
-  end
-
-  # Full workspace host-loc resolution for CALLER-SIDE file read/write
-  # (save_tab/reload_tab). These run in the caller process, not the singleton,
-  # so the Manager resolve is fine here — and it is REQUIRED to produce
-  # `{:remote, host, path}` locs for remote workspaces (manager.ex:150), which
-  # the state-only variant below cannot. Do NOT call this from the in-server
-  # broadcast path.
-  defp workspace_loc(workspace_id) do
-    with {:ok, workspace} <- Workspaces.get(workspace_id),
-         {:ok, loc} <- Workspaces.safe_host_loc(workspace) do
-      {:ok, loc}
-    else
-      _ -> {:error, :workspace_not_found}
-    end
-  end
-
-  # State-only host-loc for the IN-SERVER broadcast payload build only. See
-  # active_payload: `broadcast/2` fires in `commit_op` (the singleton), so
-  # resolving via `workspace_loc/1` -> `Workspaces.get/1` -> Manager HTTP on a
-  # cold `State` cache could hang and back up the singleton mailbox (the
-  # broadcast-fan-out cascade root #314 closes for the PreviewPanes twin). Mirror
-  # `Aliases.expanded_host_path`: folder-attach id, then the `State` record's
-  # host_path, never a remote resolve. Remote/cold-cache workspaces yield
-  # `:workspace_not_found` (payload omits active content; the viewer's on-demand
-  # hydrate path — which uses the caller-side full resolver — fills it).
-  defp workspace_loc_state_only(workspace_id) do
-    case state_only_host_path(workspace_id) do
-      path when is_binary(path) and path != "" ->
-        expanded = Path.expand(path)
-        if File.dir?(expanded), do: {:ok, {:local, expanded}}, else: {:error, :not_found}
-
-      _ ->
-        {:error, :workspace_not_found}
-    end
-  end
-
-  defp state_only_host_path(workspace_id) do
-    case Workspaces.decode_folder_id(workspace_id) do
-      path when is_binary(path) ->
-        path
-
-      _ ->
-        case Workspaces.State.get(workspace_id) do
-          {:ok, %{host_path: path}} when is_binary(path) and path != "" -> path
-          _ -> nil
-        end
-    end
-  end
-
-  defp to_rel(loc, path) do
-    root = loc_root(loc)
-
-    rel =
-      if String.starts_with?(path, "/") do
-        Path.relative_to(path, root)
-      else
-        path
-      end
-
-    case PathSafety.resolve(root, rel) do
-      {:ok, _abs} -> {:ok, rel}
-      {:error, _} = err -> err
-    end
-  end
-
-  defp loc_root({:local, root}), do: root
-  defp loc_root({:remote, _host, root}), do: root
+  # --- tmux helpers (stay here; used by split_and_register / run_deregister_io) --
 
   defp holder_command do
-    Application.app_dir(:casein, "priv/scripts/casein-file-pane")
+    Application.app_dir(:casein, "priv/scripts/devide-file-pane")
   end
 
   defp kill_pane(%{tmux_session: session, pane_id: pane_id})
@@ -1674,26 +1300,6 @@ defmodule Casein.FilePanes do
   end
 
   defp kill_pane(_), do: :ok
-
-  defp workspace_tmux_session(workspace) do
-    Map.get(workspace, :tmux_session) || Map.get(workspace, "tmux_session")
-  end
-
-  defp workspace_id(%{id: id}) when is_binary(id), do: id
-  defp workspace_id(%{"id" => id}) when is_binary(id), do: id
-  defp workspace_id(_), do: nil
-
-  defp string_param(attrs, key) when is_atom(key) do
-    value = Map.get(attrs, key) || Map.get(attrs, Atom.to_string(key))
-
-    case value do
-      v when is_binary(v) and v != "" -> v
-      _ -> nil
-    end
-  end
-
-  defp require_binary(value, _error) when is_binary(value) and value != "", do: {:ok, value}
-  defp require_binary(_value, error), do: {:error, error}
 
   defp tmux_adapter do
     Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)

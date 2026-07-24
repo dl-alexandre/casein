@@ -59,6 +59,8 @@ defmodule Casein.PushTest do
     assert notification.workspace_id == "pw-1"
     assert notification.title == "Blocked by policy"
     assert notification.reason == "not_allowlisted"
+    assert notification.origin_id == Casein.Origin.id()
+    assert is_binary(notification.origin_name)
 
     assert eventually(fn ->
              case Notifications.list_for_user("dev") do
@@ -124,7 +126,12 @@ defmodule Casein.PushTest do
     assert notification.user_id == user_id
     assert notification.session_id == "run-1"
     assert notification.card_id == "needs_review:pw-1:run-1"
-    assert notification.deep_link == "casein://review/needs_review%3Apw-1%3Arun-1"
+    assert notification.origin_id == Casein.Origin.id()
+    assert notification.locator.origin_id == Casein.Origin.id()
+    assert notification.locator.workspace_id == "pw-1"
+    assert notification.locator.session_id == "run-1"
+    assert notification.deep_link =~ "devide://review/needs_review%3Apw-1%3Arun-1?"
+    assert notification.deep_link =~ "origin_id=#{URI.encode_www_form(Casein.Origin.id())}"
     refute_receive {:pushed, "tok-other", "ios", _notification}, 300
 
     assert eventually(fn ->
@@ -209,18 +216,14 @@ defmodule Casein.PushTest do
     assert eventually(fn -> Push.tokens_for("pw-1") == [] end) == :ok
   end
 
-  defp eventually(fun, attempts \\ 50)
-
-  defp eventually(fun, attempts) when attempts > 0 do
-    if fun.() do
-      :ok
-    else
-      Process.sleep(10)
-      eventually(fun, attempts - 1)
-    end
+  defp eventually(fun, attempts \\ 50) do
+    Casein.Test.Eventually.await(
+      fn -> if fun.(), do: :ok, else: false end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "condition not met before timeout"
+    )
   end
-
-  defp eventually(_fun, 0), do: :timeout
 
   defp unique_user(prefix) do
     user_id = "#{prefix}-#{System.unique_integer([:positive])}"

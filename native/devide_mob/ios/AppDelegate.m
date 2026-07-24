@@ -24,7 +24,7 @@ static NSMutableDictionary* MobStringMapFromDictionary(NSDictionary* dict);
 static NSString* MobNotificationJSONFromUserInfo(NSDictionary* userInfo);
 static NSString* MobNotificationJSONFromReviewURL(NSURL* url);
 static void MobStoreLaunchNotificationUserInfo(NSDictionary* userInfo);
-static BOOL MobStoreReviewDeepLinkURL(NSURL* url);
+static BOOL MobStoreDeepLinkURL(NSURL* url);
 
 static void* beam_thread(void* arg) {
     mob_start_beam((const char*)arg);
@@ -129,6 +129,18 @@ static NSString* MobNotificationJSONFromReviewURL(NSURL* url) {
         @"deep_link": url.absoluteString
     } mutableCopy];
 
+    NSSet* allowedLocatorKeys = [NSSet setWithArray:@[
+        @"origin_id", @"workspace_id", @"session_id", @"task_type", @"task_id",
+        @"tmux_session", @"window", @"pane", @"tab", @"artifact"
+    ]];
+
+    NSURLComponents* components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    for (NSURLQueryItem* item in components.queryItems ?: @[]) {
+        if ([allowedLocatorKeys containsObject:item.name] && item.value.length > 0) {
+            data[item.name] = item.value;
+        }
+    }
+
     NSMutableDictionary* payload = [@{
         @"id": [NSString stringWithFormat:@"deep-link-%@", cardID],
         @"title": @"Review requested",
@@ -136,6 +148,52 @@ static NSString* MobNotificationJSONFromReviewURL(NSURL* url) {
         @"source": @"deep_link",
         @"data": data
     } mutableCopy];
+
+    NSData* jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+    if (!jsonData) {
+        return nil;
+    }
+
+    return [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+}
+
+static NSString* MobNotificationJSONFromPairURL(NSURL* url) {
+    if (![url.scheme isEqualToString:@"devide"] || ![url.host isEqualToString:@"pair"]) {
+        return nil;
+    }
+
+    NSString* code = nil;
+    if (url.path.length > 1) {
+        code = [[url.path substringFromIndex:1] stringByRemovingPercentEncoding];
+    }
+
+    if (code.length == 0) {
+        NSURLComponents* components = [NSURLComponents componentsWithURL:url
+                                                 resolvingAgainstBaseURL:NO];
+        for (NSURLQueryItem* item in components.queryItems) {
+            if ([item.name isEqualToString:@"code"] && item.value.length > 0) {
+                code = item.value;
+                break;
+            }
+        }
+    }
+
+    if (code.length == 0) {
+        return nil;
+    }
+
+    NSDictionary* data = @{
+        @"action": @"mobile.pair",
+        @"pairing_code": code,
+        @"deep_link": url.absoluteString
+    };
+
+    NSDictionary* payload = @{
+        @"id": @"pairing-deep-link",
+        @"title": @"Pair DevIDE",
+        @"source": @"deep_link",
+        @"data": data
+    };
 
     NSData* jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
     if (!jsonData) {
@@ -156,8 +214,12 @@ static void MobStoreLaunchNotificationUserInfo(NSDictionary* userInfo) {
     }
 }
 
-static BOOL MobStoreReviewDeepLinkURL(NSURL* url) {
+static BOOL MobStoreDeepLinkURL(NSURL* url) {
     NSString* json = MobNotificationJSONFromReviewURL(url);
+    if (json.length == 0) {
+        json = MobNotificationJSONFromPairURL(url);
+    }
+
     if (json.length == 0) {
         return NO;
     }
@@ -192,7 +254,7 @@ static BOOL MobStoreReviewDeepLinkURL(NSURL* url) {
     MobStoreLaunchNotificationUserInfo(userInfo);
 
     for (UIOpenURLContext* context in connectionOptions.URLContexts) {
-        MobStoreReviewDeepLinkURL(context.URL);
+        MobStoreDeepLinkURL(context.URL);
     }
 }
 
@@ -200,7 +262,7 @@ static BOOL MobStoreReviewDeepLinkURL(NSURL* url) {
     (void)scene;
 
     for (UIOpenURLContext* context in URLContexts) {
-        MobStoreReviewDeepLinkURL(context.URL);
+        MobStoreDeepLinkURL(context.URL);
     }
 }
 
@@ -276,7 +338,7 @@ didReceiveNotificationResponse:(UNNotificationResponse*)response
     (void)app;
     (void)options;
 
-    return MobStoreReviewDeepLinkURL(url);
+    return MobStoreDeepLinkURL(url);
 }
 
 - (void)application:(UIApplication*)app

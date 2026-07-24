@@ -3,6 +3,12 @@ import {
   bindPaneSectionGeometryObserver,
   resolveOverlayRect,
 } from "./pane_overlay_rect.mjs"
+import {
+  parseViewport,
+  viewportFrameStyles,
+  viewportScale,
+  withinViewport,
+} from "./preview_pane_viewport.mjs"
 
 export const PreviewPaneOverlay = {
   mounted() {
@@ -16,7 +22,7 @@ export const PreviewPaneOverlay = {
     this.statusDetail = this.el.querySelector("[data-preview-status-detail]")
     this.reloadButton = this.el.querySelector("[data-preview-reload]")
     this.reopenButton = this.el.querySelector("[data-preview-reopen]")
-    this.viewport = this.parseViewport(this.el.dataset.viewport)
+    this.viewport = parseViewport(this.el.dataset.viewport)
     this.displayUrl = null
     this.loadedUrl = null
     this.loadStartedAt = null
@@ -42,6 +48,11 @@ export const PreviewPaneOverlay = {
 
   updated() {
     this.snapshotMode = this.isSnapshotMode()
+    // Re-read the viewport every patch: the server can retune it (context-menu
+    // presets) on a live pane, and applyViewportMode() reads the parsed value,
+    // not the attribute. Parsing only in mounted() made those changes no-ops
+    // until the hook remounted.
+    this.viewport = parseViewport(this.el.dataset.viewport)
     this.applyRect()
     this.applyDisplayUrl()
     this.applyViewportMode()
@@ -69,36 +80,15 @@ export const PreviewPaneOverlay = {
   applyViewportMode() {
     if (!this.clip || !this.iframe) return
 
-    if (this.viewport) {
-      const scale = this.viewportScale()
-      this.clip.style.overflow = "hidden"
-      this.clip.style.width = "100%"
-      this.clip.style.height = "100%"
-      this.iframe.style.width = `${this.viewport.width}px`
-      this.iframe.style.height = `${this.viewport.height}px`
-      this.iframe.style.border = "0"
-      this.iframe.style.transform = scale < 1 ? `scale(${scale})` : "none"
-      this.iframe.style.transformOrigin = "0 0"
-    } else {
-      this.clip.style.overflow = "hidden"
-      this.clip.style.width = "100%"
-      this.clip.style.height = "100%"
-      this.iframe.style.width = "100%"
-      this.iframe.style.height = "100%"
-      this.iframe.style.border = "0"
-      this.iframe.style.transform = "none"
-      this.iframe.style.transformOrigin = "0 0"
-    }
+    const {clip, iframe} = viewportFrameStyles(this.viewport, this.viewportScale())
+    Object.assign(this.clip.style, clip)
+    Object.assign(this.iframe.style, iframe)
   },
 
   viewportScale() {
-    if (!this.clip || !this.viewport?.width || !this.viewport?.height) return 1
+    if (!this.clip) return 1
 
-    const availableWidth = this.clip.clientWidth
-    const availableHeight = this.clip.clientHeight
-    if (!availableWidth || !availableHeight) return 1
-
-    return Math.min(1, availableWidth / this.viewport.width, availableHeight / this.viewport.height)
+    return viewportScale(this.viewport, this.clip.clientWidth, this.clip.clientHeight)
   },
 
   applyDisplayUrl() {
@@ -624,9 +614,7 @@ export const PreviewPaneOverlay = {
     const x = Math.round((event.clientX - targetRect.left) / scale)
     const y = Math.round((event.clientY - targetRect.top) / scale)
 
-    if (this.viewport) {
-      if (x < 0 || y < 0 || x >= this.viewport.width || y >= this.viewport.height) return
-    }
+    if (!withinViewport(this.viewport, x, y)) return
 
     this.showClickFeedback(event.clientX, event.clientY)
 
@@ -736,13 +724,6 @@ export const PreviewPaneOverlay = {
     })
 
     window.setTimeout(() => dot.remove(), 220)
-  },
-
-  parseViewport(raw) {
-    if (!raw) return null
-    const match = String(raw).match(/^(\d+)x(\d+)$/i)
-    if (!match) return null
-    return { width: Number(match[1]), height: Number(match[2]) }
   },
 
   isSnapshotMode() {

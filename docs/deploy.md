@@ -1,21 +1,21 @@
-# DevIDE — Deployment
+# Casein — Deployment
 
 > Operator runbook for a Remote-mode deployment (product.md §4.2).
 > Tracks audit_remote.md cross-cutting gaps CC-1, CC-2. This document
-> is the single-source for what an operator must do to bring up DevIDE
+> is the single-source for what an operator must do to bring up Casein
 > on a remote machine.
 
 ## Architectural decision
 
-**DevIDE ships as its own image.** By default it discovers workspaces
+**Casein ships as its own image.** By default it discovers workspaces
 as directories under `CASEIN_WORKSPACES_ROOT` (the
-`DevIDE.WorkspaceSource.Local` source). To plug a different source —
+`Casein.WorkspaceSource.Local` source). To plug a different source —
 e.g. a managed-workspace integration — see [`docs/integrations/`](integrations/)
-and set `:dev_ide, :workspace_source` accordingly.
+and set `:casein, :workspace_source` accordingly.
 
 ## Required environment
 
-DevIDE refuses to boot in prod with any of these missing — see
+Casein refuses to boot in prod with any of these missing — see
 [`config/runtime.exs`](../config/runtime.exs).
 
 | Variable                    | Purpose                                                              |
@@ -31,9 +31,40 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
 | `DNS_CLUSTER_QUERY`         | Optional. For libcluster-style multi-node discovery (unused in v1).   |
 
+### Operator overlay contract
+
+Portable Casein does not require host deployment automation. Operators that
+integrate Casein with a reverse proxy, socket handoff, deploy poller, or source
+repository can keep those site-specific values outside the core checkout in a
+strict JSON file:
+
+```bash
+export CASEIN_OPERATOR_CONFIG_FILE=/etc/devide/operator.json
+```
+
+[`config/operator.example.json`](../config/operator.example.json) documents the
+accepted keys. Unknown keys, capabilities, empty strings, and invalid timeouts
+fail the release at boot. The file is data-only: it cannot load modules or
+execute code. Keep the real file in the operator's private configuration or
+overlay repository and mount it read-only into the release. The JSON is not an
+Elixir configuration language and cannot load application modules, but it is
+still trusted operator input: values such as a Git credential helper may name
+host executables used by deployment diagnostics.
+
+When the file is configured, it owns the operator boundary: site-specific
+values embedded in an older core build are discarded rather than inherited,
+and omitted capabilities default to none. Generic timing defaults may still
+come from core. This lets an overlay start with `{}` as a neutral profile and
+opt into each integration deliberately.
+
+`CASEIN_PROFILE=portable`, LAN, and desktop profiles continue to disable all
+operator deployment capabilities even if a file is present. This prevents a
+portable release from becoming dependent on an accidentally mounted host
+profile.
+
 ## Local stack (smoke validation)
 
-The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
+The repo ships a `docker-compose.yml` that brings up Casein + Postgres
 locally so you can validate the production Dockerfile end-to-end
 without provisioning a real remote machine.
 
@@ -42,11 +73,10 @@ For the single-machine or local-network development flow, including
 mkcert HTTPS, see
 [`docs/lan-access.md`](lan-access.md).
 
-For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
-milc devbox host) deployment, including the stable `/opt/casein/deploy/`
-layout and activation after the 7204683 reconciliation, see
-[`docs/integrations/manager.md`](integrations/manager.md) §5 and the
-self-contained runbook inside `lib/casein/integrations/manager/deploy/README.md`.
+Site-specific systemd units, reverse-proxy topology, and host runbooks belong
+in a private operator overlay. Core consumes those deployments only through
+the versioned JSON contract described above; it does not ship a real site's
+configuration in the release artifact.
 
 ```bash
 # 1. Configure secrets — .env is gitignored.
@@ -88,8 +118,8 @@ opening a browser):
 # up under the `dev` profile so a workspace exists in the picker.
 
 # 1. Sign a user token from inside the running release.
-TOKEN=$(docker compose exec -T dev_ide /app/bin/casein rpc \
-    'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("smoke-user"))')
+TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \
+    'IO.write(CaseinWeb.ChannelAuth.sign_user_token("smoke-user"))')
 
 # 2. Run the smoke. Sends `echo <marker>\n` as a channel `input`
 # event and waits for the marker bytes to come back as `data` pushes.
@@ -135,7 +165,7 @@ two built images for debugging.
 ## Building the image (without compose)
 
 ```bash
-docker build -t casein:latest .
+docker build -t dev_ide:latest .
 ```
 
 The build is a two-stage Dockerfile:
@@ -143,7 +173,7 @@ The build is a two-stage Dockerfile:
 - **builder** (`hexpm/elixir:1.20.0-erlang-28.5-debian-bookworm-...-slim`;
   versions are `ARG`s at the top of the Dockerfile)
   pulls deps, compiles assets and Elixir code, builds the erlexec port
-  driver, and runs `mix release casein`.
+  driver, and runs `mix release dev_ide`.
 - **runtime** (`debian:bookworm-...-slim`) installs `tmux`, `openssl`,
   `libstdc++6`, `libncurses6`, `ca-certificates`, `locales`; copies
   the release; runs as a non-root `dev_ide` user.
@@ -161,7 +191,7 @@ docker run --rm \
   -e PHX_HOST="$PHX_HOST" \
   -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
-  casein:latest /app/bin/migrate
+  dev_ide:latest /app/bin/migrate
 
 # 2. Start the server.
 docker run -d --name dev_ide \
@@ -173,7 +203,7 @@ docker run -d --name dev_ide \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
   -e CASEIN_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
-  casein:latest
+  dev_ide:latest
 ```
 
 The migrate step is intentionally explicit — it lets a CI/CD pipeline
@@ -189,12 +219,12 @@ strategies:
    the platform terminates TLS on a public hostname and forwards plain
    HTTP to port 4000. `PHX_HOST` is your public hostname; the endpoint
    is configured for HTTPS URLs in `config/runtime.exs` (`scheme:
-   "https"`). `DevIdeWeb.RuntimeSSLPlug` issues the runtime redirect and
+   "https"`). `CaseinWeb.RuntimeSSLPlug` issues the runtime redirect and
    HSTS headers unless a service profile disables it.
    **Recommended starting point.**
 
 2. **Reverse proxy with TLS** (Caddy, Nginx, Traefik) — terminate TLS
-   on the proxy, forward to DevIDE on `:4000`. Same DevIDE config as (1).
+   on the proxy, forward to Casein on `:4000`. Same Casein config as (1).
    Caddy is the lowest-config option:
    ```caddyfile
    cloud-1.dev {
@@ -202,7 +232,7 @@ strategies:
    }
    ```
 
-3. **DevIDE-terminated TLS** — Uncomment and fill in the `https:`
+3. **Casein-terminated TLS** — Uncomment and fill in the `https:`
    block in [`config/runtime.exs`](../config/runtime.exs) (lines 76–84
    of the original generator template). Mount the keyfile/certfile
    into the container. Useful for air-gapped or fully-self-managed
@@ -251,22 +281,22 @@ the operational ground truth in the meantime.
 ## macOS (Darwin) native builds
 
 A release can be built and run natively on macOS with
-`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix casein.release.lan`
+`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 
 - **Case-insensitive APFS beam collisions.** Release assembly rejects any
   modules whose BEAM filenames differ only by case. Boundary roots use unique
-  names (`DevIDE` and `DevIDEMix`) so local compilation and packaged releases
+  names (`Casein` and `CaseinMix`) so local compilation and packaged releases
   enforce the same dependency graph on APFS, NTFS, and case-sensitive Linux.
 - **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
   (`Code Signature Invalid`) unless it is ad-hoc re-signed after
-  download; the `casein.release.lan` alias does this automatically
+  download; the `dev_ide.release.lan` alias does this automatically
   (`resign_bun_binaries` in mix.exs).
 
-Run the release directly (`bin/migrate`, `bin/casein daemon`) with an
+Run the release directly (`bin/migrate`, `bin/dev_ide daemon`) with an
 env file — `bin/devide lan install` manages systemd units and is
-Linux-only. After `bin/casein stop`, wait for epmd to drop the
+Linux-only. After `bin/dev_ide stop`, wait for epmd to drop the
 `dev_ide` name before starting again or the new node fails with "name
 in use". Note the same collision still makes the Boundary compiler
 flaky in *dev* on macOS (occasional spurious `unknown boundary`
@@ -274,9 +304,9 @@ warnings); the durable fix is renaming one module of each pair.
 
 ## What this deploy doc deliberately does not address
 
-- **Multi-instance topologies.** DevIDE is a single-runtime cockpit;
+- **Multi-instance topologies.** Casein is a single-runtime cockpit;
   there is no coordinator or cross-host scheduler.
-- **High availability.** A single DevIDE instance is the target.
+- **High availability.** A single Casein instance is the target.
   Scaling to N depends on session affinity (tmux is per-host).
 - **Backup / DR.** The audit log lives in Postgres; treat that DB
   like any other operational DB. Workspaces are on disk; their

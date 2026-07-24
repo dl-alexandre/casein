@@ -109,10 +109,28 @@ defmodule Casein.Terminals.ThemeTest do
 
     test "list_presets includes built-ins plus system import" do
       ids = Theme.list_presets() |> Enum.map(& &1.id)
-      assert length(ids) == 12
+      # 15 families (incl. github/ayu/monokai/flexoki) + system import
+      assert length(ids) == 16
       assert "gruvbox" in ids
       assert "tokyo_night" in ids
+      assert "github" in ids
+      assert "ayu" in ids
+      assert "monokai" in ids
+      assert "flexoki" in ids
       assert "system" in ids
+    end
+
+    test "new high-value presets load dark and light variants" do
+      for preset <- ~w(github ayu monokai flexoki) do
+        dark = Theme.load_for_scheme(:dark, preset)
+        light = Theme.load_for_scheme(:light, preset)
+
+        assert dark.id == preset
+        assert light.id == preset
+        assert length(dark.palette) == 256
+        assert length(light.palette) == 256
+        assert dark.background != light.background
+      end
     end
   end
 

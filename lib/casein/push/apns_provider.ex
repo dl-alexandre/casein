@@ -191,6 +191,9 @@ defmodule Casein.Push.APNSProvider do
     |> maybe_put_string("session_id", notification[:session_id])
     |> maybe_put_string("card_id", notification[:card_id])
     |> maybe_put_string("card_type", notification[:card_type])
+    |> maybe_put_string("origin_id", notification[:origin_id])
+    |> maybe_put_string("origin_name", notification[:origin_name])
+    |> maybe_put_map("locator", notification[:locator])
   end
 
   defp body_text(notification) do
@@ -202,6 +205,9 @@ defmodule Casein.Push.APNSProvider do
 
   defp maybe_put_string(data, _key, nil), do: data
   defp maybe_put_string(data, key, value), do: Map.put(data, key, to_string(value))
+
+  defp maybe_put_map(data, _key, nil), do: data
+  defp maybe_put_map(data, key, value) when is_map(value), do: Map.put(data, key, value)
 
   defp apns_error(status, body) when status in [400, 410] do
     case apns_reason(body) do

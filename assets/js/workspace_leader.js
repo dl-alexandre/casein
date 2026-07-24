@@ -1,5 +1,15 @@
 import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
+import {swipeThresholdPx, swipeWindowProgress} from "./window_swipe.mjs"
+import {
+  leaderSecondKey,
+  leaderSecondKeyDecision,
+} from "./workspace_leader_election.mjs"
+import {
+  pickerCloseEvent,
+  pickerElementVisible,
+  visiblePickerSurfaces,
+} from "./workspace_picker_toggle.mjs"
 
 // C-b leader key system + Space → focus terminal.
 //
@@ -16,6 +26,11 @@ import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_t
 //   - Escape cancels it explicitly
 //   - double C-b cancels it
 
+// Screen-edge dead-zone (px). Touches that start this close to the left/right
+// edge are left to the OS back/forward swipe gestures rather than hijacked into
+// a window switch — starting our affordance there fights iOS/Android.
+const SWIPE_EDGE_GUARD_PX = 16
+
 const INTERACTIVE_SELECTOR =
   'input, textarea, button, select, a[href], [contenteditable="true"], summary, [role="textbox"], [role="button"], [role="combobox"]'
 
@@ -23,50 +38,6 @@ function isInteractivelyFocused() {
   const el = document.activeElement
   if (!el || el === document.body || el === document.documentElement) return false
   return el.matches(INTERACTIVE_SELECTOR) || !!el.closest(INTERACTIVE_SELECTOR)
-}
-
-// Standard tmux C-b second-key → data-leader-action name.
-// The command palette shows these bindings as per-item `hint` strings
-// (lib/casein/command_palette/actions.ex + palette_items.ex) — keep the
-// two in sync when rebinding keys.
-const LEADER_ACTIONS = {
-  s: "session-picker",
-  w: "window-picker",
-  "(": "prev-session",
-  ")": "next-session",
-  c: "new-window",
-  C: "new-window-tab",
-  n: "next-window",
-  p: "prev-window",
-  l: "last-window",
-  y: "copy-link",
-  d: "detach",
-  o: "pane-next",
-  "{": "pane-swap-previous",
-  "}": "pane-swap-next",
-  ";": "last-pane",
-  ":": "palette",
-  "?": "help",
-  "&": "kill-window",
-  "%": "split-right",
-  "|": "split-right",
-  '"': "split-down",
-  "-": "split-down",
-  z: "zoom",
-  x: "close-pane",
-  q: "pane-overlay",
-  ",": "rename-window",
-  $: "rename-session",
-  ArrowLeft: "pane-left",
-  ArrowRight: "pane-right",
-  ArrowUp: "pane-up",
-  ArrowDown: "pane-down",
-}
-
-// Arrow keys report as e.code on some platforms; normalize before lookup.
-function leaderSecondKey(e) {
-  if (typeof e.code === "string" && e.code.startsWith("Arrow")) return e.code
-  return e.key
 }
 
 function phxValuePayload(el) {
@@ -114,6 +85,13 @@ export const WorkspaceLeader = {
     this._leaderCommandObserver = null
     this._paneOverlayActive = false
     this._touchStart = null
+    this._swipe = null
+    this._swipeBar = null
+    this._swipeBarTimer = null
+    this._swipeVel = 0
+    this._swipeLastX = 0
+    this._swipeLastT = 0
+    this._swipeReady = false
 
     this._onKeydown = (e) => this._handleKeydown(e)
     this._onLeaderSecondKey = (e) => this._handleLeaderSecondKey(e.detail?.key)
@@ -149,15 +127,68 @@ export const WorkspaceLeader = {
       const el = e.target
       if (el.closest('button, input, textarea, select, details, [role="button"]')) return
       if (el.closest(".workspace-main-header, .mobile-key-bar")) return
+      const t = e.touches[0]
+      const vw = window.innerWidth || 360
+      // Leave the screen edges to the OS back/forward gestures.
+      const edgeBlocked =
+        e.touches.length === 1 &&
+        (t.clientX <= SWIPE_EDGE_GUARD_PX || t.clientX >= vw - SWIPE_EDGE_GUARD_PX)
       this._touchStart = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY,
+        x: t.clientX,
+        y: t.clientY,
         fingers: e.touches.length,
+        edgeBlocked,
+      }
+      this._swipe = null
+      this._swipeVel = 0
+      this._swipeLastX = t.clientX
+      this._swipeLastT = e.timeStamp
+      this._swipeReady = false
+    }
+    // Interactive single-finger horizontal swipe → an edge bar grows on the side
+    // you pull toward; release past the commit threshold switches to the
+    // adjacent tmux window (reusing the leader n/p dispatch targets so the
+    // server logic is shared). Vertical drags stay with the GhosttyTerminal hook
+    // (one finger scrolls the buffer, two fingers scroll scrollback), so this
+    // only ever engages once |dx| clearly leads |dy|. Passive: purely visual, we
+    // never preventDefault — nothing else consumes horizontal travel here.
+    this._onTouchMove = (e) => {
+      const start = this._touchStart
+      if (!start || start.fingers !== 1 || e.touches.length !== 1) return
+      if (start.edgeBlocked) return
+      // Already resolved as a vertical scroll — stay out of the way.
+      if (this._swipe && this._swipe.axis === "v") return
+
+      const x = e.touches[0].clientX
+      const dx = x - start.x
+      const dy = e.touches[0].clientY - start.y
+
+      // Signed horizontal velocity (px/ms) over the last move → flick-to-commit.
+      const dt = e.timeStamp - this._swipeLastT
+      if (dt > 0) this._swipeVel = (x - this._swipeLastX) / dt
+      this._swipeLastX = x
+      this._swipeLastT = e.timeStamp
+
+      const threshold = swipeThresholdPx(window.innerWidth || 360)
+      const s = swipeWindowProgress(dx, dy, {threshold, velocity: this._swipeVel})
+      this._swipe = s
+
+      if (s.axis === "h") {
+        // Haptic tick the instant the gesture crosses into commit range.
+        if (s.ready && !this._swipeReady && navigator.vibrate) navigator.vibrate(10)
+        this._swipeReady = s.ready
+        this._updateSwipeBar(s.edge, s.dir, s.progress, s.ready)
+      } else {
+        this._swipeReady = false
+        this._hideSwipeBar(false)
       }
     }
     this._onTouchEnd = (e) => {
       const start = this._touchStart
+      const swipe = this._swipe
       this._touchStart = null
+      this._swipe = null
+      this._swipeReady = false
       if (!start) return
 
       const dx = e.changedTouches[0].clientX - start.x
@@ -167,27 +198,30 @@ export const WorkspaceLeader = {
 
       // Two-finger tap (little travel) → toggle the soft keyboard.
       if (start.fingers >= 2 && adx < 30 && ady < 30) {
+        this._hideSwipeBar(false)
         this._toggleSoftKeyboard()
         return
       }
 
-      // Single-finger horizontal swipe → switch to the adjacent tmux window,
-      // reusing the leader n/p dispatch targets so the server logic is shared.
-      // (Vertical drags over a terminal are handled live by the GhosttyTerminal
-      // hook: one finger sends arrow keys, two fingers scroll the scrollback.)
-      if (start.fingers === 1 && adx >= 60 && adx > ady) {
-        const action = dx < 0 ? "next-window" : "prev-window"
+      // Committed horizontal swipe pulled past the threshold → switch window.
+      if (start.fingers === 1 && swipe && swipe.axis === "h" && swipe.ready) {
+        this._hideSwipeBar(true)
+        const action = swipe.dir === "next" ? "next-window" : "prev-window"
         this._dispatchLeaderAction(document.querySelector(`[data-leader-action="${action}"]`))
         return
       }
+
+      this._hideSwipeBar(false)
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
-    window.addEventListener("casein:leader-second-key", this._onLeaderSecondKey)
+    window.addEventListener("devide:leader-second-key", this._onLeaderSecondKey)
     this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
+    document.addEventListener("touchmove", this._onTouchMove, { passive: true })
     document.addEventListener("touchend", this._onTouchEnd, { passive: true })
+    document.addEventListener("touchcancel", this._onTouchEnd, { passive: true })
     this._renderLeaderButtons()
 
     setTerminalSchemeReporter((scheme) => {
@@ -222,11 +256,14 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter(null)
 
     window.removeEventListener("keydown", this._onKeydown, true)
-    window.removeEventListener("casein:leader-second-key", this._onLeaderSecondKey)
+    window.removeEventListener("devide:leader-second-key", this._onLeaderSecondKey)
     this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
+    document.removeEventListener("touchmove", this._onTouchMove)
     document.removeEventListener("touchend", this._onTouchEnd)
+    document.removeEventListener("touchcancel", this._onTouchEnd)
+    this._destroySwipeBar()
     document.body.removeAttribute("data-leader-active")
     document.body.removeAttribute("data-leader-command-active")
     this._clearLeaderCommandWatch()
@@ -298,6 +335,16 @@ export const WorkspaceLeader = {
       return
     }
 
+    // Picker rails are server-rendered but can hand focus back to the terminal
+    // while they remain open. Capture Escape globally so closing them never
+    // depends on which descendant currently owns focus. An armed leader keeps
+    // its existing Escape-to-cancel behavior.
+    if (e.key === "Escape" && !this._leaderActive && this._closeVisiblePicker()) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      return
+    }
+
     if (!this._leaderActive) return
 
     // Ignore bare modifier keydowns while waiting for the second key
@@ -319,32 +366,47 @@ export const WorkspaceLeader = {
   },
 
   _handleLeaderSecondKey(key) {
-    if (!this._leaderActive || !key) return
+    const help = document.getElementById("leader-cheatsheet")
+    const canCycleHelpTab =
+      !!help && help.querySelectorAll("[data-cheat-tab]").length >= 2
+    const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
+    const windowSidebarEl = document.querySelector("[data-window-picker-sidebar]")
+    const sessionsSidebarEl = document.querySelector("[data-sessions-picker-sidebar]")
+
+    const decision = leaderSecondKeyDecision(key, {
+      leaderActive: this._leaderActive,
+      helpVisible: leaderHelpVisible(),
+      canCycleHelpTab,
+      mobileLayout: pickerElementVisible(mobileKeyBar),
+      ...visiblePickerSurfaces(document),
+      windowSidebarVisible: !!(windowSidebarEl && windowSidebarEl.offsetParent !== null),
+      sessionsSidebarVisible: !!(sessionsSidebarEl && sessionsSidebarEl.offsetParent !== null),
+    })
+
+    if (decision.type === "noop") return
 
     // `?` while the help overlay is open cycles its tabs instead of toggling
-    // the overlay closed (Escape still closes it). Falls through to the normal
-    // toggle when there are no tabs to cycle.
-    if (key === "?" && leaderHelpVisible() && cycleLeaderHelpTab()) {
+    // the overlay closed (Escape still closes it).
+    if (decision.type === "cycle-help-tab") {
+      cycleLeaderHelpTab()
       this._clearLeader()
       return
     }
 
     this._clearLeader()
 
-    // 0–9: select tmux window by index
-    if (/^[0-9]$/.test(key)) {
-      this._dispatchLeaderAction(document.querySelector(`[data-tmux-window-index="${key}"]`))
-      return
-    }
+    switch (decision.type) {
+      case "window-index":
+        this._dispatchLeaderAction(
+          document.querySelector(`[data-tmux-window-index="${decision.index}"]`)
+        )
+        return
 
-    const action = LEADER_ACTIONS[key]
-    if (action) {
-      if (action === "pane-overlay") {
+      case "pane-overlay":
         this._activatePaneOverlay()
         return
-      }
 
-      if (action === "copy-link") {
+      case "copy-link": {
         const url = document.querySelector('[data-leader-action="copy-link"]')?.dataset.copySessionLink
         const token = this._beginLeaderCommand()
         copyPickerLink(url, "view")
@@ -353,7 +415,7 @@ export const WorkspaceLeader = {
       }
 
       // rename-window: the active tab strip hosts the inline rename form.
-      if (action === "rename-window") {
+      case "rename-window": {
         const token = this._beginLeaderCommand()
         const rename = document.querySelector('[data-leader-action="rename-window"]')
 
@@ -362,7 +424,7 @@ export const WorkspaceLeader = {
         return
       }
 
-      if (action === "rename-session") {
+      case "rename-session": {
         const token = this._beginLeaderCommand()
         const rename = document.querySelector('[data-leader-action="rename-session"]')
 
@@ -373,79 +435,106 @@ export const WorkspaceLeader = {
         return
       }
 
-      const target = document.querySelector(`[data-leader-action="${action}"]`)
-      const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
-      const onMobileLayout = mobileKeyBar && mobileKeyBar.offsetParent !== null
+      case "close-mobile":
+        this._closePicker("mobile_nav:close")
+        return
 
-      // On touch/narrow layouts the desktop pickers are CSS-hidden (the mobile
-      // nav sheet takes over). Route C-b s / C-b w to the sheet instead.
-      if (action === "session-picker" || action === "window-picker") {
-        if (onMobileLayout) {
-          const token = this._beginLeaderCommand()
-          this.pushEvent(
-            "mobile_nav:open",
-            { focus: action === "window-picker" ? "windows" : "sessions" },
-            () => this._finishLeaderCommand(token)
-          )
-          this._setLeaderCommandFallback(token)
-          return
-        }
+      case "close-sidebar":
+        this._closePicker("sidebar:close")
+        return
 
-        if (action === "window-picker") {
-          const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
-
-          if (sidebarEl && sidebarEl.offsetParent !== null) {
-            sidebarEl.dispatchEvent(
-              new CustomEvent("casein:window-sidebar:focus", {bubbles: true})
-            )
-            this._startSidebarHoldWatch(key, sidebarEl)
-            return
-          }
-
-          const token = this._beginLeaderCommand()
-          this.pushEvent("sidebar:open", {mode: "windows"}, () => {
-            this._finishLeaderCommand(token)
-            requestAnimationFrame(() => {
-              const el = document.querySelector("[data-window-picker-sidebar]")
-              if (!el) return
-              el.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
-              this._startSidebarHoldWatch(key, el)
-            })
-          })
-          this._setLeaderCommandFallback(token)
-          return
-        }
-
-        if (action === "session-picker") {
-          const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
-
-          if (sessionsEl && sessionsEl.offsetParent !== null) {
-            sessionsEl.dispatchEvent(
-              new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true})
-            )
-            this._startSessionsSidebarHoldWatch(key, sessionsEl)
-            return
-          }
-
-          const token = this._beginLeaderCommand()
-          this.pushEvent("sidebar:open", {mode: "both"}, () => {
-            this._finishLeaderCommand(token)
-            requestAnimationFrame(() => {
-              const el = document.querySelector("[data-sessions-picker-sidebar]")
-              if (!el) return
-              el.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
-              this._startSessionsSidebarHoldWatch(key, el)
-            })
-          })
-          this._setLeaderCommandFallback(token)
-          return
-        }
-
+      case "open-mobile": {
+        const token = this._beginLeaderCommand()
+        this.pushEvent(
+          "mobile_nav:open",
+          {focus: decision.focus},
+          () => this._finishLeaderCommand(token)
+        )
+        this._setLeaderCommandFallback(token)
         return
       }
 
-      this._dispatchLeaderAction(target)
+      case "focus-window-sidebar": {
+        const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
+        if (!sidebarEl) return
+        sidebarEl.dispatchEvent(
+          new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
+        )
+        this._startSidebarHoldWatch(decision.holdKey, sidebarEl)
+        return
+      }
+
+      case "open-window-sidebar": {
+        const holdKey = decision.holdKey
+        const token = this._beginLeaderCommand()
+        this.pushEvent("sidebar:open", {mode: "windows"}, () => {
+          this._finishLeaderCommand(token)
+          requestAnimationFrame(() => {
+            const el = document.querySelector("[data-window-picker-sidebar]")
+            if (!el) return
+            el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+            this._startSidebarHoldWatch(holdKey, el)
+          })
+        })
+        this._setLeaderCommandFallback(token)
+        return
+      }
+
+      case "focus-sessions-sidebar": {
+        const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
+        if (!sessionsEl) return
+        sessionsEl.dispatchEvent(
+          new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
+        )
+        this._startSessionsSidebarHoldWatch(decision.holdKey, sessionsEl)
+        return
+      }
+
+      case "open-sessions-sidebar": {
+        const holdKey = decision.holdKey
+        const token = this._beginLeaderCommand()
+        this.pushEvent("sidebar:open", {mode: "both"}, () => {
+          this._finishLeaderCommand(token)
+          requestAnimationFrame(() => {
+            const el = document.querySelector("[data-sessions-picker-sidebar]")
+            if (!el) return
+            el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+            this._startSessionsSidebarHoldWatch(holdKey, el)
+          })
+        })
+        this._setLeaderCommandFallback(token)
+        return
+      }
+
+      case "dispatch":
+        this._dispatchLeaderAction(
+          document.querySelector(`[data-leader-action="${decision.action}"]`)
+        )
+        return
+
+      case "unknown":
+      default:
+        return
     }
+  },
+
+  _closeVisiblePicker() {
+    const event = pickerCloseEvent(visiblePickerSurfaces(document))
+    if (!event) return false
+
+    this.pushEvent?.(event, {})
+
+    window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+    return true
+  },
+
+  _closePicker(event) {
+    const token = this._beginLeaderCommand()
+    this.pushEvent(event, {}, () => {
+      this._finishLeaderCommand(token)
+      window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+    })
+    this._setLeaderCommandFallback(token)
   },
 
   // Route leader actions to LiveView. Simple phx-click handlers are pushed
@@ -611,7 +700,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
         return
       }
 
@@ -674,7 +763,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
         return
       }
 
@@ -772,6 +861,122 @@ export const WorkspaceLeader = {
     } else {
       window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
     }
+  },
+
+  // --- Interactive window-swipe affordance ------------------------------------
+  // A full-height bar hugging the edge the incoming window slides in from,
+  // labelled with that window (index, name, activity dot), growing with drag
+  // progress and brightening once pulled/flicked far enough to commit on
+  // release. Built lazily and reused; styled in app.css (.window-swipe-bar).
+  _ensureSwipeBar() {
+    if (this._swipeBar && this._swipeBar.isConnected) return this._swipeBar
+    const bar = document.createElement("div")
+    bar.className = "window-swipe-bar"
+    bar.setAttribute("aria-hidden", "true")
+    bar.dataset.edge = "right"
+    const chevron = document.createElement("div")
+    chevron.className = "window-swipe-bar__chevron"
+    const label = document.createElement("div")
+    label.className = "window-swipe-bar__label"
+    const dot = document.createElement("span")
+    dot.className = "window-swipe-bar__dot"
+    const idx = document.createElement("span")
+    idx.className = "window-swipe-bar__index"
+    const name = document.createElement("span")
+    name.className = "window-swipe-bar__name"
+    label.append(dot, idx, name)
+    bar.append(chevron, label)
+    document.body.appendChild(bar)
+    this._swipeBar = bar
+    return bar
+  },
+
+  // Resolve the window a `next`/`prev` switch would land on, reading the live
+  // WindowTabStrip DOM (index order = tab order; tmux wraps at the ends). Null
+  // when there's no other window to switch to.
+  _adjacentWindow(dir) {
+    const scroller = document.querySelector('[phx-hook="WindowTabStrip"] [data-tab-scroller]')
+    if (!scroller) return null
+    const tabs = Array.from(scroller.querySelectorAll("[data-ctx-window-id]"))
+    if (tabs.length < 2) return null
+    const activeIdx = tabs.findIndex((t) => t.hasAttribute("data-active-window"))
+    if (activeIdx < 0) return null
+    const step = dir === "next" ? 1 : -1
+    const adj = tabs[(activeIdx + step + tabs.length) % tabs.length]
+    if (!adj || adj === tabs[activeIdx]) return null
+    return {
+      index: adj.getAttribute("data-window-index") || "",
+      name: adj.getAttribute("data-window-name") || "",
+      activity: adj.getAttribute("data-window-activity") || "",
+      attention: adj.getAttribute("data-window-attention") || "",
+    }
+  },
+
+  _updateSwipeBar(edge, dir, progress, ready) {
+    const bar = this._ensureSwipeBar()
+    // A single haptic tick the moment the pull crosses the commit threshold, so
+    // you feel that releasing now will switch windows without watching the bar.
+    if (ready && bar.dataset.ready !== "true" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate(8)
+      } catch (_) {
+        /* vibrate unsupported / blocked */
+      }
+    }
+    bar.dataset.edge = edge
+    bar.dataset.ready = ready ? "true" : "false"
+    bar.dataset.active = "true"
+    // Grow toward a viewport-relative max as progress → 1; the chevron points
+    // the direction of travel (toward where the content is sliding).
+    const vw = window.innerWidth || 360
+    const width = Math.round(10 + progress * Math.min(150, vw * 0.5))
+    bar.style.setProperty("--window-swipe-width", `${width}px`)
+    bar.style.setProperty("--window-swipe-progress", String(progress))
+    bar.querySelector(".window-swipe-bar__chevron").textContent =
+      edge === "right" ? "‹" : "›"
+
+    const adj = this._adjacentWindow(dir)
+    bar.dataset.disabled = adj ? "false" : "true"
+    const idxEl = bar.querySelector(".window-swipe-bar__index")
+    const nameEl = bar.querySelector(".window-swipe-bar__name")
+    const dotEl = bar.querySelector(".window-swipe-bar__dot")
+    if (adj) {
+      idxEl.textContent = adj.index
+      nameEl.textContent = adj.name
+      dotEl.dataset.activity = adj.activity
+      dotEl.dataset.attention = adj.attention
+    } else {
+      idxEl.textContent = ""
+      nameEl.textContent = "No other window"
+      dotEl.dataset.activity = ""
+      dotEl.dataset.attention = ""
+    }
+  },
+
+  _hideSwipeBar(commit) {
+    const bar = this._swipeBar
+    if (!bar) return
+    if (commit) {
+      // A brief confirm flash before it retracts.
+      bar.dataset.ready = "true"
+      bar.dataset.commit = "true"
+    }
+    bar.dataset.active = "false"
+    clearTimeout(this._swipeBarTimer)
+    this._swipeBarTimer = setTimeout(() => {
+      if (this._swipeBar) {
+        this._swipeBar.removeAttribute("data-commit")
+        this._swipeBar.removeAttribute("data-ready")
+      }
+    }, 220)
+  },
+
+  _destroySwipeBar() {
+    clearTimeout(this._swipeBarTimer)
+    if (this._swipeBar && this._swipeBar.parentNode) {
+      this._swipeBar.parentNode.removeChild(this._swipeBar)
+    }
+    this._swipeBar = null
   },
 
   _renderLeaderButtons(forceActive) {

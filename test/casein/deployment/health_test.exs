@@ -77,6 +77,7 @@ defmodule Casein.Deployment.HealthTest do
 
   defp healthy_opts(socket_path) do
     [
+      capabilities: [:socket, :reverse_proxy, :deploy_drift, :deploy_status],
       version: @revision,
       socket_path: socket_path,
       current_target: socket_path,

@@ -82,10 +82,9 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
+    pid = directory_pid!(ws)
     # Initial load + subscribe tabs path may recompute; wait for settle.
-    Process.sleep(80)
-    :sys.get_state(directory_pid!(ws))
-    init_calls = :counters.get(counter, 1)
+    init_calls = wait_counter_stable(pid, counter)
     assert init_calls >= 1
 
     # Burst of events well inside min_interval.
@@ -94,11 +93,13 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
       FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
     end
 
-    Process.sleep(min_interval + 100)
-    :sys.get_state(directory_pid!(ws))
+    # One coalesced recompute (or at most one immediate + one deferred) must land.
+    wait_until(fn -> :counters.get(counter, 1) > init_calls end)
+    # Let any trailing deferred edge settle before reading the final delta.
+    calls_after = wait_counter_stable(pid, counter)
 
-    calls_after = :counters.get(counter, 1)
     # At most one extra recompute (list_sessions call) beyond the settle baseline.
+    # The <= 2 upper bound is the tooth: unthrottled bursts must not pass.
     assert calls_after - init_calls <= 2
     assert calls_after > init_calls
   end
@@ -122,13 +123,16 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
+    pid = directory_pid!(ws)
+
     # Connected event mode: only reconcile (60s) would fire — count stays near init.
-    Process.sleep(180)
-    mid = :counters.get(counter, 1)
+    mid = wait_counter_stable(pid, counter)
 
     FakeEventSource.set_connected(fake, false)
+    flush_state(pid)
+
     # Fast poll fallback should fire several times.
-    Process.sleep(220)
+    wait_until(fn -> :counters.get(counter, 1) > mid + 1 end)
     after_down = :counters.get(counter, 1)
     assert after_down > mid + 1
 
@@ -158,12 +162,11 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
-    Process.sleep(120)
     pid = directory_pid!(ws)
-    before = :counters.get(counter, 1)
+    before = wait_counter_stable(pid, counter)
 
     for _ <- 1..5, do: send(pid, {TmuxCtl.Events, {:listener_up, "dup"}})
-    Process.sleep(150)
+    flush_state(pid)
 
     assert :counters.get(counter, 1) == before
     assert Process.alive?(pid)
@@ -209,9 +212,9 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                reconcile_ms: 60_000
              )
 
-    Process.sleep(180)
-    after_poll = :counters.get(counter, 1)
     # Pure polling at 50ms must keep firing.
+    wait_until(fn -> :counters.get(counter, 1) >= 2 end)
+    after_poll = :counters.get(counter, 1)
     assert after_poll >= 2
 
     put_fake_session("devide_#{ws}_u-bob")
@@ -236,12 +239,12 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
-    Process.sleep(80)
-    before = :counters.get(counter, 1)
+    pid = directory_pid!(ws)
+    before = wait_counter_stable(pid, counter)
 
     put_fake_session("devide_#{ws}_u-bob")
     FakeEventSource.emit(fake, %{type: :pane_mode_changed, pane_id: "%1"})
-    Process.sleep(120)
+    flush_state(pid)
 
     # No event-driven recompute; count must not jump for the ignored type.
     assert :counters.get(counter, 1) == before
@@ -269,18 +272,21 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
-    Process.sleep(100)
-    :sys.get_state(directory_pid!(ws))
-    init_calls = :counters.get(counter, 1)
+    pid = directory_pid!(ws)
+    init_calls = wait_counter_stable(pid, counter)
 
     # The min-interval window opens at the initial load; wait it out so event
     # A is genuinely unthrottled.
-    Process.sleep(min_interval + 50)
+    wait_until(fn ->
+      %{last_recompute_ms: last} = :sys.get_state(pid)
+      System.monotonic_time(:millisecond) - last >= min_interval
+    end)
 
     # Event A recomputes immediately (nothing recent).
     put_fake_session("devide_#{ws}_u-bob")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
-    Process.sleep(150)
+    flush_state(pid)
+    wait_until(fn -> :counters.get(counter, 1) == init_calls + 1 end)
     after_a = :counters.get(counter, 1)
     assert after_a == init_calls + 1
 
@@ -289,12 +295,13 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     # recompute immediately here.
     put_fake_session("devide_#{ws}_u-carol")
     FakeEventSource.emit(fake, %{type: :sessions_changed, raw: "%sessions-changed"})
-    Process.sleep(100)
-    assert :counters.get(counter, 1) == after_a
+    flush_state(pid)
+    # Hold the "no immediate recompute" tooth across a short window so an
+    # async unthrottled recompute cannot race past a single counter sample.
+    assert_counter_holds(counter, after_a, 100)
 
     # ...and it must be deferred to the window edge, never dropped.
-    Process.sleep(min_interval + 150)
-    assert :counters.get(counter, 1) == after_a + 1
+    wait_until(fn -> :counters.get(counter, 1) == after_a + 1 end)
 
     assert Enum.map(SessionDirectory.tabs(ws, workspace_name: ws), & &1.sid) |> Enum.sort() ==
              ["u-alice", "u-bob", "u-carol"]
@@ -383,16 +390,16 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
                )
              )
 
-    Process.sleep(150)
-    :sys.get_state(directory_pid!(ws))
-    before = :counters.get(counter, 1)
+    pid = directory_pid!(ws)
+    before = wait_counter_stable(pid, counter)
     flush_sessions_updated(ws)
 
     # Activity timestamp moves (volatile, outside the stable hash); the shell
     # window can never flip quiet, so tabs are hash-identical.
     put_shell_window.(2_000)
     FakeEventSource.emit(fake, %{type: :window_renamed, window_id: "@1", raw: "%window-renamed"})
-    Process.sleep(200)
+    flush_state(pid)
+    wait_until(fn -> :counters.get(counter, 1) > before end)
 
     # The event DID recompute...
     assert :counters.get(counter, 1) > before
@@ -464,6 +471,97 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
   defp install_counting_adapter(counter) do
     :persistent_term.put({__MODULE__, :recompute_counter}, counter)
     Application.put_env(:casein, :tmux_adapter, __MODULE__.CountingAdapter)
+  end
+
+  # Drain SessionDirectory's mailbox through the event (and any synchronous
+  # recompute it started). Prefer this over wall-clock sleeps before counter
+  # baselines / refute_receive after a known emit.
+  defp flush_state(pid) do
+    _ = :sys.get_state(pid)
+    :ok
+  end
+
+  # Poll `fun` until truthy or `timeout` ms, then flunk. Use for "a recompute
+  # WILL happen" and timer-driven cadence assertions.
+  defp wait_until(fun, timeout \\ 2_000) when is_function(fun, 0) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_until(fun, deadline, timeout)
+  end
+
+  defp do_wait_until(fun, deadline, timeout) do
+    case fun.() do
+      result when result not in [false, nil] ->
+        result
+
+      _ ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("wait_until timed out after #{timeout}ms")
+        else
+          receive do
+          after
+            15 -> :ok
+          end
+
+          do_wait_until(fun, deadline, timeout)
+        end
+    end
+  end
+
+  # Settle init_calls/before by requiring two consecutive counter reads (with
+  # a mailbox flush between) to match — no fixed wall-clock settle window.
+  defp wait_counter_stable(pid, counter, timeout \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    flush_state(pid)
+    prev = :counters.get(counter, 1)
+    do_wait_counter_stable(pid, counter, prev, deadline)
+  end
+
+  defp do_wait_counter_stable(pid, counter, prev, deadline) do
+    receive do
+    after
+      15 -> :ok
+    end
+
+    flush_state(pid)
+    next = :counters.get(counter, 1)
+
+    cond do
+      next == prev ->
+        next
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("wait_counter_stable timed out (last=#{next}, prev=#{prev})")
+
+      true ->
+        do_wait_counter_stable(pid, counter, next, deadline)
+    end
+  end
+
+  # Assert the counter stays at `expected` for the full `hold_ms` window.
+  # Used for "must NOT recompute immediately" teeth so async recomputes cannot
+  # race a single post-flush sample.
+  defp assert_counter_holds(counter, expected, hold_ms) do
+    deadline = System.monotonic_time(:millisecond) + hold_ms
+    do_assert_counter_holds(counter, expected, deadline)
+  end
+
+  defp do_assert_counter_holds(counter, expected, deadline) do
+    actual = :counters.get(counter, 1)
+
+    if actual != expected do
+      flunk("expected counter to hold at #{expected} (got #{actual})")
+    end
+
+    if System.monotonic_time(:millisecond) >= deadline do
+      :ok
+    else
+      receive do
+      after
+        10 -> :ok
+      end
+
+      do_assert_counter_holds(counter, expected, deadline)
+    end
   end
 end
 

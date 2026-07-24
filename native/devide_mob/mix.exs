@@ -27,14 +27,9 @@ defmodule DevideMob.MixProject do
        ref: "50724d53cca71f1f45124b554d53c6f438973b04",
        override: true},
       {:mob, "~> 0.7"},
-      # Fork branch for GenericJam/mob_dev#24: per-ABI external static archives
-      # for project NIFs that resolve extern symbols at the native app link.
-      {:mob_dev,
-       git: "https://github.com/dl-alexandre/mob_dev.git",
-       ref: "83c5462ad4d5703d088775e2cc52aa72432b1441",
-       only: :dev,
-       runtime: false,
-       override: true},
+      # GenericJam/mob_dev#24 supplies per-ABI external static archives for
+      # project NIFs that resolve extern symbols at the native app link.
+      {:mob_dev, "~> 0.6.23", only: :dev, runtime: false, override: true},
       {:ecto_sqlite3, "~> 0.18"},
       # Phoenix Channel client for the session companion — connects to the
       # dev_ide host's `/socket` UserSocket over WSS and joins `session:<id>`.

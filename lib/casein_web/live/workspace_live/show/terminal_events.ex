@@ -48,22 +48,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     {:noreply, assign(socket, :terminal_color_scheme, scheme)}
   end
 
-  def handle_event("terminal:set_preset", %{"preset" => preset}, socket) do
-    if Terminals.valid_terminal_theme_preset?(preset) do
-      themes = Terminals.terminal_theme_client_bundle(preset)
+  def handle_event("terminal:set_preset", %{"preset" => preset} = params, socket) do
+    preview? = params["preview"] in [true, "true"]
 
-      for {_pane_id, pane} <- socket.assigns.pane_data || %{},
-          worker when is_pid(worker) <- [pane[:worker]] do
-        send(worker, {:terminal_preset, preset})
-      end
-
-      {:noreply,
-       socket
-       |> assign(:terminal_preset_id, preset)
-       |> assign(:terminal_themes, themes)
-       |> push_event("terminal:theme", themes)}
-    else
-      {:noreply, socket}
+    case apply_terminal_preset(socket, preset, preview?: preview?) do
+      {:ok, socket} -> {:noreply, socket}
+      :error -> {:noreply, socket}
     end
   end
 
@@ -781,6 +771,67 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
       end
     else
       TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  @doc """
+  Apply a terminal theme preset to the LiveView and attached pane workers.
+
+  When `preview?: true`, the visual theme updates (client LUT + workers) but
+  `terminal_preset_id` is left alone so a later restore can re-commit the
+  previous choice. The client bundle includes `preview: true` so the browser
+  skips writing `localStorage["devide:terminal-preset"]`.
+  """
+  @spec apply_terminal_preset(Phoenix.LiveView.Socket.t(), String.t(), keyword()) ::
+          {:ok, Phoenix.LiveView.Socket.t()} | :error
+  def apply_terminal_preset(socket, preset, opts \\ []) when is_binary(preset) do
+    preview? = Keyword.get(opts, :preview?, false)
+
+    if Terminals.valid_terminal_theme_preset?(preset) do
+      themes =
+        Terminals.terminal_theme_client_bundle(preset)
+        |> Map.put(:preview, preview?)
+
+      for {_pane_id, pane} <- socket.assigns.pane_data || %{},
+          worker when is_pid(worker) <- [pane[:worker]] do
+        send(worker, {:terminal_preset, preset})
+      end
+
+      socket =
+        socket
+        |> then(fn s ->
+          if preview?, do: s, else: assign(s, :terminal_preset_id, preset)
+        end)
+        |> assign(:terminal_themes, themes)
+        |> push_event("terminal:theme", themes)
+
+      socket =
+        if preview? do
+          assign(socket, :palette_theme_preview_id, preset)
+        else
+          assign(socket, :palette_theme_preview_id, nil)
+        end
+
+      {:ok, socket}
+    else
+      :error
+    end
+  end
+
+  @doc "Re-apply the committed terminal preset after a cancelled palette preview."
+  @spec restore_terminal_preset(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
+  def restore_terminal_preset(socket) do
+    case socket.assigns[:palette_theme_preview_id] do
+      nil ->
+        socket
+
+      _preview ->
+        committed = socket.assigns[:terminal_preset_id] || "catppuccin"
+
+        case apply_terminal_preset(socket, committed, preview?: false) do
+          {:ok, socket} -> socket
+          :error -> assign(socket, :palette_theme_preview_id, nil)
+        end
     end
   end
 

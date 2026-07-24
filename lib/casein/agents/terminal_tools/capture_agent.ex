@@ -21,7 +21,7 @@ defmodule Casein.Agents.TerminalTools.CaptureAgent do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -41,6 +41,6 @@ defmodule Casein.Agents.TerminalTools.CaptureAgent do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.capture_agent(Helpers.to_impl_args(params))
+    Agent.capture_agent(Helpers.to_impl_args(params))
   end
 end

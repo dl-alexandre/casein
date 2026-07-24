@@ -1,5 +1,5 @@
 # Config.HTTPS only recognizes Phoenix's compile-time :force_ssl setting.
-# DevIdeWeb.RuntimeSSLPlug owns the HTTPS redirect at runtime so the same
+# CaseinWeb.RuntimeSSLPlug owns the HTTPS redirect at runtime so the same
 # release can disable it for managed local LAN HTTP mode.
 # RuntimeEndpointConfigTest asserts this plug is still installed in Endpoint.
 [

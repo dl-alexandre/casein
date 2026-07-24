@@ -12,7 +12,7 @@
 >   sessions, policy, and evidence.
 >
 > **Naming stability:** Casein is the public product name. The stable
-> implementation family remains `DevIDE.*`, `:dev_ide`, and `CASEIN_*`; the
+> implementation family remains `Casein.*`, `:casein`, and `CASEIN_*`; the
 > public-name decision in [`naming-gate.md`](naming-gate.md) does not rename
 > those compatibility surfaces.
 >
@@ -34,7 +34,7 @@ term — do not overload an existing one.
 | Term | Means | Must not mean |
 |---|---|---|
 | **Casein** | The public product: a server-authoritative workspace for people and coding agents | A code namespace; a package coordinate; one UI component; one process; the CLI alone |
-| **DevIDE** | The compatibility-stable implementation family (`DevIDE.*`, `:dev_ide`, `CASEIN_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
+| **DevIDE** | The compatibility-stable implementation family (`Casein.*`, `:casein`, `CASEIN_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
 | **Server-authoritative** | Each concern has one named server-side authority; clients authenticate, authorize, then observe or request effects | One database reconstructs everything; the browser is trusted state; “the backend decides somehow” |
 | **Authority** | The component whose current answer is binding for one concern | Every component that stores a copy; a projection; a transport; a person with an admin title |
 | **Runtime** | The server-side execution environment that hosts workspace sessions and the named authorities that govern them | The browser UI; a JavaScript loop; a fleet scheduler; a universal database |
@@ -86,7 +86,7 @@ derived from a pane label or an untrusted request field.
 
 ### Workspace
 
-A workspace is provided by a `DevIDE.WorkspaceSource`, which owns lifecycle
+A workspace is provided by a `Casein.WorkspaceSource`, which owns lifecycle
 truth. Casein maintains a redacted, denormalized `WorkspaceRecord` for fast
 reads. A workspace scopes filesystem access, sessions, policy, and evidence; it
 is not synonymous with its host or with a browser tab.
@@ -101,8 +101,8 @@ state without replaying input.
 ### Run
 
 A run is the execution lifecycle of one review-agent command
-(`DevIDE.Agents.Run`). Review runs spawn a fixed, allowlisted
-`DevIDE.Agents.ReviewCommand` argv as a local subprocess. They are one
+(`Casein.Agents.Run`). Review runs spawn a fixed, allowlisted
+`Casein.Agents.ReviewCommand` argv as a local subprocess. They are one
 projection over Audit evidence, not the universal unit for terminal or MCP
 activity.
 
@@ -117,15 +117,15 @@ agent-write capabilities.
 
 External coding agents use three workspace-scoped MCP surfaces:
 
-- **Terminal MCP** (`DevIDE.Agents.TerminalTools`) — list sessions, read pane
+- **Terminal MCP** (`Casein.Agents.TerminalTools`) — list sessions, read pane
   scrollback, send keys/commands to `devide_`-prefixed tmux sessions.
-- **Preview MCP** (`DevIDE.Agents.PreviewTools`) — open/observe/screenshot a
+- **Preview MCP** (`Casein.Agents.PreviewTools`) — open/observe/screenshot a
   scoped preview session.
-- **Artifact MCP** (`DevIDE.Agents.ArtifactTools`) — create and iterate on
+- **Artifact MCP** (`Casein.Agents.ArtifactTools`) — create and iterate on
   isolated artifact worktrees, returning Preview MCP handoff arguments.
 
 Every mutating MCP call is attributed and recorded through
-`DevIDE.Agents.MCPAudit`, then projected into the live activity feed. MCP grants
+`Casein.Agents.MCPAudit`, then projected into the live activity feed. MCP grants
 only the declared tools within the authenticated workspace scope; it is not a
 generic host shell or an agent runtime.
 
@@ -161,7 +161,7 @@ actors. Neither term describes network topology or client identity.
 
 ### Run ledger events
 
-The run ledger (`DevIDE.Runs.Ledger`) is stored in audit events with
+The run ledger (`Casein.Runs.Ledger`) is stored in audit events with
 `metadata.ledger == "run"`. The canonical actions are:
 
 | Action | When | Actor | Target |
@@ -184,12 +184,12 @@ Paths outside the run ledger still produce general audit actions:
 |---|---|---|---|
 | `policy.blocked` | Generic policy denial outside the run ledger | original actor | the blocked target |
 | agent MCP tool actions | Mutating terminal/preview/artifact MCP calls | agent | session / preview / artifact |
-| `proposal.applied` | Human applied a proposal diff via the Proposals tab (`DevIDE.ProposalApply`) | operator | `proposal` |
+| `proposal.applied` | Human applied a proposal diff via the Proposals tab (`Casein.ProposalApply`) | operator | `proposal` |
 | `proposal.apply_blocked` / `proposal.apply_failed` | Proposal apply refused (too large/invalid/conflict) or `git apply` failed | operator | `proposal` |
 | `workspace.agent_write_unlock_granted` / `_revoked` | Agent-write unlock granted or revoked | operator | `workspace` |
-| `workspace.agent_write_unlock_expired` | Passive expiry sweep revoked a stale unlock | `DevIDE.Workspaces.AgentWriteUnlockExpirer` | `workspace` |
+| `workspace.agent_write_unlock_expired` | Passive expiry sweep revoked a stale unlock | `Casein.Workspaces.AgentWriteUnlockExpirer` | `workspace` |
 | `proposals.auto_apply_authorize` | Policy decision for a review-agent run's own auto-apply attempt | `"agent:review"` | `run` |
-| `proposals.auto_applied` / `proposals.auto_apply_failed` / `proposals.auto_apply_skipped` | Outcome of a review-agent run's auto-apply attempt (`DevIDE.Proposals.AutoApply`) | `"agent:review"` | `proposal` / `run` |
+| `proposals.auto_applied` / `proposals.auto_apply_failed` / `proposals.auto_apply_skipped` | Outcome of a review-agent run's auto-apply attempt (`Casein.Proposals.AutoApply`) | `"agent:review"` | `proposal` / `run` |
 
 ## Workspace status payload (summary)
 

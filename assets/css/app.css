@@ -506,6 +506,130 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   opacity: 1;
 }
 
+/* Ease the scale-to-fit transform so viewport adjustments — soft-keyboard
+   open/close, the brief overflow-guard borrow while a tmux reflow converges,
+   and display-zoom steps — glide instead of snapping. This is the residual
+   "flash" on mobile resize: the grid momentarily shrinks to fit the smaller
+   viewport, then restores once tmux catches up; easing turns that snap into a
+   short zoom. Steady state never touches the transform, so the rule is inert
+   until an actual adjustment. See ghostty_terminal.js applyScaledLayout /
+   authoritativeOverflowGuard. */
+[data-terminal-scale-frame="true"] {
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-terminal-scale-frame="true"] {
+    transition: none;
+  }
+}
+
+/* First-run gesture coach-marks (assets/js/gesture_coach.js). Shown once per
+   mobile device to surface the invisible terminal gestures. */
+.gesture-coach {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+  padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  background: color-mix(in oklch, black 55%, transparent);
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.gesture-coach[data-open="true"] {
+  opacity: 1;
+}
+
+.gesture-coach__card {
+  width: min(24rem, 100%);
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in oklch, var(--color-sky-400, #38bdf8) 30%, transparent);
+  background: color-mix(in oklch, var(--color-zinc-950, #09090b) 92%, var(--color-sky-400, #38bdf8));
+  color: var(--color-zinc-100, #f4f4f5);
+  padding: 1.1rem 1.2rem 1rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  transform: translateY(12px);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.gesture-coach[data-open="true"] .gesture-coach__card {
+  transform: translateY(0);
+}
+
+.gesture-coach__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.7rem;
+}
+
+.gesture-coach__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.gesture-coach__item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.85rem;
+  line-height: 1.25;
+}
+
+.gesture-coach__glyph {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.5rem;
+  background: color-mix(in oklch, var(--color-sky-400, #38bdf8) 18%, transparent);
+  color: var(--color-sky-200, #bae6fd);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.gesture-coach__text b {
+  font-weight: 650;
+}
+
+.gesture-coach__dismiss {
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 0;
+  background: var(--color-sky-500, #0ea5e9);
+  color: white;
+  padding: 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+  transition: background-color 120ms ease;
+}
+
+.gesture-coach__dismiss:active {
+  background: var(--color-sky-600, #0284c7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gesture-coach,
+  .gesture-coach__card {
+    transition: opacity 120ms ease-out;
+  }
+  .gesture-coach__card {
+    transform: none;
+  }
+}
+
 /* Per-interface display zoom badge (see ghostty_terminal.js / terminal_display_zoom.mjs) */
 .casein-term-zoom-badge {
   position: absolute;
@@ -951,6 +1075,162 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   transition: padding-bottom 120ms ease-out;
 }
 
+/* Interactive window-switch swipe affordance (assets/js/workspace_leader.js).
+   A full-height bar hugging the edge the incoming window slides in from,
+   labelled with that window (index, name, activity dot). Its width tracks drag
+   progress and it brightens once pulled/flicked far enough to commit on
+   release. The element only exists in the DOM during/after a swipe, so this
+   rule is inert otherwise. */
+.window-swipe-bar {
+  position: fixed;
+  top: 0;
+  height: 100dvh;
+  width: var(--window-swipe-width, 8px);
+  z-index: 60;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  opacity: 0;
+  overflow: hidden;
+  border-radius: 0 12px 12px 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 22%, transparent)
+  );
+  box-shadow: 0 0 22px color-mix(in oklch, var(--color-sky-400, #38bdf8) 38%, transparent);
+  transition:
+    opacity 120ms ease-out,
+    width 40ms linear,
+    filter 120ms ease-out;
+}
+
+.window-swipe-bar[data-edge="right"] {
+  right: 0;
+  left: auto;
+  transform-origin: right center;
+  border-radius: 12px 0 0 12px;
+  background: linear-gradient(
+    270deg,
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 82%, transparent),
+    color-mix(in oklch, var(--color-sky-400, #38bdf8) 22%, transparent)
+  );
+}
+
+.window-swipe-bar[data-edge="left"] {
+  left: 0;
+  right: auto;
+  transform-origin: left center;
+}
+
+.window-swipe-bar[data-active="true"] {
+  opacity: calc(0.35 + 0.55 * var(--window-swipe-progress, 0));
+}
+
+.window-swipe-bar[data-ready="true"] {
+  opacity: 1;
+  filter: brightness(1.25) saturate(1.15);
+}
+
+.window-swipe-bar[data-commit="true"] {
+  opacity: 1;
+  animation: window-swipe-commit 220ms ease-out;
+}
+
+/* No adjacent window to switch to → mute the affordance and hide the dot. */
+.window-swipe-bar[data-disabled="true"] {
+  filter: grayscale(0.6) brightness(0.82);
+}
+
+.window-swipe-bar[data-disabled="true"] .window-swipe-bar__dot {
+  display: none;
+}
+
+.window-swipe-bar__chevron {
+  color: var(--color-white, #fff);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: var(--window-swipe-progress, 0);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+/* Adjacent-window stats. Fades in with progress so it only reads once the bar
+   is wide enough to hold it. */
+.window-swipe-bar__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0 0.35rem;
+  text-align: center;
+  color: var(--color-white, #fff);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  opacity: var(--window-swipe-progress, 0);
+}
+
+.window-swipe-bar__index {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 0.7rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
+.window-swipe-bar__name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.window-swipe-bar__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.window-swipe-bar__dot[data-activity="fresh"] {
+  background: var(--color-emerald-400, #34d399);
+}
+
+.window-swipe-bar__dot[data-activity="recent"] {
+  background: var(--color-amber-400, #fbbf24);
+}
+
+.window-swipe-bar__dot[data-activity="idle"] {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+@keyframes window-swipe-commit {
+  0% {
+    transform: scaleX(1);
+  }
+  40% {
+    transform: scaleX(1.25);
+  }
+  100% {
+    transform: scaleX(0.7);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .window-swipe-bar {
+    transition: opacity 100ms ease-out;
+  }
+  .window-swipe-bar[data-commit="true"] {
+    animation: none;
+  }
+}
+
 @media (pointer: coarse) {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {
@@ -1077,6 +1357,9 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .casein-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
     min-height: 1.75rem;
     padding-inline: 0.45rem;
+    /* Give the (now leading) arrow d-pad + primary keys room while typing —
+       the wide session chip is the least-used control with the keyboard up. */
+    max-width: min(30vw, 7.5rem);
   }
 
   .casein-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {

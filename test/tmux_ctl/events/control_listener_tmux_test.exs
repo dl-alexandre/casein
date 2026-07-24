@@ -9,6 +9,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   @moduletag :tmux
 
   alias TmuxCtl.Events.ControlListener
+  alias Casein.Test.Eventually
 
   @label "devide_test"
   @anchor "__casein_keepalive"
@@ -19,8 +20,16 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
 
     # Isolate: kill any prior sandbox server, recreate anchor.
     _ = System.cmd(tmux, ["-L", @label, "kill-server"], stderr_to_stdout: true)
-    # Brief pause so the socket is released.
-    Process.sleep(100)
+    # Wait until the sandbox server is fully gone before recreating.
+    Eventually.await(
+      fn ->
+        match?(
+          {_, code} when code != 0,
+          System.cmd(tmux, ["-L", @label, "list-sessions"], stderr_to_stdout: true)
+        )
+      end,
+      timeout_ms: 2000
+    )
 
     {_, 0} =
       System.cmd(
@@ -97,7 +106,16 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
     assert_receive {TmuxCtl.Events, {:listener_down, @label}}, 3_000
 
     # Recreate server + anchor; backoff should reconnect.
-    Process.sleep(100)
+    # Wait until the sandbox server is fully gone before recreating.
+    Eventually.await(
+      fn ->
+        match?(
+          {_, code} when code != 0,
+          System.cmd(tmux, ["-L", @label, "list-sessions"], stderr_to_stdout: true)
+        )
+      end,
+      timeout_ms: 2000
+    )
 
     {_, 0} =
       System.cmd(

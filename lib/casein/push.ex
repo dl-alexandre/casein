@@ -26,6 +26,8 @@ defmodule Casein.Push do
 
   defdelegate register(attrs), to: Registry
   defdelegate register_user(attrs), to: Registry
+  defdelegate register_web(attrs), to: Registry
+  defdelegate web_subscription(token), to: Registry
   defdelegate unregister(token), to: Registry
   defdelegate tokens_for(workspace_id), to: Registry
   defdelegate tokens_for_user(user_id), to: Registry

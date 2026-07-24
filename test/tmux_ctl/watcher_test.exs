@@ -268,16 +268,16 @@ defmodule TmuxCtl.Topology.WatcherTest do
   end
 
   defp await_unregistered(session, attempts \\ 50) do
-    case Registry.lookup(@registry, session) do
-      [] ->
-        :ok
-
-      _ when attempts > 0 ->
-        Process.sleep(10)
-        await_unregistered(session, attempts - 1)
-
-      _ ->
-        flunk("topology watcher for #{session} never unregistered")
-    end
+    Casein.Test.Eventually.await(
+      fn ->
+        case Registry.lookup(@registry, session) do
+          [] -> :ok
+          _ -> false
+        end
+      end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "topology watcher for #{session} never unregistered"
+    )
   end
 end

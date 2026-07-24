@@ -12,7 +12,7 @@ does not restate them.
 Three adjacent concerns, grouped because they sit at the trust boundary:
 
 - **Policy** (`lib/casein/policy/`) — the value types behind the single
-  server-side admission decision point (`DevIDE.Policy`, FP-1). Raw-terminal
+  server-side admission decision point (`Casein.Policy`, FP-1). Raw-terminal
   admission, agent-write locks, proposal-apply denial, and workspace-mode
   changes all resolve to a `Decision` struct stamped with the active
   `WorkspaceMode`.
@@ -28,16 +28,16 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Policy.Decision` | `lib/casein/policy/decision.ex` | Verdict struct (`:allow`/`:deny` + reason + mode + metadata) returned by every policy check. Constructors `allow/3`, `deny/4`, predicate `allow?/1`. |
-| `DevIDE.Policy.WorkspaceMode` | `lib/casein/policy/workspace_mode.ex` | The four safety modes (`:manual`, `:review`, `:agent_write_locked`, `:shared_stage_guarded`) and their config resolution order. `resolve/1`, `valid_modes/0`. |
-| `DevIDE.Deployment.Registry` | `lib/casein/deployment/registry.ex` | GenServer writing a per-instance JSON heartbeat file; owns instance id, version, socket path, and the `current.sock` symlink. `list_instances/0`, `mark_draining/0`, `version/0`, `socket_path/0`. |
-| `DevIDE.Deployment.Drain` | `lib/casein/deployment/drain.ex` | GenServer counting live LiveView connections; on `start_drain/1` broadcasts an update notice and stops the VM once connections hit zero (or hard-timeout). `track/1`, `draining?/0`, `connection_count/0`. |
-| `DevIDE.Deployment.Drift` | `lib/casein/deployment/drift.ex` | Detects when the running revision ≠ `origin/master` HEAD via cached `git ls-remote`. Pure `assess/3`; runtime `check_and_broadcast/0`, `remote_head/1`, `check_async/0`. |
-| `DevIDE.Deployment.Health` | `lib/casein/deployment/health.ex` | Deploy-wiring health probe: socket exists, `current.sock` points at this instance, Caddy upstream dials the socket, deploy not drifted. `status/1`, `caddy_app_dial/2`. |
-| `DevIDE.Export.Sanitizer` | `lib/casein/export/sanitizer.ex` | Deny-list redaction: `scrub/1` drops secret keys from maps/lists/env, `redact_text/1` masks secrets in text streams. Second-line egress defense. |
-| `DevIDE.Export.WorkspaceStatus` | `lib/casein/export/workspace_status.ex` | Builds the per-workspace API summary payloads (status, mode, git, runs, proposals, audit, deploy, previous-session search) — summaries only, never raw artifacts. `status/1`, `list_summary/0`, `runs/1`, `run/2`, `proposals/1`, `audit/1`, `previous_sessions/2`. |
+| `Casein.Policy.Decision` | `lib/casein/policy/decision.ex` | Verdict struct (`:allow`/`:deny` + reason + mode + metadata) returned by every policy check. Constructors `allow/3`, `deny/4`, predicate `allow?/1`. |
+| `Casein.Policy.WorkspaceMode` | `lib/casein/policy/workspace_mode.ex` | The four safety modes (`:manual`, `:review`, `:agent_write_locked`, `:shared_stage_guarded`) and their config resolution order. `resolve/1`, `valid_modes/0`. |
+| `Casein.Deployment.Registry` | `lib/casein/deployment/registry.ex` | GenServer writing a per-instance JSON heartbeat file; owns instance id, version, socket path, and the `current.sock` symlink. `list_instances/0`, `mark_draining/0`, `version/0`, `socket_path/0`. |
+| `Casein.Deployment.Drain` | `lib/casein/deployment/drain.ex` | GenServer counting live LiveView connections; on `start_drain/1` broadcasts an update notice and stops the VM once connections hit zero (or hard-timeout). `track/1`, `draining?/0`, `connection_count/0`. |
+| `Casein.Deployment.Drift` | `lib/casein/deployment/drift.ex` | Detects when the running revision ≠ `origin/master` HEAD via cached `git ls-remote`. Pure `assess/3`; runtime `check_and_broadcast/0`, `remote_head/1`, `check_async/0`. |
+| `Casein.Deployment.Health` | `lib/casein/deployment/health.ex` | Deploy-wiring health probe: socket exists, `current.sock` points at this instance, Caddy upstream dials the socket, deploy not drifted. `status/1`, `caddy_app_dial/2`. |
+| `Casein.Export.Sanitizer` | `lib/casein/export/sanitizer.ex` | Deny-list redaction: `scrub/1` drops secret keys from maps/lists/env, `redact_text/1` masks secrets in text streams. Second-line egress defense. |
+| `Casein.Export.WorkspaceStatus` | `lib/casein/export/workspace_status.ex` | Builds the per-workspace API summary payloads (status, mode, git, runs, proposals, audit, deploy, previous-session search) — summaries only, never raw artifacts. `status/1`, `list_summary/0`, `runs/1`, `run/2`, `proposals/1`, `audit/1`, `previous_sessions/2`. |
 
-> The decision point itself, `DevIDE.Policy` (`lib/casein/policy.ex`), lives
+> The decision point itself, `Casein.Policy` (`lib/casein/policy.ex`), lives
 > outside this subsystem's assigned paths but consumes both policy value types;
 > it is the caller-facing surface for everything below.
 
@@ -45,8 +45,8 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
 
 ### Policy decision (FP-1)
 1. A caller (e.g. `Terminals.Boundary`, `WorkspaceLive.Show`) builds a `ctx`
-   map and calls a `DevIDE.Policy.can_*?/1` helper.
-2. `DevIDE.Policy` resolves the active mode via `mode/1` →
+   map and calls a `Casein.Policy.can_*?/1` helper.
+2. `Casein.Policy` resolves the active mode via `mode/1` →
    `State.mode_for/1` (or `WorkspaceMode.resolve/1` when no workspace id).
 3. The helper returns a `Decision` struct via `Decision.allow/3` / `deny/4`,
    stamped with that mode (`caps` are dropped from the metadata).
@@ -69,7 +69,7 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
    checks; `deploy_revision_current` is `Drift.assess/3` returning `:current`.
 
 ### Export at egress
-1. `GET /api/workspaces[/:id...]` → `DevIDE.Export` (facade) delegates to
+1. `GET /api/workspaces[/:id...]` → `Casein.Export` (facade) delegates to
    `WorkspaceStatus`.
 2. `WorkspaceStatus.status/1` assembles the payload from persisted
    `WorkspaceRecord` state plus cheap live reads (git status, runtime list,
@@ -83,7 +83,7 @@ Functions other code calls into this subsystem:
 
 - **Policy value types** — `Decision.allow/3`, `Decision.deny/4`,
   `Decision.allow?/1`; `WorkspaceMode.resolve/1`, `WorkspaceMode.valid_modes/0`.
-  (Consumed by `DevIDE.Policy`, the actual decision module.)
+  (Consumed by `Casein.Policy`, the actual decision module.)
 - **Deployment** — `Drain.track/1` (LiveView on_mount),
   `Drain.start_drain/1` (`DrainController`), `Drain.draining?/0`,
   `Drain.connection_count/0`; `Health.status/1` (`DeployStatusController`,
@@ -91,7 +91,7 @@ Functions other code calls into this subsystem:
   `list_instances/0` / `mark_draining/0`; `Drift.assess/3`,
   `Drift.remote_head/1`, `Drift.check_async/0`.
 - **Export** — `WorkspaceStatus.{list_summary/0, status/1, runs/1, run/2,
-  proposals/1, audit/1, previous_sessions/2}` (via the `DevIDE.Export`
+  proposals/1, audit/1, previous_sessions/2}` (via the `Casein.Export`
   defdelegate facade);
   `Sanitizer.scrub/1` and `Sanitizer.redact_text/1` (called wherever a
   payload or text stream crosses the egress boundary).
@@ -116,7 +116,7 @@ application tree (see `lib/casein/application.ex`).
   configured modes silently fall back, never crash.
 - **Drain must never stop the test VM.** `Drain` is a real supervised
   singleton; its grace timer would call `System.stop(0)` mid-suite. The
-  `:dev_ide, :drain_stop_system` env injects a no-op in `test_helper.exs`.
+  `:casein, :drain_stop_system` env injects a no-op in `test_helper.exs`.
 - **`start_drain/1` is idempotent-guarded.** A second call while already
   draining returns `{:error, :already_draining}`.
 - **`ls-remote` is time-boxed and cached.** `Drift.remote_head/1` caches per

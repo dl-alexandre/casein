@@ -21,8 +21,8 @@ it. Two failure modes have bitten real work:
 2. **Read races.** A verification or "does this file exist?" check reads the
    working tree *while* another agent is mid-refactor. On 2026-06-20 a doc-accuracy
    pass concluded five real modules
-   (`DevIDE.PreviewControl.{Adapter,MemoryAdapter,PlaywrightAdapter,PlaywrightBridge}`,
-   `DevIDE.Terminals.TmuxAdapter`) were "hallucinations" because a concurrent agent
+   (`Casein.PreviewControl.{Adapter,MemoryAdapter,PlaywrightAdapter,PlaywrightBridge}`,
+   `Casein.Terminals.TmuxAdapter`) were "hallucinations" because a concurrent agent
    had just **staged their deletion** — they were present in `HEAD` the whole time.
    The pass nearly "corrected" accurate docs to match a transient state.
 

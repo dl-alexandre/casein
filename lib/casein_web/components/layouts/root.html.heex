@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <%!-- interactive-widget=resizes-visual: pin Chromium to visual-viewport-only
+         keyboard resize (the MobileKeyBar tracker assumes this). Default since
+         Chrome Android 108; explicit so defaults cannot silently regress. --%>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual"
+    />
     <meta name="csrf-token" content={get_csrf_token()} />
     <meta name="application-name" content="Casein" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -51,7 +51,7 @@ and is the authoritative home for that slice's invariants. See
 | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | Turns a typed query into a ranked list of allowlisted actions and dispatches the selected one through an existing gated LiveView event, never a free-form command; adjacent Labels and Annotations subsystems supply ephemeral pane chrome and durable context notes. |
 | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | The durable evidence plane that records every policy decision, agent MCP call, raw-terminal attach, and review-run lifecycle event as an append-only audit record, read back as a run ledger and evidence feed. |
 | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | Server-side admission decision value types (FP-1), devbox release deploy/drain/drift coordination, and the redacted API export surface. |
-| [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md) | The dependency-free `dev_ide_core` path package — `ExecCtl` (OS process execution + the authoritative command allowlist), `GitCtl` (git worktree inspection + ETS cache), and `McpCtl` (MCP tool-schema fragments) — the generic mechanism the `DevIDE.*` facades delegate into. |
+| [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md) | The dependency-free `dev_ide_core` path package — `ExecCtl` (OS process execution + the authoritative command allowlist), `GitCtl` (git worktree inspection + ETS cache), and `McpCtl` (MCP tool-schema fragments) — the generic mechanism the `Casein.*` facades delegate into. |
 | [`subsystems/push_notifications.md`](subsystems/push_notifications.md) | OS push fan-out (APNs/FCM) for session alerts and high-priority mobile cards — the offline counterpart to the live channel that reaches a backgrounded `devide_mob` app: native token acquisition, channel handoff, in-memory token registry, dispatcher, platform-routing providers, and the `CASEIN_*` runtime config to go live. |
 
 ## External surface reference
@@ -61,11 +61,11 @@ Change these only by changing the doc first.
 
 | Doc | Surface |
 |-----|---------|
-| [`reference/http_api.md`](reference/http_api.md) | The HTTP/LiveView/MCP route table and Phoenix channel topics — the thin transport tier mapping browser, operator-tool, and agent traffic onto `DevIDE.*` context calls. |
+| [`reference/http_api.md`](reference/http_api.md) | The HTTP/LiveView/MCP route table and Phoenix channel topics — the thin transport tier mapping browser, operator-tool, and agent traffic onto `Casein.*` context calls. |
 | [`reference/mcp_tools.md`](reference/mcp_tools.md) | The external MCP tool surface: narrow, bearer-gated, workspace-scoped JSON-RPC tools (terminal, preview, annotations) that drive Casein's tmux and browser previews, plus the external dev-only Tidewave endpoint. |
 | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | The operator-facing surface: the `devide runtimes` CLI, mix tasks, the static command allowlist that gates palette/agent runs, and the `C-b` leader-key bindings. |
 | [`deep_links.md`](deep_links.md) | Deep-link URL shapes into the cockpit (workspace/session/pane addressing). |
-| [`workspace_sources.md`](workspace_sources.md) | The `DevIDE.WorkspaceSource` behaviour contract (Boundary 3). |
+| [`workspace_sources.md`](workspace_sources.md) | The `Casein.WorkspaceSource` behaviour contract (Boundary 3). |
 | [`leader_keys.md`](leader_keys.md) | Authoritative `C-b` leader-key bindings and how to add one. |
 | [`terminal.md`](terminal.md) | Terminal renderer / raw path narrative (see terminals subsystem doc for the current server-core reality). |
 | [`terminal_mcp.md`](terminal_mcp.md) | Terminal MCP tool contract for agents. |

@@ -8,8 +8,8 @@
 
 The push subsystem turns high-signal server events into APNs/FCM notifications
 delivered to paired devices. It is the offline counterpart to the live channel:
-`DevIdeWeb.SessionChannel` shows in-app banners only while a device is
-connected, whereas `DevIDE.Push.Dispatcher` runs server-side regardless of any
+`CaseinWeb.SessionChannel` shows in-app banners only while a device is
+connected, whereas `Casein.Push.Dispatcher` runs server-side regardless of any
 live socket.
 
 ## End-to-end flow
@@ -25,13 +25,13 @@ didRegisterForRemoteNotifications…     ┘ → {:push_token, platform, token}
 SessionClient.register_push ───ws──▶ Channel "register_push"
                                       │
                                       ▼
-                              DevIDE.Push.Registry         (token store, in-memory)
+                              Casein.Push.Registry         (token store, in-memory)
                                       │  Dispatcher.watch(workspace_id)
                                       ▼
-  audit alert / needs_review card ─▶ DevIDE.Push.Dispatcher (subscribes spines)
+  audit alert / needs_review card ─▶ Casein.Push.Dispatcher (subscribes spines)
                                       │  Push.provider()
                                       ▼
-                              DevIDE.Push.NativeProvider   (routes by platform)
+                              Casein.Push.NativeProvider   (routes by platform)
                                 ├ android → FCMProvider  (HTTP v1 + OAuth)
                                 └ ios     → APNSProvider  (ES256 JWT)
                                       │
@@ -56,7 +56,7 @@ code and a real notification is **provider credentials**.
 ## Configuration (runtime.exs)
 
 `config/runtime.exs` reads the environment and selects the provider. Nothing is
-hardcoded — with no env set, the provider stays `DevIDE.Push.LogProvider` and
+hardcoded — with no env set, the provider stays `Casein.Push.LogProvider` and
 push is inert (logs only). Set credentials to go live.
 
 ### Provider selection
@@ -78,7 +78,7 @@ push is inert (logs only). Set credentials to go live.
 | `CASEIN_FCM_ACCESS_TOKEN` | Pre-minted OAuth token — handy for a quick smoke test without a service account |
 | `CASEIN_FCM_TOKEN_URI` | Override the Google OAuth token endpoint (tests) |
 
-`DevIDE.Push.FCMToken` mints and caches short-lived OAuth access tokens from the
+`Casein.Push.FCMToken` mints and caches short-lived OAuth access tokens from the
 service account (Google JWT-bearer flow), so no extra credential dependency is
 needed.
 
@@ -149,8 +149,8 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
 >
 > HTTP/2: APNs refuses HTTP/1.1 and closes the connection
 > (`%Req.TransportError{reason: :closed}`). The server routes APNs through a
-> dedicated HTTP/2 Finch pool (`DevIDE.Push.APNS.Finch`, started in
-> `DevIDE.Supervision.PlatformServices`), so this is handled — but it means
+> dedicated HTTP/2 Finch pool (`Casein.Push.APNS.Finch`, started in
+> `Casein.Supervision.PlatformServices`), so this is handled — but it means
 > APNs delivery cannot be proven by the stub-based tests or `push.check` alone;
 > a real send (even with a dummy token → `BadDeviceToken`) is what exercises the
 > transport. A `403 InvalidProviderToken` instead means the team id / key id /
@@ -175,11 +175,11 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
 
 ## Known simplifications
 
-- **`DevIDE.Push.Registry` is in-memory** — tokens do not survive a restart.
+- **`Casein.Push.Registry` is in-memory** — tokens do not survive a restart.
   Devices re-register on reconnect, so this self-heals for connected devices but
   drops pushes to a device that never reconnects after a server restart. Swap
   for an Ecto-backed store when durability matters.
-- **`DevIdeWeb.UserSocket` hardcodes `role: :owner`** for user-token
+- **`CaseinWeb.UserSocket` hardcodes `role: :owner`** for user-token
   connections — a placeholder until real auth roles land. See
   `lib/casein_web/channel_auth.ex`.
 

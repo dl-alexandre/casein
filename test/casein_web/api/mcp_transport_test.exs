@@ -195,10 +195,11 @@ defmodule CaseinWeb.API.MCPTransportTest do
   end
 
   defp wait_until(fun, attempts \\ 100) do
-    cond do
-      fun.() -> :ok
-      attempts <= 0 -> flunk("condition not met in time")
-      true -> Process.sleep(10) && wait_until(fun, attempts - 1)
-    end
+    Casein.Test.Eventually.await(
+      fn -> if fun.(), do: :ok, else: false end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "condition not met in time"
+    )
   end
 end

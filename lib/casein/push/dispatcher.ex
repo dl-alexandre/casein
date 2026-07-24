@@ -18,6 +18,8 @@ defmodule Casein.Push.Dispatcher do
 
   alias Casein.Audit.Event
   alias Casein.Mobile.UserObserver
+  alias Casein.Mobile.ResumeCard
+  alias Casein.Origin
   alias Casein.{Alerts, Notifications, Push}
 
   def start_link(_opts \\ []) do
@@ -103,6 +105,8 @@ defmodule Casein.Push.Dispatcher do
   end
 
   defp mobile_card_notification(%{type: :needs_review, priority: :high} = card) do
+    resume = ResumeCard.project(card)
+
     %{
       workspace_id: card.workspace_id,
       user_id: card.user_id,
@@ -113,7 +117,10 @@ defmodule Casein.Push.Dispatcher do
       title: card.title,
       reason: card.body,
       at: card.created_at,
-      deep_link: "devide://review/#{URI.encode_www_form(card.id)}"
+      locator: resume.locator,
+      resume_state: resume.state,
+      resume_phase: resume.phase,
+      deep_link: ResumeCard.deep_link(card)
     }
   end
 
@@ -171,6 +178,11 @@ defmodule Casein.Push.Dispatcher do
   defp maybe_put_notification_id(notification, _card), do: notification
 
   defp deliver(provider, %{token: token, platform: platform}, notification) do
+    notification =
+      notification
+      |> Map.put(:origin_id, Origin.id())
+      |> Map.put(:origin_name, Origin.display_name())
+
     emit_push(:attempt, platform, notification)
 
     case provider.push(token, platform, notification) do

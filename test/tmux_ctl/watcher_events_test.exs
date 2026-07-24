@@ -78,7 +78,7 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
 
     min_interval = 200
 
-    assert {:ok, _pid} =
+    assert {:ok, pid} =
              Watcher.ensure_started(
                session,
                watcher_opts(fake,
@@ -89,8 +89,8 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
                )
              )
 
-    # Init took one snapshot via resolver.
-    init_calls = :counters.get(counter, 1)
+    # Init took one snapshot via resolver; wait until counter settles.
+    init_calls = wait_counter_stable(pid, counter)
     assert init_calls >= 1
 
     :ok = Watcher.subscribe(session, watcher_opts(fake))
@@ -102,9 +102,13 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
     FakeEventSource.emit(fake, %{type: :window_add, window_id: "@3"})
     put_fake_topology(session, "c", "bash")
     FakeEventSource.emit(fake, %{type: :window_add, window_id: "@4"})
+    # emit/1 is GenServer.cast — drain fake so the three sends reach the watcher.
+    flush_event_source(fake)
 
-    # Allow coalesced refresh to fire once.
-    Process.sleep(min_interval + 80)
+    # Coalesced refresh must fire at least once for the burst.
+    wait_until(fn -> :counters.get(counter, 1) > init_calls end)
+    # Settle so any trailing coalesced snapshot is counted before the bound check.
+    _ = wait_counter_stable(pid, counter)
 
     calls_after = :counters.get(counter, 1)
     # At most one extra snapshot beyond init for the coalesced burst.
@@ -135,12 +139,13 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
              )
 
     # Connected event mode: no fast poll. Snapshot count stays near init.
-    Process.sleep(180)
-    mid = :counters.get(counter, 1)
+    mid = wait_counter_stable(pid, counter)
 
     FakeEventSource.set_connected(fake, false)
-    # Give poll fallback time to fire several times.
-    Process.sleep(220)
+    # set_connected/2 is cast — ensure listener_down is delivered before waiting.
+    flush_event_source(fake)
+    # Poll fallback must fire several times.
+    wait_until(fn -> :counters.get(counter, 1) > mid + 1 end)
     after_down = :counters.get(counter, 1)
     assert after_down > mid + 1
 
@@ -187,13 +192,12 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
              )
 
     # Settle into connected event mode, then measure.
-    Process.sleep(120)
-    before = :counters.get(counter, 1)
+    before = wait_counter_stable(pid, counter)
 
     # Queued duplicate lifecycle broadcasts around a reconnect must be no-ops
     # while already in event mode — each used to force an uncoalesced snapshot.
     for _ <- 1..5, do: send(pid, {TmuxCtl.Events, {:listener_up, "dup"}})
-    Process.sleep(150)
+    flush_state(pid)
 
     assert :counters.get(counter, 1) == before
     assert Process.alive?(pid)
@@ -205,7 +209,7 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
 
     :ok = Watcher.subscribe(session, watcher_opts(fake))
 
-    assert {:ok, _pid} =
+    assert {:ok, pid} =
              Watcher.ensure_started(
                session,
                watcher_opts(fake, enabled: true, refresh_ms: 50, reconcile_ms: 60_000)
@@ -216,8 +220,10 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
 
     put_fake_topology(session, "shell", "bash", activity: 31)
     FakeEventSource.emit(fake, %{type: :layout_change, window_id: "@1"})
-
-    Process.sleep(80)
+    # cast then watcher: event (and any snapshot it causes) must be fully done
+    # before refute_receive / version assertions, or a late broadcast is missed.
+    flush_event_source(fake)
+    flush_state(pid)
     refute_receive {@tag, {:updated, %{session: ^session}}}, 100
 
     assert %{version: ^version, panes: [%{activity: 31}]} =
@@ -262,7 +268,12 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
     t1 = Watcher.get(session, watcher_opts(fake))
     put_fake_topology(session, "tests", "mix")
     FakeEventSource.emit(fake, %{type: :window_renamed, window_id: "@1"})
-    Process.sleep(150)
+    flush_event_source(fake)
+
+    wait_until(fn ->
+      hd(Watcher.get(session, watcher_opts(fake)).windows).name == "tests"
+    end)
+
     t2 = Watcher.get(session, watcher_opts(fake))
 
     assert t2.generation == t1.generation
@@ -355,6 +366,75 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
       {@tag, {:updated, %{session: ^session}}} -> flush_updated(session)
     after
       0 -> :ok
+    end
+  end
+
+  # Drain a GenServer mailbox so prior messages (and any synchronous snapshot
+  # they caused) are fully processed before counter / refute assertions.
+  defp flush_state(pid) do
+    _ = :sys.get_state(pid)
+    :ok
+  end
+
+  # FakeEventSource.emit/set_connected use GenServer.cast — wait until those
+  # casts complete so subscriber sends are in the watcher mailbox.
+  defp flush_event_source(fake) do
+    _ = :sys.get_state(fake)
+    :ok
+  end
+
+  # Poll until fun is truthy or timeout. Uses receive-after (not wall-clock sleep).
+  defp wait_until(fun, timeout \\ 2_000) when is_function(fun, 0) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_until(fun, deadline)
+  end
+
+  defp do_wait_until(fun, deadline) do
+    if fun.() do
+      true
+    else
+      now = System.monotonic_time(:millisecond)
+
+      if now >= deadline do
+        flunk("wait_until timed out after condition stayed false")
+      else
+        receive do
+        after
+          15 -> :ok
+        end
+
+        do_wait_until(fun, deadline)
+      end
+    end
+  end
+
+  # Settle baseline: two consecutive counter reads equal after :sys.get_state.
+  defp wait_counter_stable(pid, counter, timeout \\ 2_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_counter_stable(pid, counter, deadline)
+  end
+
+  defp do_wait_counter_stable(pid, counter, deadline) do
+    flush_state(pid)
+    first = :counters.get(counter, 1)
+    flush_state(pid)
+    second = :counters.get(counter, 1)
+
+    if first == second do
+      second
+    else
+      now = System.monotonic_time(:millisecond)
+
+      if now >= deadline do
+        flunk("wait_counter_stable timed out; last reads #{first} then #{second}")
+      else
+        receive do
+        after
+          15 -> :ok
+        end
+
+        do_wait_counter_stable(pid, counter, deadline)
+      end
     end
   end
 end

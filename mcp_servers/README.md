@@ -25,7 +25,7 @@ By exposing it via MCP, a powerful agent like the one inside Odysseus can:
 - Use durable tmux-backed sessions when needed (via the governed path)
 - Still have all the nice chat/memory/research UI from Odysseus
 
-This is the recommended integration path instead of replacing DevIDE.
+This is the recommended integration path instead of replacing Casein.
 
 ### Requirements (for the MCP server process)
 
@@ -66,7 +66,7 @@ You can also run it under the same Python env as Odysseus if you want the agent 
 
 ### Safety notes
 
-- The MCP server itself does **not** decide what may run — it only forwards to DevIDE.
+- The MCP server itself does **not** decide what may run — it only forwards to Casein.
 - DevIDE's allowlist, `Policy`, workspace `mode`, and audit system are still fully in control.
 - `casein_run_command` will fail (with a clear audited denial) for anything not on the allowlist or disallowed by current policy.
 - Prefer `opencode`, `claude`, `grok`, etc. command_ids when you want the agent to continue working *inside* the workspace terminal/session.

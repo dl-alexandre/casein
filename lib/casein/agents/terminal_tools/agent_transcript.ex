@@ -20,7 +20,7 @@ defmodule Casein.Agents.TerminalTools.AgentTranscript do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -42,6 +42,6 @@ defmodule Casein.Agents.TerminalTools.AgentTranscript do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.agent_transcript(Helpers.to_impl_args(params))
+    Agent.agent_transcript(Helpers.to_impl_args(params))
   end
 end

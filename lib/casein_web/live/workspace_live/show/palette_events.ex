@@ -16,6 +16,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   alias Casein.Workspaces.FileAccess
   alias CaseinWeb.WorkspaceLive.Show
   alias CaseinWeb.WorkspaceLive.Show.PaletteItems
+  alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
   alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("palette:open", _, socket) do
@@ -48,7 +49,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   end
 
   # Arrow-key navigation pushed from PaletteHook while the modal is open.
-  # Wraps at both ends so the list feels infinite.
+  # Wraps at both ends so the list feels infinite. Theme rows live-preview
+  # across the terminal LiveView; leaving them restores the committed preset.
   def handle_event("palette:nav", %{"dir" => dir}, socket) do
     n = length(socket.assigns[:palette_items] || [])
 
@@ -64,12 +66,18 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
           _ -> cur
         end
 
-      {:noreply, assign(socket, :palette_selected_idx, next)}
+      {:noreply,
+       socket
+       |> assign(:palette_selected_idx, next)
+       |> maybe_preview_selected_theme()}
     end
   end
 
   def handle_event("palette:close", _, socket) do
-    {:noreply, assign(socket, :palette_open, false)}
+    {:noreply,
+     socket
+     |> TerminalEvents.restore_terminal_preset()
+     |> assign(:palette_open, false)}
   end
 
   def handle_event("palette:query", %{"query" => q}, socket) do
@@ -77,7 +85,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
      socket
      |> assign(:palette_query, q)
      |> assign(:palette_items, PaletteItems.query(socket, q))
-     |> assign(:palette_selected_idx, 0)}
+     |> assign(:palette_selected_idx, 0)
+     |> maybe_preview_selected_theme()}
   end
 
   def handle_event("palette:templates", _params, socket) do
@@ -89,9 +98,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   end
 
   # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
-  # fall back to top item for safety. Empty → just close.
-  def handle_event("palette:execute", %{"_selected_id" => ""}, socket),
-    do: {:noreply, assign(socket, :palette_open, false)}
+  # fall back to top item for safety. Empty → close and restore any theme preview.
+  def handle_event("palette:execute", %{"_selected_id" => ""}, socket) do
+    {:noreply,
+     socket
+     |> TerminalEvents.restore_terminal_preset()
+     |> assign(:palette_open, false)}
+  end
 
   def handle_event("palette:execute", %{"_selected_id" => id}, socket),
     do: handle_event("palette:execute", %{"id" => id}, socket)
@@ -125,13 +138,32 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
       end
 
     case PaletteItems.resolve(socket, root, id) do
+      {:ok, %{event: "terminal:set_preset", params: params}} ->
+        # Commit the previewed (or newly chosen) theme — do not restore first.
+        maybe_record_usage(socket, id)
+
+        socket =
+          socket
+          |> assign(:palette_open, false)
+          |> assign(:palette_theme_preview_id, nil)
+
+        Show.handle_event("terminal:set_preset", params, socket)
+
       {:ok, %{event: event, params: params}} ->
         maybe_record_usage(socket, id)
-        socket = assign(socket, :palette_open, false)
+
+        socket =
+          socket
+          |> TerminalEvents.restore_terminal_preset()
+          |> assign(:palette_open, false)
+
         Show.handle_event(event, params, socket)
 
       :error ->
-        {:noreply, assign(socket, :palette_open, false)}
+        {:noreply,
+         socket
+         |> TerminalEvents.restore_terminal_preset()
+         |> assign(:palette_open, false)}
     end
   end
 
@@ -173,7 +205,37 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
      socket
      |> assign(:palette_open, true)
      |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
+     |> assign(:palette_selected_idx, 0)
+     |> maybe_preview_selected_theme()}
+  end
+
+  # Live-preview terminal theme rows as the highlight moves (gsty-style).
+  # Non-theme rows restore the committed preset when a preview is active.
+  defp maybe_preview_selected_theme(socket) do
+    items = socket.assigns[:palette_items] || []
+    idx = socket.assigns[:palette_selected_idx] || 0
+
+    case theme_preset_at(items, idx) do
+      nil ->
+        TerminalEvents.restore_terminal_preset(socket)
+
+      preset ->
+        if socket.assigns[:palette_theme_preview_id] == preset do
+          socket
+        else
+          case TerminalEvents.apply_terminal_preset(socket, preset, preview?: true) do
+            {:ok, socket} -> socket
+            :error -> socket
+          end
+        end
+    end
+  end
+
+  defp theme_preset_at(items, idx) do
+    case Enum.at(items, idx) do
+      %{id: "terminal:theme:" <> preset} -> preset
+      _ -> nil
+    end
   end
 
   defp default_palette_category(tab) do
@@ -212,5 +274,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
     socket
     |> assign(:palette_items, PaletteItems.query(socket, socket.assigns[:palette_query] || ""))
     |> assign(:palette_selected_idx, 0)
+    |> maybe_preview_selected_theme()
   end
 end

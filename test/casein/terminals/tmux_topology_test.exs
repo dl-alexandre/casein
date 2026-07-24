@@ -336,17 +336,17 @@ defmodule Casein.Terminals.TmuxTopologyTest do
   end
 
   defp await_unregistered(session, attempts \\ 50) do
-    case Registry.lookup(Casein.Terminals.TopologyRegistry, session) do
-      [] ->
-        :ok
-
-      _ when attempts > 0 ->
-        Process.sleep(10)
-        await_unregistered(session, attempts - 1)
-
-      _ ->
-        flunk("topology watcher for #{session} never unregistered")
-    end
+    Casein.Test.Eventually.await(
+      fn ->
+        case Registry.lookup(Casein.Terminals.TopologyRegistry, session) do
+          [] -> :ok
+          _ -> false
+        end
+      end,
+      timeout_ms: attempts * 10,
+      interval_ms: 10,
+      message: "topology watcher for #{session} never unregistered"
+    )
   end
 
   defp restore_env(:tmux_adapter, nil), do: Application.delete_env(:casein, :tmux_adapter)

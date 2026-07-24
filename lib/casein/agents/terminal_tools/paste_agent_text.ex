@@ -18,7 +18,7 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -39,6 +39,6 @@ defmodule Casein.Agents.TerminalTools.PasteAgentText do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.paste_agent_text(Helpers.to_impl_args(params))
+    Agent.paste_agent_text(Helpers.to_impl_args(params))
   end
 end

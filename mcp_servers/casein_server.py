@@ -26,7 +26,7 @@ Optional:
     CASEIN_TIMEOUT    request timeout in seconds (default 30)
 
 Safety model (by design):
-- Only command_ids from DevIDE.Commands.allowlist() are accepted.
+- Only command_ids from Casein.Commands.allowlist() are accepted.
 - No arbitrary argv or shell strings are ever sent.
 - Every run is audited server-side.
 - "agent write" modes and workspace policy still apply.
@@ -158,7 +158,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="casein_list_commands",
-            description="List the safe, allowlisted command_ids that can be passed to casein_run_command on this DevIDE. These are the only commands an agent is permitted to request.",
+            description="List the safe, allowlisted command_ids that can be passed to casein_run_command on this Casein. These are the only commands an agent is permitted to request.",
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
@@ -275,7 +275,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             for cid, argv in KNOWN_ALLOWLIST.items():
                 lines.append(f"- `{cid}` → {argv}")
             lines.append(
-                "\nNote: the live server (DevIDE.Commands.allowlist/0) is the source of truth. "
+                "\nNote: the live server (Casein.Commands.allowlist/0) is the source of truth. "
                 "Some commands may be disabled by workspace mode or policy."
             )
             return [TextContent(type="text", text="\n".join(lines))]

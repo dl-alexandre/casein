@@ -77,7 +77,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
   end
 
   test "terminal:set_preset assigns a valid built-in preset and its themes" do
-    s = socket(%{pane_data: %{}, terminal_preset_id: nil})
+    s = socket(%{pane_data: %{}, terminal_preset_id: nil, palette_theme_preview_id: "nord"})
 
     assert {:noreply, s2} =
              TerminalEvents.handle_event(
@@ -89,6 +89,60 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
     assert s2.assigns.terminal_preset_id == "catppuccin"
     assert is_map(s2.assigns.terminal_themes)
     assert s2.assigns.terminal_themes.preset == "catppuccin"
+    assert s2.assigns.terminal_themes.preview == false
+    assert s2.assigns.palette_theme_preview_id == nil
+  end
+
+  test "terminal:set_preset with preview keeps committed preset id" do
+    s =
+      socket(%{
+        pane_data: %{},
+        terminal_preset_id: "catppuccin",
+        palette_theme_preview_id: nil
+      })
+
+    assert {:noreply, s2} =
+             TerminalEvents.handle_event(
+               "terminal:set_preset",
+               %{"preset" => "nord", "preview" => true},
+               s
+             )
+
+    assert s2.assigns.terminal_preset_id == "catppuccin"
+    assert s2.assigns.palette_theme_preview_id == "nord"
+    assert s2.assigns.terminal_themes.preset == "nord"
+    assert s2.assigns.terminal_themes.preview == true
+  end
+
+  test "restore_terminal_preset re-applies the committed preset after a preview" do
+    s =
+      socket(%{
+        pane_data: %{},
+        terminal_preset_id: "catppuccin",
+        palette_theme_preview_id: "nord",
+        terminal_themes: %{preset: "nord", preview: true}
+      })
+
+    s2 = TerminalEvents.restore_terminal_preset(s)
+
+    assert s2.assigns.palette_theme_preview_id == nil
+    assert s2.assigns.terminal_preset_id == "catppuccin"
+    assert s2.assigns.terminal_themes.preset == "catppuccin"
+    assert s2.assigns.terminal_themes.preview == false
+  end
+
+  test "restore_terminal_preset is a no-op without an active preview" do
+    s =
+      socket(%{
+        pane_data: %{},
+        terminal_preset_id: "gruvbox",
+        palette_theme_preview_id: nil,
+        terminal_themes: %{preset: "gruvbox"}
+      })
+
+    s2 = TerminalEvents.restore_terminal_preset(s)
+    assert s2.assigns.terminal_preset_id == "gruvbox"
+    assert s2.assigns.palette_theme_preview_id == nil
   end
 
   test "tmux:rename_start opens the window-rename input when mutations are allowed" do

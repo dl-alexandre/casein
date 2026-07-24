@@ -13,19 +13,19 @@ adapter. It is a boundary in the spirit of `TmuxCtl`: it provides generic
 http(s) URL primitives and runtime session orchestration, and it stays
 deliberately ignorant of the host application.
 
-The host application (`DevIDE.PreviewControl`, in `lib/casein/previews` and
+The host application (`Casein.PreviewControl`, in `lib/casein/previews` and
 `lib/casein/preview_control*`) owns everything `PreviewCtl` does not:
 
 - Ecto-persisted preview/control-session records, audit, and PubSub.
 - Workspace surface discovery and the workspace URL allowlist
-  (`DevIDE.Previews.Url`).
+  (`Casein.Previews.Url`).
 - Human-facing tmux preview panes and iframe-overlay broadcasts.
 
-The DevIDE host drives `PreviewCtl.*` from the `DevIDE.PreviewControl`
+The DevIDE host drives `PreviewCtl.*` from the `Casein.PreviewControl`
 (`lib/casein/preview_control.ex`) facade, which selects an adapter via the
 `:preview_control_adapter` config — `:memory` → `PreviewCtl.Test.FakeAdapter`,
 `:playwright` → `PreviewCtl.Playwright.Adapter` (resolved by
-`PreviewCtl.Session.adapter_for/1`). `DevIDE.PreviewControl.Registry`
+`PreviewCtl.Session.adapter_for/1`). `Casein.PreviewControl.Registry`
 `defdelegate`s into `PreviewCtl.Registry`.
 
 This subsystem is distinct from `lib/casein/previews`: that is the host
@@ -46,11 +46,11 @@ integration; this is the reusable control core.
 
 ## Data flow / lifecycle
 
-1. **Configure adapter (boot).** `DevIDE.Application.configure_preview_ctl!/0`
-   copies `config :dev_ide, :preview_ctl` and maps the operator atom
+1. **Configure adapter (boot).** `Casein.Application.configure_preview_ctl!/0`
+   copies `config :casein, :preview_ctl` and maps the operator atom
    `:preview_control_adapter` (`:memory` | `:playwright`) to the resolved module
    under `config :preview_ctl, :adapter`. The Playwright script path maps from
-   `:dev_ide :preview_playwright_script` to `:preview_ctl :playwright_script`.
+   `:casein :preview_playwright_script` to `:preview_ctl :playwright_script`.
    `PreviewCtl.Registry` and `PreviewCtl.Playwright.Bridge` are started in the
    DevIDE supervision tree (`lib/casein/application.ex`).
 
@@ -84,7 +84,7 @@ integration; this is the reusable control core.
 
 5. **Bridge port.** `Bridge` lazily spawns `node <script> --daemon` (resolved
    from `:preview_ctl :playwright_script`, searched in cwd then the priv dir of
-   `:preview_ctl :priv_app`, default `:dev_ide`). It writes one JSON line per
+   `:preview_ctl :priv_app`, default `:casein`). It writes one JSON line per
    command, rejects concurrent commands with `:playwright_busy`, decodes the
    `{"ok": true|false, ...}` response line, and re-spawns the port on demand
    after an exit.
@@ -114,7 +114,7 @@ Functions/processes the host application calls:
 
 ## Invariants & gotchas
 
-- **Adapter resolution is two-keyed.** `:preview_control_adapter` on `:dev_ide`
+- **Adapter resolution is two-keyed.** `:preview_control_adapter` on `:casein`
   is the operator atom; `:adapter` on `:preview_ctl` is the resolved module set
   at boot. `Session.default_adapter/0` falls back to
   `PreviewCtl.Test.FakeAdapter` when `:preview_ctl :adapter` is unset.
@@ -155,7 +155,7 @@ Functions/processes the host application calls:
 ## See also
 
 - [`../preview_mcp.md`](../preview_mcp.md) — the MCP JSON-RPC surface
-  (`PreviewTools`) and the `DevIDE.PreviewControl` host layer that sits on top
+  (`PreviewTools`) and the `Casein.PreviewControl` host layer that sits on top
   of this library, including adapter config keys, storage profiles, and
   default-headers env vars.
 - [`../architecture.md`](../architecture.md) — overall DevIDE subsystem map and

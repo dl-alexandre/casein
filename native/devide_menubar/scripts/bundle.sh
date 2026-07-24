@@ -30,7 +30,13 @@ if [[ -n "${DEVIDE_RELEASE_ROOT:-}" ]]; then
     exit 1
   }
   mkdir -p "$APP/Contents/Resources"
-  ditto "$DEVIDE_RELEASE_ROOT" "$APP/Contents/Resources/release"
+  # A previously-run release can leave FIFOs and sockets under tmp/. Copying a
+  # FIFO with ditto blocks forever and runtime artifacts must never ship in the
+  # app bundle. rsync the durable release tree and recreate an empty tmp dir.
+  mkdir -p "$APP/Contents/Resources/release"
+  /usr/bin/rsync -a --exclude '/tmp/***' \
+    "$DEVIDE_RELEASE_ROOT/" "$APP/Contents/Resources/release/"
+  mkdir -p "$APP/Contents/Resources/release/tmp"
 fi
 
 if [[ -n "${DEVIDE_BUNDLE_VERSION:-}" ]]; then

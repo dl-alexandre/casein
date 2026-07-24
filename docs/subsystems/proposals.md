@@ -11,7 +11,7 @@ to produce a `risk` verdict (`:clean` / `:overlap` / `:conflict` / `:invalid`).
 
 It is **strictly read-only**. There is no callback, function, or code path that
 applies a patch, writes a file, or grants a permission. Applying a proposal is
-denied at the policy layer (`DevIDE.Policy.can_apply_proposal?/1` →
+denied at the policy layer (`Casein.Policy.can_apply_proposal?/1` →
 `deny(:apply_proposal, ctx, :not_implemented)`), and this subsystem provides no
 machinery it could call even if it were allowed. This realizes the architecture
 authority-map row "Apply proposal — **Denied** (`:not_implemented`)".
@@ -20,14 +20,14 @@ authority-map row "Apply proposal — **Denied** (`:not_implemented`)".
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Proposals` | `lib/casein/proposals.ex` | Context facade. `discover/1` and `parse/2` delegate to a runtime-configurable adapter (`:proposals_adapter`, default `LocalAdapter`). |
-| `DevIDE.Proposals.Adapter` | `lib/casein/proposals/adapter.ex` | Behaviour: `discover/1` + `parse/2` callbacks returning `Proposal.t()`. |
-| `DevIDE.Proposals.LocalAdapter` | `lib/casein/proposals/local_adapter.ex` | Filesystem implementation: scans discovery dirs, size-caps, stats, and parses files. Read-only. |
-| `DevIDE.Proposals.Proposal` | `lib/casein/proposals/proposal.ex` | Struct for a single discovered artifact (path, size, mtime, parser, status, changes, diff). |
-| `DevIDE.Proposals.UnifiedDiff` | `lib/casein/proposals/unified_diff.ex` | Header-only unified-diff parser. `parse/2` extracts changed paths; `parse_with_hunks/2` also extracts hunk ranges. Rejects root-escaping paths. |
-| `DevIDE.Proposals.ConflictAnalyzer` | `lib/casein/proposals/conflict_analyzer.ex` | `analyze/2` compares a parsed proposal against the working-tree diff and returns an `Analysis`. |
-| `DevIDE.Proposals.Analysis` | `lib/casein/proposals/analysis.ex` | Struct holding the `risk` verdict, per-file overlap detail, and overlapping-file list. |
-| `DevIDE.Proposals.Hunk` | `lib/casein/proposals/hunk.ex` | Range-overlap helpers (`overlap?/2`, `overlaps/2`) used by the analyzer to detect colliding hunks. |
+| `Casein.Proposals` | `lib/casein/proposals.ex` | Context facade. `discover/1` and `parse/2` delegate to a runtime-configurable adapter (`:proposals_adapter`, default `LocalAdapter`). |
+| `Casein.Proposals.Adapter` | `lib/casein/proposals/adapter.ex` | Behaviour: `discover/1` + `parse/2` callbacks returning `Proposal.t()`. |
+| `Casein.Proposals.LocalAdapter` | `lib/casein/proposals/local_adapter.ex` | Filesystem implementation: scans discovery dirs, size-caps, stats, and parses files. Read-only. |
+| `Casein.Proposals.Proposal` | `lib/casein/proposals/proposal.ex` | Struct for a single discovered artifact (path, size, mtime, parser, status, changes, diff). |
+| `Casein.Proposals.UnifiedDiff` | `lib/casein/proposals/unified_diff.ex` | Header-only unified-diff parser. `parse/2` extracts changed paths; `parse_with_hunks/2` also extracts hunk ranges. Rejects root-escaping paths. |
+| `Casein.Proposals.ConflictAnalyzer` | `lib/casein/proposals/conflict_analyzer.ex` | `analyze/2` compares a parsed proposal against the working-tree diff and returns an `Analysis`. |
+| `Casein.Proposals.Analysis` | `lib/casein/proposals/analysis.ex` | Struct holding the `risk` verdict, per-file overlap detail, and overlapping-file list. |
+| `Casein.Proposals.Hunk` | `lib/casein/proposals/hunk.ex` | Range-overlap helpers (`overlap?/2`, `overlaps/2`) used by the analyzer to detect colliding hunks. |
 
 ## Data flow / lifecycle
 
@@ -77,29 +77,29 @@ only does real work on `status: :parsed`; anything else short-circuits to
 
 Code outside the subsystem should go through the context facade and the analyzer:
 
-- `DevIDE.Proposals.discover/1` — `(root) :: [Proposal.t()]`. Metadata-only listing, newest first, capped at 20.
-- `DevIDE.Proposals.parse/2` — `(root, rel_path) :: {:ok, Proposal.t()}`. Always returns `{:ok, _}`; failure is encoded in the proposal's `status`/`error`, not the tuple.
-- `DevIDE.Proposals.ConflictAnalyzer.analyze/2` — `(root, Proposal.t()) :: Analysis.t()`. Risk classification vs. the working tree.
+- `Casein.Proposals.discover/1` — `(root) :: [Proposal.t()]`. Metadata-only listing, newest first, capped at 20.
+- `Casein.Proposals.parse/2` — `(root, rel_path) :: {:ok, Proposal.t()}`. Always returns `{:ok, _}`; failure is encoded in the proposal's `status`/`error`, not the tuple.
+- `Casein.Proposals.ConflictAnalyzer.analyze/2` — `(root, Proposal.t()) :: Analysis.t()`. Risk classification vs. the working tree.
 
 Lower-level helpers, called by the adapter/analyzer (and usable directly):
 
-- `DevIDE.Proposals.UnifiedDiff.parse/2` and `parse_with_hunks/2` — `(diff, root) :: {:ok, [change]} | {:error, :invalid_path | :no_headers}`.
-- `DevIDE.Proposals.Hunk.overlap?/2`, `Hunk.overlaps/2` — range collision checks.
+- `Casein.Proposals.UnifiedDiff.parse/2` and `parse_with_hunks/2` — `(diff, root) :: {:ok, [change]} | {:error, :invalid_path | :no_headers}`.
+- `Casein.Proposals.Hunk.overlap?/2`, `Hunk.overlaps/2` — range collision checks.
 
 The only in-tree consumer today is the public
-`DevIDE.Export.WorkspaceStatus.proposals/1`
+`Casein.Export.WorkspaceStatus.proposals/1`
 (`lib/casein/export/workspace_status.ex`, which delegates to the private
 `recent_proposals/2`), running discover → parse →
 analyze and projects a compact summary (`risk`, `files_count`,
 `overlapping_files`) into the workspace status export.
 
 The adapter is swappable at runtime via
-`Application.get_env(:dev_ide, :proposals_adapter, DevIDE.Proposals.LocalAdapter)`.
+`Application.get_env(:casein, :proposals_adapter, Casein.Proposals.LocalAdapter)`.
 
 ## Invariants & gotchas
 
-- **Read-only by construction.** No apply/write/permission-grant path exists. Applying is policy-denied as `:not_implemented`; do not add an apply path here without revisiting `DevIDE.Policy.can_apply_proposal?/1` and the architecture authority map.
-- **Path safety is enforced twice.** Both discovery roots (`LocalAdapter`) and every diff-header target path (`UnifiedDiff`) run through `DevIDE.Files.PathSafety.resolve/2`; a header that resolves outside the workspace root makes the whole proposal `:invalid` (`"path traversal in diff header"`). This is trust-boundary 4 from the architecture doc.
+- **Read-only by construction.** No apply/write/permission-grant path exists. Applying is policy-denied as `:not_implemented`; do not add an apply path here without revisiting `Casein.Policy.can_apply_proposal?/1` and the architecture authority map.
+- **Path safety is enforced twice.** Both discovery roots (`LocalAdapter`) and every diff-header target path (`UnifiedDiff`) run through `Casein.Files.PathSafety.resolve/2`; a header that resolves outside the workspace root makes the whole proposal `:invalid` (`"path traversal in diff header"`). This is trust-boundary 4 from the architecture doc.
 - **`parse/2` never returns `:error`.** It always returns `{:ok, %Proposal{}}`; callers must inspect `status` (`:parsed | :too_large | :invalid | :unsupported`) and `error`, not pattern-match the tuple for failure.
 - **Size caps.** Files over `@max_file_bytes` (512 KB) are flagged `:too_large` and never read; rendered diffs are truncated at `@max_diff_render` (256 KB) with a `truncated: true` flag. Discovery is capped at `@max_results` (20), sorted newest-first.
 - **Discovery is extension-gated** to `.diff`/`.patch` (case-insensitive) under a fixed set of `@discovery_dirs` (`.opencode/proposals`, `.opencode/sessions`, `.opencode/logs`, `.agent/proposals`). Other agent artifact layouts are invisible until added here.

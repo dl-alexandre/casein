@@ -12,6 +12,8 @@ defmodule CaseinWeb.Plugs.DesktopAuthTest do
   setup do
     previous_mode = Application.get_env(:casein, :desktop_mode)
     previous_token = Application.get_env(:casein, :desktop_launch_token)
+    previous_lan = Application.get_env(:casein, :desktop_lan)
+    previous_lan_hosts = Application.get_env(:casein, :desktop_lan_hosts)
 
     Application.put_env(:casein, :desktop_mode, true)
     Application.put_env(:casein, :desktop_launch_token, @launch_secret)
@@ -20,6 +22,8 @@ defmodule CaseinWeb.Plugs.DesktopAuthTest do
     on_exit(fn ->
       restore(:desktop_mode, previous_mode)
       restore(:desktop_launch_token, previous_token)
+      restore(:desktop_lan, previous_lan)
+      restore(:desktop_lan_hosts, previous_lan_hosts)
     end)
 
     :ok
@@ -122,6 +126,26 @@ defmodule CaseinWeb.Plugs.DesktopAuthTest do
 
     assert conn.halted
     assert conn.status == 421
+  end
+
+  test "accepts only explicitly configured LAN host headers when LAN mode is enabled" do
+    Application.put_env(:casein, :desktop_lan, true)
+    Application.put_env(:casein, :desktop_lan_hosts, ["DairyBookPro.local", "192.168.1.72"])
+
+    accepted =
+      :get
+      |> desktop_conn("/?#{claim_query()}")
+      |> Map.put(:host, "dairybookpro.local")
+      |> DesktopAuth.call([])
+
+    rejected =
+      :get
+      |> desktop_conn("/?#{claim_query()}")
+      |> Map.put(:host, "attacker.local")
+      |> DesktopAuth.call([])
+
+    assert accepted.status == 302
+    assert rejected.status == 421
   end
 
   test "accepts a previously issued desktop session without a token" do

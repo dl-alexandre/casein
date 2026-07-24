@@ -67,12 +67,12 @@ terminal channel.
 - TLS config in [`config/runtime.exs`](../config/runtime.exs) is
   commented-out scaffolding; `keyfile` / `certfile` must be wired by the
   operator. Runtime HTTP-to-HTTPS redirect is owned by
-  `DevIdeWeb.RuntimeSSLPlug` and defaults on for prod unless a service profile
+  `CaseinWeb.RuntimeSSLPlug` and defaults on for prod unless a service profile
   disables it.
 - Postgres dependency: the prod default adapters
   ([`config/config.exs`](../config/config.exs)) require a reachable
   Repo. No "lite" mode for remote-without-DB.
-- The workspace source is pluggable via `DevIDE.WorkspaceSource`
+- The workspace source is pluggable via `Casein.WorkspaceSource`
   (default: local directories under `CASEIN_WORKSPACES_ROOT`). A
   managed-workspace integration lives behind that behaviour — see
   `docs/integrations/`.
@@ -165,12 +165,12 @@ Shipped:
 - [`lib/casein/release.ex`](../lib/casein/release.ex) — provides
   `migrate/0` / `rollback/2` for invocation via release `eval`.
 - [`rel/overlays/bin/migrate`](../rel/overlays/bin/migrate) — shell
-  wrapper that runs `bin/casein eval "DevIDE.Release.migrate()"`.
+  wrapper that runs `bin/casein eval "Casein.Release.migrate()"`.
   Migrations are explicit, not at server boot, so a CD pipeline can run
   one migrate pod before rolling the server pool.
 - [`config/runtime.exs`](../config/runtime.exs) — hardened. Fails loudly
   at boot if `CASEIN_API_TOKEN` is unset. `CASEIN_WORKSPACES_ROOT`
-  flows into `:dev_ide, :workspaces_root` when set.
+  flows into `:casein, :workspaces_root` when set.
 - [`docs/deploy.md`](deploy.md) — operator runbook with required env,
   build/run commands, smoke check, and upgrade procedure.
 
@@ -181,7 +181,7 @@ operator action) is the canonical validation.
 
 ### CC-2. Turnkey HTTPS
 
-Runtime HTTP-to-HTTPS redirect is installed by `DevIdeWeb.RuntimeSSLPlug`,
+Runtime HTTP-to-HTTPS redirect is installed by `CaseinWeb.RuntimeSSLPlug`,
 but `runtime.exs` TLS config is commented out. An operator deploying DevIDE
 must hand-roll `:keyfile` / `:certfile` paths or front the release with a TLS
 proxy. Acceptable for a custom deploy; insufficient for a one-line public
@@ -201,7 +201,7 @@ real (laptop sleep can pause the BEAM in ways that look like a restart).
 ### CC-4. Workspace source pluggability — ✅ decided
 
 **DevIDE ships as its own image** and discovers workspaces through the
-`DevIDE.WorkspaceSource` behaviour. The default source reads directories
+`Casein.WorkspaceSource` behaviour. The default source reads directories
 under `CASEIN_WORKSPACES_ROOT`; integrations supply alternatives. The
 Dockerfile stays single-responsibility.
 
@@ -211,7 +211,7 @@ rationale.
 ### CC-5. Workspace path safety on arbitrary roots
 
 `Workspaces.safe_host_path/1` and `PathSafety` already check against a
-configurable workspace root (`:dev_ide, :workspaces_root` or
+configurable workspace root (`:casein, :workspaces_root` or
 `CASEIN_WORKSPACES_ROOT`, default `/workspaces`). This should work
 transparently on any Linux server as long as the env points at the right
 directory and the BEAM has read access. Verify in the deployment

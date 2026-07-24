@@ -58,7 +58,7 @@ whether `workspace_id` is baked into the URL.
 
 **Use durable when** you hop between / spin up / abandon workspaces and don't want to
 regenerate MCP config each time. The endpoint resolves `workspace_id` per-call
-(`DevIDE.MCP.Scope`), so one wiring outlives any individual workspace.
+(`Casein.MCP.Scope`), so one wiring outlives any individual workspace.
 
 > **Token caveat.** A durable/workspaceless config needs a token that can reach more than
 > one workspace — i.e. the **global** orchestrator token (root-grade). That's fine over
@@ -355,5 +355,5 @@ windows, and any agent panes you find. Then wait for my instructions.
 **Security posture:** keep the **global** token off any public surface — prefer a
 workspace-scoped token for Door 2, or put access behind a Tailscale/WireGuard overlay for
 anywhere-access without exposing MCP to the internet (Door 1 already has that property).
-Rate limiting (`McpRateLimit`) and audit (`DevIDE.Agents.MCPAudit`) are on the pipeline;
+Rate limiting (`McpRateLimit`) and audit (`Casein.Agents.MCPAudit`) are on the pipeline;
 confirm audit retention before exposing publicly.

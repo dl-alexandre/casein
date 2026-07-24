@@ -107,7 +107,7 @@ ghostty encode — not to emit `\e[A` etc. directly.
 
 Production terminals are **tmux-backed**, not direct `Ghostty.PTY`:
 
-- `DevIDE.Terminals.Session` is the canonical PTY owner, keyed by
+- `Casein.Terminals.Session` is the canonical PTY owner, keyed by
   `{workspace, sid}` (`lib/casein/terminals/ghostty_raw_adapter.ex:6–14,29–43`),
   supervised under `SessionOwner` (`session_owner.ex`, ~951 LoC).
 - `GhosttyRawAdapter` bridges raw channel joins (`terminal:<ws>:<sid>`) onto the

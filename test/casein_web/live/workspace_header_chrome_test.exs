@@ -278,6 +278,7 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
     # Keyboard-nav hook is mounted and told which section to focus.
     assert html =~ ~s(phx-hook="MobileNavSheet")
+    assert html =~ ~s(data-mobile-nav-sheet="true")
     assert html =~ ~s(data-mobile-nav-focus="windows")
     # No tmux windows exist here, so the windows-dominant view falls back to
     # the sessions tree (at minimum the shell row is present).

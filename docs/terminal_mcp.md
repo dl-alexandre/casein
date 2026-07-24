@@ -35,7 +35,7 @@ that supplies an unknown id gets `404 unknown_mcp_session`, signalling the clien
 to re-`initialize`. Missing or unknown streamable-session errors preserve the
 top-level `error` string and include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
-`DevIDE.Agents.MCPSessions.notify/2`.
+`Casein.Agents.MCPSessions.notify/2`.
 Session ids are bound to their server, workspace, and authenticated bearer scope;
 another workspace, MCP surface, or managed-agent capability receives the same
 `404 unknown_mcp_session` response as an unknown id.
@@ -68,17 +68,17 @@ MCP. Prefer always scoping in production and dogfood setups.
 
 `terminal_send_command` / `terminal_send_agent_command` run arbitrary shell, so
 DevIDE runs an allow/deny gate in front of them
-(`DevIDE.Agents.TerminalCommandPolicy`). The default is a small denylist for
+(`Casein.Agents.TerminalCommandPolicy`). The default is a small denylist for
 high-risk host commands such as recursive root deletes, pipe-to-shell downloads,
 and `sudo`. Configure it with an allowlist or denylist of regexes matched
 against the full command string:
 
 ```elixir
 # config/runtime.exs (or dev.exs)
-config :dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
-config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
+config :casein, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
+config :casein, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
 # Trusted local-only setups may opt out explicitly:
-config :dev_ide, :terminal_command_policy, :disabled
+config :casein, :terminal_command_policy, :disabled
 ```
 
 Releases can use the `CASEIN_TERMINAL_COMMAND_POLICY` env var instead (JSON):

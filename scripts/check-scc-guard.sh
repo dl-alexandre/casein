@@ -9,7 +9,7 @@
 # and a non-preview file. A mixed cycle means a preview module reacquired a
 # compile/runtime edge into core (or vice-versa) that re-entangles the two — the
 # exact regression this guard exists to catch. Typically that is a preview
-# module referencing DevIDE.Terminals/Workspaces/Runtimes directly instead of
+# module referencing Casein.Terminals/Workspaces/Runtimes directly instead of
 # through its injected Previews.Deps.* seam.
 #
 # KNOWN INTERNAL CYCLES (tracked debt, NOT flagged): the preview domain still

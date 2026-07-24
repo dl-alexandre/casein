@@ -82,7 +82,7 @@ Clipboard toasts append a short suffix, e.g. `dnkouc4l · window @1 · pane %3 �
 
 ## Implementation
 
-- `DevIdeWeb.WorkspaceLive.Show.ViewDeepLink` — query build/restore
+- `CaseinWeb.WorkspaceLive.Show.ViewDeepLink` — query build/restore
 - `TerminalState.workspace_window_path/2` — address-bar patches (delegates to view path)
 - `TmuxCtl.Client` — `pane_zoomed_flag` in topology; `ensure_zoomed/3`
 

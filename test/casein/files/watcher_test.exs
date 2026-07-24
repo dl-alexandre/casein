@@ -35,10 +35,8 @@ defmodule Casein.Files.WatcherTest do
     ref = Process.monitor(pid)
     assert :ok = Watcher.unwatch(ws_id)
     assert_receive {:DOWN, ^ref, :process, ^pid, _}, 1_000
-    # Registry cleanup after the DOWN is itself async; poll briefly.
-    assert Enum.any?(1..50, fn _ ->
-             Watcher.whereis(ws_id) == :error || (Process.sleep(10) && false)
-           end)
+    # Registry cleanup after the DOWN is itself async; poll until gone.
+    wait_until(fn -> Watcher.whereis(ws_id) == :error end)
   end
 
   test "debounces and broadcasts non-ignored relative paths", %{root: root, ws_id: ws_id} do
@@ -135,13 +133,18 @@ defmodule Casein.Files.WatcherTest do
     if System.find_executable("inotifywait") do
       :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
       assert :ok = Watcher.watch(ws_id, root, backend: :native, debounce_ms: 40, linger_ms: 200)
-      # Give inotifywait time to finish its initial recursive walk.
-      Process.sleep(200)
 
       file = Path.join(root, "file.txt")
-      File.write!(file, "hello\n")
 
-      assert_receive {:files_changed, ^ws_id, %{paths: paths}}, 2_000
+      # Retry write until native inotify is ready and the debounced event arrives.
+      paths =
+        wait_until_files_changed(
+          ws_id,
+          fn paths -> "file.txt" in paths end,
+          fn -> File.write!(file, "hello\n") end,
+          2_000
+        )
+
       assert "file.txt" in paths
     else
       computed = Watcher.compute_watched_dirs(root)
@@ -156,58 +159,73 @@ defmodule Casein.Files.WatcherTest do
     if System.find_executable("inotifywait") do
       :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
       assert :ok = Watcher.watch(ws_id, root, backend: :native, debounce_ms: 40, linger_ms: 500)
-      Process.sleep(250)
+
+      # Warm native watcher: root non-recursive inotify is ready once a root
+      # file write is observed (mkdir is single-shot — cannot retry).
+      probe = Path.join(root, ".fw_probe")
+
+      _ =
+        wait_until_files_changed(
+          ws_id,
+          fn paths -> ".fw_probe" in paths end,
+          fn -> File.write!(probe, "probe\n") end,
+          2_000
+        )
+
+      _ = File.rm(probe)
+      drain_files_changed(ws_id)
 
       new_dir = Path.join(root, "src")
       File.mkdir_p!(new_dir)
 
       # Wait for root non-recursive event → needs_rescan → restart to include src.
-      assert Enum.any?(1..50, fn _ ->
-               case Watcher.whereis(ws_id) do
-                 {:ok, pid} ->
-                   state = :sys.get_state(pid)
+      wait_until(
+        fn ->
+          case Watcher.whereis(ws_id) do
+            {:ok, pid} ->
+              state = :sys.get_state(pid)
+              Enum.any?(state.watched_dirs.recursive, &String.ends_with?(&1, "/src"))
 
-                   Enum.any?(state.watched_dirs.recursive, &String.ends_with?(&1, "/src")) ||
-                     (Process.sleep(50) && false)
-
-                 :error ->
-                   Process.sleep(50)
-                   false
-               end
-             end),
-             "expected rescan to add src to watched_dirs.recursive"
+            :error ->
+              false
+          end
+        end,
+        3_000
+      )
 
       # Drain broadcasts from the directory create / rescan cycle.
-      _ =
-        Enum.reduce_while(1..5, :ok, fn _, acc ->
-          receive do
-            {:files_changed, ^ws_id, _} -> {:cont, acc}
-          after
-            100 -> {:halt, acc}
-          end
-        end)
-
-      # Let the restarted inotifywait recursive walk settle.
-      Process.sleep(300)
+      drain_files_changed(ws_id)
 
       nested = Path.join(new_dir, "app.ex")
-      File.write!(nested, "defmodule App do\nend\n")
 
-      assert_receive {:files_changed, ^ws_id, %{paths: paths}}, 3_000
+      # Retry write until restarted inotifywait recursive walk is ready.
+      paths =
+        wait_until_files_changed(
+          ws_id,
+          fn paths ->
+            Enum.any?(paths, fn p ->
+              p == "src/app.ex" or String.ends_with?(p, "app.ex")
+            end)
+          end,
+          fn -> File.write!(nested, "defmodule App do\nend\n") end,
+          3_000
+        )
 
       assert Enum.any?(paths, fn p ->
                p == "src/app.ex" or String.ends_with?(p, "app.ex")
              end)
     else
       # Without inotifywait, verify rescan marking via notify injection.
+      :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
       assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
       assert {:ok, pid} = Watcher.whereis(ws_id)
 
       new_dir = Path.join(root, "src")
       File.mkdir_p!(new_dir)
       :ok = Watcher.notify(ws_id, new_dir)
-      # Wait for flush to process needs_rescan.
-      Process.sleep(80)
+      # Wait for flush to process needs_rescan (path list, then post-restart :all).
+      assert_receive {:files_changed, ^ws_id, _}, 500
+      assert_receive {:files_changed, ^ws_id, %{paths: :all}}, 500
       state = :sys.get_state(pid)
       assert state.needs_rescan == false
       assert Enum.any?(state.watched_dirs.recursive, &String.ends_with?(&1, "/src"))
@@ -332,5 +350,76 @@ defmodule Casein.Files.WatcherTest do
 
     assert_receive {:files_changed, ^ws_id, %{paths: :all}}, 500
     refute_receive {:files_changed, ^ws_id, _}, 80
+  end
+
+  # -- helpers --------------------------------------------------------------
+
+  # Poll `fun` until truthy or `timeout` ms, then flunk. Backoff is a short
+  # mailbox wait — not Process.sleep — so the poll stays cooperative.
+  defp wait_until(fun, timeout \\ 2_000) when is_function(fun, 0) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_until(fun, deadline, timeout)
+  end
+
+  defp do_wait_until(fun, deadline, timeout) do
+    case fun.() do
+      result when result not in [false, nil] ->
+        result
+
+      _ ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("wait_until timed out after #{timeout}ms")
+        else
+          receive do
+          after
+            15 -> :ok
+          end
+
+          do_wait_until(fun, deadline, timeout)
+        end
+    end
+  end
+
+  # Retry a side-effect (write/touch) until a matching {:files_changed} arrives.
+  # Uses only `receive after` for timing so messages are not stolen by a
+  # separate poller backoff, and converges as soon as native inotify is ready.
+  defp wait_until_files_changed(ws_id, path_pred, write_fun, timeout)
+       when is_function(path_pred, 1) and is_function(write_fun, 0) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_until_files_changed(ws_id, path_pred, write_fun, deadline, timeout)
+  end
+
+  defp do_wait_until_files_changed(ws_id, path_pred, write_fun, deadline, timeout) do
+    write_fun.()
+
+    receive do
+      {:files_changed, ^ws_id, %{paths: paths}} ->
+        if path_pred.(paths) do
+          paths
+        else
+          if System.monotonic_time(:millisecond) >= deadline do
+            flunk("wait_until_files_changed timed out after #{timeout}ms")
+          else
+            do_wait_until_files_changed(ws_id, path_pred, write_fun, deadline, timeout)
+          end
+        end
+    after
+      50 ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          flunk("wait_until_files_changed timed out after #{timeout}ms")
+        else
+          do_wait_until_files_changed(ws_id, path_pred, write_fun, deadline, timeout)
+        end
+    end
+  end
+
+  defp drain_files_changed(ws_id) do
+    Enum.reduce_while(1..5, :ok, fn _, acc ->
+      receive do
+        {:files_changed, ^ws_id, _} -> {:cont, acc}
+      after
+        100 -> {:halt, acc}
+      end
+    end)
   end
 end

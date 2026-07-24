@@ -4,7 +4,7 @@ This directory (`lib/casein/integrations/manager/`) contains the **entire** inte
 
 ## Responsibilities
 
-The integration implements `DevIDE.WorkspaceSource` and provides:
+The integration implements `Casein.WorkspaceSource` and provides:
 
 - HTTP client to the milc-devbox manager (`client.ex`)
 - Payload normalization (`workspace.ex` + `to_public/1` in `workspace_source.ex`)
@@ -14,7 +14,7 @@ The integration implements `DevIDE.WorkspaceSource` and provides:
 
 ## Well-known metadata keys populated by this source
 
-When converting manager data to the public `%DevIDE.Workspace{}`, the following keys are placed under `metadata`:
+When converting manager data to the public `%Casein.Workspace{}`, the following keys are placed under `metadata`:
 
 - `type` — `:v3 | :legacy | :unknown`
 - `ports` — map of service → port
@@ -36,7 +36,7 @@ When converting manager data to the public `%DevIDE.Workspace{}`, the following 
 
 ## Deployment artifacts
 
-The `deploy/` subdirectory contains the systemd unit, Postgres compose file, and environment template used when running a shared DevIDE instance on a milc devbox host.
+The `deploy/` subdirectory contains the systemd unit, Postgres compose file, and environment template used when running a shared Casein instance on a milc devbox host.
 
 ## Testing
 
@@ -46,7 +46,7 @@ All tests for this integration live under `test/casein/integrations/manager/`. P
 
 **Rule**: If you find yourself writing `if type == :v3` or referencing `milc-platform-server` or `onebackend-v3` outside this directory, you are doing it wrong. Push the knowledge into this integration.
   `ws-{name}-onebackend` (compose service `onebackend-v3`).
-- **DevIDE auth today** is a placeholder: `DevIdeWeb.Plugs.AssignCurrentUser`
+- **Casein auth today** is a placeholder: `CaseinWeb.Plugs.AssignCurrentUser`
   returns a static `%{id: "dev", email: "dev@local", role: :owner}` for
   everyone. `Plugs.ApiAuth` is a separate bearer-token gate for `/api`.
 - A shared Postgres (`one-platform-postgres-dev`, pg18) is available on `:5432`.
@@ -66,22 +66,22 @@ Add a Dashboard-sibling block in `generateCaddyfile()`:
 ```
 
 ~6 lines, mirrors the existing dashboard block. Pick a fixed host port for
-DevIDE (outside the workspace port ranges; the manager allocates workspace
+Casein (outside the workspace port ranges; the manager allocates workspace
 ports from `user-ports.json`). No per-workspace route entries.
 
-### 2. Auth & identity — DevIDE (the core work)
+### 2. Auth & identity — Casein (the core work)
 
 Replace the `AssignCurrentUser` placeholder with a trusted-header identity
 plug. **This is the gating change** — without it a shared instance shows every
 dev the same `dev@local` session.
 
-- **`DevIdeWeb.Plugs.ForwardAuth`** — reads **`X-Auth-Request-Email`** (the
+- **`CaseinWeb.Plugs.ForwardAuth`** — reads **`X-Auth-Request-Email`** (the
   authoritative header — see "Identity derivation" below; `X-Auth-Request-User`
   is *not* used). Derives the username and assigns `:current_user`. Rejects
   requests missing the email header **only when forward-auth mode is enabled**
   (config flag), so local single-user dev keeps working with the static user.
 - **Trust boundary**: the headers are only trustworthy because Caddy strips
-  any client-supplied copy and re-sets them from oauth2-proxy. DevIDE must
+  any client-supplied copy and re-sets them from oauth2-proxy. Casein must
   bind to `127.0.0.1` (or the docker bridge) so it is unreachable except
   through Caddy. Document this; it is load-bearing.
 - **LiveView**: `AssignCurrentUser.from_session/1` currently ignores the
@@ -103,21 +103,21 @@ normalizeUser(email) = email |> split("@") |> first |> downcase
 prefixes the workspace name with it). Authorization throughout the manager is
 `ws.user === authUser.user || authUser.isAdmin`.
 
-**DevIDE must derive the username identically** — same `split("@") |> hd() |>
+**Casein must derive the username identically** — same `split("@") |> hd() |>
 downcase` — or it will silently mismatch the manager's records. Treat the
 email as the authoritative identity and the username as a derived value.
 
-### 3. Workspace list scoping & link access — DevIDE
+### 3. Workspace list scoping & link access — Casein
 
 The manager's `GET /workspaces` **already filters by `authUser.user`
 server-side**, and `ManagerClient` already forwards an `x-auth-request-email`
-header. So once DevIDE forwards the *authenticated* user's email (not a
+header. So once Casein forwards the *authenticated* user's email (not a
 static env var), **list scoping is delegated to the manager for free**.
 Direct workspace links are intentionally more permissive: knowing a
-`/workspaces/:id` URL is enough to open that workspace in DevIDE, matching the
+`/workspaces/:id` URL is enough to open that workspace in Casein, matching the
 manager's link-addressable `GET /api/workspaces/:id/status` endpoint.
 
-- **List** (`WorkspaceLive.Index`): no DevIDE-side filter needed — forward the
+- **List** (`WorkspaceLive.Index`): no Casein-side filter needed — forward the
   authenticated email to the manager and render what it returns. Admins: the
   manager honors `?all=true` (gated by the `admins` list in
   `auth-config.json`); mirror that flag through if an "all workspaces" view
@@ -125,7 +125,7 @@ manager's link-addressable `GET /api/workspaces/:id/status` endpoint.
 - **Show link access**: `WorkspaceLive.Show.mount/3` fetches the workspace
   through the manager with the viewer's email forwarded, then validates host
   location safety. It does not compare the workspace owner to the viewer; this
-  preserves "send me your DevIDE link" collaboration while keeping the picker
+  preserves "send me your Casein link" collaboration while keeping the picker
   scoped.
 - **Terminal / Run / Audit**: every `Session.ensure_started`, `Commands.Run`,
   and `gate/3` audit emission must carry the authenticated user — not the
@@ -134,13 +134,13 @@ manager's link-addressable `GET /api/workspaces/:id/status` endpoint.
 - **Terminal session naming** already keys on `:current_user`; with real
   identity this becomes correct multi-user isolation instead of decoration.
 
-### 4. Execution substrate on-box — DevIDE
+### 4. Execution substrate on-box — Casein
 
 On devbox the SSH layer is unnecessary; the `{:local, …}` branches already
 exist and the remote-mode work is preserved for genuine off-box use.
 
 - **FileAccess**: `Workspaces.safe_host_loc/1` returns
-  `{:local, "/data/workspaces/{name}"}` when DevIDE runs on-box (new config
+  `{:local, "/data/workspaces/{name}"}` when Casein runs on-box (new config
   flag `:on_devbox` or detect via `remote_ssh_host` being unset). Files /
   Search / Diff become direct filesystem + local `git` — no ssh.
 - **Commands / Terminal**: replace `Commands.SshAdapter` with a
@@ -150,37 +150,29 @@ exist and the remote-mode work is preserved for genuine off-box use.
   the `ssh {host} --` wrapper. `Terminals.Session` builds a local
   `tmux new-session -A` whose command is the `docker exec` instead of
   `ssh -tt …`.
-- DevIDE needs Docker access: run as a host process in the `docker` group, or
+- Casein needs Docker access: run as a host process in the `docker` group, or
   as a container with `/var/run/docker.sock` and `/data/workspaces` mounted.
 
-### 5. Deployment — DevIDE + ops
+### 5. Deployment — Casein + ops
 
-Canonical artifacts live in
-[`lib/casein/integrations/manager/deploy/`](../../lib/casein/integrations/manager/deploy/) —
-see its README for the install runbook. `mix release` ships them at
-`<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
-activation step (documented in the deploy/README) then copies them into the
-stable `/opt/casein/deploy/` so the running devbox references stable paths
-independent of any release tree or git checkout. This is the reconciliation after commit 7204683 (stable `/opt/casein/deploy/`
-sibling layout chosen so the installed unit survives `mv release` / `git pull`).
-See the deploy artifact README "Why the stable sibling directory?" section for
-the concrete failure mode that motivated the design. Decisions (from the open
-questions, now resolved):
+Canonical host artifacts live in the private
+`MILCGroup/milc-devbox` repository under `devide/`. Its installer writes the
+operator profile to `/etc/devide/operator.json` and stable infrastructure to
+`/opt/devide/deploy/`. Core releases contain only portable application
+artifacts and consume that overlay through the versioned operator-config
+contract. Decisions (from the open questions, now resolved):
 
 - **`mix release`** — already configured in `mix.exs`. Runtime config via
   `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
-- **Supervision: systemd unit**
-  (`lib/casein/integrations/manager/deploy/casein.service`, activated into
-  the stable `/opt/casein/deploy/casein.service`). Host process in the `docker`
+- **Supervision: systemd unit** from the private operator overlay. Host process
+  in the `docker`
   group — native `/data/workspaces` + docker-socket access, matches the
   `devbox-manager` service. A container buys no isolation here since the
   docker-socket mount is root-equivalent regardless.
-- **Database: dedicated Postgres container**
-  (`lib/casein/integrations/manager/deploy/docker-compose.postgres.yml`,
-  activated into the stable `/opt/casein/deploy/docker-compose.postgres.yml`) on
-  `127.0.0.1:15432` (a port
+- **Database: dedicated Postgres container** from the private operator overlay
+  on `127.0.0.1:15432` (a port
   clear of the devbox host's known occupants). The systemd unit brings it up
   `--wait`, then runs `bin/migrate`, then boots the release.
 - **Manager API calls** become `http://127.0.0.1:9000` — no `ssh -fNL` tunnel.
@@ -189,15 +181,15 @@ questions, now resolved):
 
 ## Security considerations (shared production host)
 
-- DevIDE becomes a shared dependency on a prod host: BEAM memory footprint,
+- Casein becomes a shared dependency on a prod host: BEAM memory footprint,
   and an outage affects every dev. Size the release; set a memory limit.
-- The trusted-header model is only safe if DevIDE is **not** directly
+- The trusted-header model is only safe if Casein is **not** directly
   reachable. Bind localhost; never expose `DEVIDE_PORT` publicly.
 - The picker remains user-scoped, but direct workspace URLs are a collaboration
-  affordance. Treat a shared DevIDE URL as granting cockpit access to that
+  affordance. Treat a shared Casein URL as granting cockpit access to that
   workspace; manager lifecycle mutations remain owner/admin-gated by the
   manager itself.
-- Docker access = root-equivalent on the host. The DevIDE process can exec
+- Docker access = root-equivalent on the host. The Casein process can exec
   into any container. Acceptable (the manager already has this) but worth
   stating.
 
@@ -210,14 +202,10 @@ questions, now resolved):
    plug, `from_session/1`, `ManagerClient`/`Workspaces` auth threading,
    `owns?/2`, Index list-scoping, Show + terminal-channel link access,
    `user_socket` real identity). Static-user fallback preserved for local dev.
-3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
-   (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
-   "all workspaces" view in `WorkspaceLive.Index`,
-   `lib/casein/integrations/manager/deploy/` artifacts (release-bundled at
-   `<release>/deploy/` via `rel/overlays/deploy/`, then activated into stable
-   `/opt/casein/deploy/`): systemd unit, dedicated-Postgres compose, env
-   template, runbook). The post-7204683 path reconciliation ensures release
-   swaps never break the unit.
+3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done.
+   Portable runtime support remains in core; the MILC systemd unit,
+   dedicated-Postgres compose file, environment template, and runbook are
+   maintained by the private `MILCGroup/milc-devbox/devide` overlay.
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
    exposed until auth + scoping are proven.
 
@@ -237,12 +225,12 @@ None — all resolved (see below). Remaining work is §1, the manager Caddy PR.
 
 - ~~Does `X-Auth-Request-User` equal the manager's `user` field?~~ **N/A** —
   the manager ignores `X-Auth-Request-User` and derives the username from
-  `X-Auth-Request-Email` via `email.split("@")[0].toLowerCase()`. DevIDE must
+  `X-Auth-Request-Email` via `email.split("@")[0].toLowerCase()`. Casein must
   derive it the same way. See "Identity derivation" above.
 - ~~Admin "see all workspaces" view?~~ **Superseded (flat peer model)** —
-  DevIDE no longer elevates `CASEIN_ADMINS` / `role: :admin`. Every
+  Casein no longer elevates `CASEIN_ADMINS` / `role: :admin`. Every
   oauth2-authenticated viewer may open every workspace and artifact; there is
-  no "mine vs all" privilege tier inside DevIDE. The env list is still parsed
+  no "mine vs all" privilege tier inside Casein. The env list is still parsed
   (harmless legacy) but grants nothing.
 - ~~Shared pg or dedicated container?~~ **Dedicated Postgres container** —
   isolated from the shared dev pg, one named volume to back up. The audit log

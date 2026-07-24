@@ -208,4 +208,79 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
     assert Process.alive?(view.pid)
     refute Map.has_key?(assigns(view).preview_panes, "%99")
   end
+
+  test "pane:input set_viewport re-renders the overlay's locked size", %{
+    conn: conn,
+    workspace_path: workspace_path
+  } do
+    register_pane!(workspace_path)
+
+    view = mount_view(conn)
+    refute render(view) =~ ~s(data-viewport="390x844")
+
+    render_click(view, "pane:input", %{
+      "pane-id" => @pane_id,
+      "type" => "set_viewport",
+      "viewport" => "390x844"
+    })
+
+    # The registry's :updated event drives the assign; the attribute is what the
+    # overlay hook reads on its next patch.
+    html = render(view)
+    assert html =~ ~s(data-viewport="390x844")
+    assert html =~ ~s(data-ctx-viewport="390x844")
+    assert PreviewPanes.get_by_pane(@pane_id).viewport == %{width: 390, height: 844}
+
+    # Clearing goes back to filling the pane.
+    render_click(view, "pane:input", %{
+      "pane-id" => @pane_id,
+      "type" => "set_viewport",
+      "viewport" => ""
+    })
+
+    refute render(view) =~ ~s(data-viewport="390x844")
+    assert PreviewPanes.get_by_pane(@pane_id).viewport == nil
+  end
+
+  test "pane:input set_viewport is refused for a pane in another workspace", %{
+    conn: conn,
+    workspace_path: workspace_path
+  } do
+    register_pane!(workspace_path)
+    view = mount_view(conn)
+
+    # Authorization lives on the generic route, so an unknown pane never reaches
+    # PreviewPanes.set_viewport/2 — the viewport presets inherit that gate.
+    render_click(view, "pane:input", %{
+      "pane-id" => "%99",
+      "type" => "set_viewport",
+      "viewport" => "390x844"
+    })
+
+    assert Process.alive?(view.pid)
+    assert PreviewPanes.get_by_pane(@pane_id).viewport == nil
+  end
+
+  test "pane:input set_viewport flashes on a malformed size and keeps the pane", %{
+    conn: conn,
+    workspace_path: workspace_path
+  } do
+    register_pane!(workspace_path)
+    view = mount_view(conn)
+
+    render_click(view, "pane:input", %{
+      "pane-id" => @pane_id,
+      "type" => "set_viewport",
+      "viewport" => "390x844"
+    })
+
+    render_click(view, "pane:input", %{
+      "pane-id" => @pane_id,
+      "type" => "set_viewport",
+      "viewport" => "garbage"
+    })
+
+    assert render(view) =~ "390x844"
+    assert PreviewPanes.get_by_pane(@pane_id).viewport == %{width: 390, height: 844}
+  end
 end

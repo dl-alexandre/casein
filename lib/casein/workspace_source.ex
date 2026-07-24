@@ -13,7 +13,6 @@ defmodule Casein.WorkspaceSource do
   is the stable consumer-facing facade.
   """
 
-  alias Casein.Agents.LocalAdapter
   alias Casein.Workspace
 
   @type auth :: String.t() | nil
@@ -97,6 +96,10 @@ defmodule Casein.WorkspaceSource do
   """
   @spec impl() :: module()
   def impl, do: Application.get_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+
+  @doc false
+  def capability_detector,
+    do: Application.fetch_env!(:casein, :capability_detector)
 
   @doc "Wrap a local-spawn argv via the configured source, or identity."
   @spec prepare_local_argv([String.t()]) :: [String.t()]
@@ -190,7 +193,7 @@ defmodule Casein.WorkspaceSource do
     else
       # Direct filesystem detection (avoid calling back into LocalAdapter.detect
       # to prevent recursion during transition)
-      LocalAdapter.detect_filesystem_only(root)
+      capability_detector().detect_filesystem_only(root)
     end
   end
 

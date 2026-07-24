@@ -24,7 +24,7 @@
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `DevIdeCore.exec_run/3`. The app's real executor `DevIDE.Commands.spawn/3` reimplements the same plumbing inline. | `dev_ide_core/lib/exec_ctl/port.ex` vs `lib/casein/commands.ex` | Point `DevIDE.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
+| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `DevIdeCore.exec_run/3`. The app's real executor `Casein.Commands.spawn/3` reimplements the same plumbing inline. | `dev_ide_core/lib/exec_ctl/port.ex` vs `lib/casein/commands.ex` | Point `Casein.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
 
 ## C. Contract / spec mismatches
 
@@ -36,7 +36,7 @@
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| ~~D1~~ | ~~`DevIDE.Audit` / `MemoryAdapter` / `Event` `@moduledoc`s describe the Ecto adapter as future work ("M11", "Swap with an Ecto-backed adapter in M11"), but `EctoAdapter` is fully implemented and the prod default.~~ | ~~`lib/casein/audit/audit.ex:2-8`, `memory_adapter.ex:1-4`, `audit/event.ex:2-5`~~ | **Already fixed** — all three moduledocs are in present tense. No stale M11 reference found. |
+| ~~D1~~ | ~~`Casein.Audit` / `MemoryAdapter` / `Event` `@moduledoc`s describe the Ecto adapter as future work ("M11", "Swap with an Ecto-backed adapter in M11"), but `EctoAdapter` is fully implemented and the prod default.~~ | ~~`lib/casein/audit/audit.ex:2-8`, `memory_adapter.ex:1-4`, `audit/event.ex:2-5`~~ | **Already fixed** — all three moduledocs are in present tense. No stale M11 reference found. |
 | ~~D2~~ | ~~Inline `NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3` — that function already exists and is already called.~~ | ~~`lib/casein_web/live/workspace_live/show.ex:164`~~ | **Already fixed** — no such NOTE comment exists in show.ex. |
 | D3 | `docs/terminal.md` still narrates the retired `:ghostty_pty`-per-pane raw path and smallest-viewer resize; prod defaults to `SessionOwner`/`Attachment` and focused-viewer resize. (Doc fix, but the docs-win call is to update the narrative.) | `docs/terminal.md` vs `terminals/pane_worker.ex:113`, `session_owner.ex` | Refresh `terminal.md` to the `:session_owner` reality (see `docs/subsystems/terminals.md`). |
 
@@ -45,7 +45,7 @@
 - `Annotation.preview_id` is intentionally a nullable `:binary_id`, **not** a
   foreign key, because the preview persistence model has not landed.
   (`lib/casein/annotations/annotation.ex:30`.)
-- `DevIDE.Runs.Status` retains legacy delegated-execution statuses (`expired`,
+- `Casein.Runs.Status` retains legacy delegated-execution statuses (`expired`,
   `abandoned`, `assignment_id`/`protocol`/`safe_action_id`) for
   backward-compatible timelines, with no doc explaining the retention.
   (`runs/status.ex:12-16,98-105`; `runs/ledger.ex:226-231`.)

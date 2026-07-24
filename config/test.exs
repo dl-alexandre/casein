@@ -15,7 +15,7 @@ if sqlite_repo? do
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
-          "../casein_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
+          "../dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
           System.tmp_dir!()
         ),
     pool: Ecto.Adapters.SQL.Sandbox,
@@ -27,7 +27,7 @@ else
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
-    database: "casein_test#{System.get_env("MIX_TEST_PARTITION")}",
+    database: "dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}",
     pool: Ecto.Adapters.SQL.Sandbox,
     # Capped: this devbox runs many agents' test suites concurrently against one
     # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections
@@ -62,7 +62,11 @@ config :casein, CaseinWeb.Endpoint,
   secret_key_base: "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM",
   server: false
 
-# Sandbox every tmux invocation onto a dedicated server (`tmux -L casein_test`)
+config :casein,
+       :origin_identity_secret,
+       "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM"
+
+# Sandbox every tmux invocation onto a dedicated server (`tmux -L devide_test`)
 # so the live tmux integration tests can never see, create, kill, or reconcile
 # sessions on another server — on the devbox the prod release (`devide`) and the
 # :4000 dev server (`devide_dev`) also run here. Each env gets its own label so
@@ -71,7 +75,7 @@ config :casein, :tmux_server_label, "devide_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :casein, :tmux_host_anchor, false
 
-# Keep test-boot deployment heartbeats out of the real /run/casein/instances.
+# Keep test-boot deployment heartbeats out of the real /run/devide/instances.
 # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
 # them, so an unsandboxed `mix test` boot would overwrite that live canary's
 # heartbeat with the test VM's pid — the deploy then reads a dead pid, drops
@@ -92,7 +96,7 @@ config :casein,
 config :casein, :caddy_admin_probe, false
 
 # Neutralize SessionOwner.superseded?/0 in tests. It compares the inherited
-# DEVIDE_HTTP_SOCKET against whatever /run/casein/current.sock resolves to;
+# DEVIDE_HTTP_SOCKET against whatever /run/devide/current.sock resolves to;
 # devbox test VMs inherit a real DEVIDE_HTTP_SOCKET from the spawning canary, so
 # without this every test owner would read as "superseded" and stop asserting
 # tmux sizes. Point the seam at a path that isn't a symlink → read_link fails →
@@ -103,7 +107,7 @@ config :casein,
        Path.join(System.tmp_dir!(), "devide-test-no-current-#{System.pid()}.sock")
 
 # Keep runtime-minted workspace tokens (Casein.Agents.WorkspaceTokens) out of
-# the real ~/.casein store when tests exercise the materializer/pane env.
+# the real ~/.devide store when tests exercise the materializer/pane env.
 config :casein,
        :workspace_tokens_store,
        Path.join(
@@ -170,7 +174,7 @@ config :casein,
   preview_prefer_scoped_local_server: false,
   preview_pane_persistence_enabled: false,
   terminal_desktop_integration_enabled: false,
-  # Sandbox the suite onto a dedicated tmux server (`-L casein_test`) so running
+  # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See Casein.Terminals.TmuxServer.
   tmux_server_label: "devide_test",

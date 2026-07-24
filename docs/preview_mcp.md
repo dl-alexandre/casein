@@ -35,7 +35,7 @@ that supplies an unknown id gets `404 unknown_mcp_session`, signalling the clien
 to re-`initialize`. Missing or unknown streamable-session errors preserve the
 top-level `error` string and include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
-`DevIDE.Agents.MCPSessions.notify/2`.
+`Casein.Agents.MCPSessions.notify/2`.
 
 ## Access scope
 
@@ -96,7 +96,7 @@ registers the pane via `POST /api/preview/panes` and DevIDE paints an
 iframe overlay at the pane rectangle.
 
 Preview actions are scoped to workspace/localhost origins through
-`DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+`Casein.PreviewControl`; agents do not get arbitrary browser access.
 For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback DevIDE URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
@@ -159,7 +159,7 @@ not reference `/run/casein/current.sock`.
 MCP tools (PreviewTools)
         │
         ▼
-DevIDE.PreviewControl          ← Ecto sessions, audit, PubSub, surface open
+Casein.PreviewControl          ← Ecto sessions, audit, PubSub, surface open
         │
         ▼
 PreviewCtl.Session             ← origin guard, registry, adapter dispatch
@@ -171,20 +171,20 @@ FakeAdapter  Playwright.Adapter (+ Bridge GenServer)
 
 `PreviewCtl` is an in-repo boundary (like `TmuxCtl`): generic URL primitives,
 ETS session registry, adapter behaviour, and optional Node Playwright bridge.
-DevIDE keeps workspace allowlists (`DevIDE.Previews.Url`), persistence, and
+DevIDE keeps workspace allowlists (`Casein.Previews.Url`), persistence, and
 human-iframe broadcasts.
 
 ### Adapter configuration (two keys)
 
 | Key | App | Purpose |
 |-----|-----|---------|
-| `:preview_control_adapter` | `:dev_ide` | Operator-facing atom (`:memory` \| `:playwright`) |
+| `:preview_control_adapter` | `:casein` | Operator-facing atom (`:memory` \| `:playwright`) |
 | `:adapter` | `:preview_ctl` | Resolved adapter module (set at boot from the atom) |
 
-`DevIDE.Application.configure_preview_ctl!/0` copies `config :dev_ide, :preview_ctl`
+`Casein.Application.configure_preview_ctl!/0` copies `config :casein, :preview_ctl`
 and maps `:preview_control_adapter` → `:preview_ctl :adapter`. Playwright script
-path uses `:dev_ide :preview_playwright_script` → `:preview_ctl :playwright_script`.
-DevIDE facades (`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
+path uses `:casein :preview_playwright_script` → `:preview_ctl :playwright_script`.
+DevIDE facades (`Casein.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
 `PlaywrightBridge`, `Registry`) defdelegate to `PreviewCtl.*` for backward
 compatibility.
 Opening a preview session registers a tmux preview pane and broadcasts to
@@ -225,7 +225,7 @@ CASEIN_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
 These env vars are read in the prod-only section of `config/runtime.exs`, so
 they apply to releases (the devbox systemd deploy) but are ignored by a dev
 `mix phx.server`. In dev, set the application env directly if needed:
-`config :dev_ide, :preview_default_headers, %{...}` in `dev.exs`.
+`config :casein, :preview_default_headers, %{...}` in `dev.exs`.
 
 The named `app` surface falls back to the best discoverable surface (manager
 surfaces first, then terminal-detected localhost ports) when the workspace has
@@ -471,7 +471,7 @@ sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install
 ```
 
 Then restart `devide` so `PreviewCtl.Playwright.Bridge` starts with the
-configured helper (`DevIDE.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
+configured helper (`Casein.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
 include Node or browser OS dependencies, so keep
 `CASEIN_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
 browser automation.

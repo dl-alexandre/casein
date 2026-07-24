@@ -17,7 +17,7 @@ defmodule Casein.Agents.TerminalTools.SendAgentKeys do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -37,6 +37,6 @@ defmodule Casein.Agents.TerminalTools.SendAgentKeys do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.send_agent_keys(Helpers.to_impl_args(params))
+    Agent.send_agent_keys(Helpers.to_impl_args(params))
   end
 end

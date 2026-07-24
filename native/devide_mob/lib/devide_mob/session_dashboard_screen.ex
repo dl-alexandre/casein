@@ -12,11 +12,11 @@ defmodule DevideMob.SessionDashboardScreen do
   """
   use Mob.Screen
 
-  alias DevideMob.SessionConfig
-  alias DevideMob.SessionClient
-  alias DevideMob.SessionDetailScreen
   alias DevideMob.PairingScreen
   alias DevideMob.ReviewDecisionScreen
+  alias DevideMob.SessionClient
+  alias DevideMob.SessionConfig
+  alias DevideMob.SessionDetailScreen
 
   @transition_notice_ms 1_600
 
@@ -42,6 +42,7 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:mobile_cards_snapshot, nil)
       |> Mob.Socket.assign(:mobile_cards, [])
       |> Mob.Socket.assign(:mobile_cards_by_id, %{})
+      |> Mob.Socket.assign(:cached_cards, SessionConfig.inactive_cached_cards())
       |> Mob.Socket.assign(:mobile_cards_status, :connecting)
       |> Mob.Socket.assign(:push_status, :not_requested)
       |> Mob.Socket.assign(:push_token, nil)
@@ -51,6 +52,7 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_user_registration_pending?, false)
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
+      |> Mob.Socket.assign(:pending_origin_resume, nil)
       |> Mob.Socket.assign(:filter, :needs_action)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
@@ -86,25 +88,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   def handle_info({:mobile_cards_snapshot, payload}, socket) do
-    cards =
-      payload
-      |> snapshot_cards()
-      |> List.wrap()
-      |> Enum.filter(&is_map/1)
-
-    cards_by_id =
-      cards
-      |> Map.new(fn card -> {get(card, "id"), card} end)
-      |> Map.reject(fn {id, _card} -> is_nil(id) end)
-
-    {:noreply,
-     socket
-     |> Mob.Socket.assign(:mobile_cards_snapshot, payload)
-     |> Mob.Socket.assign(:mobile_cards, cards)
-     |> Mob.Socket.assign(:mobile_cards_by_id, cards_by_id)
-     |> refresh_pairing_and_push()
-     |> maybe_register_push_for_known_workspaces()
-     |> maybe_open_pending_notification()}
+    {:noreply, accept_mobile_snapshot(socket, payload)}
   end
 
   def handle_info({:mobile_cards_status, status}, socket) do
@@ -230,7 +214,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   def handle_info({:tap, {:mobile_card_action, card_id}}, socket) do
-    card = Map.get(socket.assigns.mobile_cards_by_id, card_id)
+    card = find_mobile_card(socket, card_id)
     {:noreply, handle_mobile_card_action(socket, card)}
   end
 
@@ -300,10 +284,13 @@ defmodule DevideMob.SessionDashboardScreen do
     {:noreply, Mob.Socket.push_screen(socket, PairingScreen)}
   end
 
+  def handle_info({:tap, {:switch_host, origin_id}}, socket) when is_binary(origin_id) do
+    {:noreply, switch_host(socket, origin_id)}
+  end
+
   def handle_info({:tap, :unpair}, socket) do
     Enum.each(socket.assigns.pinned, &SessionClient.unwatch(&1, self()))
     SessionClient.unwatch_mobile_cards(self())
-    SessionConfig.clear_all()
     SessionClient.clear_pairing()
 
     {:noreply,
@@ -315,7 +302,7 @@ defmodule DevideMob.SessionDashboardScreen do
      |> Mob.Socket.assign(:mobile_cards_status, :disconnected)
      |> Mob.Socket.assign(:resume_context, nil)
      |> reset_push_state()
-     |> Mob.Socket.assign(:notice, "Device unpaired")
+     |> Mob.Socket.assign(:notice, "Host removed")
      |> assign_pairing()}
   end
 
@@ -399,6 +386,7 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp dashboard_body(%{pinned: [], paired?: false}) do
     [
+      saved_hosts_section(SessionConfig.host_profiles()),
       empty_state(
         "Not paired yet",
         "Pair this phone with a workspace to watch runs, reviews, and agent activity from anywhere.",
@@ -409,7 +397,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    [paired_summary(assigns)] ++
+    [paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
       mobile_cards_status_banner(assigns) ++
       push_status_banner(assigns) ++
       observer_section(assigns) ++
@@ -417,17 +405,22 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(assigns) do
-    ([paired_summary(assigns)] ++
+    ([paired_summary(assigns), saved_hosts_section(assigns.host_profiles)] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
        observer_section(assigns) ++
        Enum.map(assigns.pinned, fn wid ->
-         card(wid, Map.get(assigns.snapshots, wid), Map.get(assigns.statuses, wid, :connecting))
+         card(
+           wid,
+           Map.get(assigns.snapshots, wid),
+           Map.get(assigns.statuses, wid, :connecting),
+           assigns.host_name
+         )
        end))
     |> Enum.reject(&is_nil/1)
   end
 
-  defp paired_summary(%{paired?: true, host_url: host_url} = assigns) do
+  defp paired_summary(%{paired?: true, host_url: host_url, host_name: host_name} = assigns) do
     %{
       type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
@@ -440,14 +433,15 @@ defmodule DevideMob.SessionDashboardScreen do
               %{
                 type: :text,
                 props: %{
-                  text: "Paired to #{host_url}",
-                  text_color: :muted,
-                  text_size: :sm,
+                  text: "#{host_name} · Connected",
+                  text_color: :on_surface,
+                  text_size: :lg,
+                  font_weight: "bold",
                   weight: 1
                 },
                 children: []
               },
-              resume_button(assigns[:resume_context]),
+              resume_button(assigns[:resume_context], host_name),
               %{
                 type: :button,
                 props: %{
@@ -462,6 +456,7 @@ defmodule DevideMob.SessionDashboardScreen do
             ]
             |> Enum.reject(&is_nil/1)
         },
+        muted_line(host_url),
         %{
           type: :text,
           props: %{
@@ -477,11 +472,61 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp paired_summary(_assigns), do: nil
 
-  defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
+  defp saved_hosts_section([_ | _] = profiles) do
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 6},
+      children: [
+        %{
+          type: :text,
+          props: %{
+            text: "Saved hosts",
+            text_color: :on_surface,
+            text_size: :sm,
+            font_weight: "bold"
+          },
+          children: []
+        }
+        | Enum.map(profiles, &saved_host_row/1)
+      ]
+    }
+  end
+
+  defp saved_hosts_section(_profiles), do: nil
+
+  defp saved_host_row(%{
+         origin_id: origin_id,
+         display_name: display_name,
+         url: url,
+         active?: active?,
+         last_workspace_id: last_workspace_id
+       }) do
+    %{
+      type: :column,
+      props: %{fill_width: true, gap: 2},
+      children: [
+        %{
+          type: :button,
+          props: %{
+            text: "#{if(active?, do: "Connected", else: "Switch to")} · #{display_name}",
+            fill_width: true,
+            background: if(active?, do: :surface_raised, else: :primary),
+            text_color: if(active?, do: :on_surface, else: :on_primary),
+            padding: :space_sm,
+            on_tap: {self(), {:switch_host, origin_id}}
+          },
+          children: []
+        },
+        muted_line(host_context_line(url, last_workspace_id))
+      ]
+    }
+  end
+
+  defp resume_button(%{workspace_id: workspace_id}, host_name) when is_binary(workspace_id) do
     %{
       type: :button,
       props: %{
-        text: "Resume",
+        text: "Resume #{host_name} work",
         background: :surface_raised,
         text_color: :on_surface,
         padding: :space_sm,
@@ -491,7 +536,7 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp resume_button(_context), do: nil
+  defp resume_button(_context, _host_name), do: nil
 
   defp push_debug_line(assigns) do
     token? = if assigns[:push_token], do: "yes", else: "no"
@@ -794,7 +839,7 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp card(wid, snap, status) do
+  defp card(wid, snap, status, host_name) do
     state = card_state(snap, status)
     pending = pending_count(snap)
 
@@ -809,6 +854,7 @@ defmodule DevideMob.SessionDashboardScreen do
       },
       children:
         [
+          muted_line("#{host_name} · #{display_workspace(wid)}"),
           card_header(wid, status),
           primary_status(state, snap, status),
           review_callout(wid, pending),
@@ -829,7 +875,7 @@ defmodule DevideMob.SessionDashboardScreen do
     body =
       case filtered_sorted_cards(assigns, active) do
         [] -> [filter_empty_state(active)]
-        cards -> Enum.map(cards, &observer_card/1)
+        cards -> Enum.map(cards, &observer_card(&1, assigns.host_name))
       end
 
     [filter_segments(active) | body]
@@ -843,7 +889,9 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp mobile_cards(assigns) do
-    assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
+    live = assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
+    cached = assigns |> Map.get(:cached_cards, []) |> Enum.filter(&is_map/1)
+    live ++ cached
   end
 
   defp filter_segments(active) do
@@ -902,9 +950,24 @@ defmodule DevideMob.SessionDashboardScreen do
   # Segment classification reads the normalized `kind`/`status`, falling back to
   # the legacy `type` for compatibility.
   defp card_segment(card) do
+    resume_state = card |> get("resume", %{}) |> get("state") |> to_string()
     kind = to_string(get(card, "kind") || get(card, "type") || "")
     status = to_string(get(card, "status") || "")
 
+    case resume_segment(resume_state) do
+      nil -> legacy_card_segment(kind, status)
+      segment -> segment
+    end
+  end
+
+  defp resume_segment("needs_attention"), do: :needs_action
+  defp resume_segment("working"), do: :running
+  defp resume_segment("failed"), do: :failed
+  defp resume_segment("ready_to_review"), do: :needs_action
+  defp resume_segment("completed"), do: :done
+  defp resume_segment(_state), do: nil
+
+  defp legacy_card_segment(kind, status) do
     cond do
       kind in ["approval_required", "needs_review"] -> :needs_action
       kind == "in_progress" -> :running
@@ -930,10 +993,13 @@ defmodule DevideMob.SessionDashboardScreen do
   defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
   defp humanize_reason(reason), do: inspect(reason)
 
-  defp observer_card(card) do
+  defp observer_card(card, host_name) do
     workspace_id = get(card, "workspace_id")
     card_id = get(card, "id")
-    tappable? = is_binary(card_id) and not is_nil(card_action_tap(card))
+    cached? = get(card, "_cached") == true
+    tap_id = if(cached?, do: get(card, "qualified_id"), else: card_id)
+    origin_name = card_origin_name(card) || host_name
+    tappable? = is_binary(tap_id) and not is_nil(card_action_tap(card))
 
     %{
       type: :column,
@@ -959,10 +1025,10 @@ defmodule DevideMob.SessionDashboardScreen do
             ]
           },
           card_body(card),
-          workspace_id && muted_line("Workspace #{display_workspace(workspace_id)}"),
+          workspace_id && muted_line(card_context_line(origin_name, workspace_id, card)),
           action_button(
-            action_label(card),
-            {:mobile_card_action, card_id},
+            if(cached?, do: "Switch & refresh", else: action_label(card)),
+            {:mobile_card_action, tap_id},
             :primary,
             weight: 1,
             text_color: :on_primary,
@@ -1346,16 +1412,51 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp assign_pairing(socket) do
-    case SessionConfig.pairing() do
-      {:ok, url, _token} ->
+    socket =
+      socket
+      |> Mob.Socket.assign(:host_profiles, SessionConfig.host_profiles())
+      |> Mob.Socket.assign(:cached_cards, SessionConfig.inactive_cached_cards())
+
+    case SessionConfig.connection() do
+      {:ok, %{url: url, display_name: display_name, origin_id: origin_id}} ->
         socket
         |> Mob.Socket.assign(:paired?, true)
+        |> Mob.Socket.assign(:origin_id, origin_id)
         |> Mob.Socket.assign(:host_url, display_host(url))
+        |> Mob.Socket.assign(:host_name, display_name)
 
       :error ->
         socket
         |> Mob.Socket.assign(:paired?, false)
+        |> Mob.Socket.assign(:origin_id, nil)
         |> Mob.Socket.assign(:host_url, nil)
+        |> Mob.Socket.assign(:host_name, nil)
+    end
+  end
+
+  defp switch_host(socket, origin_id) do
+    Enum.each(socket.assigns.pinned, &SessionClient.unwatch(&1, self()))
+    SessionClient.unwatch_mobile_cards(self())
+
+    case SessionClient.activate_origin(origin_id) do
+      :ok ->
+        pinned = SessionConfig.pinned_workspaces()
+        Enum.each(pinned, &SessionClient.watch(&1, self()))
+        SessionClient.watch_mobile_cards(self())
+
+        socket
+        |> Mob.Socket.assign(:pinned, pinned)
+        |> Mob.Socket.assign(:snapshots, %{})
+        |> Mob.Socket.assign(:statuses, %{})
+        |> clear_mobile_cards()
+        |> Mob.Socket.assign(:mobile_cards_status, :connecting)
+        |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+        |> reset_push_state()
+        |> Mob.Socket.assign(:notice, "Switched origin; refreshing authoritative state")
+        |> assign_pairing()
+
+      :error ->
+        Mob.Socket.assign(socket, :notice, "Saved host is no longer available")
     end
   end
 
@@ -1374,6 +1475,26 @@ defmodule DevideMob.SessionDashboardScreen do
 
       _ ->
         url
+    end
+  end
+
+  defp host_context_line(url, nil), do: display_host(url)
+
+  defp host_context_line(url, workspace_id) do
+    "#{display_host(url)} · Last work: #{display_workspace(workspace_id)}"
+  end
+
+  defp card_origin_name(card) do
+    card |> get("origin", %{}) |> get("display_name")
+  end
+
+  defp card_context_line(origin_name, workspace_id, card) do
+    base = "#{origin_name || "Origin"} · Workspace #{display_workspace(workspace_id)}"
+
+    if get(card, "_cached") == true do
+      "#{base} · Cached #{get(card, "_cached_at", "earlier")} · Read-only"
+    else
+      "#{base} · Live"
     end
   end
 
@@ -1399,9 +1520,24 @@ defmodule DevideMob.SessionDashboardScreen do
     |> Mob.Socket.assign(:menu_workspace, nil)
   end
 
+  defp find_mobile_card(socket, card_id) do
+    Map.get(socket.assigns.mobile_cards_by_id, card_id) ||
+      Enum.find(socket.assigns.cached_cards, fn card ->
+        get(card, "qualified_id") == card_id
+      end)
+  end
+
   defp handle_mobile_card_action(socket, nil), do: socket
 
   defp handle_mobile_card_action(socket, card) do
+    if get(card, "_cached") == true do
+      begin_cached_resume(socket, card)
+    else
+      handle_live_mobile_card_action(socket, card)
+    end
+  end
+
+  defp handle_live_mobile_card_action(socket, card) do
     if needs_review_card?(card) do
       socket
       |> remember_card_context(card)
@@ -1423,7 +1559,85 @@ defmodule DevideMob.SessionDashboardScreen do
     end
   end
 
+  defp begin_cached_resume(socket, card) do
+    origin_id = card |> get("origin", %{}) |> get("id")
+
+    pending = %{
+      origin_id: origin_id,
+      card_id: get(card, "id"),
+      locator: card |> get("resume", %{}) |> get("locator", %{}),
+      workspace_id: get(card, "workspace_id"),
+      session_id: get(card, "session_id")
+    }
+
+    begin_origin_resume(socket, pending)
+  end
+
+  defp begin_origin_resume(socket, %{origin_id: origin_id} = pending)
+       when is_binary(origin_id) do
+    if Enum.any?(SessionConfig.host_profiles(), &(&1.origin_id == origin_id)) do
+      socket
+      |> Mob.Socket.assign(:pending_origin_resume, pending)
+      |> switch_host(origin_id)
+    else
+      socket
+      |> Mob.Socket.assign(:pending_origin_resume, nil)
+      |> Mob.Socket.assign(:notice, "Unknown origin; nothing was opened")
+    end
+  end
+
+  defp begin_origin_resume(socket, _pending) do
+    socket
+    |> Mob.Socket.assign(:pending_origin_resume, nil)
+    |> Mob.Socket.assign(:notice, "Push did not identify a trusted saved origin")
+  end
+
+  defp complete_pending_origin_resume(
+         %{assigns: %{pending_origin_resume: %{origin_id: origin_id} = pending}} = socket
+       ) do
+    if socket.assigns[:origin_id] == origin_id do
+      socket = Mob.Socket.assign(socket, :pending_origin_resume, nil)
+
+      case Map.get(socket.assigns.mobile_cards_by_id, pending.card_id) do
+        card when is_map(card) ->
+          handle_live_mobile_card_action(socket, card)
+
+        _ ->
+          open_locator_fallback(socket, pending)
+      end
+    else
+      socket
+    end
+  end
+
+  defp complete_pending_origin_resume(socket), do: socket
+
+  defp open_locator_fallback(socket, pending) do
+    locator = pending[:locator] || %{}
+    workspace_id = get(locator, "workspace_id") || pending[:workspace_id]
+    session_id = get(locator, "session_id") || pending[:session_id]
+
+    if is_binary(workspace_id) do
+      open_resume_context(socket, %{
+        workspace_id: workspace_id,
+        session_id: session_id,
+        source: :origin_resume
+      })
+    else
+      Mob.Socket.assign(socket, :notice, "Origin refreshed; open its Action Center")
+    end
+  end
+
   defp card_action_tap(card) do
+    if get(card, "_cached") == true do
+      origin_id = card |> get("origin", %{}) |> get("id")
+      if is_binary(origin_id), do: {:activate_resume, origin_id}
+    else
+      live_card_action_tap(card)
+    end
+  end
+
+  defp live_card_action_tap(card) do
     # Prefer the server's normalized navigation action route; fall back to the
     # legacy `action.route` so older payloads still navigate.
     route = navigation_route(card) || legacy_route(card)
@@ -1505,6 +1719,66 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp snapshot_cards(payload) when is_map(payload), do: get(payload, "cards", [])
   defp snapshot_cards(_payload), do: []
+
+  defp accept_mobile_snapshot(socket, payload) do
+    descriptor = get(payload, "origin")
+
+    case accept_snapshot_origin(descriptor) do
+      {:ok, origin_id} ->
+        cards =
+          payload
+          |> snapshot_cards()
+          |> List.wrap()
+          |> Enum.filter(&is_map/1)
+
+        cards_by_id =
+          cards
+          |> Map.new(fn card -> {get(card, "id"), card} end)
+          |> Map.reject(fn {id, _card} -> is_nil(id) end)
+
+        _ = SessionConfig.cache_cards(origin_id, cards, snapshot_observed_at(cards))
+
+        socket
+        |> Mob.Socket.assign(:mobile_cards_snapshot, payload)
+        |> Mob.Socket.assign(:mobile_cards, cards)
+        |> Mob.Socket.assign(:mobile_cards_by_id, cards_by_id)
+        |> refresh_pairing_and_push()
+        |> maybe_register_push_for_known_workspaces()
+        |> maybe_open_pending_notification()
+        |> complete_pending_origin_resume()
+
+      {:error, reason} ->
+        socket
+        |> Mob.Socket.assign(:notice, origin_rejection_notice(reason))
+        |> Mob.Socket.assign(:pending_origin_resume, nil)
+    end
+  end
+
+  defp accept_snapshot_origin(descriptor) when is_map(descriptor) do
+    case SessionConfig.reconcile_active_origin(descriptor) do
+      {:ok, profile} -> {:ok, profile.origin_id}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Compatibility with servers predating the descriptor: the already-active,
+  # credentialed socket may update its own profile, but can never select another.
+  defp accept_snapshot_origin(_descriptor) do
+    case SessionConfig.connection() do
+      {:ok, profile} -> {:ok, profile.origin_id}
+      :error -> {:error, :unknown_origin}
+    end
+  end
+
+  defp snapshot_observed_at(cards) do
+    cards
+    |> Enum.map(&get(&1, "updated_at"))
+    |> Enum.filter(&is_binary/1)
+    |> Enum.max(fn -> DateTime.utc_now() |> DateTime.to_iso8601() end)
+  end
+
+  defp origin_rejection_notice(:origin_mismatch), do: "Origin mismatch; state was not accepted"
+  defp origin_rejection_notice(_reason), do: "Unknown origin; state was not accepted"
 
   defp needs_review_card?(card), do: get(card, "type") in ["needs_review", :needs_review]
 
@@ -1721,14 +1995,36 @@ defmodule DevideMob.SessionDashboardScreen do
   defp handle_notification(socket, payload) do
     data = get(payload, "data", %{})
     card_id = get(data, "card_id") || review_card_id_from_deep_link(get(data, "deep_link"))
+    origin_id = get(data, "origin_id")
+
+    pairing_code =
+      get(data, "pairing_code") || pairing_code_from_deep_link(get(data, "deep_link"))
 
     cond do
+      get(data, "action") == "mobile.pair" and present?(pairing_code) ->
+        Mob.Socket.push_screen(socket, PairingScreen, %{code: pairing_code})
+
       mobile_review_notification?(data) and present?(card_id) ->
-        open_review_from_notification(socket, card_id)
+        handle_review_notification(socket, data, card_id, origin_id)
 
       true ->
         socket
     end
+  end
+
+  defp handle_review_notification(socket, data, card_id, origin_id)
+       when is_binary(origin_id) and origin_id != "" do
+    begin_origin_resume(socket, %{
+      origin_id: origin_id,
+      card_id: card_id,
+      locator: notification_locator(data),
+      workspace_id: get(data, "workspace_id"),
+      session_id: get(data, "session_id")
+    })
+  end
+
+  defp handle_review_notification(socket, _data, card_id, _origin_id) do
+    open_review_from_notification(socket, card_id)
   end
 
   defp maybe_apply_dev_notification(socket) do
@@ -1754,6 +2050,36 @@ defmodule DevideMob.SessionDashboardScreen do
     get(data, "action") == "mobile.needs_review" or
       get(data, "card_type") in ["needs_review", :needs_review] or
       review_card_id_from_deep_link(get(data, "deep_link")) != nil
+  end
+
+  defp notification_locator(data) do
+    case get(data, "locator") do
+      locator when is_map(locator) ->
+        locator
+
+      _ ->
+        decode_notification_locator(get(data, "locator_json")) || locator_fields(data)
+    end
+  end
+
+  defp decode_notification_locator(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, locator} when is_map(locator) -> locator
+      _ -> nil
+    end
+  end
+
+  defp decode_notification_locator(_json), do: nil
+
+  defp locator_fields(data) do
+    data
+    |> Enum.filter(fn {key, value} ->
+      to_string(key) in ~w(
+        origin_id workspace_id session_id task_type task_id
+        tmux_session window pane tab artifact
+      ) and is_binary(value)
+    end)
+    |> Map.new()
   end
 
   defp open_review_from_notification(socket, card_id) do
@@ -1788,11 +2114,24 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp maybe_open_pending_notification(socket), do: socket
 
-  defp review_card_id_from_deep_link("devide://review/" <> encoded_card_id) do
-    URI.decode(encoded_card_id)
+  defp review_card_id_from_deep_link(deep_link) when is_binary(deep_link) do
+    case URI.parse(deep_link) do
+      %URI{scheme: "devide", host: "review", path: "/" <> encoded_card_id}
+      when encoded_card_id != "" ->
+        URI.decode(encoded_card_id)
+
+      _ ->
+        nil
+    end
   end
 
   defp review_card_id_from_deep_link(_deep_link), do: nil
+
+  defp pairing_code_from_deep_link("devide://pair/" <> encoded_code) do
+    URI.decode(encoded_code)
+  end
+
+  defp pairing_code_from_deep_link(_deep_link), do: nil
 
   defp card_state(snap, status) do
     case status_state(status) do

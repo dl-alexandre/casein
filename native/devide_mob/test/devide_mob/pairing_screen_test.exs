@@ -37,10 +37,10 @@ defmodule DevideMob.PairingScreenTest do
     assert text(view) =~ "Have a pairing code?"
     assert find(view, :button, text: "Pair")
     assert find(view, :button, text: "Pair").props.height == 44.0
-    assert text(view) =~ "Pairs to one workspace at a time."
+    assert text(view) =~ "Each host is saved."
   end
 
-  test "valid pairing code stores credentials, replaces pins, and shows success before returning" do
+  test "valid pairing code saves the prior host and scopes pins to the new host" do
     SessionConfig.put_pairing("https://old.test", "old-token")
     SessionConfig.pin_workspace("old-ws")
 
@@ -54,6 +54,24 @@ defmodule DevideMob.PairingScreenTest do
 
     assert SessionConfig.pairing() == {:ok, "https://devide.test", "new-token"}
     assert SessionConfig.pinned_workspaces() == ["ws-1"]
+
+    assert SessionConfig.host_profiles() == [
+             %{
+               origin_id: DevideMob.OriginIdentity.legacy_id("https://devide.test"),
+               display_name: "devide.test",
+               url: "https://devide.test",
+               active?: true,
+               last_workspace_id: "ws-1"
+             },
+             %{
+               origin_id: DevideMob.OriginIdentity.legacy_id("https://old.test"),
+               display_name: "old.test",
+               url: "https://old.test",
+               active?: false,
+               last_workspace_id: "old-ws"
+             }
+           ]
+
     assert assigns(view).state == :success
     assert text(view) =~ "Paired successfully"
     assert text(view) =~ "Workspace ws-1 is ready"
@@ -95,6 +113,19 @@ defmodule DevideMob.PairingScreenTest do
     assert is_binary(request.platform)
     assert SessionConfig.pairing() == {:ok, "https://devide.test", "device-link-token"}
     assert SessionConfig.pinned_workspaces() == ["ws-1"]
+    assert assigns(view).state == :success
+  end
+
+  test "pairing code passed by a native deep link pairs without synthetic typing" do
+    code = pairing_code("https://devide.test", "native-link-token", "ws-native")
+
+    view =
+      PairingScreen
+      |> mount_screen(%{code: code})
+      |> render_info({:pair_code, code})
+
+    assert SessionConfig.pairing() == {:ok, "https://devide.test", "native-link-token"}
+    assert SessionConfig.pinned_workspaces() == ["ws-native"]
     assert assigns(view).state == :success
   end
 

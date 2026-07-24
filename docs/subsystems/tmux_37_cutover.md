@@ -92,6 +92,6 @@ reports 3.4 again — no code revert needed. Also revert the CI/install pin if
   (host-tmux fallback is fine today).
 - The client colour report covers **fg/bg only** (OSC 10/11). Full palette
   (OSC 4), named themes, and app-specific config still go through the
-  `DevIDE.Terminals.ToolThemes` registry path.
+  `Casein.Terminals.ToolThemes` registry path.
 - 3.7 changes theme send timing ("do not send theme unless changed"); re-run the
   smoke checks above after cutover.

@@ -79,7 +79,7 @@ public actor ReleaseController {
             selectedPort = port
         }
 
-        // `bin/casein stop` RPCs into the node. It can fail even against a
+        // `bin/dev_ide stop` RPCs into the node. It can fail even against a
         // live server (release rebuilds regenerate the cookie), so fall back
         // to SIGTERM on the contract pid.
         do {
@@ -126,6 +126,39 @@ public actor ReleaseController {
         return components
     }
 
+    public func lanEnabled() -> Bool {
+        HostSettings.load(at: paths.hostSettingsFile)?.lanEnabled ?? false
+    }
+
+    public func setLANEnabled(_ enabled: Bool) throws {
+        if enabled, LANConfiguration.detect() == nil {
+            throw CommandError(
+                command: "enable LAN",
+                exitCode: -1,
+                output: "no active private IPv4 network was found"
+            )
+        }
+        try HostSettings.setLANEnabled(enabled, at: paths.hostSettingsFile)
+    }
+
+    public func lanURL(for status: RuntimeStatus) -> URL? {
+        guard lanEnabled(), let configuration = LANConfiguration.detect() else { return nil }
+        return configuration.url(port: status.port)
+    }
+
+    public func lanCockpitURL(for status: RuntimeStatus) throws -> URL {
+        guard let url = lanURL(for: status),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else {
+            throw URLError(.badURL)
+        }
+
+        let secrets = try HostSecrets.loadOrCreate(at: paths.hostSecretsFile, store: secretStore)
+        components.queryItems = try DesktopLaunchClaim.queryItems(secret: secrets.desktopLaunchToken)
+        guard let authenticatedURL = components.url else { throw URLError(.badURL) }
+        return authenticatedURL
+    }
+
     /// Ask the release's own epmd whether our node name is still registered.
     private func epmdListsNode() async -> Bool {
         guard let epmd = epmdBinary() else { return false }
@@ -169,14 +202,36 @@ public actor ReleaseController {
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
         environment["CASEIN_API_TOKEN"] = secrets.apiToken
         environment["CASEIN_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
+        let settings: HostSettings
         let port: Int
-        if let selectedPort { port = selectedPort } else {
-            port = try HostSettings.loadOrSelect(at: paths.hostSettingsFile).port
+        if let selectedPort {
+            port = selectedPort
+            settings = HostSettings.load(at: paths.hostSettingsFile)
+                ?? HostSettings(port: port)
+        } else {
+            settings = try HostSettings.loadOrSelect(at: paths.hostSettingsFile)
+            port = settings.port
             selectedPort = port
         }
         environment["PORT"] = String(port)
         environment["PHX_SERVER"] = "true"
         environment["RELEASE_NODE"] = releaseNode
+
+        if settings.lanEnabled {
+            guard let lan = LANConfiguration.detect() else {
+                throw CommandError(
+                    command: "start LAN",
+                    exitCode: -1,
+                    output: "no active private IPv4 network was found"
+                )
+            }
+            environment["CASEIN_DESKTOP_LAN"] = "true"
+            environment["CASEIN_LAN_INSECURE_HTTP"] = "true"
+            environment["CASEIN_LAN_HOST"] = lan.host
+            environment["CASEIN_LAN_IP"] = lan.ip
+            environment["CASEIN_LAN_IPS"] = lan.ips.joined(separator: ",")
+            environment["PHX_IP"] = "0.0.0.0"
+        }
         return environment
     }
 

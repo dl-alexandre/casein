@@ -57,7 +57,7 @@ defmodule Casein.Push.FCMProviderTest do
     assert message["notification"]["body"] == "not_allowlisted"
     assert message["data"]["workspace_id"] == "ws-7"
     assert message["data"]["action"] == "policy.blocked"
-    assert message["data"]["deep_link"] == "casein://session/ws-7"
+    assert message["data"]["deep_link"] == "devide://session/ws-7"
 
     assert Jason.decode!(message["data"]["mob_notification_json"]) == %{
              "id" => "push:ws-7",
@@ -67,7 +67,7 @@ defmodule Casein.Push.FCMProviderTest do
              "data" => %{
                "workspace_id" => "ws-7",
                "action" => "policy.blocked",
-               "deep_link" => "casein://session/ws-7"
+               "deep_link" => "devide://session/ws-7"
              }
            }
 
@@ -109,7 +109,10 @@ defmodule Casein.Push.FCMProviderTest do
         card_id: "needs_review:ws-7:run-1",
         card_type: "needs_review",
         session_id: "run-1",
-        deep_link: "casein://review/needs_review%3Aws-7%3Arun-1"
+        origin_id: "origin-devbox",
+        origin_name: "Devbox",
+        locator: %{origin_id: "origin-devbox", workspace_id: "ws-7", session_id: "run-1"},
+        deep_link: "devide://review/needs_review%3Aws-7%3Arun-1"
       })
 
     assert :ok = FCMProvider.push("t", "android", notification)
@@ -117,16 +120,24 @@ defmodule Casein.Push.FCMProviderTest do
     assert_receive {:fcm_request, _url, _headers, body}, 1_000
     data = body["message"]["data"]
     assert data["action"] == "mobile.needs_review"
-    assert data["deep_link"] == "casein://review/needs_review%3Aws-7%3Arun-1"
+    assert data["deep_link"] == "devide://review/needs_review%3Aws-7%3Arun-1"
     assert data["card_id"] == "needs_review:ws-7:run-1"
     assert data["card_type"] == "needs_review"
     assert data["session_id"] == "run-1"
+    assert data["origin_id"] == "origin-devbox"
+    assert data["origin_name"] == "Devbox"
+
+    assert Jason.decode!(data["locator_json"]) == %{
+             "origin_id" => "origin-devbox",
+             "workspace_id" => "ws-7",
+             "session_id" => "run-1"
+           }
 
     mob_payload = Jason.decode!(data["mob_notification_json"])
     assert mob_payload["id"] == "needs_review:ws-7:run-1"
     assert mob_payload["source"] == "push"
     assert mob_payload["data"]["card_id"] == "needs_review:ws-7:run-1"
-    assert mob_payload["data"]["deep_link"] == "casein://review/needs_review%3Aws-7%3Arun-1"
+    assert mob_payload["data"]["deep_link"] == "devide://review/needs_review%3Aws-7%3Arun-1"
   end
 
   test "infers project id from FCMToken service-account config" do

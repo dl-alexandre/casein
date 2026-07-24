@@ -376,10 +376,16 @@ export function setStoredTerminalScheme(scheme) {
   }
 }
 
+/**
+ * Apply a server theme bundle (dark/light chrome + 256 LUT).
+ * When `bundle.preview` is true, skip localStorage so palette highlight
+ * previews do not persist until the user confirms with Enter.
+ */
 export function applyServerThemeBundle(bundle) {
   if (!bundle || typeof bundle !== "object") return
   serverThemeBundle = bundle
-  if (bundle.preset) setStoredTerminalPreset(bundle.preset)
+  const preview = bundle.preview === true || bundle.preview === "true"
+  if (bundle.preset && !preview) setStoredTerminalPreset(bundle.preset)
   applyTerminalTheme(resolveTerminalTheme())
 }
 

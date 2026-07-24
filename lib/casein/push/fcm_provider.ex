@@ -124,6 +124,9 @@ defmodule Casein.Push.FCMProvider do
       |> maybe_put_string("session_id", notification[:session_id])
       |> maybe_put_string("card_id", notification[:card_id])
       |> maybe_put_string("card_type", notification[:card_type])
+      |> maybe_put_string("origin_id", notification[:origin_id])
+      |> maybe_put_string("origin_name", notification[:origin_name])
+      |> maybe_put_json("locator_json", notification[:locator])
 
     Map.put(data, "mob_notification_json", notification_json(notification, data))
   end
@@ -147,6 +150,9 @@ defmodule Casein.Push.FCMProvider do
 
   defp maybe_put_string(data, _key, nil), do: data
   defp maybe_put_string(data, key, value), do: Map.put(data, key, to_string(value))
+
+  defp maybe_put_json(data, _key, nil), do: data
+  defp maybe_put_json(data, key, value), do: Map.put(data, key, Jason.encode!(value))
 
   defp project_id do
     case config()[:project_id] || inferred_project_id() do

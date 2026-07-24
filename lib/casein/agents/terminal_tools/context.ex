@@ -16,7 +16,7 @@ defmodule Casein.Agents.TerminalTools.Context do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Session}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -34,6 +34,6 @@ defmodule Casein.Agents.TerminalTools.Context do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.context(Helpers.to_impl_args(params))
+    Session.context(Helpers.to_impl_args(params))
   end
 end

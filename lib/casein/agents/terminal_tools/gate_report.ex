@@ -19,7 +19,7 @@ defmodule Casein.Agents.TerminalTools.GateReport do
 
   @behaviour Casein.Agents.ToolAction
 
-  alias Casein.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Report}
   alias McpCtl.Tool
 
   @impl Casein.Agents.ToolAction
@@ -41,6 +41,6 @@ defmodule Casein.Agents.TerminalTools.GateReport do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.gate_report(Helpers.to_impl_args(params))
+    Report.gate_report(Helpers.to_impl_args(params))
   end
 end

@@ -2,7 +2,7 @@
 
 > **Historical ledger.** The fleet-runner / delegated-execution stack referenced
 > here (`scripts/dogfood_remote_fleet.sh`, `scripts/dogfood_remote_runner_smoke.sh`,
-> `DevIDE.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
+> `Casein.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
 > in the repo. The MCP side-by-side section (lower half) remains current.
 
 Purpose: validate whether DevIDE can be trusted for daily delegated engineering
@@ -124,8 +124,8 @@ COMMAND_ID=precommit \
 bash scripts/dogfood_remote_fleet.sh
 ```
 
-During the success leg, an operator process called `DevIDE.Fleet.prepare_takeover/2`
-and `DevIDE.Fleet.attach_packet/2` against the live execution.
+During the success leg, an operator process called `Casein.Fleet.prepare_takeover/2`
+and `Casein.Fleet.attach_packet/2` against the live execution.
 
 Evidence:
 
@@ -293,7 +293,7 @@ Operational result:
   controller through a reverse SSH tunnel.
 - The runner process starts and receives work, but it also starts the full
   application supervision tree on the runner host.
-- Because the full app starts `DevIDE.Repo`, the remote runner tried to connect
+- Because the full app starts `Casein.Repo`, the remote runner tried to connect
   to a local `dev_ide_dev` database on `milcmini`. That database did not exist,
   causing repeated Postgrex connection failures and preventing a clean remote
   execution.
@@ -304,7 +304,7 @@ Remaining blocker:
 
 - Standalone runner startup is not boring on a fresh remote machine because it
   currently depends on local controller-app infrastructure, especially
-  `DevIDE.Repo`.
+  `Casein.Repo`.
 - The runner path needs a remote-safe runtime profile or release entrypoint that
   starts only the runner dependencies needed for HTTP transport and command
   execution.

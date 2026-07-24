@@ -93,7 +93,7 @@ This is almost exactly the mental model already described in `docs/product.md` Â
      - `devide_attach_terminal(...)` (read buffer / stream events)
    - Odysseus's agent (via its opencode/MCP machinery) or a custom skill can then "use the DevIDE workspace" when it needs safe, auditable, durable execution.
    - The agent gets power without the host getting pwned.
-   - This is a natural extension of the existing `DevIDE.Agents` detection + Tidewave MCP surface.
+   - This is a natural extension of the existing `Casein.Agents` detection + Tidewave MCP surface.
 
 2. **Run them side-by-side for different concerns**
    - Odysseus for personal research, writing, broad agent tasks, local model playground, documents, email/calendar.
@@ -102,7 +102,7 @@ This is almost exactly the mental model already described in `docs/product.md` Â
 
 3. **Minimal: Borrow UX/ideas into the existing Phoenix surface**
    - Add a richer chat/agent pane behind capability gates (only when an agent runtime is detected).
-   - Improve the "transcripts" and review commands surfaces already in `DevIDE.Agents`.
+   - Improve the "transcripts" and review commands surfaces already in `Casein.Agents`.
    - But this duplicates a lot of what Odysseus already does well.
 
 4. **Nuclear: Sunset the runtime and move execution authority into Odysseus**

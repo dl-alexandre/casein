@@ -4,12 +4,12 @@
 
 ## Responsibility
 
-`DevIDE.Runtimes` is a **record-only** service. After the fleet + runner-assignment
+`Casein.Runtimes` is a **record-only** service. After the fleet + runner-assignment
 removal, the architecture collapsed to a single runtime per workspace: there is no
 dynamic placement, no host *selection* engine, no assignment scheduler. The
 subsystem stores where work *has* run, not where it *should* run, and never accepts
 argv, shells, HTTP proxy targets, or mutation commands (see the `@moduledoc` on
-`lib/casein/runtimes.ex` and `DevIDE.Runtimes.StateMachine`).
+`lib/casein/runtimes.ex` and `Casein.Runtimes.StateMachine`).
 
 Its live jobs are:
 
@@ -24,31 +24,31 @@ Its live jobs are:
   `cleanup_runtime/2` for TTL eviction, and `restore_runtime/2` for explicitly
   reviving retained work. These are plain context functions; an
   operator drives them over a remote console
-  (`bin/casein rpc 'DevIDE.Runtimes.list_runtimes(%{})'`), there is no dedicated
+  (`bin/casein rpc 'Casein.Runtimes.list_runtimes(%{})'`), there is no dedicated
   CLI wrapper.
 
 ## Module map
 
 | Module | File | Role |
 | --- | --- | --- |
-| `DevIDE.Runtimes` | `lib/casein/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
-| `DevIDE.Runtimes.Runtime` | `lib/casein/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
-| `DevIDE.Runtimes.Host` | `lib/casein/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
-| `DevIDE.Runtimes.LifecycleEvent` | `lib/casein/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
-| `DevIDE.Runtimes.Profile` | `lib/casein/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
-| `DevIDE.Runtimes.StateMachine` | `lib/casein/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
-| `DevIDE.Runtimes.EctoAdapter` | `lib/casein/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `DevIDE.Runtimes` behaviour. |
-| `DevIDE.Runtimes.MemoryAdapter` | `lib/casein/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
-| `DevIDE.Runtimes.RuntimeRow` | `lib/casein/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
-| `DevIDE.Runtimes.HostRow` | `lib/casein/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
-| `DevIDE.Runtimes.LifecycleEventRow` | `lib/casein/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
+| `Casein.Runtimes` | `lib/casein/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
+| `Casein.Runtimes.Runtime` | `lib/casein/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
+| `Casein.Runtimes.Host` | `lib/casein/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
+| `Casein.Runtimes.LifecycleEvent` | `lib/casein/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
+| `Casein.Runtimes.Profile` | `lib/casein/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
+| `Casein.Runtimes.StateMachine` | `lib/casein/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
+| `Casein.Runtimes.EctoAdapter` | `lib/casein/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `Casein.Runtimes` behaviour. |
+| `Casein.Runtimes.MemoryAdapter` | `lib/casein/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
+| `Casein.Runtimes.RuntimeRow` | `lib/casein/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
+| `Casein.Runtimes.HostRow` | `lib/casein/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
+| `Casein.Runtimes.LifecycleEventRow` | `lib/casein/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
 
 ## Data flow / lifecycle
 
 **Adapter selection.** All persistence goes through `impl/0`, which reads
-`config :dev_ide, :runtimes_adapter` (default `MemoryAdapter`). `config/config.exs`
+`config :casein, :runtimes_adapter` (default `MemoryAdapter`). `config/config.exs`
 sets `EctoAdapter`; `config/test.exs` sets `MemoryAdapter`. Both satisfy the
-`@callback`s declared on `DevIDE.Runtimes`. The `MemoryAdapter` is a named
+`@callback`s declared on `Casein.Runtimes`. The `MemoryAdapter` is a named
 `GenServer` and must be supervised when used.
 
 **Agent worktree observation** (`observe_worktree/2`, the primary write path):
@@ -102,7 +102,7 @@ Called by API / LiveView / MCP / export code:
   metadata read surfaces with the current runtime projection.
 - `project_lifecycle/1` — delegates to `StateMachine.reduce/1`.
 
-`DevIDE.Runtimes.Profile`: `from_attrs/1`, `normalize/1`, `for_runtime/1`,
+`Casein.Runtimes.Profile`: `from_attrs/1`, `normalize/1`, `for_runtime/1`,
 `preview_surfaces/2`. Builtins: `phoenix` (:4000), `vite` (:5173), `static` (:8000),
 `custom`.
 

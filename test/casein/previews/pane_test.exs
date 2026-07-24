@@ -151,7 +151,7 @@ defmodule Casein.Previews.PaneTest do
   defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
-    root = Path.join(System.tmp_dir!(), "preview-pane-#{System.unique_integer([:positive])}")
+    root = Casein.TmpWorkspace.root!("preview-pane")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:casein, :workspaces_root, root)

@@ -1,8 +1,8 @@
 defmodule DevideMob.SessionConfig do
   @moduledoc """
-  Device-local settings for the session companion: the host pairing
-  (`{url, token}`), the set of pinned workspace ids the dashboard watches, and
-  the last workspace/session context the dashboard can offer to resume.
+  Device-local settings for the session companion. Multiple host profiles are
+  retained, while exactly one profile supplies the active `{url, token}`,
+  pinned workspaces, and resume context used by the live socket.
 
   Backed by `Mob.State` so it survives screen navigation. The pairing is
   provisioned by QR scan (web cockpit → camera bridge) or manual entry; see
@@ -19,47 +19,206 @@ defmodule DevideMob.SessionConfig do
   @pairing_key :session_pairing
   @pinned_key :session_pinned_workspaces
   @resume_key :session_resume_context
+  @profiles_key :session_host_profiles
+  @active_profile_key :session_active_host
+  @max_cached_cards 30
+  @cached_locator_keys ~w(workspace_id session_id tmux_session window pane tab artifact)a
+
+  alias DevideMob.OriginIdentity
 
   @doc "Returns `{:ok, url, token}` if a pairing exists, else `:error`."
   @spec pairing() :: {:ok, String.t(), String.t()} | :error
   def pairing do
-    case runtime_default_pairing() || Mob.State.get(@pairing_key, config_default_pairing()) do
+    case runtime_default_pairing() || active_profile() || legacy_pairing() do
       %{url: url, token: token} when is_binary(url) and is_binary(token) -> {:ok, url, token}
       _ -> :error
     end
   end
 
+  @doc "Active connection details including the stable origin descriptor."
+  @spec connection() :: {:ok, map()} | :error
+  def connection do
+    case runtime_default_pairing() || active_profile() || legacy_pairing() do
+      %{url: url, token: token} = profile when is_binary(url) and is_binary(token) ->
+        {:ok, normalize_profile(profile)}
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc "Saved host profiles, with credentials omitted."
+  @spec host_profiles() :: [
+          %{
+            origin_id: String.t(),
+            display_name: String.t(),
+            url: String.t(),
+            active?: boolean(),
+            last_workspace_id: String.t() | nil
+          }
+        ]
+  def host_profiles do
+    active_id = active_profile_id()
+
+    profiles()
+    |> Map.values()
+    |> Enum.map(fn profile ->
+      %{
+        origin_id: profile.origin_id,
+        display_name: profile.display_name,
+        url: profile.url,
+        active?: profile.origin_id == active_id,
+        last_workspace_id: last_workspace_id(profile)
+      }
+    end)
+    |> Enum.sort_by(&{&1.display_name, &1.origin_id})
+  end
+
   @spec put_pairing(String.t(), String.t()) :: :ok
   def put_pairing(url, token) when is_binary(url) and is_binary(token) do
-    Mob.State.put(@pairing_key, %{url: url, token: token})
+    put_pairing(%{url: url, token: token})
+  end
+
+  @spec put_pairing(map()) :: :ok
+  def put_pairing(%{url: url, token: token} = attrs)
+      when is_binary(url) and is_binary(token) do
+    incoming = normalize_profile(attrs)
+    existing = Map.get(profiles(), incoming.origin_id, default_profile())
+
+    profile =
+      incoming
+      |> Map.merge(existing)
+      |> Map.merge(Map.take(incoming, [:origin_id, :display_name, :url, :token]))
+
+    Mob.State.put(@profiles_key, Map.put(profiles(), profile.origin_id, profile))
+    activate_profile(profile)
     :ok
+  end
+
+  @doc "Make a saved host the active profile."
+  @spec activate_host(String.t()) :: {:ok, String.t(), String.t()} | :error
+  def activate_host(id_or_url) when is_binary(id_or_url) do
+    case find_profile(id_or_url) do
+      %{url: active_url, token: token} = profile ->
+        activate_profile(profile)
+        {:ok, active_url, token}
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc "Activate a trusted saved origin and return its full connection descriptor."
+  @spec activate_origin(String.t()) :: {:ok, map()} | :error
+  def activate_origin(origin_id) when is_binary(origin_id) do
+    case Map.get(profiles(), origin_id) do
+      %{url: url, token: token} = profile when is_binary(url) and is_binary(token) ->
+        activate_profile(profile)
+        {:ok, profile}
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc """
+  Reconcile a server-authenticated descriptor with the active profile.
+
+  Legacy URL-derived profiles may be upgraded once. A different stable id is
+  rejected so an untrusted payload cannot retarget the active connection.
+  """
+  @spec reconcile_active_origin(map()) :: {:ok, map()} | {:error, atom()}
+  def reconcile_active_origin(descriptor) when is_map(descriptor) do
+    origin_id = descriptor |> map_value(:id) |> present()
+
+    display_name =
+      present(map_value(descriptor, :display_name) || map_value(descriptor, :name))
+
+    with true <- is_binary(origin_id),
+         profile when is_map(profile) <- active_profile() do
+      reconcile_profile(profile, origin_id, display_name)
+    else
+      false -> {:error, :invalid_origin}
+      nil -> {:error, :unknown_origin}
+    end
+  end
+
+  def reconcile_active_origin(_descriptor), do: {:error, :invalid_origin}
+
+  @doc "Cache a bounded, non-authoritative card summary for a known origin."
+  @spec cache_cards(String.t(), [map()], String.t() | nil) :: :ok | {:error, atom()}
+  def cache_cards(origin_id, cards, observed_at \\ nil)
+      when is_binary(origin_id) and is_list(cards) do
+    case Map.get(profiles(), origin_id) do
+      nil ->
+        {:error, :unknown_origin}
+
+      profile ->
+        cached_at = observed_at || DateTime.utc_now() |> DateTime.to_iso8601()
+
+        cache =
+          cards
+          |> Enum.filter(&(is_map(&1) and present(map_value(&1, :id))))
+          |> Enum.take(@max_cached_cards)
+          |> Enum.map(&cache_card(&1, origin_id, profile.display_name, cached_at))
+
+        persist_profile(%{profile | cached_cards: cache, cards_cached_at: cached_at})
+        :ok
+    end
+  end
+
+  @doc "Read-only cached cards from inactive origins."
+  @spec inactive_cached_cards() :: [map()]
+  def inactive_cached_cards do
+    active_id = active_profile_id()
+
+    profiles()
+    |> Map.values()
+    |> Enum.reject(&(&1.origin_id == active_id))
+    |> Enum.flat_map(&Map.get(&1, :cached_cards, []))
   end
 
   @spec clear_pairing() :: :ok
   def clear_pairing do
+    active_id = active_profile_id()
+
+    if active_id do
+      Mob.State.put(@profiles_key, Map.delete(profiles(), active_id))
+    end
+
+    Mob.State.put(@active_profile_key, nil)
     Mob.State.put(@pairing_key, nil)
+    Mob.State.put(@pinned_key, [])
+    Mob.State.put(@resume_key, nil)
     :ok
   end
 
   @doc "Clear all session companion state stored on this device."
   @spec clear_all() :: :ok
   def clear_all do
-    clear_pairing()
+    Mob.State.put(@profiles_key, %{})
+    Mob.State.put(@active_profile_key, nil)
+    Mob.State.put(@pairing_key, nil)
     Mob.State.put(@pinned_key, [])
-    clear_resume_context()
+    Mob.State.put(@resume_key, nil)
     :ok
   end
 
   @doc "Workspace ids pinned to the dashboard."
   @spec pinned_workspaces() :: [String.t()]
   def pinned_workspaces do
-    runtime_default_pinned() || Mob.State.get(@pinned_key, config_default_pinned())
+    runtime_default_pinned() ||
+      profile_value(:pinned_workspaces, Mob.State.get(@pinned_key, config_default_pinned()))
   end
 
   @spec pin_workspace(String.t()) :: :ok
   def pin_workspace(workspace_id) when is_binary(workspace_id) do
     pinned = pinned_workspaces()
-    unless workspace_id in pinned, do: Mob.State.put(@pinned_key, pinned ++ [workspace_id])
+
+    unless workspace_id in pinned do
+      put_profile_value(:pinned_workspaces, pinned ++ [workspace_id])
+    end
+
     :ok
   end
 
@@ -70,7 +229,7 @@ defmodule DevideMob.SessionConfig do
 
   @spec unpin_workspace(String.t()) :: :ok
   def unpin_workspace(workspace_id) when is_binary(workspace_id) do
-    Mob.State.put(@pinned_key, pinned_workspaces() -- [workspace_id])
+    put_profile_value(:pinned_workspaces, pinned_workspaces() -- [workspace_id])
     clear_resume_context(workspace_id)
     :ok
   end
@@ -78,7 +237,7 @@ defmodule DevideMob.SessionConfig do
   @doc "Last workspace/session context the dashboard can offer to resume."
   @spec resume_context() :: map() | nil
   def resume_context do
-    case Mob.State.get(@resume_key, nil) do
+    case profile_value(:resume_context, Mob.State.get(@resume_key, nil)) do
       %{workspace_id: workspace_id} = context
       when is_binary(workspace_id) and workspace_id != "" ->
         context
@@ -106,14 +265,14 @@ defmodule DevideMob.SessionConfig do
         |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
         |> Map.new()
 
-      Mob.State.put(@resume_key, context)
+      put_profile_value(:resume_context, context)
       :ok
     end
   end
 
   @spec clear_resume_context() :: :ok
   def clear_resume_context do
-    Mob.State.put(@resume_key, nil)
+    put_profile_value(:resume_context, nil)
     :ok
   end
 
@@ -132,10 +291,299 @@ defmodule DevideMob.SessionConfig do
   defp config_default_pairing do
     case Application.get_env(:devide_mob, :session, [])[:pairing] do
       %{url: url, token: token} when is_binary(url) and is_binary(token) ->
-        %{url: url, token: token}
+        normalize_profile(%{url: url, token: token})
 
       _ ->
         nil
+    end
+  end
+
+  defp active_profile do
+    Map.get(profiles(), active_profile_id())
+  end
+
+  defp active_profile_id do
+    active = Mob.State.get(@active_profile_key, nil)
+    current_profiles = profiles_without_active_lookup()
+
+    cond do
+      is_binary(active) and Map.has_key?(current_profiles, active) ->
+        active
+
+      is_binary(active) ->
+        migrate_active_url(current_profiles, active)
+
+      true ->
+        nil
+    end
+  end
+
+  defp profiles do
+    profiles_without_active_lookup()
+  end
+
+  defp profiles_without_active_lookup do
+    case Mob.State.get(@profiles_key, nil) do
+      profiles when is_map(profiles) and map_size(profiles) > 0 ->
+        normalized =
+          Map.new(profiles, fn {_key, profile} ->
+            profile = normalize_profile(profile)
+            {profile.origin_id, profile}
+          end)
+
+        if normalized != profiles, do: Mob.State.put(@profiles_key, normalized)
+        normalized
+
+      _ ->
+        migrate_legacy_profile()
+    end
+  end
+
+  defp migrate_legacy_profile do
+    case legacy_pairing() do
+      %{url: url, token: token} ->
+        profile =
+          normalize_profile(%{
+            url: url,
+            token: token,
+            pinned_workspaces: Mob.State.get(@pinned_key, config_default_pinned()),
+            resume_context: Mob.State.get(@resume_key, nil)
+          })
+
+        Mob.State.put(@profiles_key, %{profile.origin_id => profile})
+        Mob.State.put(@active_profile_key, profile.origin_id)
+        %{profile.origin_id => profile}
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp legacy_pairing do
+    Mob.State.get(@pairing_key, config_default_pairing())
+  end
+
+  defp activate_profile(profile) do
+    Mob.State.put(@active_profile_key, profile.origin_id)
+
+    Mob.State.put(@pairing_key, %{
+      origin_id: profile.origin_id,
+      display_name: profile.display_name,
+      url: profile.url,
+      token: profile.token
+    })
+
+    Mob.State.put(@pinned_key, Map.get(profile, :pinned_workspaces, []))
+    Mob.State.put(@resume_key, Map.get(profile, :resume_context))
+  end
+
+  defp persist_profile(profile) do
+    Mob.State.put(@profiles_key, Map.put(profiles(), profile.origin_id, profile))
+  end
+
+  defp profile_value(key, fallback) do
+    case active_profile() do
+      profile when is_map(profile) -> Map.get(profile, key, fallback)
+      _ -> fallback
+    end
+  end
+
+  defp put_profile_value(key, value) do
+    Mob.State.put(storage_key(key), value)
+
+    case active_profile() do
+      %{origin_id: origin_id} = profile ->
+        Mob.State.put(
+          @profiles_key,
+          Map.put(profiles(), origin_id, Map.put(profile, key, value))
+        )
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp storage_key(:pinned_workspaces), do: @pinned_key
+  defp storage_key(:resume_context), do: @resume_key
+
+  defp normalize_url(url) do
+    OriginIdentity.normalize_url(url)
+  end
+
+  defp normalize_profile(profile) when is_map(profile) do
+    url = normalize_url(map_value(profile, :url, ""))
+
+    origin_id =
+      present(map_value(profile, :origin_id)) ||
+        OriginIdentity.legacy_id(url)
+
+    display_name =
+      present(map_value(profile, :display_name)) ||
+        OriginIdentity.display_name(url)
+
+    %{
+      origin_id: origin_id,
+      display_name: display_name,
+      url: url,
+      token: map_value(profile, :token),
+      pinned_workspaces: map_value(profile, :pinned_workspaces, []),
+      resume_context: map_value(profile, :resume_context),
+      cached_cards: map_value(profile, :cached_cards, []),
+      cards_cached_at: map_value(profile, :cards_cached_at)
+    }
+  end
+
+  defp default_profile do
+    %{pinned_workspaces: [], resume_context: nil, cached_cards: [], cards_cached_at: nil}
+  end
+
+  defp cache_card(card, origin_id, display_name, cached_at) do
+    card_id = present(map_value(card, :id))
+
+    %{
+      "id" => card_id,
+      "qualified_id" => "#{origin_id}:#{card_id}",
+      "origin" => %{"id" => origin_id, "display_name" => display_name},
+      "workspace_id" => cache_text(card, :workspace_id),
+      "workspace_name" => cache_text(card, :workspace_name),
+      "session_id" => cache_text(card, :session_id),
+      "title" => cache_text(card, :title),
+      "body" => cache_text(card, :body),
+      "type" => cache_text(card, :type),
+      "kind" => cache_text(card, :kind),
+      "status" => cache_text(card, :status),
+      "priority" => cache_priority(card),
+      "updated_at" => cache_text(card, :updated_at),
+      "resume" => cached_resume(map_value(card, :resume, %{}), origin_id, cached_at),
+      "_cached" => true,
+      "_cached_at" => cached_at
+    }
+  end
+
+  defp cache_text(card, key), do: card |> map_value(key) |> present()
+
+  defp cache_priority(card) do
+    case map_value(card, :priority) do
+      priority when is_integer(priority) -> priority
+      priority when is_binary(priority) -> present(priority)
+      _ -> nil
+    end
+  end
+
+  defp cached_resume(resume, origin_id, cached_at) when is_map(resume) do
+    %{
+      "version" => map_value(resume, :version),
+      "state" => map_value(resume, :state),
+      "phase" => map_value(resume, :phase),
+      "availability" => "offline_resumable",
+      "freshness" => %{"kind" => "cached", "observed_at" => cached_at},
+      "task_ref" => cached_task_ref(map_value(resume, :task_ref)),
+      "locator" => cached_locator(map_value(resume, :locator, %{}), origin_id)
+    }
+  end
+
+  defp cached_resume(_resume, origin_id, cached_at) do
+    cached_resume(%{}, origin_id, cached_at)
+  end
+
+  defp cached_task_ref(task_ref) when is_map(task_ref) do
+    case {present(map_value(task_ref, :type)), present(map_value(task_ref, :id))} do
+      {type, id} when is_binary(type) and is_binary(id) ->
+        %{"type" => type, "id" => id}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp cached_task_ref(_task_ref), do: nil
+
+  defp cached_locator(locator, origin_id) when is_map(locator) do
+    @cached_locator_keys
+    |> Enum.reduce(%{"origin_id" => origin_id}, fn key, acc ->
+      case present(map_value(locator, key)) do
+        nil -> acc
+        value -> Map.put(acc, Atom.to_string(key), value)
+      end
+    end)
+  end
+
+  defp cached_locator(_locator, origin_id), do: %{"origin_id" => origin_id}
+
+  defp find_profile(id_or_url) do
+    normalized_url = normalize_url(id_or_url)
+
+    Map.get(profiles(), id_or_url) ||
+      Enum.find_value(profiles(), fn {_origin_id, profile} ->
+        if profile.url == normalized_url, do: profile
+      end)
+  end
+
+  defp reconcile_profile(%{origin_id: origin_id} = profile, origin_id, display_name) do
+    profile = %{profile | display_name: display_name || profile.display_name}
+    persist_profile(profile)
+    {:ok, profile}
+  end
+
+  defp reconcile_profile(%{origin_id: "legacy_" <> _rest} = legacy, origin_id, display_name) do
+    existing = Map.get(profiles(), origin_id, default_profile())
+
+    profile =
+      existing
+      |> Map.merge(legacy, fn
+        :pinned_workspaces, current, previous -> Enum.uniq(current ++ previous)
+        :cached_cards, current, previous -> Enum.take(current ++ previous, @max_cached_cards)
+        _key, current, _previous -> current
+      end)
+      |> Map.put(:origin_id, origin_id)
+      |> Map.put(:display_name, display_name || legacy.display_name)
+
+    updated = profiles() |> Map.delete(legacy.origin_id) |> Map.put(origin_id, profile)
+    Mob.State.put(@profiles_key, updated)
+    activate_profile(profile)
+    {:ok, profile}
+  end
+
+  defp reconcile_profile(_profile, _origin_id, _display_name), do: {:error, :origin_mismatch}
+
+  defp migrate_active_url(profiles, active_url) do
+    normalized_url = normalize_url(active_url)
+
+    case Enum.find_value(profiles, &matching_origin_id(&1, normalized_url)) do
+      nil ->
+        nil
+
+      origin_id ->
+        Mob.State.put(@active_profile_key, origin_id)
+        origin_id
+    end
+  end
+
+  defp matching_origin_id({origin_id, %{url: url}}, url), do: origin_id
+  defp matching_origin_id(_profile, _url), do: nil
+
+  defp map_value(map, key, default \\ nil) do
+    case Map.fetch(map, key) do
+      {:ok, nil} -> Map.get(map, Atom.to_string(key), default)
+      {:ok, value} -> value
+      :error -> Map.get(map, Atom.to_string(key), default)
+    end
+  end
+
+  defp present(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp present(_value), do: nil
+
+  defp last_workspace_id(profile) do
+    case Map.get(profile, :resume_context) do
+      %{workspace_id: workspace_id} when is_binary(workspace_id) -> workspace_id
+      %{"workspace_id" => workspace_id} when is_binary(workspace_id) -> workspace_id
+      _ -> profile |> Map.get(:pinned_workspaces, []) |> List.first()
     end
   end
 

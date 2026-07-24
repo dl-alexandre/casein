@@ -275,10 +275,26 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
             atPath: url.deletingLastPathComponent().path)[.posixPermissions] as? Int
         let first = try HostSettings.loadOrSelect(at: url)
         #expect((1024...65535).contains(first.port))
+        #expect(!first.lanEnabled)
         #expect(try HostSettings.loadOrSelect(at: url) == first)
         let directoryPermissions = try FileManager.default.attributesOfItem(
             atPath: url.deletingLastPathComponent().path)[.posixPermissions] as? Int
         #expect(directoryPermissions == originalPermissions)
+    }
+
+    @Test func settingsMigrateAndPersistLANIntent() throws {
+        let url = try temporaryFile(contents: nil).deletingLastPathComponent()
+            .appending(path: "desktop-host.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        try #"{"port":54321}"#.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+
+        #expect(HostSettings.load(at: url) == HostSettings(port: 54321, lanEnabled: false))
+        try HostSettings.setLANEnabled(true, at: url)
+        #expect(HostSettings.load(at: url) == HostSettings(port: 54321, lanEnabled: true))
+        try HostSettings.setLANEnabled(false, at: url)
+        #expect(HostSettings.load(at: url) == HostSettings(port: 54321, lanEnabled: false))
     }
 
     @Test func cockpitURLIsCanonicalAndAuthenticated() async throws {
@@ -310,6 +326,45 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         #expect(clean?.absoluteString == "http://127.0.0.1:\(status.port)/")
     }
 
+    @Test func lanCockpitURLUsesDetectedLANHostAndIsAuthenticated() async throws {
+        guard LANConfiguration.detect() != nil else { return }
+
+        let dataDir = try temporaryFile(contents: nil).deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        let paths = HostPaths(dataDir: dataDir, releaseRoot: dataDir)
+        let launchToken = String(repeating: "l", count: 43)
+        let secrets = HostSecrets(
+            secretKeyBase: String(repeating: "s", count: 64),
+            apiToken: String(repeating: "a", count: 43),
+            desktopLaunchToken: launchToken)
+        let store = MemoryHostSecretStore()
+        try store.save(JSONEncoder().encode(secrets), account: HostSecrets.keychainAccount(for: paths.hostSecretsFile))
+        _ = try HostSettings.loadOrSelect(at: paths.hostSettingsFile)
+        try HostSettings.setLANEnabled(true, at: paths.hostSettingsFile)
+        let controller = ReleaseController(paths: paths, secretStore: store)
+        let status = try JSONDecoder().decode(RuntimeStatus.self, from: Data(smokeFixture.utf8))
+
+        let url = try await controller.lanCockpitURL(for: status)
+        #expect(url.scheme == "http")
+        #expect(url.host != "127.0.0.1")
+        #expect(url.port == status.port)
+        let queryItems = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        let query = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value ?? "") })
+        #expect(query["desktop_nonce"]?.count == 22)
+        #expect(query["desktop_proof"]?.count == 43)
+        #expect(!url.absoluteString.contains(launchToken))
+    }
+
+    @Test func lanURLUsesPreferredIPAndRetainsEveryAllowedIP() throws {
+        let configuration = LANConfiguration(
+            host: "DairyBookPro.local",
+            ip: "192.168.1.72",
+            ips: ["192.168.1.27", "192.168.1.72"])
+
+        #expect(configuration.url(port: 54_321)?.absoluteString == "http://192.168.1.72:54321")
+        #expect(configuration.ips == ["192.168.1.72", "192.168.1.27"])
+    }
+
     @Test func finderLikeEnvironmentRepairsShellAndToolPath() async throws {
         let dataDir = try temporaryFile(contents: nil).deletingLastPathComponent()
         defer { try? FileManager.default.removeItem(at: dataDir) }
@@ -321,6 +376,8 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         #expect(environment["SHELL"] == "/bin/zsh")
         #expect(environment["PATH"]?.hasPrefix("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin") == true)
         #expect(environment["RELEASE_TMP"] == dataDir.appending(path: "runtime").path)
+        #expect(environment["CASEIN_DESKTOP_LAN"] == nil)
+        #expect(environment["PHX_IP"] == nil)
     }
 
     @Test func rejectsSharedWritableDataDirectoryWithoutChmoddingIt() throws {

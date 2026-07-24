@@ -40,7 +40,7 @@ LAST_DEPLOY_FILE="${DEVIDE_LAST_DEPLOY_FILE:-/run/casein/last-deploy.json}"
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
 
 # Atomically records deploy-poller outcomes for the running release to read via
-# DevIDE.Deployment.LastDeploy (/run/casein/last-deploy.json by default).
+# Casein.Deployment.LastDeploy (/run/casein/last-deploy.json by default).
 write_deploy_status() {
   local outcome="$1"
   local target_sha="${2:-}"

@@ -12,7 +12,7 @@ of what happened instead of rebuilding context from chat logs and screenshots.
 
 > **Compatibility note:** Casein is the public product name. Existing modules,
 > commands, package coordinates, and environment variables retain their
-> `DevIDE.*`, `dev_ide`, and `CASEIN_*` names for compatibility.
+> `Casein.*`, `dev_ide`, and `CASEIN_*` names for compatibility.
 
 ### Why it exists
 
@@ -31,11 +31,11 @@ workspace under server authority, so:
 - **Reconnect restores; it does not rerun.** Reattach and the terminal restores
   recent scrollback from an in-state buffer plus tmux history — no duplicated
   command and no “where was I?”
-  *(`DevIDE.Terminals.SessionOwner`, `DevIDE.Terminals.Session`)*
+  *(`Casein.Terminals.SessionOwner`, `Casein.Terminals.Session`)*
 - **Control and evidence stay server-side.** Policy decides what may happen;
   Audit records attributable decisions and outcomes. The browser and MCP move
   requests—they do not become authority by holding a connection.
-  *(`DevIDE.Policy`, `DevIDE.Audit`)*
+  *(`Casein.Policy`, `Casein.Audit`)*
 
 This is how we run dozens of agent sessions a week at MILCGroup.
 
@@ -76,10 +76,10 @@ Start here. These are canonical and citable by section number in tickets.
   is driven over LiveView. Sessions are durable across reconnect and survive
   server restarts (in-state buffer + tmux scrollback recovery).
 - **Recorded admission.** Whether a client may attach a raw terminal is a
-  server-side policy decision (`DevIDE.Policy.can_use_raw_terminal?/1`),
+  server-side policy decision (`Casein.Policy.can_use_raw_terminal?/1`),
   recorded in the run ledger. The command allowlist
-  (`DevIDE.Commands.Allowlist`) powers palette enumeration and constrains the
-  review-mode agent runs the runtime drives (`DevIDE.Agents.Run`).
+  (`Casein.Commands.Allowlist`) powers palette enumeration and constrains the
+  review-mode agent runs the runtime drives (`Casein.Agents.Run`).
 - **Workspace picker.** `/workspaces` lists the workspaces this runtime can
   attach, with derived status and capability chips.
 - **Workspace observation.** Surfaces workspace state, DB isolation, git
@@ -201,11 +201,11 @@ All endpoints are bearer-gated with `CASEIN_API_TOKEN`.
 Casein operates under explicit safety invariants:
 
 1. **Admission is recorded**: Attaching a raw terminal is a server-side policy
-   decision (`DevIDE.Policy.can_use_raw_terminal?/1`) written to the run ledger;
+   decision (`Casein.Policy.can_use_raw_terminal?/1`) written to the run ledger;
    it is not a client capability.
 2. **Constrained agent runs**: The command allowlist
-   (`DevIDE.Commands.Allowlist`) governs palette enumeration and the review-mode
-   agent runs the runtime drives (`DevIDE.Agents.Run`) — not arbitrary argv.
+   (`Casein.Commands.Allowlist`) governs palette enumeration and the review-mode
+   agent runs the runtime drives (`Casein.Agents.Run`) — not arbitrary argv.
 3. **No generic HTTP proxy**: No endpoint translates requests into arbitrary
    HTTP.
 4. **Append-only audit**: Audit and run events are immutable; reads are stable.

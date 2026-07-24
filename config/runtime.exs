@@ -12,7 +12,7 @@ import Config
 # If you use `mix release`, you need to explicitly enable the server
 # by passing the PHX_SERVER=true when you start it:
 #
-#     PHX_SERVER=true bin/casein start
+#     PHX_SERVER=true bin/dev_ide start
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
@@ -32,7 +32,18 @@ lan_insecure_http? = truthy_env?.("CASEIN_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("CASEIN_LAN") or lan_insecure_http?
 release_cli? = truthy_env?.("CASEIN_RELEASE_CLI")
 desktop_mode? = System.get_env("CASEIN_PROFILE") == "desktop"
+desktop_lan? = desktop_mode? and truthy_env?.("CASEIN_DESKTOP_LAN")
 portable_mode? = System.get_env("CASEIN_PROFILE") == "portable"
+
+operator_config_path = System.get_env("CASEIN_OPERATOR_CONFIG_FILE")
+operator_overlay? = is_binary(operator_config_path) and operator_config_path != ""
+
+operator_config =
+  if operator_overlay? do
+    Casein.Deployment.OperatorConfig.load!(operator_config_path)
+  else
+    []
+  end
 
 config :casein,
        :desktop_terminal_backend,
@@ -133,6 +144,14 @@ lan_http_host = fn ->
   end
 end
 
+lan_http_ips = fn ->
+  (System.get_env("CASEIN_LAN_IPS") || System.get_env("CASEIN_LAN_IP") || "")
+  |> String.split(",", trim: true)
+  |> Enum.map(&String.trim/1)
+  |> Enum.reject(&(&1 == ""))
+  |> Enum.uniq()
+end
+
 if config_env() != :test do
   if System.get_env("PHX_SERVER") do
     config :casein, CaseinWeb.Endpoint, server: true
@@ -149,6 +168,12 @@ if config_env() != :test do
 
   if portable_mode? or lan_mode? do
     config :casein, deployment_capabilities: []
+  else
+    if operator_overlay? do
+      config :casein,
+        deployment_capabilities:
+          Casein.Deployment.OperatorConfig.deployment_capabilities(operator_config)
+    end
   end
 
   if desktop_mode? do
@@ -162,6 +187,12 @@ if config_env() != :test do
 
     config :casein,
       desktop_mode: true,
+      desktop_lan: desktop_lan?,
+      desktop_lan_hosts:
+        if(desktop_lan?,
+          do: [lan_http_host.() | lan_http_ips.()],
+          else: []
+        ),
       desktop_launch_token: desktop_launch_token,
       deployment_capabilities: [],
       tmux_host_anchor: false,
@@ -250,6 +281,34 @@ if config_env() != :test do
     config :casein, Casein.Push.APNSProvider, apns_provider_config
   end
 
+  # Web Push (VAPID) for the installed PWA. Keys are base64url; decode at boot so
+  # a malformed value fails fast instead of at first push. Provider stays inert
+  # (unconfigured) unless BOTH keys decode.
+  decode_vapid = fn
+    nil ->
+      nil
+
+    value ->
+      case Base.url_decode64(value, padding: false) do
+        {:ok, bin} -> bin
+        :error -> nil
+      end
+  end
+
+  vapid_public = decode_vapid.(present_env.("CASEIN_VAPID_PUBLIC_KEY"))
+  vapid_private = decode_vapid.(present_env.("CASEIN_VAPID_PRIVATE_KEY"))
+  vapid_subject = present_env.("CASEIN_VAPID_SUBJECT") || "mailto:admin@localhost"
+
+  web_push_enabled? = not is_nil(vapid_public) and not is_nil(vapid_private)
+
+  if web_push_enabled? do
+    config :casein, Casein.Push.WebPushProvider, %{
+      public_key: vapid_public,
+      private_key: vapid_private,
+      subject: vapid_subject
+    }
+  end
+
   cond do
     push_provider in ["apns"] ->
       config :casein, :push_provider, Casein.Push.APNSProvider
@@ -257,8 +316,15 @@ if config_env() != :test do
     push_provider in ["fcm", "firebase"] ->
       config :casein, :push_provider, Casein.Push.FCMProvider
 
+    # Native wins when explicitly selected or any native transport is configured:
+    # NativeProvider now also routes "web" → WebPushProvider (its config is set
+    # above whenever VAPID keys are present), so APNs/FCM and Web Push coexist.
     push_provider in ["native"] or fcm_enabled? or apns_enabled? ->
       config :casein, :push_provider, Casein.Push.NativeProvider
+
+    # Web-only: no native transport configured, just VAPID keys.
+    push_provider in ["web"] or web_push_enabled? ->
+      config :casein, :push_provider, Casein.Push.WebPushProvider
 
     true ->
       :ok
@@ -277,7 +343,7 @@ if config_env() == :prod and not release_cli? do
             Casein.Desktop.Runtime.database_path()
 
           lan_mode? ->
-            "/var/lib/casein/lan/casein.sqlite3"
+            "/var/lib/devide/lan/devide.sqlite3"
 
           true ->
             raise """
@@ -329,6 +395,8 @@ if config_env() == :prod and not release_cli? do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  config :casein, :origin_identity_secret, secret_key_base
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :casein, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
@@ -355,25 +423,34 @@ if config_env() == :prod and not release_cli? do
   end
 
   bind_ip =
-    case {desktop_mode?, System.get_env("PHX_IP")} do
-      {true, nil} ->
+    case {desktop_mode?, desktop_lan?, System.get_env("PHX_IP")} do
+      {true, false, nil} ->
         {127, 0, 0, 1}
 
-      {true, str} when str not in ["127.0.0.1", "::1"] ->
+      {true, false, str} when str not in ["127.0.0.1", "::1"] ->
         raise "CASEIN_PROFILE=desktop requires PHX_IP to be loopback"
 
-      {true, str} ->
+      {true, false, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
           {:ok, addr} -> addr
           {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
         end
 
-      {false, nil} ->
+      {true, true, nil} ->
+        {0, 0, 0, 0}
+
+      {true, true, str} ->
+        case str |> String.to_charlist() |> :inet.parse_address() do
+          {:ok, addr} -> addr
+          {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
+        end
+
+      {false, _desktop_lan, nil} ->
         if forward_auth? or lan_insecure_http?,
           do: {127, 0, 0, 1},
           else: {0, 0, 0, 0, 0, 0, 0, 0}
 
-      {false, str} ->
+      {false, _desktop_lan, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
           {:ok, addr} -> addr
           {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
@@ -401,6 +478,13 @@ if config_env() == :prod and not release_cli? do
   # are selected at install time.
   check_origin =
     cond do
+      desktop_lan? ->
+        CaseinWeb.OriginOptions.desktop_lan(
+          Casein.Desktop.Runtime.requested_port(),
+          lan_http_host.(),
+          lan_http_ips.()
+        )
+
       desktop_mode? ->
         CaseinWeb.OriginOptions.desktop(Casein.Desktop.Runtime.requested_port())
 
@@ -435,6 +519,13 @@ if config_env() == :prod and not release_cli? do
 
   endpoint_url =
     cond do
+      desktop_lan? ->
+        [
+          host: lan_http_host.(),
+          port: Casein.Desktop.Runtime.requested_port(),
+          scheme: "http"
+        ]
+
       desktop_mode? ->
         [host: "localhost", scheme: "http"]
 
@@ -640,6 +731,13 @@ if config_env() == :prod and not release_cli? do
   deployment_config =
     :casein
     |> Application.get_env(:deployment, [])
+    |> then(fn config ->
+      if operator_overlay? do
+        Casein.Deployment.OperatorConfig.deployment(config, operator_config)
+      else
+        config
+      end
+    end)
     |> then(fn config ->
       case System.get_env("DEVIDE_DEPLOY_WEBHOOK_SECRET") do
         secret when is_binary(secret) and secret != "" ->
