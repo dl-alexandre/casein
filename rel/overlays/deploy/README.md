@@ -124,13 +124,13 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    sudoedit /etc/devide/devide.env
    ```
 
-   Fill in `SECRET_KEY_BASE`, `DEV_IDE_API_TOKEN` (both `mix phx.gen.secret`),
+   Fill in `SECRET_KEY_BASE`, `CASEIN_API_TOKEN` (both `mix phx.gen.secret`),
    `DEVIDE_PG_PASSWORD`, and `DATABASE_URL`. **`DATABASE_URL` must encode the
    same user/password/db as the `DEVIDE_PG_*` vars** — and use a URL-safe
    password (letters + digits; `@ : / #` break URL parsing).
 
    For full Preview MCP browser automation, keep
-   `DEV_IDE_PREVIEW_CONTROL_ADAPTER=playwright`. The release bundles the
+   `CASEIN_PREVIEW_CONTROL_ADAPTER=playwright`. The release bundles the
    Playwright helper and npm dependency; install Chromium once for the service
    user after the release is placed:
 

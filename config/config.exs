@@ -7,7 +7,7 @@
 # General application configuration
 import Config
 
-if match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true) do
+if match?({:win32, _}, :os.type()) or System.get_env("CASEIN_NATIVE_WINDOWS") in ~w(1 true) do
   config :phoenix_live_view, :colocated_assets,
     target_directory: Path.expand("../assets/node_modules/phoenix-colocated", __DIR__),
     disable_symlink_warning: true
@@ -17,10 +17,10 @@ end
 config :casein, :env, config_env()
 
 repo_adapter =
-  case System.get_env("DEV_IDE_REPO_ADAPTER", "postgres") |> String.downcase() do
+  case System.get_env("CASEIN_REPO_ADAPTER", "postgres") |> String.downcase() do
     value when value in ["sqlite", "sqlite3"] -> Ecto.Adapters.SQLite3
     value when value in ["postgres", "postgresql"] -> Ecto.Adapters.Postgres
-    value -> raise "DEV_IDE_REPO_ADAPTER must be postgres or sqlite, got: #{inspect(value)}"
+    value -> raise "CASEIN_REPO_ADAPTER must be postgres or sqlite, got: #{inspect(value)}"
   end
 
 config :casein, :repo_adapter, repo_adapter

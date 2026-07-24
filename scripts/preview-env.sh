@@ -126,12 +126,12 @@ start_preview_server() {
     "DEVIDE_URL=http://127.0.0.1:$port"
     "DEVIDE_HTTP_SOCKET=$sock"
     "DEVIDE_PREVIEW_TIDEWAVE_PORT=$port"
-    "DEV_IDE_WORKSPACE_SOURCE=local"
-    "DEV_IDE_WORKSPACES_ROOT=$ws"
+    "CASEIN_WORKSPACE_SOURCE=local"
+    "CASEIN_WORKSPACES_ROOT=$ws"
     "DATABASE_URL=$db_url"
   )
   if [ -n "$api_token" ]; then
-    env_args+=("DEV_IDE_API_TOKEN=$api_token")
+    env_args+=("CASEIN_API_TOKEN=$api_token")
   fi
 
   (
@@ -326,7 +326,7 @@ cmd_dirty() {
     echo ">>>   tidewave: $(tidewave_url_for "$port")"
     export MIX_ENV=dev PHX_SERVER=true
     export DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port"
-    export DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws"
+    export CASEIN_WORKSPACE_SOURCE=local CASEIN_WORKSPACES_ROOT="$ws"
     exec "${MISE[@]}" mix phx.server
   fi
 
@@ -450,7 +450,7 @@ cmd_tidewave_latest() {
 }
 
 preview_api_token() {
-  awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' /etc/devide/devide.env 2>/dev/null | tail -n 1 | tr -d '"'
+  awk -F= '/^CASEIN_API_TOKEN=/{print $2}' /etc/devide/devide.env 2>/dev/null | tail -n 1 | tr -d '"'
 }
 
 preview_workspace_id() {
@@ -478,12 +478,12 @@ cmd_agent_env() {
   tw_mcp=$(json_get "$f" tidewave_mcp_url)
   [ -n "$tw_mcp" ] || tw_mcp=$(tidewave_mcp_url_for "$port")
   token=$(preview_api_token)
-  [ -n "$token" ] || die "DEV_IDE_API_TOKEN missing from /etc/devide/devide.env"
+  [ -n "$token" ] || die "CASEIN_API_TOKEN missing from /etc/devide/devide.env"
   ws_id=$(preview_workspace_id "$base_url" "$token" "$SANDBOX")
   [ -n "$ws_id" ] || die "workspace $SANDBOX not found on preview env — is it up"
   mcp_home="\${HOME}/.devide/agent-mcp/${SANDBOX}"
 
-  emit_export DEV_IDE_API_TOKEN "${token}"
+  emit_export CASEIN_API_TOKEN "${token}"
   emit_export DEVIDE_URL "${base_url}"
   emit_export DEVIDE_API_BASE_URL "${base_url}"
   emit_export DEVIDE_WORKSPACE_ID "${ws_id}"

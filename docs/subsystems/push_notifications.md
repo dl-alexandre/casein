@@ -61,7 +61,7 @@ push is inert (logs only). Set credentials to go live.
 
 ### Provider selection
 
-| `DEV_IDE_PUSH_PROVIDER` | Effect |
+| `CASEIN_PUSH_PROVIDER` | Effect |
 |-------------------------|--------|
 | `native` | Route per-platform: Android→FCM, iOS→APNs (**recommended**) |
 | `fcm` / `firebase` | Force every token through FCM |
@@ -72,11 +72,11 @@ push is inert (logs only). Set credentials to go live.
 
 | Env var | Purpose |
 |---------|---------|
-| `DEV_IDE_FCM_PROJECT_ID` | Firebase project id (optional — inferred from the service account if omitted) |
-| `DEV_IDE_FCM_SERVICE_ACCOUNT_JSON` | Raw service-account JSON |
-| `DEV_IDE_FCM_SERVICE_ACCOUNT_PATH` / `GOOGLE_APPLICATION_CREDENTIALS` | Path to service-account JSON |
-| `DEV_IDE_FCM_ACCESS_TOKEN` | Pre-minted OAuth token — handy for a quick smoke test without a service account |
-| `DEV_IDE_FCM_TOKEN_URI` | Override the Google OAuth token endpoint (tests) |
+| `CASEIN_FCM_PROJECT_ID` | Firebase project id (optional — inferred from the service account if omitted) |
+| `CASEIN_FCM_SERVICE_ACCOUNT_JSON` | Raw service-account JSON |
+| `CASEIN_FCM_SERVICE_ACCOUNT_PATH` / `GOOGLE_APPLICATION_CREDENTIALS` | Path to service-account JSON |
+| `CASEIN_FCM_ACCESS_TOKEN` | Pre-minted OAuth token — handy for a quick smoke test without a service account |
+| `CASEIN_FCM_TOKEN_URI` | Override the Google OAuth token endpoint (tests) |
 
 `DevIDE.Push.FCMToken` mints and caches short-lived OAuth access tokens from the
 service account (Google JWT-bearer flow), so no extra credential dependency is
@@ -86,12 +86,12 @@ needed.
 
 | Env var | Purpose |
 |---------|---------|
-| `DEV_IDE_APNS_TEAM_ID` | Apple developer team id |
-| `DEV_IDE_APNS_KEY_ID` | APNs auth key id (the `.p8`'s key id) |
-| `DEV_IDE_APNS_TOPIC` | iOS app bundle id — **must match the signed build** (`com.alexandrefamilyfarm.devide-mob`, from `ios/Info.plist` / `ios/Provision.xcodeproj`). A mismatch is rejected with `DeviceTokenNotForTopic`. Note this is the iOS bundle id; Android's FCM applicationId is independent. |
-| `DEV_IDE_APNS_PRIVATE_KEY` | The `.p8` PEM contents inline |
-| `DEV_IDE_APNS_PRIVATE_KEY_PATH` | Path to the `.p8` file (alternative to inline) |
-| `DEV_IDE_APNS_ENV` | `sandbox` (default) or `production` |
+| `CASEIN_APNS_TEAM_ID` | Apple developer team id |
+| `CASEIN_APNS_KEY_ID` | APNs auth key id (the `.p8`'s key id) |
+| `CASEIN_APNS_TOPIC` | iOS app bundle id — **must match the signed build** (`com.alexandrefamilyfarm.devide-mob`, from `ios/Info.plist` / `ios/Provision.xcodeproj`). A mismatch is rejected with `DeviceTokenNotForTopic`. Note this is the iOS bundle id; Android's FCM applicationId is independent. |
+| `CASEIN_APNS_PRIVATE_KEY` | The `.p8` PEM contents inline |
+| `CASEIN_APNS_PRIVATE_KEY_PATH` | Path to the `.p8` file (alternative to inline) |
+| `CASEIN_APNS_ENV` | `sandbox` (default) or `production` |
 
 The provider mints the ES256 JWT itself and converts the DER ECDSA signature to
 the raw 64-byte form APNs requires.
@@ -104,8 +104,8 @@ the raw 64-byte form APNs requires.
    role.
 2. Export and start:
    ```bash
-   export DEV_IDE_PUSH_PROVIDER=native
-   export DEV_IDE_FCM_SERVICE_ACCOUNT_PATH=/run/secrets/firebase-service-account.json
+   export CASEIN_PUSH_PROVIDER=native
+   export CASEIN_FCM_SERVICE_ACCOUNT_PATH=/run/secrets/firebase-service-account.json
    ```
 3. Verify readiness (no send): `mix dev_ide.push.check --platform android`
 4. Pair a device, trigger a `needs_review` (an agent approval request), confirm
@@ -128,12 +128,12 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
    must equal that bundle id.
 3. Export and start:
    ```bash
-   export DEV_IDE_PUSH_PROVIDER=native
-   export DEV_IDE_APNS_TEAM_ID=ABCDE12345              # your team id
-   export DEV_IDE_APNS_KEY_ID=KEY1234567               # the .p8's key id
-   export DEV_IDE_APNS_TOPIC=com.alexandrefamilyfarm.devide-mob
-   export DEV_IDE_APNS_PRIVATE_KEY_PATH=/run/secrets/AuthKey_KEY1234567.p8
-   export DEV_IDE_APNS_ENV=sandbox   # development builds register against sandbox
+   export CASEIN_PUSH_PROVIDER=native
+   export CASEIN_APNS_TEAM_ID=ABCDE12345              # your team id
+   export CASEIN_APNS_KEY_ID=KEY1234567               # the .p8's key id
+   export CASEIN_APNS_TOPIC=com.alexandrefamilyfarm.devide-mob
+   export CASEIN_APNS_PRIVATE_KEY_PATH=/run/secrets/AuthKey_KEY1234567.p8
+   export CASEIN_APNS_ENV=sandbox   # development builds register against sandbox
    ```
 4. Verify: `mix dev_ide.push.check --platform ios`
 5. The device token comes from the **real `devide_mob` build** (not the

@@ -116,14 +116,14 @@ that workspace's own credentials. From the box:
 ```bash
 source /home/devbox/.devide/agent-mcp/<workspace-name>/env.sh
 # → DEVIDE_PREVIEW_MCP_URL (workspace-scoped, includes ?workspace_id&tmux_session)
-# → DEV_IDE_API_TOKEN (64-char, workspace-scoped)
+# → CASEIN_API_TOKEN (64-char, workspace-scoped)
 ```
 
 Drive tools over plain JSON-RPC (never echo the token):
 
 ```bash
 curl -sS "$DEVIDE_PREVIEW_MCP_URL" \
-  -H "Authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "Authorization: Bearer $CASEIN_API_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",

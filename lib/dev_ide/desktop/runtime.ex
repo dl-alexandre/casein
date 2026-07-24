@@ -4,13 +4,13 @@ defmodule Casein.Desktop.Runtime do
 
   The desktop profile is a loopback-only Phoenix release backed by SQLite.
   SQLite remains a compile-time choice, so desktop releases must be assembled
-  with `DEV_IDE_REPO_ADAPTER=sqlite`.
+  with `CASEIN_REPO_ADAPTER=sqlite`.
   """
 
   @profile "desktop"
 
   @spec desktop_profile?() :: boolean()
-  def desktop_profile?, do: System.get_env("DEV_IDE_PROFILE") == @profile
+  def desktop_profile?, do: System.get_env("CASEIN_PROFILE") == @profile
 
   @spec data_dir() :: Path.t()
   def data_dir, do: data_dir(:os.type())
@@ -18,7 +18,7 @@ defmodule Casein.Desktop.Runtime do
   @doc false
   @spec data_dir({atom(), atom()}) :: Path.t()
   def data_dir(os_type) do
-    System.get_env("DEV_IDE_DESKTOP_DATA_DIR") ||
+    System.get_env("CASEIN_DESKTOP_DATA_DIR") ||
       default_data_dir(os_type)
   end
 
@@ -31,7 +31,7 @@ defmodule Casein.Desktop.Runtime do
 
   @spec status_path() :: Path.t()
   def status_path do
-    System.get_env("DEV_IDE_DESKTOP_STATUS_PATH") ||
+    System.get_env("CASEIN_DESKTOP_STATUS_PATH") ||
       Path.join(data_dir(), "runtime.json")
   end
 

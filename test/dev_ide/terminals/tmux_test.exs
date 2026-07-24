@@ -8,11 +8,11 @@ defmodule Casein.Terminals.TmuxTest do
     workspace_source = Application.get_env(:casein, :workspace_source)
     tmux_host_shell = Application.get_env(:casein, :tmux_host_shell)
     tmux_config_file = Application.get_env(:tmux_ctl, :config_file)
-    env_host_shell = System.get_env("DEV_IDE_TMUX_HOST_SHELL")
+    env_host_shell = System.get_env("CASEIN_TMUX_HOST_SHELL")
     path = System.get_env("PATH")
 
     on_exit(fn ->
-      put_or_delete_env("DEV_IDE_TMUX_HOST_SHELL", env_host_shell)
+      put_or_delete_env("CASEIN_TMUX_HOST_SHELL", env_host_shell)
       put_or_delete_env("PATH", path)
       put_or_delete_app_env(:workspace_source, workspace_source)
       put_or_delete_app_env(:tmux_host_shell, tmux_host_shell)

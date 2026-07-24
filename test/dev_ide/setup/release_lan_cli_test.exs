@@ -29,7 +29,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert {_, 0} = run_cli(fixture, ["version", "--json"], cd: "/")
 
     log = File.read!(fixture.app_bin_log)
-    assert log =~ "DEV_IDE_RELEASE_CLI=1"
+    assert log =~ "CASEIN_RELEASE_CLI=1"
     assert log =~ "DEVIDE_RELEASE_ROOT=#{fixture.release_dir}"
     assert log =~ "args:eval Casein.Release.CLI.main_base64("
   end
@@ -39,8 +39,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert text =~ "BACKEND_SERVICE=\"devide-lan.service\""
     assert text =~ "EDGE_SOCKET=\"devide-lan-http-edge.socket\""
-    assert text =~ "append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP true"
-    assert text =~ "append_env_if_missing DEV_IDE_HOME_WORKSPACE_PATH"
+    assert text =~ "append_env_if_missing CASEIN_LAN_INSECURE_HTTP true"
+    assert text =~ "append_env_if_missing CASEIN_HOME_WORKSPACE_PATH"
     assert text =~ "INSTALL_RELEASE_DIR"
     assert text =~ "ExecStart=${LAN_APP_BIN} start"
     assert text =~ "ExecStart=${proxy} 127.0.0.1:${PORT}"
@@ -55,10 +55,10 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     File.write!(fixture.env_file, """
     PORT='4010'
-    DEV_IDE_LAN_HOST='devide.home.arpa'
-    DEV_IDE_LAN_INSECURE_HTTP_PORT='8080'
-    DEV_IDE_DEFAULT_WORKSPACE='custom'
-    DEV_IDE_WORKSPACES_ROOT='#{fixture.workspace_root}'
+    CASEIN_LAN_HOST='devide.home.arpa'
+    CASEIN_LAN_INSECURE_HTTP_PORT='8080'
+    CASEIN_DEFAULT_WORKSPACE='custom'
+    CASEIN_WORKSPACES_ROOT='#{fixture.workspace_root}'
     DATABASE_URL='ecto://custom'
     """)
 
@@ -75,8 +75,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert env =~ "PORT='4010'"
     assert env =~ "DATABASE_URL='ecto://custom'"
     assert env =~ "DATABASE_PATH='#{fixture.database_path}'"
-    assert env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
-    assert env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
+    assert env =~ "CASEIN_LAN_IP='192.168.1.240'"
+    assert env =~ "CASEIN_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
 
     backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
     socket = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.socket"))
@@ -100,14 +100,14 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     public_env = File.read!(fixture.public_env_file)
     assert public_env =~ "PORT='4010'"
-    assert public_env =~ "DEV_IDE_LAN_HOST='devide.home.arpa'"
-    assert public_env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
-    assert public_env =~ "DEV_IDE_LAN_INSECURE_HTTP_PORT='8080'"
-    assert public_env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
+    assert public_env =~ "CASEIN_LAN_HOST='devide.home.arpa'"
+    assert public_env =~ "CASEIN_LAN_IP='192.168.1.240'"
+    assert public_env =~ "CASEIN_LAN_INSECURE_HTTP_PORT='8080'"
+    assert public_env =~ "CASEIN_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
     assert public_env =~ "DATABASE_PATH='#{fixture.database_path}'"
     refute public_env =~ "DATABASE_URL"
     refute public_env =~ "SECRET_KEY_BASE"
-    refute public_env =~ "DEV_IDE_API_TOKEN"
+    refute public_env =~ "CASEIN_API_TOKEN"
   end
 
   test "status works without private env access by using the public status env" do
@@ -139,10 +139,10 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 1} =
              run_cli(fixture, ["lan", "install"],
-               env: %{"DEV_IDE_DEFAULT_WORKSPACE" => "../outside"}
+               env: %{"CASEIN_DEFAULT_WORKSPACE" => "../outside"}
              )
 
-    assert out =~ "DEV_IDE_DEFAULT_WORKSPACE is not a safe workspace name"
+    assert out =~ "CASEIN_DEFAULT_WORKSPACE is not a safe workspace name"
     chown_log = if File.exists?(fixture.chown_log), do: File.read!(fixture.chown_log), else: ""
     refute chown_log =~ fixture.workspace_root
   end
@@ -170,8 +170,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert log =~ "restart devide-lan-http-edge.socket"
 
     env = File.read!(fixture.env_file)
-    assert env =~ "DEV_IDE_DEFAULT_WORKSPACE='home'"
-    assert env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
+    assert env =~ "CASEIN_DEFAULT_WORKSPACE='home'"
+    assert env =~ "CASEIN_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
   end
 
   test "up reports a status block when the edge port cannot start" do
@@ -351,7 +351,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     write_executable(Path.join(bin_dir, "dev_ide"), """
     #!/bin/sh
     {
-      printf 'DEV_IDE_RELEASE_CLI=%s\\n' "${DEV_IDE_RELEASE_CLI:-}"
+      printf 'CASEIN_RELEASE_CLI=%s\\n' "${CASEIN_RELEASE_CLI:-}"
       printf 'DEVIDE_RELEASE_ROOT=%s\\n' "${DEVIDE_RELEASE_ROOT:-}"
       printf 'args:%s\\n' "$*"
     } >> "$DEVIDE_FAKE_APP_BIN_LOG"
@@ -534,7 +534,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       "DEVIDE_FAKE_HOME" => home_workspace_path,
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
-      "DEV_IDE_LAN_HOST" => "r630.local",
+      "CASEIN_LAN_HOST" => "r630.local",
       "DATABASE_PATH" => database_path,
       "PATH" => fakebin <> ":" <> System.get_env("PATH", "")
     }

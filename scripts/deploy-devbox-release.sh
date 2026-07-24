@@ -16,18 +16,18 @@ set -euo pipefail
 TARBALL="${1:?usage: deploy-devbox-release.sh /path/to/release.tgz [revision]}"
 REVISION="${2:-manual}"
 
-APP_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
-SERVICE="${DEV_IDE_SYSTEMD_SERVICE:-devide}"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
-USER_NAME="${DEV_IDE_DEPLOY_USER:-devbox}"
-GROUP_NAME="${DEV_IDE_DEPLOY_GROUP:-devbox}"
+APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
+SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+USER_NAME="${CASEIN_DEPLOY_USER:-devbox}"
+GROUP_NAME="${CASEIN_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 DEPLOY_ID="${TS}.$$"
 STAGING="${APP_ROOT}/release.staging.${REVISION}.${TS}"
 FAILED_RELEASE="${APP_ROOT}/release.failed.${REVISION}.${DEPLOY_ID}"
 ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
-RELEASE_BACKUP_KEEP="${DEV_IDE_RELEASE_BACKUP_KEEP:-5}"
+RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
 INST_DIR="/run/devide/instances"
 CURRENT_SYMLINK="/run/devide/current.sock"
@@ -158,7 +158,7 @@ cleanup_release_backup_pattern() {
 
 cleanup_release_backups() {
   if ! [[ "${RELEASE_BACKUP_KEEP}" =~ ^[0-9]+$ ]]; then
-    log "warning: invalid DEV_IDE_RELEASE_BACKUP_KEEP=${RELEASE_BACKUP_KEEP}; skipping release backup cleanup"
+    log "warning: invalid CASEIN_RELEASE_BACKUP_KEEP=${RELEASE_BACKUP_KEEP}; skipping release backup cleanup"
     return 0
   fi
 
@@ -341,12 +341,12 @@ else
 fi
 
 token="$(
-  sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "${ENV_FILE}" |
+  sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "${ENV_FILE}" |
     tail -n 1
 )"
 
 if [ -z "${token}" ]; then
-  echo "error: DEV_IDE_API_TOKEN missing from ${ENV_FILE}" >&2
+  echo "error: CASEIN_API_TOKEN missing from ${ENV_FILE}" >&2
   exit 1
 fi
 
@@ -354,7 +354,7 @@ fi
 # was reconstructed from devide.env.example during incident recovery and lost
 # commented-by-default keys). Warn loudly so a lossy rebuild is caught at the
 # next deploy instead of in the UI.
-for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN; do
+for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL CASEIN_FORWARD_AUTH_EMAIL_DOMAIN; do
   if ! sudo grep -q "^${key}=" "${ENV_FILE}"; then
     log "WARNING: ${key} missing from ${ENV_FILE} — env file may have been rebuilt from template"
   fi
@@ -433,7 +433,7 @@ tools_json="$(
 )"
 
 # preview_open_app is in the always-on tool-search CORE set, so it is advertised
-# whether DEV_IDE_MCP_TOOL_SEARCH is on or off. preview_close is NOT in core, so
+# whether CASEIN_MCP_TOOL_SEARCH is on or off. preview_close is NOT in core, so
 # when tool-search is armed it moves behind the search_tools/invoke_tool meta-
 # tools and drops out of tools/list — a hard-coded grep for it fails the smoke
 # check and blocks the deploy even though preview MCP is healthy. Accept either

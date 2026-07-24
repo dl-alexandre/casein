@@ -20,7 +20,7 @@ defmodule Casein.Agents.TerminalCommandPolicy do
       config :casein, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
       config :casein, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
 
-  Or, for releases, the `DEV_IDE_TERMINAL_COMMAND_POLICY` env var as JSON:
+  Or, for releases, the `CASEIN_TERMINAL_COMMAND_POLICY` env var as JSON:
 
       {"mode":"allowlist","patterns":["^mix ","^git "]}
 
@@ -97,7 +97,7 @@ defmodule Casein.Agents.TerminalCommandPolicy do
       reason: reason,
       message:
         "Command blocked by terminal_command_policy (#{reason}). " <>
-          "Adjust :terminal_command_policy / DEV_IDE_TERMINAL_COMMAND_POLICY to allow it."
+          "Adjust :terminal_command_policy / CASEIN_TERMINAL_COMMAND_POLICY to allow it."
     }
   end
 
@@ -120,7 +120,7 @@ defmodule Casein.Agents.TerminalCommandPolicy do
   end
 
   defp policy_from_env do
-    case System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY") do
+    case System.get_env("CASEIN_TERMINAL_COMMAND_POLICY") do
       raw when is_binary(raw) and raw != "" -> parse_env(raw)
       _ -> @default_policy
     end

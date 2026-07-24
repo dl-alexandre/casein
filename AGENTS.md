@@ -170,11 +170,11 @@ WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 
 `deploy-local.sh` builds from the checkout, packages `release-out`, and runs the same activation script used by CI without redoing workspace SQL, `.devbox-agent.env`, MCP materialization, or pairing verification. It is the preferred fast path after a successful push; CI will still perform the later canonical deploy from `master` unless that workflow is changed.
 
-Do **not** commit `.devbox-agent.env` (contains workspace-scoped `DEV_IDE_API_TOKEN`;
-global admin is `DEV_IDE_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/devide.env`.
+Do **not** commit `.devbox-agent.env` (contains workspace-scoped `CASEIN_API_TOKEN`;
+global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/devide.env`.
 `setup-devbox-agent-pairing.sh` registers scoped tokens under
-`DEV_IDE_WORKSPACE_API_TOKENS` and writes the scoped bearer as the default agent
-`DEV_IDE_API_TOKEN`.
+`CASEIN_WORKSPACE_API_TOKENS` and writes the scoped bearer as the default agent
+`CASEIN_API_TOKEN`.
 
 ### Operator + agent model
 
@@ -190,8 +190,8 @@ global admin is `DEV_IDE_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/dev
 
 | Surface | URL | Auth |
 |---------|-----|------|
-| Terminal MCP | `https://devide.devbox.milcgroup.com/api/terminals/mcp` | Bearer `DEV_IDE_API_TOKEN` |
-| Preview MCP | `https://devide.devbox.milcgroup.com/api/preview/mcp` | Bearer `DEV_IDE_API_TOKEN` |
+| Terminal MCP | `https://devide.devbox.milcgroup.com/api/terminals/mcp` | Bearer `CASEIN_API_TOKEN` |
+| Preview MCP | `https://devide.devbox.milcgroup.com/api/preview/mcp` | Bearer `CASEIN_API_TOKEN` |
 
 Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
 
@@ -226,9 +226,9 @@ bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
 | **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
-| **Grok** | injected by `scripts/launch-devide-agent.sh grok` into project-local `.mcp.json` (`${DEV_IDE_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
-| **Codex** | injected by `scripts/launch-devide-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`DEV_IDE_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
-| **OpenCode** | injected by `scripts/launch-devide-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:DEV_IDE_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
+| **Grok** | injected by `scripts/launch-devide-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
+| **Codex** | injected by `scripts/launch-devide-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
+| **OpenCode** | injected by `scripts/launch-devide-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
@@ -246,7 +246,7 @@ at launch, after the workspace token has been resolved: Claude gets
 `.mcp.json`, and OpenCode gets project `.opencode/opencode.json`. The helper
 `merge-agent-mcp.py` now strips stale global `devide-*` blocks rather than
 writing new ones, so plain agent starts do not inherit workspace-specific MCP
-servers without `DEV_IDE_API_TOKEN`.
+servers without `CASEIN_API_TOKEN`.
 
 ### Raw terminal + workspace mode
 
@@ -270,7 +270,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
 | `claude: command not found` after template / `clauded` fails | Usually a missing `~/.devide/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.devide/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside DevIDE contexts — in a plain terminal, agent names run the real binaries (unpaired). |
-| Tab closed, tmux session vanished | Check `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
+| Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-devide-tmux.sh`. Pin binary: `bash scripts/ensure-devide-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |

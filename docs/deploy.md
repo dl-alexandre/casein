@@ -8,7 +8,7 @@
 ## Architectural decision
 
 **DevIDE ships as its own image.** By default it discovers workspaces
-as directories under `DEV_IDE_WORKSPACES_ROOT` (the
+as directories under `CASEIN_WORKSPACES_ROOT` (the
 `DevIDE.WorkspaceSource.Local` source). To plug a different source —
 e.g. a managed-workspace integration — see [`docs/integrations/`](integrations/)
 and set `:dev_ide, :workspace_source` accordingly.
@@ -24,8 +24,8 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `DATABASE_URL`              | Postgres URL: `ecto://user:pass@host:5432/dev_ide_prod`.              |
 | `PHX_HOST`                  | The public hostname (e.g. `cloud-1.dev`). Used for cookie scope + URL. |
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
-| `DEV_IDE_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
-| `DEV_IDE_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
+| `CASEIN_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
+| `CASEIN_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
 | `PORT`                      | HTTP port. Default `4000`.                                            |
 | `POOL_SIZE`                 | Postgres pool size. Default `10`.                                     |
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
@@ -53,7 +53,7 @@ self-contained runbook inside `lib/dev_ide/integrations/manager/deploy/README.md
 cp .env.example .env
 # Edit .env and fill in:
 #   SECRET_KEY_BASE   (python3 -c "import secrets;print(secrets.token_urlsafe(48))")
-#   DEV_IDE_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
+#   CASEIN_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
 
 # 2. Seed a workspace directory under the host bind-mount.
 mkdir -p workspaces-local/alpha
@@ -73,7 +73,7 @@ the workspace name to attach a terminal.
 Quick API smoke (bearer-gate validation):
 
 ```bash
-TOKEN=$(grep '^DEV_IDE_API_TOKEN=' .env | cut -d= -f2)
+TOKEN=$(grep '^CASEIN_API_TOKEN=' .env | cut -d= -f2)
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces                            # → 401 (fail-closed)
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer wrong"  # → 401
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer $TOKEN" # → 200
@@ -159,8 +159,8 @@ docker run --rm \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
-  -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
-  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
+  -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
+  -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
   dev_ide:latest /app/bin/migrate
 
 # 2. Start the server.
@@ -169,9 +169,9 @@ docker run -d --name dev_ide \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
-  -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
-  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
-  -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
+  -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
+  -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
+  -e CASEIN_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
   dev_ide:latest
 ```
@@ -218,11 +218,11 @@ curl -sf "http://${PHX_HOST}/workspaces" -H "Host: ${PHX_HOST}" -I
 
 # API is fail-closed without a bearer
 curl -sf "http://${PHX_HOST}/api/workspaces" -o /dev/null -w "%{http_code}\n"
-# Expected: 401 (or 503 if DEV_IDE_API_TOKEN missed somehow)
+# Expected: 401 (or 503 if CASEIN_API_TOKEN missed somehow)
 
 # API responds when authenticated
 curl -sf "http://${PHX_HOST}/api/workspaces" \
-  -H "Authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+  -H "Authorization: Bearer ${CASEIN_API_TOKEN}" \
   | head
 ```
 
@@ -251,7 +251,7 @@ the operational ground truth in the meantime.
 ## macOS (Darwin) native builds
 
 A release can be built and run natively on macOS with
-`MIX_ENV=prod DEV_IDE_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
+`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 

@@ -137,7 +137,7 @@ defmodule Scripts.AgentWorktreeTest do
           {"ROOT", @root},
           {"PATH", "#{Path.dirname(curl_bin)}:#{system_path()}"},
           {"FAKE_CURL_BODY", body_path},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_TMUX_SESSION", "devide_workspace-123_u-agent"},
           {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"}
@@ -172,7 +172,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", home},
           {"PATH", system_path()},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
           {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
@@ -221,7 +221,7 @@ defmodule Scripts.AgentWorktreeTest do
         ],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"PATH", "#{Path.dirname(stale_codex)}:#{system_path()}"}
         ]
       )
@@ -271,9 +271,9 @@ defmodule Scripts.AgentWorktreeTest do
         [Path.join(@root, "scripts/install-agent-shims.sh")],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
-          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
+          {"CASEIN_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"}
         ],
         stderr_to_stdout: true
@@ -338,9 +338,9 @@ defmodule Scripts.AgentWorktreeTest do
         [Path.join(@root, "scripts/devide"), "agent", "launch", "codex", "update"],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
-          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
+          {"CASEIN_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:/usr/bin:/bin"}
         ],
         stderr_to_stdout: true
@@ -386,7 +386,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", Path.join(tmp, "home")},
           {"PATH", system_path()},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
           {"DEVIDE_SCRIPTS", stale_scripts}
@@ -487,7 +487,7 @@ defmodule Scripts.AgentWorktreeTest do
 
     File.write!(Path.join(scripts, "materialize-agent-mcp.sh"), """
     #!/usr/bin/env bash
-    printf 'export DEV_IDE_API_TOKEN=leaked-token\\n'
+    printf 'export CASEIN_API_TOKEN=leaked-token\\n'
     printf 'materialize stderr body\\n' >&2
     exit 42
     """)

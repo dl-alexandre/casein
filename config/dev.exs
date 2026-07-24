@@ -11,7 +11,7 @@ end
 # Configure your database
 # Supports DATABASE_URL for easy docker/local Postgres (e.g. when host port 5432 is taken)
 sqlite_repo? =
-  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  System.get_env("CASEIN_REPO_ADAPTER", "postgres")
   |> String.downcase()
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
@@ -53,8 +53,8 @@ config :casein, :tmux_server_label, "devide_dev"
 # overrides both ways when set. Test env stays OFF for flag-off no-op proofs.
 config :casein, :tmux_events, true
 
-devide_lan_requested? = truthy?.(System.get_env("DEV_IDE_LAN"))
-devide_lan_insecure_http? = truthy?.(System.get_env("DEV_IDE_LAN_INSECURE_HTTP"))
+devide_lan_requested? = truthy?.(System.get_env("CASEIN_LAN"))
+devide_lan_insecure_http? = truthy?.(System.get_env("CASEIN_LAN_INSECURE_HTTP"))
 devide_lan? = devide_lan_requested? or devide_lan_insecure_http?
 
 devide_lan_hostname =
@@ -77,24 +77,24 @@ devide_lan_mdns_host =
   end
 
 devide_lan_host =
-  System.get_env("DEV_IDE_LAN_HOST") ||
+  System.get_env("CASEIN_LAN_HOST") ||
     devide_lan_mdns_host
 
 devide_http_port = String.to_integer(System.get_env("PORT") || "4000")
-devide_lan_https_port = String.to_integer(System.get_env("DEV_IDE_LAN_HTTPS_PORT") || "4443")
+devide_lan_https_port = String.to_integer(System.get_env("CASEIN_LAN_HTTPS_PORT") || "4443")
 
 devide_lan_insecure_http_port =
-  String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80")
+  String.to_integer(System.get_env("CASEIN_LAN_INSECURE_HTTP_PORT") || "80")
 
 devide_lan_certfile =
-  System.get_env("DEV_IDE_LAN_CERTFILE") ||
+  System.get_env("CASEIN_LAN_CERTFILE") ||
     Path.expand("../priv/cert/devide-lan.pem", __DIR__)
 
 devide_lan_keyfile =
-  System.get_env("DEV_IDE_LAN_KEYFILE") ||
+  System.get_env("CASEIN_LAN_KEYFILE") ||
     Path.expand("../priv/cert/devide-lan-key.pem", __DIR__)
 
-devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("DEV_IDE_LAN_HTTPS"))
+devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("CASEIN_LAN_HTTPS"))
 
 devide_endpoint_config = [
   # HTTP stays loopback-only; LAN mode adds a trusted HTTPS listener below.
@@ -173,14 +173,14 @@ if devide_lan? do
     config :casein, :session_same_site, nil
   end
 
-  config :casein, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+  config :casein, :default_workspace, System.get_env("CASEIN_DEFAULT_WORKSPACE") || "home"
 else
-  if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
+  if default_workspace = System.get_env("CASEIN_DEFAULT_WORKSPACE") do
     config :casein, :default_workspace, default_workspace
   end
 end
 
-case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+case System.get_env("CASEIN_LAN_PATH_ROOT") do
   path when is_binary(path) and path != "" ->
     config :casein, :lan_path_root, path
 
@@ -236,20 +236,20 @@ config :casein, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 # requiring `/workspaces` to exist with special perms. The default
 # `Casein.WorkspaceSource.Local` discovers subdirectories here as
 # workspaces.
-# Honors DEV_IDE_WORKSPACES_ROOT so an isolated preview instance
+# Honors CASEIN_WORKSPACES_ROOT so an isolated preview instance
 # (scripts/dev-preview-instance.sh) can point at a persistent seed root.
 # The prod block in runtime.exs reads the same env var.
 config :casein,
        :workspaces_root,
-       System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
+       System.get_env("CASEIN_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
 
-case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+case System.get_env("CASEIN_HOME_WORKSPACE_PATH") do
   home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
     config :casein, :home_workspace_path, home_workspace_path
 
     config :casein,
            :lan_path_root,
-           System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
+           System.get_env("CASEIN_LAN_PATH_ROOT") || home_workspace_path
 
   _ ->
     :ok

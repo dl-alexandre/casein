@@ -45,7 +45,7 @@ public struct HostPaths: Sendable, Equatable {
         guard let root, !root.isEmpty else { return nil }
 
         let dataDir =
-            environment["DEV_IDE_DESKTOP_DATA_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
+            environment["CASEIN_DESKTOP_DATA_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: "Library/Application Support/DevIDE")
 

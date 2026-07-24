@@ -7,7 +7,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
   # These tests exercise PreviewServer derivation/construction. Port selection
   # briefly probes loopback availability even for explicit ports; no listener is
   # retained. default_launcher_path/0 is made deterministic where needed with
-  # DEV_IDE_RUNTIME_PREVIEW_LAUNCHER.
+  # CASEIN_RUNTIME_PREVIEW_LAUNCHER.
 
   defp record(attrs \\ %{}) do
     %WorkspaceRecord{
@@ -305,7 +305,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
     end
 
     test "legacy preview-env command is rejected and falls through to default" do
-      System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", "/custom/launch.sh")
+      System.put_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER", "/custom/launch.sh")
 
       attrs = %{
         "port" => 6003,
@@ -317,18 +317,18 @@ defmodule Casein.Runtimes.PreviewServerTest do
       {:ok, server} = PreviewServer.build_for_worktree(record(), "rt", "tmux", "/wt", attrs, [])
       assert server["command"] == ["bash", "/custom/launch.sh", "--port", "6003"]
     after
-      System.delete_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+      System.delete_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
     end
 
     test "default command uses configured launcher path and string port" do
-      System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", "/opt/launcher.sh")
+      System.put_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER", "/opt/launcher.sh")
 
       {:ok, server} =
         PreviewServer.build_for_worktree(record(), "rt", "tmux", "/wt", %{"port" => 6004}, [])
 
       assert server["command"] == ["bash", "/opt/launcher.sh", "--port", "6004"]
     after
-      System.delete_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+      System.delete_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
     end
   end
 

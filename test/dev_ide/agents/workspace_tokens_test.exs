@@ -7,10 +7,10 @@ defmodule Casein.Agents.WorkspaceTokensTest do
     prev_registry = Application.get_env(:casein, :workspace_api_tokens)
     prev_store = Application.get_env(:casein, :workspace_tokens_store)
     prev_api_token = Application.get_env(:casein, :api_token)
-    prev_env_registry = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
-    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    System.delete_env("DEV_IDE_API_TOKEN")
+    prev_env_registry = System.get_env("CASEIN_WORKSPACE_API_TOKENS")
+    prev_env_token = System.get_env("CASEIN_API_TOKEN")
+    System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
+    System.delete_env("CASEIN_API_TOKEN")
 
     store =
       System.tmp_dir!()
@@ -23,8 +23,8 @@ defmodule Casein.Agents.WorkspaceTokensTest do
       restore_app_env(:workspace_api_tokens, prev_registry)
       restore_app_env(:workspace_tokens_store, prev_store)
       restore_app_env(:api_token, prev_api_token)
-      restore_sys_env("DEV_IDE_WORKSPACE_API_TOKENS", prev_env_registry)
-      restore_sys_env("DEV_IDE_API_TOKEN", prev_env_token)
+      restore_sys_env("CASEIN_WORKSPACE_API_TOKENS", prev_env_registry)
+      restore_sys_env("CASEIN_API_TOKEN", prev_env_token)
       File.rm(store)
     end)
 
@@ -42,8 +42,8 @@ defmodule Casein.Agents.WorkspaceTokensTest do
     assert WorkspaceTokens.token_for("ws-unknown") == nil
   end
 
-  test "token_for reads DEV_IDE_WORKSPACE_API_TOKENS from the environment" do
-    System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", ~s({"env-tok":"ws-env"}))
+  test "token_for reads CASEIN_WORKSPACE_API_TOKENS from the environment" do
+    System.put_env("CASEIN_WORKSPACE_API_TOKENS", ~s({"env-tok":"ws-env"}))
     assert WorkspaceTokens.token_for("ws-env") == "env-tok"
   end
 

@@ -66,7 +66,7 @@ defmodule Casein.Deployment.PollerWatcher do
 
   defp watcher_enabled? do
     Casein.Deployment.Capabilities.enabled?(:poller) and
-      System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH") not in ["0", "false", "no"]
+      System.get_env("CASEIN_DEPLOY_POLLER_WATCH") not in ["0", "false", "no"]
   end
 
   defp config(key, default) do

@@ -2,18 +2,18 @@ defmodule Casein.Push.RuntimeConfigTest do
   use Casein.TestCase, async: false
 
   @push_envs ~w(
-    DEV_IDE_PUSH_PROVIDER
-    DEV_IDE_FCM_PROJECT_ID
-    DEV_IDE_FCM_ACCESS_TOKEN
-    DEV_IDE_FCM_SERVICE_ACCOUNT_JSON
-    DEV_IDE_FCM_SERVICE_ACCOUNT_PATH
-    DEV_IDE_FCM_TOKEN_URI
-    DEV_IDE_APNS_TEAM_ID
-    DEV_IDE_APNS_KEY_ID
-    DEV_IDE_APNS_TOPIC
-    DEV_IDE_APNS_PRIVATE_KEY
-    DEV_IDE_APNS_PRIVATE_KEY_PATH
-    DEV_IDE_APNS_ENV
+    CASEIN_PUSH_PROVIDER
+    CASEIN_FCM_PROJECT_ID
+    CASEIN_FCM_ACCESS_TOKEN
+    CASEIN_FCM_SERVICE_ACCOUNT_JSON
+    CASEIN_FCM_SERVICE_ACCOUNT_PATH
+    CASEIN_FCM_TOKEN_URI
+    CASEIN_APNS_TEAM_ID
+    CASEIN_APNS_KEY_ID
+    CASEIN_APNS_TOPIC
+    CASEIN_APNS_PRIVATE_KEY
+    CASEIN_APNS_PRIVATE_KEY_PATH
+    CASEIN_APNS_ENV
   )
 
   setup do
@@ -31,16 +31,16 @@ defmodule Casein.Push.RuntimeConfigTest do
   end
 
   test "FCM credentials select native platform routing by default" do
-    System.put_env("DEV_IDE_FCM_PROJECT_ID", "demo-project")
+    System.put_env("CASEIN_FCM_PROJECT_ID", "demo-project")
 
     assert devide_runtime_config()[:push_provider] == Casein.Push.NativeProvider
   end
 
   test "APNs credentials select native platform routing by default" do
-    System.put_env("DEV_IDE_APNS_TEAM_ID", "TEAM123456")
-    System.put_env("DEV_IDE_APNS_KEY_ID", "KEY1234567")
-    System.put_env("DEV_IDE_APNS_TOPIC", "com.example.devide_mob")
-    System.put_env("DEV_IDE_APNS_PRIVATE_KEY_PATH", "/tmp/AuthKey_KEY1234567.p8")
+    System.put_env("CASEIN_APNS_TEAM_ID", "TEAM123456")
+    System.put_env("CASEIN_APNS_KEY_ID", "KEY1234567")
+    System.put_env("CASEIN_APNS_TOPIC", "com.example.devide_mob")
+    System.put_env("CASEIN_APNS_PRIVATE_KEY_PATH", "/tmp/AuthKey_KEY1234567.p8")
 
     config = devide_runtime_config()
 
@@ -56,10 +56,10 @@ defmodule Casein.Push.RuntimeConfigTest do
   end
 
   test "explicit provider overrides are preserved" do
-    System.put_env("DEV_IDE_PUSH_PROVIDER", "fcm")
+    System.put_env("CASEIN_PUSH_PROVIDER", "fcm")
     assert devide_runtime_config()[:push_provider] == Casein.Push.FCMProvider
 
-    System.put_env("DEV_IDE_PUSH_PROVIDER", "apns")
+    System.put_env("CASEIN_PUSH_PROVIDER", "apns")
     assert devide_runtime_config()[:push_provider] == Casein.Push.APNSProvider
   end
 

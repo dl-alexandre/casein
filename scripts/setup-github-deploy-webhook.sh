@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 DEVIDE_URL="${DEVIDE_URL:-https://devide.devbox.milcgroup.com}"
 GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/dev_ide}"
 DRY_RUN=0

@@ -23,7 +23,7 @@ defmodule Casein.Desktop.AgentEnvironment do
            ) do
       {:ok,
        %{
-         "DEV_IDE_API_TOKEN" => token,
+         "CASEIN_API_TOKEN" => token,
          "DEVIDE_API_BASE_URL" => MCPUrls.api_base_url(),
          "DEVIDE_WORKSPACE_ID" => id,
          "DEVIDE_WORKSPACE_NAME" => name,

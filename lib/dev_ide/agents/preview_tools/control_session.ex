@@ -1777,7 +1777,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
     viewport = viewport_string(Keyword.get(opts, :viewport))
 
     []
-    |> maybe_add_preview_env("DEV_IDE_API_TOKEN", preview_api_token())
+    |> maybe_add_preview_env("CASEIN_API_TOKEN", preview_api_token())
     |> maybe_add_preview_env("DEVIDE_URL", preview_api_base_url())
     |> maybe_add_preview_env("DEVIDE_WORKSPACE_ID", Keyword.get(opts, :workspace_id))
     |> maybe_add_preview_env("DEVIDE_PREVIEW_PLACEMENT", Keyword.get(opts, :placement))
@@ -1840,7 +1840,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
   end
 
   defp preview_api_token do
-    System.get_env("DEV_IDE_API_TOKEN") ||
+    System.get_env("CASEIN_API_TOKEN") ||
       Application.get_env(:casein, :casein_api_token)
   end
 

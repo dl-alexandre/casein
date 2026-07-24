@@ -46,7 +46,7 @@ Options:
 
 Environment (usually from ~/.devide/agent-mcp/<name>/env.sh or tmux session):
   DEVIDE_WORKSPACE_NAME, DEVIDE_WORKSPACE_ID, DEVIDE_CHECKOUT,
-  DEVIDE_AGENT_MCP_HOME, DEV_IDE_API_TOKEN, DEVIDE_*_MCP_URL
+  DEVIDE_AGENT_MCP_HOME, CASEIN_API_TOKEN, DEVIDE_*_MCP_URL
 
 When --workspace is passed, ambient DEVIDE_AGENT_MCP_HOME / DEVIDE_CHECKOUT from
 another workspace are ignored so a foreign shell cannot pair the wrong target.
@@ -116,7 +116,7 @@ if [[ -f "$ENV_SH" ]]; then
   # Drop foreign pairing vars before source so a wrong ambient checkout/token
   # cannot survive when --workspace selected a different staging tree.
   if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
-    unset DEVIDE_CHECKOUT DEVIDE_AGENT_MCP_HOME DEVIDE_WORKSPACE_ID DEV_IDE_API_TOKEN \
+    unset DEVIDE_CHECKOUT DEVIDE_AGENT_MCP_HOME DEVIDE_WORKSPACE_ID CASEIN_API_TOKEN \
       DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_ARTIFACT_MCP_URL \
       DEVIDE_TMUX_SESSION DEVIDE_API_BASE_URL 2>/dev/null || true
   fi
@@ -131,7 +131,7 @@ else
 fi
 
 : "${DEVIDE_WORKSPACE_ID:?DEVIDE_WORKSPACE_ID missing after sourcing env.sh}"
-: "${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN missing after sourcing env.sh}"
+: "${CASEIN_API_TOKEN:?CASEIN_API_TOKEN missing after sourcing env.sh}"
 : "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL missing after sourcing env.sh}"
 
 # Guard: env.sh must describe the workspace we asked for.
@@ -260,9 +260,9 @@ verify_terminal_mcp() {
 import json, os, sys, urllib.request
 
 url = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
-token = os.environ.get("DEV_IDE_API_TOKEN", "")
+token = os.environ.get("CASEIN_API_TOKEN", "")
 if not url or not token:
-    print("verify: missing DEVIDE_TERMINAL_MCP_URL or DEV_IDE_API_TOKEN", file=sys.stderr)
+    print("verify: missing DEVIDE_TERMINAL_MCP_URL or CASEIN_API_TOKEN", file=sys.stderr)
     sys.exit(1)
 
 def call(method, params=None, id=1, session=None):

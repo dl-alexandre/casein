@@ -112,7 +112,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
           []
       end
 
-    local_domain = System.get_env("DEV_IDE_LOCAL_DOMAIN") || "devide.test"
+    local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "devide.test"
 
     [
       "localhost",
@@ -156,12 +156,12 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
 
   defp print_next_steps(hostname, hosts, certfile, keyfile) do
     lan_hostname =
-      System.get_env("DEV_IDE_LAN_HOST") ||
+      System.get_env("CASEIN_LAN_HOST") ||
         Enum.find(hosts, &(&1 == Casein.Setup.LocalDomain.mdns_hostname())) ||
         Enum.find(hosts, &String.ends_with?(&1, ".local")) ||
         "#{hostname}.local"
 
-    host_local_domain = System.get_env("DEV_IDE_LOCAL_DOMAIN") || "devide.test"
+    host_local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "devide.test"
 
     Mix.shell().info("""
 
@@ -176,7 +176,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
 
     Start Casein in LAN mode:
 
-      DEV_IDE_LAN=true mise exec -- mix phx.server
+      CASEIN_LAN=true mise exec -- mix phx.server
 
     This opens the default home workspace at `/`. To create/check the home
     workspace and browser trust helpers first:

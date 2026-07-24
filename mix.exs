@@ -137,7 +137,7 @@ defmodule Casein.MixProject do
   end
 
   defp native_windows? do
-    match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true)
+    match?({:win32, _}, :os.type()) or System.get_env("CASEIN_NATIVE_WINDOWS") in ~w(1 true)
   end
 
   # Aliases are shortcuts or tasks specific to the current project.

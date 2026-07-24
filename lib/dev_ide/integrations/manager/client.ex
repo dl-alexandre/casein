@@ -140,7 +140,7 @@ defmodule Casein.Integrations.Manager.Client do
 
   defp auth_headers(_) do
     case Application.get_env(:casein, :manager_user_email) ||
-           System.get_env("DEV_IDE_DEVBOX_USER_EMAIL") do
+           System.get_env("CASEIN_DEVBOX_USER_EMAIL") do
       nil -> []
       email -> [{"x-auth-request-email", email}]
     end

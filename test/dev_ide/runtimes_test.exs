@@ -364,13 +364,13 @@ defmodule Casein.RuntimesTest do
     Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
     Application.put_env(:casein, :runtime_preview_runner, __MODULE__.PreviewRunner)
     Application.put_env(:casein, :runtime_preview_runner_test_pid, self())
-    previous = System.get_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
-    System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", Path.join(worktree, "missing-launcher.sh"))
+    previous = System.get_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
+    System.put_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER", Path.join(worktree, "missing-launcher.sh"))
 
     on_exit(fn ->
       if previous,
-        do: System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", previous),
-        else: System.delete_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+        do: System.put_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER", previous),
+        else: System.delete_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
     end)
 
     assert {:ok, runtime} =
@@ -779,7 +779,7 @@ defmodule Casein.RuntimesTest do
   end
 
   defp tmp_dir!(name) do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     path = Path.join(root, "devide-runtimes-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)

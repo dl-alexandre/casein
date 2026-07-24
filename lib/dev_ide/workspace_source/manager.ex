@@ -166,7 +166,7 @@ defmodule Casein.WorkspaceSource.Manager do
 
   @doc """
   True when Casein runs colocated on the integration host. Set via
-  `:casein, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
+  `:casein, :on_devbox` or env `CASEIN_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
   defdelegate on_host?(), to: Casein.HostMode
@@ -174,7 +174,7 @@ defmodule Casein.WorkspaceSource.Manager do
   @doc """
   Compose service to exec into for command/terminal execution in on-host
   mode. Set via `:casein, :devbox_exec_service` or env
-  `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
+  `CASEIN_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
   """
   @spec exec_service() :: String.t()
   defdelegate exec_service(), to: Casein.HostMode

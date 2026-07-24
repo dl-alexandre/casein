@@ -43,13 +43,13 @@ sudo ./bin/devide lan up
 Build LAN-local releases with the SQLite repo profile:
 
 ```bash
-DEV_IDE_REPO_ADAPTER=sqlite MIX_ENV=prod mix dev_ide.release.lan
+CASEIN_REPO_ADAPTER=sqlite MIX_ENV=prod mix dev_ide.release.lan
 ```
 
 or, when using the containerized release builder:
 
 ```bash
-DEV_IDE_REPO_ADAPTER=sqlite ./scripts/build-release.sh
+CASEIN_REPO_ADAPTER=sqlite ./scripts/build-release.sh
 ```
 
 `dev_ide.release.lan` installs the frontend npm dependencies, installs the
@@ -65,9 +65,9 @@ and probes both the real URL and `/assets/css/app.css` before printing `READY`.
 
 Existing values in `/etc/devide/lan.env` are preserved. Upgrades refresh the
 systemd unit files so they point at the durable release copy, while local env
-overrides such as `DATABASE_PATH`, `DATABASE_URL`, `PORT`, `DEV_IDE_LAN_HOST`, and
-`DEV_IDE_WORKSPACES_ROOT` remain intact. By default, `lan up` also writes
-`DEV_IDE_HOME_WORKSPACE_PATH` to the LAN service user's home directory, so the
+overrides such as `DATABASE_PATH`, `DATABASE_URL`, `PORT`, `CASEIN_LAN_HOST`, and
+`CASEIN_WORKSPACES_ROOT` remain intact. By default, `lan up` also writes
+`CASEIN_HOME_WORKSPACE_PATH` to the LAN service user's home directory, so the
 initial `home` workspace opens at the actual home directory rather than an empty
 seed folder.
 
@@ -103,7 +103,7 @@ sudo DATABASE_PATH=/var/lib/devide/lan/devide.sqlite3 \
 ```
 
 Postgres is still supported for server-style releases by compiling with the
-default `DEV_IDE_REPO_ADAPTER=postgres` profile and setting `DATABASE_URL`.
+default `CASEIN_REPO_ADAPTER=postgres` profile and setting `DATABASE_URL`.
 
 ## What `lan up` Owns
 
@@ -120,12 +120,12 @@ considered healthy unless DevIDE itself is running. The backend service uses the
 LAN profile internally:
 
 ```text
-DEV_IDE_LAN_INSECURE_HTTP=true
-DEV_IDE_LAN_DIRECT_MODE=true
-DEV_IDE_LAN_FRIENDLY_PATHS=true
-DEV_IDE_LAN_PATH_ROOT=/home/<user>
-DEV_IDE_DEFAULT_WORKSPACE=home
-DEV_IDE_HOME_WORKSPACE_PATH=/home/<user>
+CASEIN_LAN_INSECURE_HTTP=true
+CASEIN_LAN_DIRECT_MODE=true
+CASEIN_LAN_FRIENDLY_PATHS=true
+CASEIN_LAN_PATH_ROOT=/home/<user>
+CASEIN_DEFAULT_WORKSPACE=home
+CASEIN_HOME_WORKSPACE_PATH=/home/<user>
 PORT=4000
 ```
 
@@ -236,7 +236,7 @@ and imports the mkcert CA into the host user's trust stores when possible.
 Start HTTPS LAN mode manually with:
 
 ```bash
-DEV_IDE_LAN=true mise exec -- mix phx.server
+CASEIN_LAN=true mise exec -- mix phx.server
 ```
 
 Then open:
@@ -249,7 +249,7 @@ For portless HTTPS:
 
 ```bash
 mise exec -- mix dev_ide.doctor --fix --edge
-DEV_IDE_LAN=true mise exec -- mix phx.server
+CASEIN_LAN=true mise exec -- mix phx.server
 ```
 
 Then open:
@@ -293,31 +293,31 @@ mise exec -- mix dev_ide.doctor --fix
 To choose a different same-host name:
 
 ```bash
-DEV_IDE_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix dev_ide.doctor --fix
+CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix dev_ide.doctor --fix
 ```
 
 ## Internals
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DEV_IDE_LAN_INSECURE_HTTP` | set by `lan up` | Enables the no-cert LAN HTTP service profile. |
-| `DEV_IDE_LAN_INSECURE_HTTP_PORT` | `80` | Port exposed by the LAN HTTP edge. |
+| `CASEIN_LAN_INSECURE_HTTP` | set by `lan up` | Enables the no-cert LAN HTTP service profile. |
+| `CASEIN_LAN_INSECURE_HTTP_PORT` | `80` | Port exposed by the LAN HTTP edge. |
 | `PORT` | `4000` | Loopback backend port used by `devide-lan.service`. |
-| `DEV_IDE_LAN_HOST` | `<hostname>.local` | Endpoint URL host used for generated URLs. |
-| `DEV_IDE_LAN_DIRECT_MODE` | enabled by LAN profiles | Set to `false` only for manual runs that should keep `/` on the workspace picker. |
-| `DEV_IDE_LAN_FRIENDLY_PATHS` | enabled by LAN profiles | Lets `/` and `/<dir>` open filesystem-addressed workspaces under `DEV_IDE_LAN_PATH_ROOT`. |
-| `DEV_IDE_LAN_PATH_ROOT` | `DEV_IDE_HOME_WORKSPACE_PATH` | Root for LAN-friendly URL paths. `/aws` resolves to `$DEV_IDE_LAN_PATH_ROOT/aws`. |
-| `DEV_IDE_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
-| `DEV_IDE_WORKSPACES_ROOT` | `/tmp/dev_ide_workspaces` in dev | Parent directory for local filesystem workspaces. |
+| `CASEIN_LAN_HOST` | `<hostname>.local` | Endpoint URL host used for generated URLs. |
+| `CASEIN_LAN_DIRECT_MODE` | enabled by LAN profiles | Set to `false` only for manual runs that should keep `/` on the workspace picker. |
+| `CASEIN_LAN_FRIENDLY_PATHS` | enabled by LAN profiles | Lets `/` and `/<dir>` open filesystem-addressed workspaces under `CASEIN_LAN_PATH_ROOT`. |
+| `CASEIN_LAN_PATH_ROOT` | `CASEIN_HOME_WORKSPACE_PATH` | Root for LAN-friendly URL paths. `/aws` resolves to `$CASEIN_LAN_PATH_ROOT/aws`. |
+| `CASEIN_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
+| `CASEIN_WORKSPACES_ROOT` | `/tmp/dev_ide_workspaces` in dev | Parent directory for local filesystem workspaces. |
 | `DATABASE_PATH` | `/var/lib/devide/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |
 | `DATABASE_URL` | Postgres fallback | Used by Postgres-compiled releases, ignored by SQLite-compiled releases. |
 | `DEVIDE_LAN_ENV_FILE` | `/etc/devide/lan.env` in release | Private env file owned by the release `devide lan` helper. |
 | `DEVIDE_LAN_PUBLIC_ENV_FILE` | `/etc/devide/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
 | `DEVIDE_LAN_RELEASE_DIR` | `/opt/devide/lan-release` in release | Durable release copy used by managed systemd units. |
-| `DEV_IDE_LAN` | unset | Enables manual HTTPS LAN mode. |
-| `DEV_IDE_LAN_HTTPS_PORT` | `4443` | Manual HTTPS backend port. |
-| `DEV_IDE_LAN_CERTFILE` | `priv/cert/devide-lan.pem` | Manual HTTPS certificate path. |
-| `DEV_IDE_LAN_KEYFILE` | `priv/cert/devide-lan-key.pem` | Manual HTTPS private key path. |
+| `CASEIN_LAN` | unset | Enables manual HTTPS LAN mode. |
+| `CASEIN_LAN_HTTPS_PORT` | `4443` | Manual HTTPS backend port. |
+| `CASEIN_LAN_CERTFILE` | `priv/cert/devide-lan.pem` | Manual HTTPS certificate path. |
+| `CASEIN_LAN_KEYFILE` | `priv/cert/devide-lan-key.pem` | Manual HTTPS private key path. |
 
 ## Troubleshooting
 
@@ -338,7 +338,7 @@ can resolve the host.
 
 If `lan up` fails because port `80` is already occupied, it prints the managed
 LAN status block and recent backend logs instead of reporting ready. Stop the
-conflicting service or choose another `DEV_IDE_LAN_INSECURE_HTTP_PORT`.
+conflicting service or choose another `CASEIN_LAN_INSECURE_HTTP_PORT`.
 
 If the database is unavailable, the backend service will fail during
 `bin/migrate` or boot; `lan up` reports `NOT READY` and includes recent

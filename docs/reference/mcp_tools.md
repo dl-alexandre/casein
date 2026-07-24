@@ -47,7 +47,7 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 
 | Surface | Method + Path | Auth | Handler → Tools |
 |---------|---------------|------|------------------|
-| Terminal MCP | `POST /api/terminals/mcp` | `Authorization: Bearer $DEV_IDE_API_TOKEN` | `TerminalMCP` → `TerminalTools` + `AnnotationTools` |
+| Terminal MCP | `POST /api/terminals/mcp` | `Authorization: Bearer $CASEIN_API_TOKEN` | `TerminalMCP` → `TerminalTools` + `AnnotationTools` |
 | Terminal MCP stream | `GET /api/terminals/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Terminal MCP session end | `DELETE /api/terminals/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview MCP | `POST /api/preview/mcp` | bearer | `PreviewMCP` → `PreviewTools` |
@@ -183,7 +183,7 @@ Agents call Tidewave's own tools (e.g. `project_eval`, `execute_sql_query`,
 
 ```text
 Agent (JSON-RPC 2.0 over HTTPS)
-  │  Authorization: Bearer $DEV_IDE_API_TOKEN
+  │  Authorization: Bearer $CASEIN_API_TOKEN
   ▼
 {Terminal,Preview,Artifact}MCPController  ── ApiAuth plug; default_workspace_id from ?workspace_id= or :api_workspace_id
   ▼

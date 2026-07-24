@@ -40,7 +40,7 @@ run_installer_rejects_bin_dir_candidate() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   bin_dir="${HOME}/.local/bin"
   package_claude="${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude"
 
@@ -66,7 +66,7 @@ run_resolver_rejects_recorded_devide_shim() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   real_dir="${home}/real-bin-dir"
   real_codex="${real_dir}/codex"
 
@@ -91,7 +91,7 @@ run_installer_generated_shims_carry_marker() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
@@ -122,7 +122,7 @@ run_installer_cleans_legacy_shims() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   # A legacy marker-carrying launcher shim and a user's own script side by
   # side in ~/.local/bin: migration must remove exactly the former.
@@ -155,7 +155,7 @@ run_installer_verifies_precedence_when_bin_dir_off_path() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   err="${home}/stderr.log"
 
   # Non-interactive callers (systemd units, deploy poller) run without the
@@ -180,7 +180,7 @@ run_launch_version_passthrough_skips_launcher() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   write_executable \
     "${HOME}/.local/share/npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude" \
@@ -213,7 +213,7 @@ run_launch_falls_back_unpaired_without_env() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
 echo \"real-grok \$*\""
@@ -224,7 +224,7 @@ echo \"real-grok \$*\""
   # cwd ancestry. The shimmed name must launch the real binary with ZERO
   # added output — the shim never adds noise to the command it wraps.
   err="${home}/stderr.log"
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
   assert_eq "unpaired fallback execs real grok" "real-grok chat" "$out"
   if [[ -s "$err" ]]; then
@@ -233,7 +233,7 @@ echo \"real-grok \$*\""
     exit 1
   fi
 
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     DEVIDE_AGENT_LAUNCH_VERBOSE=1 \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
   assert_eq "verbose unpaired fallback execs real grok" "real-grok chat" "$out"
@@ -244,7 +244,7 @@ echo \"real-grok \$*\""
   fi
 
   status=0
-  (cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  (cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     DEVIDE_AGENT_LAUNCH_STRICT=1 \
     bash "${ROOT}/scripts/devide" agent launch grok chat >/dev/null 2>"$err") || status=$?
   if [[ "$status" -eq 0 ]]; then
@@ -266,7 +266,7 @@ run_launch_stamps_pane_pairing_state() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   tmux_log="${home}/tmux-calls.log"
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
@@ -281,7 +281,7 @@ echo real-grok"
 printf '%s\\n' \"\$*\" >>\"${tmux_log}\"
 exit 0"
 
-  out="$(cd "$home" && env -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     TMUX="${home}/fake-socket,1,0" TMUX_PANE="%7" PATH="${HOME}/fake-bin:${PATH:-/usr/bin:/bin}" \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>&1)"
   assert_eq "stamped fallback still execs real grok" "real-grok" "$out"
@@ -306,7 +306,7 @@ run_check_and_ensure_modes() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 

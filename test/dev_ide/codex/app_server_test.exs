@@ -37,7 +37,7 @@ defmodule Casein.Codex.AppServerTest do
                "config" => %{
                  "shell_environment_policy" => %{
                    "ignore_default_excludes" => true,
-                   "set" => %{"DEV_IDE_API_TOKEN" => "must-not-reach-shells"}
+                   "set" => %{"CASEIN_API_TOKEN" => "must-not-reach-shells"}
                  }
                }
              })

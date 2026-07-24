@@ -179,9 +179,9 @@ lifecycle) and `DevIdeWeb.DesktopHealthController`; the supervision wiring
 lives in `DevIDE.Application.desktop_status/0`.
 
 The host must provide the release's environment (learned from the first
-desktop-profile boot): `DEV_IDE_PROFILE=desktop`, a generated-and-persisted
-`SECRET_KEY_BASE` and `DEV_IDE_API_TOKEN` (boot refuses to start without the
-token), and optionally `DEV_IDE_DESKTOP_DATA_DIR`. It should also set a
+desktop-profile boot): `CASEIN_PROFILE=desktop`, a generated-and-persisted
+`SECRET_KEY_BASE` and `CASEIN_API_TOKEN` (boot refuses to start without the
+token), and optionally `CASEIN_DESKTOP_DATA_DIR`. It should also set a
 distinct `RELEASE_NODE` if anything else on the machine may register a
 `dev_ide` node with epmd — a stale node holds the default name and start
 fails with "name in use".

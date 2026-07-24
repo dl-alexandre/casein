@@ -37,7 +37,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           # Satisfy agent_env_resolve's first branch (already-exported creds) so
           # the script doesn't abort looking for a Casein tmux pane / env file.
-          {"DEV_IDE_API_TOKEN", "test-token"},
+          {"CASEIN_API_TOKEN", "test-token"},
           {"DEVIDE_WORKSPACE_ID", "test-ws"}
         ]
       )

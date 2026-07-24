@@ -28,9 +28,9 @@ if (Test-Path -LiteralPath $pidPath) {
 }
 Remove-Item -LiteralPath $pidPath, (Join-Path $dataRoot 'runtime.json') -Force -ErrorAction SilentlyContinue
 
-$env:DEV_IDE_PROFILE = 'desktop'
-$env:DEV_IDE_REPO_ADAPTER = 'sqlite'
-$env:DEV_IDE_DESKTOP_DATA_DIR = $dataRoot
+$env:CASEIN_PROFILE = 'desktop'
+$env:CASEIN_REPO_ADAPTER = 'sqlite'
+$env:CASEIN_DESKTOP_DATA_DIR = $dataRoot
 $env:DEVIDE_RELEASE_ROOT = $releaseRoot
 & $release migrate
 if ($LASTEXITCODE -ne 0) { throw "DevIDE database repair failed with exit code $LASTEXITCODE" }

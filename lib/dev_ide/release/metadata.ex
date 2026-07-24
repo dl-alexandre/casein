@@ -215,7 +215,7 @@ defmodule Casein.Release.Metadata do
   end
 
   defp default_repo_adapter do
-    env_or_default("DEV_IDE_REPO_ADAPTER", "postgres")
+    env_or_default("CASEIN_REPO_ADAPTER", "postgres")
   end
 
   defp env_or_default(var, default) do

@@ -105,7 +105,7 @@ defmodule Casein.Git.InspectorTest do
   end
 
   defp tmp_root do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     File.mkdir_p!(root)
     root
   end

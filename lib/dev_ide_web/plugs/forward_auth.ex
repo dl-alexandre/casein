@@ -9,7 +9,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   `:current_user`, and stashes it in the session so LiveView mounts
   (`AssignCurrentUser.from_session/1`) see the same identity.
 
-  Enabled via `:casein, :forward_auth` (or env `DEV_IDE_FORWARD_AUTH`).
+  Enabled via `:casein, :forward_auth` (or env `CASEIN_FORWARD_AUTH`).
   When enabled, a request missing the header is rejected with 401 — the
   proxy should have caught unauthenticated requests already. When
   disabled, falls back to the static `AssignCurrentUser` identity so
@@ -101,12 +101,12 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   end
 
   @doc """
-  Legacy `DEV_IDE_ADMINS` / `:admins` list parser.
+  Legacy `CASEIN_ADMINS` / `:admins` list parser.
 
   **No longer grants privileges.** Kept so existing env still loads without
   error and so `runtime.exs` can treat a non-empty value as a signal that
-  forward-auth is intended. New deploys should set `DEV_IDE_FORWARD_AUTH=true`
-  and omit `DEV_IDE_ADMINS`.
+  forward-auth is intended. New deploys should set `CASEIN_FORWARD_AUTH=true`
+  and omit `CASEIN_ADMINS`.
   """
   @spec admins() :: [String.t()]
   def admins do
@@ -115,7 +115,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
         Enum.map(list, &String.downcase/1)
 
       _ ->
-        case System.get_env("DEV_IDE_ADMINS") do
+        case System.get_env("CASEIN_ADMINS") do
           nil -> []
           str -> str |> String.split([",", " "], trim: true) |> Enum.map(&String.downcase/1)
         end
@@ -148,7 +148,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   @spec enabled?() :: boolean()
   def enabled? do
     case Application.get_env(:casein, :forward_auth) do
-      nil -> System.get_env("DEV_IDE_FORWARD_AUTH") in ~w(1 true yes)
+      nil -> System.get_env("CASEIN_FORWARD_AUTH") in ~w(1 true yes)
       val -> !!val
     end
   end

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-dev_ide}}"
 WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-}"
 CI_MODE=0
@@ -19,7 +19,7 @@ Verifies Terminal + Preview MCP endpoints for agent pairing.
 
 Environment:
   DEVIDE_URL          Base URL (default http://localhost:4000)
-  DEV_IDE_API_TOKEN   Bearer token (required)
+  CASEIN_API_TOKEN   Bearer token (required)
   WORKSPACE_ID        Workspace UUID or name (default dev_ide)
   VERIFY_ROUNDTRIP=1  Also send a harmless echo in the first session (optional)
 
@@ -57,7 +57,7 @@ echo "    URL:         $DEVIDE_URL"
 echo "    workspace:   $WORKSPACE_ID"
 
 if [[ -z "$TOKEN" ]]; then
-  echo "ERROR: DEV_IDE_API_TOKEN is not set" >&2
+  echo "ERROR: CASEIN_API_TOKEN is not set" >&2
   exit 1
 fi
 

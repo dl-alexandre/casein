@@ -55,7 +55,7 @@ Defined in `DevIdeWeb.Router`. Auth plugs themselves live in
 |---|---|---|
 | `:browser` | session, live-flash, CSP headers, `:protect_from_forgery`, `DevIdeWeb.Plugs.ForwardAuth` | Trusted `X-Auth-Request-Email` header from the reverse proxy (`ForwardAuth`); falls back to the static single-user `AssignCurrentUser` identity when forward-auth is disabled. Assigns `:current_user`. |
 | `:preview_proxy` | session, `ForwardAuth` | Same identity as `:browser`, but **omits** the cockpit CSP / secure-browser headers so proxied app HTML runs under its own framing rules. |
-| `:api` | `:accepts ["json"]`, `DevIdeWeb.Plugs.ApiAuth` | Bearer token (`:dev_ide, :api_token` / `DEV_IDE_API_TOKEN`, or per-workspace `workspace_api_tokens`). No token configured → **503** `api_token_not_configured`; bad token → 401; workspace-scoped token outside its workspace → 403. |
+| `:api` | `:accepts ["json"]`, `DevIdeWeb.Plugs.ApiAuth` | Bearer token (`:dev_ide, :api_token` / `CASEIN_API_TOKEN`, or per-workspace `workspace_api_tokens`). No token configured → **503** `api_token_not_configured`; bad token → 401; workspace-scoped token outside its workspace → 403. |
 | `:mcp_api` | `:accepts ["json"]`, `ApiAuth`, `DevIdeWeb.Plugs.McpRateLimit` | Same bearer gate as `:api`, plus per-token (hashed) rate limiting (default 120 hits / 60 s → **429** `rate_limited` with `Retry-After`). |
 
 The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
@@ -194,7 +194,7 @@ down. A missing session id on `GET`/`DELETE` returns **400**
 `error` string and also include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"` so clients can branch on a versioned
 shape. POST bodies over `:mcp_max_body_bytes`
-(`DEV_IDE_MCP_MAX_BODY_BYTES`, default `1_000_000`) return **413**
+(`CASEIN_MCP_MAX_BODY_BYTES`, default `1_000_000`) return **413**
 `request_body_too_large` before JSON-RPC handling with the same
 `error_version`. `?workspace_id=` pre-scopes the endpoint:
 `MCPWorkspaceScope` injects it into omitted `tools/call` args and rejects calls

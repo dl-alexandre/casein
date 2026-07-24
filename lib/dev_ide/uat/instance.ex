@@ -1,7 +1,7 @@
 defmodule Casein.UAT.Instance do
   @moduledoc """
   Boots and tears down an ephemeral Casein instance for a Tier A UAT run, against
-  a temporary, seeded `DEV_IDE_WORKSPACES_ROOT` so the run has zero impact on the
+  a temporary, seeded `CASEIN_WORKSPACES_ROOT` so the run has zero impact on the
   live release/session.
 
   The OS side effects go through a `Casein.UAT.Instance.Runner` (default
@@ -126,8 +126,8 @@ defmodule Casein.UAT.Instance do
   end
 
   defp launch_env(root, port, %Manifest{identity: identity}) do
-    base = %{"DEV_IDE_WORKSPACES_ROOT" => root, "PORT" => Integer.to_string(port)}
-    if identity, do: Map.put(base, "DEV_IDE_UAT_IDENTITY", identity), else: base
+    base = %{"CASEIN_WORKSPACES_ROOT" => root, "PORT" => Integer.to_string(port)}
+    if identity, do: Map.put(base, "CASEIN_UAT_IDENTITY", identity), else: base
   end
 
   defp allocate_port(opts) do

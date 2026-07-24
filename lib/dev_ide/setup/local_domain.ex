@@ -12,7 +12,7 @@ defmodule Casein.Setup.LocalDomain do
   @begin_marker "# BEGIN Casein local domain"
   @end_marker "# END Casein local domain"
 
-  def default_domain, do: System.get_env("DEV_IDE_LOCAL_DOMAIN") || @default_domain
+  def default_domain, do: System.get_env("CASEIN_LOCAL_DOMAIN") || @default_domain
 
   def short_hostname do
     case :inet.gethostname() do
@@ -38,7 +38,7 @@ defmodule Casein.Setup.LocalDomain do
   end
 
   def default_ip do
-    System.get_env("DEV_IDE_LAN_IP") || autodetect_lan_ip() || "127.0.0.1"
+    System.get_env("CASEIN_LAN_IP") || autodetect_lan_ip() || "127.0.0.1"
   end
 
   def resolve_ipv4(domain) when is_binary(domain) do

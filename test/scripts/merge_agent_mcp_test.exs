@@ -17,12 +17,12 @@ defmodule Scripts.MergeAgentMcpTest do
     assert out == ""
   end
 
-  test "does not stamp ui.theme even when DEV_IDE_TERMINAL_SCHEME is set" do
+  test "does not stamp ui.theme even when CASEIN_TERMINAL_SCHEME is set" do
     config = write_config("[ui]\ntheme = \"auto\"\n")
 
     assert {_, 0} =
              System.cmd("python3", [@script],
-               env: base_env(config) ++ [{"DEV_IDE_TERMINAL_SCHEME", "light"}],
+               env: base_env(config) ++ [{"CASEIN_TERMINAL_SCHEME", "light"}],
                stderr_to_stdout: true
              )
 
@@ -86,11 +86,11 @@ defmodule Scripts.MergeAgentMcpTest do
   end
 
   # HOME drives the script's home-relative paths; System.cmd merges env with the
-  # caller's, so Casein-managed shells' DEV_IDE_TERMINAL_SCHEME is cleared unless
+  # caller's, so Casein-managed shells' CASEIN_TERMINAL_SCHEME is cleared unless
   # a test sets it.
   defp base_env(config) do
     # config is <home>/.grok/config.toml, so HOME is two levels up.
     home = config |> Path.dirname() |> Path.dirname()
-    @base_env ++ [{"HOME", home}, {"DEV_IDE_TERMINAL_SCHEME", nil}]
+    @base_env ++ [{"HOME", home}, {"CASEIN_TERMINAL_SCHEME", nil}]
   end
 end

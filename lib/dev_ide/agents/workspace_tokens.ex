@@ -5,13 +5,13 @@ defmodule Casein.Agents.WorkspaceTokens do
   `CaseinWeb.Endpoint.reject_global_mcp_tool_calls/2` rejects MCP `tools/call`
   requests made with the global admin token, so every path that hands a token
   to an agent (materialized `env.sh`, tmux session env) must resolve a
-  workspace-scoped token here — never `:api_token` / `DEV_IDE_API_TOKEN`.
+  workspace-scoped token here — never `:api_token` / `CASEIN_API_TOKEN`.
   (An operator may opt a trusted single-tenant box out of that rejection with
-  `DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS=1` for a full-box orchestrator token;
+  `CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1` for a full-box orchestrator token;
   agents materialized here should still use workspace-scoped tokens regardless.)
 
   Tokens live in the `:workspace_api_tokens` registry (token → workspace_id or
-  list of ids), seeded at boot from `DEV_IDE_WORKSPACE_API_TOKENS` and the
+  list of ids), seeded at boot from `CASEIN_WORKSPACE_API_TOKENS` and the
   store file. When a workspace has no token yet, one is minted, registered in
   the application env (both auth plugs read it per-request, so it is valid
   immediately), and persisted to the store file so it survives restarts —
@@ -150,7 +150,7 @@ defmodule Casein.Agents.WorkspaceTokens do
 
   defp registry do
     app_tokens = Application.get_env(:casein, :workspace_api_tokens, %{})
-    env_tokens = tokens_from_env(System.get_env("DEV_IDE_WORKSPACE_API_TOKENS"))
+    env_tokens = tokens_from_env(System.get_env("CASEIN_WORKSPACE_API_TOKENS"))
 
     [app_tokens, env_tokens]
     |> Enum.filter(&is_map/1)
@@ -167,7 +167,7 @@ defmodule Casein.Agents.WorkspaceTokens do
   defp tokens_from_env(_), do: %{}
 
   defp global_token do
-    case Application.get_env(:casein, :api_token) || System.get_env("DEV_IDE_API_TOKEN") do
+    case Application.get_env(:casein, :api_token) || System.get_env("CASEIN_API_TOKEN") do
       value when is_binary(value) and value != "" -> value
       _ -> nil
     end

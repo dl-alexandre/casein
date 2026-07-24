@@ -5,7 +5,7 @@ defmodule CaseinWeb.API.MCPToolSearch do
   Casein's per-runtime MCP surface is large (terminal ~17, preview ~25, artifact,
   tidewave), and flat-injecting every tool schema into an agent's context costs
   tokens and, past ~30-50 tools, hurts tool-selection accuracy. When enabled
-  (`DEV_IDE_MCP_TOOL_SEARCH=1`), `tools/list` advertises only a small always-on
+  (`CASEIN_MCP_TOOL_SEARCH=1`), `tools/list` advertises only a small always-on
   CORE set plus two meta-tools — `search_tools` and `invoke_tool`. The long tail
   is reached on demand: `search_tools(query)` returns matching tool schemas, then
   `invoke_tool(name, arguments)` runs one, dispatched through the server's normal

@@ -96,8 +96,8 @@ arguments:
 | `manual` (default) | `workspace-write` | `on-request` |
 | explicit `DEVIDE_CODEX_DEFAULT_YOLO=1` | unrestricted | bypassed |
 
-`shell_environment_policy.exclude` removes `DEV_IDE_API_TOKEN`,
-`DEV_IDE_ADMIN_API_TOKEN`, and `DEV_IDE_WORKSPACE_API_TOKENS` from commands run
+`shell_environment_policy.exclude` removes `CASEIN_API_TOKEN`,
+`CASEIN_ADMIN_API_TOKEN`, and `CASEIN_WORKSPACE_API_TOKENS` from commands run
 inside repositories. The Codex process keeps the workspace token so its MCP
 client can authenticate.
 

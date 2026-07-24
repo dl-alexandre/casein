@@ -5,7 +5,7 @@ defmodule Casein.Terminals.TmuxExecutableTest do
 
   setup do
     previous = Application.get_env(:casein, :tmux_executable)
-    previous_env = System.get_env("DEV_IDE_TMUX_EXECUTABLE")
+    previous_env = System.get_env("CASEIN_TMUX_EXECUTABLE")
 
     on_exit(fn ->
       restore_app_env(previous)
@@ -27,14 +27,14 @@ defmodule Casein.Terminals.TmuxExecutableTest do
     env_path = System.find_executable("sh")
     config_path = System.find_executable("env")
     Application.put_env(:casein, :tmux_executable, config_path)
-    System.put_env("DEV_IDE_TMUX_EXECUTABLE", env_path)
+    System.put_env("CASEIN_TMUX_EXECUTABLE", env_path)
 
     assert TmuxExecutable.resolve() == env_path
   end
 
   test "nonexistent overrides are ignored" do
     Application.put_env(:casein, :tmux_executable, "/definitely/missing/tmux")
-    System.put_env("DEV_IDE_TMUX_EXECUTABLE", "/also/missing/tmux")
+    System.put_env("CASEIN_TMUX_EXECUTABLE", "/also/missing/tmux")
 
     assert TmuxExecutable.resolve() == System.find_executable("tmux")
   end
@@ -42,6 +42,6 @@ defmodule Casein.Terminals.TmuxExecutableTest do
   defp restore_app_env(nil), do: Application.delete_env(:casein, :tmux_executable)
   defp restore_app_env(value), do: Application.put_env(:casein, :tmux_executable, value)
 
-  defp restore_system_env(nil), do: System.delete_env("DEV_IDE_TMUX_EXECUTABLE")
-  defp restore_system_env(value), do: System.put_env("DEV_IDE_TMUX_EXECUTABLE", value)
+  defp restore_system_env(nil), do: System.delete_env("CASEIN_TMUX_EXECUTABLE")
+  defp restore_system_env(value), do: System.put_env("CASEIN_TMUX_EXECUTABLE", value)
 end

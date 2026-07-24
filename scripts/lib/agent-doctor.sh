@@ -43,7 +43,7 @@ devide_shims_expected() {
 }
 
 check_shims() {
-  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
   local shims_expected=0
   if devide_shims_expected; then
@@ -104,7 +104,7 @@ check_shims() {
   # a missing shim still surfaces a real binary error rather than "not found"
   # from a release-only PATH — and so reinstall finds package candidates.
   local npm_prefix npm_bin
-  npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
   npm_bin="${npm_prefix}/bin"
   case ":${PATH:-}:" in
     *":${shim_dir}:"*) pass "PATH includes ${shim_dir}" ;;
@@ -120,7 +120,7 @@ check_shims() {
     *":${npm_bin}:"*) pass "PATH includes npm agent bin (${npm_bin})" ;;
     *)
       if [[ "$shims_expected" == "1" ]]; then
-        warn "paired-context PATH missing ${npm_bin} — set DEV_IDE_NPM_PREFIX / repair-tmux-env"
+        warn "paired-context PATH missing ${npm_bin} — set CASEIN_NPM_PREFIX / repair-tmux-env"
       else
         pass "plain-shell PATH does not require npm agent bin (${npm_bin})"
       fi
@@ -133,7 +133,7 @@ check_shims() {
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
 check_shim_targets() {
-  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
   local runtime shim cli target_missing=0 checked=0
   for runtime in grok claude codex opencode agent; do
     shim="${shim_dir}/${runtime}"
@@ -173,16 +173,16 @@ check_real_bins() {
 }
 
 check_token() {
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   if [[ -z "$token" ]]; then
-    fail "DEV_IDE_API_TOKEN is not set"
+    fail "CASEIN_API_TOKEN is not set"
     return
   fi
 
   if [[ "$token" == \'*\' || "$token" == \"*\" ]]; then
-    fail "DEV_IDE_API_TOKEN has literal shell quotes — run repair-tmux-env.sh"
+    fail "CASEIN_API_TOKEN has literal shell quotes — run repair-tmux-env.sh"
   else
-    pass "DEV_IDE_API_TOKEN is set (unquoted)"
+    pass "CASEIN_API_TOKEN is set (unquoted)"
   fi
 }
 
@@ -253,7 +253,7 @@ check_tidewave_mcp() {
 }
 
 check_mcp_endpoints() {
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   local terminal_url="${DEVIDE_TERMINAL_MCP_URL:-}"
   local preview_url="${DEVIDE_PREVIEW_MCP_URL:-}"
   local artifact_url="${DEVIDE_ARTIFACT_MCP_URL:-}"

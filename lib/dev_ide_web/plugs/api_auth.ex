@@ -3,7 +3,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
   Bearer-token gate for the read-only API.
 
   Token comes from `:casein, :api_token` (preferred for tests) or the
-  `DEV_IDE_API_TOKEN` environment variable. If neither is set the API
+  `CASEIN_API_TOKEN` environment variable. If neither is set the API
   refuses every request with 503 — there is no "open by default" mode.
   """
 
@@ -119,7 +119,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
     global_tokens =
       [
         Application.get_env(:casein, :api_token),
-        System.get_env("DEV_IDE_API_TOKEN")
+        System.get_env("CASEIN_API_TOKEN")
       ]
       |> Enum.map(&{:global, &1})
 
@@ -128,7 +128,7 @@ defmodule CaseinWeb.Plugs.ApiAuth do
 
   defp workspace_tokens do
     app_tokens = Application.get_env(:casein, :workspace_api_tokens, %{})
-    env_tokens = workspace_tokens_from_env(System.get_env("DEV_IDE_WORKSPACE_API_TOKENS"))
+    env_tokens = workspace_tokens_from_env(System.get_env("CASEIN_WORKSPACE_API_TOKENS"))
 
     [app_tokens, env_tokens]
     |> Enum.flat_map(&normalize_workspace_tokens/1)

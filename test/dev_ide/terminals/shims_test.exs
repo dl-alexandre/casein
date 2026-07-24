@@ -95,8 +95,8 @@ defmodule Casein.Terminals.ShimsTest do
           {"PATH", Enum.join([real_dir, clean_bin], ":")},
           {"DEVIDE_API_BASE_URL", "http://devide.test"},
           {"DEVIDE_WORKSPACE_ID", "ws-open"},
-          {"DEV_IDE_API_TOKEN", "open-token"},
-          {"DEV_IDE_FAKE_CURL_CAPTURE", capture}
+          {"CASEIN_API_TOKEN", "open-token"},
+          {"CASEIN_FAKE_CURL_CAPTURE", capture}
         ],
         stderr_to_stdout: true
       )
@@ -127,8 +127,8 @@ defmodule Casein.Terminals.ShimsTest do
           {"PATH", clean_bin},
           {"DEVIDE_API_BASE_URL", "http://devide.test"},
           {"DEVIDE_WORKSPACE_ID", "ws-open"},
-          {"DEV_IDE_API_TOKEN", "open-token"},
-          {"DEV_IDE_FAKE_CURL_CAPTURE", capture}
+          {"CASEIN_API_TOKEN", "open-token"},
+          {"CASEIN_FAKE_CURL_CAPTURE", capture}
         ],
         stderr_to_stdout: true
       )
@@ -156,9 +156,9 @@ defmodule Casein.Terminals.ShimsTest do
       )
 
     assert out =~ "ELIO_CLIPBOARD_OSC52=1"
-    assert out =~ "DEV_IDE_APP_SHIM=elio"
-    assert out =~ "DEV_IDE_TERMINAL=1"
-    assert out =~ "DEV_IDE_CLIPBOARD=osc52"
+    assert out =~ "CASEIN_APP_SHIM=elio"
+    assert out =~ "CASEIN_TERMINAL=1"
+    assert out =~ "CASEIN_CLIPBOARD=osc52"
   end
 
   test "materialize! writes no grok shim while still writing elio" do
@@ -259,7 +259,7 @@ defmodule Casein.Terminals.ShimsTest do
       System.cmd(Shims.shim_path("elio"), [],
         env: [
           {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
-          {"DEV_IDE_TERMINAL_SCHEME", "light"},
+          {"CASEIN_TERMINAL_SCHEME", "light"},
           {"COLORFGBG", nil}
         ],
         stderr_to_stdout: true
@@ -279,7 +279,7 @@ defmodule Casein.Terminals.ShimsTest do
       System.cmd(Shims.shim_path("elio"), [],
         env: [
           {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
-          {"DEV_IDE_TERMINAL_SCHEME", "dark"},
+          {"CASEIN_TERMINAL_SCHEME", "dark"},
           {"COLORFGBG", "custom"}
         ],
         stderr_to_stdout: true
@@ -309,14 +309,14 @@ defmodule Casein.Terminals.ShimsTest do
 
   test "theme env exports scheme, COLORFGBG, and optional preset" do
     assert %{
-             "DEV_IDE_TERMINAL_SCHEME" => "light",
+             "CASEIN_TERMINAL_SCHEME" => "light",
              "COLORFGBG" => "0;15",
              "COLORTERM" => "truecolor",
-             "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
+             "CASEIN_TERMINAL_PRESET" => "catppuccin"
            } = Shims.theme_env(:light, "catppuccin")
 
     assert %{
-             "DEV_IDE_TERMINAL_SCHEME" => "dark",
+             "CASEIN_TERMINAL_SCHEME" => "dark",
              "COLORFGBG" => "15;0",
              "COLORTERM" => "truecolor"
            } = Shims.theme_env(:dark)
@@ -324,24 +324,24 @@ defmodule Casein.Terminals.ShimsTest do
 
   test "env merges theme variables when scheme is provided" do
     assert %{
-             "DEV_IDE_TERMINAL" => "1",
-             "DEV_IDE_CLIPBOARD" => "osc52",
-             "DEV_IDE_SHELL_INTEGRATION" => "1",
-             "DEV_IDE_SHELL_INTEGRATION_BASH" => _,
-             "DEV_IDE_TERMINAL_SCHEME" => "light",
+             "CASEIN_TERMINAL" => "1",
+             "CASEIN_CLIPBOARD" => "osc52",
+             "CASEIN_SHELL_INTEGRATION" => "1",
+             "CASEIN_SHELL_INTEGRATION_BASH" => _,
+             "CASEIN_TERMINAL_SCHEME" => "light",
              "COLORFGBG" => "0;15",
              "COLORTERM" => "truecolor",
-             "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
+             "CASEIN_TERMINAL_PRESET" => "catppuccin"
            } = Shims.env(scheme: :light, preset: "catppuccin", include_path?: false)
   end
 
   test "terminal env can omit PATH for non-host execution contexts", %{shim_dir: shim_dir} do
     assert %{
-             "DEV_IDE_TERMINAL" => "1",
-             "DEV_IDE_CLIPBOARD" => "osc52",
-             "DEV_IDE_SHELL_INTEGRATION" => "1",
+             "CASEIN_TERMINAL" => "1",
+             "CASEIN_CLIPBOARD" => "osc52",
+             "CASEIN_SHELL_INTEGRATION" => "1",
              "COLORTERM" => "truecolor",
-             "DEV_IDE_SHELL_INTEGRATION_BASH" => _
+             "CASEIN_SHELL_INTEGRATION_BASH" => _
            } = Shims.env(include_path?: false)
 
     refute Map.has_key?(Shims.env(include_path?: false), "PATH")
@@ -413,7 +413,7 @@ defmodule Casein.Terminals.ShimsTest do
           """
           export HOME=#{shell_quote(home)}
           export PATH=/usr/bin:/bin
-          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
           source #{shell_quote(script)}
           command -v claude
           """
@@ -455,7 +455,7 @@ defmodule Casein.Terminals.ShimsTest do
           """
           export HOME=#{shell_quote(home)}
           export PATH=/usr/bin:/bin
-          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
           source #{shell_quote(script)}
           command -v claude
           """
@@ -496,7 +496,7 @@ defmodule Casein.Terminals.ShimsTest do
           """
           export HOME=#{shell_quote(home)}
           export PATH=#{shell_quote(installer_bin)}:#{shell_quote(agent_shims)}:/usr/bin:/bin
-          export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+          export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
           source #{shell_quote(script)}
           command -v grok
           """
@@ -515,8 +515,8 @@ defmodule Casein.Terminals.ShimsTest do
     File.write!(
       rcfile,
       """
-      export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
-      unset DEV_IDE_SHELL_INTEGRATION_LOADED
+      export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
+      unset CASEIN_SHELL_INTEGRATION_LOADED
       export TMUX=fake,1,0
       PS1='$ '
       source #{Shims.shell_integration_path()}
@@ -548,10 +548,10 @@ defmodule Casein.Terminals.ShimsTest do
     assert command =~ "sh -lc"
     # zsh branch first (gated on $SHELL being zsh — the macOS default), then
     # the original integrated-bash chain (the devbox default).
-    assert command =~ "DEV_IDE_SHELL_INTEGRATION_ZDOTDIR"
+    assert command =~ "CASEIN_SHELL_INTEGRATION_ZDOTDIR"
     assert command =~ ~s(${SHELL:-})
     assert command =~ ~s(exec "$__devide_shell" -il)
-    assert command =~ "DEV_IDE_SHELL_INTEGRATION_BASH"
+    assert command =~ "CASEIN_SHELL_INTEGRATION_BASH"
     assert command =~ "bash --init-file"
     assert command =~ "bash -l"
   end
@@ -563,7 +563,7 @@ defmodule Casein.Terminals.ShimsTest do
       File.mkdir_p!(home)
 
       script = """
-      print -r -- "loaded=${DEV_IDE_SHELL_INTEGRATION_LOADED:-0}"
+      print -r -- "loaded=${CASEIN_SHELL_INTEGRATION_LOADED:-0}"
       print -r -- "zdotdir=${ZDOTDIR:-unset}"
       print -r -- "precmd=${precmd_functions}"
       print -r -- "preexec=${preexec_functions}"
@@ -578,9 +578,9 @@ defmodule Casein.Terminals.ShimsTest do
             {"HOME", home},
             {"PATH", "/usr/bin:/bin"},
             {"ZDOTDIR", Shims.zdotdir_path()},
-            {"DEV_IDE_USER_ZDOTDIR", ""},
-            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
-            {"DEV_IDE_SHELL_INTEGRATION_LOADED", nil}
+            {"CASEIN_USER_ZDOTDIR", ""},
+            {"CASEIN_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
+            {"CASEIN_SHELL_INTEGRATION_LOADED", nil}
           ],
           stderr_to_stdout: true
         )
@@ -609,15 +609,15 @@ defmodule Casein.Terminals.ShimsTest do
           [
             "-il",
             "-c",
-            "print -r -- \"profile=$DEVIDE_PROFILE_SEEN rc=$DEVIDE_RC_SEEN loaded=$DEV_IDE_SHELL_INTEGRATION_LOADED zdotdir=$ZDOTDIR\""
+            "print -r -- \"profile=$DEVIDE_PROFILE_SEEN rc=$DEVIDE_RC_SEEN loaded=$CASEIN_SHELL_INTEGRATION_LOADED zdotdir=$ZDOTDIR\""
           ],
           env: [
             {"HOME", home},
             {"PATH", "/usr/bin:/bin"},
             {"ZDOTDIR", Shims.zdotdir_path()},
-            {"DEV_IDE_USER_ZDOTDIR", user_zdotdir},
-            {"DEV_IDE_SHELL_INTEGRATION_ZDOTDIR", Shims.zdotdir_path()},
-            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()}
+            {"CASEIN_USER_ZDOTDIR", user_zdotdir},
+            {"CASEIN_SHELL_INTEGRATION_ZDOTDIR", Shims.zdotdir_path()},
+            {"CASEIN_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()}
           ],
           stderr_to_stdout: true
         )
@@ -638,8 +638,8 @@ defmodule Casein.Terminals.ShimsTest do
             {"HOME", home},
             {"PATH", "/usr/bin:/bin"},
             {"ZDOTDIR", Shims.zdotdir_path()},
-            {"DEV_IDE_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
-            {"DEV_IDE_SHELL_INTEGRATION_LOADED", nil}
+            {"CASEIN_SHELL_INTEGRATION_ZSH", Shims.zsh_integration_path()},
+            {"CASEIN_SHELL_INTEGRATION_LOADED", nil}
           ],
           stderr_to_stdout: true
         )
@@ -671,8 +671,8 @@ defmodule Casein.Terminals.ShimsTest do
             "-i",
             "-c",
             """
-            export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
-            unset DEV_IDE_SHELL_INTEGRATION_LOADED
+            export CASEIN_SHELL_INTEGRATION_SKIP_RC=1
+            unset CASEIN_SHELL_INTEGRATION_LOADED
             source #{shell_quote(Shims.zsh_integration_path())}
             command -v claude
             """
@@ -695,7 +695,7 @@ defmodule Casein.Terminals.ShimsTest do
       System.cmd(bash!(), ["scripts/ensure-terminal-tool.sh", "elio"],
         env: [
           {"PATH", clean_bin},
-          {"DEV_IDE_TERMINAL_TOOLS_DIR", tool_root}
+          {"CASEIN_TERMINAL_TOOLS_DIR", tool_root}
         ],
         stderr_to_stdout: true
       )
@@ -720,7 +720,7 @@ defmodule Casein.Terminals.ShimsTest do
       System.cmd(bash!(), ["scripts/ensure-terminal-tool.sh", "--check", "elio"],
         env: [
           {"PATH", clean_bin},
-          {"DEV_IDE_TERMINAL_TOOLS_DIR", tool_root}
+          {"CASEIN_TERMINAL_TOOLS_DIR", tool_root}
         ],
         stderr_to_stdout: true
       )
@@ -740,7 +740,7 @@ defmodule Casein.Terminals.ShimsTest do
       System.cmd(Shims.install_script_path("elio"), [],
         env: [
           {"PATH", clean_bin},
-          {"DEV_IDE_TERMINAL_TOOLS_DIR", tool_root}
+          {"CASEIN_TERMINAL_TOOLS_DIR", tool_root}
         ],
         stderr_to_stdout: true
       )
@@ -824,8 +824,8 @@ defmodule Casein.Terminals.ShimsTest do
       "  esac\n",
       "done\n",
       "printf '{\"kind\":\"markdown\",\"path\":\"docs/readme.md\"}' >\"$out\"\n",
-      "if [[ -n \"${DEV_IDE_FAKE_CURL_CAPTURE:-}\" ]]; then\n",
-      "  printf '%s\\n%s\\n%s\\n' \"$request_url\" \"$max_time\" \"$data\" >\"$DEV_IDE_FAKE_CURL_CAPTURE\"\n",
+      "if [[ -n \"${CASEIN_FAKE_CURL_CAPTURE:-}\" ]]; then\n",
+      "  printf '%s\\n%s\\n%s\\n' \"$request_url\" \"$max_time\" \"$data\" >\"$CASEIN_FAKE_CURL_CAPTURE\"\n",
       "fi\n",
       "printf '200'\n"
     ])
@@ -848,9 +848,9 @@ defmodule Casein.Terminals.ShimsTest do
     [
       "#!/usr/bin/env bash\n",
       "printf 'ELIO_CLIPBOARD_OSC52=%s\\n' \"${ELIO_CLIPBOARD_OSC52:-}\"\n",
-      "printf 'DEV_IDE_APP_SHIM=%s\\n' \"${DEV_IDE_APP_SHIM:-}\"\n",
-      "printf 'DEV_IDE_TERMINAL=%s\\n' \"${DEV_IDE_TERMINAL:-}\"\n",
-      "printf 'DEV_IDE_CLIPBOARD=%s\\n' \"${DEV_IDE_CLIPBOARD:-}\"\n",
+      "printf 'CASEIN_APP_SHIM=%s\\n' \"${CASEIN_APP_SHIM:-}\"\n",
+      "printf 'CASEIN_TERMINAL=%s\\n' \"${CASEIN_TERMINAL:-}\"\n",
+      "printf 'CASEIN_CLIPBOARD=%s\\n' \"${CASEIN_CLIPBOARD:-}\"\n",
       "printf 'COLORFGBG=%s\\n' \"${COLORFGBG:-}\"\n",
       "printf 'ARGV=%s\\n' \"$*\"\n"
     ]

@@ -8,7 +8,7 @@ defmodule Casein.Desktop.AgentLauncherTest do
       assert AgentLauncher.supported?(id)
       assert {:ok, command} = AgentLauncher.command(id)
       assert String.ends_with?(command, "\r")
-      refute command =~ "DEV_IDE_API_TOKEN"
+      refute command =~ "CASEIN_API_TOKEN"
       refute command =~ "Bearer"
     end
   end

@@ -89,7 +89,7 @@ site into it.
 | `DevIDE.Terminals.ModePolicy` | `mode_policy.ex` | Pure mode resolver; everything is `:raw`; `tmux_mutations_enabled?/1` true only for `:shell`. |
 | `DevIDE.Terminals.Theme` / `.Builtins` | `theme.ex`, `theme/builtins.ex` | Renderer-first themes (Catppuccin presets + `ghostty.conf` loading) and OSC 10/11/12/4 rewrite helpers for pane query responses. |
 | `DevIDE.Terminals.ClipboardPaste` | `clipboard_paste.ex` | Saves pasted/dropped images/files into `.devide/clipboard/` and pastes the path; git-exclude maintenance. |
-| `DevIDE.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.devide/terminal-shims/`, self-healing installers under `~/.devide/terminal-shims/install/`, managed tool binaries under `~/.devide/tools/bin/`, and pane capability env (`DEV_IDE_TERMINAL=1`, `DEV_IDE_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
+| `DevIDE.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.devide/terminal-shims/`, self-healing installers under `~/.devide/terminal-shims/install/`, managed tool binaries under `~/.devide/tools/bin/`, and pane capability env (`CASEIN_TERMINAL=1`, `CASEIN_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
 | `DevIDE.Terminals.GhosttySnapshot` | `ghostty_snapshot.ex` | Writes `Ghostty.Terminal` HTML/plain/VT grid dumps to `:ghostty_snapshot_dir` (kept out of the LiveView for the no-apply boundary guard). |
 | `DevIDE.Terminals.InspectionCommands` | `inspection_commands.ex` | Read-only governed argv registry (`pwd`/`ls`/`git status`/`rg`/`tidewave`/`preview …`) run in the workspace root with bounded output. |
 | `DevIDE.Terminals.Workflows` | `workflows.ex` | Repo-scoped Warp-subset workflow launchers; renders+revalidates argv, encodes a `workflow:` command id (never persists executable argv). |
@@ -208,7 +208,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   falls back to the host's *default* server, sharing it with plain SSH tmux.
   - **Per-server config.** On the host path, `TmuxRunner` appends `-f <file>`,
     resolved by precedence: `:tmux_ctl, :config_file` → `:dev_ide,
-    :tmux_config_file` → `$DEV_IDE_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`
+    :tmux_config_file` → `$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`
     (`tmux_runner.ex:82-104`). Container sessions skip `-f` (the priv dir isn't
     mounted in arbitrary workspace images) and instead get the same options
     programmatically via `TmuxCtl.Client.apply_defaults/1`. tmux reads `-f` only
@@ -240,7 +240,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   lives in `DevIDE.Policy` (outside this subsystem); the verdict is recorded as
   `run.session_attached` / `run.session_denied` in `Runs.Ledger`.
 - **Clipboard copy-out is OSC52.** DevIDE terminal panes advertise
-  `DEV_IDE_TERMINAL=1` and `DEV_IDE_CLIPBOARD=osc52`; terminal apps should emit
+  `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; terminal apps should emit
   OSC52 for copy/yank operations so the browser-side clipboard bridge can write
   to the human's clipboard. Server desktop helpers (`wl-copy`, `xclip`, `xsel`,
   `pbcopy`, etc.) are not the primary route because they target the server or

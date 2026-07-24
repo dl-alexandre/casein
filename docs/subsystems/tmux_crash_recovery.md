@@ -23,7 +23,7 @@ describes the mitigations that keep the cockpit usable.
    5 attempts with backoff.
 3. **Scrollback archive** — `DevIDE.Terminals.ScrollbackArchive` spills a
    bounded tail (default 256 KiB) to ETS + disk under
-   `~/.devide/tmux-scrollback` (override via `DEV_IDE_TMUX_SCROLLBACK_DIR`);
+   `~/.devide/tmux-scrollback` (override via `CASEIN_TMUX_SCROLLBACK_DIR`);
    fresh creates reseed when archive has data. Intentional `Tmux.kill/1`
    deletes the archive so the next open is not a false recovery.
 4. **Recovery banner + audit** — SessionOwner notifies (manager UUID) after

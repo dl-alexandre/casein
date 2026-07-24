@@ -48,7 +48,7 @@ invoke_release_cli() {
   done
 
   export DEVIDE_CLI_ARGV="${argv}"
-  export DEV_IDE_RELEASE_CLI=1
+  export CASEIN_RELEASE_CLI=1
 
   if command -v mise >/dev/null 2>&1; then
     (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'Casein.Release.CLI.main() |> then(&System.halt/1)')
@@ -93,7 +93,7 @@ export_agent_env() {
   agent_env_export_runtime_paths
 
   local key
-  for key in DEV_IDE_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
+  for key in CASEIN_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
     DEVIDE_API_BASE_URL DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_ARTIFACT_MCP_URL DEVIDE_CHECKOUT \
     DEVIDE_AGENT_MCP_HOME DEVIDE_SCRIPTS DEVIDE_AGENT_ENV_FILE \
     CLAUDE_CONFIG_DIR CODEX_HOME PATH; do

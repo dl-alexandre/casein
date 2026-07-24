@@ -54,7 +54,7 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
   describe "admins (legacy list, no privileges)" do
     setup do
       prev = Application.get_env(:casein, :admins)
-      prev_env = System.get_env("DEV_IDE_ADMINS")
+      prev_env = System.get_env("CASEIN_ADMINS")
 
       on_exit(fn ->
         case prev do
@@ -63,8 +63,8 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
         end
 
         case prev_env do
-          nil -> System.delete_env("DEV_IDE_ADMINS")
-          val -> System.put_env("DEV_IDE_ADMINS", val)
+          nil -> System.delete_env("CASEIN_ADMINS")
+          val -> System.put_env("CASEIN_ADMINS", val)
         end
       end)
 
@@ -78,7 +78,7 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
 
     test "admins/0 is empty when nothing is configured" do
       Application.delete_env(:casein, :admins)
-      System.delete_env("DEV_IDE_ADMINS")
+      System.delete_env("CASEIN_ADMINS")
       assert ForwardAuth.admins() == []
     end
 

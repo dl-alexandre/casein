@@ -149,10 +149,10 @@ defmodule Casein.Deployment.LastDeployTest do
              )
   end
 
-  test "check_async is a no-op when DEV_IDE_DEPLOY_POLLER_WATCH disables it" do
-    prev = System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH")
-    System.put_env("DEV_IDE_DEPLOY_POLLER_WATCH", "0")
-    on_exit(fn -> restore_env("DEV_IDE_DEPLOY_POLLER_WATCH", prev) end)
+  test "check_async is a no-op when CASEIN_DEPLOY_POLLER_WATCH disables it" do
+    prev = System.get_env("CASEIN_DEPLOY_POLLER_WATCH")
+    System.put_env("CASEIN_DEPLOY_POLLER_WATCH", "0")
+    on_exit(fn -> restore_env("CASEIN_DEPLOY_POLLER_WATCH", prev) end)
 
     assert :ok = LastDeploy.check_async()
   end

@@ -212,8 +212,8 @@ if (-not $SkipBuild) {
     Push-Location $root
     try {
         $env:MIX_ENV = 'prod'
-        $env:DEV_IDE_NATIVE_WINDOWS = 'true'
-        $env:DEV_IDE_REPO_ADAPTER = 'sqlite'
+        $env:CASEIN_NATIVE_WINDOWS = 'true'
+        $env:CASEIN_REPO_ADAPTER = 'sqlite'
         $env:DEVIDE_RELEASE_PROFILE = 'desktop'
         $env:DEVIDE_GIT_REVISION = $sourceRevision
         if (-not (Test-Path -LiteralPath (Join-Path $root 'assets\node_modules\@codemirror\view'))) {

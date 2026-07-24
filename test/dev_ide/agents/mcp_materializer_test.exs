@@ -14,11 +14,11 @@ defmodule Casein.Agents.MCPMaterializerTest do
     prev_token = Application.get_env(:casein, :api_token)
     prev_base = Application.get_env(:casein, :agent_mcp_base_url)
     prev_auth_root = Application.get_env(:casein, :agent_auth_profile_root)
-    prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
+    prev_env_token = System.get_env("CASEIN_API_TOKEN")
     prev_ws_tokens = Application.get_env(:casein, :workspace_api_tokens)
-    prev_env_ws_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    System.delete_env("DEV_IDE_API_TOKEN")
-    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+    prev_env_ws_tokens = System.get_env("CASEIN_WORKSPACE_API_TOKENS")
+    System.delete_env("CASEIN_API_TOKEN")
+    System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
     Application.put_env(:casein, :api_token, "secret-token")
     Application.put_env(:casein, :workspace_api_tokens, %{"scoped-ws-abc-token" => "ws-abc"})
     Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:4000")
@@ -38,12 +38,12 @@ defmodule Casein.Agents.MCPMaterializerTest do
       restore_auth_root(prev_auth_root)
 
       if prev_env_token,
-        do: System.put_env("DEV_IDE_API_TOKEN", prev_env_token),
-        else: System.delete_env("DEV_IDE_API_TOKEN")
+        do: System.put_env("CASEIN_API_TOKEN", prev_env_token),
+        else: System.delete_env("CASEIN_API_TOKEN")
 
       if prev_env_ws_tokens,
-        do: System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", prev_env_ws_tokens),
-        else: System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+        do: System.put_env("CASEIN_WORKSPACE_API_TOKENS", prev_env_ws_tokens),
+        else: System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
 
       File.rm_rf(tmp)
       File.rm_rf(auth_root)
@@ -62,27 +62,27 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert grok =~ "devide-terminal"
     assert grok =~ "devide-artifact"
     assert grok =~ "workspace_id=ws-abc"
-    assert grok =~ "${DEV_IDE_API_TOKEN}"
+    assert grok =~ "${CASEIN_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
     assert mcp_json =~ "devide-terminal-test-ws"
     assert mcp_json =~ "devide-artifact-test-ws"
     assert mcp_json =~ "/api/artifacts/mcp?workspace_id=ws-abc"
-    assert mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute mcp_json =~ "secret-token"
     refute mcp_json =~ "Bearer '"
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
 
     grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
     assert grok_mcp_json =~ "devide-terminal-test-ws"
-    assert grok_mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    assert grok_mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute grok_mcp_json =~ "secret-token"
 
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "devide-terminal"
     refute codex =~ "devide-preview"
     refute codex =~ "devide-artifact"
-    refute codex =~ "DEV_IDE_API_TOKEN"
+    refute codex =~ "CASEIN_API_TOKEN"
 
     hooks = Jason.decode!(File.read!(Path.join(staging, "claude-hooks-settings.json")))
 
@@ -105,7 +105,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert Map.has_key?(sidechat, "hooks")
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
+    assert env_sh =~ "export CASEIN_API_TOKEN='scoped-ws-abc-token'"
     assert env_sh =~ "export DEVIDE_WORKSPACE_MODE='manual'"
     assert env_sh =~ "export DEVIDE_API_BASE_URL='http://127.0.0.1:4000'"
 
@@ -211,12 +211,12 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
-    assert mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute mcp_json =~ "Bearer quoted-token"
     refute mcp_json =~ "Bearer '"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    assert env_sh =~ "export DEV_IDE_API_TOKEN='quoted-token'"
+    assert env_sh =~ "export CASEIN_API_TOKEN='quoted-token'"
     assert env_sh =~ "DEVIDE_WORKSPACE_ID"
     assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
     assert env_sh =~ "DEVIDE_ARTIFACT_MCP_URL"
@@ -228,7 +228,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    assert [_, token] = Regex.run(~r/export DEV_IDE_API_TOKEN='([0-9a-f]{64})'/, env_sh)
+    assert [_, token] = Regex.run(~r/export CASEIN_API_TOKEN='([0-9a-f]{64})'/, env_sh)
     refute token == "secret-token"
 
     # the minted token is registered so the MCP endpoints accept it immediately
@@ -295,7 +295,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute merged["mcpServers"]["devide-artifact-test-ws"]
 
     contents = File.read!(Path.join(checkout, ".mcp.json"))
-    refute contents =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute contents =~ "Bearer ${CASEIN_API_TOKEN}"
     refute contents =~ "scoped-ws-abc-token"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))

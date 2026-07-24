@@ -47,7 +47,7 @@ defmodule Casein.Agents.PaneEnv do
 
       vars =
         %{
-          "DEV_IDE_API_TOKEN" => token,
+          "CASEIN_API_TOKEN" => token,
           "DEVIDE_WORKSPACE_ID" => workspace_id,
           "DEVIDE_WORKSPACE_NAME" => workspace_name,
           "DEVIDE_API_BASE_URL" => MCPUrls.api_base_url(),
@@ -58,7 +58,7 @@ defmodule Casein.Agents.PaneEnv do
           "DEVIDE_AGENT_MCP_HOME" => staging,
           "DEVIDE_SCRIPTS" => scripts_root,
           "DEVIDE_AGENT_ENV_FILE" => env_sh,
-          "DEV_IDE_NPM_PREFIX" => npm_prefix,
+          "CASEIN_NPM_PREFIX" => npm_prefix,
           "PATH" => path
         }
         |> maybe_put_tmux_session(opts)

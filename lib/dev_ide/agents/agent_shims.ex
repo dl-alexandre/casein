@@ -26,7 +26,7 @@ defmodule Casein.Agents.AgentShims do
   def bin_dir do
     :casein
     |> Application.get_env(:agent_bin_dir)
-    |> non_empty_or(System.get_env("DEV_IDE_AGENT_BIN_DIR"))
+    |> non_empty_or(System.get_env("CASEIN_AGENT_BIN_DIR"))
     |> non_empty_or(@default_bin_dir)
     |> Path.expand()
   end
@@ -36,7 +36,7 @@ defmodule Casein.Agents.AgentShims do
   def npm_prefix do
     :casein
     |> Application.get_env(:agent_npm_prefix)
-    |> non_empty_or(System.get_env("DEV_IDE_NPM_PREFIX"))
+    |> non_empty_or(System.get_env("CASEIN_NPM_PREFIX"))
     |> non_empty_or(@default_npm_prefix)
     |> Path.expand()
   end
@@ -126,7 +126,7 @@ defmodule Casein.Agents.AgentShims do
         env = [
           {"HOME", System.get_env("HOME") || "/home/devbox"},
           {"PATH", System.get_env("PATH") || "/usr/bin:/bin"},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix()}
+          {"CASEIN_NPM_PREFIX", npm_prefix()}
         ]
 
         case System.cmd("bash", [script],

@@ -88,7 +88,7 @@ defmodule Casein.Agents.TerminalTools do
     terminal_defs ++ AnnotationTools.definitions()
   end
 
-  # workspace_digest is feature-flagged (DEV_IDE_WORKSPACE_DIGEST): hide it from
+  # workspace_digest is feature-flagged (CASEIN_WORKSPACE_DIGEST): hide it from
   # tools/list until enabled. Like the tool-search meta-tools, it stays callable
   # by name — the flag only changes what is advertised.
   defp hidden_action?(WorkspaceDigest),

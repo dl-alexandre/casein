@@ -84,7 +84,7 @@ their `~/.tmux.conf`) and the three envs never collide on the shared devbox.
 
 On the **host** path, `TmuxRunner` also appends `-f <file>` (precedence:
 `:tmux_ctl, :config_file` → `:dev_ide, :tmux_config_file` →
-`$DEV_IDE_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
+`$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
 skip `-f` and get the same options via `TmuxCtl.Client.apply_defaults/1`
 instead. Because tmux reads `-f` only when it *starts* a server, config is
 per-server, not per-client: a different config means a different `-L` label.
@@ -144,7 +144,7 @@ DevIDE configures `:tmux_ctl, :terminal_env` at boot from
 `DevIDE.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
 `new-session`, `new-window`, `split-window`, and `set-environment` defaults so
 new shells inherit the DevIDE terminal capability contract. The generic
-contract is `DEV_IDE_TERMINAL=1` and `DEV_IDE_CLIPBOARD=osc52`; app-specific
+contract is `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; app-specific
 behavior stays lazy in command shims such as `~/.devide/terminal-shims/elio`.
 The pane `PATH` also includes `~/.devide/tools/bin/`, where known missing tools
 can be installed on first invocation. For example, typing `elio` in a DevIDE

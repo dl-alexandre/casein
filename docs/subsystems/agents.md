@@ -84,7 +84,7 @@ compile-time-fixed argv.
    writes a staging home containing `grok/config.toml`, `codex/config.toml`,
    `opencode.json`, `.mcp.json`, `cursor/mcp.json`, and `env.sh`. Grok,
    OpenCode, Claude/Cursor staging configs point at the terminal + preview MCP URLs
-   (from `MCPUrls`) with a `Bearer ${DEV_IDE_API_TOKEN}` header, plus an
+   (from `MCPUrls`) with a `Bearer ${CASEIN_API_TOKEN}` header, plus an
    optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Managed Grok has
    a separate `grok/.mcp.json` containing only the three DevIDE-authenticated
    servers; Tidewave is excluded because it is outside `ApiAuth`. Codex staging is
@@ -96,7 +96,7 @@ compile-time-fixed argv.
    only `claude` has bitten after deploys/npm updates), refreshes
    `:tmux_ctl` `:terminal_env` so the next `new-window`/`split-window` gets
    `-e PATH=…` with agent bins, then builds the `DEVIDE_*` env map
-   (`DEV_IDE_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
+   (`CASEIN_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
    `DEVIDE_PREVIEW_MCP_URL`, `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional
    `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
    `Tmux.set_environments/2`. Template apply calls this **before** creating
@@ -125,7 +125,7 @@ compile-time-fixed argv.
    passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`
    (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
-   Plain agent starts do not depend on `DEV_IDE_API_TOKEN` because DevIDE MCP is
+   Plain agent starts do not depend on `CASEIN_API_TOKEN` because DevIDE MCP is
    not persisted in global agent configs. Version/help probes
    (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
    `claude update`) bypass the launcher entirely and exec the real binary —

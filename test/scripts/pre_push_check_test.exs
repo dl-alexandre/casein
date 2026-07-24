@@ -28,7 +28,7 @@ defmodule Scripts.PrePushCheckTest do
 
     # Skipped silently without the workspace env vars.
     assert content =~
-             "[[ -n \"${DEV_IDE_API_TOKEN:-}\" && -n \"${DEVIDE_WORKSPACE_ID:-}\" ]] || return 0"
+             "[[ -n \"${CASEIN_API_TOKEN:-}\" && -n \"${DEVIDE_WORKSPACE_ID:-}\" ]] || return 0"
 
     # Skipped when the helper binaries are missing.
     assert content =~ "command -v python3 >/dev/null 2>&1 || return 0"

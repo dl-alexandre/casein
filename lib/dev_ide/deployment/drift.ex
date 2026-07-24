@@ -21,7 +21,7 @@ defmodule Casein.Deployment.Drift do
   @doc "Whether the drift check is enabled (not opted out via env)."
   @spec enabled?() :: boolean()
   def enabled? do
-    System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK") not in ["0", "false", "no"]
+    System.get_env("CASEIN_DEPLOY_DRIFT_CHECK") not in ["0", "false", "no"]
   end
 
   @doc "Starts a best-effort async drift check unless disabled by env."
@@ -145,7 +145,7 @@ defmodule Casein.Deployment.Drift do
 
   @doc false
   @spec branch() :: String.t()
-  def branch, do: System.get_env("DEV_IDE_GIT_BRANCH") || config(:git_branch, @default_branch)
+  def branch, do: System.get_env("CASEIN_GIT_BRANCH") || config(:git_branch, @default_branch)
 
   defp lookup_cached(branch, ttl) do
     case :persistent_term.get(cache_key(branch), nil) do
@@ -217,7 +217,7 @@ defmodule Casein.Deployment.Drift do
   defp normalize(nil), do: nil
   defp normalize(value), do: value |> to_string() |> String.trim()
 
-  defp remote, do: System.get_env("DEV_IDE_GIT_REMOTE") || config(:git_remote, @default_remote)
+  defp remote, do: System.get_env("CASEIN_GIT_REMOTE") || config(:git_remote, @default_remote)
 
   defp config(key, default) do
     :casein

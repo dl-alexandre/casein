@@ -34,7 +34,7 @@ def claude_mcp_payload(
     tidewave_url: str | None = None,
 ) -> dict:
     terminal_key, preview_key, artifact_key, tidewave_key = server_keys(workspace_name)
-    auth = "Bearer ${DEV_IDE_API_TOKEN}"
+    auth = "Bearer ${CASEIN_API_TOKEN}"
     servers: dict = {
         terminal_key: {
             "type": "http",

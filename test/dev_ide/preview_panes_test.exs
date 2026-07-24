@@ -246,7 +246,7 @@ defmodule Casein.PreviewPanesTest do
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
     Application.delete_env(:casein, :preview_proxy_enabled)
-    System.delete_env("DEV_IDE_PREVIEW_PROXY")
+    System.delete_env("CASEIN_PREVIEW_PROXY")
 
     assert {:ok, registration} =
              PreviewPanes.register(%{

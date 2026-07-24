@@ -11,9 +11,9 @@ defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
 
   test "nil auth with no static config sends no auth header" do
     prev = Application.get_env(:casein, :manager_user_email)
-    env_prev = System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
+    env_prev = System.get_env("CASEIN_DEVBOX_USER_EMAIL")
     Application.delete_env(:casein, :manager_user_email)
-    System.delete_env("DEV_IDE_DEVBOX_USER_EMAIL")
+    System.delete_env("CASEIN_DEVBOX_USER_EMAIL")
 
     Req.Test.stub(Client, fn conn ->
       assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == []
@@ -24,7 +24,7 @@ defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
       assert {:ok, []} = Client.list([], nil)
     after
       restore(:manager_user_email, prev)
-      if env_prev, do: System.put_env("DEV_IDE_DEVBOX_USER_EMAIL", env_prev)
+      if env_prev, do: System.put_env("CASEIN_DEVBOX_USER_EMAIL", env_prev)
     end
   end
 

@@ -27,8 +27,8 @@ set -euo pipefail
 # copy from a /tmp path — without it, ROOT would be derived from the temp $0 and
 # point outside the repo, breaking every git call.
 ROOT="${DEVIDE_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
-DEPLOY_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+DEPLOY_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
 WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
 BRANCH="${DEVIDE_DEPLOY_BRANCH:-master}"
 LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/devide-deploy-poller.lock}"
@@ -237,7 +237,7 @@ ensure_agent_shims() {
   if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh --check >/dev/null 2>&1); then
     missing=""
     for name in grok claude codex opencode agent devide; do
-      if [ ! -x "${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}/${name}" ]; then
+      if [ ! -x "${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}/${name}" ]; then
         missing="${missing} ${name}"
       fi
     done

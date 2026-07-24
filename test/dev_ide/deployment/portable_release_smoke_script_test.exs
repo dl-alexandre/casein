@@ -17,13 +17,13 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ "/api/smoke/terminal"
     assert text =~ "docker/smoke/Dockerfile"
     assert text =~ "/api/workspaces"
-    assert text =~ ~s(DEV_IDE_PROFILE="portable")
+    assert text =~ ~s(CASEIN_PROFILE="portable")
   end
 
   test "generic Compose stack selects portable runtime and release profiles" do
     text = File.read!(@compose)
 
-    assert text =~ "DEV_IDE_PROFILE: ${DEV_IDE_PROFILE:-portable}"
+    assert text =~ "CASEIN_PROFILE: ${CASEIN_PROFILE:-portable}"
     assert text =~ "DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}"
   end
 

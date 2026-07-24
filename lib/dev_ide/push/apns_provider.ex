@@ -95,7 +95,7 @@ defmodule Casein.Push.APNSProvider do
     end
   end
 
-  # private_key_path is an operator-set config value (DEV_IDE_APNS_PRIVATE_KEY_PATH),
+  # private_key_path is an operator-set config value (CASEIN_APNS_PRIVATE_KEY_PATH),
   # never request/user input — no traversal surface.
   # sobelow_skip ["Traversal.FileModule"]
   defp private_key(cfg) do

@@ -40,7 +40,7 @@ defmodule Scripts.AgentStateScriptsTest do
     assert {"", 0} =
              System.cmd("bash", [@state_script],
                env: [
-                 {"DEV_IDE_API_TOKEN", nil},
+                 {"CASEIN_API_TOKEN", nil},
                  {"DEVIDE_WORKSPACE_ID", nil},
                  {"DEVIDE_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
@@ -149,7 +149,7 @@ defmodule Scripts.AgentStateScriptsTest do
     assert {"", 0} =
              System.cmd("bash", [@codex_script, "{}"],
                env: [
-                 {"DEV_IDE_API_TOKEN", nil},
+                 {"CASEIN_API_TOKEN", nil},
                  {"DEVIDE_WORKSPACE_ID", nil},
                  {"DEVIDE_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
@@ -212,7 +212,7 @@ defmodule Scripts.AgentStateScriptsTest do
     [
       {"PATH", stub_dir <> ":" <> System.get_env("PATH")},
       {"CURL_CAPTURE", capture},
-      {"DEV_IDE_API_TOKEN", "test-token"},
+      {"CASEIN_API_TOKEN", "test-token"},
       {"DEVIDE_WORKSPACE_ID", "ws-test"},
       {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:1/api/terminals/mcp"},
       {"TMUX_PANE", "%9"},

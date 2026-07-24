@@ -106,7 +106,7 @@ defmodule Scripts.AgentDoctorTest do
           {"DEVIDE_GROK_LEADER_ROOT", leader.root},
           {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
           {"DEVIDE_GROK_PROVIDER_AUTH_MODE", "api-key"},
-          {"DEV_IDE_API_TOKEN", "never-print-this-token"}
+          {"CASEIN_API_TOKEN", "never-print-this-token"}
         ]
       )
 
@@ -236,7 +236,7 @@ defmodule Scripts.AgentDoctorTest do
           {"DEVIDE_GROK_BUNDLE_DIGEST", bundle.digest},
           {"DEVIDE_GROK_LEADER_ROOT", leader.root},
           {"DEVIDE_GROK_LEADER_SOCKET", leader.socket},
-          {"DEV_IDE_API_TOKEN", "never-print-this-token"}
+          {"CASEIN_API_TOKEN", "never-print-this-token"}
         ]
       )
 
@@ -413,7 +413,7 @@ defmodule Scripts.AgentDoctorTest do
       {"DEVIDE_WORKTREE", ""},
       {"DEVIDE_WORKSPACE_NAME", ""},
       {"DEVIDE_WORKSPACE_ID", ""},
-      {"DEV_IDE_API_TOKEN", ""},
+      {"CASEIN_API_TOKEN", ""},
       {"DEVIDE_GROK_BUNDLE_ROOT", ""},
       {"DEVIDE_GROK_BUNDLE_DIR", ""},
       {"DEVIDE_GROK_BUNDLE_DIGEST", ""},

@@ -407,7 +407,7 @@ defmodule Casein.Agents.TranscriptsTest do
   end
 
   defp tmp_home! do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     home = Path.join(root, "devide-transcripts-#{System.unique_integer([:positive])}")
     File.rm_rf!(home)
     File.mkdir_p!(home)

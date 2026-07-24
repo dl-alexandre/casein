@@ -16,7 +16,7 @@ WORKSPACE_ID="ws-durability-test"
 EXISTING_TOKEN="deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 INITIAL_JSON="{\"${EXISTING_TOKEN}\":\"${WORKSPACE_ID}\"}"
 
-printf "DEV_IDE_WORKSPACE_API_TOKENS='%s'\n" "$INITIAL_JSON" >"$TMP_ENV"
+printf "CASEIN_WORKSPACE_API_TOKENS='%s'\n" "$INITIAL_JSON" >"$TMP_ENV"
 
 mapfile -t lines < <(workspace_scoped_token_ensure_for_workspace "$TMP_ENV" "$WORKSPACE_ID")
 token="${lines[0]:-}"
@@ -56,7 +56,7 @@ if ! grep -q "$EXISTING_TOKEN" <<<"$merged3"; then
 fi
 
 # --- workspace_scoped_token_is_registered_for -------------------------------
-# The materializer trusts this to decide whether an inherited DEV_IDE_API_TOKEN
+# The materializer trusts this to decide whether an inherited CASEIN_API_TOKEN
 # may be written as-is or must be swapped/fail-closed. Exercise it hermetically
 # against a temp env-file registry and a temp runtime store.
 VAL_ENV="$(mktemp)"
@@ -69,7 +69,7 @@ OTHER_TOKEN="3333333333333333333333333333333333333333333333333333333333333333"
 LIST_TOKEN="4444444444444444444444444444444444444444444444444444444444444444"
 WS="ws-validate"
 
-printf "DEV_IDE_WORKSPACE_API_TOKENS='%s'\n" \
+printf "CASEIN_WORKSPACE_API_TOKENS='%s'\n" \
   "{\"${ENV_TOKEN}\":\"${WS}\",\"${OTHER_TOKEN}\":\"ws-different\",\"${LIST_TOKEN}\":[\"ws-a\",\"${WS}\"]}" \
   >"$VAL_ENV"
 printf '{"%s":"%s"}\n' "$STORE_TOKEN" "$WS" >"$VAL_STORE"

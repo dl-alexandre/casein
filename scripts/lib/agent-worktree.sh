@@ -96,12 +96,12 @@ agent_worktree_create() {
 agent_worktree_report_mcp() {
   local worktree_path="$1"
   local runtime="${2:-}"
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
   local mcp_url="${DEVIDE_TERMINAL_MCP_URL:-${DEVIDE_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
 
   [[ -n "$token" && -n "$workspace_id" ]] || {
-    echo "warn: skipping terminal_report_worktree (missing DEV_IDE_API_TOKEN or DEVIDE_WORKSPACE_ID)" >&2
+    echo "warn: skipping terminal_report_worktree (missing CASEIN_API_TOKEN or DEVIDE_WORKSPACE_ID)" >&2
     return 0
   }
 

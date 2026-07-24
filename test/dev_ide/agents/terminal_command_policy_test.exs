@@ -11,7 +11,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
 
   setup do
     prev = Application.get_env(:casein, :terminal_command_policy)
-    prev_env = System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
+    prev_env = System.get_env("CASEIN_TERMINAL_COMMAND_POLICY")
 
     on_exit(fn ->
       if prev,
@@ -19,12 +19,12 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
         else: Application.delete_env(:casein, :terminal_command_policy)
 
       if prev_env,
-        do: System.put_env("DEV_IDE_TERMINAL_COMMAND_POLICY", prev_env),
-        else: System.delete_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
+        do: System.put_env("CASEIN_TERMINAL_COMMAND_POLICY", prev_env),
+        else: System.delete_env("CASEIN_TERMINAL_COMMAND_POLICY")
     end)
 
     Application.delete_env(:casein, :terminal_command_policy)
-    System.delete_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
+    System.delete_env("CASEIN_TERMINAL_COMMAND_POLICY")
     :ok
   end
 
@@ -98,9 +98,9 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
   end
 
   describe "release env-var configuration" do
-    test "parses DEV_IDE_TERMINAL_COMMAND_POLICY when the app env is unset" do
+    test "parses CASEIN_TERMINAL_COMMAND_POLICY when the app env is unset" do
       System.put_env(
-        "DEV_IDE_TERMINAL_COMMAND_POLICY",
+        "CASEIN_TERMINAL_COMMAND_POLICY",
         ~s({"mode":"allowlist","patterns":["^mix "]})
       )
 
@@ -111,7 +111,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
     end
 
     test "falls back to the default denylist on malformed JSON" do
-      System.put_env("DEV_IDE_TERMINAL_COMMAND_POLICY", "not json")
+      System.put_env("CASEIN_TERMINAL_COMMAND_POLICY", "not json")
       assert {:denylist, patterns} = TerminalCommandPolicy.policy()
       assert is_list(patterns)
     end

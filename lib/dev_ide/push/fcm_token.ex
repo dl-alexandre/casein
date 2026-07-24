@@ -41,10 +41,10 @@ defmodule Casein.Push.FCMToken do
 
   Runtime config also supports:
 
-    * `DEV_IDE_FCM_ACCESS_TOKEN` — direct pre-minted token, useful for smoke
+    * `CASEIN_FCM_ACCESS_TOKEN` — direct pre-minted token, useful for smoke
       tests.
-    * `DEV_IDE_FCM_SERVICE_ACCOUNT_JSON` — raw service-account JSON.
-    * `DEV_IDE_FCM_SERVICE_ACCOUNT_PATH` or `GOOGLE_APPLICATION_CREDENTIALS` —
+    * `CASEIN_FCM_SERVICE_ACCOUNT_JSON` — raw service-account JSON.
+    * `CASEIN_FCM_SERVICE_ACCOUNT_PATH` or `GOOGLE_APPLICATION_CREDENTIALS` —
       path to service-account JSON.
   """
 
@@ -220,7 +220,7 @@ defmodule Casein.Push.FCMToken do
   defp expires_in(_body), do: 3_600
 
   # The service-account path comes from operator config/env
-  # (DEV_IDE_FCM_SERVICE_ACCOUNT_PATH / GOOGLE_APPLICATION_CREDENTIALS), never
+  # (CASEIN_FCM_SERVICE_ACCOUNT_PATH / GOOGLE_APPLICATION_CREDENTIALS), never
   # request/user input — no traversal surface.
   # sobelow_skip ["Traversal.FileModule"]
   defp service_account do
@@ -269,19 +269,19 @@ defmodule Casein.Push.FCMToken do
   end
 
   defp direct_access_token do
-    case config()[:access_token] || env("DEV_IDE_FCM_ACCESS_TOKEN") do
+    case config()[:access_token] || env("CASEIN_FCM_ACCESS_TOKEN") do
       token when is_binary(token) and token != "" -> token
       _ -> nil
     end
   end
 
   defp configured_service_account_json do
-    config()[:service_account_json] || env("DEV_IDE_FCM_SERVICE_ACCOUNT_JSON")
+    config()[:service_account_json] || env("CASEIN_FCM_SERVICE_ACCOUNT_JSON")
   end
 
   defp configured_service_account_path do
     config()[:service_account_path] ||
-      env("DEV_IDE_FCM_SERVICE_ACCOUNT_PATH") ||
+      env("CASEIN_FCM_SERVICE_ACCOUNT_PATH") ||
       env("GOOGLE_APPLICATION_CREDENTIALS")
   end
 

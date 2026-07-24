@@ -47,7 +47,7 @@ encode_argv() {
 
 release_cli() {
   encoded="$(encode_argv "$@")"
-  DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${RELEASE_DIR}" \
+  CASEIN_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${RELEASE_DIR}" \
     exec "${APP_BIN}" eval "Casein.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
 }
 
@@ -63,7 +63,7 @@ release_eval_halt() {
   root="$1"
   code="$2"
 
-  DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${root}" "${UPDATE_EVAL_APP_BIN}" eval "${code}"
+  CASEIN_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${root}" "${UPDATE_EVAL_APP_BIN}" eval "${code}"
 }
 
 usage() {
@@ -93,11 +93,11 @@ Environment:
   DEVIDE_LAN_UPDATE_ROOT     Default: /opt/devide/lan
   DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
   DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/dev_ide_workspaces
-  DEV_IDE_HOME_WORKSPACE_PATH Default: service user's home directory
+  CASEIN_HOME_WORKSPACE_PATH Default: service user's home directory
   DATABASE_PATH              SQLite DB path. Default: /var/lib/devide/lan/devide.sqlite3
-  DEV_IDE_LAN_HOST          Default: <hostname>.local
+  CASEIN_LAN_HOST          Default: <hostname>.local
   PORT                      Backend loopback port. Default: 4000
-  DEV_IDE_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
+  CASEIN_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
   DATABASE_URL              Default: ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev
 EOF
 }
@@ -705,7 +705,7 @@ validate_workspace_name() {
 
   case "${workspace}" in
     "" | "." | ".." | */* | *"/../"* | *"/.." | *"/./"* | *"/.")
-      die "DEV_IDE_DEFAULT_WORKSPACE is not a safe workspace name: ${workspace}"
+      die "CASEIN_DEFAULT_WORKSPACE is not a safe workspace name: ${workspace}"
       ;;
   esac
 }
@@ -782,14 +782,14 @@ write_public_env_file() {
   {
     printf "%s=%s\n" PORT "$(quote_env_value "${PORT}")"
     printf "%s=%s\n" PHX_HOST "$(quote_env_value "${PHX_HOST:-}")"
-    printf "%s=%s\n" DEV_IDE_LAN_HOST "$(quote_env_value "${DEV_IDE_LAN_HOST}")"
-    printf "%s=%s\n" DEV_IDE_LAN_IP "$(quote_env_value "${DEV_IDE_LAN_IP:-}")"
-    printf "%s=%s\n" DEV_IDE_LAN_INSECURE_HTTP_PORT "$(quote_env_value "${DEV_IDE_LAN_INSECURE_HTTP_PORT}")"
-    printf "%s=%s\n" DEV_IDE_DEFAULT_WORKSPACE "$(quote_env_value "${DEV_IDE_DEFAULT_WORKSPACE}")"
-    printf "%s=%s\n" DEV_IDE_HOME_WORKSPACE_PATH "$(quote_env_value "${DEV_IDE_HOME_WORKSPACE_PATH}")"
-    printf "%s=%s\n" DEV_IDE_LAN_FRIENDLY_PATHS "$(quote_env_value "${DEV_IDE_LAN_FRIENDLY_PATHS:-}")"
-    printf "%s=%s\n" DEV_IDE_LAN_PATH_ROOT "$(quote_env_value "${DEV_IDE_LAN_PATH_ROOT:-}")"
-    printf "%s=%s\n" DEV_IDE_WORKSPACES_ROOT "$(quote_env_value "${DEV_IDE_WORKSPACES_ROOT}")"
+    printf "%s=%s\n" CASEIN_LAN_HOST "$(quote_env_value "${CASEIN_LAN_HOST}")"
+    printf "%s=%s\n" CASEIN_LAN_IP "$(quote_env_value "${CASEIN_LAN_IP:-}")"
+    printf "%s=%s\n" CASEIN_LAN_INSECURE_HTTP_PORT "$(quote_env_value "${CASEIN_LAN_INSECURE_HTTP_PORT}")"
+    printf "%s=%s\n" CASEIN_DEFAULT_WORKSPACE "$(quote_env_value "${CASEIN_DEFAULT_WORKSPACE}")"
+    printf "%s=%s\n" CASEIN_HOME_WORKSPACE_PATH "$(quote_env_value "${CASEIN_HOME_WORKSPACE_PATH}")"
+    printf "%s=%s\n" CASEIN_LAN_FRIENDLY_PATHS "$(quote_env_value "${CASEIN_LAN_FRIENDLY_PATHS:-}")"
+    printf "%s=%s\n" CASEIN_LAN_PATH_ROOT "$(quote_env_value "${CASEIN_LAN_PATH_ROOT:-}")"
+    printf "%s=%s\n" CASEIN_WORKSPACES_ROOT "$(quote_env_value "${CASEIN_WORKSPACES_ROOT}")"
     printf "%s=%s\n" DATABASE_PATH "$(quote_env_value "${DATABASE_PATH:-}")"
   } >"${PUBLIC_ENV_FILE}"
 
@@ -822,31 +822,31 @@ ensure_env_file() {
   append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/devide/lan/devide.sqlite3}"
   append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev}"
   append_env_if_missing SECRET_KEY_BASE "${SECRET_KEY_BASE:-$(random_hex)}"
-  append_env_if_missing DEV_IDE_API_TOKEN "${DEV_IDE_API_TOKEN:-$(random_hex)}"
+  append_env_if_missing CASEIN_API_TOKEN "${CASEIN_API_TOKEN:-$(random_hex)}"
   append_env_if_missing RELEASE_COOKIE "${RELEASE_COOKIE:-$(random_hex)}"
-  append_env_if_missing DEV_IDE_WORKSPACE_SOURCE local
-  append_env_if_missing DEV_IDE_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/dev_ide_workspaces}"
-  append_env_if_missing DEV_IDE_DEFAULT_WORKSPACE "${DEV_IDE_DEFAULT_WORKSPACE:-home}"
-  append_env_if_missing DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}"
-  append_env_if_missing DEV_IDE_LAN_FRIENDLY_PATHS true
-  append_env_if_missing DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT:-${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}}"
-  append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP true
-  append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP_PORT "${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
-  append_env_if_missing DEV_IDE_LAN_HOST "${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
-  append_env_if_missing DEV_IDE_LAN_IP "${DEV_IDE_LAN_IP:-$(primary_lan_ip)}"
-  append_env_if_missing DEV_IDE_LAN_DIRECT_MODE true
+  append_env_if_missing CASEIN_WORKSPACE_SOURCE local
+  append_env_if_missing CASEIN_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/dev_ide_workspaces}"
+  append_env_if_missing CASEIN_DEFAULT_WORKSPACE "${CASEIN_DEFAULT_WORKSPACE:-home}"
+  append_env_if_missing CASEIN_HOME_WORKSPACE_PATH "${CASEIN_HOME_WORKSPACE_PATH:-${lan_home}}"
+  append_env_if_missing CASEIN_LAN_FRIENDLY_PATHS true
+  append_env_if_missing CASEIN_LAN_PATH_ROOT "${CASEIN_LAN_PATH_ROOT:-${CASEIN_HOME_WORKSPACE_PATH:-${lan_home}}}"
+  append_env_if_missing CASEIN_LAN_INSECURE_HTTP true
+  append_env_if_missing CASEIN_LAN_INSECURE_HTTP_PORT "${CASEIN_LAN_INSECURE_HTTP_PORT:-80}"
+  append_env_if_missing CASEIN_LAN_HOST "${CASEIN_LAN_HOST:-$(default_lan_host)}"
+  append_env_if_missing CASEIN_LAN_IP "${CASEIN_LAN_IP:-$(primary_lan_ip)}"
+  append_env_if_missing CASEIN_LAN_DIRECT_MODE true
 
   chmod 0600 "${ENV_FILE}"
   chown root:root "${ENV_FILE}"
 
   load_env_if_present
-  validate_workspace_name "${DEV_IDE_DEFAULT_WORKSPACE}"
+  validate_workspace_name "${CASEIN_DEFAULT_WORKSPACE}"
   ensure_owned_file_parent DATABASE_PATH "${DATABASE_PATH}" "${lan_user}" "${lan_group}"
-  ensure_owned_dir DEV_IDE_WORKSPACES_ROOT "${DEV_IDE_WORKSPACES_ROOT}" "${lan_user}" "${lan_group}"
-  ensure_existing_dir DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH}"
-  ensure_existing_dir DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT}"
-  if [ "${DEV_IDE_DEFAULT_WORKSPACE}" != "home" ]; then
-    ensure_owned_dir DEV_IDE_DEFAULT_WORKSPACE_DIR "${DEV_IDE_WORKSPACES_ROOT}/${DEV_IDE_DEFAULT_WORKSPACE}" "${lan_user}" "${lan_group}"
+  ensure_owned_dir CASEIN_WORKSPACES_ROOT "${CASEIN_WORKSPACES_ROOT}" "${lan_user}" "${lan_group}"
+  ensure_existing_dir CASEIN_HOME_WORKSPACE_PATH "${CASEIN_HOME_WORKSPACE_PATH}"
+  ensure_existing_dir CASEIN_LAN_PATH_ROOT "${CASEIN_LAN_PATH_ROOT}"
+  if [ "${CASEIN_DEFAULT_WORKSPACE}" != "home" ]; then
+    ensure_owned_dir CASEIN_DEFAULT_WORKSPACE_DIR "${CASEIN_WORKSPACES_ROOT}/${CASEIN_DEFAULT_WORKSPACE}" "${lan_user}" "${lan_group}"
   fi
   write_public_env_file
 }
@@ -890,7 +890,7 @@ Description=DevIDE managed LAN HTTP edge socket
 Documentation=https://github.com/dl-alexandre/dev_ide
 
 [Socket]
-ListenStream=${DEV_IDE_LAN_INSECURE_HTTP_PORT}
+ListenStream=${CASEIN_LAN_INSECURE_HTTP_PORT}
 NoDelay=true
 
 [Install]
@@ -937,8 +937,8 @@ lan_install() {
 
 ready_now() {
   load_env_if_present
-  host="${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
-  edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
+  host="${CASEIN_LAN_HOST:-$(default_lan_host)}"
+  edge_port="${CASEIN_LAN_INSECURE_HTTP_PORT:-80}"
   backend_port="${PORT:-4000}"
   canonical_url="$(url_for "${host}" "${edge_port}")"
   css_url="${canonical_url}assets/css/app.css"
@@ -987,7 +987,7 @@ lan_up() {
   fi
 
   if [ "${UFW}" != "" ] && command -v "${UFW}" >/dev/null 2>&1; then
-    "${UFW}" allow "${DEV_IDE_LAN_INSECURE_HTTP_PORT}/tcp" >/dev/null 2>&1 || true
+    "${UFW}" allow "${CASEIN_LAN_INSECURE_HTTP_PORT}/tcp" >/dev/null 2>&1 || true
   fi
 
   if wait_ready; then
@@ -1015,12 +1015,12 @@ lan_status() {
   need_systemctl
   load_env_if_present
 
-  host="${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
-  edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
+  host="${CASEIN_LAN_HOST:-$(default_lan_host)}"
+  edge_port="${CASEIN_LAN_INSECURE_HTTP_PORT:-80}"
   backend_port="${PORT:-4000}"
   canonical_url="$(url_for "${host}" "${edge_port}")"
   css_url="${canonical_url}assets/css/app.css"
-  lan_ip="${DEV_IDE_LAN_IP:-$(primary_lan_ip)}"
+  lan_ip="${CASEIN_LAN_IP:-$(primary_lan_ip)}"
   ip_url=""
 
   if [ "${lan_ip}" != "" ]; then

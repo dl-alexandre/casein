@@ -3,7 +3,7 @@
 # Repair DevIDE tmux session environment for the current or named session.
 #
 # Fixes stale session env from earlier MCP work:
-#   - DEV_IDE_API_TOKEN stored with literal shell quotes
+#   - CASEIN_API_TOKEN stored with literal shell quotes
 #   - provider homes redirecting auth to empty staging
 #   - PATH left as a literal "${PATH}" string
 #
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 LOCAL_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 CANONICAL_SCRIPTS="${DEVIDE_SCRIPTS_ROOT:-${ROOT}/scripts}"
 # shellcheck source=agent-auth-profile.sh
@@ -27,13 +27,13 @@ log() { printf '>>> %s\n' "$*" >&2; }
 # Listing workspaces may need the global/admin token; it is never pushed into
 # a session — agent panes only receive workspace-scoped tokens, because the
 # MCP endpoints reject tools/call made with the global token.
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 if [[ -z "$TOKEN" ]]; then
-  TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
+  TOKEN="$(sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
 fi
 
 if [[ -z "$TOKEN" ]]; then
-  echo "error: DEV_IDE_API_TOKEN missing (export it or set ${ENV_FILE})" >&2
+  echo "error: CASEIN_API_TOKEN missing (export it or set ${ENV_FILE})" >&2
   exit 1
 fi
 
@@ -113,7 +113,7 @@ materialize_workspace() {
     query_suffix="${query_suffix}&tmux_session=${session}"
   fi
 
-  DEV_IDE_API_TOKEN="${agent_token}" \
+  CASEIN_API_TOKEN="${agent_token}" \
     DEVIDE_WORKSPACE_NAME="${workspace_name}" \
     DEVIDE_WORKSPACE_ID="${workspace_id}" \
     DEVIDE_TMUX_SESSION="${session}" \
@@ -208,10 +208,10 @@ repair_session() {
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
   tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
   set_provider_auth_profiles "$session" "$workspace_name"
-  set_session_env_if_missing "$session" DEV_IDE_TERMINAL_SCHEME dark
+  set_session_env_if_missing "$session" CASEIN_TERMINAL_SCHEME dark
   set_session_env_if_missing "$session" COLORFGBG "15;0"
 
-  tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$agent_token"
+  tmux set-environment -t "$session" CASEIN_API_TOKEN "$agent_token"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_NAME "$workspace_name"
   tmux set-environment -t "$session" DEVIDE_TMUX_SESSION "$session"
@@ -229,12 +229,12 @@ repair_session() {
   tmux set-environment -t "$session" DEVIDE_SCRIPTS "$scripts"
   tmux set-environment -t "$session" DEVIDE_AGENT_ENV_FILE "$env_sh"
   local npm_prefix terminal_shims tools_bin repaired_path
-  npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-  terminal_shims="${DEV_IDE_TERMINAL_SHIMS_DIR:-${HOME}/.devide/terminal-shims}"
-  tools_bin="${DEV_IDE_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}/bin"
+  npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  terminal_shims="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.devide/terminal-shims}"
+  tools_bin="${CASEIN_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}/bin"
   # Match PaneEnv / Shims.path_with_shims order: terminal shims → tools →
   # agent launchers → npm package bins → existing PATH (deduped below).
-  repaired_path="${terminal_shims}:${tools_bin}:${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${npm_prefix}/bin:${PATH}"
+  repaired_path="${terminal_shims}:${tools_bin}:${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${npm_prefix}/bin:${PATH}"
   repaired_path="$(
     PATH="$repaired_path" python3 - <<'PY'
 import os
@@ -247,7 +247,7 @@ for part in os.environ.get("PATH", "").split(":"):
 print(":".join(out))
 PY
   )"
-  tmux set-environment -t "$session" DEV_IDE_NPM_PREFIX "$npm_prefix"
+  tmux set-environment -t "$session" CASEIN_NPM_PREFIX "$npm_prefix"
   tmux set-environment -t "$session" PATH "$repaired_path"
 
   log "repaired ${session} (${workspace_name})"

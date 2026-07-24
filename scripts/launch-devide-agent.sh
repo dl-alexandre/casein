@@ -313,13 +313,13 @@ codex_mcp_config_args() {
   printf '%s\0' \
     -c "mcp_servers.${terminal_key}.url=\"$(codex_terminal_mcp_url)\"" \
     -c "mcp_servers.${terminal_key}.enabled=true" \
-    -c "mcp_servers.${terminal_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.${terminal_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\"" \
     -c "mcp_servers.${preview_key}.url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
     -c "mcp_servers.${preview_key}.enabled=true" \
-    -c "mcp_servers.${preview_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.${preview_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\"" \
     -c "mcp_servers.${artifact_key}.url=\"${DEVIDE_ARTIFACT_MCP_URL}\"" \
     -c "mcp_servers.${artifact_key}.enabled=true" \
-    -c "mcp_servers.${artifact_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
+    -c "mcp_servers.${artifact_key}.bearer_token_env_var=\"CASEIN_API_TOKEN\""
 
   if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
     printf '%s\0' \
@@ -557,8 +557,8 @@ grok_prepare_managed_home() {
     if command -v timeout >/dev/null 2>&1; then
       env -u GROK_HOME -u GROK_AUTH -u GROK_AUTH_PATH \
         -u GROK_AUTH_PROVIDER_COMMAND -u XAI_API_KEY -u GROK_CODE_XAI_API_KEY \
-        -u DEV_IDE_API_TOKEN -u DEV_IDE_ADMIN_API_TOKEN \
-        -u DEV_IDE_WORKSPACE_API_TOKENS \
+        -u CASEIN_API_TOKEN -u CASEIN_ADMIN_API_TOKEN \
+        -u CASEIN_WORKSPACE_API_TOKENS \
         timeout --kill-after=2 30 "$grok_bin" --no-auto-update models \
         >/dev/null 2>&1 || true
     fi
@@ -728,7 +728,7 @@ grok_configure_capability() {
     echo "error: managed Grok capability issuer URL is unavailable" >&2
     return 1
   }
-  bootstrap_token="${DEV_IDE_API_TOKEN:-}"
+  bootstrap_token="${CASEIN_API_TOKEN:-}"
   socket="$(realpath -m "$DEVIDE_GROK_LEADER_SOCKET")"
   leader_id="$(basename "$(dirname "$socket")")"
   capability_file="$(dirname "$socket")/capability"
@@ -786,12 +786,12 @@ grok_configure_capability() {
     return 1
   }
 
-  export DEV_IDE_API_TOKEN="$token"
+  export CASEIN_API_TOKEN="$token"
   export DEVIDE_GROK_SANDBOX_PROFILE="$profile"
   export DEVIDE_GROK_SANDBOX_BASE="$sandbox_base"
   export DEVIDE_GROK_CAPABILITY_FILE="$capability_file"
   export DEVIDE_GROK_PERMISSION_MODE="default"
-  unset DEV_IDE_ADMIN_API_TOKEN DEV_IDE_WORKSPACE_API_TOKENS
+  unset CASEIN_ADMIN_API_TOKEN CASEIN_WORKSPACE_API_TOKENS
   unset DEVIDE_AGENT_ENV_FILE DEVIDE_AGENT_BOOTSTRAP_FILE DEVIDE_AGENT_MCP_HOME
 }
 
@@ -986,7 +986,7 @@ codex_state_hook_args() {
 
 codex_security_config_args() {
   printf '%s\0' -c \
-    'shell_environment_policy.exclude=["DEV_IDE_API_TOKEN","DEV_IDE_ADMIN_API_TOKEN","DEV_IDE_WORKSPACE_API_TOKENS"]'
+    'shell_environment_policy.exclude=["CASEIN_API_TOKEN","CASEIN_ADMIN_API_TOKEN","CASEIN_WORKSPACE_API_TOKENS"]'
 }
 
 codex_arg_sets_terminal_title() {
@@ -1016,7 +1016,7 @@ codex_workspace_mode() {
   local fallback="${DEVIDE_WORKSPACE_MODE:-manual}"
   local base="${DEVIDE_API_BASE_URL:-${DEVIDE_URL:-}}"
   local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   local payload mode
 
   if [[ -n "$base" && -n "$workspace_id" && -n "$token" ]]; then
@@ -1261,8 +1261,8 @@ case "$RUNTIME" in
     fi
     # --mcp-config is additive (no --strict): keeps the operator's global MCP
     # servers (e.g. fff) and layers the workspace's terminal/preview/artifact on top.
-    # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
-    # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
+    # CASEIN_API_TOKEN is already exported by agent_env_resolve above, so the
+    # ${CASEIN_API_TOKEN} placeholder in the config resolves.
     claude_args=(--mcp-config "$mcp_json")
 
     if [[ -n "$sidechat_target" ]]; then

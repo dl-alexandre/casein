@@ -18,9 +18,9 @@ defmodule Casein.Codex.ExecRun do
   @max_line_bytes 10 * 1024 * 1024
   @default_timeout_ms :timer.minutes(30)
   @sensitive_env [
-    {"DEV_IDE_API_TOKEN", false},
-    {"DEV_IDE_ADMIN_API_TOKEN", false},
-    {"DEV_IDE_WORKSPACE_API_TOKENS", false}
+    {"CASEIN_API_TOKEN", false},
+    {"CASEIN_ADMIN_API_TOKEN", false},
+    {"CASEIN_WORKSPACE_API_TOKENS", false}
   ]
 
   def child_spec(opts) do

@@ -16,11 +16,11 @@ defmodule Casein.Agents.PaneEnvTest do
     prev_base = Application.get_env(:casein, :agent_mcp_base_url)
     prev_api_base = Application.get_env(:casein, :api_base_url)
     prev_auth_root = Application.get_env(:casein, :agent_auth_profile_root)
-    prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
+    prev_env_token = System.get_env("CASEIN_API_TOKEN")
     prev_ws_tokens = Application.get_env(:casein, :workspace_api_tokens)
-    prev_env_ws_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    System.delete_env("DEV_IDE_API_TOKEN")
-    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+    prev_env_ws_tokens = System.get_env("CASEIN_WORKSPACE_API_TOKENS")
+    System.delete_env("CASEIN_API_TOKEN")
+    System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
 
     Application.put_env(:casein, :api_token, "test-token")
     Application.put_env(:casein, :workspace_api_tokens, %{"scoped-ws-123-token" => "ws-123"})
@@ -41,12 +41,12 @@ defmodule Casein.Agents.PaneEnvTest do
       restore_auth_root(prev_auth_root)
 
       if prev_env_token,
-        do: System.put_env("DEV_IDE_API_TOKEN", prev_env_token),
-        else: System.delete_env("DEV_IDE_API_TOKEN")
+        do: System.put_env("CASEIN_API_TOKEN", prev_env_token),
+        else: System.delete_env("CASEIN_API_TOKEN")
 
       if prev_env_ws_tokens,
-        do: System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", prev_env_ws_tokens),
-        else: System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+        do: System.put_env("CASEIN_WORKSPACE_API_TOKENS", prev_env_ws_tokens),
+        else: System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
 
       File.rm_rf(tmp)
       File.rm_rf(auth_root)
@@ -66,7 +66,7 @@ defmodule Casein.Agents.PaneEnvTest do
                tmux_session: "devide_dalexandre-devide_wt-agent"
              )
 
-    assert vars["DEV_IDE_API_TOKEN"] == "scoped-ws-123-token"
+    assert vars["CASEIN_API_TOKEN"] == "scoped-ws-123-token"
     assert vars["DEVIDE_WORKSPACE_ID"] == "ws-123"
     assert vars["DEVIDE_API_BASE_URL"] == "http://127.0.0.1:4000"
     assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-123"
@@ -95,8 +95,8 @@ defmodule Casein.Agents.PaneEnvTest do
                checkout: @workspace.path
              )
 
-    refute vars["DEV_IDE_API_TOKEN"] == "test-token"
-    assert vars["DEV_IDE_API_TOKEN"] =~ ~r/^[0-9a-f]{64}$/
+    refute vars["CASEIN_API_TOKEN"] == "test-token"
+    assert vars["CASEIN_API_TOKEN"] =~ ~r/^[0-9a-f]{64}$/
   end
 
   test "launch_command returns bare runtime (PATH shims inject MCP)" do

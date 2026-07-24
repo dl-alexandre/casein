@@ -15,7 +15,7 @@ set -euo pipefail
 
 MODE="sweep"
 TTL_SECONDS="${DEVIDE_WORKTREE_ALARM_TTL_SECONDS:-86400}"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/devide/release/bin/dev_ide}"
 
 usage() {

@@ -41,13 +41,13 @@ defmodule Mix.Tasks.Casein.Edge.Setup do
     unit_dir = opts[:unit_dir] || Casein.Setup.LanEdge.unit_dir()
 
     listen_port =
-      opts[:listen_port] || env_int("DEV_IDE_LAN_EDGE_PORT") || 443
+      opts[:listen_port] || env_int("CASEIN_LAN_EDGE_PORT") || 443
 
     backend_port =
-      opts[:backend_port] || env_int("DEV_IDE_LAN_HTTPS_PORT") || 4443
+      opts[:backend_port] || env_int("CASEIN_LAN_HTTPS_PORT") || 4443
 
     backend_host =
-      opts[:backend_host] || System.get_env("DEV_IDE_LAN_EDGE_BACKEND") || "127.0.0.1"
+      opts[:backend_host] || System.get_env("CASEIN_LAN_EDGE_BACKEND") || "127.0.0.1"
 
     prepared_dir =
       Path.join(System.tmp_dir!(), "devide-lan-edge-#{System.unique_integer([:positive])}")

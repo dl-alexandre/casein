@@ -12,7 +12,7 @@ of what happened instead of rebuilding context from chat logs and screenshots.
 
 > **Compatibility note:** Casein is the public product name. Existing modules,
 > commands, package coordinates, and environment variables retain their
-> `DevIDE.*`, `dev_ide`, and `DEV_IDE_*` names for compatibility.
+> `DevIDE.*`, `dev_ide`, and `CASEIN_*` names for compatibility.
 
 ### Why it exists
 
@@ -140,7 +140,7 @@ docker run -d --name dev_ide -p 4000:4000 <env...> dev_ide:latest
 ```
 
 Required env for the default Postgres profile: `SECRET_KEY_BASE`,
-`DATABASE_URL`, `PHX_HOST`, `DEV_IDE_API_TOKEN`, `DEV_IDE_WORKSPACES_ROOT`.
+`DATABASE_URL`, `PHX_HOST`, `CASEIN_API_TOKEN`, `CASEIN_WORKSPACES_ROOT`.
 LAN-local SQLite releases use `DATABASE_PATH` instead; see
 [`docs/lan-access.md`](docs/lan-access.md).
 
@@ -150,10 +150,10 @@ Create a `.env` or set in `config/runtime.exs`:
 
 ```bash
 # Required: API bearer token (requests without it are rejected)
-export DEV_IDE_API_TOKEN="secure-random-string"
+export CASEIN_API_TOKEN="secure-random-string"
 
 # Filesystem root for workspace path validation
-export DEV_IDE_WORKSPACES_ROOT="/workspaces"
+export CASEIN_WORKSPACES_ROOT="/workspaces"
 ```
 
 ## Architecture & protocol docs
@@ -176,7 +176,7 @@ the top of this file).
 
 ## API overview
 
-All endpoints are bearer-gated with `DEV_IDE_API_TOKEN`.
+All endpoints are bearer-gated with `CASEIN_API_TOKEN`.
 
 ### Read API
 

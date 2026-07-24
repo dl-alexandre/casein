@@ -164,11 +164,11 @@ defmodule Casein.Terminals.SessionTest do
       {:ok, pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
       assert {:ok, _, _, _} = Session.subscribe(pid)
 
-      assert {:ok, "DEV_IDE_TERMINAL_SCHEME=dark"} =
-               tmux_show_environment(tmux_session, "DEV_IDE_TERMINAL_SCHEME")
+      assert {:ok, "CASEIN_TERMINAL_SCHEME=dark"} =
+               tmux_show_environment(tmux_session, "CASEIN_TERMINAL_SCHEME")
 
-      assert {:ok, "DEV_IDE_TERMINAL_PRESET=catppuccin"} =
-               tmux_show_environment(tmux_session, "DEV_IDE_TERMINAL_PRESET")
+      assert {:ok, "CASEIN_TERMINAL_PRESET=catppuccin"} =
+               tmux_show_environment(tmux_session, "CASEIN_TERMINAL_PRESET")
 
       assert {:ok, "COLORFGBG=15;0"} = tmux_show_environment(tmux_session, "COLORFGBG")
 

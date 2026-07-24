@@ -13,7 +13,7 @@ defmodule Casein.Release.PackageScriptTest do
     assert text =~ "unsupported profile"
     assert text =~ "v1 packaging supports only --profile lan"
     assert text =~ "REPO_ADAPTER=sqlite"
-    assert text =~ "export DEV_IDE_REPO_ADAPTER=\"${REPO_ADAPTER}\""
+    assert text =~ "export CASEIN_REPO_ADAPTER=\"${REPO_ADAPTER}\""
   end
 
   test "package script writes sha256sum-compatible sidecars" do

@@ -14,7 +14,7 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
       fake_tmux_scrollback: TmuxCtl.Test.FakeState.get(:fake_tmux_scrollback),
       fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid),
       terminal_command_policy: Application.get_env(:casein, :terminal_command_policy),
-      env_command_policy: System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
+      env_command_policy: System.get_env("CASEIN_TERMINAL_COMMAND_POLICY")
     }
 
     MemoryAdapter.clear()
@@ -42,7 +42,7 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
         else: Application.delete_env(:casein, :tmux_adapter)
 
       restore_app_env(:terminal_command_policy, previous.terminal_command_policy)
-      restore_system_env("DEV_IDE_TERMINAL_COMMAND_POLICY", previous.env_command_policy)
+      restore_system_env("CASEIN_TERMINAL_COMMAND_POLICY", previous.env_command_policy)
 
       MemoryAdapter.clear()
       Runtimes.clear()

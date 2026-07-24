@@ -12,7 +12,7 @@ CURRENT_SOCK="/run/devide/current.sock"
 LOOPBACK_PORT="${DEVIDE_LOOPBACK_PORT:-4000}"
 LOOPBACK_URL="http://127.0.0.1:${LOOPBACK_PORT}"
 SERVICE="devide-loopback"
-DEPLOY_DST="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/deploy"
+DEPLOY_DST="${CASEIN_DEPLOY_ROOT:-/opt/devide}/deploy"
 
 log() { printf '>>> %s\n' "$*"; }
 

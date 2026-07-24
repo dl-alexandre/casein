@@ -212,13 +212,13 @@ defmodule TmuxCtl.ClientTest do
 
   test "new_window includes configured terminal env" do
     Application.put_env(:tmux_ctl, :terminal_env, %{
-      "DEV_IDE_CLIPBOARD" => "osc52",
+      "CASEIN_CLIPBOARD" => "osc52",
       "PATH" => "/tmp/devide-shims:/usr/bin"
     })
 
     assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
     assert_receive {:tmux_runner, argv}
-    assert contains_sequence?(argv, ["-e", "DEV_IDE_CLIPBOARD=osc52"])
+    assert contains_sequence?(argv, ["-e", "CASEIN_CLIPBOARD=osc52"])
     assert contains_sequence?(argv, ["-e", "PATH=/tmp/devide-shims:/usr/bin"])
   end
 
@@ -240,11 +240,11 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "split_pane includes configured terminal env" do
-    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_TERMINAL" => "1"})
+    Application.put_env(:tmux_ctl, :terminal_env, %{"CASEIN_TERMINAL" => "1"})
 
     assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
     assert_receive {:tmux_runner, argv}
-    assert contains_sequence?(argv, ["-e", "DEV_IDE_TERMINAL=1"])
+    assert contains_sequence?(argv, ["-e", "CASEIN_TERMINAL=1"])
   end
 
   test "split_pane appends default command unless an explicit command is provided" do
@@ -294,7 +294,7 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "apply_defaults pushes configured terminal env into the tmux session" do
-    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_CLIPBOARD" => "osc52"})
+    Application.put_env(:tmux_ctl, :terminal_env, %{"CASEIN_CLIPBOARD" => "osc52"})
 
     assert :ok = Client.apply_defaults(@session)
     assert_receive {:tmux_runner, argv}
@@ -303,7 +303,7 @@ defmodule TmuxCtl.ClientTest do
              "set-environment",
              "-t",
              @session,
-             "DEV_IDE_CLIPBOARD",
+             "CASEIN_CLIPBOARD",
              "osc52"
            ])
   end

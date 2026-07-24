@@ -258,17 +258,17 @@ Application.get_env(:dev_ide, :isolation_probe, DevIDE.Workspaces.IsolationProbe
 
 | Key | Purpose | Default |
 |---|---|---|
-| `:api_token` / `DEV_IDE_API_TOKEN` | Bearer auth for API + MCP routes | nil (refuses all requests) |
+| `:api_token` / `CASEIN_API_TOKEN` | Bearer auth for API + MCP routes | nil (refuses all requests) |
 | `:workspace_source` | Module implementing `DevIDE.WorkspaceSource` | `DevIDE.WorkspaceSource.Local` |
 | `:workspaces_root` | Allowed filesystem root for workspace paths | `/workspaces` |
 | `:workspace_modes` | Per-workid mode overrides | `%{}` |
 | `:default_workspace_mode` | Fallback mode | `:manual` |
 | `:raw_terminal_everywhere` | Allow raw shell in any workspace/mode/host; otherwise raw requires local host + manual mode | `false` |
-| `:mcp_max_body_bytes` / `DEV_IDE_MCP_MAX_BODY_BYTES` | Max POST body size for terminal/preview/artifact MCP requests before JSON-RPC handling | `1_000_000` |
+| `:mcp_max_body_bytes` / `CASEIN_MCP_MAX_BODY_BYTES` | Max POST body size for terminal/preview/artifact MCP requests before JSON-RPC handling | `1_000_000` |
 | `:tmux_idle_seconds` | Idle GC delay before killing an unsubscribed tmux session | disabled in dev, `600` in prod |
 | `:shared_db_patterns` | Substrings/regexes for shared-stage DB detection | `[]` |
 | `:unsafe_db_patterns` | Substrings/regexes for prod DB detection | `[]` |
-| `DevIDE.Proposals.AutoApply` `enabled:` / `DEV_IDE_AGENT_AUTO_APPLY_ENABLED` | Deployment-wide kill switch for a review-agent run self-applying its own proposal; independent of any per-workspace unlock | `false` |
+| `DevIDE.Proposals.AutoApply` `enabled:` / `CASEIN_AGENT_AUTO_APPLY_ENABLED` | Deployment-wide kill switch for a review-agent run self-applying its own proposal; independent of any per-workspace unlock | `false` |
 
 ## Key design invariants
 

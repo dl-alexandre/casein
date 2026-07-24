@@ -41,10 +41,10 @@ defmodule Casein.Deployment.DriftTest do
     assert Drift.assess("1fb643a", {:ok, remote}, "master") == :current
   end
 
-  test "branch reads DEV_IDE_GIT_BRANCH when set" do
-    prev = System.get_env("DEV_IDE_GIT_BRANCH")
-    System.put_env("DEV_IDE_GIT_BRANCH", "release/test")
-    on_exit(fn -> restore_env("DEV_IDE_GIT_BRANCH", prev) end)
+  test "branch reads CASEIN_GIT_BRANCH when set" do
+    prev = System.get_env("CASEIN_GIT_BRANCH")
+    System.put_env("CASEIN_GIT_BRANCH", "release/test")
+    on_exit(fn -> restore_env("CASEIN_GIT_BRANCH", prev) end)
 
     assert Drift.branch() == "release/test"
   end
@@ -61,10 +61,10 @@ defmodule Casein.Deployment.DriftTest do
     assert {:ok, ^sha} = Drift.remote_head(branch: branch, cache_ttl_ms: 60_000)
   end
 
-  test "check_async is a no-op when DEV_IDE_DEPLOY_DRIFT_CHECK disables it" do
-    prev = System.get_env("DEV_IDE_DEPLOY_DRIFT_CHECK")
-    System.put_env("DEV_IDE_DEPLOY_DRIFT_CHECK", "0")
-    on_exit(fn -> restore_env("DEV_IDE_DEPLOY_DRIFT_CHECK", prev) end)
+  test "check_async is a no-op when CASEIN_DEPLOY_DRIFT_CHECK disables it" do
+    prev = System.get_env("CASEIN_DEPLOY_DRIFT_CHECK")
+    System.put_env("CASEIN_DEPLOY_DRIFT_CHECK", "0")
+    on_exit(fn -> restore_env("CASEIN_DEPLOY_DRIFT_CHECK", prev) end)
 
     assert :ok = Drift.check_async()
   end
@@ -77,13 +77,13 @@ defmodule Casein.Deployment.DriftTest do
     :persistent_term.put(key, {{:ok, sha}, System.monotonic_time(:millisecond)})
 
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
     System.put_env("DEVIDE_GIT_REVISION", sha)
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
       restore_env("DEVIDE_GIT_REVISION", prev_rev)
-      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 
@@ -98,13 +98,13 @@ defmodule Casein.Deployment.DriftTest do
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
     System.put_env("DEVIDE_GIT_REVISION", "manual-hotfix-label")
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
       restore_env("DEVIDE_GIT_REVISION", prev_rev)
-      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 
@@ -119,13 +119,13 @@ defmodule Casein.Deployment.DriftTest do
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
     System.put_env("DEVIDE_GIT_REVISION", "manual-hotfix-label")
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
       restore_env("DEVIDE_GIT_REVISION", prev_rev)
-      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 
@@ -180,14 +180,14 @@ defmodule Casein.Deployment.DriftTest do
 
     expected = git!(main, ["rev-parse", "HEAD"])
 
-    prev_remote = System.get_env("DEV_IDE_GIT_REMOTE")
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
-    System.put_env("DEV_IDE_GIT_REMOTE", Path.expand(bare))
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    prev_remote = System.get_env("CASEIN_GIT_REMOTE")
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
+    System.put_env("CASEIN_GIT_REMOTE", Path.expand(bare))
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_env("DEV_IDE_GIT_REMOTE", prev_remote)
-      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_env("CASEIN_GIT_REMOTE", prev_remote)
+      restore_env("CASEIN_GIT_BRANCH", prev_branch)
     end)
 
     assert {:ok, ^expected} = Drift.remote_head(cache_ttl_ms: 0)
@@ -241,14 +241,14 @@ defmodule Casein.Deployment.DriftTest do
       {{:ok, stale_sha}, System.monotonic_time(:millisecond) - 120_000}
     )
 
-    prev_remote = System.get_env("DEV_IDE_GIT_REMOTE")
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
-    System.put_env("DEV_IDE_GIT_REMOTE", Path.expand(bare))
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    prev_remote = System.get_env("CASEIN_GIT_REMOTE")
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
+    System.put_env("CASEIN_GIT_REMOTE", Path.expand(bare))
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_env("DEV_IDE_GIT_REMOTE", prev_remote)
-      restore_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_env("CASEIN_GIT_REMOTE", prev_remote)
+      restore_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 

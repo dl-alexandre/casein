@@ -18,7 +18,7 @@ defmodule Casein.Agents.TerminalToolsTest do
       fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid),
       api_token: Application.get_env(:casein, :api_token),
       agent_mcp_base_url: Application.get_env(:casein, :agent_mcp_base_url),
-      env_api_token: System.get_env("DEV_IDE_API_TOKEN"),
+      env_api_token: System.get_env("CASEIN_API_TOKEN"),
       env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME"),
       env_home: System.get_env("HOME")
     }
@@ -39,7 +39,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
       restore_app_env(:api_token, previous.api_token)
       restore_app_env(:agent_mcp_base_url, previous.agent_mcp_base_url)
-      restore_system_env("DEV_IDE_API_TOKEN", previous.env_api_token)
+      restore_system_env("CASEIN_API_TOKEN", previous.env_api_token)
       restore_system_env("DEVIDE_AGENT_MCP_HOME", previous.env_agent_mcp_home)
       restore_system_env("HOME", previous.env_home)
 
@@ -714,7 +714,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   end
 
   defp tmp_dir!(name) do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
     make_tree_writable(path)
     File.rm_rf!(path)

@@ -26,7 +26,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
 
     File.write!(
       mcp,
-      ~s({"mcpServers":{"devide":{"headers":{"Authorization":"Bearer ${DEV_IDE_API_TOKEN}"}}}}\n)
+      ~s({"mcpServers":{"devide":{"headers":{"Authorization":"Bearer ${CASEIN_API_TOKEN}"}}}}\n)
     )
 
     File.write!(hook_config, ~s({"hooks":{"SessionStart":[]}}\n))
@@ -67,7 +67,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     assert GrokCapabilityBundle.allowed_path?(first.dir)
     assert :ok = GrokCapabilityBundle.verify(first.dir, first.digest)
 
-    assert File.read!(Path.join(first.dir, ".mcp.json")) =~ "${DEV_IDE_API_TOKEN}"
+    assert File.read!(Path.join(first.dir, ".mcp.json")) =~ "${CASEIN_API_TOKEN}"
     assert File.regular?(Path.join([first.dir, "hooks", "devide-agent-state.sh"]))
     assert File.regular?(Path.join([first.dir, "skills", "verify", "SKILL.md"]))
 

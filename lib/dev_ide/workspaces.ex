@@ -187,7 +187,7 @@ defmodule Casein.Workspaces do
   Derive an `X-Auth-Request-Email` value for workspace-scoped preview fetches.
 
   Uses the workspace owner's manager username plus
-  `:forward_auth_email_domain` (env `DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN`).
+  `:forward_auth_email_domain` (env `CASEIN_FORWARD_AUTH_EMAIL_DOMAIN`).
   """
   @spec forward_auth_email(Workspace.t() | map()) :: String.t() | nil
   def forward_auth_email(workspace) do
@@ -267,7 +267,7 @@ defmodule Casein.Workspaces do
 
   defp forward_auth_email_domain do
     Application.get_env(:casein, :forward_auth_email_domain) ||
-      System.get_env("DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN")
+      System.get_env("CASEIN_FORWARD_AUTH_EMAIL_DOMAIN")
   end
 
   @spec safe_host_path(Workspace.t() | map()) :: {:ok, String.t()} | {:error, atom()}

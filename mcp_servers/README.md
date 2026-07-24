@@ -37,10 +37,10 @@ This is the recommended integration path instead of replacing DevIDE.
 ### Environment variables (required)
 
 ```bash
-export DEV_IDE_BASE_URL=http://localhost:4000
-export DEV_IDE_API_TOKEN="the-same-token-you-use-for-DEV_IDE_API_TOKEN-on-the-server"
+export CASEIN_BASE_URL=http://localhost:4000
+export CASEIN_API_TOKEN="the-same-token-you-use-for-CASEIN_API_TOKEN-on-the-server"
 # optional
-export DEV_IDE_TIMEOUT=30
+export CASEIN_TIMEOUT=30
 ```
 
 ### Running it directly (for testing / Odysseus registration)
@@ -58,7 +58,7 @@ In Odysseus Settings → MCP / Tools / Servers (the exact label may vary by vers
 - Add a new stdio server
 - Command: `python`
 - Args: absolute path to `.../dev_ide/mcp_servers/devide_server.py` (or make a small wrapper script)
-- Environment: pass the two DEV_IDE_* vars above
+- Environment: pass the two CASEIN_* vars above
 
 After registration the agent should be able to discover and call the `devide_*` tools.
 

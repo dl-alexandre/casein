@@ -39,7 +39,7 @@ open "build/DevIDE MenuBar.app"
 
 Release discovery: `DEVIDE_RELEASE_ROOT` wins; otherwise the persisted
 release embedded under the app's `Contents/Resources`, then the persisted
-"Choose Release…" pick (UserDefaults). `DEV_IDE_DESKTOP_DATA_DIR` overrides
+"Choose Release…" pick (UserDefaults). `CASEIN_DESKTOP_DATA_DIR` overrides
 the default `~/Library/Application Support/DevIDE`. The host generates and
 persists boot secrets in the user's login Keychain on first start; an existing
 `host-secrets.json` is migrated once and removed only after the Keychain write

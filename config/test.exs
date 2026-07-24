@@ -6,7 +6,7 @@ import Config
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
 sqlite_repo? =
-  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  System.get_env("CASEIN_REPO_ADAPTER", "postgres")
   |> String.downcase()
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 

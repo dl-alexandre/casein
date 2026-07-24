@@ -18,7 +18,7 @@ defmodule Casein.Terminals.TmuxRunner do
   @spec host_shell?() :: boolean()
   def host_shell? do
     Application.get_env(:casein, :tmux_host_shell) ||
-      System.get_env("DEV_IDE_TMUX_HOST_SHELL") in ~w(1 true yes)
+      System.get_env("CASEIN_TMUX_HOST_SHELL") in ~w(1 true yes)
   end
 
   @doc """
@@ -120,7 +120,7 @@ defmodule Casein.Terminals.TmuxRunner do
     [
       Application.get_env(:tmux_ctl, :config_file),
       Application.get_env(:casein, :tmux_config_file),
-      System.get_env("DEV_IDE_TMUX_CONFIG"),
+      System.get_env("CASEIN_TMUX_CONFIG"),
       default_host_tmux_config_file()
     ]
     |> Enum.find(&(is_binary(&1) and File.regular?(&1)))

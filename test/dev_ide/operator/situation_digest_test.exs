@@ -369,7 +369,7 @@ defmodule Casein.Operator.SituationDigestTest do
   end
 
   defp tmp_dir!(name) do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     path = Path.join(root, "devide-digest-#{System.unique_integer([:positive])}-#{name}")
     File.rm_rf!(path)
     File.mkdir_p!(path)

@@ -40,7 +40,7 @@ defmodule Mix.Tasks.Casein.InsecureHttp.Setup do
     fix? = Keyword.get(opts, :fix, false)
     enable? = not Keyword.get(opts, :no_enable, false)
     unit_dir = opts[:unit_dir] || Casein.Setup.InsecureHttpEdge.unit_dir()
-    listen_port = opts[:listen_port] || env_int("DEV_IDE_LAN_INSECURE_HTTP_PORT") || 80
+    listen_port = opts[:listen_port] || env_int("CASEIN_LAN_INSECURE_HTTP_PORT") || 80
     backend_port = opts[:backend_port] || env_int("PORT") || 4000
     backend_host = opts[:backend_host] || "127.0.0.1"
 

@@ -152,7 +152,7 @@ public actor ReleaseController {
         // PHX_IP would fail the loopback guard, and DATABASE_PATH or a
         // status-path override would detach the contract from the data dir.
         // Allowlist rather than denylist so the next release-reconfiguring
-        // var (MIX_ENV, DEV_IDE_LAN, …) is excluded by default instead of
+        // var (MIX_ENV, CASEIN_LAN, …) is excluded by default instead of
         // needing a new scrub entry. PATH passes through for tmux/git.
         let inherited = inheritedEnvironment
         var environment: [String: String] = [:]
@@ -163,12 +163,12 @@ public actor ReleaseController {
         environment["PATH"] = hostPath(inherited["PATH"])
         environment["LANG"] = inherited["LANG"] ?? "en_US.UTF-8"
         environment["LC_ALL"] = inherited["LC_ALL"] ?? "en_US.UTF-8"
-        environment["DEV_IDE_PROFILE"] = "desktop"
-        environment["DEV_IDE_DESKTOP_DATA_DIR"] = paths.dataDir.path
+        environment["CASEIN_PROFILE"] = "desktop"
+        environment["CASEIN_DESKTOP_DATA_DIR"] = paths.dataDir.path
         environment["RELEASE_TMP"] = paths.runtimeDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
-        environment["DEV_IDE_API_TOKEN"] = secrets.apiToken
-        environment["DEV_IDE_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
+        environment["CASEIN_API_TOKEN"] = secrets.apiToken
+        environment["CASEIN_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
         let port: Int
         if let selectedPort { port = selectedPort } else {
             port = try HostSettings.loadOrSelect(at: paths.hostSettingsFile).port

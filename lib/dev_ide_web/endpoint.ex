@@ -142,7 +142,7 @@ defmodule CaseinWeb.Endpoint do
   # SECURITY: default false. When false, MCP `tools/call` requires a
   # workspace-scoped token (see reject_global_mcp_tool_calls/2) so a leaked
   # global admin token cannot execute tools box-wide (effectively RCE across
-  # every workspace). Set DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS=1 ONLY on a
+  # every workspace). Set CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS=1 ONLY on a
   # single-tenant box you fully trust, to let a :global orchestrator token make
   # box-wide tool calls (omit workspace_id to traverse; pass it to confine).
   defp allow_global_mcp_tool_calls? do
@@ -191,14 +191,14 @@ defmodule CaseinWeb.Endpoint do
   defp global_token?(token) do
     [
       Application.get_env(:casein, :api_token),
-      System.get_env("DEV_IDE_API_TOKEN")
+      System.get_env("CASEIN_API_TOKEN")
     ]
     |> Enum.any?(&secure_match?(token, &1))
   end
 
   defp workspace_token?(token) do
     app_tokens = Application.get_env(:casein, :workspace_api_tokens, %{})
-    env_tokens = workspace_tokens_from_env(System.get_env("DEV_IDE_WORKSPACE_API_TOKENS"))
+    env_tokens = workspace_tokens_from_env(System.get_env("CASEIN_WORKSPACE_API_TOKENS"))
 
     [app_tokens, env_tokens]
     |> Enum.flat_map(&workspace_token_values/1)

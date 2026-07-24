@@ -73,7 +73,7 @@ terminal channel.
   ([`config/config.exs`](../config/config.exs)) require a reachable
   Repo. No "lite" mode for remote-without-DB.
 - The workspace source is pluggable via `DevIDE.WorkspaceSource`
-  (default: local directories under `DEV_IDE_WORKSPACES_ROOT`). A
+  (default: local directories under `CASEIN_WORKSPACES_ROOT`). A
   managed-workspace integration lives behind that behaviour — see
   `docs/integrations/`.
 
@@ -169,7 +169,7 @@ Shipped:
   Migrations are explicit, not at server boot, so a CD pipeline can run
   one migrate pod before rolling the server pool.
 - [`config/runtime.exs`](../config/runtime.exs) — hardened. Fails loudly
-  at boot if `DEV_IDE_API_TOKEN` is unset. `DEV_IDE_WORKSPACES_ROOT`
+  at boot if `CASEIN_API_TOKEN` is unset. `CASEIN_WORKSPACES_ROOT`
   flows into `:dev_ide, :workspaces_root` when set.
 - [`docs/deploy.md`](deploy.md) — operator runbook with required env,
   build/run commands, smoke check, and upgrade procedure.
@@ -202,7 +202,7 @@ real (laptop sleep can pause the BEAM in ways that look like a restart).
 
 **DevIDE ships as its own image** and discovers workspaces through the
 `DevIDE.WorkspaceSource` behaviour. The default source reads directories
-under `DEV_IDE_WORKSPACES_ROOT`; integrations supply alternatives. The
+under `CASEIN_WORKSPACES_ROOT`; integrations supply alternatives. The
 Dockerfile stays single-responsibility.
 
 See [`docs/deploy.md`](deploy.md) "Architectural decision" for the full
@@ -212,7 +212,7 @@ rationale.
 
 `Workspaces.safe_host_path/1` and `PathSafety` already check against a
 configurable workspace root (`:dev_ide, :workspaces_root` or
-`DEV_IDE_WORKSPACES_ROOT`, default `/workspaces`). This should work
+`CASEIN_WORKSPACES_ROOT`, default `/workspaces`). This should work
 transparently on any Linux server as long as the env points at the right
 directory and the BEAM has read access. Verify in the deployment
 runbook; not a code change.

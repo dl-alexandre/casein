@@ -398,7 +398,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
             HostPaths.detect(
                 environment: [
                     "DEVIDE_RELEASE_ROOT": "/opt/devide/release",
-                    "DEV_IDE_DESKTOP_DATA_DIR": "/tmp/devide-data",
+                    "CASEIN_DESKTOP_DATA_DIR": "/tmp/devide-data",
                 ],
                 defaults: try freshDefaults(), bundleResources: nil))
 

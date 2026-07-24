@@ -12,9 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
-SERVICE="${DEV_IDE_SYSTEMD_SERVICE:-devide}"
-WORKSPACE_NAME="${DEV_IDE_WORKSPACE_NAME:-dalexandre-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
 
 log() { printf '>>> %s\n' "$*"; }
@@ -29,9 +29,9 @@ if ! sudo test -f "$ENV_FILE"; then
   exit 1
 fi
 
-ADMIN_TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
+ADMIN_TOKEN="$(sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
 if [[ -z "$ADMIN_TOKEN" ]]; then
-  echo "error: DEV_IDE_API_TOKEN missing from $ENV_FILE" >&2
+  echo "error: CASEIN_API_TOKEN missing from $ENV_FILE" >&2
   exit 1
 fi
 
@@ -70,7 +70,7 @@ if [[ -z "$AGENT_TOKEN" ]]; then
   exit 1
 fi
 workspace_scoped_token_write_env "$ENV_FILE" "$SCOPED_JSON"
-log "registered scoped token in DEV_IDE_WORKSPACE_API_TOKENS (global admin token unchanged)"
+log "registered scoped token in CASEIN_WORKSPACE_API_TOKENS (global admin token unchanged)"
 
 bash scripts/deploy-local.sh
 
@@ -122,10 +122,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
-# DEV_IDE_API_TOKEN is workspace-scoped. The global admin token stays only in
+# CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
 # /etc/devide/devide.env; never copy it into an agent-readable checkout.
 
-export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
+export CASEIN_API_TOKEN='${AGENT_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_API_BASE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
@@ -138,13 +138,13 @@ $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
-export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export DEV_IDE_AGENT_BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
+export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
+export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
-case ":\${PATH:-}:" in *":\${DEV_IDE_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${DEV_IDE_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
+case ":\${PATH:-}:" in *":\${CASEIN_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${CASEIN_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 # Launcher shims last so they land frontmost: bare agent names in this shell
 # must hit DevIDE MCP injection once this file is sourced.
-case ":\${PATH:-}:" in *":\${DEV_IDE_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${DEV_IDE_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
+case ":\${PATH:-}:" in *":\${CASEIN_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${CASEIN_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
 EOF
 chmod 600 "$AGENT_ENV"
 
@@ -165,7 +165,7 @@ log "installing agent shims on PATH (grok/claude/codex/opencode → MCP auto-inj
 bash scripts/install-agent-shims.sh
 
 log "verifying MCP endpoints (workspace-scoped token)"
-DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$AGENT_TOKEN" \
+DEVIDE_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
   bash scripts/verify_agent_pairing.sh --ci
 

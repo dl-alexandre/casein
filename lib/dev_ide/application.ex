@@ -159,7 +159,7 @@ defmodule Casein.Application do
 
   defp terminal_shell_command do
     Application.get_env(:casein, :tmux_login_shell_command) ||
-      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      System.get_env("CASEIN_TMUX_LOGIN_SHELL") ||
       Casein.Terminals.Shims.shell_command()
   end
 

@@ -114,7 +114,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | **Invariant** | **FP-1**, product §10.2, product §13 rule 1 |
 | **Verify** | `test/dev_ide/terminals/mode_policy_test.exs`, `test/dev_ide_web/channels/terminal_channel_test.exs` (gate behavior when flag disabled) |
 | **Rationale** | Shared devbox / multi-tenant use needs the gate **on** by default; permissive default is acceptable for single-user local dev only and should be explicit in prod `runtime.exs`. |
-| **Status (2026-06-29)** | ✅ **CLOSED.** `Policy.can_use_raw_terminal?/1` and `Terminals.ModePolicy.raw_terminal_allowed?/2` now default to local host + `:manual` workspace mode. `config/runtime.exs` exposes `DEV_IDE_RAW_TERMINAL_EVERYWHERE=1|true|yes` as the explicit prod opt-in for raw-everywhere. Regression coverage lives in `test/dev_ide/policy_test.exs`, `test/dev_ide/terminals/boundary_test.exs`, and `test/dev_ide/terminals/mode_policy_test.exs`. |
+| **Status (2026-06-29)** | ✅ **CLOSED.** `Policy.can_use_raw_terminal?/1` and `Terminals.ModePolicy.raw_terminal_allowed?/2` now default to local host + `:manual` workspace mode. `config/runtime.exs` exposes `CASEIN_RAW_TERMINAL_EVERYWHERE=1|true|yes` as the explicit prod opt-in for raw-everywhere. Regression coverage lives in `test/dev_ide/policy_test.exs`, `test/dev_ide/terminals/boundary_test.exs`, and `test/dev_ide/terminals/mode_policy_test.exs`. |
 | **Addendum (2026-07-02)** | The mode-gate fix above didn't fully close the door: `DevIDE.Policy.WorkspaceMode`'s default fallback was still `:review`, not `:manual` — so a workspace with no persisted/config-pinned mode silently landed in `:review` and raw terminal (and split-screen) stayed unreachable with zero user-facing feedback (`do_split/2` in `show.ex` just returned `{:noreply, socket}` on deny). Fixed by flipping the default to `:manual` (`lib/dev_ide/policy/workspace_mode.ex`). |
 
 ### P3 — Agent write and proposal apply permanently denied
@@ -132,12 +132,12 @@ Items where server authority, audit, or admission gates are weakened or absent.
 
 | Field | Detail |
 |-------|--------|
-| **Source** | `docs/hardening.md` §Workspace-Scoped Tokens, `config/runtime.exs` (`DEV_IDE_WORKSPACE_API_TOKENS`), `lib/dev_ide_web/plugs/api_auth.ex` |
-| **Gap** | Dogfood agents use `DEV_IDE_API_TOKEN` (admin/global) materialized into `~/.grok/config.toml` etc. Workspace-scoped tokens exist but are optional; an agent with the global token can omit `workspace_id` and see **all** `devide_*` sessions (`docs/terminal_mcp.md` §Access scope). |
+| **Source** | `docs/hardening.md` §Workspace-Scoped Tokens, `config/runtime.exs` (`CASEIN_WORKSPACE_API_TOKENS`), `lib/dev_ide_web/plugs/api_auth.ex` |
+| **Gap** | Dogfood agents use `CASEIN_API_TOKEN` (admin/global) materialized into `~/.grok/config.toml` etc. Workspace-scoped tokens exist but are optional; an agent with the global token can omit `workspace_id` and see **all** `devide_*` sessions (`docs/terminal_mcp.md` §Access scope). |
 | **Invariant** | **FP-10**, hardening boundary "every MCP call must be workspace-scoped" |
 | **Verify** | `test/dev_ide_web/controllers/api/terminal_mcp_controller_test.exs` (scoped token rejects cross-workspace override); `scripts/verify_agent_pairing.sh` |
 | **Rationale** | On a shared devbox, global tokens are the largest blast-radius misconfiguration; default agent materialization should emit workspace-scoped tokens. |
-| **Status (2026-06-26)** | ✅ **CLOSED** (shipped `9b75d9c`, 2026-06-23 — before this doc was committed). The standard pairing flow already emits a scoped token by default: `setup-devbox-agent-pairing.sh` mints a per-workspace token (`scripts/lib/workspace-scoped-token.sh:60`, `secrets.token_hex(32)`), registers it server-side in `DEV_IDE_WORKSPACE_API_TOKENS` + redeploys (`:65-75`), and writes it as the agent's default `DEV_IDE_API_TOKEN` (`:127`) — the global admin token is kept only as `DEV_IDE_ADMIN_API_TOKEN` (`:128`). `materialize-agent-mcp.sh` simply propagates that already-scoped token. Cross-workspace access is blocked (`api_auth.ex:90-100`) with a regression test: scoped token → another workspace returns `403 workspace_forbidden` (`terminal_mcp_controller_test.exs:72-83`) and auto-injects its own workspace when the query is omitted (`:57`). **Residual:** agents started *outside* the pairing flow (hand-rolled env / raw global token) still get global scope — see MCP P5; the global token remains unrestricted by design for admin use. |
+| **Status (2026-06-26)** | ✅ **CLOSED** (shipped `9b75d9c`, 2026-06-23 — before this doc was committed). The standard pairing flow already emits a scoped token by default: `setup-devbox-agent-pairing.sh` mints a per-workspace token (`scripts/lib/workspace-scoped-token.sh:60`, `secrets.token_hex(32)`), registers it server-side in `CASEIN_WORKSPACE_API_TOKENS` + redeploys (`:65-75`), and writes it as the agent's default `CASEIN_API_TOKEN` (`:127`) — the global admin token is kept only as `CASEIN_ADMIN_API_TOKEN` (`:128`). `materialize-agent-mcp.sh` simply propagates that already-scoped token. Cross-workspace access is blocked (`api_auth.ex:90-100`) with a regression test: scoped token → another workspace returns `403 workspace_forbidden` (`terminal_mcp_controller_test.exs:72-83`) and auto-injects its own workspace when the query is omitted (`:57`). **Residual:** agents started *outside* the pairing flow (hand-rolled env / raw global token) still get global scope — see MCP P5; the global token remains unrestricted by design for admin use. |
 
 ### P5 — Forward-auth trust chain has documented bypass matchers
 
@@ -146,7 +146,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | **Source** | `lib/dev_ide_web/plugs/forward_auth.ex` moduledoc (OPTIONS + `/site.webmanifest` bypass), `lib/dev_ide/application.ex` (`assert_forward_auth_bind!/0`) |
 | **Gap** | Caddy excludes OPTIONS and `/site.webmanifest` from forward-auth; a client-supplied `X-Auth-Request-Email` could spoof identity on those paths if Phoenix ever routes OPTIONS authentically. Prod bind misconfiguration warns but does not halt (`assert_forward_auth_bind!`). |
 | **Invariant** | **FP-1** (server decides who may act), product §4 server owns operational safety |
-| **Verify** | `lib/dev_ide/application.ex:115-130`; enable `DEV_IDE_FORWARD_AUTH=1` without loopback bind in dev → raises |
+| **Verify** | `lib/dev_ide/application.ex:115-130`; enable `CASEIN_FORWARD_AUTH=1` without loopback bind in dev → raises |
 | **Rationale** | Load-bearing for shared devbox; needs a regression test if OPTIONS routes are added, and prod should fail closed on bind mismatch. |
 
 ---
@@ -162,9 +162,9 @@ Items where sessions, scrollback, or workspace attachment fail the user promise 
 | **Source** | `docs/state_machines.md` terminal lifecycle rule 3, `lib/dev_ide/terminals/tmux_janitor.ex`, `config/runtime.exs` (`:tmux_idle_seconds`, prod default 600s) |
 | **Gap** | After `:tmux_idle_seconds` with **no LiveView subscriber**, `TmuxJanitor` kills `devide_`-prefixed tmux sessions. Operator closes tab → work may be destroyed despite FP-2 "sessions durable by default." |
 | **Invariant** | **FP-2**, **FP-8**, **FP-9**, product §8 promises 1–2 |
-| **Verify** | `test/dev_ide/terminals/tmux_janitor_test.exs`; check prod `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` |
+| **Verify** | `test/dev_ide/terminals/tmux_janitor_test.exs`; check prod `CASEIN_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` |
 | **Rationale** | The persistence story (tmux survives) conflicts with idle GC policy; prod needs either disabled GC, much longer TTL, or explicit operator opt-in to kill idle sessions. |
-| **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `DEV_IDE_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `devide_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
+| **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `CASEIN_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `devide_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
 
 ### P2 — Cross-host workspace attach not configured
 
@@ -240,7 +240,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject DevIDE MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
 | **Invariant** | Operational safety on multi-user host |
 | **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-devide-agent.sh` |
-| **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `DEV_IDE_API_TOKEN`. |
+| **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `CASEIN_API_TOKEN`. |
 
 ### P4 — Preview MCP cannot drive LiveView WebSocket interactions
 

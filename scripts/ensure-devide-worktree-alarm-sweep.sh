@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="devide-worktree-alarm-sweep.service"
 TIMER="devide-worktree-alarm-sweep.timer"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 
 START=1
 DISABLE=0

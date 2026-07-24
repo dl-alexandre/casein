@@ -28,11 +28,11 @@ falsey_env? = fn name ->
   System.get_env(name) in ~w(0 false FALSE no NO off OFF)
 end
 
-lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
-lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
-release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
-desktop_mode? = System.get_env("DEV_IDE_PROFILE") == "desktop"
-portable_mode? = System.get_env("DEV_IDE_PROFILE") == "portable"
+lan_insecure_http? = truthy_env?.("CASEIN_LAN_INSECURE_HTTP")
+lan_mode? = truthy_env?.("CASEIN_LAN") or lan_insecure_http?
+release_cli? = truthy_env?.("CASEIN_RELEASE_CLI")
+desktop_mode? = System.get_env("CASEIN_PROFILE") == "desktop"
+portable_mode? = System.get_env("CASEIN_PROFILE") == "portable"
 
 config :casein,
        :desktop_terminal_backend,
@@ -44,32 +44,32 @@ config :casein,
 # via MCP. Enable only on a single-tenant box you fully trust.
 config :casein,
        :allow_global_mcp_tool_calls,
-       truthy_env?.("DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS")
+       truthy_env?.("CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS")
 
 # When on, MCP `tools/list` advertises only a small core set + the search_tools
 # / invoke_tool meta-tools instead of every tool, to cut context and improve
 # tool selection on large surfaces. Off by default (full tool list). The
 # meta-tools are always callable; this only changes what tools/list advertises.
-config :casein, :mcp_tool_search, truthy_env?.("DEV_IDE_MCP_TOOL_SEARCH")
+config :casein, :mcp_tool_search, truthy_env?.("CASEIN_MCP_TOOL_SEARCH")
 
 # When on, the terminal MCP server advertises the read-only workspace_digest
 # tool (operator situation digest: sessions, worktrees, deploy, activity,
 # risks) in tools/list. Off by default while the digest shape settles; the
 # tool stays callable by name either way.
-config :casein, :workspace_digest, truthy_env?.("DEV_IDE_WORKSPACE_DIGEST")
+config :casein, :workspace_digest, truthy_env?.("CASEIN_WORKSPACE_DIGEST")
 
 # When on, workspace_digest is served by a live per-workspace
 # Casein.Operator.SituationServer (event-fed digest + stateful risk detectors
 # broadcasting on "situation:<ws>") started on the first digest request.
 # Off by default: the digest cold-builds per call and no server is started.
-config :casein, :situation_server, truthy_env?.("DEV_IDE_SITUATION_SERVER")
+config :casein, :situation_server, truthy_env?.("CASEIN_SITUATION_SERVER")
 
 # When on, Casein.Ops.PgProbe polls the box's Postgres servers (host 5432 +
 # release 15432 by default) for connection saturation and leak-shaped
 # application_names (wf_*, devide-<uuid>), emitting ops.pg_saturation_*
 # audit rows and "ops:health" broadcasts on threshold transitions. Off by
 # default — it shells out to psql once per interval.
-config :casein, :pg_probe, truthy_env?.("DEV_IDE_PG_PROBE")
+config :casein, :pg_probe, truthy_env?.("CASEIN_PG_PROBE")
 
 # When on, start the host-tmux control-mode listener and wire topology
 # watchers to event-triggered refreshes (reconcile poll remains). Default
@@ -83,19 +83,19 @@ end
 # Probe targets as JSON, e.g.
 # [{"host":"127.0.0.1","port":5432,"user":"postgres","dbname":"postgres"}].
 # Parsed by PgProbe at runtime; invalid JSON falls back to the defaults.
-if pg_probe_targets = System.get_env("DEV_IDE_PG_PROBE_TARGETS") do
+if pg_probe_targets = System.get_env("CASEIN_PG_PROBE_TARGETS") do
   config :casein, :pg_probe_targets_json, pg_probe_targets
 end
 
-if pg_probe_user = System.get_env("DEV_IDE_PG_PROBE_USER") do
+if pg_probe_user = System.get_env("CASEIN_PG_PROBE_USER") do
   config :casein, :pg_probe_user, pg_probe_user
 end
 
-if pg_probe_dbname = System.get_env("DEV_IDE_PG_PROBE_DBNAME") do
+if pg_probe_dbname = System.get_env("CASEIN_PG_PROBE_DBNAME") do
   config :casein, :pg_probe_dbname, pg_probe_dbname
 end
 
-if pg_probe_password = System.get_env("DEV_IDE_PG_PROBE_PASSWORD") do
+if pg_probe_password = System.get_env("CASEIN_PG_PROBE_PASSWORD") do
   config :casein, :pg_probe_password, pg_probe_password
 end
 
@@ -103,12 +103,12 @@ end
 # worktree root) naming freeze-skill sentinel files. The situation digest only
 # *reports* matching sentinels as frozen_scopes; nothing is enforced. Default:
 # the elixir-phoenix freeze skill's `.claude/.freeze` convention.
-if freeze_globs = System.get_env("DEV_IDE_FREEZE_SENTINEL_GLOBS") do
+if freeze_globs = System.get_env("CASEIN_FREEZE_SENTINEL_GLOBS") do
   config :casein, :freeze_sentinel_globs, String.split(freeze_globs, ",", trim: true)
 end
 
 lan_http_host = fn ->
-  case System.get_env("DEV_IDE_LAN_HOST") do
+  case System.get_env("CASEIN_LAN_HOST") do
     host when is_binary(host) and host != "" ->
       host
 
@@ -153,11 +153,11 @@ if config_env() != :test do
 
   if desktop_mode? do
     desktop_launch_token =
-      System.get_env("DEV_IDE_DESKTOP_LAUNCH_TOKEN") ||
-        raise "DEV_IDE_PROFILE=desktop requires DEV_IDE_DESKTOP_LAUNCH_TOKEN"
+      System.get_env("CASEIN_DESKTOP_LAUNCH_TOKEN") ||
+        raise "CASEIN_PROFILE=desktop requires CASEIN_DESKTOP_LAUNCH_TOKEN"
 
     if byte_size(desktop_launch_token) < 32 do
-      raise "DEV_IDE_DESKTOP_LAUNCH_TOKEN must contain at least 32 bytes"
+      raise "CASEIN_DESKTOP_LAUNCH_TOKEN must contain at least 32 bytes"
     end
 
     config :casein,
@@ -169,7 +169,7 @@ if config_env() != :test do
       session_cookie_key: "_dev_ide_desktop_key"
   end
 
-  if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
+  if default_workspace = System.get_env("CASEIN_DEFAULT_WORKSPACE") do
     config :casein, :default_workspace, default_workspace
   else
     if lan_mode? do
@@ -199,35 +199,35 @@ if config_env() != :test do
     end
   end
 
-  push_provider = present_env.("DEV_IDE_PUSH_PROVIDER")
+  push_provider = present_env.("CASEIN_PUSH_PROVIDER")
 
   fcm_enabled? =
     push_provider in ["fcm", "firebase", "native"] or
-      not is_nil(present_env.("DEV_IDE_FCM_PROJECT_ID"))
+      not is_nil(present_env.("CASEIN_FCM_PROJECT_ID"))
 
   apns_enabled? =
     push_provider in ["apns", "native"] or
-      not is_nil(present_env.("DEV_IDE_APNS_TEAM_ID")) or
-      not is_nil(present_env.("DEV_IDE_APNS_KEY_ID")) or
-      not is_nil(present_env.("DEV_IDE_APNS_PRIVATE_KEY")) or
-      not is_nil(present_env.("DEV_IDE_APNS_PRIVATE_KEY_PATH"))
+      not is_nil(present_env.("CASEIN_APNS_TEAM_ID")) or
+      not is_nil(present_env.("CASEIN_APNS_KEY_ID")) or
+      not is_nil(present_env.("CASEIN_APNS_PRIVATE_KEY")) or
+      not is_nil(present_env.("CASEIN_APNS_PRIVATE_KEY_PATH"))
 
   if fcm_enabled? do
     fcm_provider_config =
       [
-        project_id: present_env.("DEV_IDE_FCM_PROJECT_ID"),
+        project_id: present_env.("CASEIN_FCM_PROJECT_ID"),
         access_token_fun: {Casein.Push.FCMToken, :access_token, []}
       ]
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
     fcm_token_config =
       [
-        access_token: present_env.("DEV_IDE_FCM_ACCESS_TOKEN"),
-        service_account_json: present_env.("DEV_IDE_FCM_SERVICE_ACCOUNT_JSON"),
+        access_token: present_env.("CASEIN_FCM_ACCESS_TOKEN"),
+        service_account_json: present_env.("CASEIN_FCM_SERVICE_ACCOUNT_JSON"),
         service_account_path:
-          present_env.("DEV_IDE_FCM_SERVICE_ACCOUNT_PATH") ||
+          present_env.("CASEIN_FCM_SERVICE_ACCOUNT_PATH") ||
             present_env.("GOOGLE_APPLICATION_CREDENTIALS"),
-        token_uri: present_env.("DEV_IDE_FCM_TOKEN_URI")
+        token_uri: present_env.("CASEIN_FCM_TOKEN_URI")
       ]
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
@@ -238,12 +238,12 @@ if config_env() != :test do
   if apns_enabled? do
     apns_provider_config =
       [
-        team_id: present_env.("DEV_IDE_APNS_TEAM_ID"),
-        key_id: present_env.("DEV_IDE_APNS_KEY_ID"),
-        topic: present_env.("DEV_IDE_APNS_TOPIC"),
-        private_key: present_env.("DEV_IDE_APNS_PRIVATE_KEY"),
-        private_key_path: present_env.("DEV_IDE_APNS_PRIVATE_KEY_PATH"),
-        environment: present_env.("DEV_IDE_APNS_ENV") || "sandbox"
+        team_id: present_env.("CASEIN_APNS_TEAM_ID"),
+        key_id: present_env.("CASEIN_APNS_KEY_ID"),
+        topic: present_env.("CASEIN_APNS_TOPIC"),
+        private_key: present_env.("CASEIN_APNS_PRIVATE_KEY"),
+        private_key_path: present_env.("CASEIN_APNS_PRIVATE_KEY_PATH"),
+        environment: present_env.("CASEIN_APNS_ENV") || "sandbox"
       ]
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
@@ -294,8 +294,8 @@ if config_env() == :prod and not release_cli? do
   else
     if desktop_mode? do
       raise """
-      DEV_IDE_PROFILE=desktop requires a SQLite-compiled release.
-      Rebuild with DEV_IDE_REPO_ADAPTER=sqlite and DEVIDE_RELEASE_PROFILE=desktop.
+      CASEIN_PROFILE=desktop requires a SQLite-compiled release.
+      Rebuild with CASEIN_REPO_ADAPTER=sqlite and DEVIDE_RELEASE_PROFILE=desktop.
       """
     end
 
@@ -334,9 +334,9 @@ if config_env() == :prod and not release_cli? do
   config :casein, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   # CSP frame-src for preview-pane iframes. Defaults to unrestricted preview
-  # embedding; DEV_IDE_PREVIEW_FRAME_SRC overrides the whole directive when set.
+  # embedding; CASEIN_PREVIEW_FRAME_SRC overrides the whole directive when set.
   preview_frame_src =
-    System.get_env("DEV_IDE_PREVIEW_FRAME_SRC") ||
+    System.get_env("CASEIN_PREVIEW_FRAME_SRC") ||
       "frame-src * data: blob:"
 
   config :casein, :preview_frame_src, preview_frame_src
@@ -347,8 +347,8 @@ if config_env() == :prod and not release_cli? do
   # proxy (otherwise a client could spoof the `X-Auth-Request-*` headers
   # directly). Set `PHX_IP=127.0.0.1` (or `::1`) in that case.
   forward_auth? =
-    System.get_env("DEV_IDE_FORWARD_AUTH") in ~w(1 true yes) or
-      System.get_env("DEV_IDE_ADMINS") not in [nil, ""]
+    System.get_env("CASEIN_FORWARD_AUTH") in ~w(1 true yes) or
+      System.get_env("CASEIN_ADMINS") not in [nil, ""]
 
   if forward_auth? do
     config :casein, :forward_auth, true
@@ -360,7 +360,7 @@ if config_env() == :prod and not release_cli? do
         {127, 0, 0, 1}
 
       {true, str} when str not in ["127.0.0.1", "::1"] ->
-        raise "DEV_IDE_PROFILE=desktop requires PHX_IP to be loopback"
+        raise "CASEIN_PROFILE=desktop requires PHX_IP to be loopback"
 
       {true, str} ->
         case str |> String.to_charlist() |> :inet.parse_address() do
@@ -392,7 +392,7 @@ if config_env() == :prod and not release_cli? do
     """
   end
 
-  on_devbox? = System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes)
+  on_devbox? = System.get_env("CASEIN_ON_DEVBOX") in ~w(1 true yes)
 
   # Allow WebSocket connections from localhost (Preview MCP browser) when
   # running on-devbox. The loopback preview browser sends Origin:
@@ -411,12 +411,12 @@ if config_env() == :prod and not release_cli? do
             String.to_integer(
               System.get_env(
                 if(lan_insecure_http?,
-                  do: "DEV_IDE_LAN_INSECURE_HTTP_PORT",
-                  else: "DEV_IDE_LAN_HTTPS_PORT"
+                  do: "CASEIN_LAN_INSECURE_HTTP_PORT",
+                  else: "CASEIN_LAN_HTTPS_PORT"
                 )
               ) || if(lan_insecure_http?, do: "80", else: "443")
             ),
-          lan_ip: System.get_env("DEV_IDE_LAN_IP")
+          lan_ip: System.get_env("CASEIN_LAN_IP")
         )
 
       on_devbox? ->
@@ -441,7 +441,7 @@ if config_env() == :prod and not release_cli? do
       lan_insecure_http? ->
         [
           host: lan_http_host.(),
-          port: String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80"),
+          port: String.to_integer(System.get_env("CASEIN_LAN_INSECURE_HTTP_PORT") || "80"),
           scheme: "http"
         ]
 
@@ -453,7 +453,7 @@ if config_env() == :prod and not release_cli? do
     cond do
       desktop_mode? -> false
       lan_insecure_http? -> false
-      falsey_env?.("DEV_IDE_FORCE_SSL") -> false
+      falsey_env?.("CASEIN_FORCE_SSL") -> false
       true -> true
     end
 
@@ -478,15 +478,15 @@ if config_env() == :prod and not release_cli? do
   # missing), so we surface that here as a fail-fast on boot instead of
   # discovering it on the first request.
 
-  System.get_env("DEV_IDE_API_TOKEN") ||
+  System.get_env("CASEIN_API_TOKEN") ||
     raise """
-    environment variable DEV_IDE_API_TOKEN is missing.
+    environment variable CASEIN_API_TOKEN is missing.
     The HTTP API refuses every request with 503 when no token is
     configured. Generate one with: mix phx.gen.secret
     """
 
   env_workspace_tokens =
-    case System.get_env("DEV_IDE_WORKSPACE_API_TOKENS") do
+    case System.get_env("CASEIN_WORKSPACE_API_TOKENS") do
       nil ->
         %{}
 
@@ -497,7 +497,7 @@ if config_env() == :prod and not release_cli? do
 
           _ ->
             raise """
-            environment variable DEV_IDE_WORKSPACE_API_TOKENS is invalid.
+            environment variable CASEIN_WORKSPACE_API_TOKENS is invalid.
             Expected JSON object mapping bearer token to workspace_id or list of workspace_ids.
             """
         end
@@ -524,21 +524,21 @@ if config_env() == :prod and not release_cli? do
     config :casein, :workspace_api_tokens, workspace_tokens
   end
 
-  if root = System.get_env("DEV_IDE_WORKSPACES_ROOT") do
+  if root = System.get_env("CASEIN_WORKSPACES_ROOT") do
     config :casein, :workspaces_root, root
   end
 
-  if root = System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+  if root = System.get_env("CASEIN_LAN_PATH_ROOT") do
     config :casein, :lan_path_root, root
   end
 
-  case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+  case System.get_env("CASEIN_HOME_WORKSPACE_PATH") do
     home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
       config :casein, :home_workspace_path, home_workspace_path
 
       config :casein,
              :lan_path_root,
-             System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
+             System.get_env("CASEIN_LAN_PATH_ROOT") || home_workspace_path
 
     _ ->
       :ok
@@ -565,11 +565,11 @@ if config_env() == :prod and not release_cli? do
   # mode unless this deployment explicitly opts into raw everywhere.
   config :casein,
          :raw_terminal_everywhere,
-         boolean_env?.("DEV_IDE_RAW_TERMINAL_EVERYWHERE")
+         boolean_env?.("CASEIN_RAW_TERMINAL_EVERYWHERE")
 
   config :casein,
          :mcp_max_body_bytes,
-         positive_integer_env.("DEV_IDE_MCP_MAX_BODY_BYTES")
+         positive_integer_env.("CASEIN_MCP_MAX_BODY_BYTES")
 
   # Deployment-wide kill switch for auto-applying a review-agent run's own
   # proposal (Casein.Proposals.AutoApply). Off by default — even a workspace
@@ -578,14 +578,14 @@ if config_env() == :prod and not release_cli? do
   # deployment in here.
   config :casein,
          Casein.Proposals.AutoApply,
-         enabled: boolean_env?.("DEV_IDE_AGENT_AUTO_APPLY_ENABLED")
+         enabled: boolean_env?.("CASEIN_AGENT_AUTO_APPLY_ENABLED")
 
   # Idle GC for `devide_*` tmux sessions. Durable workspace sessions are the
   # default, so session GC is opt-in via env vars rather than enabled by a
   # short production default.
   config :casein,
          :tmux_idle_seconds,
-         positive_integer_env.("DEV_IDE_TMUX_IDLE_SECONDS")
+         positive_integer_env.("CASEIN_TMUX_IDLE_SECONDS")
 
   # Periodic sweep for blank, auto-named, never-used windows that pile up
   # *inside* `devide_*` sessions (extra `Ctrl-b c` windows a user opens and
@@ -595,11 +595,11 @@ if config_env() == :prod and not release_cli? do
   # A window must be idle for the idle window before it's eligible.
   config :casein,
          :tmux_window_sweep_ms,
-         positive_integer_env.("DEV_IDE_TMUX_WINDOW_SWEEP_MS")
+         positive_integer_env.("CASEIN_TMUX_WINDOW_SWEEP_MS")
 
   config :casein,
          :tmux_window_idle_seconds,
-         positive_integer_env.("DEV_IDE_TMUX_WINDOW_IDLE_SECONDS")
+         positive_integer_env.("CASEIN_TMUX_WINDOW_IDLE_SECONDS")
 
   # Same sweep also reaps whole orphaned sessions: blank `devide_*` sessions
   # with no attached client, idle this long, where every pane is just a shell.
@@ -608,7 +608,7 @@ if config_env() == :prod and not release_cli? do
   # an attached (live) session is never touched.
   config :casein,
          :tmux_session_idle_seconds,
-         positive_integer_env.("DEV_IDE_TMUX_SESSION_IDLE_SECONDS")
+         positive_integer_env.("CASEIN_TMUX_SESSION_IDLE_SECONDS")
 
   # Agent-worktree runtime reaper: expires stale `terminal_report_worktree`
   # records and tears down clean, idle worktrees so the pane picker does not
@@ -659,24 +659,24 @@ if config_env() == :prod and not release_cli? do
   config :casein, :deployment, deployment_config
 
   preview_script_env =
-    case System.get_env("DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT") do
+    case System.get_env("CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT") do
       "" -> nil
       value -> value
     end
 
   preview_artifacts_root_env =
-    case System.get_env("DEV_IDE_PREVIEW_ARTIFACTS_ROOT") do
+    case System.get_env("CASEIN_PREVIEW_ARTIFACTS_ROOT") do
       "" -> nil
       value -> value
     end
 
   artifact_projects_root_env =
-    case System.get_env("DEV_IDE_ARTIFACT_PROJECTS_ROOT") do
+    case System.get_env("CASEIN_ARTIFACT_PROJECTS_ROOT") do
       "" -> nil
       value -> value
     end
 
-  case System.get_env("DEV_IDE_PREVIEW_CONTROL_ADAPTER") do
+  case System.get_env("CASEIN_PREVIEW_CONTROL_ADAPTER") do
     adapter when adapter in [nil, ""] ->
       :ok
 
@@ -690,7 +690,7 @@ if config_env() == :prod and not release_cli? do
 
     other ->
       raise """
-      environment variable DEV_IDE_PREVIEW_CONTROL_ADAPTER is invalid: #{inspect(other)}.
+      environment variable CASEIN_PREVIEW_CONTROL_ADAPTER is invalid: #{inspect(other)}.
       Expected one of: memory, playwright
       """
   end
@@ -712,7 +712,7 @@ if config_env() == :prod and not release_cli? do
   # fetches don't 401 behind the auth proxy. JSON object env wins over the
   # email shorthand. Caller-provided default_headers always override these.
   preview_default_headers =
-    case System.get_env("DEV_IDE_PREVIEW_DEFAULT_HEADERS") do
+    case System.get_env("CASEIN_PREVIEW_DEFAULT_HEADERS") do
       json when is_binary(json) and json != "" ->
         case Jason.decode(json) do
           {:ok, headers} when is_map(headers) ->
@@ -720,7 +720,7 @@ if config_env() == :prod and not release_cli? do
 
           _ ->
             raise """
-            environment variable DEV_IDE_PREVIEW_DEFAULT_HEADERS must be a JSON
+            environment variable CASEIN_PREVIEW_DEFAULT_HEADERS must be a JSON
             object of header name/value pairs, got: #{inspect(json)}
             """
         end
@@ -730,11 +730,11 @@ if config_env() == :prod and not release_cli? do
         # at call time (PreviewTools + Workspaces.forward_auth_headers/1).
         # Static env is only for non-workspace preview paths or local dev.
         email =
-          System.get_env("DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL") ||
+          System.get_env("CASEIN_PREVIEW_FORWARD_AUTH_EMAIL") ||
             if forward_auth? do
               nil
             else
-              System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
+              System.get_env("CASEIN_DEVBOX_USER_EMAIL")
             end
 
         if is_binary(email) and email != "" do
@@ -746,11 +746,11 @@ if config_env() == :prod and not release_cli? do
     config :casein, :preview_default_headers, preview_default_headers
   end
 
-  if domain = System.get_env("DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN") do
+  if domain = System.get_env("CASEIN_FORWARD_AUTH_EMAIL_DOMAIN") do
     config :casein, :forward_auth_email_domain, domain
   end
 
-  if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
+  if modes_json = System.get_env("CASEIN_WORKSPACE_MODES") do
     modes =
       modes_json
       |> Jason.decode!()
@@ -766,14 +766,14 @@ if config_env() == :prod and not release_cli? do
   # land on the empty workspace picker because the local source can't resolve
   # the workspace id as a directory under /workspaces. Two activation paths:
   #
-  #   * DEV_IDE_WORKSPACE_SOURCE=manager|local   — explicit override.
-  #   * DEV_IDE_ON_DEVBOX=true                   — auto-detect on devbox
+  #   * CASEIN_WORKSPACE_SOURCE=manager|local   — explicit override.
+  #   * CASEIN_ON_DEVBOX=true                   — auto-detect on devbox
   #                                                (same flag the integration
   #                                                already uses for path
   #                                                resolution and docker exec).
-  on_devbox? = System.get_env("DEV_IDE_ON_DEVBOX") in ["true", "1", "yes"]
+  on_devbox? = System.get_env("CASEIN_ON_DEVBOX") in ["true", "1", "yes"]
 
-  case System.get_env("DEV_IDE_WORKSPACE_SOURCE") do
+  case System.get_env("CASEIN_WORKSPACE_SOURCE") do
     "manager" ->
       config :casein, :workspace_source, Casein.WorkspaceSource.Manager
 

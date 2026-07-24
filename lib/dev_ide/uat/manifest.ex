@@ -11,7 +11,7 @@ defmodule Casein.UAT.Manifest do
       app-under-test into a deterministic state (e.g. `mix run priv/uat/seeds/checkout.exs`)
     * `tiers` — which tiers this scenario is eligible for (`:tier_a`, `:tier_b`)
     * `baselines` — optional artifact baselines (e.g. screenshot paths)
-    * `fixtures_dir` — directory copied into the ephemeral `DEV_IDE_WORKSPACES_ROOT`
+    * `fixtures_dir` — directory copied into the ephemeral `CASEIN_WORKSPACES_ROOT`
 
   **Tier A determinism is a contract, not a convention:** a scenario eligible for
   `:tier_a` MUST declare a `seed_cmd`. A scenario that cannot be made

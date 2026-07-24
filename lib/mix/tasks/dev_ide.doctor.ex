@@ -53,31 +53,31 @@ defmodule Mix.Tasks.Casein.Doctor do
     end
 
     fix? = Keyword.get(opts, :fix, false)
-    workspace = opts[:workspace] || System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+    workspace = opts[:workspace] || System.get_env("CASEIN_DEFAULT_WORKSPACE") || "home"
 
     root =
-      opts[:workspaces_root] || System.get_env("DEV_IDE_WORKSPACES_ROOT") ||
+      opts[:workspaces_root] || System.get_env("CASEIN_WORKSPACES_ROOT") ||
         "/tmp/dev_ide_workspaces"
 
     http_port = env_int("PORT") || 4000
-    https_port = env_int("DEV_IDE_LAN_HTTPS_PORT") || 4443
-    edge_port = Keyword.get(opts, :edge_port) || env_int("DEV_IDE_LAN_EDGE_PORT") || 443
+    https_port = env_int("CASEIN_LAN_HTTPS_PORT") || 4443
+    edge_port = Keyword.get(opts, :edge_port) || env_int("CASEIN_LAN_EDGE_PORT") || 443
 
     insecure_http_port =
-      Keyword.get(opts, :insecure_http_port) || env_int("DEV_IDE_LAN_INSECURE_HTTP_PORT") || 80
+      Keyword.get(opts, :insecure_http_port) || env_int("CASEIN_LAN_INSECURE_HTTP_PORT") || 80
 
     local_domain = opts[:local_domain] || Casein.Setup.LocalDomain.default_domain()
 
     lan_host =
-      opts[:lan_host] || System.get_env("DEV_IDE_LAN_HOST") ||
+      opts[:lan_host] || System.get_env("CASEIN_LAN_HOST") ||
         Casein.Setup.LocalDomain.mdns_hostname()
 
     lan_ip = opts[:lan_ip] || Casein.Setup.LocalDomain.default_ip()
     hosts_file = opts[:hosts_file] || @default_hosts_file
-    edge? = Keyword.get(opts, :edge, false) or truthy_env?("DEV_IDE_LAN_EDGE")
+    edge? = Keyword.get(opts, :edge, false) or truthy_env?("CASEIN_LAN_EDGE")
 
     insecure_http? =
-      Keyword.get(opts, :insecure_http, false) or truthy_env?("DEV_IDE_LAN_INSECURE_HTTP")
+      Keyword.get(opts, :insecure_http, false) or truthy_env?("CASEIN_LAN_INSECURE_HTTP")
 
     Mix.shell().info("Casein doctor\n")
 
@@ -364,7 +364,7 @@ defmodule Mix.Tasks.Casein.Doctor do
       edge_open? ->
         warn(
           "portless LAN edge",
-          "listening on :#{edge_port}, but Casein HTTPS backend is not listening on :#{https_port}; start with DEV_IDE_LAN=true mise exec -- mix phx.server or use http://#{lan_host}/"
+          "listening on :#{edge_port}, but Casein HTTPS backend is not listening on :#{https_port}; start with CASEIN_LAN=true mise exec -- mix phx.server or use http://#{lan_host}/"
         )
 
       edge? and fix? ->
@@ -574,7 +574,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     HTTPS LAN mode is still available with:
 
-      DEV_IDE_LAN=true mise exec -- mix phx.server
+      CASEIN_LAN=true mise exec -- mix phx.server
 
     Same-host HTTPS fallback:
 
@@ -586,7 +586,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     To keep the workspace picker at `/`, start with:
 
-      DEV_IDE_LAN_INSECURE_HTTP=true DEV_IDE_LAN_DIRECT_MODE=false mise exec -- mix phx.server
+      CASEIN_LAN_INSECURE_HTTP=true CASEIN_LAN_DIRECT_MODE=false mise exec -- mix phx.server
     """
   end
 
@@ -595,7 +595,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     LAN quick start:
 
-      DEV_IDE_LAN=true mise exec -- mix phx.server
+      CASEIN_LAN=true mise exec -- mix phx.server
 
     Then open:
 
@@ -615,7 +615,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     To keep the workspace picker at `/`, start with:
 
-      DEV_IDE_LAN=true DEV_IDE_LAN_DIRECT_MODE=false mise exec -- mix phx.server
+      CASEIN_LAN=true CASEIN_LAN_DIRECT_MODE=false mise exec -- mix phx.server
     """
   end
 

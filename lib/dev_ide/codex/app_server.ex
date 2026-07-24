@@ -16,9 +16,9 @@ defmodule Casein.Codex.AppServer do
   @max_line_bytes 10_000_000
   @max_buffer_bytes 20_000_000
   @sensitive_shell_env [
-    "DEV_IDE_API_TOKEN",
-    "DEV_IDE_ADMIN_API_TOKEN",
-    "DEV_IDE_WORKSPACE_API_TOKENS"
+    "CASEIN_API_TOKEN",
+    "CASEIN_ADMIN_API_TOKEN",
+    "CASEIN_WORKSPACE_API_TOKENS"
   ]
 
   @type status :: :initializing | :ready

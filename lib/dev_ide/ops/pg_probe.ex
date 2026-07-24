@@ -8,16 +8,16 @@ defmodule Casein.Ops.PgProbe do
   crash-loop. Both manifest as `pg_stat_activity` filling with leak-shaped
   `application_name`s long before anyone notices.
 
-  Off by default; flag `:pg_probe` (`DEV_IDE_PG_PROBE`). Every
+  Off by default; flag `:pg_probe` (`CASEIN_PG_PROBE`). Every
   `:pg_probe_interval_ms` (60s) a monitored helper process shells out to
   `psql` per target (`System.cmd` — no new hex deps) for
   `SELECT application_name, count(*) FROM pg_stat_activity GROUP BY 1` plus
   `SHOW max_connections`. Targets default to both known servers and are
-  configurable as JSON via `DEV_IDE_PG_PROBE_TARGETS`
+  configurable as JSON via `CASEIN_PG_PROBE_TARGETS`
   (`[{"host":"127.0.0.1","port":5432}, ...]`, optional per-target
   `user`/`dbname`/`password`); credentials default to the dev-conventional
-  postgres/postgres and are configurable via `DEV_IDE_PG_PROBE_USER` /
-  `DEV_IDE_PG_PROBE_DBNAME` / `DEV_IDE_PG_PROBE_PASSWORD`.
+  postgres/postgres and are configurable via `CASEIN_PG_PROBE_USER` /
+  `CASEIN_PG_PROBE_DBNAME` / `CASEIN_PG_PROBE_PASSWORD`.
 
   Per target the probe computes total connections, `max_connections`,
   utilization, and leak_suspects (application_name matching `^wf_` or
@@ -71,7 +71,7 @@ defmodule Casein.Ops.PgProbe do
 
   ## Public API
 
-  @doc "Whether the probe is enabled (`DEV_IDE_PG_PROBE`)."
+  @doc "Whether the probe is enabled (`CASEIN_PG_PROBE`)."
   @spec enabled?() :: boolean()
   def enabled?, do: Application.get_env(:casein, :pg_probe, false)
 
@@ -443,7 +443,7 @@ defmodule Casein.Ops.PgProbe do
         Enum.map(targets, &normalize_target/1)
 
       _ ->
-        Logger.warning("[pg_probe] invalid DEV_IDE_PG_PROBE_TARGETS JSON — using defaults")
+        Logger.warning("[pg_probe] invalid CASEIN_PG_PROBE_TARGETS JSON — using defaults")
         @default_targets
     end
   end

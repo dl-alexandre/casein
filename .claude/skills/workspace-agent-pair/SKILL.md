@@ -17,7 +17,7 @@ target workspace agent able to drive DevIDE the same way a dalexandre-devide
 agent does.
 
 **Do not** hand-copy tokens into chat. **Do not** write bearer tokens into
-tracked git files (staging uses `{env:DEV_IDE_API_TOKEN}` / `${DEV_IDE_API_TOKEN}`).
+tracked git files (staging uses `{env:CASEIN_API_TOKEN}` / `${CASEIN_API_TOKEN}`).
 
 ## When to run
 
@@ -43,7 +43,7 @@ source ~/.devide/agent-mcp/<workspace-name>/env.sh
 | `DEVIDE_CHECKOUT` | Product tree the agent should `cd` into |
 | `DEVIDE_AGENT_MCP_HOME` | `~/.devide/agent-mcp/<name>/` staging |
 | `DEVIDE_TERMINAL_MCP_URL` / `PREVIEW` / `ARTIFACT` | Pre-scoped MCP URLs |
-| `DEV_IDE_API_TOKEN` | Workspace-scoped bearer (never echo) |
+| `CASEIN_API_TOKEN` | Workspace-scoped bearer (never echo) |
 
 If `~/.devide/agent-mcp/<name>/env.sh` is **missing**, this is first-time pairing —
 run `scripts/refresh-devbox-agent-pairing.sh` / `setup-devbox-agent-pairing.sh` for

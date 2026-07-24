@@ -19,7 +19,7 @@ set -u
 # Never let an error in here surface to the agent.
 trap 'exit 0' ERR
 
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
 MCP_URL="${DEVIDE_TERMINAL_MCP_URL:-}"
 PANE="${TMUX_PANE:-}"

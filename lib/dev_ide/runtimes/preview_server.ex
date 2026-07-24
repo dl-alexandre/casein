@@ -434,7 +434,7 @@ defmodule Casein.Runtimes.PreviewServer do
   end
 
   defp default_launcher_path do
-    configured = System.get_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+    configured = System.get_env("CASEIN_RUNTIME_PREVIEW_LAUNCHER")
 
     cond do
       is_binary(configured) and configured != "" ->

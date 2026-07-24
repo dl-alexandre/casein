@@ -79,7 +79,7 @@ Artifact worktrees live under `:dev_ide, :artifact_projects_root`. Releases can
 set it with:
 
 ```bash
-DEV_IDE_ARTIFACT_PROJECTS_ROOT=/opt/devide/artifact_projects
+CASEIN_ARTIFACT_PROJECTS_ROOT=/opt/devide/artifact_projects
 ```
 
 When this root is configured, `DevIDE.Runtimes` automatically accepts worktrees

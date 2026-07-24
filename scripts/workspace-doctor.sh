@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${1:-${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-}}}"
 WORKSPACE_TERMINAL_ID="${WORKSPACE_TERMINAL_ID:-${DEVIDE_WORKSPACE_NAME:-$WORKSPACE_ID}}"
 OUT_ROOT="${WORKSPACE_DOCTOR_OUT:-tmp/workspace-doctor}"
@@ -22,7 +22,7 @@ Collects a read-only diagnostic bundle for a workspace:
 
 Environment:
   DEVIDE_URL           Base URL (default http://127.0.0.1:4000)
-  DEV_IDE_API_TOKEN    Bearer token
+  CASEIN_API_TOKEN    Bearer token
   WORKSPACE_ID         Default workspace id when argv is omitted
   WORKSPACE_DOCTOR_OUT Output root (default tmp/workspace-doctor)
 EOF
@@ -39,7 +39,7 @@ if [[ -z "${WORKSPACE_ID}" ]]; then
 fi
 
 if [[ -z "${TOKEN}" ]]; then
-  echo "ERROR: DEV_IDE_API_TOKEN is not set" >&2
+  echo "ERROR: CASEIN_API_TOKEN is not set" >&2
   exit 1
 fi
 

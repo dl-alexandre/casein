@@ -23,14 +23,14 @@ while IFS= read -r line; do
           ;;
       esac
       case "$line" in
-        *'DEV_IDE_API_TOKEN'*) ;;
+        *'CASEIN_API_TOKEN'*) ;;
         *)
           printf '%s\n' '{"id":2,"error":{"code":-32602,"message":"missing safe thread defaults"}}'
           continue
           ;;
       esac
       case "$line" in
-        *'"set":{"DEV_IDE_API_TOKEN"'*)
+        *'"set":{"CASEIN_API_TOKEN"'*)
           printf '%s\n' '{"id":2,"error":{"code":-32602,"message":"sensitive token leaked to shell overrides"}}'
           continue
           ;;
@@ -55,14 +55,14 @@ while IFS= read -r line; do
           ;;
       esac
       case "$line" in
-        *'DEV_IDE_API_TOKEN'*) ;;
+        *'CASEIN_API_TOKEN'*) ;;
         *)
           printf '%s\n' '{"id":2,"error":{"code":-32602,"message":"missing safe thread defaults"}}'
           continue
           ;;
       esac
       case "$line" in
-        *'"set":{"DEV_IDE_API_TOKEN"'*)
+        *'"set":{"CASEIN_API_TOKEN"'*)
           printf '%s\n' '{"id":2,"error":{"code":-32602,"message":"sensitive token leaked to shell overrides"}}'
           continue
           ;;

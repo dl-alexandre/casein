@@ -12,7 +12,7 @@
 >   sessions, policy, and evidence.
 >
 > **Naming stability:** Casein is the public product name. The stable
-> implementation family remains `DevIDE.*`, `:dev_ide`, and `DEV_IDE_*`; the
+> implementation family remains `DevIDE.*`, `:dev_ide`, and `CASEIN_*`; the
 > public-name decision in [`naming-gate.md`](naming-gate.md) does not rename
 > those compatibility surfaces.
 >
@@ -34,7 +34,7 @@ term — do not overload an existing one.
 | Term | Means | Must not mean |
 |---|---|---|
 | **Casein** | The public product: a server-authoritative workspace for people and coding agents | A code namespace; a package coordinate; one UI component; one process; the CLI alone |
-| **DevIDE** | The compatibility-stable implementation family (`DevIDE.*`, `:dev_ide`, `DEV_IDE_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
+| **DevIDE** | The compatibility-stable implementation family (`DevIDE.*`, `:dev_ide`, `CASEIN_*`) beneath Casein | A second product; a requirement that public copy use the old name; authorization for a codebase-wide rename |
 | **Server-authoritative** | Each concern has one named server-side authority; clients authenticate, authorize, then observe or request effects | One database reconstructs everything; the browser is trusted state; “the backend decides somehow” |
 | **Authority** | The component whose current answer is binding for one concern | Every component that stores a copy; a projection; a transport; a person with an admin title |
 | **Runtime** | The server-side execution environment that hosts workspace sessions and the named authorities that govern them | The browser UI; a JavaScript loop; a fleet scheduler; a universal database |

@@ -806,7 +806,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
   defp wrapped_login_shell_command do
     Application.get_env(:casein, :tmux_login_shell_command) ||
-      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      System.get_env("CASEIN_TMUX_LOGIN_SHELL") ||
       Terminals.terminal_shell_command()
   end
 

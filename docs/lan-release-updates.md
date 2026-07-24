@@ -143,7 +143,7 @@ Install and rollback are implemented in Phase 4. `lan status --json` follows in
 Phase 5.
 
 Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
-release tree and `DEV_IDE_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
+release tree and `CASEIN_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
 keeps read-only operator commands independent of server runtime requirements like
 `DATABASE_PATH`, `DATABASE_URL`, and `SECRET_KEY_BASE`.
 
@@ -183,7 +183,7 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 12. `systemctl restart devide-lan.service`.
 13. Probe:
     - `http://127.0.0.1:$PORT/`
-    - `http://$DEV_IDE_LAN_HOST/`
+    - `http://$CASEIN_LAN_HOST/`
     - `/assets/css/app.css`
 14. On probe failure: roll back symlinks and restart.
 

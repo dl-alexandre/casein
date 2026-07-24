@@ -35,7 +35,7 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 
 log() { printf '>>> %s\n' "$*"; }
 

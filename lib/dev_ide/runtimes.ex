@@ -1016,7 +1016,7 @@ defmodule Casein.Runtimes do
   end
 
   defp env_agent_worktree_roots do
-    case System.get_env("DEV_IDE_AGENT_WORKTREE_ROOTS") do
+    case System.get_env("CASEIN_AGENT_WORKTREE_ROOTS") do
       nil -> []
       value -> String.split(value, [",", ":"], trim: true)
     end

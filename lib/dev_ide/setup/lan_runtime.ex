@@ -23,14 +23,14 @@ defmodule Casein.Setup.LanRuntime do
       group: Keyword.get(opts, :group) || primary_group(user),
       home: home,
       home_workspace_path:
-        Keyword.get(opts, :home_workspace_path) || System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") ||
+        Keyword.get(opts, :home_workspace_path) || System.get_env("CASEIN_HOME_WORKSPACE_PATH") ||
           home,
       lan_host:
-        Keyword.get(opts, :lan_host) || System.get_env("DEV_IDE_LAN_HOST") ||
+        Keyword.get(opts, :lan_host) || System.get_env("CASEIN_LAN_HOST") ||
           LocalDomain.mdns_hostname(),
       lan_ip: Keyword.get(opts, :lan_ip) || LocalDomain.default_ip(),
       listen_port:
-        Keyword.get(opts, :listen_port) || env_int("DEV_IDE_LAN_INSECURE_HTTP_PORT") || 80,
+        Keyword.get(opts, :listen_port) || env_int("CASEIN_LAN_INSECURE_HTTP_PORT") || 80,
       mise_path: Keyword.get(opts, :mise_path) || System.find_executable("mise"),
       proxyd_path: Keyword.get(opts, :proxyd_path) || InsecureHttpEdge.proxyd_path(),
       timeout_seconds: Keyword.get(opts, :timeout_seconds, 30),
@@ -38,9 +38,9 @@ defmodule Casein.Setup.LanRuntime do
       user: user,
       workdir: Keyword.get(opts, :workdir, File.cwd!()) |> Path.expand(),
       workspace:
-        Keyword.get(opts, :workspace) || System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home",
+        Keyword.get(opts, :workspace) || System.get_env("CASEIN_DEFAULT_WORKSPACE") || "home",
       workspaces_root:
-        Keyword.get(opts, :workspaces_root) || System.get_env("DEV_IDE_WORKSPACES_ROOT") ||
+        Keyword.get(opts, :workspaces_root) || System.get_env("CASEIN_WORKSPACES_ROOT") ||
           @default_workspaces_root
     }
   end

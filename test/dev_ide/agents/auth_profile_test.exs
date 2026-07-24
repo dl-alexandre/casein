@@ -206,7 +206,7 @@ defmodule Casein.Agents.AuthProfileTest do
       {"DEVIDE_AGENT_AUTH_ROOT", root},
       {"DEVIDE_SCRIPTS", Path.dirname(devide)},
       {"HOME", home},
-      {"DEV_IDE_API_TOKEN", "token"},
+      {"CASEIN_API_TOKEN", "token"},
       {"DEVIDE_WORKSPACE_ID", "ws-1"},
       {"DEVIDE_WORKSPACE_NAME", "Sconde-Test"},
       {"PATH", "/usr/bin:/bin"},

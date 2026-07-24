@@ -30,8 +30,8 @@ When converting manager data to the public `%DevIDE.Workspace{}`, the following 
 ## Configuration (only relevant when this source is active)
 
 - `MILC_DEVBOX_MANAGER_URL`
-- `DEV_IDE_ON_DEVBOX` / `on_devbox`
-- `DEV_IDE_DEVBOX_EXEC_SERVICE` (defaults to `onebackend-v3`)
+- `CASEIN_ON_DEVBOX` / `on_devbox`
+- `CASEIN_DEVBOX_EXEC_SERVICE` (defaults to `onebackend-v3`)
 - `MILC_DEVBOX_SSH_HOST`
 
 ## Deployment artifacts
@@ -240,7 +240,7 @@ None — all resolved (see below). Remaining work is §1, the manager Caddy PR.
   `X-Auth-Request-Email` via `email.split("@")[0].toLowerCase()`. DevIDE must
   derive it the same way. See "Identity derivation" above.
 - ~~Admin "see all workspaces" view?~~ **Superseded (flat peer model)** —
-  DevIDE no longer elevates `DEV_IDE_ADMINS` / `role: :admin`. Every
+  DevIDE no longer elevates `CASEIN_ADMINS` / `role: :admin`. Every
   oauth2-authenticated viewer may open every workspace and artifact; there is
   no "mine vs all" privilege tier inside DevIDE. The env list is still parsed
   (harmless legacy) but grants nothing.

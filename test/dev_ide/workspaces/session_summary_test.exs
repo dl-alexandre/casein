@@ -477,7 +477,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
   defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp transcript_fixture! do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
 
     auth_root =
       Path.join([root, "summary-transcript-#{System.unique_integer([:positive])}", "auth"])

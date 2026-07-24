@@ -42,15 +42,15 @@ defmodule Casein.Setup.LanService do
     #{environment("MIX_ENV", "dev")}
     #{environment("MIX_BUILD_PATH", build_path)}
     #{environment("PORT", Integer.to_string(backend_port))}
-    #{environment("DEV_IDE_LAN_INSECURE_HTTP", "true")}
-    #{environment("DEV_IDE_LAN_INSECURE_HTTP_PORT", Integer.to_string(listen_port))}
-    #{environment("DEV_IDE_LAN_HOST", lan_host)}
-    #{environment("DEV_IDE_LAN_DIRECT_MODE", "true")}
-    #{environment("DEV_IDE_LAN_FRIENDLY_PATHS", "true")}
-    #{environment("DEV_IDE_LAN_PATH_ROOT", home_workspace_path)}
-    #{environment("DEV_IDE_DEFAULT_WORKSPACE", workspace)}
-    #{environment("DEV_IDE_HOME_WORKSPACE_PATH", home_workspace_path)}
-    #{environment("DEV_IDE_WORKSPACES_ROOT", workspaces_root)}
+    #{environment("CASEIN_LAN_INSECURE_HTTP", "true")}
+    #{environment("CASEIN_LAN_INSECURE_HTTP_PORT", Integer.to_string(listen_port))}
+    #{environment("CASEIN_LAN_HOST", lan_host)}
+    #{environment("CASEIN_LAN_DIRECT_MODE", "true")}
+    #{environment("CASEIN_LAN_FRIENDLY_PATHS", "true")}
+    #{environment("CASEIN_LAN_PATH_ROOT", home_workspace_path)}
+    #{environment("CASEIN_DEFAULT_WORKSPACE", workspace)}
+    #{environment("CASEIN_HOME_WORKSPACE_PATH", home_workspace_path)}
+    #{environment("CASEIN_WORKSPACES_ROOT", workspaces_root)}
     ExecStart=#{mise_path} exec -- mix phx.server
     Restart=on-failure
     RestartSec=2

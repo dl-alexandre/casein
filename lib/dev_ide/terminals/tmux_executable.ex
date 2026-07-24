@@ -9,7 +9,7 @@ defmodule Casein.Terminals.TmuxExecutable do
   tmux must be resolved inside the remote execution environment.
   """
 
-  @env_key "DEV_IDE_TMUX_EXECUTABLE"
+  @env_key "CASEIN_TMUX_EXECUTABLE"
 
   @spec resolve() :: String.t()
   def resolve do

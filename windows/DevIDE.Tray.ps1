@@ -11,8 +11,8 @@ Add-Type -AssemblyName System.Security
 function Get-DevIDEPaths {
     param([string]$Root)
 
-    $dataRoot = if ($env:DEV_IDE_DESKTOP_DATA_DIR) {
-        $env:DEV_IDE_DESKTOP_DATA_DIR
+    $dataRoot = if ($env:CASEIN_DESKTOP_DATA_DIR) {
+        $env:CASEIN_DESKTOP_DATA_DIR
     } else {
         Join-Path $env:LOCALAPPDATA 'DevIDE'
     }
@@ -197,10 +197,10 @@ function Get-DevIDEEnvironment {
     New-Item -ItemType Directory -Force -Path $script:Paths.RuntimeTemp | Out-Null
 
     @{
-        'DEV_IDE_PROFILE' = 'desktop'
-        'DEV_IDE_DESKTOP_DATA_DIR' = $script:Paths.DataRoot
+        'CASEIN_PROFILE' = 'desktop'
+        'CASEIN_DESKTOP_DATA_DIR' = $script:Paths.DataRoot
         'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot
-        'DEV_IDE_REPO_ADAPTER' = 'sqlite'
+        'CASEIN_REPO_ADAPTER' = 'sqlite'
         'DATABASE_PATH' = $script:Paths.Database
         'PHX_SERVER' = 'true'
         'PHX_HOST' = 'localhost'
@@ -212,8 +212,8 @@ function Get-DevIDEEnvironment {
         'RELEASE_DISTRIBUTION' = 'none'
         'RELEASE_TMP' = $script:Paths.RuntimeTemp
         'SECRET_KEY_BASE' = $secret
-        'DEV_IDE_API_TOKEN' = $apiToken
-        'DEV_IDE_DESKTOP_LAUNCH_TOKEN' = $launchToken
+        'CASEIN_API_TOKEN' = $apiToken
+        'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken
     }
 }
 

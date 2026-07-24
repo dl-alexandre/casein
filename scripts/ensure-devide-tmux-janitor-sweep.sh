@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="devide-tmux-janitor-sweep.service"
 TIMER="devide-tmux-janitor-sweep.timer"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
 
 START=1
 DISABLE=0
@@ -47,23 +47,23 @@ ensure_env_policy() {
       seen_window_idle = 0
       seen_session_idle = 0
     }
-    /^DEV_IDE_TMUX_WINDOW_SWEEP_MS=/ {
+    /^CASEIN_TMUX_WINDOW_SWEEP_MS=/ {
       next
     }
-    /^DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=/ {
-      print "DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=86400"
+    /^CASEIN_TMUX_WINDOW_IDLE_SECONDS=/ {
+      print "CASEIN_TMUX_WINDOW_IDLE_SECONDS=86400"
       seen_window_idle = 1
       next
     }
-    /^DEV_IDE_TMUX_SESSION_IDLE_SECONDS=/ {
-      print "DEV_IDE_TMUX_SESSION_IDLE_SECONDS=86400"
+    /^CASEIN_TMUX_SESSION_IDLE_SECONDS=/ {
+      print "CASEIN_TMUX_SESSION_IDLE_SECONDS=86400"
       seen_session_idle = 1
       next
     }
     { print }
     END {
-      if (!seen_window_idle) print "DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=86400"
-      if (!seen_session_idle) print "DEV_IDE_TMUX_SESSION_IDLE_SECONDS=86400"
+      if (!seen_window_idle) print "CASEIN_TMUX_WINDOW_IDLE_SECONDS=86400"
+      if (!seen_session_idle) print "CASEIN_TMUX_SESSION_IDLE_SECONDS=86400"
     }
   ' "$backup" | sudo tee "$ENV_FILE" >/dev/null
   sudo chmod 600 "$ENV_FILE"

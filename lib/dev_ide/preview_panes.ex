@@ -1214,7 +1214,7 @@ defmodule Casein.PreviewPanes do
 
   defp preview_proxy_enabled? do
     case Application.get_env(:casein, :preview_proxy_enabled) do
-      nil -> System.get_env("DEV_IDE_PREVIEW_PROXY", "true") not in ~w(0 false no)
+      nil -> System.get_env("CASEIN_PREVIEW_PROXY", "true") not in ~w(0 false no)
       val -> !!val
     end
   end

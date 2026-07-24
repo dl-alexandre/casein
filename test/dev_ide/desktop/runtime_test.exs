@@ -3,7 +3,7 @@ defmodule Casein.Desktop.RuntimeTest do
 
   alias Casein.Desktop.Runtime
 
-  @env_vars ~w(DEV_IDE_PROFILE DEV_IDE_DESKTOP_DATA_DIR DEV_IDE_DESKTOP_STATUS_PATH XDG_DATA_HOME LOCALAPPDATA APPDATA DATABASE_PATH SQLITE_DATABASE_PATH PORT)
+  @env_vars ~w(CASEIN_PROFILE CASEIN_DESKTOP_DATA_DIR CASEIN_DESKTOP_STATUS_PATH XDG_DATA_HOME LOCALAPPDATA APPDATA DATABASE_PATH SQLITE_DATABASE_PATH PORT)
 
   setup do
     saved = Map.new(@env_vars, &{&1, System.get_env(&1)})
@@ -19,12 +19,12 @@ defmodule Casein.Desktop.RuntimeTest do
 
   test "recognizes only the desktop profile" do
     refute Runtime.desktop_profile?()
-    System.put_env("DEV_IDE_PROFILE", "desktop")
+    System.put_env("CASEIN_PROFILE", "desktop")
     assert Runtime.desktop_profile?()
   end
 
   test "uses the explicit desktop data directory for local state" do
-    System.put_env("DEV_IDE_DESKTOP_DATA_DIR", "/tmp/devide-desktop")
+    System.put_env("CASEIN_DESKTOP_DATA_DIR", "/tmp/devide-desktop")
 
     assert Runtime.data_dir() == "/tmp/devide-desktop"
     assert Runtime.database_path() == "/tmp/devide-desktop/devide.sqlite3"
@@ -55,7 +55,7 @@ defmodule Casein.Desktop.RuntimeTest do
 
   test "honors database and status path overrides" do
     System.put_env("DATABASE_PATH", "/tmp/custom.sqlite3")
-    System.put_env("DEV_IDE_DESKTOP_STATUS_PATH", "/tmp/status.json")
+    System.put_env("CASEIN_DESKTOP_STATUS_PATH", "/tmp/status.json")
 
     assert Runtime.database_path() == "/tmp/custom.sqlite3"
     assert Runtime.status_path() == "/tmp/status.json"

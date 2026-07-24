@@ -50,7 +50,7 @@ defmodule Casein.Push.Diagnostics do
   end
 
   defp hint(_platform, :push_provider_unconfigured) do
-    "Set DEV_IDE_PUSH_PROVIDER=native and configure APNs/FCM credentials for the target platforms."
+    "Set CASEIN_PUSH_PROVIDER=native and configure APNs/FCM credentials for the target platforms."
   end
 
   defp hint(platform, :unsupported_platform) do
@@ -59,7 +59,7 @@ defmodule Casein.Push.Diagnostics do
 
   defp hint(_platform, reason)
        when reason in [:no_project_id, :no_access_token_fun, :no_service_account] do
-    "Configure Firebase with DEV_IDE_FCM_PROJECT_ID plus DEV_IDE_FCM_SERVICE_ACCOUNT_JSON, DEV_IDE_FCM_SERVICE_ACCOUNT_PATH, GOOGLE_APPLICATION_CREDENTIALS, or DEV_IDE_FCM_ACCESS_TOKEN."
+    "Configure Firebase with CASEIN_FCM_PROJECT_ID plus CASEIN_FCM_SERVICE_ACCOUNT_JSON, CASEIN_FCM_SERVICE_ACCOUNT_PATH, GOOGLE_APPLICATION_CREDENTIALS, or CASEIN_FCM_ACCESS_TOKEN."
   end
 
   defp hint(_platform, reason)
@@ -69,7 +69,7 @@ defmodule Casein.Push.Diagnostics do
               :no_topic,
               :no_private_key
             ] do
-    "Configure APNs with DEV_IDE_APNS_TEAM_ID, DEV_IDE_APNS_KEY_ID, DEV_IDE_APNS_TOPIC, and DEV_IDE_APNS_PRIVATE_KEY or DEV_IDE_APNS_PRIVATE_KEY_PATH."
+    "Configure APNs with CASEIN_APNS_TEAM_ID, CASEIN_APNS_KEY_ID, CASEIN_APNS_TOPIC, and CASEIN_APNS_PRIVATE_KEY or CASEIN_APNS_PRIVATE_KEY_PATH."
   end
 
   defp hint(platform, :invalid_private_key) when platform in ["android", "fcm"] do

@@ -3,7 +3,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
   Compiles Grok plugins into immutable, content-addressed capability bundles.
 
   The bundle contains no bearer token. Its MCP configuration references the
-  managed-leader `DEV_IDE_API_TOKEN` capability, and Grok receives the absolute
+  managed-leader `CASEIN_API_TOKEN` capability, and Grok receives the absolute
   bundle path through ACP `_meta.pluginDirs` for one private leader only.
   """
 

@@ -11,19 +11,19 @@ All actions flow through DevIDE's allowlist, Policy, audit trail,
 and (when in fleet mode) the runner lease/claim protocol.
 
 Quick start (with a running DevIDE at localhost:4000):
-    DEV_IDE_BASE_URL=http://localhost:4000 \
-    DEV_IDE_API_TOKEN=your-secure-token \
+    CASEIN_BASE_URL=http://localhost:4000 \
+    CASEIN_API_TOKEN=your-secure-token \
     python mcp_servers/devide_server.py
 
 Register in Odysseus (Settings → MCP Servers) by pointing at the
 absolute path to this file (or run it as a stdio server).
 
 Env vars (required):
-    DEV_IDE_BASE_URL   e.g. http://localhost:4000 or https://devide.example.com
-    DEV_IDE_API_TOKEN  the bearer token (same as DEV_IDE_API_TOKEN on the server)
+    CASEIN_BASE_URL   e.g. http://localhost:4000 or https://devide.example.com
+    CASEIN_API_TOKEN  the bearer token (same as CASEIN_API_TOKEN on the server)
 
 Optional:
-    DEV_IDE_TIMEOUT    request timeout in seconds (default 30)
+    CASEIN_TIMEOUT    request timeout in seconds (default 30)
 
 Safety model (by design):
 - Only command_ids from DevIDE.Commands.allowlist() are accepted.
@@ -56,12 +56,12 @@ from mcp.types import Tool, TextContent
 # Configuration
 # ---------------------------------------------------------------------------
 
-BASE_URL = os.environ.get("DEV_IDE_BASE_URL", "http://localhost:4000").rstrip("/")
-API_TOKEN = os.environ.get("DEV_IDE_API_TOKEN")
-TIMEOUT = float(os.environ.get("DEV_IDE_TIMEOUT", "30"))
+BASE_URL = os.environ.get("CASEIN_BASE_URL", "http://localhost:4000").rstrip("/")
+API_TOKEN = os.environ.get("CASEIN_API_TOKEN")
+TIMEOUT = float(os.environ.get("CASEIN_TIMEOUT", "30"))
 
 if not API_TOKEN:
-    print("ERROR: DEV_IDE_API_TOKEN is required", file=sys.stderr)
+    print("ERROR: CASEIN_API_TOKEN is required", file=sys.stderr)
     sys.exit(1)
 
 HEADERS = {

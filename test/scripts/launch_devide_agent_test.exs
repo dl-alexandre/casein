@@ -133,7 +133,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     refute text =~ ~S("/data/workspaces/*/.devbox-agent.env")
     refute text =~ ~S("/data/workspaces/*/*/.devbox-agent.env")
     assert text =~ "managed Grok capability materialization failed"
-    assert text =~ ~S(unset DEV_IDE_ADMIN_API_TOKEN DEV_IDE_WORKSPACE_API_TOKENS)
+    assert text =~ ~S(unset CASEIN_ADMIN_API_TOKEN CASEIN_WORKSPACE_API_TOKENS)
     assert text =~ ~S(--permission-mode "$DEVIDE_GROK_PERMISSION_MODE")
     assert text =~ "--no-auto-update"
     refute text =~ ~S(lock_file="${socket_real%.sock}.lock")
@@ -145,8 +145,8 @@ defmodule Scripts.LaunchDevideAgentTest do
     setup = File.read!(Path.expand("../../scripts/setup-devbox-agent-pairing.sh", __DIR__))
     refresh = File.read!(Path.expand("../../scripts/refresh-devbox-agent-pairing.sh", __DIR__))
 
-    refute setup =~ "export DEV_IDE_ADMIN_API_TOKEN="
-    refute refresh =~ "export DEV_IDE_ADMIN_API_TOKEN="
+    refute setup =~ "export CASEIN_ADMIN_API_TOKEN="
+    refute refresh =~ "export CASEIN_ADMIN_API_TOKEN="
   end
 
   test "codex defaults to full access, preserves explicit policies, and scrubs bearer credentials" do

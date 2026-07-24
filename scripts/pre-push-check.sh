@@ -24,7 +24,7 @@ GATE_STARTED_AT="$(date +%s)"
 
 report_gate_result() {
   local exit_code="$1"
-  [[ -n "${DEV_IDE_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   command -v curl >/dev/null 2>&1 || return 0
 
@@ -61,7 +61,7 @@ print(json.dumps({
 
   rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"gate_report\",\"arguments\":${params}}}"
   curl -fsS --max-time 5 -X POST "${mcp_url}" \
-    -H "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    -H "authorization: Bearer ${CASEIN_API_TOKEN}" \
     -H "content-type: application/json" \
     -d "${rpc_body}" >/dev/null 2>&1 || true
   return 0
@@ -129,7 +129,7 @@ log "boundary: agent launcher shims must never target ~/.local/bin again"
 # by DevIDE (operator call, 2026-07-13). Pin the installer's target dir and
 # the Elixir default; a regression here silently re-hijacks agent names
 # machine-wide.
-if ! grep -q 'BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' scripts/install-agent-shims.sh; then
+if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' scripts/install-agent-shims.sh; then
   echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.devide/agent-shims" >&2
   exit 1
 fi

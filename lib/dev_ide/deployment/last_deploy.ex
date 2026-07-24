@@ -116,7 +116,7 @@ defmodule Casein.Deployment.LastDeploy do
   @doc "Starts a best-effort async poller-status check unless disabled by env."
   @spec check_async() :: :ok
   def check_async do
-    if System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH") in ["0", "false", "no"] do
+    if System.get_env("CASEIN_DEPLOY_POLLER_WATCH") in ["0", "false", "no"] do
       :ok
     else
       _ = Task.start(fn -> check_and_broadcast() end)

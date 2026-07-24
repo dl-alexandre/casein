@@ -180,7 +180,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
   test "self-serve orchestrator token CAN call tools with allow_global_mcp_tool_calls off",
        %{conn: conn} do
     # Default posture: global tool-calls are OFF. A minted orchestrator token is
-    # non-global, so it is NOT rejected — no DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS
+    # non-global, so it is NOT rejected — no CASEIN_ALLOW_GLOBAL_MCP_TOOL_CALLS
     # needed. This is the safe, revocable path.
     refute Application.get_env(:casein, :allow_global_mcp_tool_calls, false)
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
@@ -431,7 +431,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     assert event.tool == "terminal_send_command"
   end
 
-  describe "tool search (DEV_IDE_MCP_TOOL_SEARCH)" do
+  describe "tool search (CASEIN_MCP_TOOL_SEARCH)" do
     test "tools/list returns the full surface when disabled (default)", %{conn: conn} do
       conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
       %{"result" => %{"tools" => tools}} = json_response(conn, 200)
@@ -598,7 +598,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     end
   end
 
-  describe "workspace digest (DEV_IDE_WORKSPACE_DIGEST)" do
+  describe "workspace digest (CASEIN_WORKSPACE_DIGEST)" do
     test "tools/list hides workspace_digest when disabled (default)", %{conn: conn} do
       conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, @token)
       %{"result" => %{"tools" => tools}} = json_response(conn, 200)

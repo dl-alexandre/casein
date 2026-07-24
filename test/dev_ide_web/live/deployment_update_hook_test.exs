@@ -22,13 +22,13 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
   setup do
     MemoryAdapter.clear()
 
-    prev_watch = System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH")
-    System.put_env("DEV_IDE_DEPLOY_POLLER_WATCH", "0")
+    prev_watch = System.get_env("CASEIN_DEPLOY_POLLER_WATCH")
+    System.put_env("CASEIN_DEPLOY_POLLER_WATCH", "0")
 
     on_exit(fn ->
       if prev_watch,
-        do: System.put_env("DEV_IDE_DEPLOY_POLLER_WATCH", prev_watch),
-        else: System.delete_env("DEV_IDE_DEPLOY_POLLER_WATCH")
+        do: System.put_env("CASEIN_DEPLOY_POLLER_WATCH", prev_watch),
+        else: System.delete_env("CASEIN_DEPLOY_POLLER_WATCH")
     end)
 
     # Isolate from the box's real poller status file: on the devbox an actual
@@ -135,11 +135,11 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_branch_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_branch_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 
@@ -199,11 +199,11 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
 
-    prev_branch = System.get_env("DEV_IDE_GIT_BRANCH")
-    System.put_env("DEV_IDE_GIT_BRANCH", branch)
+    prev_branch = System.get_env("CASEIN_GIT_BRANCH")
+    System.put_env("CASEIN_GIT_BRANCH", branch)
 
     on_exit(fn ->
-      restore_branch_env("DEV_IDE_GIT_BRANCH", prev_branch)
+      restore_branch_env("CASEIN_GIT_BRANCH", prev_branch)
       :persistent_term.erase(key)
     end)
 

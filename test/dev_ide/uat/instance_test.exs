@@ -27,7 +27,7 @@ defmodule Casein.UAT.InstanceTest do
     assert File.dir?(inst.workspaces_root)
 
     assert %{port: 41_049, workspaces_root: root, env: env} = FakeRunner.launched()
-    assert env["DEV_IDE_WORKSPACES_ROOT"] == root
+    assert env["CASEIN_WORKSPACES_ROOT"] == root
     assert env["PORT"] == "41049"
     assert {"echo seed", ^root} = FakeRunner.seeded()
 

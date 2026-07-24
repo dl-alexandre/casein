@@ -5,7 +5,7 @@ defmodule Casein.Operator.SituationServer do
   Holds the latest `Casein.Operator.SituationDigest` and keeps it warm from
   push signals instead of cold-rebuilding per request. Started on demand by
   the first `get_digest/1` when the `:situation_server` flag
-  (`DEV_IDE_SITUATION_SERVER`) is on; with the flag off nothing starts and
+  (`CASEIN_SITUATION_SERVER`) is on; with the flag off nothing starts and
   callers keep the Phase-0 cold build.
 
   Fan-in (first production consumer of the `SessionEvents` bus):
@@ -107,7 +107,7 @@ defmodule Casein.Operator.SituationServer do
 
   ## Public API
 
-  @doc "Whether the live situation server is enabled (`DEV_IDE_SITUATION_SERVER`)."
+  @doc "Whether the live situation server is enabled (`CASEIN_SITUATION_SERVER`)."
   @spec enabled?() :: boolean()
   def enabled?, do: Application.get_env(:casein, :situation_server, false)
 

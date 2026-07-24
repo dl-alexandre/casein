@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/devide-curl.sh"
 
 API_BASE="${DEVIDE_URL:-http://127.0.0.1:4000}"
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 
 URL=""
 VIEWPORT=""
@@ -49,7 +49,7 @@ Environment:
   DEVIDE_PREVIEW_PLACEMENT preview placement label, e.g. beside_agent
   DEVIDE_PREVIEW_ANCHOR_PANE_ID tmux pane id this preview was split from
   DEVIDE_PREVIEW_ANCHOR_WINDOW_ID tmux window id this preview should stay beside
-  DEV_IDE_API_TOKEN   bearer token for /api/preview/panes
+  CASEIN_API_TOKEN   bearer token for /api/preview/panes
   DEVIDE_URL          DevIDE base URL (default http://127.0.0.1:4000)
 EOF
 }
@@ -106,7 +106,7 @@ if [[ -z "${PANE_ID}" ]]; then
 fi
 
 if [[ -z "${TOKEN}" ]]; then
-  echo "error: DEV_IDE_API_TOKEN is not set" >&2
+  echo "error: CASEIN_API_TOKEN is not set" >&2
   exit 2
 fi
 

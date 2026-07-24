@@ -55,7 +55,7 @@ defmodule CaseinWeb.TerminalTelemetry do
   end
 
   defp env_sample_rate do
-    System.get_env("DEV_IDE_TERMINAL_PAYLOAD_BYTES_SAMPLE_RATE")
+    System.get_env("CASEIN_TERMINAL_PAYLOAD_BYTES_SAMPLE_RATE")
   end
 
   defp normalize_sample_rate(nil), do: @default_payload_byte_sample_rate

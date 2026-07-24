@@ -17,11 +17,11 @@ defmodule Casein.Terminals.Shims do
   # and the staged ZDOTDIR bootstrap is materialized, enter integrated zsh;
   # otherwise fall through to the original integrated-bash chain (the devbox
   # default, where $SHELL is bash or unset under systemd).
-  @shell_command_body ~s(__devide_shell="${SHELL:-}"; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ] && [ "${__devide_shell##*/}" = zsh ] && [ -r "${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then DEV_IDE_USER_ZDOTDIR="${ZDOTDIR:-${HOME:-}}" ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}" unset DEV_IDE_SHELL_INTEGRATION_LOADED; export DEV_IDE_USER_ZDOTDIR ZDOTDIR; exec "$__devide_shell" -il; fi; if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ]; then exec "$__devide_shell"; fi; exec sh)
+  @shell_command_body ~s(__devide_shell="${SHELL:-}"; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ] && [ "${__devide_shell##*/}" = zsh ] && [ -r "${CASEIN_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then CASEIN_USER_ZDOTDIR="${ZDOTDIR:-${HOME:-}}" ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR}" unset CASEIN_SHELL_INTEGRATION_LOADED; export CASEIN_USER_ZDOTDIR ZDOTDIR; exec "$__devide_shell" -il; fi; if [ -r "${CASEIN_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$CASEIN_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ]; then exec "$__devide_shell"; fi; exec sh)
   @capability_env %{
-    "DEV_IDE_TERMINAL" => "1",
-    "DEV_IDE_CLIPBOARD" => "osc52",
-    "DEV_IDE_SHELL_INTEGRATION" => "1",
+    "CASEIN_TERMINAL" => "1",
+    "CASEIN_CLIPBOARD" => "osc52",
+    "CASEIN_SHELL_INTEGRATION" => "1",
     "COLORTERM" => "truecolor"
   }
   @registry %{
@@ -121,7 +121,7 @@ defmodule Casein.Terminals.Shims do
   def dir do
     :casein
     |> Application.get_env(:terminal_shims_dir)
-    |> non_empty_or(System.get_env("DEV_IDE_TERMINAL_SHIMS_DIR"))
+    |> non_empty_or(System.get_env("CASEIN_TERMINAL_SHIMS_DIR"))
     |> non_empty_or(@default_dir)
     |> Path.expand()
   end
@@ -131,7 +131,7 @@ defmodule Casein.Terminals.Shims do
   def tool_root do
     :casein
     |> Application.get_env(:terminal_tools_dir)
-    |> non_empty_or(System.get_env("DEV_IDE_TERMINAL_TOOLS_DIR"))
+    |> non_empty_or(System.get_env("CASEIN_TERMINAL_TOOLS_DIR"))
     |> non_empty_or(@default_tool_root)
     |> Path.expand()
   end
@@ -170,9 +170,9 @@ defmodule Casein.Terminals.Shims do
   @spec capability_env() :: %{String.t() => String.t()}
   def capability_env do
     @capability_env
-    |> Map.put("DEV_IDE_SHELL_INTEGRATION_BASH", shell_integration_path())
-    |> Map.put("DEV_IDE_SHELL_INTEGRATION_ZSH", zsh_integration_path())
-    |> Map.put("DEV_IDE_SHELL_INTEGRATION_ZDOTDIR", zdotdir_path())
+    |> Map.put("CASEIN_SHELL_INTEGRATION_BASH", shell_integration_path())
+    |> Map.put("CASEIN_SHELL_INTEGRATION_ZSH", zsh_integration_path())
+    |> Map.put("CASEIN_SHELL_INTEGRATION_ZDOTDIR", zdotdir_path())
   end
 
   @doc """
@@ -198,7 +198,7 @@ defmodule Casein.Terminals.Shims do
   @spec theme_env(:dark | :light, String.t() | nil) :: %{String.t() => String.t()}
   def theme_env(scheme, preset \\ nil) when scheme in [:dark, :light] do
     %{
-      "DEV_IDE_TERMINAL_SCHEME" => Atom.to_string(scheme),
+      "CASEIN_TERMINAL_SCHEME" => Atom.to_string(scheme),
       "COLORFGBG" => colorfgbg_for_scheme(scheme),
       "COLORTERM" => "truecolor"
     }
@@ -209,7 +209,7 @@ defmodule Casein.Terminals.Shims do
   Returns environment variables for Casein terminal panes.
 
   Pass `scheme:` / `preset:` to include per-viewer theme variables
-  (`DEV_IDE_TERMINAL_SCHEME`, `COLORFGBG`, optional `DEV_IDE_TERMINAL_PRESET`).
+  (`CASEIN_TERMINAL_SCHEME`, `COLORFGBG`, optional `CASEIN_TERMINAL_PRESET`).
 
   `include_path?: false` is useful for execution contexts where the host shim
   directory may not be mounted, such as container-owned tmux servers.
@@ -408,7 +408,7 @@ defmodule Casein.Terminals.Shims do
 
     api_base="${DEVIDE_API_BASE_URL:-}"
     workspace_id="${DEVIDE_WORKSPACE_ID:-}"
-    token="${DEV_IDE_API_TOKEN:-}"
+    token="${CASEIN_API_TOKEN:-}"
 
     if [ -z "$api_base" ]; then
       echo "devide-open: DEVIDE_API_BASE_URL is not set" >&2
@@ -421,7 +421,7 @@ defmodule Casein.Terminals.Shims do
     fi
 
     if [ -z "$token" ]; then
-      echo "devide-open: DEV_IDE_API_TOKEN is not set" >&2
+      echo "devide-open: CASEIN_API_TOKEN is not set" >&2
       exit 64
     fi
 
@@ -499,8 +499,8 @@ defmodule Casein.Terminals.Shims do
 
     shim_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
     installer="${shim_dir}/install/#{name}"
-    if [[ -n "${DEV_IDE_TERMINAL_TOOLS_DIR:-}" ]]; then
-      tool_root="${DEV_IDE_TERMINAL_TOOLS_DIR}"
+    if [[ -n "${CASEIN_TERMINAL_TOOLS_DIR:-}" ]]; then
+      tool_root="${CASEIN_TERMINAL_TOOLS_DIR}"
     else
       tool_root=#{shell_quote(tool_root())}
     fi
@@ -534,7 +534,7 @@ defmodule Casein.Terminals.Shims do
 
       installed=0
       if PATH="$clean_path" command -v devide >/dev/null 2>&1; then
-        if DEV_IDE_TERMINAL_SHIMS_DIR="$shim_dir" DEV_IDE_TERMINAL_TOOLS_DIR="$tool_root" PATH="$clean_path" devide ensure-installed #{shell_quote(name)}; then
+        if CASEIN_TERMINAL_SHIMS_DIR="$shim_dir" CASEIN_TERMINAL_TOOLS_DIR="$tool_root" PATH="$clean_path" devide ensure-installed #{shell_quote(name)}; then
           installed=1
         fi
       fi
@@ -562,7 +562,7 @@ defmodule Casein.Terminals.Shims do
     fi
 
     if [[ -z "${COLORFGBG+x}" ]]; then
-      case "${DEV_IDE_TERMINAL_SCHEME:-}" in
+      case "${CASEIN_TERMINAL_SCHEME:-}" in
         light) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:light))} ;;
         dark) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:dark))} ;;
       esac
@@ -571,9 +571,9 @@ defmodule Casein.Terminals.Shims do
     fi
 
     #{env_exports}
-    export DEV_IDE_APP_SHIM=#{shell_quote(name)}
-    export DEV_IDE_TERMINAL="${DEV_IDE_TERMINAL:-1}"
-    export DEV_IDE_CLIPBOARD="${DEV_IDE_CLIPBOARD:-osc52}"
+    export CASEIN_APP_SHIM=#{shell_quote(name)}
+    export CASEIN_TERMINAL="${CASEIN_TERMINAL:-1}"
+    export CASEIN_CLIPBOARD="${CASEIN_CLIPBOARD:-osc52}"
 
     exec "$real_cmd" "$@"
     """
@@ -585,8 +585,8 @@ defmodule Casein.Terminals.Shims do
 
     # Bash reads --init-file instead of its normal startup files. Source the
     # user's profile first, then install Casein's prompt/command markers.
-    if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -z "${DEV_IDE_SHELL_INTEGRATION_RC_SOURCED:-}" ]]; then
-      export DEV_IDE_SHELL_INTEGRATION_RC_SOURCED=1
+    if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -z "${CASEIN_SHELL_INTEGRATION_RC_SOURCED:-}" ]]; then
+      export CASEIN_SHELL_INTEGRATION_RC_SOURCED=1
 
       if [[ -r /etc/profile ]]; then
         source /etc/profile
@@ -602,7 +602,7 @@ defmodule Casein.Terminals.Shims do
         source "${HOME}/.bashrc"
       fi
 
-      unset DEV_IDE_SHELL_INTEGRATION_RC_SOURCED
+      unset CASEIN_SHELL_INTEGRATION_RC_SOURCED
     fi
 
     # Casein dirs must be at the FRONT of PATH, not merely present: the user
@@ -634,7 +634,7 @@ defmodule Casein.Terminals.Shims do
     __devide_prepend_path \\
       "${HOME:-}/.devide/terminal-shims" \\
       "${HOME:-}/.devide/tools/bin" \\
-      "${DEV_IDE_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path
@@ -644,10 +644,10 @@ defmodule Casein.Terminals.Shims do
       *) return 0 2>/dev/null || exit 0 ;;
     esac
 
-    if [[ "${DEV_IDE_SHELL_INTEGRATION_LOADED:-}" == "1" ]]; then
+    if [[ "${CASEIN_SHELL_INTEGRATION_LOADED:-}" == "1" ]]; then
       return 0 2>/dev/null || exit 0
     fi
-    export DEV_IDE_SHELL_INTEGRATION_LOADED=1
+    export CASEIN_SHELL_INTEGRATION_LOADED=1
 
     __devide_urlencode() {
       local value="${1:-}"
@@ -773,7 +773,7 @@ defmodule Casein.Terminals.Shims do
     if (( ${+functions[__devide_precmd]} )); then
       return 0
     fi
-    typeset -g DEV_IDE_SHELL_INTEGRATION_LOADED=1
+    typeset -g CASEIN_SHELL_INTEGRATION_LOADED=1
 
     # Belt-and-suspenders PATH repair, mirroring the bash integration: keep
     # Casein shims findable even when the pane inherited a thin release PATH.
@@ -793,7 +793,7 @@ defmodule Casein.Terminals.Shims do
     __devide_prepend_path \\
       "${HOME:-}/.devide/terminal-shims" \\
       "${HOME:-}/.devide/tools/bin" \\
-      "${DEV_IDE_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path
@@ -884,38 +884,38 @@ defmodule Casein.Terminals.Shims do
        """
        # Chain through the user's original ZDOTDIR, then force the staged root
        # back so a user .zshenv that changes ZDOTDIR cannot skip our wrappers.
-       export DEV_IDE_USER_ZDOTDIR="${DEV_IDE_USER_ZDOTDIR:-${HOME}}"
-       export DEV_IDE_SHELL_INTEGRATION_ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR:-${ZDOTDIR}}"
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${DEV_IDE_USER_ZDOTDIR}/.zshenv" ]]; then
-         source "${DEV_IDE_USER_ZDOTDIR}/.zshenv"
+       export CASEIN_USER_ZDOTDIR="${CASEIN_USER_ZDOTDIR:-${HOME}}"
+       export CASEIN_SHELL_INTEGRATION_ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR:-${ZDOTDIR}}"
+       if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${CASEIN_USER_ZDOTDIR}/.zshenv" ]]; then
+         source "${CASEIN_USER_ZDOTDIR}/.zshenv"
        fi
-       export ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}"
+       export ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR}"
        """},
       {".zprofile",
        """
        # Staged by Casein (ZDOTDIR bootstrap) — chain to the user's real .zprofile.
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${DEV_IDE_USER_ZDOTDIR}/.zprofile" ]]; then
-         source "${DEV_IDE_USER_ZDOTDIR}/.zprofile"
+       if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${CASEIN_USER_ZDOTDIR}/.zprofile" ]]; then
+         source "${CASEIN_USER_ZDOTDIR}/.zprofile"
        fi
-       export ZDOTDIR="${DEV_IDE_SHELL_INTEGRATION_ZDOTDIR}"
+       export ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR}"
        """},
       {".zshrc",
        """
        # Staged by Casein (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
        # chain to their real ~/.zshrc, then load Casein shell integration.
-       __devide_user_zdotdir="${DEV_IDE_USER_ZDOTDIR:-${HOME}}"
+       __devide_user_zdotdir="${CASEIN_USER_ZDOTDIR:-${HOME}}"
        if [[ "${__devide_user_zdotdir}" != "${HOME}" ]]; then
          export ZDOTDIR="${__devide_user_zdotdir}"
        else
          unset ZDOTDIR
        fi
 
-       if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${__devide_user_zdotdir}/.zshrc" ]]; then
+       if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${__devide_user_zdotdir}/.zshrc" ]]; then
          source "${__devide_user_zdotdir}/.zshrc"
        fi
 
-       if [[ -r "${DEV_IDE_SHELL_INTEGRATION_ZSH:-}" ]]; then
-         source "${DEV_IDE_SHELL_INTEGRATION_ZSH}"
+       if [[ -r "${CASEIN_SHELL_INTEGRATION_ZSH:-}" ]]; then
+         source "${CASEIN_SHELL_INTEGRATION_ZSH}"
        else
          # Fall back to the integration file next to this staged directory.
          __devide_zdotdir="${${(%):-%x}:A:h}"
@@ -924,7 +924,7 @@ defmodule Casein.Terminals.Shims do
          fi
          unset __devide_zdotdir
        fi
-       unset DEV_IDE_USER_ZDOTDIR __devide_user_zdotdir
+       unset CASEIN_USER_ZDOTDIR __devide_user_zdotdir
        """}
     ]
   end
@@ -946,13 +946,13 @@ defmodule Casein.Terminals.Shims do
     #!/usr/bin/env bash
     set -euo pipefail
 
-    if [[ -n "${DEV_IDE_TERMINAL_TOOLS_DIR:-}" ]]; then
-      tool_root="${DEV_IDE_TERMINAL_TOOLS_DIR}"
+    if [[ -n "${CASEIN_TERMINAL_TOOLS_DIR:-}" ]]; then
+      tool_root="${CASEIN_TERMINAL_TOOLS_DIR}"
     else
       tool_root=#{shell_quote(tool_root())}
     fi
     tool_bin="${tool_root}/bin"
-    lock_timeout="${DEV_IDE_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS:-600}"
+    lock_timeout="${CASEIN_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS:-600}"
     install_lock_dir=""
     mkdir -p "$tool_bin"
 
@@ -1149,7 +1149,7 @@ defmodule Casein.Terminals.Shims do
 
   defp desktop_integration_enabled? do
     case Application.get_env(:casein, :terminal_desktop_integration_enabled) do
-      nil -> System.get_env("DEV_IDE_TERMINAL_DESKTOP_INTEGRATION") not in ["0", "false", "no"]
+      nil -> System.get_env("CASEIN_TERMINAL_DESKTOP_INTEGRATION") not in ["0", "false", "no"]
       value -> !!value
     end
   end
@@ -1196,7 +1196,7 @@ defmodule Casein.Terminals.Shims do
   defp colorfgbg_for_scheme(:dark), do: "15;0"
 
   defp maybe_put_preset(env, preset) when is_binary(preset) and preset != "" do
-    Map.put(env, "DEV_IDE_TERMINAL_PRESET", preset)
+    Map.put(env, "CASEIN_TERMINAL_PRESET", preset)
   end
 
   defp maybe_put_preset(env, _), do: env

@@ -12,7 +12,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
 
   Default on-disk location is durable under `~/.devide/tmux-scrollback` (not
   `/tmp`). Override with `:tmux_scrollback_archive_dir` or
-  `DEV_IDE_TMUX_SCROLLBACK_DIR`. Call `delete/1` on intentional session kill
+  `CASEIN_TMUX_SCROLLBACK_DIR`. Call `delete/1` on intentional session kill
   so reopening a sid does not false-positive as a crash recovery.
   """
 
@@ -35,12 +35,12 @@ defmodule Casein.Terminals.ScrollbackArchive do
   @doc """
   Directory for durable on-disk spill.
 
-  Precedence: app config → `DEV_IDE_TMUX_SCROLLBACK_DIR` →
+  Precedence: app config → `CASEIN_TMUX_SCROLLBACK_DIR` →
   `$HOME/.devide/tmux-scrollback` → tmp fallback.
   """
   def archive_dir do
     Application.get_env(:casein, :tmux_scrollback_archive_dir) ||
-      System.get_env("DEV_IDE_TMUX_SCROLLBACK_DIR") ||
+      System.get_env("CASEIN_TMUX_SCROLLBACK_DIR") ||
       default_archive_dir()
   end
 

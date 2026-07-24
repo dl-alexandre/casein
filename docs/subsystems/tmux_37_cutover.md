@@ -61,7 +61,7 @@ not enabled in `priv/tmux/devide.conf`.
    ```
    Expect **exactly one** `\e]11;rgb:…` reply matching the session background.
    Flip the browser scheme (dark↔light), wait ~1 s, re-run: the reply must show
-   the new background and `tmux -L devide show-environment DEV_IDE_TERMINAL_SCHEME`
+   the new background and `tmux -L devide show-environment CASEIN_TERMINAL_SCHEME`
    must agree.
 7. **Smoke-check explicit theme reports** (3.6+ only):
    ```sh

@@ -28,11 +28,11 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "[System.Security.Cryptography.ProtectedData]::Protect"
     assert script =~ "[System.Security.Cryptography.ProtectedData]::Unprotect"
     assert script =~ "dpapi:"
-    assert script =~ "'DEV_IDE_PROFILE' = 'desktop'"
-    assert script =~ "'DEV_IDE_REPO_ADAPTER' = 'sqlite'"
+    assert script =~ "'CASEIN_PROFILE' = 'desktop'"
+    assert script =~ "'CASEIN_REPO_ADAPTER' = 'sqlite'"
     assert script =~ "'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot"
-    assert script =~ "'DEV_IDE_API_TOKEN' = $apiToken"
-    assert script =~ "'DEV_IDE_DESKTOP_LAUNCH_TOKEN' = $launchToken"
+    assert script =~ "'CASEIN_API_TOKEN' = $apiToken"
+    assert script =~ "'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken"
     assert script =~ "'RELEASE_DISTRIBUTION' = 'none'"
     assert script =~ "'RELEASE_TMP' = $script:Paths.RuntimeTemp"
     assert script =~ "$runtime = Invoke-DevIDERelease -Arguments @('start') -Port $Port"
@@ -98,8 +98,8 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
   test "packager builds the Windows SQLite release and copies the host" do
     script = File.read!(@package_script)
 
-    assert script =~ "$env:DEV_IDE_NATIVE_WINDOWS = 'true'"
-    assert script =~ "$env:DEV_IDE_REPO_ADAPTER = 'sqlite'"
+    assert script =~ "$env:CASEIN_NATIVE_WINDOWS = 'true'"
+    assert script =~ "$env:CASEIN_REPO_ADAPTER = 'sqlite'"
     assert script =~ "Asset dependencies are missing"
     assert script =~ "@('compile', '--force')"
     assert script =~ "@('release', 'dev_ide', '--overwrite')"

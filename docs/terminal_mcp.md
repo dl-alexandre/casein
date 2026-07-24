@@ -10,7 +10,7 @@ POST /api/terminals/mcp
 The endpoint uses the same bearer-token gate as the rest of the API:
 
 ```text
-Authorization: Bearer $DEV_IDE_API_TOKEN
+Authorization: Bearer $CASEIN_API_TOKEN
 ```
 
 Agents should discover this endpoint from the `terminal_mcp` capability. The
@@ -81,10 +81,10 @@ config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
 config :dev_ide, :terminal_command_policy, :disabled
 ```
 
-Releases can use the `DEV_IDE_TERMINAL_COMMAND_POLICY` env var instead (JSON):
+Releases can use the `CASEIN_TERMINAL_COMMAND_POLICY` env var instead (JSON):
 
 ```bash
-DEV_IDE_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "]}'
+CASEIN_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "]}'
 ```
 
 A blocked call returns a structured `command_blocked` tool error and is recorded
@@ -331,7 +331,7 @@ Set the base URL, token, and workspace:
 
 ```bash
 export DEVIDE_URL=http://localhost:4000
-export DEV_IDE_API_TOKEN=...
+export CASEIN_API_TOKEN=...
 export WORKSPACE_ID=my-workspace-id
 ```
 
@@ -345,7 +345,7 @@ Initialize:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -359,7 +359,7 @@ List tools:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -372,7 +372,7 @@ List live sessions (scoped):
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -389,7 +389,7 @@ Read the tail of a pane (plain text):
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -412,7 +412,7 @@ Run a command in the agent pane:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",

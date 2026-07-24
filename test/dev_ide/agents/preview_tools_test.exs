@@ -488,7 +488,7 @@ defmodule Casein.Agents.PreviewToolsTest do
              |> Enum.filter(&(&1.id == pane_id))
 
     assert command =~ script
-    assert command =~ "DEV_IDE_API_TOKEN="
+    assert command =~ "CASEIN_API_TOKEN="
     assert command =~ "DEVIDE_WORKSPACE_ID=#{@v3_workspace.id}"
     assert command =~ "http://localhost:5173/"
 

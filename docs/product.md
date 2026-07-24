@@ -20,7 +20,7 @@
 > the agent interface, preview, and an audit/activity feed.
 >
 > **Naming compatibility:** Casein is the public product name. Stable
-> implementation identifiers remain `DevIDE.*`, `:dev_ide`, and `DEV_IDE_*`.
+> implementation identifiers remain `DevIDE.*`, `:dev_ide`, and `CASEIN_*`.
 >
 > Companion docs:
 > [`architecture.md`](architecture.md) (system internals + invariants),

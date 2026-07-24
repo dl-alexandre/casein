@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Helpers for workspace-scoped MCP bearer tokens (DEV_IDE_WORKSPACE_API_TOKENS).
+# Helpers for workspace-scoped MCP bearer tokens (CASEIN_WORKSPACE_API_TOKENS).
 # Sourced by setup-devbox-agent-pairing.sh — not executed directly.
 
-# Read DEV_IDE_WORKSPACE_API_TOKENS JSON from an env file (best effort).
+# Read CASEIN_WORKSPACE_API_TOKENS JSON from an env file (best effort).
 workspace_scoped_token_read_json() {
   local env_file="$1"
   local line=""
 
   if [[ -r "$env_file" ]]; then
-    line="$(awk -F= '/^DEV_IDE_WORKSPACE_API_TOKENS=/{sub(/^DEV_IDE_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
+    line="$(awk -F= '/^CASEIN_WORKSPACE_API_TOKENS=/{sub(/^CASEIN_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
   elif sudo -n test -r "$env_file" 2>/dev/null; then
-    line="$(sudo -n awk -F= '/^DEV_IDE_WORKSPACE_API_TOKENS=/{sub(/^DEV_IDE_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
+    line="$(sudo -n awk -F= '/^CASEIN_WORKSPACE_API_TOKENS=/{sub(/^CASEIN_WORKSPACE_API_TOKENS=/, ""); print; exit}' "$env_file")"
   else
     printf '{}'
     return 0
@@ -161,10 +161,10 @@ workspace_scoped_token_write_env() {
     return 1
   fi
 
-  if grep -q '^DEV_IDE_WORKSPACE_API_TOKENS=' "$tmp"; then
-    sed -i "s|^DEV_IDE_WORKSPACE_API_TOKENS=.*|DEV_IDE_WORKSPACE_API_TOKENS='${json}'|" "$tmp"
+  if grep -q '^CASEIN_WORKSPACE_API_TOKENS=' "$tmp"; then
+    sed -i "s|^CASEIN_WORKSPACE_API_TOKENS=.*|CASEIN_WORKSPACE_API_TOKENS='${json}'|" "$tmp"
   else
-    printf "\nDEV_IDE_WORKSPACE_API_TOKENS='%s'\n" "$json" >>"$tmp"
+    printf "\nCASEIN_WORKSPACE_API_TOKENS='%s'\n" "$json" >>"$tmp"
   fi
 
   if [[ -w "$env_file" ]]; then

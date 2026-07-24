@@ -33,7 +33,7 @@ case "${1:-}" in
     ;;
   show-environment)
     if [[ "${FAKE_TMUX_ENV_MODE:-empty}" == "complete" ]]; then
-      printf 'DEV_IDE_API_TOKEN=%s\n' "${FAKE_TMUX_TOKEN:-}"
+      printf 'CASEIN_API_TOKEN=%s\n' "${FAKE_TMUX_TOKEN:-}"
       printf 'DEVIDE_WORKSPACE_ID=%s\n' "${FAKE_TMUX_WORKSPACE_ID:-}"
     fi
     ;;
@@ -44,7 +44,7 @@ chmod +x "${MOCK_BIN}/tmux"
 setup_staged_env() {
   mkdir -p "$(dirname "$STAGED_ENV")"
   cat >"$STAGED_ENV" <<EOF
-export DEV_IDE_API_TOKEN="${STAGED_TOKEN}"
+export CASEIN_API_TOKEN="${STAGED_TOKEN}"
 export DEVIDE_WORKSPACE_NAME="${WORKSPACE_NAME}"
 export DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}"
 export DEVIDE_TERMINAL_MCP_URL="http://127.0.0.1:4000/api/terminals/mcp?workspace_id=${WORKSPACE_ID}"
@@ -82,7 +82,7 @@ run_test_a_inherited_token_falls_through_to_staged_env() (
   export FAKE_TMUX_ENV_MODE="empty"
   export PATH="${MOCK_BIN}:${PATH}"
 
-  export DEV_IDE_API_TOKEN="inherited-server-token"
+  export CASEIN_API_TOKEN="inherited-server-token"
   unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
 
   # shellcheck source=/dev/null
@@ -93,7 +93,7 @@ run_test_a_inherited_token_falls_through_to_staged_env() (
   assert_nonempty "DEVIDE_WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID:-}"
   assert_eq "DEVIDE_WORKSPACE_NAME" "$WORKSPACE_NAME" "${DEVIDE_WORKSPACE_NAME}"
   assert_eq "DEVIDE_WORKSPACE_ID" "$WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID}"
-  assert_eq "DEV_IDE_API_TOKEN" "$STAGED_TOKEN" "${DEV_IDE_API_TOKEN}"
+  assert_eq "CASEIN_API_TOKEN" "$STAGED_TOKEN" "${CASEIN_API_TOKEN}"
 
   echo "PASS: Test A"
 )
@@ -110,13 +110,13 @@ run_test_b_complete_tmux_env_succeeds_at_step_4() (
   export FAKE_TMUX_WORKSPACE_ID="$TMUX_WORKSPACE_ID"
   export PATH="${MOCK_BIN}:${PATH}"
 
-  unset DEV_IDE_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
+  unset CASEIN_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
 
   # shellcheck source=/dev/null
   source "${ROOT}/scripts/lib/agent-env.sh"
   agent_env_resolve
 
-  assert_eq "DEV_IDE_API_TOKEN" "$TMUX_TOKEN" "${DEV_IDE_API_TOKEN}"
+  assert_eq "CASEIN_API_TOKEN" "$TMUX_TOKEN" "${CASEIN_API_TOKEN}"
   assert_eq "DEVIDE_WORKSPACE_ID" "$TMUX_WORKSPACE_ID" "${DEVIDE_WORKSPACE_ID}"
   if [[ -f "$STAGED_ENV" ]]; then
     echo "FAIL: staged env.sh was read when tmux session env was complete" >&2
@@ -136,7 +136,7 @@ run_test_materialize_after_inherited_token_resolve() (
   export FAKE_TMUX_ENV_MODE="empty"
   export PATH="${MOCK_BIN}:${PATH}"
 
-  export DEV_IDE_API_TOKEN="inherited-server-token"
+  export CASEIN_API_TOKEN="inherited-server-token"
   unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE DEVIDE_CHECKOUT
 
   # shellcheck source=/dev/null

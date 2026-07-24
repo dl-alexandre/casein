@@ -38,7 +38,7 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
     workspace = %{id: "desktop-ws", name: "Desktop Workspace", path: checkout}
 
     assert {:ok, env} = AgentEnvironment.build(workspace, checkout)
-    assert env["DEV_IDE_API_TOKEN"] =~ ~r/^[0-9a-f]{64}$/
+    assert env["CASEIN_API_TOKEN"] =~ ~r/^[0-9a-f]{64}$/
     assert env["DEVIDE_WORKSPACE_ID"] == "desktop-ws"
     assert env["DEVIDE_CHECKOUT"] == checkout
 
@@ -50,8 +50,8 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
     staging = env["DEVIDE_AGENT_MCP_HOME"]
     config = File.read!(Path.join(staging, ".mcp.json"))
     assert config =~ "devide-terminal-desktop-workspace"
-    assert config =~ "Bearer ${DEV_IDE_API_TOKEN}"
-    refute config =~ env["DEV_IDE_API_TOKEN"]
+    assert config =~ "Bearer ${CASEIN_API_TOKEN}"
+    refute config =~ env["CASEIN_API_TOKEN"]
 
     staged_env = File.read!(Path.join(staging, "env.sh"))
     assert staged_env =~ "DEVIDE_GROK_BUNDLE_DIR="

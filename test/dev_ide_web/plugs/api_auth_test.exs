@@ -19,11 +19,11 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
   setup do
     prev_api_token = Application.get_env(:casein, :api_token)
     prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
-    prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
-    prev_env_workspace_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
+    prev_env_token = System.get_env("CASEIN_API_TOKEN")
+    prev_env_workspace_tokens = System.get_env("CASEIN_WORKSPACE_API_TOKENS")
 
-    System.delete_env("DEV_IDE_API_TOKEN")
-    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+    System.delete_env("CASEIN_API_TOKEN")
+    System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
     Application.delete_env(:casein, :api_token)
 
     Application.put_env(:casein, :workspace_api_tokens, %{
@@ -35,13 +35,13 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
       restore_env(:workspace_api_tokens, prev_workspace_tokens)
 
       case prev_env_token do
-        nil -> System.delete_env("DEV_IDE_API_TOKEN")
-        val -> System.put_env("DEV_IDE_API_TOKEN", val)
+        nil -> System.delete_env("CASEIN_API_TOKEN")
+        val -> System.put_env("CASEIN_API_TOKEN", val)
       end
 
       case prev_env_workspace_tokens do
-        nil -> System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
-        val -> System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", val)
+        nil -> System.delete_env("CASEIN_WORKSPACE_API_TOKENS")
+        val -> System.put_env("CASEIN_WORKSPACE_API_TOKENS", val)
       end
     end)
 

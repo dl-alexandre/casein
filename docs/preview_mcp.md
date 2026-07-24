@@ -10,7 +10,7 @@ POST /api/preview/mcp
 The endpoint uses the same bearer-token gate as the rest of the API:
 
 ```text
-Authorization: Bearer $DEV_IDE_API_TOKEN
+Authorization: Bearer $CASEIN_API_TOKEN
 ```
 
 Agents should discover this endpoint from the `preview_mcp` capability. The
@@ -217,9 +217,9 @@ always win):
 
 ```bash
 # Either a full JSON header object…
-DEV_IDE_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
+CASEIN_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
 # …or the forward-auth email shorthand.
-DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
+CASEIN_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
 ```
 
 These env vars are read in the prod-only section of `config/runtime.exs`, so
@@ -313,14 +313,14 @@ Set the base URL and token:
 
 ```bash
 export DEVIDE_URL=http://localhost:4000
-export DEV_IDE_API_TOKEN=...
+export CASEIN_API_TOKEN=...
 ```
 
 Initialize:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -334,7 +334,7 @@ List tools:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -347,7 +347,7 @@ Open the app preview:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -370,7 +370,7 @@ from the browser runtime:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -389,7 +389,7 @@ Close the session:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -455,10 +455,10 @@ npx playwright install chromium
 Production can opt into browser automation with:
 
 ```bash
-DEV_IDE_PREVIEW_CONTROL_ADAPTER=playwright
+CASEIN_PREVIEW_CONTROL_ADAPTER=playwright
 # Optional; relative paths resolve from the release app priv directory.
-DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
-DEV_IDE_PREVIEW_ARTIFACTS_ROOT=/opt/devide/preview_artifacts
+CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
+CASEIN_PREVIEW_ARTIFACTS_ROOT=/opt/devide/preview_artifacts
 ```
 
 For the systemd devbox deployment, the release build installs the locked
@@ -473,5 +473,5 @@ sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install
 Then restart `devide` so `PreviewCtl.Playwright.Bridge` starts with the
 configured helper (`DevIDE.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
 include Node or browser OS dependencies, so keep
-`DEV_IDE_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
+`CASEIN_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
 browser automation.
