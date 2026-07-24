@@ -2,9 +2,9 @@ defmodule Mix.Tasks.Casein.Push.Check do
   @moduledoc """
   Checks whether the configured server push provider can deliver to native platforms.
 
-      mix dev_ide.push.check
-      mix dev_ide.push.check --platform ios
-      mix dev_ide.push.check --platform android --platform ios
+      mix casein.push.check
+      mix casein.push.check --platform ios
+      mix casein.push.check --platform android --platform ios
 
   The task exits non-zero when any requested platform is not ready.
   """

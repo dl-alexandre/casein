@@ -1,14 +1,14 @@
 #!/bin/sh
 # Release-side DevIDE operator helper.
 #
-# The generated release entrypoint remains bin/dev_ide. This wrapper owns the
+# The generated release entrypoint remains bin/casein. This wrapper owns the
 # small product surface that should not require Mix: `devide lan ...`.
 
 set -eu
 
 BIN_DIR="$(cd -P -- "$(dirname -- "$0")" && pwd)"
 RELEASE_DIR="$(cd -P -- "${BIN_DIR}/.." && pwd)"
-APP_BIN="${BIN_DIR}/dev_ide"
+APP_BIN="${BIN_DIR}/casein"
 MIGRATE_BIN="${BIN_DIR}/migrate"
 
 ENV_FILE="${DEVIDE_LAN_ENV_FILE:-/etc/devide/lan.env}"
@@ -169,7 +169,7 @@ release_dir_is_install_target() {
 
 configure_lan_release_paths() {
   LAN_RELEASE_DIR="$1"
-  LAN_APP_BIN="${LAN_RELEASE_DIR}/bin/dev_ide"
+  LAN_APP_BIN="${LAN_RELEASE_DIR}/bin/casein"
   LAN_MIGRATE_BIN="${LAN_RELEASE_DIR}/bin/migrate"
 }
 
@@ -204,7 +204,7 @@ ensure_durable_release() {
 }
 
 release_static_dir() {
-  for dir in "${LAN_RELEASE_DIR}"/lib/dev_ide-*/priv/static; do
+  for dir in "${LAN_RELEASE_DIR}"/lib/casein-*/priv/static; do
     if [ -d "${dir}" ]; then
       echo "${dir}"
       return 0
@@ -216,7 +216,7 @@ release_static_dir() {
 
 ensure_release_static_assets() {
   static_dir="$(release_static_dir)" ||
-    die "release static directory missing under ${LAN_RELEASE_DIR}/lib/dev_ide-*/priv/static"
+    die "release static directory missing under ${LAN_RELEASE_DIR}/lib/casein-*/priv/static"
 
   [ -f "${static_dir}/cache_manifest.json" ] ||
     die "release is missing priv/static/cache_manifest.json; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
@@ -353,7 +353,7 @@ ensure_update_layout() {
 
   [ ! -L "${current_release}" ] || die "current release directory must not be a symlink: ${current_release}"
   [ -x "${current_release}/bin/devide" ] || die "current release wrapper missing: ${current_release}/bin/devide"
-  [ -x "${current_release}/bin/dev_ide" ] || die "current release entrypoint missing: ${current_release}/bin/dev_ide"
+  [ -x "${current_release}/bin/casein" ] || die "current release entrypoint missing: ${current_release}/bin/casein"
   own_release_tree "${current_release}"
 
   set_symlink "${current_target}" "${CURRENT_LINK}"
@@ -394,7 +394,7 @@ validate_update_release_tree() {
   release_root="$1"
 
   [ -x "${release_root}/bin/devide" ] || die "release wrapper missing: ${release_root}/bin/devide"
-  [ -x "${release_root}/bin/dev_ide" ] || die "release entrypoint missing: ${release_root}/bin/dev_ide"
+  [ -x "${release_root}/bin/casein" ] || die "release entrypoint missing: ${release_root}/bin/casein"
   [ -x "${release_root}/bin/migrate" ] || die "release migration helper missing: ${release_root}/bin/migrate"
 
   previous_release_dir="${LAN_RELEASE_DIR}"

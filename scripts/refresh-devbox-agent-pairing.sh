@@ -95,7 +95,7 @@ relaunch_current_release_if_needed() {
   local active_release="${CASEIN_DEPLOY_ROOT:-/opt/devide}/release"
   local tarball revision
 
-  if [[ ! -x "${active_release}/bin/dev_ide" ]]; then
+  if [[ ! -x "${active_release}/bin/casein" ]]; then
     log "warning: workspace token env changed but ${active_release} is not an executable release"
     return 0
   fi

@@ -246,7 +246,7 @@ sudo rm -rf "${STAGING}"
 sudo mkdir -p "${STAGING}"
 sudo tar -xzf "${TARBALL}" -C "${STAGING}"
 
-sudo test -x "${STAGING}/bin/dev_ide"
+sudo test -x "${STAGING}/bin/casein"
 sudo test -x "${STAGING}/bin/migrate"
 sudo test -f "${STAGING}/deploy/devide.service"
 sudo test -f "${STAGING}/deploy/docker-compose.postgres.yml"
@@ -285,7 +285,7 @@ fi
 log "ensuring RELEASE_COOKIE is pinned in ${ENV_FILE}"
 # Without a pinned RELEASE_COOKIE the release auto-generates a fresh cookie at
 # every boot (releases/COOKIE), so the running node's cookie diverges from the
-# on-disk file and peer commands (`bin/dev_ide stop`, `rpc`, health probes) fail
+# on-disk file and peer commands (`bin/casein stop`, `rpc`, health probes) fail
 # the distribution challenge (:noconnection). That makes the graceful ExecStop
 # fail and every deploy hard-SIGTERM the node mid-session, draining LiveView
 # sockets and killing live tmux terminals. Generate + persist one if absent, so
@@ -297,7 +297,7 @@ if ! sudo grep -qE '^RELEASE_COOKIE=.+' "${ENV_FILE}"; then
   # we can no longer read (e.g. the env file was rebuilt from devide.env.example
   # and silently dropped the key — see the template-rebuild warning below).
   # Minting a *fresh* cookie here would diverge from the running node, so the
-  # graceful peer `bin/dev_ide stop` fails the distribution challenge
+  # graceful peer `bin/casein stop` fails the distribution challenge
   # (:noconnection), ExecStop fails, and systemd hard-SIGTERMs the old node
   # mid-session — draining LiveView sockets and killing live tmux terminals.
   # Abort instead so the operator can restore the real cookie before redeploying.
@@ -400,7 +400,7 @@ sudo systemd-run \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
-  "${ACTIVE_RELEASE}/bin/dev_ide" start
+  "${ACTIVE_RELEASE}/bin/casein" start
 
 # ── Health-check the new instance via its Unix socket ───────────────────────
 log "waiting for new instance API readiness on ${NEW_SOCKET}"

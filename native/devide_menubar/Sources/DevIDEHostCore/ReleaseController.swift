@@ -79,7 +79,7 @@ public actor ReleaseController {
             selectedPort = port
         }
 
-        // `bin/dev_ide stop` RPCs into the node. It can fail even against a
+        // `bin/casein stop` RPCs into the node. It can fail even against a
         // live server (release rebuilds regenerate the cookie), so fall back
         // to SIGTERM on the contract pid.
         do {

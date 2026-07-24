@@ -25,7 +25,7 @@ cp ".build/$CONFIGURATION/devide-menubar" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
 
 if [[ -n "${DEVIDE_RELEASE_ROOT:-}" ]]; then
-  [[ -x "$DEVIDE_RELEASE_ROOT/bin/dev_ide" ]] || {
+  [[ -x "$DEVIDE_RELEASE_ROOT/bin/casein" ]] || {
     echo "DEVIDE_RELEASE_ROOT is not an assembled DevIDE release" >&2
     exit 1
   }

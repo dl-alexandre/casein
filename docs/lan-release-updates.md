@@ -43,7 +43,7 @@ Systemd continues to point at the stable path:
 ```text
 WorkingDirectory=/opt/devide/lan-release
 ExecStartPre=/opt/devide/lan-release/bin/migrate
-ExecStart=/opt/devide/lan-release/bin/dev_ide start
+ExecStart=/opt/devide/lan-release/bin/casein start
 ```
 
 `lan-release` preserves the existing mental model while enabling clean rollback via
@@ -54,7 +54,7 @@ ExecStart=/opt/devide/lan-release/bin/dev_ide start
 Ship inside every LAN release at:
 
 ```text
-releases/dev_ide.relmeta.json
+releases/casein.relmeta.json
 ```
 
 Schema (metadata version 1):
@@ -143,7 +143,7 @@ Install and rollback are implemented in Phase 4. `lan status --json` follows in
 Phase 5.
 
 Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
-release tree and `CASEIN_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
+release tree and `CASEIN_RELEASE_CLI=1` while invoking `bin/casein eval`. That
 keeps read-only operator commands independent of server runtime requirements like
 `DATABASE_PATH`, `DATABASE_URL`, and `SECRET_KEY_BASE`.
 
@@ -166,7 +166,7 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 
 ## Install algorithm (Phase 4)
 
-1. Read current metadata from `/opt/devide/lan-release/releases/dev_ide.relmeta.json`.
+1. Read current metadata from `/opt/devide/lan-release/releases/casein.relmeta.json`.
 2. Fetch manifest (`DEVIDE_UPDATE_MANIFEST_URL` override, else embedded URL).
 3. Select artifact matching `profile + target`.
 4. Refuse incompatible manifest/installer versions.
@@ -174,8 +174,8 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 6. Verify SHA256.
 7. Extract to `/opt/devide/lan/releases/<revision>.staging`.
 8. Validate staging tree:
-   - `bin/devide`, `bin/dev_ide`, `bin/migrate`
-   - static assets under `lib/dev_ide-*/priv/static`
+   - `bin/devide`, `bin/casein`, `bin/migrate`
+   - static assets under `lib/casein-*/priv/static`
    - metadata `profile` / `repo_adapter` / `target`
 9. Move staging → `/opt/devide/lan/releases/<revision>`.
 10. Point `previous` at old `current`.
@@ -208,7 +208,7 @@ making the dynamic probe mandatory.
 
 | Module | Role |
 |--------|------|
-| `DevIDE.Release.Metadata` | Read/write `dev_ide.relmeta.json`; assemble-time writer. |
+| `DevIDE.Release.Metadata` | Read/write `casein.relmeta.json`; assemble-time writer. |
 | `DevIDE.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
 | `DevIDE.Release.Update.Check` | Compare installed revision vs manifest artifact. |
 | `DevIDE.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |

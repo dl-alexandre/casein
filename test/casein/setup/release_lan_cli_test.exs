@@ -83,12 +83,12 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     edge = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.service"))
 
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/devide"))
-    assert File.exists?(Path.join(fixture.install_release_dir, "bin/dev_ide"))
+    assert File.exists?(Path.join(fixture.install_release_dir, "bin/casein"))
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/migrate"))
 
     refute backend =~ fixture.release_dir
     assert backend =~ "WorkingDirectory=#{fixture.install_release_dir}"
-    assert backend =~ "ExecStart=#{fixture.install_release_dir}/bin/dev_ide start"
+    assert backend =~ "ExecStart=#{fixture.install_release_dir}/bin/casein start"
     assert socket =~ "ListenStream=8080"
     assert edge =~ "ExecStart=#{fixture.fakebin}/systemd-socket-proxyd 127.0.0.1:4010"
 
@@ -348,7 +348,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     File.cp!(@script, Path.join(bin_dir, "devide"))
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
 
-    write_executable(Path.join(bin_dir, "dev_ide"), """
+    write_executable(Path.join(bin_dir, "casein"), """
     #!/bin/sh
     {
       printf 'CASEIN_RELEASE_CLI=%s\\n' "${CASEIN_RELEASE_CLI:-}"
@@ -356,7 +356,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       printf 'args:%s\\n' "$*"
     } >> "$DEVIDE_FAKE_APP_BIN_LOG"
     case "$0:$*" in
-      *"/releases/${DEVIDE_FAKE_CURRENT_REVISION}/bin/dev_ide:"*InstallPlan.print_metadata_shell_base64*)
+      *"/releases/${DEVIDE_FAKE_CURRENT_REVISION}/bin/casein:"*InstallPlan.print_metadata_shell_base64*)
         echo "old release does not contain InstallPlan" >&2
         exit 1
         ;;
@@ -379,7 +379,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     """)
 
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
-    static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
+    static_dir = Path.join(release_dir, "lib/casein-0.1.0/priv/static")
     File.mkdir_p!(Path.join(static_dir, "assets/css"))
     File.mkdir_p!(Path.join(static_dir, "assets/js"))
     File.write!(Path.join(static_dir, "cache_manifest.json"), "{}\n")
@@ -405,7 +405,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     write_fake_release_tree(
       update_release_dir,
       Path.join(bin_dir, "devide"),
-      File.read!(Path.join(bin_dir, "dev_ide")),
+      File.read!(Path.join(bin_dir, "casein")),
       update_metadata
     )
 
@@ -583,12 +583,12 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
   defp write_fake_release_tree(release_dir, devide_script, app_script, metadata) do
     bin_dir = Path.join(release_dir, "bin")
-    static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
+    static_dir = Path.join(release_dir, "lib/casein-0.1.0/priv/static")
 
     File.mkdir_p!(bin_dir)
     File.cp!(devide_script, Path.join(bin_dir, "devide"))
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
-    write_executable(Path.join(bin_dir, "dev_ide"), app_script)
+    write_executable(Path.join(bin_dir, "casein"), app_script)
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
 
     File.mkdir_p!(Path.join(static_dir, "assets/css"))
@@ -608,7 +608,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     File.mkdir_p!(Path.join(release_dir, "releases"))
 
     File.write!(
-      Path.join(release_dir, "releases/dev_ide.relmeta.json"),
+      Path.join(release_dir, "releases/casein.relmeta.json"),
       Jason.encode!(metadata_json(metadata), pretty: true) <> "\n"
     )
   end

@@ -22,7 +22,7 @@ defmodule Casein.MixProject do
       # Raise the floor as coverage improves; never lower it.
       test_coverage: [summary: [threshold: 66]],
       releases: [
-        dev_ide: [
+        casein: [
           include_executables_for: [:unix, :windows],
           applications: [runtime_tools: :permanent],
           steps: [
@@ -163,14 +163,14 @@ defmodule Casein.MixProject do
       "preview.npm": [
         "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress"
       ],
-      "dev_ide.release.lan": [
+      "casein.release.lan": [
         "compile",
         "assets.npm",
         "preview.npm",
         "tailwind.install --if-missing",
         &resign_bun_binaries/1,
         "assets.deploy",
-        "release dev_ide --overwrite"
+        "release casein --overwrite"
       ],
       precommit: [
         "compile --warnings-as-errors",
@@ -222,7 +222,7 @@ defmodule Casein.MixProject do
 
       Run `MIX_ENV=prod mix assets.deploy` before `mix release`, or use:
 
-          MIX_ENV=prod mix dev_ide.release.lan
+          MIX_ENV=prod mix casein.release.lan
       """)
     end
 

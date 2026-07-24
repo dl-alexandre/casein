@@ -119,11 +119,11 @@ iex -S mix phx.server
 The server runs at [`localhost:4000`](http://localhost:4000). The picker
 is the first screen; click a workspace to attach a terminal.
 
-For local-network dogfooding, run `mise exec -- mix dev_ide.lan.up` and open
+For local-network dogfooding, run `mise exec -- mix casein.lan.up` and open
 `http://<hostname>.local/`. That creates/checks the default `home` workspace,
 installs the managed `devide-lan.service` backend plus the port-80 LAN edge,
 and `/` opens the workspace directly. Use
-`mise exec -- mix dev_ide.lan.status` and `mise exec -- mix dev_ide.lan.down`
+`mise exec -- mix casein.lan.status` and `mise exec -- mix casein.lan.down`
 to inspect or stop it. Trusted mkcert HTTPS remains available as an optional
 manual path.
 See [`docs/lan-access.md`](docs/lan-access.md).

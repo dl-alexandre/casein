@@ -13,7 +13,7 @@ function Assert-Condition {
 }
 
 $packageRoot = [IO.Path]::GetFullPath($PackageRoot)
-$metadataPath = Join-Path $packageRoot 'releases\dev_ide.relmeta.json'
+$metadataPath = Join-Path $packageRoot 'releases\casein.relmeta.json'
 $installer = Join-Path $packageRoot 'windows\Install-DevIDE.ps1'
 $uninstaller = Join-Path $packageRoot 'windows\Uninstall-DevIDE.ps1'
 $trayHost = Join-Path $packageRoot 'windows\DevIDE.Tray.ps1'
@@ -69,7 +69,7 @@ try {
     Assert-Condition (Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE') 'Installer did not register Apps & Features metadata'
 
     $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
-    Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\dev_ide.bat')) 'Installed release is missing dev_ide.bat'
+    Assert-Condition (Test-Path -LiteralPath (Join-Path $current.release_root 'bin\casein.bat')) 'Installed release is missing casein.bat'
     Assert-Condition ($current.revision -eq $metadata.revision) 'Installed release revision differs from package metadata'
 
     $dataRoot = Join-Path $testLocalAppData 'DevIDE'

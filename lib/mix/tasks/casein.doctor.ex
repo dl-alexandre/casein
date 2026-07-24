@@ -2,12 +2,12 @@ defmodule Mix.Tasks.Casein.Doctor do
   @moduledoc """
   Checks the local Casein development setup and can fix safe local defaults.
 
-      mix dev_ide.doctor
-      mix dev_ide.doctor --fix
-      mix dev_ide.doctor --fix --edge
-      mix dev_ide.doctor --fix --insecure-http
-      mix dev_ide.doctor --fix --hosts 192.168.1.240
-      mix dev_ide.doctor --fix --local-domain devide.test
+      mix casein.doctor
+      mix casein.doctor --fix
+      mix casein.doctor --fix --edge
+      mix casein.doctor --fix --insecure-http
+      mix casein.doctor --fix --hosts 192.168.1.240
+      mix casein.doctor --fix --local-domain devide.test
 
   With `--fix`, the task creates the configured default workspace directory,
   generates missing LAN certificates with `mkcert`, and imports the mkcert root
@@ -149,7 +149,7 @@ defmodule Mix.Tasks.Casein.Doctor do
       fix? and System.find_executable("mkcert") ->
         force? = File.exists?(certfile) or File.exists?(keyfile)
         args = setup_args(opts, local_domain, lan_host, lan_ip, force?)
-        Mix.shell().info(["  ", "$ mix dev_ide.lan.setup ", Enum.join(args, " ")])
+        Mix.shell().info(["  ", "$ mix casein.lan.setup ", Enum.join(args, " ")])
         Mix.Task.rerun("dev_ide.lan.setup", args)
 
       true ->
@@ -370,7 +370,7 @@ defmodule Mix.Tasks.Casein.Doctor do
       edge? and fix? ->
         Mix.shell().info([
           "  ",
-          "$ mix dev_ide.edge.setup --fix --listen-port ",
+          "$ mix casein.edge.setup --fix --listen-port ",
           Integer.to_string(edge_port),
           " --backend-port ",
           Integer.to_string(https_port)
@@ -412,13 +412,13 @@ defmodule Mix.Tasks.Casein.Doctor do
       edge_open? ->
         warn(
           "insecure LAN HTTP",
-          "listening on :#{insecure_http_port}, but Casein HTTP backend is not listening on :#{backend_port}; run `mise exec -- mix dev_ide.lan.up`"
+          "listening on :#{insecure_http_port}, but Casein HTTP backend is not listening on :#{backend_port}; run `mise exec -- mix casein.lan.up`"
         )
 
       insecure_http? and fix? ->
         Mix.shell().info([
           "  ",
-          "$ mix dev_ide.lan.up --listen-port ",
+          "$ mix casein.lan.up --listen-port ",
           Integer.to_string(insecure_http_port),
           " --backend-port ",
           Integer.to_string(backend_port),
@@ -438,13 +438,13 @@ defmodule Mix.Tasks.Casein.Doctor do
       insecure_http? ->
         warn(
           "insecure LAN HTTP",
-          "not listening; run `mise exec -- mix dev_ide.lan.up` to prepare http://#{lan_host}/"
+          "not listening; run `mise exec -- mix casein.lan.up` to prepare http://#{lan_host}/"
         )
 
       true ->
         warn(
           "insecure LAN HTTP",
-          "optional trusted-LAN shortcut; run `mise exec -- mix dev_ide.lan.up` for http://#{lan_host}/"
+          "optional trusted-LAN shortcut; run `mise exec -- mix casein.lan.up` for http://#{lan_host}/"
         )
     end
   end
@@ -549,11 +549,11 @@ defmodule Mix.Tasks.Casein.Doctor do
   end
 
   defp edge_message(false, lan_host) do
-    "For portless access, run `mise exec -- mix dev_ide.doctor --fix --edge`, then open `https://#{lan_host}/`."
+    "For portless access, run `mise exec -- mix casein.doctor --fix --edge`, then open `https://#{lan_host}/`."
   end
 
   defp insecure_http_message(false, lan_host) do
-    "Managed LAN HTTP shortcut: run `mise exec -- mix dev_ide.lan.up`, then open `http://#{lan_host}/`."
+    "Managed LAN HTTP shortcut: run `mise exec -- mix casein.lan.up`, then open `http://#{lan_host}/`."
   end
 
   defp quick_start_message(%{insecure_http?: true} = assigns) do
@@ -561,7 +561,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     Managed LAN HTTP quick start:
 
-      mise exec -- mix dev_ide.lan.up
+      mise exec -- mix casein.lan.up
 
     Then open:
 
@@ -569,8 +569,8 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     Check or stop it with:
 
-      mise exec -- mix dev_ide.lan.status
-      mise exec -- mix dev_ide.lan.down
+      mise exec -- mix casein.lan.status
+      mise exec -- mix casein.lan.down
 
     HTTPS LAN mode is still available with:
 

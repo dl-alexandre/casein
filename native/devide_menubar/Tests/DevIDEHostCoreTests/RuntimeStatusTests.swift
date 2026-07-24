@@ -403,7 +403,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
                 defaults: try freshDefaults(), bundleResources: nil))
 
         #expect(paths.statusFile.path == "/tmp/devide-data/runtime.json")
-        #expect(paths.devIdeBinary.path == "/opt/devide/release/bin/dev_ide")
+        #expect(paths.devIdeBinary.path == "/opt/devide/release/bin/casein")
         #expect(paths.migrateBinary.path == "/opt/devide/release/bin/migrate")
         #expect(paths.logsDir.path == "/tmp/devide-data/runtime/log")
     }

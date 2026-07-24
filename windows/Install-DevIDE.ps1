@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 function Read-ReleaseMetadata {
     param([string]$Root)
 
-    $path = Join-Path $Root 'releases\dev_ide.relmeta.json'
+    $path = Join-Path $Root 'releases\casein.relmeta.json'
     if (-not (Test-Path -LiteralPath $path)) { throw "Release metadata is missing at $path" }
     $metadata = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
     if ($metadata.profile -ne 'desktop' -or $metadata.repo_adapter -ne 'sqlite' -or $metadata.target -ne 'windows-x86_64') {

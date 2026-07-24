@@ -7,10 +7,10 @@ APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 RELEASE="$APP/Contents/Resources/release"
 
 [[ -x "$APP/Contents/MacOS/devide-menubar" ]]
-[[ -x "$RELEASE/bin/dev_ide" ]]
+[[ -x "$RELEASE/bin/casein" ]]
 tmux_bin="$(find "$RELEASE/lib" -path '*/dev_ide-*/priv/bin/tmux' -print -quit)"
 [[ -x "$tmux_bin" ]]
-metadata="$RELEASE/releases/dev_ide.relmeta.json"
+metadata="$RELEASE/releases/casein.relmeta.json"
 [[ -f "$metadata" ]]
 [[ "$(plutil -extract profile raw "$metadata")" == "desktop" ]]
 case "$(uname -m)" in
@@ -27,7 +27,7 @@ resolver_secret="package-smoke-secret-package-smoke-secret-package-smoke-secret-
 resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/devide-resolver-$$.sqlite3" \
   SECRET_KEY_BASE="$resolver_secret" \
   CASEIN_API_TOKEN="$resolver_secret" \
-  "$RELEASE/bin/dev_ide" eval 'IO.puts(DevIDE.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
+  "$RELEASE/bin/casein" eval 'IO.puts(DevIDE.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
 [[ "$resolved_tmux" == "$tmux_bin" ]]
 
 smoke_label="devide_package_$$"

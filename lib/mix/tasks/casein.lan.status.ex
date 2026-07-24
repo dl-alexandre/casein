@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Casein.Lan.Status do
   @moduledoc """
   Prints the current Casein LAN service status.
 
-      mix dev_ide.lan.status
+      mix casein.lan.status
   """
 
   use Mix.Task

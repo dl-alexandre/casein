@@ -17,7 +17,7 @@ $releasesRoot = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'releases')).Trim
 if (-not $previous.StartsWith($releasesRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Previous release path is outside the DevIDE releases directory.'
 }
-$metadataPath = Join-Path $previous 'releases\dev_ide.relmeta.json'
+$metadataPath = Join-Path $previous 'releases\casein.relmeta.json'
 if (-not (Test-Path -LiteralPath $metadataPath)) { throw 'Previous release is incomplete.' }
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
 

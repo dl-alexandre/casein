@@ -177,7 +177,7 @@ self_update "$@"
 ensure_live_instance() {
   local rev="$1"
 
-  if [ ! -x "${ACTIVE_RELEASE}/bin/dev_ide" ]; then
+  if [ ! -x "${ACTIVE_RELEASE}/bin/casein" ]; then
     log "self-heal: no release at ${ACTIVE_RELEASE} — skipping liveness check"
     return 0
   fi

@@ -32,7 +32,7 @@ MODE="test-leaks"
 APPLY=0
 AGE_MIN="${DEVIDE_TMUX_REAP_AGE_MIN:-30}"
 ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
-RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/devide/release/bin/dev_ide}"
+RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/devide/release/bin/casein}"
 
 usage() {
   sed -n '2,27p' "$0"

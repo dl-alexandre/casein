@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Casein.Lan.Down do
   @moduledoc """
   Stops the managed Casein LAN service and port-80 edge.
 
-      mix dev_ide.lan.down
+      mix casein.lan.down
   """
 
   use Mix.Task

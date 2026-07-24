@@ -90,7 +90,7 @@ outside the default `/tmp/devide-agent-worktrees` tree.
 For a local smoke test against an already-known workspace:
 
 ```bash
-mix dev_ide.artifact.smoke WORKSPACE_ID --name "Artifact Smoke" --serve
+mix casein.artifact.smoke WORKSPACE_ID --name "Artifact Smoke" --serve
 ```
 
 The task prints the same JSON-ready project payload returned by

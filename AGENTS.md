@@ -258,7 +258,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
   -c "UPDATE workspace_records SET mode='review' WHERE name='dalexandre-devide';"
 ```
 
-`bin/dev_ide rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.
+`bin/casein rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.
 
 ### Friction we hit (save future time)
 

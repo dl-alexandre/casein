@@ -114,7 +114,7 @@ The first native macOS surface is a menu bar extra (status item), not a
 windowed application. DevIDE's desktop shape — a long-running loopback daemon
 with a browser cockpit — matches the Docker Desktop/OrbStack model, and the
 status item directly fixes the release's current UX gaps: manual
-`bin/migrate && bin/dev_ide daemon` startup, an undiscoverable ephemeral port
+`bin/migrate && bin/casein daemon` startup, an undiscoverable ephemeral port
 (`PORT=0`), the epmd "name in use" restart race, no autostart, and no visible
 health. The app's main menu (File/Edit/Window) only becomes relevant once an
 embedded webview window exists; see "Later: windowed cockpit" below.

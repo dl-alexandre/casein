@@ -1,6 +1,6 @@
 defmodule Casein.Setup.LanRuntime do
   @moduledoc """
-  Runtime helpers behind `mix dev_ide.lan.*`.
+  Runtime helpers behind `mix casein.lan.*`.
   """
 
   alias Casein.Setup.InsecureHttpEdge

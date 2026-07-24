@@ -120,8 +120,8 @@ export DEVIDE_RELEASE_CHANNEL="${CHANNEL}"
   OUTPUT_DIR="${OUTPUT_DIR}" ./scripts/build-release.sh
 )
 
-[ -f "${OUTPUT_DIR}/releases/dev_ide.relmeta.json" ] ||
-  die "release tree missing releases/dev_ide.relmeta.json"
+[ -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ] ||
+  die "release tree missing releases/casein.relmeta.json"
 
 log "packaging ${TARBALL}"
 mkdir -p "${DIST_DIR}"

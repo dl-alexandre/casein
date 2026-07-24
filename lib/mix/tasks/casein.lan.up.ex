@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Casein.Lan.Up do
   @moduledoc """
   Starts Casein LAN HTTP mode as a managed local service.
 
-      mix dev_ide.lan.up
+      mix casein.lan.up
 
   This installs or updates:
 

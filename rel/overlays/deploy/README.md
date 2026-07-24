@@ -33,7 +33,7 @@ through Caddy. Never publish `PORT` outside the host.
                          # Populated by the activation step from the release's
                          # bundled <release>/deploy/ copy. The installed unit
                          # and all ExecStartPre paths reference this dir.
-  release/               # extracted `mix release` output → release/bin/dev_ide
+  release/               # extracted `mix release` output → release/bin/casein
                          # (also contains its own copy of deploy/ for the next
                          # activation or rollback)
   release.prev/          # (optional) previous release for fast rollback
@@ -135,7 +135,7 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    user after the release is placed:
 
    ```sh
-   cd /opt/devide/release/lib/dev_ide-*/priv/scripts
+   cd /opt/devide/release/lib/casein-*/priv/scripts
    sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
    ```
 
@@ -351,8 +351,8 @@ WorkingDirectory=/opt/devide
 # Stable paths (the whole point of the reconciliation):
 ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
 ExecStartPre=/opt/devide/release/bin/migrate
-ExecStart=/opt/devide/release/bin/dev_ide start
-ExecStop=/opt/devide/release/bin/dev_ide stop
+ExecStart=/opt/devide/release/bin/casein start
+ExecStop=/opt/devide/release/bin/casein stop
 
 TimeoutStartSec=300
 Restart=always

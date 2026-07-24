@@ -88,7 +88,7 @@ opening a browser):
 # up under the `dev` profile so a workspace exists in the picker.
 
 # 1. Sign a user token from inside the running release.
-TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \
+TOKEN=$(docker compose exec -T dev_ide /app/bin/casein rpc \
     'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("smoke-user"))')
 
 # 2. Run the smoke. Sends `echo <marker>\n` as a channel `input`
@@ -143,7 +143,7 @@ The build is a two-stage Dockerfile:
 - **builder** (`hexpm/elixir:1.20.0-erlang-28.5-debian-bookworm-...-slim`;
   versions are `ARG`s at the top of the Dockerfile)
   pulls deps, compiles assets and Elixir code, builds the erlexec port
-  driver, and runs `mix release dev_ide`.
+  driver, and runs `mix release casein`.
 - **runtime** (`debian:bookworm-...-slim`) installs `tmux`, `openssl`,
   `libstdc++6`, `libncurses6`, `ca-certificates`, `locales`; copies
   the release; runs as a non-root `dev_ide` user.
@@ -251,7 +251,7 @@ the operational ground truth in the meantime.
 ## macOS (Darwin) native builds
 
 A release can be built and run natively on macOS with
-`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
+`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix casein.release.lan`
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 
@@ -261,12 +261,12 @@ handled by the build itself:
   enforce the same dependency graph on APFS, NTFS, and case-sensitive Linux.
 - **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
   (`Code Signature Invalid`) unless it is ad-hoc re-signed after
-  download; the `dev_ide.release.lan` alias does this automatically
+  download; the `casein.release.lan` alias does this automatically
   (`resign_bun_binaries` in mix.exs).
 
-Run the release directly (`bin/migrate`, `bin/dev_ide daemon`) with an
+Run the release directly (`bin/migrate`, `bin/casein daemon`) with an
 env file — `bin/devide lan install` manages systemd units and is
-Linux-only. After `bin/dev_ide stop`, wait for epmd to drop the
+Linux-only. After `bin/casein stop`, wait for epmd to drop the
 `dev_ide` name before starting again or the new node fails with "name
 in use". Note the same collision still makes the Boundary compiler
 flaky in *dev* on macOS (occasional spurious `unknown boundary`

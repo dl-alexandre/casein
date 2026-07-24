@@ -31,8 +31,8 @@ struct LifecycleIntegrationTests {
         ).standardizedFileURL
         try #require(
             FileManager.default.isExecutableFile(
-                atPath: releaseRoot.appending(path: "bin/dev_ide").path),
-            "no executable bin/dev_ide under \(releaseRoot.path)")
+                atPath: releaseRoot.appending(path: "bin/casein").path),
+            "no executable bin/casein under \(releaseRoot.path)")
 
         let dataDir = FileManager.default.temporaryDirectory
             .appending(path: "devide-host-e2e-\(UUID().uuidString)")

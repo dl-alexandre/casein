@@ -2,8 +2,8 @@ defmodule Mix.Tasks.Casein.InsecureHttp.Setup do
   @moduledoc """
   Prepares or installs the optional insecure Casein LAN HTTP edge.
 
-      mix dev_ide.insecure_http.setup
-      mix dev_ide.insecure_http.setup --fix
+      mix casein.insecure_http.setup
+      mix casein.insecure_http.setup --fix
 
   This intentionally exposes Casein over plain HTTP on the LAN:
 

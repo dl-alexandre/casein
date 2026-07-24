@@ -38,7 +38,7 @@ function Get-SourceRevision {
 function Read-DesktopReleaseMetadata {
     param([string]$Path, [string]$Revision)
 
-    $metadataPath = Join-Path $Path 'releases\dev_ide.relmeta.json'
+    $metadataPath = Join-Path $Path 'releases\casein.relmeta.json'
     if (-not (Test-Path -LiteralPath $metadataPath)) {
         throw "Release metadata is missing at $metadataPath"
     }
@@ -136,8 +136,8 @@ function Write-ReleaseTrustManifest {
     param([string]$PackagePath, [string]$Revision, [string]$Version)
 
     $relativeFiles = @(
-        'bin\dev_ide.bat',
-        'releases\dev_ide.relmeta.json',
+        'bin\casein.bat',
+        'releases\casein.relmeta.json',
         'windows\DevIDE.Tray.ps1',
         'windows\DevIDE.Launcher.ps1',
         'windows\Install-DevIDE.ps1',
@@ -230,7 +230,7 @@ if (-not $SkipBuild) {
     }
 }
 
-$releaseBat = Join-Path $releasePath 'bin\dev_ide.bat'
+$releaseBat = Join-Path $releasePath 'bin\casein.bat'
 if (-not (Test-Path -LiteralPath $releaseBat)) {
     throw "Windows release not found at $releaseBat"
 }

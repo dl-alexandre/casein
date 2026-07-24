@@ -2,9 +2,9 @@ defmodule Mix.Tasks.Casein.Edge.Setup do
   @moduledoc """
   Prepares or installs the optional Casein LAN HTTPS edge.
 
-      mix dev_ide.edge.setup
-      mix dev_ide.edge.setup --fix
-      mix dev_ide.edge.setup --listen-port 443 --backend-port 4443
+      mix casein.edge.setup
+      mix casein.edge.setup --fix
+      mix casein.edge.setup --listen-port 443 --backend-port 4443
 
   The edge uses systemd socket activation and `systemd-socket-proxyd` to forward
   `https://<hostname>.local/` on port 443 to Casein's LAN HTTPS listener on

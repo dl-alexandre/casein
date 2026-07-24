@@ -81,7 +81,7 @@ struct MenuContent: View {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
-        panel.message = "Select a Casein release directory (contains bin/dev_ide)"
+        panel.message = "Select a Casein release directory (contains bin/casein)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if let paths = HostPaths.choose(releaseRoot: url) {
             monitor.reconfigure(paths: paths)

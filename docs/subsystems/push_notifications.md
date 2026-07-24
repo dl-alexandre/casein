@@ -107,7 +107,7 @@ the raw 64-byte form APNs requires.
    export CASEIN_PUSH_PROVIDER=native
    export CASEIN_FCM_SERVICE_ACCOUNT_PATH=/run/secrets/firebase-service-account.json
    ```
-3. Verify readiness (no send): `mix dev_ide.push.check --platform android`
+3. Verify readiness (no send): `mix casein.push.check --platform android`
 4. Pair a device, trigger a `needs_review` (an agent approval request), confirm
    the banner arrives with the app backgrounded.
 
@@ -135,7 +135,7 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
    export CASEIN_APNS_PRIVATE_KEY_PATH=/run/secrets/AuthKey_KEY1234567.p8
    export CASEIN_APNS_ENV=sandbox   # development builds register against sandbox
    ```
-4. Verify: `mix dev_ide.push.check --platform ios`
+4. Verify: `mix casein.push.check --platform ios`
 5. The device token comes from the **real `devide_mob` build** (not the
    `MobProvision` shell) — `AppDelegate.m` registers for remote notifications via
    `mob_notify` after the user grants permission. Run it on a real device,
@@ -159,7 +159,7 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
 
 ## Verifying
 
-- `mix dev_ide.push.check` — config readiness for both platforms (exits non-zero
+- `mix casein.push.check` — config readiness for both platforms (exits non-zero
   if any requested platform is not ready). Each `not ready` line prints the
   specific missing env. This is a configuration check, not a send probe.
 - **Offline end-to-end proof** (no credentials, no devices):

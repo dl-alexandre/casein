@@ -466,7 +466,7 @@ For the systemd devbox deployment, the release build installs the locked
 installed once for the service user:
 
 ```bash
-cd /opt/devide/release/lib/dev_ide-*/priv/scripts
+cd /opt/devide/release/lib/casein-*/priv/scripts
 sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
 ```
 

@@ -1,6 +1,6 @@
 defmodule Casein.Release.Metadata do
   @moduledoc """
-  Embedded release metadata (`releases/dev_ide.relmeta.json`).
+  Embedded release metadata (`releases/casein.relmeta.json`).
 
   See `docs/lan-release-updates.md` for the v1 schema. `revision` is the update
   identity; `version` is display-only.
@@ -23,7 +23,7 @@ defmodule Casein.Release.Metadata do
           built_at: String.t()
         }
 
-  @metadata_filename "dev_ide.relmeta.json"
+  @metadata_filename "casein.relmeta.json"
   @metadata_dir "releases"
 
   @doc "Relative path inside a release tree."

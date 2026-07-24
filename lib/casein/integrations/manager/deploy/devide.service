@@ -58,8 +58,8 @@ WorkingDirectory=/opt/devide
 ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
 ExecStartPre=/opt/devide/release/bin/clean_devide_socket
 ExecStartPre=/opt/devide/release/bin/migrate
-ExecStart=/opt/devide/release/bin/dev_ide start
-ExecStop=/opt/devide/release/bin/dev_ide stop
+ExecStart=/opt/devide/release/bin/casein start
+ExecStop=/opt/devide/release/bin/casein stop
 
 # Keep daemonized tmux servers alive across release restarts. In host-tmux
 # mode the `devide_*` tmux server is spawned by the BEAM and stays in this

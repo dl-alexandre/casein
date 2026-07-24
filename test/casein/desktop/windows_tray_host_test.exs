@@ -71,7 +71,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
 
     assert script =~ "previous_release_root"
     assert script =~ "StartsWith($releasesRoot"
-    assert script =~ "releases\\dev_ide.relmeta.json"
+    assert script =~ "releases\\casein.relmeta.json"
     assert script =~ "rollback = $true"
   end
 
@@ -79,7 +79,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     script = File.read!(@repair)
 
     assert script =~ "StartsWith($releasesRoot"
-    assert script =~ "bin\\dev_ide.bat"
+    assert script =~ "bin\\casein.bat"
     assert script =~ "& $release migrate"
     assert script =~ "Get-Process -Id $runtimePid"
   end

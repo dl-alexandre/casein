@@ -24,7 +24,7 @@ Its live jobs are:
   `cleanup_runtime/2` for TTL eviction, and `restore_runtime/2` for explicitly
   reviving retained work. These are plain context functions; an
   operator drives them over a remote console
-  (`bin/dev_ide rpc 'DevIDE.Runtimes.list_runtimes(%{})'`), there is no dedicated
+  (`bin/casein rpc 'DevIDE.Runtimes.list_runtimes(%{})'`), there is no dedicated
   CLI wrapper.
 
 ## Module map

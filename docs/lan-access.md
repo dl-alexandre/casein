@@ -6,7 +6,7 @@ product-like local-network mode for a single trusted machine on a trusted LAN.
 For the simple dogfood path, use plain HTTP on the LAN:
 
 ```bash
-mise exec -- mix dev_ide.lan.up
+mise exec -- mix casein.lan.up
 ```
 
 Then open:
@@ -24,8 +24,8 @@ http://r630.local/
 Check or stop it with:
 
 ```bash
-mise exec -- mix dev_ide.lan.status
-mise exec -- mix dev_ide.lan.down
+mise exec -- mix casein.lan.status
+mise exec -- mix casein.lan.down
 ```
 
 `lan up` prints ready only after the managed backend service is active, the
@@ -43,7 +43,7 @@ sudo ./bin/devide lan up
 Build LAN-local releases with the SQLite repo profile:
 
 ```bash
-CASEIN_REPO_ADAPTER=sqlite MIX_ENV=prod mix dev_ide.release.lan
+CASEIN_REPO_ADAPTER=sqlite MIX_ENV=prod mix casein.release.lan
 ```
 
 or, when using the containerized release builder:
@@ -52,9 +52,9 @@ or, when using the containerized release builder:
 CASEIN_REPO_ADAPTER=sqlite ./scripts/build-release.sh
 ```
 
-`dev_ide.release.lan` installs the frontend npm dependencies, installs the
+`casein.release.lan` installs the frontend npm dependencies, installs the
 preview helper npm dependencies, runs `assets.deploy`, and then assembles the
-release. A plain `mix release dev_ide` will now fail fast if the CSS/JS bundles
+release. A plain `mix release casein` will now fail fast if the CSS/JS bundles
 or `cache_manifest.json` are missing, because a release without those files
 boots but renders an unstyled page.
 
@@ -90,7 +90,7 @@ unrelated manual `mix phx.server` or release processes.
 The release service runs:
 
 ```text
-/opt/devide/lan-release/bin/dev_ide start
+/opt/devide/lan-release/bin/casein start
 ```
 
 with the LAN service profile from `/etc/devide/lan.env`. If your database is
@@ -131,7 +131,7 @@ PORT=4000
 
 Those are implementation details for the service profile, not the normal user
 interface. The checkout/Mix task uses `mise exec -- mix phx.server`; the
-release helper uses the release's `bin/dev_ide start`. The default direct
+release helper uses the release's `bin/casein start`. The default direct
 workspace is the service user's home directory:
 
 ```text
@@ -172,7 +172,7 @@ sudo ufw allow 80/tcp
 The Mix task itself should be run as your normal user:
 
 ```bash
-mise exec -- mix dev_ide.lan.up
+mise exec -- mix casein.lan.up
 ```
 
 It uses `sudo` only for systemd unit installation, service control, and the
@@ -181,7 +181,7 @@ Run:
 
 ```bash
 sudo -v
-mise exec -- mix dev_ide.lan.up
+mise exec -- mix casein.lan.up
 ```
 
 Avoid `sudo mise exec -- mix ...`; that builds as root and can leave root-owned
@@ -191,22 +191,22 @@ artifacts under the checkout.
 
 ```bash
 # Use another direct workspace
-mise exec -- mix dev_ide.lan.up --workspace dev_ide
+mise exec -- mix casein.lan.up --workspace dev_ide
 
 # Use another workspace root
-mise exec -- mix dev_ide.lan.up --workspaces-root /data/devide-workspaces
+mise exec -- mix casein.lan.up --workspaces-root /data/devide-workspaces
 
 # Point the built-in "home" workspace somewhere else
-mise exec -- mix dev_ide.lan.up --home-workspace-path "$HOME"
+mise exec -- mix casein.lan.up --home-workspace-path "$HOME"
 
 # Use another LAN hostname for status probes and generated URLs
-mise exec -- mix dev_ide.lan.up --host devide.home.arpa
+mise exec -- mix casein.lan.up --host devide.home.arpa
 
 # Avoid firewall changes
-mise exec -- mix dev_ide.lan.up --no-firewall
+mise exec -- mix casein.lan.up --no-firewall
 
 # Use a different backend port if :4000 is occupied
-mise exec -- mix dev_ide.lan.up --backend-port 4010
+mise exec -- mix casein.lan.up --backend-port 4010
 ```
 
 ## Trusted HTTPS
@@ -221,7 +221,7 @@ For trusted local HTTPS, install `mkcert`, then run the doctor:
 # Arch
 sudo pacman -S mkcert nss
 
-mise exec -- mix dev_ide.doctor --fix
+mise exec -- mix casein.doctor --fix
 ```
 
 The doctor creates/checks the default workspace, generates:
@@ -248,7 +248,7 @@ https://<hostname>.local:4443/
 For portless HTTPS:
 
 ```bash
-mise exec -- mix dev_ide.doctor --fix --edge
+mise exec -- mix casein.doctor --fix --edge
 CASEIN_LAN=true mise exec -- mix phx.server
 ```
 
@@ -287,13 +287,13 @@ devide.test
 mapping:
 
 ```bash
-mise exec -- mix dev_ide.doctor --fix
+mise exec -- mix casein.doctor --fix
 ```
 
 To choose a different same-host name:
 
 ```bash
-CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix dev_ide.doctor --fix
+CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
 ```
 
 ## Internals
@@ -329,7 +329,7 @@ journalctl -u devide-lan.service -n 100 --no-pager
 
 If `lan status` says `NOT READY` but also reports `manual backend
 detected`, the URL works through a manually started `mix phx.server`, not
-through `devide-lan.service`. Run `mise exec -- mix dev_ide.lan.up` to move that
+through `devide-lan.service`. Run `mise exec -- mix casein.lan.up` to move that
 working state under systemd.
 
 If `http://<hostname>.local/` times out but the IP fallback works, fix mDNS or

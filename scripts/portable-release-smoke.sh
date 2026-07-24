@@ -157,7 +157,7 @@ terminal_json="$(
 
 log "checking Phoenix Channel keystroke round-trip"
 user_token="$(
-  "${compose[@]}" exec --no-TTY dev_ide /app/bin/dev_ide rpc \
+  "${compose[@]}" exec --no-TTY dev_ide /app/bin/casein rpc \
     'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("portable-smoke-user"))'
 )"
 app_container="$("${compose[@]}" ps --quiet dev_ide)"

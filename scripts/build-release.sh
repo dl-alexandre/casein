@@ -80,16 +80,16 @@ docker run --rm "${BUILDER_TAG}" \
   tar -C "${OUTPUT_DIR}" -xf -
 
 # Sanity-check the release looks right.
-if [ ! -x "${OUTPUT_DIR}/bin/dev_ide" ]; then
-  echo "error: extracted tree missing bin/dev_ide — build did not produce a usable release" >&2
+if [ ! -x "${OUTPUT_DIR}/bin/casein" ]; then
+  echo "error: extracted tree missing bin/casein — build did not produce a usable release" >&2
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/devide" ]; then
   echo "error: extracted tree missing bin/devide (rel/overlays/bin/devide) — required by release LAN commands" >&2
   exit 1
 fi
-if [ ! -f "${OUTPUT_DIR}/releases/dev_ide.relmeta.json" ]; then
-  echo "error: extracted tree missing releases/dev_ide.relmeta.json — required for LAN update checks" >&2
+if [ ! -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ]; then
+  echo "error: extracted tree missing releases/casein.relmeta.json — required for LAN update checks" >&2
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
@@ -128,7 +128,7 @@ fi
 
 echo
 echo "release ready at: ${OUTPUT_DIR}"
-echo "  bin/dev_ide   $(file -b "${OUTPUT_DIR}/bin/dev_ide" 2>/dev/null || echo 'script')"
+echo "  bin/casein   $(file -b "${OUTPUT_DIR}/bin/casein" 2>/dev/null || echo 'script')"
 echo "  bin/devide    present (release operator helper)"
 echo "  bin/migrate   present"
 echo "  bin/clean_devide_socket  present"

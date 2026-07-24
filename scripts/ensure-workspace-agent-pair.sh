@@ -159,7 +159,7 @@ skill_source_dir() {
     "${ROOT}/.claude/skills" \
     "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
     "/opt/devide/deploy-build/.claude/skills" \
-    "/opt/devide/release/lib/dev_ide-0.1.0/priv/claude/skills"
+    "/opt/devide/release/lib/casein-0.1.0/priv/claude/skills"
   do
     if [[ -d "${candidate}/preview-ui-walk" || -d "${candidate}/workspace-agent-pair" ]]; then
       printf '%s\n' "$candidate"

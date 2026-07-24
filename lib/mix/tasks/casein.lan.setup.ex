@@ -2,9 +2,9 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
   @moduledoc """
   Generates a trusted local development certificate for Casein LAN mode.
 
-      mix dev_ide.lan.setup
-      mix dev_ide.lan.setup --hostname workstation --hosts workstation.home,devide.test
-      mix dev_ide.lan.setup --no-install-ca
+      mix casein.lan.setup
+      mix casein.lan.setup --hostname workstation --hosts workstation.home,devide.test
+      mix casein.lan.setup --no-install-ca
 
   The task requires `mkcert` on PATH. By default it runs `mkcert -install`
   before generating `priv/cert/devide-lan.pem` and
@@ -181,7 +181,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
     This opens the default home workspace at `/`. To create/check the home
     workspace and browser trust helpers first:
 
-      mise exec -- mix dev_ide.doctor --fix
+      mise exec -- mix casein.doctor --fix
 
     Open:
 

@@ -19,7 +19,7 @@ function Get-DevIDEPaths {
 
     [pscustomobject]@{
         ReleaseRoot = [IO.Path]::GetFullPath($Root)
-        ReleaseBat  = Join-Path $Root 'bin\dev_ide.bat'
+        ReleaseBat  = Join-Path $Root 'bin\casein.bat'
         DataRoot    = $dataRoot
         Database    = Join-Path $dataRoot 'devide.sqlite3'
         Settings    = Join-Path $dataRoot 'desktop-host.json'

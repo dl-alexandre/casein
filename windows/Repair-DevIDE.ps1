@@ -14,7 +14,7 @@ $releasesRoot = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'releases'))
 if (-not $releaseRoot.StartsWith($releasesRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Installed release path is outside the DevIDE releases directory.'
 }
-$release = Join-Path $releaseRoot 'bin\dev_ide.bat'
+$release = Join-Path $releaseRoot 'bin\casein.bat'
 if (-not (Test-Path -LiteralPath $release)) { throw "Installed runtime is missing: $release" }
 
 $dataRoot = Join-Path $env:LOCALAPPDATA 'DevIDE'

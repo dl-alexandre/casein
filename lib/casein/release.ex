@@ -4,7 +4,7 @@ defmodule Casein.Release do
 
   In a release there is no `mix`, so anything Mix tasks would normally
   do (like running migrations) goes here and is invoked via
-  `bin/dev_ide eval "Casein.Release.migrate()"`.
+  `bin/casein eval "Casein.Release.migrate()"`.
 
   This module is required by `audit_remote.md` CC-1 — the Dockerfile's
   migrate overlay calls into it.

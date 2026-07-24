@@ -32,7 +32,7 @@ esac
 
 bash native/devide_menubar/scripts/build-tmux-runtime.sh "$tmux_runtime"
 MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite DEVIDE_RELEASE_PROFILE=desktop \
-  DEVIDE_RELEASE_TARGET="$release_target" "${MIX[@]}" dev_ide.release.lan
+  DEVIDE_RELEASE_TARGET="$release_target" "${MIX[@]}" casein.release.lan
 
 app_priv="$(find "$release_root/lib" -maxdepth 2 -type d -path '*/dev_ide-*/priv' -print -quit)"
 [[ -n "$app_priv" ]] || { echo "assembled release has no DevIDE priv directory" >&2; exit 1; }
