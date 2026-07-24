@@ -54,6 +54,14 @@ defmodule DevIdeWeb.PwaStaticTest do
     assert css =~ "display-mode: standalone"
   end
 
+  test "viewport meta pins Chromium interactive-widget to resizes-visual" do
+    root = File.read!("lib/dev_ide_web/components/layouts/root.html.heex")
+    offline = File.read!("priv/static/offline.html")
+
+    assert root =~ "interactive-widget=resizes-visual"
+    assert offline =~ "interactive-widget=resizes-visual"
+  end
+
   test "offline fallback is served as static HTML", %{conn: conn} do
     conn = get(conn, "/offline.html")
     body = response(conn, 200)
