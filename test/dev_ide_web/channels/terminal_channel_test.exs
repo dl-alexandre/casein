@@ -2116,53 +2116,57 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter
   end
 
+  # Retries kill until no matching panes remain (or ~500ms elapses). Soft on
+  # timeout — cleanup must not flunk the suite. Backoff is receive-after via
+  # DevIDE.Test.Eventually (never Process.sleep).
   defp kill_tmux_sessions_under(root) do
-    kill_tmux_sessions_under(root, 10)
-  end
-
-  defp kill_tmux_sessions_under(_root, 0), do: :ok
-
-  defp kill_tmux_sessions_under(root, attempts) do
     root = canonical_path(root)
 
-    killed =
-      case System.cmd(
-             "tmux",
-             DevIDE.Terminals.TmuxServer.args() ++
-               ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
-             stderr_to_stdout: true
-           ) do
-        {output, 0} ->
-          output
-          |> String.split("\n", trim: true)
-          |> Enum.map(&String.split(&1, "\t", parts: 2))
-          |> Enum.reduce(false, fn
-            [session, path], acc ->
-              if String.starts_with?(canonical_path(path), root) do
-                System.cmd(
-                  "tmux",
-                  DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
-                  stderr_to_stdout: true
-                )
+    try do
+      DevIDE.Test.Eventually.await(
+        fn -> not kill_tmux_sessions_once(root) end,
+        timeout_ms: 10 * 50,
+        interval_ms: 50,
+        message: "tmux sessions under #{root} still present after cleanup"
+      )
+    rescue
+      ExUnit.AssertionError -> :ok
+    end
 
-                true
-              else
-                acc
-              end
+    :ok
+  end
 
-            _, acc ->
+  defp kill_tmux_sessions_once(root) do
+    case System.cmd(
+           "tmux",
+           DevIDE.Terminals.TmuxServer.args() ++
+             ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.map(&String.split(&1, "\t", parts: 2))
+        |> Enum.reduce(false, fn
+          [session, path], acc ->
+            if String.starts_with?(canonical_path(path), root) do
+              System.cmd(
+                "tmux",
+                DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+                stderr_to_stdout: true
+              )
+
+              true
+            else
               acc
-          end)
+            end
 
-        _ ->
-          false
-      end
+          _, acc ->
+            acc
+        end)
 
-    if killed do
-      kill_tmux_sessions_under(root, attempts - 1)
-    else
-      Process.sleep(50)
-      kill_tmux_sessions_under(root, attempts - 1)
+      _ ->
+        false
     end
   end
 

@@ -1275,18 +1275,22 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   # The mount-time eager Ghostty worker start is async; poll until the pane has
   # live handles (or give up) so tests that nil/clear those handles aren't raced
   # by a worker that starts afterwards.
-  defp await_pane_worker(view, pane_id, attempts \\ 50)
+  defp await_pane_worker(view, pane_id, attempts \\ 50) do
+    try do
+      DevIDE.Test.Eventually.await(
+        fn ->
+          pane = :sys.get_state(view.pid).socket.assigns.pane_data[pane_id]
+          pane && is_pid(pane[:ghostty_pty])
+        end,
+        timeout_ms: attempts * 20,
+        interval_ms: 20,
+        message: "pane worker did not start for #{pane_id}"
+      )
 
-  defp await_pane_worker(_view, _pane_id, 0), do: :ok
-
-  defp await_pane_worker(view, pane_id, attempts) do
-    pane = :sys.get_state(view.pid).socket.assigns.pane_data[pane_id]
-
-    if pane && is_pid(pane[:ghostty_pty]) do
       :ok
-    else
-      Process.sleep(20)
-      await_pane_worker(view, pane_id, attempts - 1)
+    rescue
+      # Soft timeout: original helper returned :ok when attempts exhausted.
+      ExUnit.AssertionError -> :ok
     end
   end
 

@@ -19,20 +19,13 @@ defmodule DevIDE.Terminals.AgentStateTest do
   # Poll for an async-projected value (agent_events rows land eventually, not
   # in lockstep with the synchronous audit PubSub). Returns the first non-nil
   # result; flunks after ~2s.
-  defp await_until(fun, attempts \\ 100)
-
-  defp await_until(fun, attempts) when attempts > 0 do
-    case fun.() do
-      nil ->
-        Process.sleep(20)
-        await_until(fun, attempts - 1)
-
-      value ->
-        value
-    end
+  defp await_until(fun, attempts \\ 100) do
+    DevIDE.Test.Eventually.await(fun,
+      timeout_ms: attempts * 20,
+      interval_ms: 20,
+      message: "async projection did not converge before timeout"
+    )
   end
-
-  defp await_until(_fun, 0), do: flunk("async projection did not converge before timeout")
 
   defp entry(state, seconds_ago, message \\ nil) do
     %{
