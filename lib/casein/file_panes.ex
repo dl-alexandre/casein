@@ -34,7 +34,7 @@ defmodule Casein.FilePanes do
   alias Casein.Workspaces.Aliases, as: WorkspaceAliases
   alias Casein.Workspaces.FileAccess
 
-  @table :dev_ide_file_panes
+  @table :casein_file_panes
   @topology_tag Casein.Terminals.TmuxTopology
   # Register/deregister/clear wait on offloaded Repo/tmux I/O.
   @lifecycle_call_timeout 30_000

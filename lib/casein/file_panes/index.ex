@@ -7,7 +7,7 @@ defmodule Casein.FilePanes.Index do
   values and performs public ETS lookups against the GenServer-owned table.
   """
 
-  @table :dev_ide_file_panes
+  @table :casein_file_panes
 
   def lookup(pane_id) when is_binary(pane_id) do
     case :ets.lookup(@table, pane_id) do

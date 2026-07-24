@@ -219,22 +219,22 @@ defmodule Casein.Terminals.Theme do
 
   defp chrome_tokens(spec) do
     %{
-      "--devide-term-bg" => spec.bg,
-      "--devide-term-fg" => spec.fg,
-      "--devide-term-border" => spec.border,
-      "--devide-term-selection" => spec.selection,
-      "--devide-term-cursor" => spec.cursor,
-      "--devide-term-prompt" => spec.prompt,
-      "--devide-term-muted" => spec.muted,
-      "--devide-term-success" => spec.success,
-      "--devide-term-warning" => spec.warning,
-      "--devide-term-error" => spec.error,
-      "--devide-term-info" => spec.info,
-      "--devide-term-scrollbar-track" => spec.scrollbar_track,
-      "--devide-term-scrollbar-thumb" => spec.scrollbar_thumb,
-      "--devide-term-scrollbar-active" => spec.scrollbar_active,
-      "--devide-term-focus-ring" => spec.focus,
-      "--devide-term-prompt-border" => spec.prompt_border
+      "--casein-term-bg" => spec.bg,
+      "--casein-term-fg" => spec.fg,
+      "--casein-term-border" => spec.border,
+      "--casein-term-selection" => spec.selection,
+      "--casein-term-cursor" => spec.cursor,
+      "--casein-term-prompt" => spec.prompt,
+      "--casein-term-muted" => spec.muted,
+      "--casein-term-success" => spec.success,
+      "--casein-term-warning" => spec.warning,
+      "--casein-term-error" => spec.error,
+      "--casein-term-info" => spec.info,
+      "--casein-term-scrollbar-track" => spec.scrollbar_track,
+      "--casein-term-scrollbar-thumb" => spec.scrollbar_thumb,
+      "--casein-term-scrollbar-active" => spec.scrollbar_active,
+      "--casein-term-focus-ring" => spec.focus,
+      "--casein-term-prompt-border" => spec.prompt_border
     }
   end
 
@@ -256,10 +256,10 @@ defmodule Casein.Terminals.Theme do
 
     chrome =
       preset.chrome
-      |> maybe_put_chrome("--devide-term-bg", conf[:background_hex])
-      |> maybe_put_chrome("--devide-term-fg", conf[:foreground_hex])
-      |> maybe_put_chrome("--devide-term-cursor", conf[:cursor_color])
-      |> maybe_put_chrome("--devide-term-selection", conf[:selection_background])
+      |> maybe_put_chrome("--casein-term-bg", conf[:background_hex])
+      |> maybe_put_chrome("--casein-term-fg", conf[:foreground_hex])
+      |> maybe_put_chrome("--casein-term-cursor", conf[:cursor_color])
+      |> maybe_put_chrome("--casein-term-selection", conf[:selection_background])
 
     cursor =
       case conf[:cursor_color] do

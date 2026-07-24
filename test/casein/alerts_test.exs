@@ -34,7 +34,7 @@ defmodule Casein.AlertsTest do
       assert attrs.type == "terminal_size_fight"
       assert attrs.workspace_id == "ws-abc"
       assert attrs.channels == ["in_app"]
-      assert attrs.deep_link == "casein://session/ws-abc"
+      assert attrs.deep_link == "devide://session/ws-abc"
       assert attrs.body =~ "80x24"
       # Dedupe scoping so a flapping deploy collapses to one card per session.
       assert attrs.dedupe_key == "user-1:terminal_size_fight:ws-abc:sid-1"

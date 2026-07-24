@@ -122,7 +122,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     # MCPMaterializer), so isolate this test's MCP staging dir via a fake
     # HOME rather than DEVIDE_AGENT_MCP_HOME directly.
     home = tmp_dir!("report-worktree-home")
-    staging = Path.join([home, ".devide", "agent-mcp", "runtime"])
+    staging = Path.join([home, ".casein", "agent-mcp", "runtime"])
     previous_home = System.get_env("HOME")
 
     System.put_env("HOME", home)

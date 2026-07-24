@@ -586,10 +586,10 @@ function patchPreLayout(hook) {
     textRendering: "geometricPrecision",
     lineHeight:
       getComputedStyle(document.documentElement)
-        .getPropertyValue("--devide-terminal-line-height")
+        .getPropertyValue("--casein-terminal-line-height")
         .trim() || "17px",
-    backgroundColor: termVar("--devide-term-bg") || "#0a0a0a",
-    color: termVar("--devide-term-fg") || "#e4e4e7"
+    backgroundColor: termVar("--casein-term-bg") || "#0a0a0a",
+    color: termVar("--casein-term-fg") || "#e4e4e7"
   })
 
   // When a viewer scales the grid to fit (mobile observer / pinch-zoom out), the
@@ -598,7 +598,7 @@ function patchPreLayout(hook) {
   // changes — so the pillarbox bars match the terminal instead of reading as a
   // broken near-black gutter beside a light-theme grid.
   if (hook.screen) {
-    hook.screen.style.backgroundColor = "var(--devide-term-bg, #0a0a0a)"
+    hook.screen.style.backgroundColor = "var(--casein-term-bg, #0a0a0a)"
   }
 
   // Native browser text selection on the pre — desktop and touch alike. The
@@ -703,12 +703,12 @@ function ensureScrollbarChrome(hook) {
   if (hook.__scrollbarTrack || !hook.screen) return
 
   const track = document.createElement("div")
-  track.className = "devide-term-scrollbar"
+  track.className = "casein-term-scrollbar"
   track.dataset.pinned = "true"
   track.setAttribute("aria-hidden", "true")
 
   const thumb = document.createElement("div")
-  thumb.className = "devide-term-scrollbar-thumb"
+  thumb.className = "casein-term-scrollbar-thumb"
   track.appendChild(thumb)
 
   hook.screen.appendChild(track)
@@ -1021,7 +1021,7 @@ function renderCellSelection(hook) {
     rect.style.top = `${metrics.paddingTop + row * metrics.height}px`
     rect.style.width = `${Math.max(1, endCol - startCol + 1) * metrics.width}px`
     rect.style.height = `${metrics.height}px`
-    rect.style.background = termVar("--devide-term-selection") || "rgba(137, 180, 250, 0.35)"
+    rect.style.background = termVar("--casein-term-selection") || "rgba(137, 180, 250, 0.35)"
     rect.style.borderRadius = "2px"
     layer.appendChild(rect)
   }
@@ -1421,7 +1421,7 @@ function setFileLinkHover(hook, hover) {
     top: `${metrics.paddingTop + (hover.point.row + 1) * metrics.height - 2}px`,
     width: `${(hover.link.to - hover.link.from + 1) * metrics.width}px`,
     height: "1px",
-    background: termVar("--devide-term-link") || "rgba(137, 180, 250, 0.9)"
+    background: termVar("--casein-term-link") || "rgba(137, 180, 250, 0.9)"
   })
   layer.appendChild(underline)
 }
@@ -1637,7 +1637,7 @@ function setWebLinkHover(hook, hover) {
     top: `${metrics.paddingTop + (hover.point.row + 1) * metrics.height - 2}px`,
     width: `${(hover.link.to - hover.link.from + 1) * metrics.width}px`,
     height: "1px",
-    background: termVar("--devide-term-link") || "rgba(137, 180, 250, 0.9)"
+    background: termVar("--casein-term-link") || "rgba(137, 180, 250, 0.9)"
   })
   layer.appendChild(underline)
 }
@@ -2026,9 +2026,9 @@ function clearDisplayScale(hook) {
 
   hook.pre.style.transform = ""
   hook.pre.style.transformOrigin = ""
-  hook.el?.style.removeProperty("--devide-term-display-scale")
-  hook.el?.style.removeProperty("--devide-term-display-mode")
-  hook.el?.style.removeProperty("--devide-term-display-zoom")
+  hook.el?.style.removeProperty("--casein-term-display-scale")
+  hook.el?.style.removeProperty("--casein-term-display-mode")
+  hook.el?.style.removeProperty("--casein-term-display-zoom")
   Object.assign(hook.pre.style, { left: "", top: "", width: "", height: "" })
   patchPreLayout(hook)
 }
@@ -2182,11 +2182,11 @@ function applyLayoutResult(hook, result) {
     clearDisplayScale(hook)
   }
 
-  if (result.cssScale == null) hook.el.style.removeProperty("--devide-term-display-scale")
-  else hook.el.style.setProperty("--devide-term-display-scale", String(result.cssScale))
+  if (result.cssScale == null) hook.el.style.removeProperty("--casein-term-display-scale")
+  else hook.el.style.setProperty("--casein-term-display-scale", String(result.cssScale))
 
-  if (result.cssZoom == null) hook.el.style.removeProperty("--devide-term-display-zoom")
-  else hook.el.style.setProperty("--devide-term-display-zoom", String(result.cssZoom))
+  if (result.cssZoom == null) hook.el.style.removeProperty("--casein-term-display-zoom")
+  else hook.el.style.setProperty("--casein-term-display-zoom", String(result.cssZoom))
 
   if (result.clipScreen) {
     if (hook.screen) hook.screen.style.overflow = "hidden"
@@ -2339,7 +2339,7 @@ function ensureDisplayZoomBadge(hook) {
   if (hook.__displayZoomBadge) return hook.__displayZoomBadge
 
   const badge = document.createElement("div")
-  badge.className = "devide-term-zoom-badge"
+  badge.className = "casein-term-zoom-badge"
   badge.hidden = true
   badge.setAttribute("aria-hidden", "true")
   hook.el.appendChild(badge)

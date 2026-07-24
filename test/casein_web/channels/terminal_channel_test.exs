@@ -462,7 +462,7 @@ defmodule CaseinWeb.TerminalChannelTest do
       System.system_time(:millisecond) + 60_000
     }
 
-    :ets.insert(:dev_ide_terminal_fast_path_cache, [stale_claims, wildcard_claims])
+    :ets.insert(:casein_terminal_fast_path_cache, [stale_claims, wildcard_claims])
 
     case join_raw(socket, "terminal:ws-1:#{sid}") do
       {:ok, reply, _socket} ->
@@ -508,8 +508,8 @@ defmodule CaseinWeb.TerminalChannelTest do
 
         {:ok, claims} = ChannelAuth.verify_terminal_capability(capability)
         # Force the exact-key ETS entry to look expired (expires_at in the past).
-        :ets.insert(:dev_ide_terminal_fast_path_cache, {cache_key, claims, 0})
-        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) != []
+        :ets.insert(:casein_terminal_fast_path_cache, {cache_key, claims, 0})
+        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) != []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply, _socket} ->
@@ -688,7 +688,7 @@ defmodule CaseinWeb.TerminalChannelTest do
       }
     ]
 
-    :ets.insert(:dev_ide_terminal_fast_path_cache, stale_claims)
+    :ets.insert(:casein_terminal_fast_path_cache, stale_claims)
 
     reconnect_socket =
       CaseinWeb.UserSocket
@@ -702,12 +702,12 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         assert :ets.lookup(
-                 :dev_ide_terminal_fast_path_cache,
+                 :casein_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
                ) != []
 
         assert :ets.lookup(
-                 :dev_ide_terminal_fast_path_cache,
+                 :casein_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :any)
                ) != []
 
@@ -759,7 +759,7 @@ defmodule CaseinWeb.TerminalChannelTest do
         System.system_time(:millisecond) + 60_000
       }
 
-    :ets.insert(:dev_ide_terminal_fast_path_cache, [stale_claim, wildcard_claim])
+    :ets.insert(:casein_terminal_fast_path_cache, [stale_claim, wildcard_claim])
 
     socket =
       CaseinWeb.UserSocket
@@ -773,12 +773,12 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert joined_socket.assigns.terminal_fast_path
 
         assert :ets.lookup(
-                 :dev_ide_terminal_fast_path_cache,
+                 :casein_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
                ) != []
 
         assert :ets.lookup(
-                 :dev_ide_terminal_fast_path_cache,
+                 :casein_terminal_fast_path_cache,
                  terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :any)
                ) != []
 
@@ -1044,8 +1044,8 @@ defmodule CaseinWeb.TerminalChannelTest do
         # Drop the ETS exact entry: the socket-local fast-path cache must still
         # serve the reconnect without a fresh manager lookup.
         cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
-        :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
-        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
+        :ets.delete(:casein_terminal_fast_path_cache, cache_key)
+        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) == []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply2, _socket2} ->
@@ -1093,8 +1093,8 @@ defmodule CaseinWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
-        :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
-        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
+        :ets.delete(:casein_terminal_fast_path_cache, cache_key)
+        assert :ets.lookup(:casein_terminal_fast_path_cache, cache_key) == []
 
         case join_raw(socket, "terminal:ws-1:#{sid}") do
           {:ok, reply2, _socket2} ->
@@ -2204,8 +2204,8 @@ defmodule CaseinWeb.TerminalChannelTest do
   end
 
   defp reset_terminal_fast_path_cache! do
-    case :ets.whereis(:dev_ide_terminal_fast_path_cache) do
-      :undefined -> :ets.new(:dev_ide_terminal_fast_path_cache, [:named_table, :public, :set])
+    case :ets.whereis(:casein_terminal_fast_path_cache) do
+      :undefined -> :ets.new(:casein_terminal_fast_path_cache, [:named_table, :public, :set])
       table -> :ets.delete_all_objects(table)
     end
   end
