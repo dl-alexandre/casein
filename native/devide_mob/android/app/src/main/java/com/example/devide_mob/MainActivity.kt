@@ -98,7 +98,8 @@ class MainActivity : ComponentActivity() {
         // bridge until nativeSetActivity has initialized that bridge below.
         // Writing it earlier is lost when bridge initialization resets the
         // launch-notification slot.
-        val launchNotificationJson = notificationJsonFromIntent(intent)
+        val launchNotificationJson =
+            notificationJsonFromIntent(intent) ?: PairingLaunchPayload.consume()
 
         setContent {
             val state by MobBridge.rootState
@@ -309,7 +310,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationJsonFromIntent(intent)?.let { json ->
+        (notificationJsonFromIntent(intent) ?: PairingLaunchPayload.consume())?.let { json ->
             deliverOrStoreNotification(json)
         }
     }
@@ -320,7 +321,6 @@ class MainActivity : ComponentActivity() {
             ?.let { return it }
 
         return notificationJsonFromReviewDeepLink(intent?.data)
-            ?: notificationJsonFromPairDeepLink(intent?.data)
     }
 
     private fun notificationJsonFromReviewDeepLink(uri: android.net.Uri?): String? {
@@ -343,25 +343,6 @@ class MainActivity : ComponentActivity() {
                 ).forEach { key ->
                     uri.getQueryParameter(key)?.takeIf { it.isNotBlank() }?.let { put(key, it) }
                 }
-            })
-        }.toString()
-    }
-
-    private fun notificationJsonFromPairDeepLink(uri: android.net.Uri?): String? {
-        if (uri?.scheme != "devide" || uri.host != "pair") return null
-
-        val code = uri.pathSegments.firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
-            ?: return null
-
-        return org.json.JSONObject().apply {
-            put("id", "pairing-deep-link")
-            put("title", "Pair Casein")
-            put("source", "deep_link")
-            put("data", org.json.JSONObject().apply {
-                put("action", "mobile.pair")
-                put("pairing_code", code)
-                put("deep_link", uri.toString())
             })
         }.toString()
     }

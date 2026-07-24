@@ -77,6 +77,18 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="devide" android:host="review" />
             </intent-filter>
+        </activity>
+
+        <!-- Pairing links contain a short-lived bootstrap credential. Route
+             them through a no-history trampoline so Android never retains the
+             opaque code as MainActivity's task/base intent. -->
+        <activity
+            android:name=".PairingActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="com.example.devide_mob.pairing"
+            android:theme="@style/AppTheme">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
