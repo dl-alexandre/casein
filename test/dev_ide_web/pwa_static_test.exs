@@ -48,10 +48,24 @@ defmodule DevIdeWeb.PwaStaticTest do
     css = File.read!("assets/css/app.css")
 
     # black-translucent status bar paints over content; standalone shell must
-    # clear the notch/Dynamic Island (top) and the home indicator (bottom).
+    # clear the notch/Dynamic Island (top), home indicator (bottom), and
+    # landscape sensor housing (left/right on coarse-pointer devices).
     assert css =~ "safe-area-inset-top"
     assert css =~ "safe-area-inset-bottom"
+    assert css =~ "safe-area-inset-left"
+    assert css =~ "safe-area-inset-right"
     assert css =~ "display-mode: standalone"
+    assert css =~ "text-size-adjust"
+    assert css =~ "position: fixed"
+    assert css =~ "orientation: landscape"
+  end
+
+  test "viewport meta pins Chromium interactive-widget to resizes-visual" do
+    root = File.read!("lib/dev_ide_web/components/layouts/root.html.heex")
+    offline = File.read!("priv/static/offline.html")
+
+    assert root =~ "interactive-widget=resizes-visual"
+    assert offline =~ "interactive-widget=resizes-visual"
   end
 
   test "offline fallback is served as static HTML", %{conn: conn} do
