@@ -13,8 +13,6 @@ argv, shells, HTTP proxy targets, or mutation commands (see the `@moduledoc` on
 
 Its live jobs are:
 
-- **Host registry** — `list_hosts/0` feeds the workspace picker (where a new
-  workspace can run).
 - **Agent worktree discovery** — agents report the git worktrees they create via
   `observe_worktree/2`; `list_agent_worktrees/1` lists them for the workspace show
   view, agent events, and terminal MCP.
@@ -33,14 +31,12 @@ Its live jobs are:
 | --- | --- | --- |
 | `DevIDE.Runtimes` | `lib/dev_ide/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
 | `DevIDE.Runtimes.Runtime` | `lib/dev_ide/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
-| `DevIDE.Runtimes.Host` | `lib/dev_ide/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
 | `DevIDE.Runtimes.LifecycleEvent` | `lib/dev_ide/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
 | `DevIDE.Runtimes.Profile` | `lib/dev_ide/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
 | `DevIDE.Runtimes.StateMachine` | `lib/dev_ide/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
 | `DevIDE.Runtimes.EctoAdapter` | `lib/dev_ide/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `DevIDE.Runtimes` behaviour. |
 | `DevIDE.Runtimes.MemoryAdapter` | `lib/dev_ide/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
 | `DevIDE.Runtimes.RuntimeRow` | `lib/dev_ide/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
-| `DevIDE.Runtimes.HostRow` | `lib/dev_ide/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
 | `DevIDE.Runtimes.LifecycleEventRow` | `lib/dev_ide/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
 
 ## Data flow / lifecycle
