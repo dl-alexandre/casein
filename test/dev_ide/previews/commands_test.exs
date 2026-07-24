@@ -188,6 +188,31 @@ defmodule DevIDE.Previews.CommandsTest do
     end
   end
 
+  defmodule StubPreviewTools do
+    @moduledoc false
+    def invoke("preview_report_errors", _workspace, %{"session_id" => id}),
+      do: {:ok, %{stub_saw: id}}
+  end
+
+  describe "run/4 preview errors — configured preview_tools seam" do
+    test "routes the errors command through the configured preview_tools module" do
+      prev = Application.fetch_env!(:dev_ide, :preview_tools)
+      on_exit(fn -> Application.put_env(:dev_ide, :preview_tools, prev) end)
+      Application.put_env(:dev_ide, :preview_tools, StubPreviewTools)
+
+      assert {:ok, result} =
+               Commands.run(@workspace, "preview errors 123", ["preview", "errors", "123"])
+
+      # The success path resolves the tool module via config — the seam that
+      # keeps DevIDE.Agents.PreviewTools out of Commands' compile graph
+      # (intra-preview xref cycle 41 -> dissolved). Falsifiable: reverting to a
+      # hardcoded PreviewTools.invoke ignores the stub, so the output would be a
+      # "Failed: ..." error (no live preview for ws-pure), not the stub payload.
+      assert result.status == "completed"
+      assert result.output =~ "stub_saw"
+    end
+  end
+
   describe "run/4 default opts" do
     test "actor_id defaults to \"terminal\" when opts omitted (help path still works)" do
       # The help branch ignores actor_id, but this confirms run/4 accepts the

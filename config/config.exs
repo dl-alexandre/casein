@@ -222,3 +222,5 @@ config :dev_ide, :preview_proxy_hmr,
 import_config "#{config_env()}.exs"
 
 config :dev_ide, :capability_detector, DevIDE.Agents.LocalAdapter
+
+config :dev_ide, :preview_tools, DevIDE.Agents.PreviewTools
