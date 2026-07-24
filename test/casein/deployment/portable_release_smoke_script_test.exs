@@ -41,8 +41,14 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ ~s("${STAGING}/bin/casein")
     assert text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket)
     assert text =~ ~s("${ACTIVE_RELEASE}/bin/casein" start)
+    assert text =~ "*/priv/scripts/casein-preview"
+    assert text =~ "*/priv/scripts/casein-curl.sh"
+    assert text =~ "casein-agent-state.sh casein-codex-notify.sh"
     refute text =~ ~s("${STAGING}/bin/dev_ide")
     refute text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket)
     refute text =~ ~s("${ACTIVE_RELEASE}/bin/dev_ide" start)
+    refute text =~ "*/priv/scripts/devide-preview"
+    refute text =~ "*/priv/scripts/devide-curl.sh"
+    refute text =~ "devide-agent-state.sh devide-codex-notify.sh"
   end
 end
