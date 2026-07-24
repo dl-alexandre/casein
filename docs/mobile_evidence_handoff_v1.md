@@ -1,6 +1,6 @@
 # Mobile intervention proof and Evidence Handoff v1
 
-Status: implementation complete; verification in progress
+Status: implementation and physical verification complete; PR gate pending
 Base at implementation start: `ff77f6fb93c79cceedd7503735f5ff8afb699571`
 
 ## Product outcome
@@ -50,8 +50,23 @@ PWA surface for deeper work.
   link that was deleted after use.
 - iPad killed-app routing and background/foreground restoration opened the
   authoritative card with bounded output and an explicit agent target. Portrait
-  and landscape filled the scene canvas. The final signed run exceeded five
-  minutes without a new crash, CPU, disk, OpenSSL, RAND, or EPMD error report.
+  and landscape filled the scene canvas. A persisted development BEAM override
+  initially shadowed the newly installed signed bundle; refreshing that
+  override through the supported exact-head deploy path restored the intended
+  Evidence Handoff renderer without changing credentials. The final signed run
+  exceeded five minutes without a new crash, CPU, disk, OpenSSL, RAND, or EPMD
+  error report.
+- Both physical devices rendered the authoritative Evidence Handoff: two
+  contained changed paths, a bounded sanitized diff excerpt, metadata-only
+  preview artifact, visible Devbox/live freshness, and exact diff, preview, and
+  artifact PWA targets. Android physically opened all three targets to the
+  authenticated boundary.
+- Android warm and background deep links originally reached the activity while
+  the generated notification hub had no registered PID. The lifecycle bridge
+  now prefers that PID, narrowly falls back to the existing live screen PID
+  only when it is explicitly marked for the `notifications` capability, and
+  keeps a bounded cold-start fallback. Warm and background routing now open the
+  authoritative card in the same process; killed-app routing remains green.
 - APNs (`BadDeviceToken`) and FCM (`NOT_FOUND`, no Firebase app configuration)
   blocked real external push delivery. Supported product deep links exercised
   the same warm/cold routing without claiming notification delivery.
