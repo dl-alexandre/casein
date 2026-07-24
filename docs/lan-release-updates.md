@@ -69,7 +69,7 @@ Schema (metadata version 1):
   "repo_adapter": "sqlite",
   "target": "linux-x86_64",
   "channel": "canary",
-  "update_manifest_url": "https://github.com/dl-alexandre/dev_ide/releases/latest/download/devide-canary.json",
+  "update_manifest_url": "https://github.com/dl-alexandre/casein/releases/latest/download/devide-canary.json",
   "built_at": "2026-07-02T12:00:00Z"
 }
 ```
@@ -103,11 +103,11 @@ Channel-scoped, evolvable JSON published to GitHub Releases (or any HTTPS host):
       "profile": "lan",
       "repo_adapter": "sqlite",
       "target": "linux-x86_64",
-      "url": "https://github.com/dl-alexandre/dev_ide/releases/download/canary/casein-lan-linux-x86_64-67f393a.tar.gz",
+      "url": "https://github.com/dl-alexandre/casein/releases/download/canary/casein-lan-linux-x86_64-67f393a.tar.gz",
       "sha256": "...",
       "size": 123456789,
       "min_installer_metadata_version": 1,
-      "changelog_url": "https://github.com/dl-alexandre/dev_ide/compare/504670c...67f393a"
+      "changelog_url": "https://github.com/dl-alexandre/casein/compare/504670c...67f393a"
     }
   ]
 }

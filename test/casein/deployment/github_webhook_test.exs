@@ -4,7 +4,7 @@ defmodule Casein.Deployment.GithubWebhookTest do
   alias Casein.Deployment.GithubWebhook
 
   @secret "webhook-test-secret"
-  @repo "dl-alexandre/dev_ide"
+  @repo "dl-alexandre/casein"
 
   test "verify_signature accepts a valid GitHub HMAC" do
     body = ~s({"ref":"refs/heads/master"})

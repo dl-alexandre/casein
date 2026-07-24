@@ -58,7 +58,7 @@ bash scripts/ensure-ci-runner.sh --remove   # unregister + tear down
 Then make the check **Required** so it actually blocks merges (needs repo admin; the check must have run once to be selectable):
 
 ```bash
-env -u GH_TOKEN gh api -X PUT repos/dl-alexandre/dev_ide/branches/master/protection \
+env -u GH_TOKEN gh api -X PUT repos/dl-alexandre/casein/branches/master/protection \
   -f 'required_status_checks[strict]=false' \
   -f 'required_status_checks[contexts][]=gate' \
   -F 'enforce_admins=false' -F 'required_pull_request_reviews=' -F 'restrictions='

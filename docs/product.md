@@ -19,8 +19,10 @@
 > single-runtime workspace cockpit: a durable raw terminal over tmux, MCP as
 > the agent interface, preview, and an audit/activity feed.
 >
-> **Naming compatibility:** Casein is the public product name. Stable
-> implementation identifiers remain `Casein.*`, `:casein`, and `CASEIN_*`.
+> **Naming:** Casein is both the public product name and the implementation
+> identity (`Casein.*`, `:casein`, `CASEIN_*`, release `casein`). Externally
+> registered identifiers still pending rename are tracked in
+> [`naming-gate.md`](naming-gate.md).
 >
 > Companion docs:
 > [`architecture.md`](architecture.md) (system internals + invariants),

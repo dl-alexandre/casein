@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO="${CI_RUNNER_REPO:-dl-alexandre/dev_ide}"
+REPO="${CI_RUNNER_REPO:-dl-alexandre/casein}"
 RUNNER_DIR="${CI_RUNNER_DIR:-$HOME/actions-runner}"
 RUNNER_LABELS="${CI_RUNNER_LABELS:-self-hosted,devbox}"
 RUNNER_NAME="${CI_RUNNER_NAME:-devbox-$(hostname -s)}"

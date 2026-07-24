@@ -27,7 +27,7 @@ defmodule Casein.Setup.LanEdge do
     """
     [Unit]
     Description=Casein LAN HTTPS edge socket
-    Documentation=https://github.com/dl-alexandre/dev_ide
+    Documentation=https://github.com/dl-alexandre/casein
 
     [Socket]
     ListenStream=#{listen_port}

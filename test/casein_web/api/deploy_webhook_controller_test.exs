@@ -2,7 +2,7 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
   use CaseinWeb.ConnCase, async: false
 
   @secret "deploy-webhook-test-secret"
-  @repo "dl-alexandre/dev_ide"
+  @repo "dl-alexandre/casein"
 
   setup %{conn: conn} do
     prev_deploy = Application.get_env(:casein, :deployment)

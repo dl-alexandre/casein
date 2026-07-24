@@ -5,8 +5,8 @@
   "author": {
     "name": "DevIDE"
   },
-  "repository": "https://github.com/dl-alexandre/dev_ide",
-  "homepage": "https://github.com/dl-alexandre/dev_ide",
+  "repository": "https://github.com/dl-alexandre/casein",
+  "homepage": "https://github.com/dl-alexandre/casein",
   "keywords": ["devide", "phoenix", "workspace", "preview", "agents"],
   "skills": "./skills/",
   "interface": {
