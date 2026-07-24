@@ -14,7 +14,10 @@ defmodule Casein.Mobile.Intervention do
 
   @follow_up_max_length 280
   @excerpt_lines 8
-  @capture_lines 12
+  # Full-screen agent TUIs commonly leave a block of blank rows below the last
+  # rendered message. Capture enough bounded scrollback to reach meaningful
+  # output, then trim those rows before taking the compact excerpt.
+  @capture_lines 120
   @excerpt_max_chars 1_200
 
   @spec describe(map()) :: map() | nil
@@ -181,10 +184,10 @@ defmodule Casein.Mobile.Intervention do
       |> TerminalOutputFormat.format(ansi: false)
       |> Sanitizer.redact_text()
       |> redact_structured_secrets()
+      |> String.trim()
       |> String.split("\n")
       |> Enum.take(-@excerpt_lines)
       |> Enum.join("\n")
-      |> String.trim()
       |> String.slice(0, @excerpt_max_chars)
 
     if excerpt == "", do: {:error, :intervention_output_unavailable}, else: {:ok, excerpt}

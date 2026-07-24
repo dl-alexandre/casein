@@ -245,7 +245,9 @@ defmodule CaseinWeb.MobileUserChannelTest do
     {tmux_session, pane_id} = seed_intervention_target(workspace_id)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {tmux_session, pane_id} => "starting\nTOKEN=super-secret\n\e[31mNeeds your answer\e[0m\n"
+      {tmux_session, pane_id} =>
+        "starting\nTOKEN=super-secret\n\e[31mNeeds your answer\e[0m\n" <>
+          String.duplicate("\n", 30)
     })
 
     assert {:ok, _reply, _socket} = join_mobile(user_id, role: :admin)
