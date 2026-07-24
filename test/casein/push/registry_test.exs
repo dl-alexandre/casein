@@ -59,6 +59,29 @@ defmodule Casein.Push.RegistryTest do
     assert Registry.tokens_for("ws-1") == []
   end
 
+  test "resolves one web subscription shared across workspace scopes" do
+    subscription = %{
+      "endpoint" => "https://push.example.test/shared-device",
+      "keys" => %{"p256dh" => "public-key", "auth" => "auth-secret"}
+    }
+
+    assert :ok =
+             Registry.register_web(%{
+               workspace_id: "ws-1",
+               subscription: subscription,
+               user_id: "dev"
+             })
+
+    assert :ok =
+             Registry.register_web(%{
+               workspace_id: "ws-2",
+               subscription: subscription,
+               user_id: "dev"
+             })
+
+    assert {:ok, ^subscription} = Registry.web_subscription(subscription["endpoint"])
+  end
+
   test "unregister removes a token from every workspace and user bucket" do
     :ok = Registry.register(%{workspace_id: "ws-1", token: "tok-shared", platform: "ios"})
     :ok = Registry.register(%{workspace_id: "ws-2", token: "tok-shared", platform: "ios"})
