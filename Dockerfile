@@ -85,8 +85,8 @@ COPY mix.exs mix.lock ./
 COPY config config
 # Local path dependencies must be present before deps.get/compile can resolve
 # them.
-COPY dev_ide_core dev_ide_core
-COPY dev_ide_preview_browser dev_ide_preview_browser
+COPY casein_core casein_core
+COPY casein_preview_browser casein_preview_browser
 RUN mix deps.get --only prod && mix deps.compile
 
 # Application code first — esbuild reads compile-time artifacts from
@@ -129,7 +129,7 @@ ENV LANG=en_US.UTF-8 \
     LC_ALL=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     MIX_ENV=prod \
-    HOME=/home/dev_ide \
+    HOME=/home/casein \
     PHX_SERVER=true \
     SHELL=/bin/bash
 
@@ -137,16 +137,16 @@ ENV LANG=en_US.UTF-8 \
 # by this user so the runtime can read/write workspace contents that
 # match its UID:GID (operator can override via -u or by chowning the
 # bind-mounted directory).
-RUN groupadd --gid 1000 dev_ide \
-    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev_ide \
+RUN groupadd --gid 1000 casein \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash casein \
     && mkdir -p /workspaces \
-    && chown -R dev_ide:casein /workspaces
+    && chown -R casein:casein /workspaces
 
 WORKDIR /app
 
-COPY --from=builder --chown=dev_ide:casein /app/_build/prod/rel/dev_ide ./
+COPY --from=builder --chown=casein:casein /app/_build/prod/rel/casein ./
 
-USER dev_ide
+USER casein
 
 EXPOSE 4000
 
