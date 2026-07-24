@@ -447,29 +447,29 @@ printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -qE '"preview_close"|"invoke_tool"'
 
 preview_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-preview' -print -quit 2>/dev/null
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-preview' -print -quit 2>/dev/null
 )"
 if [ -z "${preview_script_dir}" ]; then
-  echo "error: devide-preview script missing from release priv/scripts" >&2
+  echo "error: casein-preview script missing from release priv/scripts" >&2
   exit 1
 fi
 if [ ! -x "${preview_script_dir}" ]; then
-  echo "error: devide-preview is not executable in release priv/scripts" >&2
+  echo "error: casein-preview is not executable in release priv/scripts" >&2
   exit 1
 fi
 
-devide_curl_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-curl.sh' -print -quit 2>/dev/null
+casein_curl_script_dir="$(
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-curl.sh' -print -quit 2>/dev/null
 )"
-if [ -z "${devide_curl_script_dir}" ]; then
-  echo "error: devide-curl.sh missing from release priv/scripts" >&2
+if [ -z "${casein_curl_script_dir}" ]; then
+  echo "error: casein-curl.sh missing from release priv/scripts" >&2
   exit 1
 fi
 
 # Agent hook scripts staged per-workspace by the materializer (copied out of the
-# release's priv/scripts). Missing here means non-dev_ide workspaces get no live
+# release's priv/scripts). Missing here means non-Casein workspaces get no live
 # agent-state / codex notify hook.
-for hook_script in devide-agent-state.sh devide-codex-notify.sh; do
+for hook_script in casein-agent-state.sh casein-codex-notify.sh; do
   hook_script_path="$(
     sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path "*/priv/scripts/${hook_script}" -print -quit 2>/dev/null
   )"
