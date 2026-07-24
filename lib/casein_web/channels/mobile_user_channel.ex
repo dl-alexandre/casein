@@ -11,6 +11,7 @@ defmodule CaseinWeb.MobileUserChannel do
   use Phoenix.Channel
 
   alias Casein.Mobile.Actions
+  alias Casein.Mobile.Evidence
   alias Casein.Mobile.Intervention
   alias Casein.Mobile.Observability
   alias Casein.Mobile.ResumeCard
@@ -270,13 +271,14 @@ defmodule CaseinWeb.MobileUserChannel do
         id: socket.assigns[:mobile_origin_id] || Origin.id(),
         display_name: socket.assigns[:mobile_origin_name] || Origin.display_name()
       },
-      cards: Enum.map(cards, &render_card/1)
+      cards: Enum.map(cards, &render_card(&1, socket))
     }
   end
 
-  defp render_card(card) do
+  defp render_card(card, socket) do
     resume = ResumeCard.project(card)
     intervention = Intervention.describe(card)
+    evidence = Evidence.project(card, socket.assigns[:current_user] || %{})
     actions = intervention_actions(card, intervention)
 
     %{
@@ -292,8 +294,13 @@ defmodule CaseinWeb.MobileUserChannel do
       resource: render_value(Map.get(card, :resource, %{})),
       actions: Enum.map(actions, &render_action_spec/1),
       intervention: render_intervention(intervention),
+      evidence: render_evidence(evidence),
       pwa_url: CaseinWeb.Endpoint.url() <> Intervention.pwa_path(card),
-      context: render_value(Map.get(card, :context, %{})),
+      context:
+        card
+        |> Map.get(:context, %{})
+        |> Map.drop([:files_changed, "files_changed", :diff_preview, "diff_preview"])
+        |> render_value(),
       priority: Atom.to_string(card.priority),
       user_id: card.user_id,
       workspace_id: card.workspace_id,
@@ -303,7 +310,10 @@ defmodule CaseinWeb.MobileUserChannel do
       body: card.body,
       action: render_action(card.action),
       secondary_actions: Enum.map(card.secondary_actions, &render_action/1),
-      meta: render_value(card.meta),
+      meta:
+        card.meta
+        |> Map.drop([:files_changed, "files_changed", :diff_preview, "diff_preview"])
+        |> render_value(),
       created_at: render_value(card.created_at),
       updated_at: render_value(card.updated_at),
       expires_at: render_value(card.expires_at)
@@ -327,6 +337,29 @@ defmodule CaseinWeb.MobileUserChannel do
     |> Map.delete(:pwa_path)
     |> Map.put(:pwa_url, CaseinWeb.Endpoint.url() <> intervention.pwa_path)
     |> render_value()
+  end
+
+  defp render_evidence(nil), do: nil
+
+  defp render_evidence(evidence) do
+    evidence
+    |> update_in([:artifact], &qualify_evidence_artifact/1)
+    |> update_in([:links], fn links -> Enum.map(links || [], &qualify_evidence_link/1) end)
+    |> render_value()
+  end
+
+  defp qualify_evidence_artifact(nil), do: nil
+
+  defp qualify_evidence_artifact(artifact) do
+    artifact
+    |> Map.put(:pwa_url, CaseinWeb.Endpoint.url() <> artifact.pwa_path)
+    |> Map.delete(:pwa_path)
+  end
+
+  defp qualify_evidence_link(link) do
+    link
+    |> Map.put(:url, CaseinWeb.Endpoint.url() <> link.path)
+    |> Map.delete(:path)
   end
 
   # Action specs may carry a `:route` tuple (navigation actions); convert it to a

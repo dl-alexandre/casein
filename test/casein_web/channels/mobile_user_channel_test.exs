@@ -271,6 +271,44 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert Enum.any?(card.actions, &(&1["id"] == "follow_up"))
   end
 
+  test "authoritative card exposes bounded evidence and omits raw evidence fields", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    file = Path.join([workspace_root, workspace_id, "lib", "safe.ex"])
+    File.mkdir_p!(Path.dirname(file))
+    File.write!(file, "defmodule Safe, do: :ok")
+
+    assert {:ok, _reply, _socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: "run-evidence",
+      review_count: 1,
+      files_changed: ["lib/safe.ex", "../outside"],
+      diff_preview: "- token=secret-value\n+ token=safe-value",
+      locator: %{pane: "%2", tab: "diff"}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+    assert card.evidence["version"] == 1
+    assert card.evidence["changed_files"]["files"] == ["lib/safe.ex"]
+    assert card.evidence["diff"]["excerpt"] =~ "token=[REDACTED]"
+    assert [%{"kind" => "diff", "url" => diff_url}] = card.evidence["links"]
+    assert diff_url =~ "/workspaces/#{workspace_id}?"
+    assert diff_url =~ "tab=diff"
+    assert diff_url =~ "pane=%252"
+    refute Map.has_key?(card.meta, "diff_preview")
+    refute Map.has_key?(card.meta, "files_changed")
+    refute Map.has_key?(card.context, "diff_preview")
+    refute Map.has_key?(card.context, "files_changed")
+    refute Jason.encode!(card) =~ "secret-value"
+  end
+
   test "follow-up revalidates the exact agent pane and duplicate request ids paste once", %{
     workspace_root: workspace_root
   } do
