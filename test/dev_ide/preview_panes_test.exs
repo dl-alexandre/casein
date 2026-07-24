@@ -697,6 +697,94 @@ defmodule DevIDE.PreviewPanesTest do
     assert shared.viewport == %{width: 375, height: 812}
   end
 
+  test "set_viewport locks, retunes and clears a pane's viewport" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_viewport"
+    pane_id = "%40"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert registration.viewport == nil
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, locked} = PreviewPanes.set_viewport(pane_id, "390x844")
+    assert locked.viewport == %{width: 390, height: 844}
+    assert PreviewPanes.get_by_pane(pane_id).viewport == %{width: 390, height: 844}
+
+    # The :updated broadcast is what re-renders data-viewport for the overlay.
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, retuned} = PreviewPanes.set_viewport(pane_id, "820x1180")
+    assert retuned.viewport == %{width: 820, height: 1180}
+
+    # nil and "" both mean "back to filling the pane".
+    assert {:ok, cleared} = PreviewPanes.set_viewport(pane_id, "")
+    assert cleared.viewport == nil
+    assert PreviewPanes.get_by_pane(pane_id).viewport == nil
+
+    assert {:ok, _} = PreviewPanes.set_viewport(pane_id, "390x844")
+    assert {:ok, cleared_nil} = PreviewPanes.set_viewport(pane_id, nil)
+    assert cleared_nil.viewport == nil
+  end
+
+  test "set_viewport survives a restart via the persisted registration" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_viewport_persist"
+    pane_id = "%41"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, _} = PreviewPanes.set_viewport(pane_id, "390x844")
+
+    persisted = Repo.get_by!(PreviewPaneRegistration, pane_id: pane_id, status: :open)
+    assert persisted.viewport == %{"width" => 390, "height" => 844}
+  end
+
+  test "set_viewport refuses a malformed size rather than silently unlocking" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_viewport_bad"
+    pane_id = "%42"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, _} = PreviewPanes.set_viewport(pane_id, "390x844")
+
+    for bad <- ["garbage", "390", "390x", "x844", "390x844px", "-1x844"] do
+      assert {:error, :invalid_viewport} = PreviewPanes.set_viewport(pane_id, bad),
+             "expected #{inspect(bad)} to be refused"
+    end
+
+    # A typo must leave the pane exactly as it was, not reset it.
+    assert PreviewPanes.get_by_pane(pane_id).viewport == %{width: 390, height: 844}
+  end
+
+  test "set_viewport on an unknown pane reports not_found" do
+    assert {:error, :not_found} = PreviewPanes.set_viewport("%nope", "390x844")
+  end
+
   test "shared panes navigate together and close the session on the last deregistration" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_shared_nav"

@@ -727,6 +727,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
     end
   end
 
+  # Viewport presets from the preview-pane context menu. Purely viewer-side —
+  # PreviewPanes.set_viewport/2 touches no browser — so there is nothing to
+  # assign here: the registry's :updated pane event re-renders data-viewport and
+  # the overlay hook re-reads it.
+  def dispatch_preview_input(socket, pane_id, %{"type" => "set_viewport"} = input) do
+    viewport = Map.get(input, "viewport")
+
+    case PreviewPanes.set_viewport(pane_id, viewport) do
+      {:ok, _registration} ->
+        record_preview_activity(socket, pane_id, "set_viewport", %{
+          "source" => "context_menu",
+          "viewport" => viewport
+        })
+
+        {:noreply, socket}
+
+      {:error, :invalid_viewport} ->
+        {:noreply, put_flash(socket, :error, "Preview viewport must look like 390x844")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Preview viewport failed: #{inspect(reason)}")}
+    end
+  end
+
   def dispatch_preview_input(socket, _pane_id, _input),
     do: {:reply, %{error: "unsupported_input"}, socket}
 
