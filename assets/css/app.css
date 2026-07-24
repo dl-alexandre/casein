@@ -868,6 +868,22 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: auto;
 }
 
+/* Chromeless file panes (desktop default): the in-pane tab strip is hidden —
+   the focused pane's buffers render in the header strip instead — and the
+   editor fills the whole pane. The mobile media query re-reveals the in-pane
+   strip and insets the editor below it. */
+.file-pane-inpane-strip {
+  display: none;
+}
+
+/* Chromeless preview panes (desktop default): the routine "Session X" badge
+   moves to the header context strip. The amber session-MISMATCH warning stays
+   in-pane — it must be visible even on an unfocused preview. Mobile (below)
+   shows every badge, since there's no header strip there. */
+.preview-session-badge:not([data-mismatch="true"]) {
+  display: none;
+}
+
 /* Mobile terminal chrome is hidden by default and revealed on the same
    touch/narrow marker as the compact header below, so session switching is
    reachable on narrow viewports too — not just coarse-pointer (touch) devices. */
@@ -973,6 +989,39 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   [data-mobile-focus-layout="true"] > .preview-pane-overlay[data-mobile-pane-active="false"] {
     display: none !important;
+  }
+
+  /* File overlays need the same focus-layout treatment previews get: force the
+     active pane full-screen (overriding the JS-applied tmux rect) and hide the
+     inactive ones. Without these a file pane stayed pinned to its narrow tmux
+     rectangle on mobile. */
+  [data-mobile-focus-layout="true"] > .file-pane-overlay[data-mobile-pane-active="true"] {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 35 !important;
+    contain: layout;
+  }
+
+  [data-mobile-focus-layout="true"] > .file-pane-overlay[data-mobile-pane-active="false"] {
+    display: none !important;
+  }
+
+  /* Chromeless panes are desktop-only: with no persistent header on mobile, the
+     tab strip renders in-pane and the editor/placeholder inset below it, and
+     the preview session badge is shown regardless of mismatch. */
+  .file-pane-inpane-strip {
+    display: flex;
+  }
+
+  .file-pane-overlay .file-pane-editor,
+  .file-pane-overlay [data-file-pane-placeholder] {
+    top: 1.75rem;
+  }
+
+  .preview-session-badge {
+    display: block !important;
   }
 
   [data-mobile-focus-layout="true"] .mobile-pane-rail {

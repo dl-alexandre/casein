@@ -182,6 +182,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
             <.header_overflow_menu {header_overflow_attrs(assigns)} />
           </div>
         </header>
+
+        <%!-- Chromeless panes: the focused feature pane's chrome lives here in
+             the header (the pane itself is bare) — a file pane's open buffers,
+             or a preview's session label. Reserved whenever any file pane
+             exists so focus bouncing editor↔terminal doesn't jump the header
+             height; hidden on touch/narrow, where chrome renders in-pane
+             instead (.header-terminal-pickers is display:none there). --%>
+        <% focused_id = ui_focused_pane_id(@ui_highlight_pane_id, @tmux_active_pane_id) %>
+        <% file_strip = focused_file_strip(@feature_panes, focused_id, @file_pane_dirty) %>
+        <% preview_chrome = focused_preview_chrome(@preview_panes, focused_id, @tmux_session) %>
+        <div
+          :if={
+            @tab == "terminal" and match?({:ok, _}, @host_loc) and
+              (file_strip != nil or preview_chrome != nil or any_file_pane?(@feature_panes))
+          }
+          class="header-terminal-pickers file-pane-strip-row -mt-0.5 mb-1 flex h-7 shrink-0 items-center border-b border-base-300/70 pointer-coarse:hidden"
+        >
+          <.file_pane_tab_strip
+            :if={file_strip}
+            strip={file_strip}
+            class="min-w-0 flex-1 self-stretch"
+          />
+          <div
+            :if={file_strip == nil and preview_chrome != nil}
+            title={preview_chrome.title}
+            class={[
+              "min-w-0 truncate rounded border px-2 py-0.5 text-[11px] font-medium leading-none",
+              if(preview_chrome.mismatch?,
+                do: "border-amber-300/50 bg-amber-400/10 text-amber-600 dark:text-amber-200",
+                else: "border-base-300 bg-base-200/60 text-base-content/70"
+              )
+            ]}
+          >
+            {preview_chrome.label}
+          </div>
+          <div
+            :if={file_strip == nil and preview_chrome == nil}
+            class="flex items-center px-2 text-[11px] text-base-content/40"
+          >
+            No file pane focused
+          </div>
+        </div>
       <% else %>
         <%!-- Thin reveal strip when chrome is hidden (focus mode).
              Click or keyboard shortcut brings the header + utility bar back.
@@ -578,6 +620,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       :pane_history,
       :terminal_themes,
       :focused_pane_id,
+      :file_pane_dirty,
       :pane_data,
       :desktop_terminal?,
       :desktop_terminal_term,

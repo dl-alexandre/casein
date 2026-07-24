@@ -62,6 +62,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
     end
   end
 
+  # Viewer-local dirty tracking. Deliberately NOT routed through
+  # Pane.impl(:file).handle_input/2: dirty describes this browser's unsaved
+  # CodeMirror buffer, not the persisted file pane, so it must never touch the
+  # shared registry payload. Authorized like "pane:input" (pane exists, is a
+  # file pane, belongs to this workspace), then stored in the :file_pane_dirty
+  # socket assign.
+  def handle_event("file-pane:dirty", params, socket) do
+    pane_id = event_pane_id(params)
+    path = params["path"]
+
+    with true <- is_binary(pane_id) and pane_id != "",
+         true <- is_binary(path) and path != "",
+         {:file, payload} <- Panes.get_by_pane(pane_id),
+         true <- pane_workspace_match?(socket, feature_value(payload, :workspace_id)) do
+      {:noreply, put_file_pane_dirty(socket, pane_id, path, params["dirty"] == true)}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
   def handle_event("tree:open_in_pane", %{"path" => path} = params, socket)
       when is_binary(path) do
     tmux_session = socket.assigns[:tmux_session]
@@ -150,7 +170,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
 
   def handle_info({:pane_event, evt}, socket) do
     if pane_workspace_match?(socket, evt.workspace_id) do
-      socket = update_feature_panes(socket, evt)
+      socket =
+        socket
+        |> update_feature_panes(evt)
+        |> reconcile_file_pane_dirty()
 
       socket =
         case evt.type do
@@ -185,6 +208,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
       Map.put(feature_panes(socket), evt.pane_id, %{type: evt.type, payload: evt.payload})
     )
   end
+
+  # Keep :file_pane_dirty honest after any feature-pane change: drop dirty
+  # markers whose {pane_id, path} no longer names a live tab (tab closed, pane
+  # removed). Cheap set intersection over the current file-pane tabs.
+  defp reconcile_file_pane_dirty(socket) do
+    dirty = file_pane_dirty(socket)
+
+    if MapSet.size(dirty) == 0 do
+      socket
+    else
+      valid =
+        for {pane_id, %{type: :file} = entry} <- feature_panes(socket),
+            %{path: path} <- TerminalChrome.file_pane_tabs(entry),
+            into: MapSet.new(),
+            do: {pane_id, path}
+
+      assign(socket, :file_pane_dirty, MapSet.intersection(dirty, valid))
+    end
+  end
+
+  defp put_file_pane_dirty(socket, pane_id, path, true),
+    do: assign(socket, :file_pane_dirty, MapSet.put(file_pane_dirty(socket), {pane_id, path}))
+
+  defp put_file_pane_dirty(socket, pane_id, path, false),
+    do: assign(socket, :file_pane_dirty, MapSet.delete(file_pane_dirty(socket), {pane_id, path}))
+
+  defp file_pane_dirty(socket), do: socket.assigns[:file_pane_dirty] || MapSet.new()
 
   # Push the active tab's fresh content to the overlay hooks. Broadcast-with-id:
   # every FilePaneOverlay instance receives it and filters on payload.pane_id.
