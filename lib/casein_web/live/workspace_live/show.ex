@@ -147,7 +147,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
-    pane:input
+    pane:input file-pane:dirty
     run:cancel set_log_service
     ctx:open ctx:close
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
@@ -287,6 +287,11 @@ defmodule CaseinWeb.WorkspaceLive.Show do
         # derivation of it (plus later, preview-only observation updates).
         # Empty on both static and connected first paint — same as :tree.
         |> assign(:feature_panes, %{})
+        # Viewer-local set of {pane_id, path} with unsaved edits. Never persisted
+        # or broadcast — it's this browser's dirty buffers, so the file-pane tab
+        # strip shows a dot only for the viewer who has the unsaved edit. Kept in
+        # sync by "file-pane:dirty" and pruned when tabs/panes close.
+        |> assign(:file_pane_dirty, MapSet.new())
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -845,6 +850,9 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # "Open in pane" entry point) are handled by FilePaneEvents. These clauses
   # must precede the "tree:*" catch-all below.
   def handle_event("pane:input" = event, params, socket),
+    do: FilePaneEvents.handle_event(event, params, socket)
+
+  def handle_event("file-pane:dirty" = event, params, socket),
     do: FilePaneEvents.handle_event(event, params, socket)
 
   def handle_event("tree:open_in_pane" = event, params, socket),

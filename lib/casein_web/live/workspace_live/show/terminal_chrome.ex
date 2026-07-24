@@ -707,6 +707,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   attr :focused_pane_id, :any, default: nil
   attr :pane_data, :map, default: %{}
   attr :workspace_start_error, :string, default: nil
+  attr :file_pane_dirty, :any, default: nil
 
   def tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
@@ -897,6 +898,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
               tmux_mutations_enabled?={@tmux_mutations_enabled?}
               ui_highlight_pane_id={@ui_highlight_pane_id}
               tmux_active_pane_id={@tmux_active_pane_id}
+              file_pane_dirty={@file_pane_dirty}
             />
         <% end %>
       <% end %>
@@ -1103,11 +1105,17 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
           </div>
         </div>
       </div>
+      <%!-- Chromeless preview: on desktop the routine "Session X" label moves to
+           the header context strip (preview_chrome_chip). The in-pane badge is
+           hidden there UNLESS it's a session MISMATCH — that amber warning must
+           stay visible even when the preview is unfocused, so CSS keeps
+           [data-mismatch="true"] shown. Mobile shows the badge either way. --%>
       <div class="pointer-events-none absolute right-2 top-2 z-20 flex max-w-[calc(100%-1rem)] justify-end">
         <div
+          data-mismatch={to_string(preview_session_mismatch?(@preview, @active_tmux_session))}
           title={preview_session_title(@preview, @active_tmux_session)}
           class={[
-            "max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
+            "preview-session-badge max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
             if(preview_session_mismatch?(@preview, @active_tmux_session),
               do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
               else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
@@ -1128,12 +1136,28 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   attr :tmux_mutations_enabled?, :boolean, required: true
   attr :ui_highlight_pane_id, :any, default: nil
   attr :tmux_active_pane_id, :any, default: nil
+  attr :file_pane_dirty, :any, default: nil
 
-  # File-pane overlay. The ROOT is diffed by LiveView (the tab strip is
-  # server-rendered from the registry payload); only the inner editor div is
-  # phx-update="ignore" so CodeMirror survives re-renders. The FilePaneOverlay
-  # hook positions the root from data-pane-rect.
+  # File-pane overlay. Panes are chromeless on desktop: the tab strip that used
+  # to live in-pane now renders in the header (see `file_pane_tab_strip/1` in
+  # `WorkspaceShell`), and the editor fills the whole pane. On touch/narrow
+  # viewports there is no persistent header to host tabs, so the same strip
+  # component still renders in-pane (`.file-pane-inpane-strip`, revealed by the
+  # mobile CSS media query) and the editor is inset below it. Both strips carry
+  # `data-file-pane-strip` so the hook's close-others can find every tab.
+  #
+  # The ROOT is diffed by LiveView (the strip is server-rendered, dirty flags
+  # viewer-local); only the inner editor div is phx-update="ignore" so
+  # CodeMirror survives re-renders. The FilePaneOverlay hook positions the root
+  # from data-pane-rect.
   defp file_pane_overlay(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :strip,
+        file_strip_vm(assigns.pane.id, assigns.file_pane, assigns.file_pane_dirty)
+      )
+
     ~H"""
     <div
       id={"file-pane-" <> dom_fragment(@pane.id)}
@@ -1151,72 +1175,100 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
                 not pane_ui_active?(@pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
         <.pane_resize_handles pane_id={@pane.id} prefix="file-pane" z_class="z-30" />
       <% end %>
-      <div
-        data-file-pane-tabs
-        class="absolute inset-x-0 top-0 z-20 flex h-7 items-stretch overflow-x-auto border-b border-zinc-800 bg-zinc-900/95 text-[11px] text-zinc-300"
-        role="tablist"
-        aria-label="Open files"
-      >
-        <%= for tab <- file_pane_tabs(@file_pane) do %>
-          <div
-            data-file-pane-tab
-            data-path={tab.path}
-            data-ctx-menu="file_pane_tab"
-            data-ctx-path={tab.path}
-            data-ctx-target-id={"file-pane-" <> dom_fragment(@pane.id)}
-            class={[
-              "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
-              if(tab.path == file_pane_active_path(@file_pane),
-                do: "bg-zinc-950 text-zinc-100",
-                else: "hover:bg-zinc-800/70"
-              )
-            ]}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={to_string(tab.path == file_pane_active_path(@file_pane))}
-              title={tab.path}
-              phx-click={
-                JS.push("pane:input",
-                  value: %{"pane-id" => @pane.id, "type" => "activate_tab", "path" => tab.path}
-                )
-              }
-              class="flex min-w-0 items-center gap-1 px-2 font-mono"
-            >
-              <span class="truncate">{tab.title}</span>
-              <span
-                data-dirty-dot
-                class="hidden shrink-0 text-[9px] leading-none text-amber-400"
-                aria-label="Unsaved changes"
-              >
-                ●
-              </span>
-            </button>
-            <button
-              type="button"
-              phx-click={
-                JS.dispatch("devide:file-pane:close-tab",
-                  to: "[id='file-pane-" <> dom_fragment(@pane.id) <> "']",
-                  detail: %{path: tab.path}
-                )
-              }
-              title={"Close " <> tab.title}
-              aria-label={"Close " <> tab.title}
-              class="shrink-0 px-1 text-zinc-500 transition hover:text-zinc-100"
-            >
-              ×
-            </button>
-          </div>
-        <% end %>
-      </div>
+      <.file_pane_tab_strip
+        strip={@strip}
+        class="file-pane-inpane-strip absolute inset-x-0 top-0 z-20 h-7 border-b border-zinc-800 bg-zinc-900/95"
+      />
       <div
         id={"file-pane-editor-" <> dom_fragment(@pane.id)}
         data-file-pane-editor
         data-ctx-menu="file_pane_editor"
         phx-update="ignore"
-        class="file-pane-editor absolute inset-x-0 bottom-0 top-7 z-10 overflow-hidden bg-zinc-950"
+        class="file-pane-editor absolute inset-0 z-10 overflow-hidden bg-zinc-950"
       >
+      </div>
+    </div>
+    """
+  end
+
+  attr :strip, :any,
+    required: true,
+    doc: "file_strip_vm/3 view-model (%{pane_id, tabs, active_path}) for the focused file pane"
+
+  attr :class, :any, default: nil
+  attr :id, :any, default: nil
+
+  @doc """
+  Renders a file pane's open-buffer tabs (the "chromeless pane" tab strip).
+
+  Placed both in the header (desktop, for the focused file pane) and in-pane
+  (mobile, per overlay). Every activate/close action carries an explicit
+  `pane-id`, and close dispatches to the overlay root by document id, so the
+  strip works from anywhere in the page. Dirty dots are server-rendered from
+  the viewer-local `:file_pane_dirty` set folded into the view-model.
+  """
+  def file_pane_tab_strip(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      data-file-pane-strip={@strip.pane_id}
+      role="tablist"
+      aria-label="Open files"
+      class={["flex items-stretch overflow-x-auto text-[11px] text-zinc-300", @class]}
+    >
+      <div
+        :for={tab <- @strip.tabs}
+        data-file-pane-tab
+        data-path={tab.path}
+        data-ctx-menu="file_pane_tab"
+        data-ctx-path={tab.path}
+        data-ctx-target-id={"file-pane-" <> dom_fragment(@strip.pane_id)}
+        class={[
+          "flex max-w-56 shrink-0 items-stretch border-r border-zinc-800",
+          if(tab.path == @strip.active_path,
+            do: "bg-zinc-950 text-zinc-100",
+            else: "hover:bg-zinc-800/70"
+          )
+        ]}
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={to_string(tab.path == @strip.active_path)}
+          title={tab.path}
+          phx-click={
+            JS.push("pane:input",
+              value: %{"pane-id" => @strip.pane_id, "type" => "activate_tab", "path" => tab.path}
+            )
+          }
+          class="flex min-w-0 items-center gap-1 px-2 font-mono"
+        >
+          <span class="truncate">{tab.title}</span>
+          <span
+            data-dirty-dot
+            class={[
+              "shrink-0 text-[9px] leading-none text-amber-400",
+              unless(tab.dirty, do: "hidden")
+            ]}
+            aria-label="Unsaved changes"
+          >
+            ●
+          </span>
+        </button>
+        <button
+          type="button"
+          phx-click={
+            JS.dispatch("devide:file-pane:close-tab",
+              to: "[id='file-pane-" <> dom_fragment(@strip.pane_id) <> "']",
+              detail: %{path: tab.path}
+            )
+          }
+          title={"Close " <> tab.title}
+          aria-label={"Close " <> tab.title}
+          class="shrink-0 px-1 text-zinc-500 transition hover:text-zinc-100"
+        >
+          ×
+        </button>
       </div>
     </div>
     """
@@ -1266,6 +1318,71 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     do: feature_value(payload, :active_path)
 
   def file_pane_active_path(_entry), do: nil
+
+  @doc """
+  Builds the tab-strip view-model for one file pane.
+
+  Returns `%{pane_id, active_path, tabs: [%{path, title, line, dirty}]}`. The
+  `dirty` flag is viewer-local — it comes from the `:file_pane_dirty` MapSet
+  (`{pane_id, path}` members), NOT the shared/persisted registry payload, so
+  one viewer's unsaved buffer never shows a dot in another viewer's strip.
+  """
+  def file_strip_vm(pane_id, entry, dirty) do
+    dirty = dirty || MapSet.new()
+
+    tabs =
+      entry
+      |> file_pane_tabs()
+      |> Enum.map(&Map.put(&1, :dirty, MapSet.member?(dirty, {pane_id, &1.path})))
+
+    %{pane_id: pane_id, active_path: file_pane_active_path(entry), tabs: tabs}
+  end
+
+  @doc """
+  The tab-strip view-model for the currently focused file pane, or `nil` when
+  the focused pane is not a file pane. `focused_pane_id` is the UI-focused pane
+  (see `ui_focused_pane_id/2`).
+  """
+  def focused_file_strip(feature_panes, focused_pane_id, dirty \\ nil) do
+    with pane_id when is_binary(pane_id) and pane_id != "" <- focused_pane_id,
+         %{type: :file} = entry <- Map.get(feature_panes || %{}, pane_id) do
+      file_strip_vm(pane_id, entry, dirty)
+    else
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Resolves the UI-focused pane id the same way `pane_ui_active?/3` does: the
+  window-scoped highlight when set, else the tmux-active pane.
+  """
+  def ui_focused_pane_id(highlight_pane_id, tmux_active_pane_id) do
+    if is_binary(highlight_pane_id) and highlight_pane_id != "",
+      do: highlight_pane_id,
+      else: tmux_active_pane_id
+  end
+
+  @doc "True when the feature-pane snapshot holds at least one file pane."
+  def any_file_pane?(feature_panes), do: file_pane_entries(feature_panes) != %{}
+
+  @doc """
+  Header-strip chrome for the focused preview pane, or `nil` when the focused
+  pane is not a preview. Mirrors the in-pane session badge so a desktop preview
+  can be chromeless; the amber mismatch warning still renders in-pane.
+  """
+  def focused_preview_chrome(preview_panes, focused_pane_id, active_tmux_session) do
+    with pane_id when is_binary(pane_id) and pane_id != "" <- focused_pane_id,
+         preview when is_map(preview) <- Map.get(preview_panes || %{}, pane_id) do
+      %{
+        label: preview_session_label(preview, active_tmux_session),
+        title: preview_session_title(preview, active_tmux_session),
+        mismatch?: preview_session_mismatch?(preview, active_tmux_session),
+        pane_title: preview_pane_title(preview)
+      }
+    else
+      _ -> nil
+    end
+  end
 
   defp feature_value(map, key) when is_map(map) and is_atom(key) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))

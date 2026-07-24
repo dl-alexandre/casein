@@ -102,6 +102,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
                       focused_pane_id={@focused_pane_id}
                       pane_data={@pane_data}
                       workspace_start_error={@workspace_start_error}
+                      file_pane_dirty={@file_pane_dirty}
                     />
                   <% else %>
                     <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">

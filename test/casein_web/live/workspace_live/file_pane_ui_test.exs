@@ -302,6 +302,144 @@ defmodule CaseinWeb.WorkspaceLive.FilePaneUiTest do
     refute has_element?(view, "#file-pane--2")
   end
 
+  describe "chromeless header strip + viewer-local dirty" do
+    test "the focused file pane's buffers render in the header context strip",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+
+      register_file_pane(view, tmux_session)
+      render(view)
+
+      # The header row (desktop, .file-pane-strip-row) carries the focused file
+      # pane's tab, keyed by pane id — separate from the in-pane strip.
+      assert has_element?(
+               view,
+               ".file-pane-strip-row [data-file-pane-strip='#{@file_pane_id}'] " <>
+                 "[data-file-pane-tab][data-path='lib/foo.ex']"
+             )
+    end
+
+    test "file-pane:dirty toggles a viewer-local dot without touching the registry",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+      assert {:ok, _} =
+               FilePanes.register(%{
+                 pane_id: @file_pane_id,
+                 workspace_id: @workspace_id,
+                 tmux_session: tmux_session,
+                 pane_window_id: "@1",
+                 open_files: [%{path: "lib/foo.ex", line: nil}],
+                 active_path: "lib/foo.ex"
+               })
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      register_file_pane(view, tmux_session)
+      render(view)
+
+      dot = ".file-pane-strip-row [data-file-pane-tab][data-path='lib/foo.ex'] [data-dirty-dot]"
+
+      # Clean: the dot is hidden.
+      assert render(element(view, dot)) =~ "hidden"
+
+      # Mark dirty: viewer-local set updated, dot revealed, registry untouched.
+      render_hook(view, "file-pane:dirty", %{
+        "pane-id" => @file_pane_id,
+        "path" => "lib/foo.ex",
+        "dirty" => true
+      })
+
+      assert MapSet.member?(
+               socket_assigns(view, :file_pane_dirty),
+               {@file_pane_id, "lib/foo.ex"}
+             )
+
+      refute render(element(view, dot)) =~ "hidden"
+      # The persisted registration never learns about the unsaved buffer.
+      assert %{active_path: "lib/foo.ex"} = FilePanes.get_by_pane(@file_pane_id)
+
+      # Clearing removes the marker.
+      render_hook(view, "file-pane:dirty", %{
+        "pane-id" => @file_pane_id,
+        "path" => "lib/foo.ex",
+        "dirty" => false
+      })
+
+      assert socket_assigns(view, :file_pane_dirty) == MapSet.new()
+      assert render(element(view, dot)) =~ "hidden"
+    end
+
+    test "file-pane:dirty for an unregistered pane is refused",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+
+      render_hook(view, "file-pane:dirty", %{
+        "pane-id" => "%999",
+        "path" => "lib/foo.ex",
+        "dirty" => true
+      })
+
+      assert socket_assigns(view, :file_pane_dirty) == MapSet.new()
+    end
+
+    test "focusing a non-file pane shows the placeholder instead of tabs",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      register_file_pane(view, tmux_session)
+
+      # Move focus to the operator pane: the file pane still exists (row stays,
+      # no height jump) but its tabs leave the header.
+      render_click(view, "tmux:select_pane", %{"pane-id" => "%1"})
+      html = render(view)
+
+      assert has_element?(view, ".file-pane-strip-row")
+      refute has_element?(view, ".file-pane-strip-row [data-file-pane-tab]")
+      assert html =~ "No file pane focused"
+    end
+
+    test "removing a file pane prunes its viewer-local dirty markers",
+         %{conn: conn, tmux_session: tmux_session, workspace_path: workspace_path} do
+      seed_topology(tmux_session, workspace_path, ["%1", @file_pane_id])
+
+      assert {:ok, _} =
+               FilePanes.register(%{
+                 pane_id: @file_pane_id,
+                 workspace_id: @workspace_id,
+                 tmux_session: tmux_session,
+                 pane_window_id: "@1",
+                 open_files: [%{path: "lib/foo.ex", line: nil}],
+                 active_path: "lib/foo.ex"
+               })
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/#{@workspace_id}?host=local")
+      render_async(view, 5_000)
+      register_file_pane(view, tmux_session)
+
+      render_hook(view, "file-pane:dirty", %{
+        "pane-id" => @file_pane_id,
+        "path" => "lib/foo.ex",
+        "dirty" => true
+      })
+
+      refute socket_assigns(view, :file_pane_dirty) == MapSet.new()
+
+      send(view.pid, {:pane_event, pane_event(:removed, tmux_session, payload: %{})})
+      render(view)
+
+      assert socket_assigns(view, :file_pane_dirty) == MapSet.new()
+    end
+  end
+
   describe "terminal:open_file_link" do
     setup do
       Casein.FilePanes.LinkResolver.clear_cache()
