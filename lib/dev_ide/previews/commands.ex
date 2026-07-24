@@ -6,7 +6,6 @@ defmodule DevIDE.Previews.Commands do
   control sessions, observe pages, and interact — without arbitrary URLs.
   """
 
-  alias DevIDE.Agents.PreviewTools
   alias DevIDE.Previews
   alias DevIDE.Previews.Control, as: PreviewControl
 
@@ -187,7 +186,7 @@ defmodule DevIDE.Previews.Commands do
   defp errors(workspace, session_id, line) do
     with {:ok, id} <- parse_id(session_id),
          {:ok, payload} <-
-           PreviewTools.invoke("preview_report_errors", workspace, %{"session_id" => id}) do
+           preview_tools().invoke("preview_report_errors", workspace, %{"session_id" => id}) do
       ok(line, ["preview", "errors", session_id], inspect(payload) <> "\n")
     else
       {:error, reason} ->
@@ -219,6 +218,12 @@ defmodule DevIDE.Previews.Commands do
   defp configured_adapter do
     Application.get_env(:dev_ide, :preview_control_adapter, :memory)
   end
+
+  # Resolved via config (default set in config.exs) rather than a static alias so
+  # DevIDE.Agents.PreviewTools stays out of this module's compile graph — that
+  # single edge was the sole return path holding the 35-module preview-tools
+  # subtree in the intra-preview compile cycle (xref 41 -> dissolved).
+  defp preview_tools, do: Application.fetch_env!(:dev_ide, :preview_tools)
 
   defp ok(line, argv, output, exit_code \\ 0) do
     {:ok,
