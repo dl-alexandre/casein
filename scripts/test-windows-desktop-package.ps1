@@ -17,11 +17,13 @@ $metadataPath = Join-Path $packageRoot 'releases\casein.relmeta.json'
 $installer = Join-Path $packageRoot 'windows\Install-Casein.ps1'
 $uninstaller = Join-Path $packageRoot 'windows\Uninstall-Casein.ps1'
 $trayHost = Join-Path $packageRoot 'windows\Casein.Tray.ps1'
+$trustedLan = Join-Path $packageRoot 'windows\Casein.TrustedLan.ps1'
 
 Assert-Condition (Test-Path -LiteralPath $metadataPath) "Release metadata is missing at $metadataPath"
 Assert-Condition (Test-Path -LiteralPath $installer) "Installer is missing at $installer"
 Assert-Condition (Test-Path -LiteralPath $uninstaller) "Uninstaller is missing at $uninstaller"
 Assert-Condition (Test-Path -LiteralPath $trayHost) "Tray host is missing at $trayHost"
+Assert-Condition (Test-Path -LiteralPath $trustedLan) "Trusted LAN helper is missing at $trustedLan"
 Assert-Condition (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'docs'))) 'Internal docs must not be included in a public desktop package'
 
 $metadata = Get-Content -Raw -LiteralPath $metadataPath | ConvertFrom-Json
@@ -35,6 +37,7 @@ $env:LOCALAPPDATA = $testLocalAppData
 
 try {
     . $trayHost -ReleaseRoot $packageRoot -LibraryOnly
+    . $trustedLan -ReleaseRoot $packageRoot -LibraryOnly
     Initialize-CaseinJobObjectSupport
     Assert-Condition (($null -ne ('Casein.Windows.JobObject' -as [type]))) 'Windows Job Object support did not load'
 
@@ -63,6 +66,13 @@ try {
     Assert-Condition ($protectedSecret.StartsWith('dpapi:')) 'Secret was not protected with DPAPI'
     Assert-Condition (-not $protectedSecret.Contains('legacy-secret-value')) 'Protected secret file contains plaintext'
     Assert-Condition ((Get-OrCreateCaseinSecret $legacySecretPath 32) -eq 'legacy-secret-value') 'DPAPI secret did not round trip'
+
+    $selectedAddress = Select-CaseinLanAddress @(
+        [pscustomobject]@{ Address = '192.168.50.7'; InterfaceAlias = 'vEthernet (WSL)'; InterfaceIndex = 2; InterfaceMetric = 1; HasDefaultGateway = $true; VirtualOrTunnel = $true },
+        [pscustomobject]@{ Address = '10.0.0.20'; InterfaceAlias = 'Ethernet'; InterfaceIndex = 8; InterfaceMetric = 15; HasDefaultGateway = $false; VirtualOrTunnel = $false },
+        [pscustomobject]@{ Address = '192.168.50.8'; InterfaceAlias = 'Wi-Fi'; InterfaceIndex = 7; InterfaceMetric = 25; HasDefaultGateway = $true; VirtualOrTunnel = $false }
+    )
+    Assert-Condition ($selectedAddress.Address -eq '192.168.50.8') 'Trusted LAN selection did not prefer the physical default route'
 
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $installer -PackageRoot $packageRoot
     if ($LASTEXITCODE -ne 0) { throw "Installer exited with $LASTEXITCODE" }

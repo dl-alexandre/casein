@@ -363,3 +363,22 @@ using `lan up` if it occupies the same backend port.
 DevIDE LAN exposes the cockpit to other devices on the local network. Use it
 only on networks you trust. API and MCP endpoints keep their bearer-token
 checks, but the browser cockpit remains the same local-dev operator surface.
+
+## Windows desktop Trusted LAN
+
+The packaged Windows desktop uses a separate, off-by-default tray control:
+**Trusted LAN access**. It requires UAC consent and creates one Casein-owned
+inbound rule for the packaged runtime executable, selected private physical
+interface address, retained desktop port, TCP, and `LocalSubnet`. VPN, tunnel,
+Hyper-V, WSL, loopback, and common VM adapters are not selected automatically.
+
+Use **Copy Trusted LAN URL** after enabling. If the workstation changes
+interfaces or addresses, disable and re-enable access, then deliberately
+re-pair Device Link at the new URL. The persisted Windows origin id remains the
+same, so the existing mobile profile is updated; Casein does not silently fail
+over between addresses. Disable removes the owned firewall rule and returns
+the listener to loopback. Uninstall also removes the rule before deleting the
+installed release.
+
+See [`desktop/windows_mobile_acceptance.md`](desktop/windows_mobile_acceptance.md)
+for the selection order, release evidence, and physical-device matrix.

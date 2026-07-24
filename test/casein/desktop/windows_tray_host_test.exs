@@ -13,6 +13,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
   @repair Path.expand("../../../windows/Repair-Casein.ps1", __DIR__)
   @support Path.expand("../../../windows/New-CaseinSupportBundle.ps1", __DIR__)
   @rollback Path.expand("../../../windows/Rollback-Casein.ps1", __DIR__)
+  @trusted_lan Path.expand("../../../windows/Casein.TrustedLan.ps1", __DIR__)
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -60,11 +61,35 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
           "Roll back last update",
           "Open logs",
           "Create support bundle",
+          "Trusted LAN access",
+          "Copy Trusted LAN URL",
           "Launch at Windows sign-in",
           "Quit Casein"
         ] do
       assert script =~ label
     end
+  end
+
+  test "Trusted LAN selects a private physical interface and scopes its firewall rule" do
+    script = File.read!(@trusted_lan)
+    tray = File.read!(@tray_script)
+    uninstaller = File.read!(@uninstaller)
+
+    assert script =~ "Get-NetIPConfiguration -Detailed"
+    assert script =~ "Get-NetIPInterface -AddressFamily IPv4"
+    assert script =~ "NetworkCategory -ne 'Private'"
+    assert script =~ "vpn|wireguard|tailscale|tunnel|tap|tun|hyper-v|vethernet|wsl"
+    assert script =~ "Sort-Object"
+    assert script =~ "-Profile Private"
+    assert script =~ "-LocalAddress $selected.Address"
+    assert script =~ "-LocalPort $ListenPort"
+    assert script =~ "-Program $program"
+    assert script =~ "-RemoteAddress LocalSubnet"
+    assert script =~ "Remove-CaseinTrustedLanFirewallRules"
+    assert tray =~ "'CASEIN_DESKTOP_LAN'] = 'true'"
+    assert tray =~ "'CASEIN_LAN_INSECURE_HTTP'] = 'true'"
+    assert tray =~ "'PHX_IP'] = '0.0.0.0'"
+    assert uninstaller =~ "-Action Disable"
   end
 
   test "rollback swaps only between validated installed release roots" do
@@ -90,6 +115,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
 
     assert script =~ "desktop-host.log"
     assert script =~ "runtime.json"
+    assert script =~ "trusted-lan.json"
     assert script =~ "system.json"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'api-token.txt')"
     refute script =~ "Copy-Item -LiteralPath (Join-Path $DataRoot 'secret-key-base.txt')"
@@ -116,6 +142,13 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "Write-ReleaseTrustManifest"
     assert script =~ "Set-AuthenticodeSignature"
+
+    assert script =~
+             "Where-Object { $_.Extension.ToLowerInvariant() -in @('.exe', '.dll', '.ps1', '.psm1') }"
+
+    assert script =~ "Write-SignedUpdateCatalog"
+    assert script =~ "New-FileCatalog"
+    assert script =~ "Test-FileCatalog"
     assert script =~ "RequireSigned"
     assert script =~ "windows\\Casein.Tray.ps1"
     assert script =~ "windows\\Install-Casein.ps1"
@@ -131,6 +164,8 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "DEVIDE_REQUIRE_SIGNED_RELEASES"
     assert script =~ "Get-FileHash -Algorithm SHA256"
     assert script =~ "Release integrity check failed"
+    assert script =~ "SignedFiles"
+    assert script =~ "Packaged executable is not trusted"
     assert script =~ "Copy-ReleaseTree"
     assert script =~ "robocopy.exe"
     assert script =~ "Remove-ReleaseTree"

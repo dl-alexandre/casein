@@ -28,6 +28,7 @@ function Get-CaseinPaths {
         RuntimeStatus = Join-Path $dataRoot 'runtime.json'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
         OriginIdentity = Join-Path $dataRoot 'origin.json'
+        TrustedLan = Join-Path $dataRoot 'trusted-lan.json'
         StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
     }
 }
@@ -135,6 +136,31 @@ function Save-CaseinSettings {
         Set-Content -LiteralPath $script:Paths.Settings -Encoding UTF8
 }
 
+function Read-CaseinTrustedLanState {
+    if (-not (Test-Path -LiteralPath $script:Paths.TrustedLan)) {
+        return [pscustomobject]@{ enabled = $false }
+    }
+    try {
+        Get-Content -Raw -LiteralPath $script:Paths.TrustedLan | ConvertFrom-Json
+    } catch {
+        Write-CaseinLog "Ignoring invalid Trusted LAN state: $($_.Exception.Message)"
+        [pscustomobject]@{ enabled = $false }
+    }
+}
+
+function Set-CaseinTrustedLan {
+    param([bool]$Enabled, [int]$Port)
+
+    $helper = Join-Path $PSScriptRoot 'Casein.TrustedLan.ps1'
+    $action = if ($Enabled) { 'Enable' } else { 'Disable' }
+    $arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$helper`" -Action $action -Port $Port -DataRoot `"$($script:Paths.DataRoot)`" -ReleaseRoot `"$($script:Paths.ReleaseRoot)`""
+    $process = Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+        throw "Trusted LAN $action was cancelled or failed with exit code $($process.ExitCode)."
+    }
+    Read-CaseinTrustedLanState
+}
+
 function Get-CaseinPort {
     param([int]$SavedPort)
 
@@ -224,7 +250,7 @@ function Get-CaseinEnvironment {
     $origin = Get-OrCreateCaseinOriginIdentity
     New-Item -ItemType Directory -Force -Path $script:Paths.RuntimeTemp | Out-Null
 
-    @{
+    $environment = @{
         'CASEIN_PROFILE' = 'desktop'
         'CASEIN_DESKTOP_DATA_DIR' = $script:Paths.DataRoot
         'DEVIDE_RELEASE_ROOT' = $script:Paths.ReleaseRoot
@@ -245,6 +271,15 @@ function Get-CaseinEnvironment {
         'CASEIN_ORIGIN_ID' = $origin.origin_id
         'CASEIN_ORIGIN_DISPLAY_NAME' = $origin.origin_name
     }
+    $trustedLan = Read-CaseinTrustedLanState
+    if ([bool]$trustedLan.enabled -and [int]$trustedLan.port -eq $Port) {
+        $environment['CASEIN_DESKTOP_LAN'] = 'true'
+        $environment['CASEIN_LAN_INSECURE_HTTP'] = 'true'
+        $environment['CASEIN_LAN_HOST'] = [string]$trustedLan.address
+        $environment['CASEIN_LAN_IPS'] = [string]$trustedLan.address
+        $environment['PHX_IP'] = '0.0.0.0'
+    }
+    $environment
 }
 
 function Initialize-CaseinJobObjectSupport {
@@ -550,6 +585,11 @@ function Start-CaseinTray {
     $rollbackItem = $menu.Items.Add('Roll back last update')
     $logsItem = $menu.Items.Add('Open logs')
     $supportItem = $menu.Items.Add('Create support bundle')
+    $trustedLanItem = $menu.Items.Add('Trusted LAN access')
+    $trustedLanState = Read-CaseinTrustedLanState
+    $trustedLanItem.Checked = [bool]$trustedLanState.enabled
+    $copyLanUrlItem = $menu.Items.Add('Copy Trusted LAN URL')
+    $copyLanUrlItem.Enabled = [bool]$trustedLanState.enabled
     $startupItem = $menu.Items.Add('Launch at Windows sign-in')
     $startupItem.Checked = $script:LaunchAtSignIn
     [void]$menu.Items.Add('-')
@@ -619,6 +659,37 @@ function Start-CaseinTray {
         } catch {
             Write-CaseinLog "Support bundle failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Support bundle failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
+        }
+    })
+    $trustedLanItem.Add_Click({
+        $trustedLanItem.Enabled = $false
+        try {
+            $enable = -not $trustedLanItem.Checked
+            Stop-CaseinRuntime $script:Port
+            $state = Set-CaseinTrustedLan $enable $script:Port
+            $trustedLanItem.Checked = [bool]$state.enabled
+            $copyLanUrlItem.Enabled = [bool]$state.enabled
+            if (-not (Start-CaseinRuntime $script:Port)) {
+                throw 'Runtime did not become ready after changing Trusted LAN access.'
+            }
+            $message = if ($state.enabled) {
+                "Trusted LAN is available at $($state.url). Re-pair the same Windows origin after an address change."
+            } else {
+                'Trusted LAN access and its firewall rule are disabled.'
+            }
+            $tray.ShowBalloonTip(5000, 'Casein Trusted LAN', $message, [Windows.Forms.ToolTipIcon]::Info)
+        } catch {
+            Write-CaseinLog "Trusted LAN change failed: $($_.Exception.Message)"
+            $tray.ShowBalloonTip(5000, 'Trusted LAN change failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
+            if (-not (Test-CaseinReady $script:Port)) { Start-CaseinRuntime $script:Port | Out-Null }
+        } finally {
+            $trustedLanItem.Enabled = $true
+        }
+    })
+    $copyLanUrlItem.Add_Click({
+        $state = Read-CaseinTrustedLanState
+        if ([bool]$state.enabled -and $state.url) {
+            [Windows.Forms.Clipboard]::SetText([string]$state.url)
         }
     })
     $quitItem.Add_Click({
