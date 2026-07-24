@@ -89,5 +89,4 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.Close do
     do: %{status: "error", reason: Shared.health_error(reason)}
 
   defp close_result_payload(other), do: %{status: "unknown", result: inspect(other)}
-
 end

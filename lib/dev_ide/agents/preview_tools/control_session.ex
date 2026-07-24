@@ -33,5 +33,4 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession do
   defdelegate preview_diff_opts_for_test(a1), to: Interaction
   defdelegate playback_open(a1, a2), to: Playback
   defdelegate close(a1), to: Close
-
 end
