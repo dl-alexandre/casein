@@ -49,8 +49,8 @@ If you must check whether a symbol or file exists in the shared root, ask the
 committed tree, which no concurrent edit can mutate under you:
 
 ```sh
-git cat-file -e HEAD:lib/dev_ide/foo.ex      # exists in HEAD?
-git show HEAD:lib/dev_ide/foo.ex | grep …    # read the committed content
+git cat-file -e HEAD:lib/casein/foo.ex      # exists in HEAD?
+git show HEAD:lib/casein/foo.ex | grep …    # read the committed content
 ```
 
 If the working tree and `HEAD` disagree, a concurrent agent is mid-refactor —
@@ -63,8 +63,8 @@ or commit a bare index. Stage and commit explicit paths so you cannot capture
 someone else's work:
 
 ```sh
-git add docs/ lib/dev_ide/my_file.ex
-git commit -- docs/ lib/dev_ide/my_file.ex
+git add docs/ lib/casein/my_file.ex
+git commit -- docs/ lib/casein/my_file.ex
 ```
 
 ### 4. Snapshot before anything destructive

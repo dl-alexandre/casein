@@ -22,7 +22,7 @@ on is an implementation detail. This subsystem owns:
   (`FileAccess`, `SshRunner`).
 - Cross-workspace read models and viewer-aliasing (`SessionSummary`, `Aliases`).
 
-The consumer-facing facade is `DevIDE.Workspaces` (at `lib/dev_ide/workspaces.ex`,
+The consumer-facing facade is `DevIDE.Workspaces` (at `lib/casein/workspaces.ex`,
 **outside** this directory): all LiveViews/channels/plugs depend on it, never on a
 source. It also owns folder-attach (`folder:`-prefixed ids, base64url path) and
 `allowed_roots/0`.
@@ -31,23 +31,23 @@ source. It also owns folder-attach (`folder:`-prefixed ids, base64url path) and
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Workspace` | `lib/dev_ide/workspace.ex` | Public value struct: `id, name, user, branch, status, path, metadata`. Source-agnostic. |
-| `DevIDE.WorkspaceSource` | `lib/dev_ide/workspace_source.ex` | Behaviour for discovery/lifecycle + optional-callback dispatch helpers (`prepare_local_argv`, `local_tmux_pane_shell`, `local_exec_cwd`, `default_log_service`, `detect_capabilities`, `create_form_fields`); `impl/0` reads the configured module. |
-| `DevIDE.WorkspaceSource.Local` | `lib/dev_ide/workspace_source/local.ex` | Default source: workspaces = subdirs of `:workspaces_root`; `status: :running`; start/stop no-ops; `delete` refused unless `allow_destructive`; `safe_host_path` gate. |
-| `DevIDE.Workspaces.State` | `lib/dev_ide/workspaces/state.ex` | Persistence boundary: `sync/1`, `persist_isolation/2`, `set_mode/2`, `mode_for/1`; `sanitize_manager_payload/1` deny-list; mode-change PubSub. |
-| `DevIDE.Workspaces.State.WorkspaceRecord` | `lib/dev_ide/workspaces/state/workspace_record.ex` | Cache struct: observed status, resolved `mode`, redacted isolation snapshot, `manager_payload`, `last_seen_at`. |
-| `DevIDE.Workspaces.State.Adapter` | `lib/dev_ide/workspaces/state/adapter.ex` | Persistence behaviour: `upsert/1`, `get/1`, `list/0`, `delete/1`. |
-| `DevIDE.Workspaces.State.MemoryAdapter` | `lib/dev_ide/workspaces/state/memory_adapter.ex` | GenServer-backed in-memory adapter (tests + dev fallback; the default). |
-| `DevIDE.Workspaces.State.EctoAdapter` | `lib/dev_ide/workspaces/state/ecto_adapter.ex` | Postgres adapter; upserts on `external_id` conflict into `workspace_records`. |
-| `DevIDE.Workspaces.DbIsolation` | `lib/dev_ide/workspaces/db_isolation.ex` | Read-only isolation snapshot struct (`isolation, source, summary, detected_at, signals`); never carries raw credentials. |
-| `DevIDE.Workspaces.Isolation` | `lib/dev_ide/workspaces/isolation.ex` | Public isolation API: `detect/2` (delegates to probe), `shared?/1`, `unsafe?/1`. |
-| `DevIDE.Workspaces.Isolation.Patterns` | `lib/dev_ide/workspaces/isolation/patterns.ex` | Host-pattern matcher for `:shared_db_patterns` / `:unsafe_db_patterns` (substring or `~r//`). |
-| `DevIDE.Workspaces.IsolationProbe` | `lib/dev_ide/workspaces/isolation_probe.ex` | Probe behaviour: `detect/2 :: DbIsolation.t()`. |
-| `DevIDE.Workspaces.IsolationProbe.LocalAdapter` | `lib/dev_ide/workspaces/isolation_probe/local_adapter.ex` | Filesystem-only probe: manager payload → env files → compose; classifies + aggregates signals. Default probe. |
-| `DevIDE.Workspaces.FileAccess` | `lib/dev_ide/workspaces/file_access.ex` | `ls/read/read_text/write_text/search/git_*` over a `{:local,_}` / `{:remote,host,_}` loc; remote via `ssh`. |
-| `DevIDE.Workspaces.SshRunner` | `lib/dev_ide/workspaces/ssh_runner.ex` | Test seam over `ssh`; default `SshRunner.System` shells out via `System.cmd`/`Port`. |
-| `DevIDE.Workspaces.SessionSummary` | `lib/dev_ide/workspaces/session_summary.ex` | Cross-workspace read model for switchers/pickers; `build/1`, `build_many/1`, `orphan_tmux_sessions/1`; dedupes path/name aliases. |
-| `DevIDE.Workspaces.Aliases` | `lib/dev_ide/workspaces/aliases.ex` | Maps a workspace id to the set of viewer ids that share its on-disk path (`@moduledoc false`). |
+| `DevIDE.Workspace` | `lib/casein/workspace.ex` | Public value struct: `id, name, user, branch, status, path, metadata`. Source-agnostic. |
+| `DevIDE.WorkspaceSource` | `lib/casein/workspace_source.ex` | Behaviour for discovery/lifecycle + optional-callback dispatch helpers (`prepare_local_argv`, `local_tmux_pane_shell`, `local_exec_cwd`, `default_log_service`, `detect_capabilities`, `create_form_fields`); `impl/0` reads the configured module. |
+| `DevIDE.WorkspaceSource.Local` | `lib/casein/workspace_source/local.ex` | Default source: workspaces = subdirs of `:workspaces_root`; `status: :running`; start/stop no-ops; `delete` refused unless `allow_destructive`; `safe_host_path` gate. |
+| `DevIDE.Workspaces.State` | `lib/casein/workspaces/state.ex` | Persistence boundary: `sync/1`, `persist_isolation/2`, `set_mode/2`, `mode_for/1`; `sanitize_manager_payload/1` deny-list; mode-change PubSub. |
+| `DevIDE.Workspaces.State.WorkspaceRecord` | `lib/casein/workspaces/state/workspace_record.ex` | Cache struct: observed status, resolved `mode`, redacted isolation snapshot, `manager_payload`, `last_seen_at`. |
+| `DevIDE.Workspaces.State.Adapter` | `lib/casein/workspaces/state/adapter.ex` | Persistence behaviour: `upsert/1`, `get/1`, `list/0`, `delete/1`. |
+| `DevIDE.Workspaces.State.MemoryAdapter` | `lib/casein/workspaces/state/memory_adapter.ex` | GenServer-backed in-memory adapter (tests + dev fallback; the default). |
+| `DevIDE.Workspaces.State.EctoAdapter` | `lib/casein/workspaces/state/ecto_adapter.ex` | Postgres adapter; upserts on `external_id` conflict into `workspace_records`. |
+| `DevIDE.Workspaces.DbIsolation` | `lib/casein/workspaces/db_isolation.ex` | Read-only isolation snapshot struct (`isolation, source, summary, detected_at, signals`); never carries raw credentials. |
+| `DevIDE.Workspaces.Isolation` | `lib/casein/workspaces/isolation.ex` | Public isolation API: `detect/2` (delegates to probe), `shared?/1`, `unsafe?/1`. |
+| `DevIDE.Workspaces.Isolation.Patterns` | `lib/casein/workspaces/isolation/patterns.ex` | Host-pattern matcher for `:shared_db_patterns` / `:unsafe_db_patterns` (substring or `~r//`). |
+| `DevIDE.Workspaces.IsolationProbe` | `lib/casein/workspaces/isolation_probe.ex` | Probe behaviour: `detect/2 :: DbIsolation.t()`. |
+| `DevIDE.Workspaces.IsolationProbe.LocalAdapter` | `lib/casein/workspaces/isolation_probe/local_adapter.ex` | Filesystem-only probe: manager payload → env files → compose; classifies + aggregates signals. Default probe. |
+| `DevIDE.Workspaces.FileAccess` | `lib/casein/workspaces/file_access.ex` | `ls/read/read_text/write_text/search/git_*` over a `{:local,_}` / `{:remote,host,_}` loc; remote via `ssh`. |
+| `DevIDE.Workspaces.SshRunner` | `lib/casein/workspaces/ssh_runner.ex` | Test seam over `ssh`; default `SshRunner.System` shells out via `System.cmd`/`Port`. |
+| `DevIDE.Workspaces.SessionSummary` | `lib/casein/workspaces/session_summary.ex` | Cross-workspace read model for switchers/pickers; `build/1`, `build_many/1`, `orphan_tmux_sessions/1`; dedupes path/name aliases. |
+| `DevIDE.Workspaces.Aliases` | `lib/casein/workspaces/aliases.ex` | Maps a workspace id to the set of viewer ids that share its on-disk path (`@moduledoc false`). |
 
 ## Data flow / lifecycle
 

@@ -133,7 +133,7 @@ if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' 
   echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.devide/agent-shims" >&2
   exit 1
 fi
-if ! grep -q '@default_bin_dir "~/.devide/agent-shims"' lib/dev_ide/agents/agent_shims.ex; then
+if ! grep -q '@default_bin_dir "~/.devide/agent-shims"' lib/casein/agents/agent_shims.ex; then
   echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.devide/agent-shims" >&2
   exit 1
 fi

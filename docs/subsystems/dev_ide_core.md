@@ -64,17 +64,17 @@ for a host-configurable vocabulary scrub before that generic 1.0.
 
 ## Delegation boundary
 
-The DevIDE domain (`DevIDE` boundary in `lib/dev_ide_domain.ex`) lists `GitCtl`,
+The DevIDE domain (`DevIDE` boundary in `lib/casein_domain.ex`) lists `GitCtl`,
 `ExecCtl`, and `McpCtl` among its allowed `deps`, and these app modules delegate
 into them:
 
 | Core module | DevIDE app delegator | Shape |
 |-------------|----------------------|-------|
-| `ExecCtl.Allowlist` | `DevIDE.Commands.Allowlist` (`lib/dev_ide/commands/allowlist.ex`) | Thin `defdelegate all/0`, `allowed?/1`, `argv_for/1`. The real id→argv map is in core; this is the source of truth. |
+| `ExecCtl.Allowlist` | `DevIDE.Commands.Allowlist` (`lib/casein/commands/allowlist.ex`) | Thin `defdelegate all/0`, `allowed?/1`, `argv_for/1`. The real id→argv map is in core; this is the source of truth. |
 | `ExecCtl.Allowlist` (transitively) | `DevIDE.Commands` → `DevIDE.Policy` | `DevIDE.Commands.allowed?/1` re-exports the delegate; `DevIDE.Policy.can_run_command?/1` gates on `command_allowed?/1`, which calls `DevIDE.Commands.allowed?/1` (i.e. `ExecCtl.Allowlist.allowed?/1`) or a workflow command. |
-| `GitCtl.Inspector` | `DevIDE.Git.Inspector` (`lib/dev_ide/git/inspector.ex`) | `inspect_cwd/1` delegates to `GitCtl.Inspector.inspect_cwd/1` and maps `%GitCtl.Inspector{}` → its own mirror struct. `infer_agent/1` is DevIDE workspace policy injected back into `GitCtl` via `config :git_ctl, agent_inference: {mod, fun}`. An `@after_compile` guard raises if the two structs' fields drift apart. |
-| `GitCtl.Cache` | `DevIDE.Git.Inspector` / `DevIDE.Git.InspectorCache` (`lib/dev_ide/git/inspector_cache.ex`) | The app owns the ETS table named by `GitCtl.Cache.table/0` (created in a supervised `InspectorCache` GenServer); `GitCtl.Cache` only reads/writes it. |
-| `McpCtl.Error` | `DevIDE.Agents.MCPError` (`lib/dev_ide/agents/mcp_error.ex`) | Thin `defdelegate format/1`, `summary/1`, `tool_result/1`. |
+| `GitCtl.Inspector` | `DevIDE.Git.Inspector` (`lib/casein/git/inspector.ex`) | `inspect_cwd/1` delegates to `GitCtl.Inspector.inspect_cwd/1` and maps `%GitCtl.Inspector{}` → its own mirror struct. `infer_agent/1` is DevIDE workspace policy injected back into `GitCtl` via `config :git_ctl, agent_inference: {mod, fun}`. An `@after_compile` guard raises if the two structs' fields drift apart. |
+| `GitCtl.Cache` | `DevIDE.Git.Inspector` / `DevIDE.Git.InspectorCache` (`lib/casein/git/inspector_cache.ex`) | The app owns the ETS table named by `GitCtl.Cache.table/0` (created in a supervised `InspectorCache` GenServer); `GitCtl.Cache` only reads/writes it. |
+| `McpCtl.Error` | `DevIDE.Agents.MCPError` (`lib/casein/agents/mcp_error.ex`) | Thin `defdelegate format/1`, `summary/1`, `tool_result/1`. |
 | `McpCtl.Tool` / `McpCtl.Params` / `McpCtl.Schema` | `DevIDE.Agents.TerminalTools`, `DevIDE.Agents.PreviewTools`, `DevIDE.Agents.AnnotationTools` | The tool modules `alias McpCtl.{Params, Tool}` and build their `definitions/0` from these fragments. `TerminalTools`/`AnnotationTools` alias `@type tool :: McpCtl.Tool.t()`; `PreviewTools` inlines an equivalent map type. |
 
 The authoritative allowlist arrow is worth stating plainly: **`ExecCtl.Allowlist`

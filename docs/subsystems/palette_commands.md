@@ -25,17 +25,17 @@ the palette's file rows open them:
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.CommandPalette` | `lib/dev_ide/command_palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
-| `DevIDE.CommandPalette.FileIndex` | `lib/dev_ide/command_palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
-| `DevIDE.CommandPalette.Fuzzy` | `lib/dev_ide/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
-| `DevIDE.CommandPalette.Item` | `lib/dev_ide/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
-| `DevIDE.CommandPalette.Actions` | `lib/dev_ide/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
-| `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
-| `DevIDE.Labels` | `lib/dev_ide/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
-| `DevIDE.Labels.Derivation` | `lib/dev_ide/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
-| `DevIDE.Annotations` | `lib/dev_ide/annotations.ex` *(context, outside assigned dir)* | CRUD + approval lifecycle for annotations; audits each write and broadcasts on `workspace:<id>`. |
-| `DevIDE.Annotations.Annotation` | `lib/dev_ide/annotations/annotation.ex` | Ecto schema + changeset; `validate_context_present/1` requires at least one of terminal/file/preview/linked context. |
-| `DevIdeWeb.WorkspaceLive.Show.PaletteItems` | `lib/dev_ide_web/live/workspace_live/show/palette_items.ex` *(web tier)* | Per-request orchestrator: merges static `Palette.query` results with live socket-derived rows (sessions, windows, panes, templates, workflows, shell) and re-`resolve`s dynamic ids. |
+| `DevIDE.CommandPalette` | `lib/casein/command_palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
+| `DevIDE.CommandPalette.FileIndex` | `lib/casein/command_palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
+| `DevIDE.CommandPalette.Fuzzy` | `lib/casein/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
+| `DevIDE.CommandPalette.Item` | `lib/casein/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
+| `DevIDE.CommandPalette.Actions` | `lib/casein/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
+| `DevIDE.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
+| `DevIDE.Labels` | `lib/casein/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
+| `DevIDE.Labels.Derivation` | `lib/casein/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
+| `DevIDE.Annotations` | `lib/casein/annotations.ex` *(context, outside assigned dir)* | CRUD + approval lifecycle for annotations; audits each write and broadcasts on `workspace:<id>`. |
+| `DevIDE.Annotations.Annotation` | `lib/casein/annotations/annotation.ex` | Ecto schema + changeset; `validate_context_present/1` requires at least one of terminal/file/preview/linked context. |
+| `DevIdeWeb.WorkspaceLive.Show.PaletteItems` | `lib/casein_web/live/workspace_live/show/palette_items.ex` *(web tier)* | Per-request orchestrator: merges static `Palette.query` results with live socket-derived rows (sessions, windows, panes, templates, workflows, shell) and re-`resolve`s dynamic ids. |
 
 ## Data flow / lifecycle
 

@@ -42,17 +42,17 @@ vocabulary.
 
 It has three layers under this subsystem’s direct ownership:
 
-1. **Audit** (`lib/dev_ide/audit/`) — the raw record. A flat, append-only
+1. **Audit** (`lib/casein/audit/`) — the raw record. A flat, append-only
    `Event` struct, written through a swappable `Adapter` (in-memory ring in
    dev/test, Postgres in prod). It knows nothing about run vocabulary; it just
    stores and returns events.
-2. **Run ledger** (`lib/dev_ide/runs/`) — a normalized vocabulary *on top of*
+2. **Run ledger** (`lib/casein/runs/`) — a normalized vocabulary *on top of*
    Audit. `Runs.Ledger` writes/reads a constrained set of `run.*` actions
    (session attach/deny, run started/succeeded/failed/timed_out, approval
    request/grant/deny) so terminal and run surfaces cannot invent incompatible
    event shapes. `Runs.Status` is the single source of truth for what each
    status string *means* (terminal? failed? retryable?).
-3. **Logs** (`lib/dev_ide/logs/`) — live, *non-durable* workspace service log
+3. **Logs** (`lib/casein/logs/`) — live, *non-durable* workspace service log
    streaming (SSE from the workspace source). It is part of the activity
    surface but is a transient transport, not part of the durable plane.
 
@@ -67,15 +67,15 @@ request parameters (MCP `actor_id` especially).
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Audit` | `lib/dev_ide/audit.ex` | Public entry point. `emit/1`, `emit!/1`, `emit_decision/2`, `list/1`, `recent_for/2`, `clear/0`; dispatches to the configured adapter. |
-| `DevIDE.Audit.Event` | `lib/dev_ide/audit/event.ex` | The single audit record struct. Stable shape mirroring the `audit_events` table; `new/1` mints `id` + `inserted_at`. |
-| `DevIDE.Audit.Adapter` | `lib/dev_ide/audit/adapter.ex` | Behaviour for persistence backends (`record/1`, `list/1`, `recent_for/2`, `clear/0`). |
-| `DevIDE.Audit.MemoryAdapter` | `lib/dev_ide/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. **Test** default only (the `config/test.exs` override). |
-| `DevIDE.Audit.EctoAdapter` | `lib/dev_ide/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. **Default for every env** (`config.exs`); test overrides to `MemoryAdapter`. Caps metadata at 32 KB. |
-| `DevIDE.Runs.Ledger` | `lib/dev_ide/runs/ledger.ex` | Normalized run vocabulary over Audit: emits `run.*` events, reads back run summaries/timelines, tags every event with `ledger`/`ledger_version`. |
-| `DevIDE.Runs.Status` | `lib/dev_ide/runs/status.ex` | Status semantics: `normalize/1`, `terminal?/1`, `failed?/1`, `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`, `status_class/1`. |
-| `DevIDE.Logs.Adapter` | `lib/dev_ide/logs/adapter.ex` | Behaviour + dispatcher for workspace service log streaming. |
-| `DevIDE.Logs.SSE` | `lib/dev_ide/logs/sse.ex` | Default log adapter; delegates to `DevIDE.Workspaces.stream_logs/3`. |
+| `DevIDE.Audit` | `lib/casein/audit.ex` | Public entry point. `emit/1`, `emit!/1`, `emit_decision/2`, `list/1`, `recent_for/2`, `clear/0`; dispatches to the configured adapter. |
+| `DevIDE.Audit.Event` | `lib/casein/audit/event.ex` | The single audit record struct. Stable shape mirroring the `audit_events` table; `new/1` mints `id` + `inserted_at`. |
+| `DevIDE.Audit.Adapter` | `lib/casein/audit/adapter.ex` | Behaviour for persistence backends (`record/1`, `list/1`, `recent_for/2`, `clear/0`). |
+| `DevIDE.Audit.MemoryAdapter` | `lib/casein/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. **Test** default only (the `config/test.exs` override). |
+| `DevIDE.Audit.EctoAdapter` | `lib/casein/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. **Default for every env** (`config.exs`); test overrides to `MemoryAdapter`. Caps metadata at 32 KB. |
+| `DevIDE.Runs.Ledger` | `lib/casein/runs/ledger.ex` | Normalized run vocabulary over Audit: emits `run.*` events, reads back run summaries/timelines, tags every event with `ledger`/`ledger_version`. |
+| `DevIDE.Runs.Status` | `lib/casein/runs/status.ex` | Status semantics: `normalize/1`, `terminal?/1`, `failed?/1`, `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`, `status_class/1`. |
+| `DevIDE.Logs.Adapter` | `lib/casein/logs/adapter.ex` | Behaviour + dispatcher for workspace service log streaming. |
+| `DevIDE.Logs.SSE` | `lib/casein/logs/sse.ex` | Default log adapter; delegates to `DevIDE.Workspaces.stream_logs/3`. |
 
 ## Data flow / lifecycle
 

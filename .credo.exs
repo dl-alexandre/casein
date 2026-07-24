@@ -138,7 +138,7 @@
           # pure churn in a file with active WIP. Re-enable there once the
           # guards move to ExUnit tags.
           {Credo.Check.Refactor.UnlessWithElse,
-           [files: %{excluded: ["test/dev_ide_web/live/workspace_pane_split_test.exs"]}]},
+           [files: %{excluded: ["test/casein_web/live/workspace_pane_split_test.exs"]}]},
           {Credo.Check.Refactor.WithClauses, []},
 
           #

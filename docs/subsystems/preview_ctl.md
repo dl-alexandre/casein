@@ -13,8 +13,8 @@ adapter. It is a boundary in the spirit of `TmuxCtl`: it provides generic
 http(s) URL primitives and runtime session orchestration, and it stays
 deliberately ignorant of the host application.
 
-The host application (`DevIDE.PreviewControl`, in `lib/dev_ide/previews` and
-`lib/dev_ide/preview_control*`) owns everything `PreviewCtl` does not:
+The host application (`DevIDE.PreviewControl`, in `lib/casein/previews` and
+`lib/casein/preview_control*`) owns everything `PreviewCtl` does not:
 
 - Ecto-persisted preview/control-session records, audit, and PubSub.
 - Workspace surface discovery and the workspace URL allowlist
@@ -22,13 +22,13 @@ The host application (`DevIDE.PreviewControl`, in `lib/dev_ide/previews` and
 - Human-facing tmux preview panes and iframe-overlay broadcasts.
 
 The DevIDE host drives `PreviewCtl.*` from the `DevIDE.PreviewControl`
-(`lib/dev_ide/preview_control.ex`) facade, which selects an adapter via the
+(`lib/casein/preview_control.ex`) facade, which selects an adapter via the
 `:preview_control_adapter` config — `:memory` → `PreviewCtl.Test.FakeAdapter`,
 `:playwright` → `PreviewCtl.Playwright.Adapter` (resolved by
 `PreviewCtl.Session.adapter_for/1`). `DevIDE.PreviewControl.Registry`
 `defdelegate`s into `PreviewCtl.Registry`.
 
-This subsystem is distinct from `lib/dev_ide/previews`: that is the host
+This subsystem is distinct from `lib/casein/previews`: that is the host
 integration; this is the reusable control core.
 
 ## Module map
@@ -52,7 +52,7 @@ integration; this is the reusable control core.
    under `config :preview_ctl, :adapter`. The Playwright script path maps from
    `:dev_ide :preview_playwright_script` to `:preview_ctl :playwright_script`.
    `PreviewCtl.Registry` and `PreviewCtl.Playwright.Bridge` are started in the
-   DevIDE supervision tree (`lib/dev_ide/application.ex`).
+   DevIDE supervision tree (`lib/casein/application.ex`).
 
 2. **Start a session.** The host calls `PreviewCtl.Runtime.start/4` (or
    `ensure_registered/4`) with an integer `session_id`, an opaque `session`
@@ -149,7 +149,7 @@ Functions/processes the host application calls:
   from `<base href>` or a canonical `<link>` so a served snapshot can report the
   true site URL rather than the path it is served from.
 - **`@moduledoc false` on facades.** The DevIDE-side facades in
-  `lib/dev_ide/preview_control*` are out of this subsystem; do not edit them
+  `lib/casein/preview_control*` are out of this subsystem; do not edit them
   from here.
 
 ## See also

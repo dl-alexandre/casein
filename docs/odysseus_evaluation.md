@@ -111,7 +111,7 @@ This is almost exactly the mental model already described in `docs/product.md` �
 
 ## Current DevIDE hooks that already point at this world
 
-- `lib/dev_ide/agents.ex` + `LocalAdapter` — explicitly detects opencode, fff, browser artifacts, Tidewave.
+- `lib/casein/agents.ex` + `LocalAdapter` — explicitly detects opencode, fff, browser artifacts, Tidewave.
 - Tidewave MCP endpoint (when the dep is present).
 - "agent write locked" modes and the whole proposal/approval machinery.
 - DevIDE's read/submit API surface is designed for a higher-level coordinator/planner to drive work.
@@ -148,7 +148,7 @@ These live at the root of the DevIDE checkout so they are easy to reference or c
 
 ## References
 
-- DevIDE: `docs/product.md`, `docs/architecture.md`, `lib/dev_ide/agents.ex`, `lib/dev_ide_web/router.ex` (API surface), Tidewave integration.
+- DevIDE: `docs/product.md`, `docs/architecture.md`, `lib/casein/agents.ex`, `lib/casein_web/router.ex` (API surface), Tidewave integration.
 - Odysseus: README, `src/agent_loop.py` (inferred from structure), `mcp_servers/`, architecture section in README, THREAT_MODEL.md, SECURITY.md.
 
 Status: Evaluation complete + first prototype delivered. Awaiting user direction on standing up Odysseus + wiring test.

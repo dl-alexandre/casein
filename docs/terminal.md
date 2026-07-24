@@ -209,7 +209,7 @@ them into a `<pre>` with styled spans. Why Ghostty for raw PTY:
 - **Same persistence**: tmux survives BEAM restarts; a new
   `Ghostty.Terminal` rebuilds the grid from tmux's history on reattach.
 
-Wiring lives in `lib/dev_ide_web/live/workspace_live/show.ex`:
+Wiring lives in `lib/casein_web/live/workspace_live/show.ex`:
 `@ghostty_term_id`, `start_ghostty_terminal/1`,
 `handle_info({:terminal_ready, ...})` (lazily spawns the PTY using the
 fitted cols/rows), `handle_info({:data, ...})` (forwards PTY output into
@@ -217,6 +217,6 @@ the terminal grid), `cleanup_ghostty_resources/1` (called on mode
 transitions out of `:raw` and from `terminate/2`).
 
 Disk writes for the Snapshot button live in
-`lib/dev_ide/terminals/ghostty_snapshot.ex` — extracted from `show.ex` so
+`lib/casein/terminals/ghostty_snapshot.ex` — extracted from `show.ex` so
 the LiveView source stays write-free for the `DevIDE.ProposalsNoApplyTest`
 boundary guard.

@@ -15,16 +15,16 @@
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| ~~A1~~ | ~~`Export.Sanitizer.redact_text/1` is public, `@doc`'d and `@spec`'d but has **zero callers** in `lib/`.~~ | ~~`lib/dev_ide/export/sanitizer.ex:34-49`~~ | **Resolved** — has multiple callers: `workspace_status.ex` (via `redact_text_values/1`), `mcp_audit.ex`, and `agent_prompt_sender.ex`. Finding was inaccurate. |
-| A2 | Export emits permanently-inert fields: `WorkspaceStatus.active_run_summary/1` always returns `nil`, `run_artifacts/1` always `[]` (retired with the delegated-execution stack). | `lib/dev_ide/export/workspace_status.ex` — `active_run_summary/1` at `defp active_run_summary`, `run_artifacts/1` | Intentionally kept: both are live in the payload / UI (`run_events.ex` calls `run_artifacts/1`). The comment in the source documents the retirement. No action needed unless the feature returns. |
-| ~~A3~~ | ~~`runtimes.ex:list_agent_worktrees/1` filters a `"failed"` status that no transition in `StateMachine.statuses/0` produces; `Runtime.failure_reason` is likewise unreachable.~~ | ~~`lib/dev_ide/runtimes.ex` (+ `runtimes/state_machine.ex`)~~ | **Resolved/inaccurate** — `list_agent_worktrees/1` only rejects `"cleaned"` and `"expired"`, which are the real terminal statuses. `failure_reason` is set in `expire_runtime/2` and used in the payload, ecto adapter, and preview server. No dead code. |
+| ~~A1~~ | ~~`Export.Sanitizer.redact_text/1` is public, `@doc`'d and `@spec`'d but has **zero callers** in `lib/`.~~ | ~~`lib/casein/export/sanitizer.ex:34-49`~~ | **Resolved** — has multiple callers: `workspace_status.ex` (via `redact_text_values/1`), `mcp_audit.ex`, and `agent_prompt_sender.ex`. Finding was inaccurate. |
+| A2 | Export emits permanently-inert fields: `WorkspaceStatus.active_run_summary/1` always returns `nil`, `run_artifacts/1` always `[]` (retired with the delegated-execution stack). | `lib/casein/export/workspace_status.ex` — `active_run_summary/1` at `defp active_run_summary`, `run_artifacts/1` | Intentionally kept: both are live in the payload / UI (`run_events.ex` calls `run_artifacts/1`). The comment in the source documents the retirement. No action needed unless the feature returns. |
+| ~~A3~~ | ~~`runtimes.ex:list_agent_worktrees/1` filters a `"failed"` status that no transition in `StateMachine.statuses/0` produces; `Runtime.failure_reason` is likewise unreachable.~~ | ~~`lib/casein/runtimes.ex` (+ `runtimes/state_machine.ex`)~~ | **Resolved/inaccurate** — `list_agent_worktrees/1` only rejects `"cleaned"` and `"expired"`, which are the real terminal statuses. `failure_reason` is set in `expire_runtime/2` and used in the payload, ecto adapter, and preview server. No dead code. |
 | A4 | `DevIdeCore` convenience facade (`git_inspect/1`, `exec_run/3`, `mcp_tool/3`) is unused — callers reach `GitCtl.Inspector` / `McpCtl.Tool` directly. | `dev_ide_core/lib/dev_ide_core.ex` | Keep as documented sugar, or delete if it will never be the call path. |
 
 ## B. Duplication to consolidate
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `DevIdeCore.exec_run/3`. The app's real executor `DevIDE.Commands.spawn/3` reimplements the same plumbing inline. | `dev_ide_core/lib/exec_ctl/port.ex` vs `lib/dev_ide/commands.ex` | Point `DevIDE.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
+| B1 | `ExecCtl.Port` (erlexec spawn + proxy + monitor) has **no production caller** — only tests and the unused `DevIdeCore.exec_run/3`. The app's real executor `DevIDE.Commands.spawn/3` reimplements the same plumbing inline. | `dev_ide_core/lib/exec_ctl/port.ex` vs `lib/casein/commands.ex` | Point `DevIDE.Commands.spawn/3` at `ExecCtl.Port`, deleting the duplicate plumbing — or drop `ExecCtl.Port` if the app's copy must own it. |
 
 ## C. Contract / spec mismatches
 
@@ -36,15 +36,15 @@
 
 | # | Finding | Location | Action |
 |---|---------|----------|--------|
-| ~~D1~~ | ~~`DevIDE.Audit` / `MemoryAdapter` / `Event` `@moduledoc`s describe the Ecto adapter as future work ("M11", "Swap with an Ecto-backed adapter in M11"), but `EctoAdapter` is fully implemented and the prod default.~~ | ~~`lib/dev_ide/audit/audit.ex:2-8`, `memory_adapter.ex:1-4`, `audit/event.ex:2-5`~~ | **Already fixed** — all three moduledocs are in present tense. No stale M11 reference found. |
-| ~~D2~~ | ~~Inline `NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3` — that function already exists and is already called.~~ | ~~`lib/dev_ide_web/live/workspace_live/show.ex:164`~~ | **Already fixed** — no such NOTE comment exists in show.ex. |
+| ~~D1~~ | ~~`DevIDE.Audit` / `MemoryAdapter` / `Event` `@moduledoc`s describe the Ecto adapter as future work ("M11", "Swap with an Ecto-backed adapter in M11"), but `EctoAdapter` is fully implemented and the prod default.~~ | ~~`lib/casein/audit/audit.ex:2-8`, `memory_adapter.ex:1-4`, `audit/event.ex:2-5`~~ | **Already fixed** — all three moduledocs are in present tense. No stale M11 reference found. |
+| ~~D2~~ | ~~Inline `NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3` — that function already exists and is already called.~~ | ~~`lib/casein_web/live/workspace_live/show.ex:164`~~ | **Already fixed** — no such NOTE comment exists in show.ex. |
 | D3 | `docs/terminal.md` still narrates the retired `:ghostty_pty`-per-pane raw path and smallest-viewer resize; prod defaults to `SessionOwner`/`Attachment` and focused-viewer resize. (Doc fix, but the docs-win call is to update the narrative.) | `docs/terminal.md` vs `terminals/pane_worker.ex:113`, `session_owner.ex` | Refresh `terminal.md` to the `:session_owner` reality (see `docs/subsystems/terminals.md`). |
 
 ## E. Known-incomplete (documented, no action unless prioritised)
 
 - `Annotation.preview_id` is intentionally a nullable `:binary_id`, **not** a
   foreign key, because the preview persistence model has not landed.
-  (`lib/dev_ide/annotations/annotation.ex:30`.)
+  (`lib/casein/annotations/annotation.ex:30`.)
 - `DevIDE.Runs.Status` retains legacy delegated-execution statuses (`expired`,
   `abandoned`, `assignment_id`/`protocol`/`safe_action_id`) for
   backward-compatible timelines, with no doc explaining the retention.

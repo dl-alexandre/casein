@@ -198,8 +198,8 @@ config :casein, CaseinWeb.Endpoint,
       # Gettext translations
       ~r"priv/gettext/.*\.po$"E,
       # Router, Controllers, LiveViews and LiveComponents
-      ~r"lib/dev_ide_web/router\.ex$"E,
-      ~r"lib/dev_ide_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"lib/casein_web/router\.ex$"E,
+      ~r"lib/casein_web/(controllers|live|components)/.*\.(ex|heex)$"E
     ]
   ]
 

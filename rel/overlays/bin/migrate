@@ -5,7 +5,7 @@
 #   docker run --rm dev_ide:latest /app/bin/migrate
 #
 # Implemented as `eval` against Casein.Release.migrate/0
-# (see audit_remote.md CC-1 and lib/dev_ide/release.ex).
+# (see audit_remote.md CC-1 and lib/casein/release.ex).
 
 set -eu
 

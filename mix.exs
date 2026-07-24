@@ -106,8 +106,8 @@ defmodule Casein.MixProject do
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
-      {:casein_core, path: "dev_ide_core"},
-      {:casein_preview_browser, path: "dev_ide_preview_browser"},
+      {:casein_core, path: "casein_core"},
+      {:casein_preview_browser, path: "casein_preview_browser"},
       ghostty_dependency(),
       {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev, :test]},
@@ -130,7 +130,7 @@ defmodule Casein.MixProject do
 
   defp ghostty_dependency do
     if native_windows?() do
-      {:ghostty, path: "dev_ide_ghostty_windows", override: true}
+      {:ghostty, path: "casein_ghostty_windows", override: true}
     else
       {:ghostty, "~> 0.4"}
     end

@@ -57,7 +57,7 @@ end
 
 ## Best Practices
 
-1. **Never leak source concepts** into public modules (`lib/dev_ide/` outside `integrations/`).
+1. **Never leak source concepts** into public modules (`lib/casein/` outside `integrations/`).
 2. Put rich data in `metadata`. Generic code should only read well-known keys (see "Metadata Contract" in architecture docs).
 3. Use the optional callbacks (`prepare_local_argv`, `default_log_service`, etc.) instead of adding `if source == X` branches in generic code.
 4. Keep heavy dependencies (HTTP clients, special auth, etc.) inside your integration directory.
@@ -67,4 +67,4 @@ end
 - Test your source in isolation.
 - Add a small conformance test that exercises the public facade with your source selected.
 
-For the reference MILC implementation, see `lib/dev_ide/integrations/manager/`.
+For the reference MILC implementation, see `lib/casein/integrations/manager/`.

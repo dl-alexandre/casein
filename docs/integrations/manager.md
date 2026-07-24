@@ -1,6 +1,6 @@
 # MILC Devbox Manager Integration
 
-This directory (`lib/dev_ide/integrations/manager/`) contains the **entire** integration with the milc-devbox manager system. Nothing outside this tree (or its dedicated tests and this document) should contain knowledge of the manager, its payload shapes, service names, or deployment conventions.
+This directory (`lib/casein/integrations/manager/`) contains the **entire** integration with the milc-devbox manager system. Nothing outside this tree (or its dedicated tests and this document) should contain knowledge of the manager, its payload shapes, service names, or deployment conventions.
 
 ## Responsibilities
 
@@ -40,7 +40,7 @@ The `deploy/` subdirectory contains the systemd unit, Postgres compose file, and
 
 ## Testing
 
-All tests for this integration live under `test/dev_ide/integrations/manager/`. Public tests may use Bypass to stub the manager HTTP endpoints when exercising the full stack with this source selected.
+All tests for this integration live under `test/casein/integrations/manager/`. Public tests may use Bypass to stub the manager HTTP endpoints when exercising the full stack with this source selected.
 
 ---
 
@@ -156,7 +156,7 @@ exist and the remote-mode work is preserved for genuine off-box use.
 ### 5. Deployment — DevIDE + ops
 
 Canonical artifacts live in
-[`lib/dev_ide/integrations/manager/deploy/`](../../lib/dev_ide/integrations/manager/deploy/) —
+[`lib/casein/integrations/manager/deploy/`](../../lib/casein/integrations/manager/deploy/) —
 see its README for the install runbook. `mix release` ships them at
 `<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
 activation step (documented in the deploy/README) then copies them into the
@@ -172,13 +172,13 @@ questions, now resolved):
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
 - **Supervision: systemd unit**
-  (`lib/dev_ide/integrations/manager/deploy/devide.service`, activated into
+  (`lib/casein/integrations/manager/deploy/devide.service`, activated into
   the stable `/opt/devide/deploy/devide.service`). Host process in the `docker`
   group — native `/data/workspaces` + docker-socket access, matches the
   `devbox-manager` service. A container buys no isolation here since the
   docker-socket mount is root-equivalent regardless.
 - **Database: dedicated Postgres container**
-  (`lib/dev_ide/integrations/manager/deploy/docker-compose.postgres.yml`,
+  (`lib/casein/integrations/manager/deploy/docker-compose.postgres.yml`,
   activated into the stable `/opt/devide/deploy/docker-compose.postgres.yml`) on
   `127.0.0.1:15432` (a port
   clear of the devbox host's known occupants). The systemd unit brings it up
@@ -213,7 +213,7 @@ questions, now resolved):
 3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
    (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
    "all workspaces" view in `WorkspaceLive.Index`,
-   `lib/dev_ide/integrations/manager/deploy/` artifacts (release-bundled at
+   `lib/casein/integrations/manager/deploy/` artifacts (release-bundled at
    `<release>/deploy/` via `rel/overlays/deploy/`, then activated into stable
    `/opt/devide/deploy/`): systemd unit, dedicated-Postgres compose, env
    template, runbook). The post-7204683 path reconciliation ensures release

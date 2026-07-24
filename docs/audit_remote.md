@@ -103,7 +103,7 @@ the Session GenServer's `:DOWN` handler clears the subscriber but the
 tmux session itself is untouched. This survives a network drop the same
 way a local run does.
 
-- [`lib/dev_ide/terminals/session.ex`](../lib/dev_ide/terminals/session.ex) (`:DOWN` handler)
+- [`lib/casein/terminals/session.ex`](../lib/casein/terminals/session.ex) (`:DOWN` handler)
 
 ### 5. resume — *works* (browser drop AND server restart)
 
@@ -120,14 +120,14 @@ Two cases, both covered:
   replay-on-subscribe path carries it to the client unchanged. Closed in
   this commit.
 
-- [`lib/dev_ide/terminals/session.ex`](../lib/dev_ide/terminals/session.ex) (`init/1`, `trim_to/2`)
+- [`lib/casein/terminals/session.ex`](../lib/casein/terminals/session.ex) (`init/1`, `trim_to/2`)
 - [`lib/tmux_ctl/client.ex`](../lib/tmux_ctl/client.ex) (`session_exists?/1`, `capture_scrollback/1`)
-- Test: [`test/dev_ide/terminals/session_test.exs`](../test/dev_ide/terminals/session_test.exs) ("recovers tmux scrollback when the Session GenServer is rebuilt")
+- Test: [`test/casein/terminals/session_test.exs`](../test/casein/terminals/session_test.exs) ("recovers tmux scrollback when the Session GenServer is rebuilt")
 
 ### 6. audit inspect — *works*
 
 The Ecto audit adapter
-([`lib/dev_ide/audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex),
+([`lib/casein/audit/ecto_adapter.ex`](../lib/casein/audit/ecto_adapter.ex),
 the prod default) writes every gate decision to the `audit_events`
 table. Survives restart. The Run ledger and Agents MCP activity render
 contextual audit from the same storage — no remote-specific code needed.
@@ -138,7 +138,7 @@ Two replays, both durable:
 
 - **Audit replay** — reconstruct the decision event stream after a
   client returns. Durable via the Ecto audit adapter
-  ([`audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex)).
+  ([`audit/ecto_adapter.ex`](../lib/casein/audit/ecto_adapter.ex)).
   Survives restart.
 - **PTY replay** — reconstruct what the terminal showed. In-state buffer
   for the live-process case; tmux scrollback capture for the
@@ -162,7 +162,7 @@ Shipped:
 - [`.dockerignore`](../.dockerignore) — excludes `_build`, `deps`,
   `ui-iterations*`, `docs`, `.git`, etc. for a tight build context.
 - [`mix.exs`](../mix.exs) — `:releases` config added.
-- [`lib/dev_ide/release.ex`](../lib/dev_ide/release.ex) — provides
+- [`lib/casein/release.ex`](../lib/casein/release.ex) — provides
   `migrate/0` / `rollback/2` for invocation via release `eval`.
 - [`rel/overlays/bin/migrate`](../rel/overlays/bin/migrate) — shell
   wrapper that runs `bin/dev_ide eval "DevIDE.Release.migrate()"`.

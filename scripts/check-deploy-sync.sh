@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Verify rel/overlays/deploy/ stays byte-identical to the canonical source in
-# lib/dev_ide/integrations/manager/deploy/. We can't use symlinks (mix release
+# lib/casein/integrations/manager/deploy/. We can't use symlinks (mix release
 # packages overlays via docker cp during build, which extracts symlinks as
 # unresolved links rather than following them — see scripts/build-release.sh
 # and the docker-cp tar implementation). So we ship two copies and enforce
@@ -12,7 +12,7 @@
 set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${REPO_ROOT}/lib/dev_ide/integrations/manager/deploy"
+SRC="${REPO_ROOT}/lib/casein/integrations/manager/deploy"
 DST="${REPO_ROOT}/rel/overlays/deploy"
 
 failed=0

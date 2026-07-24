@@ -485,7 +485,7 @@ Fixes filed:
 
 ### First dogfood targets
 
-1. Agent runs `mix test test/dev_ide/agents/` in the **agent** pane; human watches
+1. Agent runs `mix test test/casein/agents/` in the **agent** pane; human watches
    terminal + Live MCP activity.
 2. Small code change → `mix precommit` in agent pane → human reviews diff in UI.
 3. LiveView tweak → `preview_open_app` screenshot → human compares preview iframe.

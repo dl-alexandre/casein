@@ -73,7 +73,7 @@ You can also run it under the same Python env as Odysseus if you want the agent 
 
 ### Current allowlist (example)
 
-See `lib/dev_ide/commands.ex` for the live definition. At the time of writing it includes the usual mix tasks plus direct entry points for several agent CLIs (`opencode`, `claude`, `grok`, ...).
+See `lib/casein/commands.ex` for the live definition. At the time of writing it includes the usual mix tasks plus direct entry points for several agent CLIs (`opencode`, `claude`, `grok`, ...).
 
 ### Development
 

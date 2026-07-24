@@ -184,7 +184,7 @@ global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/devi
   - Operator pane stays **focused** (human types here).
   - **Agent pane** is for MCP `terminal_send_command` / `terminal_send_keys`.
   - **Verify pane** is for `git status` / test output.
-- Built-in template id: `agent_pair` (`lib/dev_ide/terminals/session_template/loader.ex`).
+- Built-in template id: `agent_pair` (`lib/casein/terminals/session_template/loader.ex`).
 
 ### MCP endpoints (wire into external agent)
 
@@ -297,12 +297,12 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
 - `scripts/devide-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-devide-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
-- `lib/dev_ide/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
+- `lib/casein/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
 - `scripts/verify_agent_pairing.sh` — MCP smoke test
 - `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)
 - `.devbox-agent-prompt.txt` — copy-paste prompt for external agents
-- `lib/dev_ide/agents/activity.ex` — live MCP activity feed
-- `lib/dev_ide/agents/mcp_audit.ex` — audit + activity for terminal/preview MCP
+- `lib/casein/agents/activity.ex` — live MCP activity feed
+- `lib/casein/agents/mcp_audit.ex` — audit + activity for terminal/preview MCP
 - `docs/tmux_control_plane.md` — tmux topology/templates API
 
 ### Phoenix v1.8 guidelines

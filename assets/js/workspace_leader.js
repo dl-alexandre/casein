@@ -27,7 +27,7 @@ function isInteractivelyFocused() {
 
 // Standard tmux C-b second-key → data-leader-action name.
 // The command palette shows these bindings as per-item `hint` strings
-// (lib/dev_ide/command_palette/actions.ex + palette_items.ex) — keep the
+// (lib/casein/command_palette/actions.ex + palette_items.ex) — keep the
 // two in sync when rebinding keys.
 const LEADER_ACTIONS = {
   s: "session-picker",

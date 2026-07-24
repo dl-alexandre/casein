@@ -99,8 +99,8 @@ the primary checkout (linked agent worktrees are exempt). Enable with
 Never `git commit -a` from the primary checkout. Stage and commit explicit paths:
 
 ```bash
-git add lib/dev_ide/my_file.ex test/dev_ide/my_file_test.exs
-git commit -- lib/dev_ide/my_file.ex test/dev_ide/my_file_test.exs
+git add lib/casein/my_file.ex test/casein/my_file_test.exs
+git commit -- lib/casein/my_file.ex test/casein/my_file_test.exs
 ```
 
 Verify claims against `HEAD`, not the working tree — see [`agent_concurrency.md`](agent_concurrency.md).

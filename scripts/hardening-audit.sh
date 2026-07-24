@@ -50,13 +50,13 @@ if [[ "$LIVE_ONLY" -ne 1 ]]; then
 
   log "running hardening-focused tests"
   mise exec -- mix test \
-    test/dev_ide_web/api/terminal_mcp_test.exs \
-    test/dev_ide_web/api/preview_mcp_test.exs \
-    test/dev_ide_web/controllers/api/terminal_mcp_controller_test.exs \
-    test/dev_ide_web/controllers/api/preview_mcp_controller_test.exs \
-    test/dev_ide/policy_test.exs \
-    test/dev_ide/deployment/drain_test.exs \
-    test/dev_ide_web/api/deploy_status_controller_test.exs
+    test/casein_web/api/terminal_mcp_test.exs \
+    test/casein_web/api/preview_mcp_test.exs \
+    test/casein_web/controllers/api/terminal_mcp_controller_test.exs \
+    test/casein_web/controllers/api/preview_mcp_controller_test.exs \
+    test/casein/policy_test.exs \
+    test/casein/deployment/drain_test.exs \
+    test/casein_web/api/deploy_status_controller_test.exs
 fi
 
 if [[ "$LIVE" -eq 1 ]]; then

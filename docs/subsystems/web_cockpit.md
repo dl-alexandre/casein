@@ -7,7 +7,7 @@ This is a companion to the authoritative [`../architecture.md`](../architecture.
 
 ## Responsibility
 
-`lib/dev_ide_web/{live,components,channels,plugs}` own the **viewer surface** of
+`lib/casein_web/{live,components,channels,plugs}` own the **viewer surface** of
 DevIDE: how a workspace's durable terminal, tmux topology, files, runs, audit,
 and previews are presented to a browser, and how browser input is admitted and
 relayed to server-side state. It owns no execution authority — input flows into

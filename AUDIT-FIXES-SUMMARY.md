@@ -8,7 +8,7 @@ Worktree off `master`; **not pushed**, no PR opened.
 ### 1. Fix N+1 on "mark all read" — **done**
 - Added `DevIDE.Notifications.mark_all_read/1` using a single `Repo.update_all` for unread+unresolved rows.
 - Drawer `notifications:mark_all_read` calls it once (no list+per-row loop).
-- Test in `test/dev_ide/notifications_test.exs` covers count, read-only targeting, resolved untouched, other users untouched.
+- Test in `test/casein/notifications_test.exs` covers count, read-only targeting, resolved untouched, other users untouched.
 - Broadcasts one `{:notification_updated, :mark_all_read}` for LiveView badge/list refresh.
 
 ### 2. Notifications composite index — **done**
@@ -18,10 +18,10 @@ Worktree off `master`; **not pushed**, no PR opened.
 
 ### 3. ETS concurrency flags — **done**
 Added `read_concurrency: true, write_concurrency: true` to:
-- `lib/dev_ide/file_panes.ex`
-- `lib/dev_ide/preview_panes.ex`
-- `lib/dev_ide_web/channels/terminal_channel.ex`
-- `lib/dev_ide/terminals/workspace_access_cache.ex`
+- `lib/casein/file_panes.ex`
+- `lib/casein/preview_panes.ex`
+- `lib/casein_web/channels/terminal_channel.ex`
+- `lib/casein/terminals/workspace_access_cache.ex`
 
 ### 4. File-tree assign leak on collapse — **done**
 - `tree:toggle` collapse now drops all assign keys under `path <> "/"` via `drop_tree_descendants/2`.
@@ -45,7 +45,7 @@ Grep before removal:
 Also unlocked unused transitives (`rebus`, `typedstruct`). `mix deps.unlock --unused` + `mix deps.get` + compile clean.
 
 ### 7. Remove stale boundary deps — **skipped**
-Brief claimed `GitCtl` / `ExecCtl` / `McpCtl` do not exist. Grep shows they are **real modules** under `dev_ide_core/lib/` and are heavily used (`GitCtl.Inspector`, `ExecCtl.Allowlist`, `McpCtl.Tool`, etc.). Removing them from `lib/dev_ide_domain.ex` would surface real cross-boundary needs incorrectly. **Left the deps list unchanged.**
+Brief claimed `GitCtl` / `ExecCtl` / `McpCtl` do not exist. Grep shows they are **real modules** under `dev_ide_core/lib/` and are heavily used (`GitCtl.Inspector`, `ExecCtl.Allowlist`, `McpCtl.Tool`, etc.). Removing them from `lib/casein_domain.ex` would surface real cross-boundary needs incorrectly. **Left the deps list unchanged.**
 
 ### 8. Patch-level dependency bumps — **done** (with one skip)
 | Package | Change | Notes |
@@ -57,8 +57,8 @@ Brief claimed `GitCtl` / `ExecCtl` / `McpCtl` do not exist. Grep shows they are 
 | `exqlite` | **skipped** | only available bump was 0.37.0 → 0.38.0 (minor) |
 
 ### 9. Tests for security-sensitive modules — **done**
-- `test/dev_ide/previews/artifact_protection_test.exs` — `protect/2`, `protected/1`, `clear/0`, prune-gate behavior.
-- `test/dev_ide_web/plugs/deploy_webhook_auth_test.exs` — 503 unconfigured, 400 missing body / invalid JSON, 401 missing/invalid signature, valid path assigns payload.
+- `test/casein/previews/artifact_protection_test.exs` — `protect/2`, `protected/1`, `clear/0`, prune-gate behavior.
+- `test/casein_web/plugs/deploy_webhook_auth_test.exs` — 503 unconfigured, 400 missing body / invalid JSON, 401 missing/invalid signature, valid path assigns payload.
 
 ### 10. Close OPTIONS forward-auth spoof — **done**
 - `ForwardAuth.call/2` now matches `OPTIONS` first → **405 Method Not Allowed**, never reads `X-Auth-Request-Email`.

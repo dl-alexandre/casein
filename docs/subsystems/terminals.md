@@ -7,7 +7,7 @@
 This is the largest DevIDE subsystem. It is the server half of FP-1 (execution
 authority lives server-side), FP-2/FP-8 (durable sessions over tmux), and
 FP-9 (reattach replays scrollback). It does **not** own the browser renderer or
-the LiveView wiring — those live in `lib/dev_ide_web/live/workspace_live/`
+the LiveView wiring — those live in `lib/casein_web/live/workspace_live/`
 (`PaneWorker`, the Ghostty hook). It does not own admission policy
 (`DevIDE.Policy.can_use_raw_terminal?/1`); `Terminals.Boundary` is the only call
 site into it.

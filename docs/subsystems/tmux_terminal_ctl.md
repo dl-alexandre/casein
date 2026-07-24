@@ -90,7 +90,7 @@ Other code (primarily the `DevIDE.Terminals.*` facade) calls:
 - **`TmuxCtl.Runner.run/2` / `argv/2`** — execute or materialize tmux argv; call sites that
   open Ports (`attach/1`) or run `System.cmd` directly (`send_command/3`) use `argv/2`.
 - **`TerminalCtl.Escape.strip_handshakes/1`**, **`TerminalCtl.Replay.append/4`** — consumed by
-  `lib/dev_ide/terminals/session_owner.ex` and `lib/dev_ide/bounded_buffer.ex`.
+  `lib/casein/terminals/session_owner.ex` and `lib/casein/bounded_buffer.ex`.
 
 ## Invariants & gotchas
 

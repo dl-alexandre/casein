@@ -22,34 +22,34 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 
 | Module | File | Role |
 |---|---|---|
-| `DevIdeWeb.Router` | `lib/dev_ide_web/router.ex` | Route table + the `:browser`, `:preview_proxy`, `:api`, `:mcp_api` pipelines and CSP |
-| `DevIdeWeb.LegacyWorkspaceController` | `lib/dev_ide_web/controllers/legacy_workspace_controller.ex` | `GET /workspaces` redirects to `/` (the picker was absorbed by the dashboard) |
-| `DevIdeWeb.PreviewArtifactController` | `lib/dev_ide_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
-| `DevIdeWeb.PreviewProxyController` | `lib/dev_ide_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
-| `DevIdeWeb.API.WorkspaceController` | `lib/dev_ide_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
-| `DevIdeWeb.API.WorkspaceWindowController` | `lib/dev_ide_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
-| `DevIdeWeb.API.WorkspacePaneController` | `lib/dev_ide_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
-| `DevIdeWeb.API.WorkspaceTemplateController` | `lib/dev_ide_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
-| `DevIdeWeb.API.ArtifactProjectController` | `lib/dev_ide_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
-| `DevIdeWeb.API.WorkspaceAPI` | `lib/dev_ide_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
-| `DevIdeWeb.API.PreviewPaneController` | `lib/dev_ide_web/controllers/api/preview_pane_controller.ex` | Register/deregister `devide-preview` CLI panes |
-| `DevIdeWeb.API.DeployStatusController` | `lib/dev_ide_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
-| `DevIdeWeb.API.DrainController` | `lib/dev_ide_web/api/drain_controller.ex` | Start a graceful deployment drain |
-| `DevIdeWeb.API.PreviewMCPController` | `lib/dev_ide_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for the preview MCP server |
-| `DevIdeWeb.API.PreviewMCP` | `lib/dev_ide_web/api/preview_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.PreviewTools` |
-| `DevIdeWeb.API.TerminalMCPController` | `lib/dev_ide_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for the terminal MCP server |
-| `DevIdeWeb.API.TerminalMCP` | `lib/dev_ide_web/api/terminal_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.TerminalTools` |
-| `DevIdeWeb.API.ArtifactMCPController` | `lib/dev_ide_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for the artifact MCP server |
-| `DevIdeWeb.API.ArtifactMCP` | `lib/dev_ide_web/api/artifact_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.ArtifactTools` |
-| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for MCP handlers |
-| `DevIdeWeb.UserSocket` | `lib/dev_ide_web/channels/user_socket.ex` | Token-verified socket; routes `terminal:*` to the terminal channel |
-| `DevIdeWeb.TerminalChannel` | `lib/dev_ide_web/channels/terminal_channel.ex` | Bidirectional terminal stream bridged to a `SessionOwner` |
-| `DevIdeWeb.ErrorHTML` / `DevIdeWeb.ErrorJSON` | `lib/dev_ide_web/controllers/error_{html,json}.ex` | Status-message rendering for error responses |
+| `DevIdeWeb.Router` | `lib/casein_web/router.ex` | Route table + the `:browser`, `:preview_proxy`, `:api`, `:mcp_api` pipelines and CSP |
+| `DevIdeWeb.LegacyWorkspaceController` | `lib/casein_web/controllers/legacy_workspace_controller.ex` | `GET /workspaces` redirects to `/` (the picker was absorbed by the dashboard) |
+| `DevIdeWeb.PreviewArtifactController` | `lib/casein_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
+| `DevIdeWeb.PreviewProxyController` | `lib/casein_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
+| `DevIdeWeb.API.WorkspaceController` | `lib/casein_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
+| `DevIdeWeb.API.WorkspaceWindowController` | `lib/casein_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
+| `DevIdeWeb.API.WorkspacePaneController` | `lib/casein_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
+| `DevIdeWeb.API.WorkspaceTemplateController` | `lib/casein_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
+| `DevIdeWeb.API.ArtifactProjectController` | `lib/casein_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
+| `DevIdeWeb.API.WorkspaceAPI` | `lib/casein_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
+| `DevIdeWeb.API.PreviewPaneController` | `lib/casein_web/controllers/api/preview_pane_controller.ex` | Register/deregister `devide-preview` CLI panes |
+| `DevIdeWeb.API.DeployStatusController` | `lib/casein_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
+| `DevIdeWeb.API.DrainController` | `lib/casein_web/api/drain_controller.ex` | Start a graceful deployment drain |
+| `DevIdeWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for the preview MCP server |
+| `DevIdeWeb.API.PreviewMCP` | `lib/casein_web/api/preview_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.PreviewTools` |
+| `DevIdeWeb.API.TerminalMCPController` | `lib/casein_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for the terminal MCP server |
+| `DevIdeWeb.API.TerminalMCP` | `lib/casein_web/api/terminal_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.TerminalTools` |
+| `DevIdeWeb.API.ArtifactMCPController` | `lib/casein_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for the artifact MCP server |
+| `DevIdeWeb.API.ArtifactMCP` | `lib/casein_web/api/artifact_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.ArtifactTools` |
+| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/casein_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for MCP handlers |
+| `DevIdeWeb.UserSocket` | `lib/casein_web/channels/user_socket.ex` | Token-verified socket; routes `terminal:*` to the terminal channel |
+| `DevIdeWeb.TerminalChannel` | `lib/casein_web/channels/terminal_channel.ex` | Bidirectional terminal stream bridged to a `SessionOwner` |
+| `DevIdeWeb.ErrorHTML` / `DevIdeWeb.ErrorJSON` | `lib/casein_web/controllers/error_{html,json}.ex` | Status-message rendering for error responses |
 
 ## Pipelines (auth)
 
 Defined in `DevIdeWeb.Router`. Auth plugs themselves live in
-`lib/dev_ide_web/plugs/` (outside this subsystem) — referenced here for completeness.
+`lib/casein_web/plugs/` (outside this subsystem) — referenced here for completeness.
 
 | Pipeline | Plugs | Identity model |
 |---|---|---|

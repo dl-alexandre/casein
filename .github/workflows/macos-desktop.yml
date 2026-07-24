@@ -6,17 +6,17 @@ on:
     branches: [master]
     paths:
       - "native/devide_menubar/**"
-      - "lib/dev_ide/desktop/**"
-      - "lib/dev_ide/terminals/tmux_executable.ex"
-      - "lib/dev_ide/terminals/tmux_runner.ex"
-      - "lib/dev_ide/terminals/host_server_anchor.ex"
-      - "lib/dev_ide_web/plugs/desktop_auth.ex"
+      - "lib/casein/desktop/**"
+      - "lib/casein/terminals/tmux_executable.ex"
+      - "lib/casein/terminals/tmux_runner.ex"
+      - "lib/casein/terminals/host_server_anchor.ex"
+      - "lib/casein_web/plugs/desktop_auth.ex"
       - "config/runtime.exs"
       - "mix.exs"
       - "mix.lock"
       - "rel/**"
-      - "lib/dev_ide/application.ex"
-      - "lib/dev_ide/terminals/shims.ex"
+      - "lib/casein/application.ex"
+      - "lib/casein/terminals/shims.ex"
       - "priv/repo/migrations/**"
       - "scripts/package-macos-desktop.sh"
       - "scripts/test-macos-desktop-package.sh"
@@ -24,17 +24,17 @@ on:
   pull_request:
     paths:
       - "native/devide_menubar/**"
-      - "lib/dev_ide/desktop/**"
-      - "lib/dev_ide/terminals/tmux_executable.ex"
-      - "lib/dev_ide/terminals/tmux_runner.ex"
-      - "lib/dev_ide/terminals/host_server_anchor.ex"
-      - "lib/dev_ide_web/plugs/desktop_auth.ex"
+      - "lib/casein/desktop/**"
+      - "lib/casein/terminals/tmux_executable.ex"
+      - "lib/casein/terminals/tmux_runner.ex"
+      - "lib/casein/terminals/host_server_anchor.ex"
+      - "lib/casein_web/plugs/desktop_auth.ex"
       - "config/runtime.exs"
       - "mix.exs"
       - "mix.lock"
       - "rel/**"
-      - "lib/dev_ide/application.ex"
-      - "lib/dev_ide/terminals/shims.ex"
+      - "lib/casein/application.ex"
+      - "lib/casein/terminals/shims.ex"
       - "priv/repo/migrations/**"
       - "scripts/package-macos-desktop.sh"
       - "scripts/test-macos-desktop-package.sh"
@@ -97,7 +97,7 @@ jobs:
 
       - name: Test host and terminal resolution
         run: |
-          mix test test/dev_ide/terminals/tmux_executable_test.exs test/dev_ide/desktop
+          mix test test/casein/terminals/tmux_executable_test.exs test/casein/desktop
           /usr/bin/swift test --package-path native/devide_menubar
 
       - name: Build self-contained package

@@ -46,7 +46,7 @@ For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
 milc devbox host) deployment, including the stable `/opt/devide/deploy/`
 layout and activation after the 7204683 reconciliation, see
 [`docs/integrations/manager.md`](integrations/manager.md) §5 and the
-self-contained runbook inside `lib/dev_ide/integrations/manager/deploy/README.md`.
+self-contained runbook inside `lib/casein/integrations/manager/deploy/README.md`.
 
 ```bash
 # 1. Configure secrets — .env is gitignored.

@@ -76,11 +76,11 @@ MCP schemas.
 
 The initial repository scan found host coupling concentrated in these areas:
 
-1. `lib/tmux_ctl/` and `lib/dev_ide/terminals/tmux*.ex` implement the current
+1. `lib/tmux_ctl/` and `lib/casein/terminals/tmux*.ex` implement the current
    topology and mutation engine.
 2. Terminal sessions, templates, agent panes, and LiveView events expose tmux
    pane/window identifiers and commands beyond the adapter layer.
-3. `lib/dev_ide/terminals/shims.ex`, agent launchers, preview launchers, and most
+3. `lib/casein/terminals/shims.ex`, agent launchers, preview launchers, and most
    `scripts/` utilities assume Bash and POSIX command construction.
 4. Deploy, LAN, cleanup, and janitor paths assume systemd, Unix signals, `/proc`,
    Unix permissions, or Unix sockets.

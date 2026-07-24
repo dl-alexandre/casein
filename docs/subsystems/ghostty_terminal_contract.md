@@ -75,7 +75,7 @@ So vs. the draft's proposed `%{cells: [{row, col, codepoints, fg, bg, attrs, wid
 `Ghostty.Terminal.cells/1` gives the grid as data and dev_ide renders it
 client-side — i.e. **§6 Q1 = Model B, already shipped** (for web):
 
-- `lib/dev_ide_web/components/ghostty_terminal_component.ex` mounts a JS hook
+- `lib/casein_web/components/ghostty_terminal_component.ex` mounts a JS hook
   `phx-hook="GhosttyTerminal"` with `phx-update="ignore"` (:51–52) and pushes
   frames with `Phoenix.LiveView.push_event(socket, "ghostty:render", payload)`
   (:212). Input is captured via a hidden `<textarea data-ghostty-input>` (:60).
@@ -108,7 +108,7 @@ ghostty encode — not to emit `\e[A` etc. directly.
 Production terminals are **tmux-backed**, not direct `Ghostty.PTY`:
 
 - `DevIDE.Terminals.Session` is the canonical PTY owner, keyed by
-  `{workspace, sid}` (`lib/dev_ide/terminals/ghostty_raw_adapter.ex:6–14,29–43`),
+  `{workspace, sid}` (`lib/casein/terminals/ghostty_raw_adapter.ex:6–14,29–43`),
   supervised under `SessionOwner` (`session_owner.ex`, ~951 LoC).
 - `GhosttyRawAdapter` bridges raw channel joins (`terminal:<ws>:<sid>`) onto the
   same `SessionOwner` so a raw join and a LiveView pane share one PTY + one

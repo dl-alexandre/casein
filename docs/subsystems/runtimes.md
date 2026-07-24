@@ -9,7 +9,7 @@ removal, the architecture collapsed to a single runtime per workspace: there is 
 dynamic placement, no host *selection* engine, no assignment scheduler. The
 subsystem stores where work *has* run, not where it *should* run, and never accepts
 argv, shells, HTTP proxy targets, or mutation commands (see the `@moduledoc` on
-`lib/dev_ide/runtimes.ex` and `DevIDE.Runtimes.StateMachine`).
+`lib/casein/runtimes.ex` and `DevIDE.Runtimes.StateMachine`).
 
 Its live jobs are:
 
@@ -31,17 +31,17 @@ Its live jobs are:
 
 | Module | File | Role |
 | --- | --- | --- |
-| `DevIDE.Runtimes` | `lib/dev_ide/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
-| `DevIDE.Runtimes.Runtime` | `lib/dev_ide/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
-| `DevIDE.Runtimes.Host` | `lib/dev_ide/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
-| `DevIDE.Runtimes.LifecycleEvent` | `lib/dev_ide/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
-| `DevIDE.Runtimes.Profile` | `lib/dev_ide/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
-| `DevIDE.Runtimes.StateMachine` | `lib/dev_ide/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
-| `DevIDE.Runtimes.EctoAdapter` | `lib/dev_ide/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `DevIDE.Runtimes` behaviour. |
-| `DevIDE.Runtimes.MemoryAdapter` | `lib/dev_ide/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
-| `DevIDE.Runtimes.RuntimeRow` | `lib/dev_ide/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
-| `DevIDE.Runtimes.HostRow` | `lib/dev_ide/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
-| `DevIDE.Runtimes.LifecycleEventRow` | `lib/dev_ide/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
+| `DevIDE.Runtimes` | `lib/casein/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
+| `DevIDE.Runtimes.Runtime` | `lib/casein/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
+| `DevIDE.Runtimes.Host` | `lib/casein/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
+| `DevIDE.Runtimes.LifecycleEvent` | `lib/casein/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
+| `DevIDE.Runtimes.Profile` | `lib/casein/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
+| `DevIDE.Runtimes.StateMachine` | `lib/casein/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
+| `DevIDE.Runtimes.EctoAdapter` | `lib/casein/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `DevIDE.Runtimes` behaviour. |
+| `DevIDE.Runtimes.MemoryAdapter` | `lib/casein/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
+| `DevIDE.Runtimes.RuntimeRow` | `lib/casein/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
+| `DevIDE.Runtimes.HostRow` | `lib/casein/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
+| `DevIDE.Runtimes.LifecycleEventRow` | `lib/casein/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
 
 ## Data flow / lifecycle
 

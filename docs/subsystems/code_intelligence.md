@@ -6,10 +6,10 @@
 
 These four contexts give the cockpit its "what's in this workspace" surfaces:
 
-- **Files** (`lib/dev_ide/files/`) — list/read/write/create/rename/delete a workspace tree, version-checked and atomic, with a single path-safety gate.
-- **Search** (`lib/dev_ide/search/`) — cross-file text search via ripgrep, argv-only, results filtered back through path safety.
-- **Git** (`lib/dev_ide/git/`) — branch/status/diff for the working tree, plus worktree/checkout inspection (delegated to `GitCtl`).
-- **Elixir** (`lib/dev_ide/elixir/`) — regex-level symbol extraction and project/tooling detection. No `mix`, no AST, no processes.
+- **Files** (`lib/casein/files/`) — list/read/write/create/rename/delete a workspace tree, version-checked and atomic, with a single path-safety gate.
+- **Search** (`lib/casein/search/`) — cross-file text search via ripgrep, argv-only, results filtered back through path safety.
+- **Git** (`lib/casein/git/`) — branch/status/diff for the working tree, plus worktree/checkout inspection (delegated to `GitCtl`).
+- **Elixir** (`lib/casein/elixir/`) — regex-level symbol extraction and project/tooling detection. No `mix`, no AST, no processes.
 
 Every read in this subsystem canonicalises its target through `DevIDE.Files.PathSafety` so a traversal (`../`) or escaping symlink cannot surface content from outside the workspace root. The root itself is supplied pre-validated by the caller (typically `DevIDE.Workspaces.safe_host_path/1`).
 
@@ -17,22 +17,22 @@ Every read in this subsystem canonicalises its target through `DevIDE.Files.Path
 
 | module | file | role |
 |--------|------|------|
-| `DevIDE.Files.PathSafety` | `lib/dev_ide/files/path_safety.ex` | Allowlist + ignore-set + symlink-escape gate. The shared safety primitive every other module here depends on. |
-| `DevIDE.Files.Entry` | `lib/dev_ide/files/entry.ex` | Struct for one tree entry (`name`, `rel_path`, `kind`, `size`, `mtime`); built from `File.Stat`. |
-| `DevIDE.Files.Version` | `lib/dev_ide/files/version.ex` | Opaque optimistic-concurrency token `<size>:<mtime_hex>:<sha256_16>` for write conflict detection. |
-| `DevIDE.Files.Janitor` | `lib/dev_ide/files/janitor.ex` | Boot-time sweep of stale `.devide.tmp.*` sidecars from aborted atomic writes. |
-| `DevIDE.Search.Adapter` | `lib/dev_ide/search/adapter.ex` | Behaviour: `search/3`, `available?/0`. |
-| `DevIDE.Search.RipgrepAdapter` | `lib/dev_ide/search/ripgrep_adapter.ex` | Default adapter; runs `rg --json` argv-only, parses match events, path-safe filters. |
-| `DevIDE.Search.MemoryAdapter` | `lib/dev_ide/search/memory_adapter.ex` | Test-only adapter reading canned results from app env. |
-| `DevIDE.Search.Result` | `lib/dev_ide/search/result.ex` | Struct for one match (`path`, `line`, `column`, `preview`). |
-| `DevIDE.Git.Adapter` | `lib/dev_ide/git/adapter.ex` | Behaviour: `branch/1`, `status_short/1`, `diff/2`, `diff_all/1`. |
-| `DevIDE.Git.LocalAdapter` | `lib/dev_ide/git/local_adapter.ex` | Default adapter; `git -C <root>` argv-only, diff output capped at 256 KB. |
-| `DevIDE.Git.Inspector` | `lib/dev_ide/git/inspector.ex` | Worktree/checkout context facade over `GitCtl.Inspector`; mirrors its struct (compile-time field check) and injects agent inference. |
-| `DevIDE.Git.InspectorCache` | `lib/dev_ide/git/inspector_cache.ex` | Supervised owner of the `GitCtl.Cache` ETS table so it outlives transient callers. |
-| `DevIDE.Elixir.Symbols` | `lib/dev_ide/elixir/symbols.ex` | Line-level regex symbol scanner for `.ex`/`.exs`. |
-| `DevIDE.Elixir.Symbol` | `lib/dev_ide/elixir/symbol.ex` | Struct for one extracted symbol (`kind`, `name`, `line`, `arity`, `visibility`). |
-| `DevIDE.Elixir.Project` | `lib/dev_ide/elixir/project.ex` | Detect mix/umbrella/phoenix/live_view/ecto/formatter from `mix.exs`/`mix.lock`. |
-| `DevIDE.Elixir.Tooling` | `lib/dev_ide/elixir/tooling.ex` | Detect formatter / Lexical / ElixirLS presence from workspace-local artifacts. |
+| `DevIDE.Files.PathSafety` | `lib/casein/files/path_safety.ex` | Allowlist + ignore-set + symlink-escape gate. The shared safety primitive every other module here depends on. |
+| `DevIDE.Files.Entry` | `lib/casein/files/entry.ex` | Struct for one tree entry (`name`, `rel_path`, `kind`, `size`, `mtime`); built from `File.Stat`. |
+| `DevIDE.Files.Version` | `lib/casein/files/version.ex` | Opaque optimistic-concurrency token `<size>:<mtime_hex>:<sha256_16>` for write conflict detection. |
+| `DevIDE.Files.Janitor` | `lib/casein/files/janitor.ex` | Boot-time sweep of stale `.devide.tmp.*` sidecars from aborted atomic writes. |
+| `DevIDE.Search.Adapter` | `lib/casein/search/adapter.ex` | Behaviour: `search/3`, `available?/0`. |
+| `DevIDE.Search.RipgrepAdapter` | `lib/casein/search/ripgrep_adapter.ex` | Default adapter; runs `rg --json` argv-only, parses match events, path-safe filters. |
+| `DevIDE.Search.MemoryAdapter` | `lib/casein/search/memory_adapter.ex` | Test-only adapter reading canned results from app env. |
+| `DevIDE.Search.Result` | `lib/casein/search/result.ex` | Struct for one match (`path`, `line`, `column`, `preview`). |
+| `DevIDE.Git.Adapter` | `lib/casein/git/adapter.ex` | Behaviour: `branch/1`, `status_short/1`, `diff/2`, `diff_all/1`. |
+| `DevIDE.Git.LocalAdapter` | `lib/casein/git/local_adapter.ex` | Default adapter; `git -C <root>` argv-only, diff output capped at 256 KB. |
+| `DevIDE.Git.Inspector` | `lib/casein/git/inspector.ex` | Worktree/checkout context facade over `GitCtl.Inspector`; mirrors its struct (compile-time field check) and injects agent inference. |
+| `DevIDE.Git.InspectorCache` | `lib/casein/git/inspector_cache.ex` | Supervised owner of the `GitCtl.Cache` ETS table so it outlives transient callers. |
+| `DevIDE.Elixir.Symbols` | `lib/casein/elixir/symbols.ex` | Line-level regex symbol scanner for `.ex`/`.exs`. |
+| `DevIDE.Elixir.Symbol` | `lib/casein/elixir/symbol.ex` | Struct for one extracted symbol (`kind`, `name`, `line`, `arity`, `visibility`). |
+| `DevIDE.Elixir.Project` | `lib/casein/elixir/project.ex` | Detect mix/umbrella/phoenix/live_view/ecto/formatter from `mix.exs`/`mix.lock`. |
+| `DevIDE.Elixir.Tooling` | `lib/casein/elixir/tooling.ex` | Detect formatter / Lexical / ElixirLS presence from workspace-local artifacts. |
 
 These contexts have public facades one directory up — `DevIDE.Files`, `DevIDE.Search`, `DevIDE.Git`, `DevIDE.Elixir` — and a location-aware wrapper `DevIDE.Workspaces.FileAccess` that dispatches local vs. remote (`{:local, root}` / `{:remote, host, root}`). Those facades are outside this subsystem's directories but are the actual call entry points (see Public surface).
 
@@ -47,7 +47,7 @@ These contexts have public facades one directory up — `DevIDE.Files`, `DevIDE.
 
 **Git.** `DevIDE.Git.*` shell out via `LocalAdapter` (`git -C <root>`, argv-only, `stderr_to_stdout: true`). Independently, `Git.Inspector.inspect_cwd/1` delegates to `GitCtl.Inspector` (in the `dev_ide_core` sibling) for worktree detection, caching results per-cwd in an ETS table owned by the supervised `InspectorCache`. `SessionDirectory` calls `Inspector` to label sessions with branch/worktree/agent context.
 
-**Elixir.** Pure, synchronous, content-in/struct-out. `Symbols.extract/2` scans source line-by-line; `Project.detect/1` and `Tooling.detect/1` read a handful of root files through `PathSafety`. No process is started anywhere in `lib/dev_ide/elixir/`.
+**Elixir.** Pure, synchronous, content-in/struct-out. `Symbols.extract/2` scans source line-by-line; `Project.detect/1` and `Tooling.detect/1` read a handful of root files through `PathSafety`. No process is started anywhere in `lib/casein/elixir/`.
 
 ## Public surface
 

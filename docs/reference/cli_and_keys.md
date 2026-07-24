@@ -29,8 +29,8 @@ operators and agents — and nothing more. Three concerns live here:
 
 | Module / file | File | Role |
 | --- | --- | --- |
-| `DevIDE.Commands` | `lib/dev_ide/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `DevIDE.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
-| `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
+| `DevIDE.Commands` | `lib/casein/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `DevIDE.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
+| `DevIDE.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 

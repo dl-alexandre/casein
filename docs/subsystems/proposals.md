@@ -20,14 +20,14 @@ authority-map row "Apply proposal — **Denied** (`:not_implemented`)".
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Proposals` | `lib/dev_ide/proposals.ex` | Context facade. `discover/1` and `parse/2` delegate to a runtime-configurable adapter (`:proposals_adapter`, default `LocalAdapter`). |
-| `DevIDE.Proposals.Adapter` | `lib/dev_ide/proposals/adapter.ex` | Behaviour: `discover/1` + `parse/2` callbacks returning `Proposal.t()`. |
-| `DevIDE.Proposals.LocalAdapter` | `lib/dev_ide/proposals/local_adapter.ex` | Filesystem implementation: scans discovery dirs, size-caps, stats, and parses files. Read-only. |
-| `DevIDE.Proposals.Proposal` | `lib/dev_ide/proposals/proposal.ex` | Struct for a single discovered artifact (path, size, mtime, parser, status, changes, diff). |
-| `DevIDE.Proposals.UnifiedDiff` | `lib/dev_ide/proposals/unified_diff.ex` | Header-only unified-diff parser. `parse/2` extracts changed paths; `parse_with_hunks/2` also extracts hunk ranges. Rejects root-escaping paths. |
-| `DevIDE.Proposals.ConflictAnalyzer` | `lib/dev_ide/proposals/conflict_analyzer.ex` | `analyze/2` compares a parsed proposal against the working-tree diff and returns an `Analysis`. |
-| `DevIDE.Proposals.Analysis` | `lib/dev_ide/proposals/analysis.ex` | Struct holding the `risk` verdict, per-file overlap detail, and overlapping-file list. |
-| `DevIDE.Proposals.Hunk` | `lib/dev_ide/proposals/hunk.ex` | Range-overlap helpers (`overlap?/2`, `overlaps/2`) used by the analyzer to detect colliding hunks. |
+| `DevIDE.Proposals` | `lib/casein/proposals.ex` | Context facade. `discover/1` and `parse/2` delegate to a runtime-configurable adapter (`:proposals_adapter`, default `LocalAdapter`). |
+| `DevIDE.Proposals.Adapter` | `lib/casein/proposals/adapter.ex` | Behaviour: `discover/1` + `parse/2` callbacks returning `Proposal.t()`. |
+| `DevIDE.Proposals.LocalAdapter` | `lib/casein/proposals/local_adapter.ex` | Filesystem implementation: scans discovery dirs, size-caps, stats, and parses files. Read-only. |
+| `DevIDE.Proposals.Proposal` | `lib/casein/proposals/proposal.ex` | Struct for a single discovered artifact (path, size, mtime, parser, status, changes, diff). |
+| `DevIDE.Proposals.UnifiedDiff` | `lib/casein/proposals/unified_diff.ex` | Header-only unified-diff parser. `parse/2` extracts changed paths; `parse_with_hunks/2` also extracts hunk ranges. Rejects root-escaping paths. |
+| `DevIDE.Proposals.ConflictAnalyzer` | `lib/casein/proposals/conflict_analyzer.ex` | `analyze/2` compares a parsed proposal against the working-tree diff and returns an `Analysis`. |
+| `DevIDE.Proposals.Analysis` | `lib/casein/proposals/analysis.ex` | Struct holding the `risk` verdict, per-file overlap detail, and overlapping-file list. |
+| `DevIDE.Proposals.Hunk` | `lib/casein/proposals/hunk.ex` | Range-overlap helpers (`overlap?/2`, `overlaps/2`) used by the analyzer to detect colliding hunks. |
 
 ## Data flow / lifecycle
 
@@ -88,7 +88,7 @@ Lower-level helpers, called by the adapter/analyzer (and usable directly):
 
 The only in-tree consumer today is the public
 `DevIDE.Export.WorkspaceStatus.proposals/1`
-(`lib/dev_ide/export/workspace_status.ex`, which delegates to the private
+(`lib/casein/export/workspace_status.ex`, which delegates to the private
 `recent_proposals/2`), running discover → parse →
 analyze and projects a compact summary (`risk`, `files_count`,
 `overlapping_files`) into the workspace status export.

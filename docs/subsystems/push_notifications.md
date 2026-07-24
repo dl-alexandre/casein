@@ -163,13 +163,13 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
   if any requested platform is not ready). Each `not ready` line prints the
   specific missing env. This is a configuration check, not a send probe.
 - **Offline end-to-end proof** (no credentials, no devices):
-  - `test/dev_ide/push/delivery_integration_test.exs` drives a real spine event
+  - `test/casein/push/delivery_integration_test.exs` drives a real spine event
     through `Dispatcher → NativeProvider → FCM/APNs provider → HTTP seam` and
     asserts the exact outbound URL, headers (incl. a real ES256 JWT / FCM bearer
     token), and JSON envelope.
-  - `test/dev_ide/push_test.exs` covers dispatcher fan-out, workspace/user
+  - `test/casein/push_test.exs` covers dispatcher fan-out, workspace/user
     scoping, dedupe, and invalid-token auto-unregister against a fake provider.
-  - `test/dev_ide/push/registry_test.exs` covers the token store directly.
+  - `test/casein/push/registry_test.exs` covers the token store directly.
   - Per-provider request shaping: `apns_provider_test.exs`,
     `fcm_provider_test.exs`, `fcm_token_test.exs`, `native_provider_test.exs`.
 
@@ -181,10 +181,10 @@ server authenticates to APNs with a `.p8` **auth key** you create separately.
   for an Ecto-backed store when durability matters.
 - **`DevIdeWeb.UserSocket` hardcodes `role: :owner`** for user-token
   connections — a placeholder until real auth roles land. See
-  `lib/dev_ide_web/channel_auth.ex`.
+  `lib/casein_web/channel_auth.ex`.
 
 ## Related
 
 - Deep-link scheme the payloads use: [`../deep_links.md`](../deep_links.md)
-- Alert taxonomy shared with the live channel: `lib/dev_ide/alerts.ex`
-- Card lifecycle that produces `needs_review` pushes: `lib/dev_ide/mobile/`
+- Alert taxonomy shared with the live channel: `lib/casein/alerts.ex`
+- Card lifecycle that produces `needs_review` pushes: `lib/casein/mobile/`
