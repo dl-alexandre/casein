@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.Reaper do
+defmodule Casein.Runtimes.Reaper do
   @moduledoc """
   Periodic sweeper for stale agent-worktree runtimes and their preview servers.
 
@@ -13,11 +13,11 @@ defmodule DevIDE.Runtimes.Reaper do
 
   require Logger
 
-  alias DevIDE.Git
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.{PreviewKiller, PreviewServer, Runtime, WorktreeAlarm}
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Git
+  alias Casein.Runtimes
+  alias Casein.Runtimes.{PreviewKiller, PreviewServer, Runtime, WorktreeAlarm}
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   @git_timeout_ms 10_000
 
@@ -35,7 +35,7 @@ defmodule DevIDE.Runtimes.Reaper do
   @impl true
   def init(_opts) do
     Logger.info(
-      "[runtime-reaper] supervised under DevIDE.Supervision.PlatformServices " <>
+      "[runtime-reaper] supervised under Casein.Supervision.PlatformServices " <>
         "enabled=#{enabled?()} dry_run=#{dry_run?()}"
     )
 

@@ -1,7 +1,7 @@
-defmodule DevIDE.BoundedBufferTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.BoundedBufferTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.BoundedBuffer
+  alias Casein.BoundedBuffer
 
   test "appends while under the limit" do
     assert BoundedBuffer.append("abc", "def", 10) == "abcdef"

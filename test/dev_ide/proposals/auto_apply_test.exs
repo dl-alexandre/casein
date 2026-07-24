@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.AutoApplyTest do
+defmodule Casein.Proposals.AutoApplyTest do
   # Exercises maybe_auto_apply/3 directly (the pure gate-and-apply logic) —
   # watch/4's polling loop is a thin Task.Supervisor wrapper around
   # Agents.Run.state/1, already covered for the state-machine itself by
@@ -6,9 +6,9 @@ defmodule DevIDE.Proposals.AutoApplyTest do
   # test/dev_ide/proposal_apply_test.exs.
   use ExUnit.Case, async: false
 
-  alias DevIDE.{Audit, Workspaces}
-  alias DevIDE.Proposals.AutoApply
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.{Audit, Workspaces}
+  alias Casein.Proposals.AutoApply
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @proposal_dir ".opencode/proposals"
 
@@ -83,9 +83,9 @@ defmodule DevIDE.Proposals.AutoApplyTest do
       FakeRun.start_link(%{status: :succeeded, output_kind: :proposal, started_at: nil})
 
     cid =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         {:ok, _task} = AutoApply.watch(root, root, run_pid, %{run_id: "r-ctx", command_id: "c"})
-        DevIDE.Signals.Context.current().trace_id
+        Casein.Signals.Context.current().trace_id
       end)
 
     assert_receive {:audit_event, %{action: "proposals.auto_apply_skipped", metadata: metadata}},

@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.RuntimeSupervisor do
+defmodule Casein.Codex.RuntimeSupervisor do
   @moduledoc """
   Dynamic supervisor for isolated Codex runtimes.
 
@@ -9,9 +9,9 @@ defmodule DevIDE.Codex.RuntimeSupervisor do
 
   use DynamicSupervisor
 
-  alias DevIDE.Codex.Runtime
+  alias Casein.Codex.Runtime
 
-  @registry DevIDE.Codex.Registry
+  @registry Casein.Codex.Registry
 
   def start_link(opts \\ []) do
     DynamicSupervisor.start_link(__MODULE__, opts, name: __MODULE__)

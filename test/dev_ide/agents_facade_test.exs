@@ -1,11 +1,11 @@
-defmodule DevIDE.AgentsFacadeTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.AgentsFacadeTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents
-  alias DevIDE.Agents.{Artifact, Capability, ReviewCommand}
+  alias Casein.Agents
+  alias Casein.Agents.{Artifact, Capability, ReviewCommand}
 
   defmodule Stub do
-    @behaviour DevIDE.Agents
+    @behaviour Casein.Agents
 
     @impl true
     def detect(root, ws) do

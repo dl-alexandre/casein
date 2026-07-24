@@ -1,12 +1,12 @@
-defmodule DevIDE.Git.LocalAdapterTest do
+defmodule Casein.Git.LocalAdapterTest do
   # Adapter-level security tests for the git shell-out boundary. The facade is
-  # covered in DevIDE.GitTest; this file pins the hardening properties that make
+  # covered in Casein.GitTest; this file pins the hardening properties that make
   # shelling out to `git` safe: path-traversal/symlink rejection via PathSafety,
   # argv-style invocation (no shell), and the `--` pathspec guard against option
   # injection.
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Git.LocalAdapter
+  alias Casein.Git.LocalAdapter
 
   setup do
     root = Path.join(System.tmp_dir!(), "git-adapter-#{System.unique_integer([:positive])}")

@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.MixProject do
+defmodule CaseinPreviewBrowser.MixProject do
   use Mix.Project
 
   @version "0.1.0"
@@ -12,10 +12,10 @@ defmodule DevIDEPreviewBrowser.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      description: "Standalone browser-runtime boundary for DevIDE preview control backends.",
+      description: "Standalone browser-runtime boundary for Casein preview control backends.",
       package: package(),
       docs: docs(),
-      name: "DevIDEPreviewBrowser",
+      name: "CaseinPreviewBrowser",
       source_url: @source_url
     ]
   end

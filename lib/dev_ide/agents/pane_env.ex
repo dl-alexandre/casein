@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.PaneEnv do
+defmodule Casein.Agents.PaneEnv do
   @moduledoc """
   Builds the `DEVIDE_*` environment (MCP URLs, API token, checkout, staging
   home) external agents need, and pushes it into a workspace tmux session via
   `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
   """
 
-  alias DevIDE.Agents.{
+  alias Casein.Agents.{
     AgentShims,
     AuthProfile,
     MCPMaterializer,
@@ -14,10 +14,10 @@ defmodule DevIDE.Agents.PaneEnv do
     WorkspaceTokens
   }
 
-  alias DevIDE.Terminals.{Shims, Tmux}
+  alias Casein.Terminals.{Shims, Tmux}
 
   @doc """
-  Build the environment map agents need for DevIDE MCP, keyed as strings.
+  Build the environment map agents need for Casein MCP, keyed as strings.
   """
   @spec vars_for_workspace(map(), keyword()) ::
           {:ok, %{String.t() => String.t()}} | {:error, term()}
@@ -34,7 +34,7 @@ defmodule DevIDE.Agents.PaneEnv do
       npm_bin = AgentShims.npm_bin_dir()
 
       # Prefer agent launcher shims first so bare `claude`/`grok` always hit
-      # DevIDE MCP injection; Shims.path_with_shims/1 also embeds these dirs so
+      # Casein MCP injection; Shims.path_with_shims/1 also embeds these dirs so
       # session create (pre-PaneEnv) is not bashrc-dependent.
       path =
         case System.get_env("PATH") do
@@ -103,7 +103,7 @@ defmodule DevIDE.Agents.PaneEnv do
   command name is enough — MCP injection happens automatically.
 
   `clauded` is a host bash alias (`claude --dangerously-skip-permissions`).
-  Palette/MCP launches must not rely on that alias: the DevIDE `claude` shim
+  Palette/MCP launches must not rely on that alias: the Casein `claude` shim
   already defaults to skip-permissions via `launch-devide-agent.sh`.
   """
   @spec launch_command(String.t(), map(), keyword()) :: String.t()

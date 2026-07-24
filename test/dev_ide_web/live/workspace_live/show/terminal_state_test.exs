@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   describe "next_ui_highlight_pane_id/5" do
     # A preview tile the user clicked in window @1 stays highlighted across an

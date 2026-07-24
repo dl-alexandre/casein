@@ -1,8 +1,8 @@
-defmodule DevIDE.UAT.Replay do
+defmodule Casein.UAT.Replay do
   @moduledoc """
-  Deterministic replay of a frozen `DevIDE.UAT.Trace` — the Tier A engine. No
+  Deterministic replay of a frozen `Casein.UAT.Trace` — the Tier A engine. No
   LLM: every action and assertion is driven mechanically through
-  `DevIDE.Previews.Control`, so a green run never touches an agent.
+  `Casein.Previews.Control`, so a green run never touches an agent.
 
   ## Outcomes
 
@@ -17,29 +17,29 @@ defmodule DevIDE.UAT.Replay do
 
   `:drift` and `:errored` halt the run (subsequent steps can't be trusted);
   assertion failures are collected so one run reports every broken assertion.
-  The run is persisted as a `DevIDE.UAT.Run` with the structured verdict.
+  The run is persisted as a `Casein.UAT.Run` with the structured verdict.
   """
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.Previews.Control, as: PreviewControl
-  alias DevIDE.UAT.{Matcher, Run, Trace, Visual}
+  alias Casein.Agents.PreviewTools
+  alias Casein.Previews.Control, as: PreviewControl
+  alias Casein.UAT.{Matcher, Run, Trace, Visual}
 
   @action_kinds ~w(navigate click type press)a
 
   @doc """
-  Replay `trace` against `workspace`, persisting and returning a `DevIDE.UAT.Run`.
+  Replay `trace` against `workspace`, persisting and returning a `Casein.UAT.Run`.
 
   Options:
 
     * `:tier` — `:tier_a` (default) or `:tier_b`
     * `:target_instance` — label for the instance under test (default `"memory"`)
-    * `:repo` — Ecto repo (default `DevIDE.Repo`)
+    * `:repo` — Ecto repo (default `Casein.Repo`)
     * any other option is forwarded to `PreviewControl.open_session/3`
       (e.g. `:actor_id`, `:adapter`)
   """
   @spec run(Trace.t(), map(), keyword()) :: {:ok, Run.t()} | {:error, term()}
   def run(%Trace{} = trace, workspace, opts \\ []) do
-    {repo, open_opts} = Keyword.pop(opts, :repo, DevIDE.Repo)
+    {repo, open_opts} = Keyword.pop(opts, :repo, Casein.Repo)
     {tier, open_opts} = Keyword.pop(open_opts, :tier, :tier_a)
     {target_instance, open_opts} = Keyword.pop(open_opts, :target_instance, "memory")
 

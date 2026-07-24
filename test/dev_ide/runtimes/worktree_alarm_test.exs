@@ -1,17 +1,17 @@
-defmodule DevIDE.Runtimes.WorktreeAlarmTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Runtimes.WorktreeAlarmTest do
+  use Casein.TestCase, async: false
 
   import ExUnit.CaptureLog
 
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.WorktreeAlarm
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspaces.State
+  alias Casein.Runtimes
+  alias Casein.Runtimes.WorktreeAlarm
+  alias Casein.Workspace
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.State
 
   setup do
     Runtimes.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
 
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
 
@@ -126,7 +126,7 @@ defmodule DevIDE.Runtimes.WorktreeAlarmTest do
     assert log =~ "[worktree-alarm]"
 
     assert [_event] =
-             DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
+             Casein.Audit.MemoryAdapter.recent_with_action_prefix(
                ws,
                "workspace.agent_worktree_stale",
                5

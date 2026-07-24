@@ -1,10 +1,10 @@
-defmodule DevIDE.UAT.Instance do
+defmodule Casein.UAT.Instance do
   @moduledoc """
-  Boots and tears down an ephemeral DevIDE instance for a Tier A UAT run, against
+  Boots and tears down an ephemeral Casein instance for a Tier A UAT run, against
   a temporary, seeded `DEV_IDE_WORKSPACES_ROOT` so the run has zero impact on the
   live release/session.
 
-  The OS side effects go through a `DevIDE.UAT.Instance.Runner` (default
+  The OS side effects go through a `Casein.UAT.Instance.Runner` (default
   `SystemRunner`, shelling out to `scripts/dev-preview-instance.sh`); this module
   owns the deterministic logic: allocate a port from `:preview_env_port_range`,
   stage the fixtures into a temp root, launch, poll for readiness, seed, and —
@@ -12,9 +12,9 @@ defmodule DevIDE.UAT.Instance do
   the temp root.
   """
 
-  alias DevIDE.Previews
-  alias DevIDE.UAT.Instance.SystemRunner
-  alias DevIDE.UAT.Manifest
+  alias Casein.Previews
+  alias Casein.UAT.Instance.SystemRunner
+  alias Casein.UAT.Manifest
 
   @enforce_keys [:scenario_id, :port, :handle, :workspaces_root, :base_url, :runner, :owns_root]
   defstruct [:scenario_id, :port, :handle, :workspaces_root, :base_url, :runner, :owns_root]

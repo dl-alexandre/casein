@@ -1,13 +1,13 @@
-defmodule DevIDE.Agents.TerminalCommandPolicyTest do
+defmodule Casein.Agents.TerminalCommandPolicyTest do
   @moduledoc """
   The allow/deny gate for terminal command execution. Operators can configure
   an allowlist or denylist over `terminal_send_command` /
   `terminal_send_agent_command`. Raw key tools are never gated so interactivity
   (e.g. `C-c`) keeps working.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.{TerminalCommandPolicy, TerminalTools}
+  alias Casein.Agents.{TerminalCommandPolicy, TerminalTools}
 
   setup do
     prev = Application.get_env(:dev_ide, :terminal_command_policy)

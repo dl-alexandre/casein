@@ -1,8 +1,8 @@
-defmodule DevIDE.PreviewsTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.PreviewsTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Previews
-  alias DevIDE.Previews.Preview
+  alias Casein.Previews
+  alias Casein.Previews.Preview
 
   @workspace %{id: "ws-1"}
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Git.Adapter do
+defmodule Casein.Git.Adapter do
   @moduledoc "Behaviour for git status/diff adapters."
 
   @type status_entry :: %{x: String.t(), y: String.t(), path: String.t()}

@@ -1,4 +1,4 @@
-defmodule DevIDE.Links.Resolver.Ctx do
+defmodule Casein.Links.Resolver.Ctx do
   @moduledoc """
   Context for resolving explicit link targets.
 

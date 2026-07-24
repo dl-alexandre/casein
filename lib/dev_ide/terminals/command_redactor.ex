@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.CommandRedactor do
+defmodule Casein.Terminals.CommandRedactor do
   @moduledoc """
   Redaction hook for terminal command records before they enter CommandLog.
   """
@@ -15,7 +15,7 @@ defmodule DevIDE.Terminals.CommandRedactor do
       Application.get_env(
         :dev_ide,
         :terminal_command_redactor,
-        DevIDE.Terminals.CommandRedactor.Default
+        Casein.Terminals.CommandRedactor.Default
       )
 
     module.redact(data, metadata)

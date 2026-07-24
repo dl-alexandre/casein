@@ -1,6 +1,6 @@
-defmodule DevIDE.UAT.Git.System do
+defmodule Casein.UAT.Git.System do
   @moduledoc """
-  Default `DevIDE.UAT.Git` — publishes a self-heal proposal as a branch + PR via
+  Default `Casein.UAT.Git` — publishes a self-heal proposal as a branch + PR via
   `git` and `gh`.
 
   > **Not exercised by the unit suite.** Pushing branches / opening PRs can't run
@@ -10,7 +10,7 @@ defmodule DevIDE.UAT.Git.System do
   > ambient `GH_TOKEN` (see the git-push token-shadow lesson) — hence `env -u`.
   """
 
-  @behaviour DevIDE.UAT.Git
+  @behaviour Casein.UAT.Git
 
   @impl true
   def propose(%{branch: branch, files: files, title: title, body: body}) do

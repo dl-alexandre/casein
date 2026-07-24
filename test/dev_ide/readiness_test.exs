@@ -1,7 +1,7 @@
-defmodule DevIDE.ReadinessTest do
-  use DevIDE.DataCase, async: true
+defmodule Casein.ReadinessTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Readiness
+  alias Casein.Readiness
 
   test "reports ready when the configured database answers" do
     assert Readiness.status() == %{ok: true, checks: %{database: :ready}}

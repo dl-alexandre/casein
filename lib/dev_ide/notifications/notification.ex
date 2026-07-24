@@ -1,4 +1,4 @@
-defmodule DevIDE.Notifications.Notification do
+defmodule Casein.Notifications.Notification do
   @moduledoc """
   Durable user-facing notification row.
 
@@ -28,7 +28,7 @@ defmodule DevIDE.Notifications.Notification do
     field :ttl_seconds, :integer
     field :expires_at, :utc_datetime_usec
     field :deep_link, :string
-    field :channels, DevIDE.EctoTypes.StringList, default: []
+    field :channels, Casein.EctoTypes.StringList, default: []
     field :default_delivery, :map, default: %{}
     field :source_type, :string
     field :source_id, :string

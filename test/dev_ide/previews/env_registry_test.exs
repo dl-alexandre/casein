@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.EnvRegistryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Previews.EnvRegistryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.EnvRegistry
+  alias Casein.Previews.EnvRegistry
 
   setup do
     home =

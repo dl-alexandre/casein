@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.WorkflowsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.WorkflowsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Terminals.Workflows
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspace
+  alias Casein.Terminals.Workflows
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @ws "ws-1"
 

@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponent do
+defmodule CaseinWeb.WorkspaceLive.ProposalPanelComponent do
   @moduledoc """
   Proposals tab as a stateful LiveComponent: owns the proposal list,
   selection, analysis, and pending-confirm state; `proposal:*` events land
@@ -7,7 +7,7 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponent do
   Because component events bypass Show's `:handle_event` authz hook, every
   handler funnels through `PanelGate.gate_event/3` — the same audited
   viewer check the hook applies. The actual write still happens in
-  `DevIDE.ProposalApply`, never here or in `DevIDE.Proposals` — see
+  `Casein.ProposalApply`, never here or in `Casein.Proposals` — see
   test/dev_ide/proposals_no_apply_test.exs.
 
   Outbound effects go to the parent LV as messages: `{:panel_flash, kind,
@@ -15,13 +15,13 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponent do
   (Show refreshes its tree + git-status hub state after an apply).
   """
 
-  use DevIdeWeb, :live_component
+  use CaseinWeb, :live_component
 
-  import DevIdeWeb.WorkspaceLive.Show.Context
-  import DevIdeWeb.WorkspaceLive.Show.ProposalPanel, only: [proposal_panel: 1]
+  import CaseinWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.ProposalPanel, only: [proposal_panel: 1]
 
-  alias DevIDE.{ProposalApply, Proposals}
-  alias DevIdeWeb.WorkspaceLive.Show.PanelGate
+  alias Casein.{ProposalApply, Proposals}
+  alias CaseinWeb.WorkspaceLive.Show.PanelGate
 
   # Config assigns the parent passes; everything else is component-private
   # UI state. policy_ctx/home_host_path read these from socket.assigns, so

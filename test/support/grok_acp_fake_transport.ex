@@ -1,5 +1,5 @@
-defmodule DevIDE.Test.GrokACPFakeTransport do
-  @behaviour DevIDE.AgentSessions.GrokACP.Transport
+defmodule Casein.Test.GrokACPFakeTransport do
+  @behaviour Casein.AgentSessions.GrokACP.Transport
 
   @impl true
   def start(owner, opts) do

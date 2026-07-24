@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.PollerWatcher do
+defmodule Casein.Deployment.PollerWatcher do
   @moduledoc """
   Periodically reads the deploy-poller status file and broadcasts UI updates.
 
@@ -6,13 +6,13 @@ defmodule DevIDE.Deployment.PollerWatcher do
   in-progress build), so this GenServer polls on an interval. Each tick also
   re-checks drift (cheap — `Drift.remote_head/1` is cached for 60s) so drift
   transitions are actually observed instead of only at boot, and feeds both
-  observations to `DevIDE.Deployment.DeployAudit`, which persists audit rows
+  observations to `Casein.Deployment.DeployAudit`, which persists audit rows
   on transitions only.
   """
 
   use GenServer
 
-  alias DevIDE.Deployment.{DeployAudit, Drift, LastDeploy}
+  alias Casein.Deployment.{DeployAudit, Drift, LastDeploy}
 
   @default_interval_ms 30_000
 
@@ -65,7 +65,7 @@ defmodule DevIDE.Deployment.PollerWatcher do
   end
 
   defp watcher_enabled? do
-    DevIDE.Deployment.Capabilities.enabled?(:poller) and
+    Casein.Deployment.Capabilities.enabled?(:poller) and
       System.get_env("DEV_IDE_DEPLOY_POLLER_WATCH") not in ["0", "false", "no"]
   end
 

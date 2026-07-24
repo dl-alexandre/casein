@@ -1,12 +1,12 @@
-defmodule DevIDE.UAT.Freeze do
+defmodule Casein.UAT.Freeze do
   @moduledoc """
-  Freezes a `DevIDE.UAT.Trace` from the audit trail of a successful authoring
+  Freezes a `Casein.UAT.Trace` from the audit trail of a successful authoring
   run. The acceptance agent drives the `preview_*` MCP tools; every action it
-  takes is a `DevIDE.Previews.ControlAction` row whose `result` holds the full
+  takes is a `Casein.Previews.ControlAction` row whose `result` holds the full
   observation (including `dom_summary`). Freeze reads those rows in order and
   reconstructs a durable, replayable trace — resolving each action's target to a
   CSS selector plus the role/name observed at author time, never the positional
-  `element_id` (see `DevIDE.UAT.Trace`).
+  `element_id` (see `Casein.UAT.Trace`).
 
   Only replayable verbs become steps; `observe`/`screenshot` actions are skipped.
   Assertions are not inferred here — they are added by the author harness from
@@ -16,8 +16,8 @@ defmodule DevIDE.UAT.Freeze do
 
   import Ecto.Query
 
-  alias DevIDE.Previews.{ControlAction, ControlObservation}
-  alias DevIDE.UAT.{Step, Trace}
+  alias Casein.Previews.{ControlAction, ControlObservation}
+  alias Casein.UAT.{Step, Trace}
 
   @verb_kinds %{"navigate" => :navigate, "click" => :click, "type" => :type, "press" => :press}
 
@@ -27,11 +27,11 @@ defmodule DevIDE.UAT.Freeze do
   `attrs` supplies the trace metadata the audit trail can't: `:id` (required),
   `:criterion` (required), `:target`, `:identity`, `:provenance` (merged with the
   derived `authored_by_session`). `opts[:repo]` overrides the repo (default
-  `DevIDE.Repo`).
+  `Casein.Repo`).
   """
   @spec from_session(integer(), map(), keyword()) :: {:ok, Trace.t()} | {:error, term()}
   def from_session(session_id, attrs, opts \\ []) do
-    repo = Keyword.get(opts, :repo, DevIDE.Repo)
+    repo = Keyword.get(opts, :repo, Casein.Repo)
 
     with {:ok, id} <- fetch(attrs, :id),
          {:ok, criterion} <- fetch(attrs, :criterion) do

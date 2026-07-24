@@ -1,31 +1,31 @@
-defmodule DevIdeWeb.API.TerminalMCP do
+defmodule CaseinWeb.API.TerminalMCP do
   @moduledoc """
   Minimal MCP (Model Context Protocol) JSON-RPC handler that exposes
-  `DevIDE.Agents.TerminalTools` to external coding agents (Grok, Claude,
+  `Casein.Agents.TerminalTools` to external coding agents (Grok, Claude,
   Codex, opencode).
 
-  This is the terminal sibling of `DevIdeWeb.API.PreviewMCP`: same wire shape
+  This is the terminal sibling of `CaseinWeb.API.PreviewMCP`: same wire shape
   (JSON-RPC 2.0 over a single HTTP POST), its own route. Where PreviewMCP lets
   agents drive a browser surface, this lets them drive tmux sessions — list
   them, read pane scrollback, and send keys/commands — which is the workflow
   that makes tmux (vs. raw terminal splits) worth running for agents at all.
 
   The JSON-RPC envelope (routing, `initialize`, `ping`, response helpers,
-  protocol-version negotiation) lives in `DevIdeWeb.API.MCPEnvelope`; this module
+  protocol-version negotiation) lives in `CaseinWeb.API.MCPEnvelope`; this module
   implements only the terminal-specific behaviour callbacks. The handler is pure:
   it returns `{:reply, map}` (a 200 response), `:noreply` (a notification — 202,
   no body), or `{:error, map}` (a protocol-level JSON-RPC error). The thin
   `TerminalMCPController` owns the HTTP plumbing.
   """
 
-  @behaviour DevIdeWeb.API.MCPEnvelope
+  @behaviour CaseinWeb.API.MCPEnvelope
 
-  alias DevIDE.Agents.{MCPAudit, MCPError, TerminalTools}
-  alias DevIDE.MCP.Scope
-  alias DevIdeWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
+  alias Casein.Agents.{MCPAudit, MCPError, TerminalTools}
+  alias Casein.MCP.Scope
+  alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
-  @server_name "DevIDE Terminal MCP Server"
+  @server_name "Casein Terminal MCP Server"
 
   @type outcome :: MCPEnvelope.outcome()
 
@@ -41,7 +41,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   @impl true
   def instructions(opts) do
     MCPWorkspaceScope.scoped_instructions(
-      "tmux control tools for DevIDE sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
+      "tmux control tools for Casein sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
         "Start with terminal_context when unsure; it returns recommended next_tool " <>
         "and next_arguments. Otherwise call terminal_list_sessions to discover a " <>
         "session name, then terminal_topology to inspect windows/panes. Apply the agent_pair " <>
@@ -55,7 +55,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
         "the session active pane follows the operator across windows, so resolve " <>
         "\"the pane beside me\" from the caller.adjacent_panes block that " <>
         "terminal_context/terminal_topology return when the caller pane is known " <>
-        "(sent automatically via X-DevIDE-Caller-Pane for DevIDE-launched agents), " <>
+        "(sent automatically via X-DevIDE-Caller-Pane for Casein-launched agents), " <>
         "and pass explicit pane ids on capture/send calls.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )
@@ -76,7 +76,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
 
   @impl true
   # Meta-tools: cross-server discovery/routing lives in MCPToolSearch so an agent
-  # on this endpoint can find and run tools on any DevIDE server.
+  # on this endpoint can find and run tools on any Casein server.
   def call_tool(id, %{"name" => "search_tools"} = params, _opts),
     do: MCPToolSearch.search_result(id, Map.get(params, "arguments", %{}) || %{})
 
@@ -89,7 +89,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
     audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         case Scope.resolve_tool_call(name, args,
                surface: :terminal,
                default_workspace_id: default_workspace_id,

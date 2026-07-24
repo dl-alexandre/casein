@@ -1,8 +1,8 @@
-defmodule DevIDE.Deployment.TerminalSmoke do
+defmodule Casein.Deployment.TerminalSmoke do
   @moduledoc """
   Post-deploy acceptance smoke for the terminal subsystem.
 
-  Application health (`DevIDE.Deployment.Health`) and the deploy script's MCP
+  Application health (`Casein.Deployment.Health`) and the deploy script's MCP
   `tools/list` gate both pass even when a freshly-opened terminal is unusable —
   which is exactly how the 2026-07-09 `getcwd failed` incident shipped: the host
   tmux server's cwd was a reaped worktree, so every new pane started in a deleted
@@ -17,7 +17,7 @@ defmodule DevIDE.Deployment.TerminalSmoke do
 
   require Logger
 
-  alias DevIDE.Terminals.TmuxServer
+  alias Casein.Terminals.TmuxServer
 
   @session_prefix "devide_smoke_"
 

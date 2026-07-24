@@ -1,13 +1,13 @@
-defmodule DevIDEPreviewBrowser.FakeBackend do
+defmodule CaseinPreviewBrowser.FakeBackend do
   @moduledoc """
   In-memory backend for tests and early integration work.
 
   It exercises the public contract without starting a native browser runtime.
   """
 
-  @behaviour DevIDEPreviewBrowser.Backend
+  @behaviour CaseinPreviewBrowser.Backend
 
-  alias DevIDEPreviewBrowser.Screenshot
+  alias CaseinPreviewBrowser.Screenshot
 
   defstruct browsers: %{}, commands: []
 

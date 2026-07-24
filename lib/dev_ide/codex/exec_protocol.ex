@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.ExecProtocol do
+defmodule Casein.Codex.ExecProtocol do
   @moduledoc "Normalizes `codex exec --json` JSONL records into canonical events."
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   @spec normalize(map(), map()) :: {:ok, [Event.t()]} | :ignore | {:error, term()}
   def normalize(%{"type" => "thread.started", "thread_id" => thread_id}, context)

@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.API.TerminalMCPControllerTest do
+defmodule CaseinWeb.API.TerminalMCPControllerTest do
   @moduledoc """
   HTTP transport + auth tests for POST /api/terminals/mcp.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   @token "test-terminal-mcp-token"
 
@@ -131,7 +131,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
   test "global token CAN call tools box-wide when allow_global_mcp_tool_calls is enabled",
        %{conn: conn} do
     Application.put_env(:dev_ide, :allow_global_mcp_tool_calls, true)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -183,10 +183,10 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     # non-global, so it is NOT rejected — no DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS
     # needed. This is the safe, revocable path.
     refute Application.get_env(:dev_ide, :allow_global_mcp_tool_calls, false)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     {:ok, raw, _record} =
-      DevIDE.Agents.OrchestratorTokens.create_for_subject(%{
+      Casein.Agents.OrchestratorTokens.create_for_subject(%{
         id: "alice",
         username: "alice",
         email: "alice@example.com",
@@ -241,7 +241,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
   test "workspace-scoped token can call Terminal MCP mutation tools", %{conn: conn} do
     Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -294,7 +294,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
   test "X-DevIDE-Caller-Pane header anchors caller-pane terminal tools", %{conn: conn} do
     Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -340,7 +340,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
   test "malformed caller-pane headers are ignored", %{conn: conn} do
     Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -378,7 +378,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
   test "a workspace-token mutation is audited with the ws:<id> actor", %{conn: conn} do
     Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -400,8 +400,8 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       ]
     })
 
-    DevIDE.Audit.MemoryAdapter.clear()
-    on_exit(fn -> DevIDE.Audit.MemoryAdapter.clear() end)
+    Casein.Audit.MemoryAdapter.clear()
+    on_exit(fn -> Casein.Audit.MemoryAdapter.clear() end)
 
     conn =
       post_mcp(
@@ -424,7 +424,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     assert %{"result" => %{"structuredContent" => %{"status" => "sent"}}} =
              json_response(conn, 200)
 
-    [event] = DevIDE.Audit.recent_for("ws-scoped", 1)
+    [event] = Casein.Audit.recent_for("ws-scoped", 1)
     assert event.action == "agent.terminal_terminal_send_command"
     assert event.actor_id == "ws:ws-scoped"
     assert event.source == "terminal_mcp"
@@ -529,7 +529,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
     test "invoke_tool runs a discovered tool through normal scope + audit", %{conn: conn} do
       Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -620,7 +620,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     test "workspace_digest returns the digest through scope dispatch", %{conn: conn} do
       Application.put_env(:dev_ide, :workspace_digest, true)
       Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
       conn =
         post_mcp(
@@ -653,7 +653,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       Application.put_env(:dev_ide, :workspace_digest, true)
       Application.put_env(:dev_ide, :situation_server, true)
       Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-live"})
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
       # Keep the server's async worktree sweep away from the box's real
       # agent-worktree root.
@@ -664,7 +664,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       ])
 
       on_exit(fn ->
-        case DevIDE.Operator.SituationServer.whereis("ws-live") do
+        case Casein.Operator.SituationServer.whereis("ws-live") do
           nil -> :ok
           pid -> GenServer.stop(pid)
         end
@@ -689,7 +689,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       assert is_list(digest["risks"])
 
       # The request spun up (and was answered by) the live per-workspace server.
-      assert is_pid(DevIDE.Operator.SituationServer.whereis("ws-live")),
+      assert is_pid(Casein.Operator.SituationServer.whereis("ws-live")),
              "expected the digest request to start the live SituationServer"
     end
   end

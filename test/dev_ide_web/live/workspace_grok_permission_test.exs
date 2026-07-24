@@ -1,21 +1,21 @@
-defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceGrokPermissionTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.AgentSessions.GrokACP
-  alias DevIDE.AgentSessions.GrokACP.Attachments
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Labels
-  alias DevIDE.Test.GrokACPFakeTransport
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.AgentSessions.GrokACP
+  alias Casein.AgentSessions.GrokACP.Attachments
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Labels
+  alias Casein.Test.GrokACPFakeTransport
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-1"
   @workspace_name "alpha"
 
   setup do
-    tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(@workspace_name)
+    tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(@workspace_name)
 
     kill_tmux_sessions_with_prefix(tmux_prefix)
     Attachments.clear()
@@ -235,7 +235,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
       restore(:workspaces_root, previous_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", @workspace_id, "status"]} =
           conn ->
         conn
@@ -268,7 +268,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
          {sessions, 0} <-
            System.cmd(
              executable,
-             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
+             Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
              stderr_to_stdout: true
            ) do
       sessions
@@ -278,7 +278,7 @@ defmodule DevIdeWeb.WorkspaceGrokPermissionTest do
         _ =
           System.cmd(
             executable,
-            DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+            Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
             stderr_to_stdout: true
           )
       end)

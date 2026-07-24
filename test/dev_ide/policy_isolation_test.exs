@@ -1,7 +1,7 @@
-defmodule DevIDE.PolicyIsolationTest do
-  use DevIDE.TestCase, async: false
-  alias DevIDE.Policy
-  alias DevIDE.Policy.Decision
+defmodule Casein.PolicyIsolationTest do
+  use Casein.TestCase, async: false
+  alias Casein.Policy
+  alias Casein.Policy.Decision
 
   setup do
     prev = Application.get_env(:dev_ide, :workspace_modes)

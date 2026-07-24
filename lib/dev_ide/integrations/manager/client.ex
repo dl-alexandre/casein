@@ -1,4 +1,4 @@
-defmodule DevIDE.Integrations.Manager.Client do
+defmodule Casein.Integrations.Manager.Client do
   @moduledoc """
   Thin HTTP client for the milc-devbox Node manager API.
 
@@ -13,7 +13,7 @@ defmodule DevIDE.Integrations.Manager.Client do
 
   require Logger
 
-  alias DevIDE.Integrations.Manager.Workspace
+  alias Casein.Integrations.Manager.Workspace
 
   @type error ::
           {:http, pos_integer(), term()}

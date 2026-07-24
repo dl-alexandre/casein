@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.SessionEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.SessionEventsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.SessionEvents
+  alias Casein.Terminals.SessionEvents
 
   test "delivers output events to topic subscribers" do
     assert :ok = SessionEvents.subscribe("ws-ev-1", "sid-1")

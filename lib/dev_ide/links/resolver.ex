@@ -1,4 +1,4 @@
-defmodule DevIDE.Links.Resolver do
+defmodule Casein.Links.Resolver do
   @moduledoc """
   Resolves candidate links into verified, typed targets.
 
@@ -7,10 +7,10 @@ defmodule DevIDE.Links.Resolver do
   quiet, while forbidden or malformed inputs return `{:error, reason}`.
   """
 
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Previews
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.FileAccess
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Previews
+  alias Casein.Workspaces
+  alias Casein.Workspaces.FileAccess
 
   @type target ::
           {:file, %{path: String.t(), line: pos_integer() | nil, col: pos_integer() | nil}}
@@ -160,7 +160,7 @@ defmodule DevIDE.Links.Resolver do
   end
 
   defp expand_tilde("~") do
-    # This is the DevIDE host user's home, not a remote workspace user's home.
+    # This is the Casein host user's home, not a remote workspace user's home.
     # Confinement rejects non-workspace homes today; keep remote "~" support
     # explicit if remote home resolution is added later.
     System.user_home!()

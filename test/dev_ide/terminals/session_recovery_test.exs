@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.SessionRecoveryTest do
+defmodule Casein.Terminals.SessionRecoveryTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.{ScrollbackArchive, SessionRecovery, TemplatePreference}
+  alias Casein.Terminals.{ScrollbackArchive, SessionRecovery, TemplatePreference}
 
   setup do
     archive_dir =
@@ -35,7 +35,7 @@ defmodule DevIDE.Terminals.SessionRecoveryTest do
     ScrollbackArchive.put(session, "prior output\n")
     {buf, true} = SessionRecovery.seed_from_archive(session)
     assert String.contains?(buf, "prior output")
-    assert String.contains?(buf, "DevIDE")
+    assert String.contains?(buf, "Casein")
   end
 
   test "notify_session_recreated broadcasts recovery notice" do

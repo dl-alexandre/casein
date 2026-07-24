@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AgentApprovalsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovalsTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.AgentApprovals
+  alias CaseinWeb.WorkspaceLive.Show.AgentApprovals
 
   test "renders Codex and Grok requests in one operator approval queue" do
     codex = %{

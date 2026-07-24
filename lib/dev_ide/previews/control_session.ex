@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.ControlSession do
+defmodule Casein.Previews.ControlSession do
   @moduledoc """
   Ecto schema for one browser/control runtime attached to a `Preview`. Records
   the adapter, current URL, actor/assignment, storage profile metadata, and
@@ -17,9 +17,9 @@ defmodule DevIDE.Previews.ControlSession do
     field :assignment_id, :string
     field :metadata, :map, default: %{}
 
-    belongs_to :preview, DevIDE.Previews.Preview
-    has_many :actions, DevIDE.Previews.ControlAction, foreign_key: :session_id
-    has_many :observations, DevIDE.Previews.ControlObservation, foreign_key: :session_id
+    belongs_to :preview, Casein.Previews.Preview
+    has_many :actions, Casein.Previews.ControlAction, foreign_key: :session_id
+    has_many :observations, Casein.Previews.ControlObservation, foreign_key: :session_id
 
     timestamps(type: :utc_datetime)
   end

@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.CleanExec do
+defmodule Casein.Terminals.CleanExec do
   @moduledoc """
   Wraps long-lived terminal child argv so they do not inherit app sockets.
 

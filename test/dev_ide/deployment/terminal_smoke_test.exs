@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.TerminalSmokeTest do
+defmodule Casein.Deployment.TerminalSmokeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Deployment.TerminalSmoke
+  alias Casein.Deployment.TerminalSmoke
 
   describe "proc_cwd_alive?/2" do
     test "true when the cwd symlink resolves to a live path" do

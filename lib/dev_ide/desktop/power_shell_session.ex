@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.PowerShellSession do
+defmodule Casein.Desktop.PowerShellSession do
   @moduledoc """
   Application-owned PowerShell session used by the native Windows desktop UI.
 
@@ -9,7 +9,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
 
   use GenServer
 
-  alias DevIDE.Desktop.AgentEnvironment
+  alias Casein.Desktop.AgentEnvironment
 
   @name __MODULE__
   @registry Module.concat(__MODULE__, Registry)
@@ -38,7 +38,7 @@ defmodule DevIDE.Desktop.PowerShellSession do
     case resolve(target) do
       nil ->
         opts = [cwd: cwd, workspace: workspace, name: target]
-        supervisor = if Process.whereis(@supervisor), do: @supervisor, else: DevIDE.Supervisor
+        supervisor = if Process.whereis(@supervisor), do: @supervisor, else: Casein.Supervisor
 
         case Supervisor.start_child(supervisor, {__MODULE__, opts}) do
           {:ok, _pid} -> :ok

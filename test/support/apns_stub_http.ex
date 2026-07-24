@@ -1,8 +1,8 @@
-defmodule DevIDE.Push.APNS.StubHTTP do
+defmodule Casein.Push.APNS.StubHTTP do
   @moduledoc """
-  Test double for `DevIDE.Push.APNS.HTTP`.
+  Test double for `Casein.Push.APNS.HTTP`.
   """
-  @behaviour DevIDE.Push.APNS.HTTP
+  @behaviour Casein.Push.APNS.HTTP
 
   @impl true
   def post(url, headers, body) do

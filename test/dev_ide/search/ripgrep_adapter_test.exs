@@ -1,7 +1,7 @@
-defmodule DevIDE.Search.RipgrepAdapterTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Search.RipgrepAdapterTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Search.RipgrepAdapter
+  alias Casein.Search.RipgrepAdapter
 
   setup do
     root = Path.join(System.tmp_dir!(), "rg-#{System.unique_integer([:positive])}")

@@ -1,17 +1,17 @@
-defmodule DevIdeWeb.PairingController do
+defmodule CaseinWeb.PairingController do
   @moduledoc """
   Mobile companion pairing page. Renders, for an authenticated cockpit user, a
-  QR + copyable credentials the DevIDE mobile app uses to connect its
+  QR + copyable credentials the Casein mobile app uses to connect its
   `DevideMob.SessionClient` to `session:<workspace_id>`.
 
-  The token is minted with `DevIdeWeb.ChannelAuth.sign_pairing_token/2`: a
+  The token is minted with `CaseinWeb.ChannelAuth.sign_pairing_token/2`: a
   short-lived, workspace-scoped token accepted only by `session:<workspace_id>`.
   The session channel still re-checks workspace ownership before exposing state.
   """
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIdeWeb.ChannelAuth
-  alias DevIDE.Workspaces
+  alias CaseinWeb.ChannelAuth
+  alias Casein.Workspaces
 
   # Every interpolation in page/4 is Plug.HTML.html_escape'd (workspace_id, base,
   # code); qr_svg is derived from a Base64url string (safe charset) rendered as
@@ -40,7 +40,7 @@ defmodule DevIdeWeb.PairingController do
           token_exchange_url: base <> "/api/device-links/exchange",
           origin: %{
             id: "dev_ide",
-            name: "DevIDE",
+            name: "Casein",
             base_url: base,
             socket_url: base <> "/socket/websocket",
             token_exchange_url: base <> "/api/device-links/exchange",
@@ -120,7 +120,7 @@ defmodule DevIdeWeb.PairingController do
         <div class="field"><label>Host</label><code>#{Plug.HTML.html_escape(base)}</code></div>
         <div class="field"><label>Workspace</label><code>#{Plug.HTML.html_escape(workspace_id)}</code></div>
         <div class="field"><label>Pairing code</label><code>#{Plug.HTML.html_escape(code)}</code></div>
-        <p class="hint">In the DevIDE app, open <strong>Sessions → Pair</strong> and scan this code,
+        <p class="hint">In the Casein app, open <strong>Sessions → Pair</strong> and scan this code,
         or paste the pairing code above. The device will join this workspace's live session feed.</p>
       </div>
     </body>

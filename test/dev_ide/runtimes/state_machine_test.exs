@@ -1,7 +1,7 @@
-defmodule DevIDE.Runtimes.StateMachineTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runtimes.StateMachineTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runtimes.{LifecycleEvent, StateMachine}
+  alias Casein.Runtimes.{LifecycleEvent, StateMachine}
 
   test "runtime lifecycle transitions are bounded to placement states" do
     assert StateMachine.statuses() == ~w(requested provisioned expired cleaned)

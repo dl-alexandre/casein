@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.LifecycleEventRow do
+defmodule Casein.Runtimes.LifecycleEventRow do
   @moduledoc false
 
   use Ecto.Schema

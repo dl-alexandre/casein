@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.TerminalOutput do
+defmodule Casein.Previews.TerminalOutput do
   @moduledoc false
 
-  alias DevIDE.Previews.Deps
+  alias Casein.Previews.Deps
 
   @session_prefix "devide_"
   @max_lines 300
@@ -31,7 +31,7 @@ defmodule DevIDE.Previews.TerminalOutput do
   @spec ports_from_text(String.t()) :: [integer()]
   def ports_from_text(text) when is_binary(text) do
     text
-    |> DevIDE.Previews.Detector.discover()
+    |> Casein.Previews.Detector.discover()
     |> Enum.map(& &1.port)
     |> Enum.uniq()
     |> Enum.sort()

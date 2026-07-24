@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.Status do
+defmodule Casein.Desktop.Status do
   @moduledoc """
   Publishes the desktop host status contract (`runtime.json`).
 
@@ -9,14 +9,14 @@ defmodule DevIDE.Desktop.Status do
   by design — hosts must treat a file whose `pid` is not alive as stale.
   See `docs/desktop/platform_architecture.md`, "Status contract".
 
-  The domain boundary cannot reference `DevIdeWeb`, so the endpoint's bound
+  The domain boundary cannot reference `CaseinWeb`, so the endpoint's bound
   port arrives through the injected `:port_resolver` (or a literal `:port`).
   """
 
   use GenServer
 
-  alias DevIDE.Desktop.Runtime
-  alias DevIDE.Release.Metadata
+  alias Casein.Desktop.Runtime
+  alias Casein.Release.Metadata
 
   @schema 1
 

@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.PreviewToolsActionTest do
+defmodule Casein.Agents.PreviewToolsActionTest do
   @moduledoc """
   Unit tests for the Jido.Action-backed preview tool surface.
   """
   use ExUnit.Case, async: true
 
-  alias DevIDE.Agents.PreviewTools
+  alias Casein.Agents.PreviewTools
 
   describe "definitions/0" do
     test "exposes 28 preview tools" do

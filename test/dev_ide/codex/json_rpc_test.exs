@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.JsonRpcTest do
+defmodule Casein.Codex.JsonRpcTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Codex.JsonRpc
+  alias Casein.Codex.JsonRpc
 
   test "encodes App Server requests without a jsonrpc header" do
     encoded = JsonRpc.encode_request(10, "thread/start", %{"cwd" => "/workspace"})

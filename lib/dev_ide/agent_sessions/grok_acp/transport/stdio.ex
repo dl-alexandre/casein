@@ -1,4 +1,4 @@
-defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
+defmodule Casein.AgentSessions.GrokACP.Transport.Stdio do
   @moduledoc """
   Bidirectional ACP transport through Grok's supported stdio bridge.
 
@@ -10,7 +10,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Transport.Stdio do
   stdout remains protocol-only; stderr is delivered separately to the owner.
   """
 
-  @behaviour DevIDE.AgentSessions.GrokACP.Transport
+  @behaviour Casein.AgentSessions.GrokACP.Transport
 
   @default_leader_timeout_ms 10_000
   @socket_poll_ms 25

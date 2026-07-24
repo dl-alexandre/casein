@@ -1,16 +1,16 @@
-defmodule DevIDE.Terminals.WebLinkScanner do
+defmodule Casein.Terminals.WebLinkScanner do
   @moduledoc """
   Pure per-row scanner for clickable http(s) URLs in rendered terminal rows
   (the `ghostty:render` frame hot path).
 
-  Sibling to `DevIDE.Terminals.FileLinkScanner`: that module linkifies
+  Sibling to `Casein.Terminals.FileLinkScanner`: that module linkifies
   workspace file paths (and deliberately *excludes* URL spans); this one does
   the opposite, surfacing web URLs so the client can open them in a new tab.
   Unlike file links, web links need no filesystem validation — an URL is its
   own target — so this scanner never touches disk and runs for remote sessions
   too.
 
-  URL span detection is delegated to `DevIDE.Links.Scanner.scan_urls/1` (the
+  URL span detection is delegated to `Casein.Links.Scanner.scan_urls/1` (the
   shared, tested `https?://…` matcher with punctuation trimming). Its `Span`
   offsets are **byte** offsets; this module converts them to **cell columns**
   (`from`/`to`, zero-based, inclusive) so underline overlays can position
@@ -21,7 +21,7 @@ defmodule DevIDE.Terminals.WebLinkScanner do
   before any regex runs, and at most eight links are taken per row.
   """
 
-  alias DevIDE.Links.Scanner
+  alias Casein.Links.Scanner
 
   @max_links_per_row 8
 

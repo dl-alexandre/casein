@@ -1,5 +1,5 @@
 defmodule PreviewCtl.Playwright.BridgeTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias PreviewCtl.Playwright.Bridge
 
@@ -122,8 +122,8 @@ defmodule PreviewCtl.Playwright.BridgeTest do
   end
 
   defp restart_bridge! do
-    _ = Supervisor.terminate_child(DevIDE.Supervisor, Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, Bridge)
+    _ = Supervisor.terminate_child(Casein.Supervisor, Bridge)
+    {:ok, _} = Supervisor.restart_child(Casein.Supervisor, Bridge)
   end
 
   defp put_or_delete_env(nil), do: Application.delete_env(:preview_ctl, :playwright_script)

@@ -1,7 +1,7 @@
-defmodule DevIDE.Signals.ObanContext do
+defmodule Casein.Signals.ObanContext do
   @moduledoc false
 
-  alias DevIDE.Signals.Context
+  alias Casein.Signals.Context
   alias Jido.Signal.Trace.Context, as: TraceContext
 
   @meta_key "signals_context"

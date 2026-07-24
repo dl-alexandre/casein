@@ -22,4 +22,4 @@ Remove-Item -LiteralPath $installRoot -Recurse -Force -ErrorAction SilentlyConti
 Remove-Item -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE' -Recurse -Force -ErrorAction SilentlyContinue
 if ($RemoveUserData) { Remove-Item -LiteralPath $dataRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
-Write-Host 'DevIDE was uninstalled.'
+Write-Host 'Casein was uninstalled.'

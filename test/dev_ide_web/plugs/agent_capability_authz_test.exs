@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.Plugs.AgentCapabilityAuthzTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.AgentCapabilityAuthzTest do
+  use Casein.TestCase, async: false
 
   import Plug.Conn
   import Plug.Test
 
-  alias DevIdeWeb.Plugs.AgentCapabilityAuthz
+  alias CaseinWeb.Plugs.AgentCapabilityAuthz
 
   @workspace_id "ws-cap-authz"
   @tmux_session "devide_ws-cap-authz_agent"

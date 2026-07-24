@@ -1,10 +1,10 @@
-defmodule DevIDE.Workspaces do
+defmodule Casein.Workspaces do
   @moduledoc """
   Public workspaces facade.
 
-  Returns `DevIDE.Workspace` values from the configured
-  `DevIDE.WorkspaceSource` backend. The default source
-  (`DevIDE.WorkspaceSource.Local`) discovers workspaces as directories
+  Returns `Casein.Workspace` values from the configured
+  `Casein.WorkspaceSource` backend. The default source
+  (`Casein.WorkspaceSource.Local`) discovers workspaces as directories
   under `:dev_ide, :workspaces_root`; production deployments select a
   different source via config — see that module's docstring.
 
@@ -12,9 +12,9 @@ defmodule DevIDE.Workspaces do
   module — never on a specific source implementation.
   """
 
-  alias DevIDE.{Workspace, WorkspaceSource}
-  alias DevIDE.Workspaces.{DbIsolation, Scratch, State}
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.{Workspace, WorkspaceSource}
+  alias Casein.Workspaces.{DbIsolation, Scratch, State}
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   @type auth :: WorkspaceSource.auth()
 
@@ -78,7 +78,7 @@ defmodule DevIDE.Workspaces do
 
   def create_form_fields, do: WorkspaceSource.create_form_fields()
 
-  @doc "Persisted workspace records known to DevIDE."
+  @doc "Persisted workspace records known to Casein."
   @spec list_records() :: [WorkspaceRecord.t()]
   def list_records, do: State.list()
 
@@ -91,11 +91,11 @@ defmodule DevIDE.Workspaces do
 
   @doc "Resolve the effective workspace mode and source."
   @spec mode_for(String.t()) ::
-          {DevIDE.Policy.WorkspaceMode.t(), :config_override | :persisted | :default}
+          {Casein.Policy.WorkspaceMode.t(), :config_override | :persisted | :default}
   def mode_for(external_id), do: State.mode_for(external_id)
 
   @doc "Persist a manual workspace mode change."
-  @spec set_mode(String.t(), DevIDE.Policy.WorkspaceMode.t()) ::
+  @spec set_mode(String.t(), Casein.Policy.WorkspaceMode.t()) ::
           {:ok, WorkspaceRecord.t()} | {:error, term()}
   def set_mode(external_id, mode), do: State.set_mode(external_id, mode)
 
@@ -103,7 +103,7 @@ defmodule DevIDE.Workspaces do
   @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_mode_changes(external_id), do: State.subscribe_mode_changes(external_id)
 
-  @doc "Grant a time-boxed agent-write unlock (DevIDE.Proposals.AutoApply)."
+  @doc "Grant a time-boxed agent-write unlock (Casein.Proposals.AutoApply)."
   @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
           {:ok, WorkspaceRecord.t()} | {:error, term()}
   def grant_agent_write_unlock(external_id, until, granted_by),
@@ -160,7 +160,7 @@ defmodule DevIDE.Workspaces do
   True when `viewer` may open or use a workspace in the multi-user cockpit.
 
   **Flat peer model:** any authenticated identity (has `id` / `username` /
-  `email`) may access every workspace. DevIDE does not elevate an "admin"
+  `email`) may access every workspace. Casein does not elevate an "admin"
   role over peers and does not owner-gate shared surfaces (artifacts, preview
   proxy, terminals, files). The outer gate is oauth2-proxy / API token auth —
   once you're in, peers are equal. Unauthenticated or empty maps are denied.
@@ -543,7 +543,7 @@ defmodule DevIDE.Workspaces do
   `:workspaces_roots` list, and optional `:home_workspace_path`.
 
   Includes `:lan_path_root` when set, so any path that resolves through
-  `DevIDE.Workspaces.PathResolver` is by construction attachable — the URL
+  `Casein.Workspaces.PathResolver` is by construction attachable — the URL
   resolver and the attach gate cannot disagree.
   """
   @spec allowed_roots() :: [String.t()]

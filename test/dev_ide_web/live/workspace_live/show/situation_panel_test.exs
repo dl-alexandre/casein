@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SituationPanelTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.SituationPanelTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.SituationPanel
+  alias CaseinWeb.WorkspaceLive.Show.SituationPanel
 
   defp risk(id, severity, subject) do
     %{

@@ -1,6 +1,6 @@
-defmodule DevIDE.UAT.Matcher do
+defmodule Casein.UAT.Matcher do
   @moduledoc """
-  Resolves a frozen `DevIDE.UAT.Step` `match` against the *live* element list
+  Resolves a frozen `Casein.UAT.Step` `match` against the *live* element list
   from `preview_elements`, re-deriving the element a trace was authored against
   even though its positional `element_id` ("el_N") is long gone.
 

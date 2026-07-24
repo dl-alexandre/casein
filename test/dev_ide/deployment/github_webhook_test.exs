@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.GithubWebhookTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Deployment.GithubWebhookTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Deployment.GithubWebhook
+  alias Casein.Deployment.GithubWebhook
 
   @secret "webhook-test-secret"
   @repo "dl-alexandre/dev_ide"

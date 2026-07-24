@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.Visual do
+defmodule Casein.UAT.Visual do
   @moduledoc """
   The optional visual-baseline tier (tier-3). Compares a captured screenshot
-  against a stored baseline and returns an **advisory** result — `DevIDE.UAT.Replay`
+  against a stored baseline and returns an **advisory** result — `Casein.UAT.Replay`
   treats a mismatch as `:warn`, never `:fail`, so a flaky pixel diff can never gate
   CI.
 

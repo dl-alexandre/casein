@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
+defmodule CaseinWeb.WorkspaceLive.Show.ViewDeepLink do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveView, only: [connected?: 1, push_patch: 2]
 
-  use DevIdeWeb, :verified_routes
+  use CaseinWeb, :verified_routes
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   @query_param_order ~w(host session window pane zoom)
   @idle_patch_threshold_ms 4_000

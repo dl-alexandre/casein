@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionDirectory do
+defmodule Casein.Terminals.SessionDirectory do
   @moduledoc """
   Per-workspace source of truth for the terminal session tab list.
 
@@ -6,12 +6,12 @@ defmodule DevIDE.Terminals.SessionDirectory do
   workspace (live shells, agent worktree sessions, scanned tmux sessions —
   merged and deduplicated by `SessionDirectory.Compose`) and broadcasts changes:
 
-      {DevIDE.Terminals.SessionDirectory, {:sessions_updated, workspace_id, tabs}}
+      {Casein.Terminals.SessionDirectory, {:sessions_updated, workspace_id, tabs}}
 
   on `"terminal_tabs:<workspace_id>"`. Consumers apply
   `Compose.visible_for/2` with their own default sid.
 
-  Lifecycle: started on demand, registered in `DevIDE.Terminals.Registry`
+  Lifecycle: started on demand, registered in `Casein.Terminals.Registry`
   under `{:session_directory, workspace_id}`. While subscribers exist it
   polls tmux every #{2_000}ms as a safety net (sessions can appear or die
   outside this node's control); when the last subscriber goes away it stops.
@@ -31,21 +31,21 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   require Logger
 
-  alias DevIDE.Agents.Transcripts
-  alias DevIDE.Terminals.Activity
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.PaneState
-  alias DevIDE.Terminals.SessionDirectory.Compose
-  alias DevIDE.Terminals.SessionRegistry
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxEvents
-  alias DevIDE.Git.Inspector, as: GitInspector
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Agents.Transcripts
+  alias Casein.Terminals.Activity
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.PaneState
+  alias Casein.Terminals.SessionDirectory.Compose
+  alias Casein.Terminals.SessionRegistry
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxEvents
+  alias Casein.Git.Inspector, as: GitInspector
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Terminals.Session.Info, as: SessionInfo
 
-  @registry DevIDE.Terminals.Registry
-  @supervisor DevIDE.Terminals.Supervisor
-  @pubsub DevIDE.PubSub
+  @registry Casein.Terminals.Registry
+  @supervisor Casein.Terminals.Supervisor
+  @pubsub Casein.PubSub
   @topic_prefix "terminal_tabs:"
   @poll_ms 2_000
   @default_reconcile_ms 5_000
@@ -72,7 +72,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   `:workspace_name` or `:workspace_names` — used for tmux session-name
   prefixes. The workspace id is always included as a stable fallback.
   """
-  @spec read(String.t(), keyword()) :: [DevIDE.Terminals.Session.Info.t()]
+  @spec read(String.t(), keyword()) :: [Casein.Terminals.Session.Info.t()]
   def read(workspace_id, opts \\ []) when is_binary(workspace_id) do
     workspace_names = workspace_names(workspace_id, opts)
     tmux_sessions = Keyword.get_lazy(opts, :tmux_sessions, &list_tmux_sessions/0)
@@ -87,7 +87,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   @doc "Cached canonical tabs; starts the directory on demand."
-  @spec tabs(String.t(), keyword()) :: [DevIDE.Terminals.Session.Info.t()]
+  @spec tabs(String.t(), keyword()) :: [Casein.Terminals.Session.Info.t()]
   def tabs(workspace_id, opts \\ []) do
     case ensure_started(workspace_id, opts) do
       {:ok, pid} -> GenServer.call(pid, :tabs)
@@ -105,7 +105,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   are never queued behind it. The fresh list is then handed to the GenServer via
   a fast cast that updates the cache and broadcasts on change.
   """
-  @spec refresh_now(String.t(), keyword()) :: [DevIDE.Terminals.Session.Info.t()]
+  @spec refresh_now(String.t(), keyword()) :: [Casein.Terminals.Session.Info.t()]
   def refresh_now(workspace_id, opts \\ []) do
     case ensure_started(workspace_id, opts) do
       {:ok, pid} ->
@@ -144,7 +144,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   @doc "Finds a canonical tab by its attach id."
   @spec fetch(String.t(), String.t(), keyword()) ::
-          {:ok, DevIDE.Terminals.Session.Info.t()} | :error
+          {:ok, Casein.Terminals.Session.Info.t()} | :error
   def fetch(workspace_id, attach_id, opts \\ []) do
     case Enum.find(tabs(workspace_id, opts), &(Compose.attach_id(&1) == attach_id)) do
       nil -> :error

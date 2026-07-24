@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.SessionEvents do
+defmodule Casein.Terminals.SessionEvents do
   @moduledoc """
   Content-event bus for terminal sessions.
 
-  `DevIDE.Terminals.SessionOwner` broadcasts here whenever a session's
+  `Casein.Terminals.SessionOwner` broadcasts here whenever a session's
   backend produces live output, stamped with the owner's monotonic content
   generation. This gives consumers other than the attached viewers — agent
   watchers, activity surfaces, scrollback tooling — a push signal for "this
@@ -14,7 +14,7 @@ defmodule DevIDE.Terminals.SessionEvents do
   possible at this layer (it arrives later with OSC 133 command records).
   """
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
 
   @type event :: %{
           type: :output,

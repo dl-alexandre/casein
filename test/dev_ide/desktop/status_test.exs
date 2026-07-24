@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.StatusTest do
+defmodule Casein.Desktop.StatusTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Desktop.Status
+  alias Casein.Desktop.Status
 
   setup do
     dir =

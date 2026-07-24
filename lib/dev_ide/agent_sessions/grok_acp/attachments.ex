@@ -1,4 +1,4 @@
-defmodule DevIDE.AgentSessions.GrokACP.Attachments do
+defmodule Casein.AgentSessions.GrokACP.Attachments do
   @moduledoc """
   Production lifecycle manager for Grok ACP leader attachments.
 
@@ -8,17 +8,17 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
   workspace-scoped projection for operator approval surfaces.
 
   Neither the global `~/.grok/leader.sock` nor an arbitrary filesystem path is
-  accepted. Leader sockets must be direct children of DevIDE's configured
+  accepted. Leader sockets must be direct children of Casein's configured
   Grok leader root, and capability bundles must be content-addressed directories
-  accepted by `DevIDE.Agents.GrokCapabilityBundle`.
+  accepted by `Casein.Agents.GrokCapabilityBundle`.
   """
 
   use GenServer
 
   require Logger
 
-  alias DevIDE.Agents.GrokCapabilityBundle
-  alias DevIDE.AgentSessions.GrokACP
+  alias Casein.Agents.GrokCapabilityBundle
+  alias Casein.AgentSessions.GrokACP
   alias Phoenix.PubSub
 
   @topic_prefix "grok_acp_attachments:"
@@ -73,7 +73,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
   @doc "Subscribe to safe attachment snapshots for a workspace."
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @doc false
@@ -249,7 +249,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
         state
 
       {:error, reason} ->
-        Logger.warning("Unable to attach DevIDE to Grok leader",
+        Logger.warning("Unable to attach Casein to Grok leader",
           workspace_id: observation.workspace_id,
           reason: inspect(reason)
         )
@@ -378,7 +378,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
 
   defp broadcast(state, workspace_id) do
     PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       topic(workspace_id),
       {:grok_acp_attachments_updated, workspace_id, workspace_snapshots(state, workspace_id)}
     )
@@ -472,7 +472,7 @@ defmodule DevIDE.AgentSessions.GrokACP.Attachments do
   defp valid_cwd(_cwd), do: nil
 
   defp valid_transcript(path) when is_binary(path) do
-    if DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(path),
+    if Casein.Agents.Transcripts.Grok.allowed_pending_path?(path),
       do: Path.expand(path),
       else: nil
   end

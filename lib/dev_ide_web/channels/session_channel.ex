@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.SessionChannel do
+defmodule CaseinWeb.SessionChannel do
   @moduledoc """
   Mobile companion channel (v1a) — a live, read-only projection of one
   workspace's supervisory state. Topic: `session:<workspace_id>`.
 
   This is the "ACP as façade" surface: it owns no session state. It joins on
-  a `DevIDE.Session.Snapshot`, subscribes to the three event spines the
+  a `Casein.Session.Snapshot`, subscribes to the three event spines the
   runtime already broadcasts, and pushes a fresh snapshot (debounced) whenever
   something supervisory changes:
 
-    * `DevIDE.Audit` (`{:audit_event, _}`)            — runs, policy decisions, ledger
-    * `DevIDE.Workspaces.State` (`{:workspace_mode_changed, _, _}`)
-    * `DevIDE.Agents.Activity` (`{:agent_mcp_activity, _}`)
+    * `Casein.Audit` (`{:audit_event, _}`)            — runs, policy decisions, ledger
+    * `Casein.Workspaces.State` (`{:workspace_mode_changed, _, _}`)
+    * `Casein.Agents.Activity` (`{:agent_mcp_activity, _}`)
 
   Write affordances are deliberately *not* here in v1a. The only action a
   client may take is read/refresh; quick allowlisted commands and approvals
@@ -22,16 +22,16 @@ defmodule DevIdeWeb.SessionChannel do
 
   use Phoenix.Channel
 
-  alias DevIDE.Audit
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Alerts
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Notifications
-  alias DevIDE.Push
-  alias DevIDE.Scope
-  alias DevIDE.Session.Snapshot
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.State
+  alias Casein.Audit
+  alias Casein.Agents.Activity
+  alias Casein.Alerts
+  alias Casein.Mobile.UserObserver
+  alias Casein.Notifications
+  alias Casein.Push
+  alias Casein.Scope
+  alias Casein.Session.Snapshot
+  alias Casein.Workspaces
+  alias Casein.Workspaces.State
 
   # Coalesce bursts of deltas into one push.
   @debounce_ms 150

@@ -1,4 +1,4 @@
-defmodule DevIDE.Push.Diagnostics do
+defmodule Casein.Push.Diagnostics do
   @moduledoc """
   Readiness diagnostics for native push delivery.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Push.Diagnostics do
   attempt delivery without minting tokens or contacting APNs/FCM.
   """
 
-  alias DevIDE.Push
+  alias Casein.Push
 
   @default_platforms ["android", "ios"]
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews do
+defmodule Casein.Previews do
   @moduledoc """
   Preview Broker context.
 
@@ -13,11 +13,11 @@ defmodule DevIDE.Previews do
 
   import Ecto.Query
 
-  alias DevIDE.Audit
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Repo
+  alias Casein.Audit
+  alias Casein.Previews.Deps
+  alias Casein.Repo
 
-  alias DevIDE.Previews.{
+  alias Casein.Previews.{
     Artifacts,
     Commands,
     ControlSession,
@@ -210,7 +210,7 @@ defmodule DevIDE.Previews do
 
   @doc """
   Returns true for HTTP(S) URLs that can be controlled and shown inside the
-  DevIDE cockpit panel.
+  Casein cockpit panel.
   """
   def trusted_url?(url), do: Url.trusted_embed?(url)
 
@@ -295,7 +295,7 @@ defmodule DevIDE.Previews do
 
   defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
 
-  # Self-include only the control loopback and DevIDE app origins on update.
+  # Self-include only the control loopback and Casein app origins on update.
   # Navigated target origins are already covered by registration-time
   # allowlisting or must not expand the persisted list on every update_url.
   @max_persisted_allowed_origins 64
@@ -460,7 +460,7 @@ defmodule DevIDE.Previews do
   def surface_key_for_surface(surface), do: Identity.surface_key(surface)
 
   @doc "Preview candidates detected from terminal output."
-  def discover_candidates(data), do: DevIDE.Previews.Detector.discover(data)
+  def discover_candidates(data), do: Casein.Previews.Detector.discover(data)
 
   @doc "Named preview surfaces from workspace metadata (v3) and terminal hints."
   def discover_surfaces(workspace, opts \\ []) when is_map(workspace),

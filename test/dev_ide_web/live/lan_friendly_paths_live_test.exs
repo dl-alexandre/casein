@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.LanFriendlyPathsLiveTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Workspaces.Aliases
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspaces.Aliases
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     env_keys = [
@@ -41,8 +41,8 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{})
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :workspaces_root, workspaces_root)
     Application.put_env(:dev_ide, :workspaces_roots, [])
     Application.put_env(:dev_ide, :home_workspace_path, root)
@@ -160,7 +160,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
 
       alpha = Path.join(outside, "alpha")
       File.mkdir_p!(alpha)
-      {:ok, ws} = DevIDE.Workspaces.attach_folder(alpha)
+      {:ok, ws} = Casein.Workspaces.attach_folder(alpha)
 
       {:ok, view, _html} = live(conn, "/workspaces/#{ws.id}")
 
@@ -284,7 +284,7 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     assert lan_path_error.target_path == target_path
   end
 
-  test "reserved prefixes continue to route to their explicit DevIDE surfaces", %{conn: conn} do
+  test "reserved prefixes continue to route to their explicit Casein surfaces", %{conn: conn} do
     conn = get(conn, "/api/workspaces")
     assert conn.status in [401, 503]
   end

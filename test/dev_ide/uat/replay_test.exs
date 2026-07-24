@@ -1,8 +1,8 @@
-defmodule DevIDE.UAT.ReplayTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.ReplayTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.UAT.{Replay, Run, Step, Trace}
+  alias Casein.PreviewControl.Registry
+  alias Casein.UAT.{Replay, Run, Step, Trace}
 
   @workspace %{
     id: "ws-preview",

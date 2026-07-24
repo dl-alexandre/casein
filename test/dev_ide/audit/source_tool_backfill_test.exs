@@ -1,4 +1,4 @@
-defmodule DevIDE.Audit.SourceToolBackfillTest do
+defmodule Casein.Audit.SourceToolBackfillTest do
   @moduledoc """
   Verifies the `source`/`tool` columns added to `audit_events` and the
   migration's action-prefix backfill.
@@ -7,11 +7,11 @@ defmodule DevIDE.Audit.SourceToolBackfillTest do
   inserting action-prefixed rows with NULL source/tool and replaying the
   literal backfill statements exposed by the migration module.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.EctoAdapter
-  alias DevIDE.Repo
+  alias Casein.Audit
+  alias Casein.Audit.EctoAdapter
+  alias Casein.Repo
 
   @migration_path "priv/repo/migrations/20260716080000_add_source_tool_to_audit_events.exs"
 
@@ -23,7 +23,7 @@ defmodule DevIDE.Audit.SourceToolBackfillTest do
   end
 
   defp migration_module do
-    case Code.ensure_loaded(DevIDE.Repo.Migrations.AddSourceToolToAuditEvents) do
+    case Code.ensure_loaded(Casein.Repo.Migrations.AddSourceToolToAuditEvents) do
       {:module, mod} ->
         mod
 

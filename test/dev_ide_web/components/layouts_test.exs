@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.LayoutsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.LayoutsTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
   import Phoenix.Template, only: [render_to_string: 4]
 
-  alias DevIdeWeb.Layouts
+  alias CaseinWeb.Layouts
 
   defp slot(content) do
     [%{__slot__: :inner_block, inner_block: fn _, _ -> content end}]

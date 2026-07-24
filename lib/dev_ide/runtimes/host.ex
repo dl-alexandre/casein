@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.Host do
+defmodule Casein.Runtimes.Host do
   @moduledoc "Host capability inventory used for runtime placement."
 
   @type t :: %__MODULE__{

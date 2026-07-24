@@ -1,11 +1,11 @@
-defmodule DevIDE.Proposals.AutoApply do
+defmodule Casein.Proposals.AutoApply do
   @moduledoc """
   Policy-gated, audited auto-apply of a completed review-agent run's own
   proposal — the "reviewed unlock flow" `docs/hardening.md` describes.
 
   Deliberately outside `lib/dev_ide/agents/` (that subsystem has its own
   read-only boundary guard, `test/dev_ide/agents_readonly_test.exs`, which
-  must stay green and unmodified). Polls `DevIDE.Agents.Run.state/1` via
+  must stay green and unmodified). Polls `Casein.Agents.Run.state/1` via
   `Task.Supervisor` rather than calling `subscribe/1` — `Agents.Run` is
   single-subscriber (a second subscriber would steal delivery from the
   LiveView's own stream), and `state/1` is a plain `GenServer.call`, safe for
@@ -23,11 +23,11 @@ defmodule DevIDE.Proposals.AutoApply do
 
   require Logger
 
-  alias DevIDE.{Audit, Policy, Proposals, Workspaces}
-  alias DevIDE.Agents.Run
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Proposals.DiffSignals
-  alias DevIDE.Runs.Ledger
+  alias Casein.{Audit, Policy, Proposals, Workspaces}
+  alias Casein.Agents.Run
+  alias Casein.Policy.Decision
+  alias Casein.Proposals.DiffSignals
+  alias Casein.Runs.Ledger
 
   @poll_ms 2_000
   @max_wait_ms :timer.hours(3)
@@ -43,10 +43,10 @@ defmodule DevIDE.Proposals.AutoApply do
   def watch(workspace_id, root, run_pid, run_ctx) do
     # Causality handoff: outcome audit events emitted by the watcher task
     # correlate back to the run-start context captured here.
-    signals_ctx = DevIDE.Signals.Context.snapshot()
+    signals_ctx = Casein.Signals.Context.snapshot()
 
-    Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-      DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
+    Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
+      Casein.Signals.Context.with_snapshot(signals_ctx, fn ->
         poll(workspace_id, root, run_pid, run_ctx, System.monotonic_time(:millisecond))
       end)
     end)
@@ -153,7 +153,7 @@ defmodule DevIDE.Proposals.AutoApply do
 
   defp select_proposal(_root, _run_ctx), do: {:error, :no_run_id}
 
-  # DevIDE.ProposalApply.apply/4 gates on Policy.can_apply_proposal?/1, which
+  # Casein.ProposalApply.apply/4 gates on Policy.can_apply_proposal?/1, which
   # requires workspace_operator?/1 (workspace_user == actor_username, or an
   # admin/operator role). An autonomous run has no identity of its own to
   # offer there — it authorizes via the *separate* can_enable_agent_write?/1
@@ -172,7 +172,7 @@ defmodule DevIDE.Proposals.AutoApply do
       actor_username: granter
     }
 
-    case DevIDE.ProposalApply.apply(root, proposal.rel_path, actor_ctx) do
+    case Casein.ProposalApply.apply(root, proposal.rel_path, actor_ctx) do
       {:ok, result} ->
         emit_applied(workspace_id, run_ctx, proposal, result)
         emit_run_approval(workspace_id, run_ctx, proposal)

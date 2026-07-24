@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.WebhookTriggerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Deployment.WebhookTriggerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Deployment.WebhookTrigger
+  alias Casein.Deployment.WebhookTrigger
 
   @repo "dl-alexandre/dev_ide"
 

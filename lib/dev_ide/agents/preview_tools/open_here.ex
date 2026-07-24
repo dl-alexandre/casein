@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.OpenHere do
+defmodule Casein.Agents.PreviewTools.OpenHere do
   @moduledoc "preview_open_here."
 
   use Jido.Action,
@@ -37,15 +37,15 @@ defmodule DevIDE.Agents.PreviewTools.OpenHere do
       tmux_session: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id, :tmux_session])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open_here")
 
   @impl Jido.Action

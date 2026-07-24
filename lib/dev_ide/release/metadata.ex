@@ -1,4 +1,4 @@
-defmodule DevIDE.Release.Metadata do
+defmodule Casein.Release.Metadata do
   @moduledoc """
   Embedded release metadata (`releases/dev_ide.relmeta.json`).
 

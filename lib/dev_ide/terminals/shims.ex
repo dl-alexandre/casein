@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.Shims do
+defmodule Casein.Terminals.Shims do
   @moduledoc """
-  Materializes DevIDE terminal command shims and exposes terminal capability env.
+  Materializes Casein terminal command shims and exposes terminal capability env.
 
-  The shims are intentionally scoped to DevIDE terminal panes by prepending this
+  The shims are intentionally scoped to Casein terminal panes by prepending this
   directory to pane `PATH`; the host's real binaries stay untouched and can be
   invoked directly by absolute path when debugging.
   """
@@ -29,13 +29,13 @@ defmodule DevIDE.Terminals.Shims do
       env: %{},
       requires: ["api"],
       script: :devide_open,
-      notes: "Open files and localhost URLs in the connected DevIDE viewer."
+      notes: "Open files and localhost URLs in the connected Casein viewer."
     },
     "elio" => %{
       env: %{"ELIO_CLIPBOARD_OSC52" => "1"},
       install: %{method: :cargo, package: "elio", bin: "elio"},
       requires: ["osc52"],
-      notes: "Use browser clipboard through DevIDE's OSC52 bridge.",
+      notes: "Use browser clipboard through Casein's OSC52 bridge.",
       theme: %{
         mode: :static,
         path: "~/.config/elio/theme.toml",
@@ -62,7 +62,7 @@ defmodule DevIDE.Terminals.Shims do
           # ~/.grok/config.toml is one file shared by every workspace and
           # viewer on the box, and grok hot-reloads it — the stamp restyles
           # every running grok pane, not just the caller's. grokday is banned
-          # outright: it renders illegibly in the DevIDE viewer (operator
+          # outright: it renders illegibly in the Casein viewer (operator
           # call, 2026-07-07). Both values here must stay legible on either
           # scheme so a mixed-scheme clobber is cosmetic, never unreadable.
           values: %{dark: "groknight", light: "tokyonight"}
@@ -116,7 +116,7 @@ defmodule DevIDE.Terminals.Shims do
     for {name, %{theme: theme}} <- @registry, into: %{}, do: {name, theme}
   end
 
-  @doc "Directory where DevIDE materializes terminal shims."
+  @doc "Directory where Casein materializes terminal shims."
   @spec dir() :: String.t()
   def dir do
     :dev_ide
@@ -126,7 +126,7 @@ defmodule DevIDE.Terminals.Shims do
     |> Path.expand()
   end
 
-  @doc "Directory where DevIDE installs self-healed terminal tools."
+  @doc "Directory where Casein installs self-healed terminal tools."
   @spec tool_root() :: String.t()
   def tool_root do
     :dev_ide
@@ -136,7 +136,7 @@ defmodule DevIDE.Terminals.Shims do
     |> Path.expand()
   end
 
-  @doc "Directory that contains DevIDE-managed terminal tool binaries."
+  @doc "Directory that contains Casein-managed terminal tool binaries."
   @spec tools_bin_dir() :: String.t()
   def tools_bin_dir, do: Path.join(tool_root(), "bin")
 
@@ -144,11 +144,11 @@ defmodule DevIDE.Terminals.Shims do
   @spec shim_path(String.t()) :: String.t()
   def shim_path(name) when is_binary(name), do: Path.join(dir(), name)
 
-  @doc "Absolute path to DevIDE's bash shell integration file."
+  @doc "Absolute path to Casein's bash shell integration file."
   @spec shell_integration_path() :: String.t()
   def shell_integration_path, do: Path.join(dir(), @shell_integration_name)
 
-  @doc "Absolute path to DevIDE's zsh shell integration file."
+  @doc "Absolute path to Casein's zsh shell integration file."
   @spec zsh_integration_path() :: String.t()
   def zsh_integration_path, do: Path.join(dir(), @zsh_integration_name)
 
@@ -166,7 +166,7 @@ defmodule DevIDE.Terminals.Shims do
   @spec install_script_path(String.t()) :: String.t()
   def install_script_path(name) when is_binary(name), do: Path.join([dir(), "install", name])
 
-  @doc "Generic terminal capability variables safe for every DevIDE pane."
+  @doc "Generic terminal capability variables safe for every Casein pane."
   @spec capability_env() :: %{String.t() => String.t()}
   def capability_env do
     @capability_env
@@ -176,7 +176,7 @@ defmodule DevIDE.Terminals.Shims do
   end
 
   @doc """
-  Shell command for tmux panes that should enter the DevIDE-integrated shell.
+  Shell command for tmux panes that should enter the Casein-integrated shell.
 
   Follows the user's login shell: when `$SHELL` is zsh (the macOS default) and
   the staged ZDOTDIR is materialized, panes get integrated zsh; otherwise the
@@ -206,7 +206,7 @@ defmodule DevIDE.Terminals.Shims do
   end
 
   @doc """
-  Returns environment variables for DevIDE terminal panes.
+  Returns environment variables for Casein terminal panes.
 
   Pass `scheme:` / `preset:` to include per-viewer theme variables
   (`DEV_IDE_TERMINAL_SCHEME`, `COLORFGBG`, optional `DEV_IDE_TERMINAL_PRESET`).
@@ -252,7 +252,7 @@ defmodule DevIDE.Terminals.Shims do
   """
   @spec sync_tmux_terminal_env!(keyword()) :: %{String.t() => String.t()}
   def sync_tmux_terminal_env!(opts \\ []) do
-    _ = DevIDE.Agents.AgentShims.ensure_best_effort()
+    _ = Casein.Agents.AgentShims.ensure_best_effort()
     terminal_env = env(opts)
     Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
     terminal_env
@@ -322,10 +322,10 @@ defmodule DevIDE.Terminals.Shims do
 
     # Terminal shims first (elio/devide-open), then tools, then agent launcher
     # shims + npm package bins so panes can find `claude`/`grok` without
-    # relying on bashrc. Agent bins must precede npm bins so DevIDE shims win
+    # relying on bashrc. Agent bins must precede npm bins so Casein shims win
     # over bare package symlinks (MCP injection).
-    agent_bins = DevIDE.Agents.AgentShims.bin_dir()
-    npm_bins = DevIDE.Agents.AgentShims.npm_bin_dir()
+    agent_bins = Casein.Agents.AgentShims.bin_dir()
+    npm_bins = Casein.Agents.AgentShims.npm_bin_dir()
 
     [dir(), tools_bin_dir(), agent_bins, npm_bins | String.split(base, ":", trim: true)]
     |> Enum.uniq()
@@ -460,7 +460,7 @@ defmodule DevIDE.Terminals.Shims do
     }
 
     if [ "$status" = "200" ]; then
-      echo "Opened ${target} in DevIDE viewer"
+      echo "Opened ${target} in Casein viewer"
       exit 0
     fi
 
@@ -584,7 +584,7 @@ defmodule DevIDE.Terminals.Shims do
     #!/usr/bin/env bash
 
     # Bash reads --init-file instead of its normal startup files. Source the
-    # user's profile first, then install DevIDE's prompt/command markers.
+    # user's profile first, then install Casein's prompt/command markers.
     if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -z "${DEV_IDE_SHELL_INTEGRATION_RC_SOURCED:-}" ]]; then
       export DEV_IDE_SHELL_INTEGRATION_RC_SOURCED=1
 
@@ -605,13 +605,13 @@ defmodule DevIDE.Terminals.Shims do
       unset DEV_IDE_SHELL_INTEGRATION_RC_SOURCED
     fi
 
-    # DevIDE dirs must be at the FRONT of PATH, not merely present: the user
+    # Casein dirs must be at the FRONT of PATH, not merely present: the user
     # rc files sourced above prepend agent-installer dirs (~/.grok/bin,
     # ~/.opencode/bin, …) over the pane env, and an agent name resolving past
     # ~/.devide/agent-shims silently skips MCP injection. So strip existing
     # occurrences and re-prepend, instead of skipping dirs already on PATH.
     # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
-    # then npm package bins (so DevIDE shims win over bare package symlinks);
+    # then npm package bins (so Casein shims win over bare package symlinks);
     # ~/.local/bin rides along for user tools on thin release PATHs.
     __devide_prepend_path() {
       # Build the new prefix in ARGUMENT order so the first arg ends up at
@@ -673,7 +673,7 @@ defmodule DevIDE.Terminals.Shims do
 
       if [[ -n "${TMUX:-}" ]]; then
         # tmux consumes plain OSC 133 for its own prompt marks. A passthrough
-        # copy reaches DevIDE's attached client/emulator.
+        # copy reaches Casein's attached client/emulator.
         printf '\\033Ptmux;\\033\\033]%s\\a\\033\\\\' "$payload"
       fi
     }
@@ -776,7 +776,7 @@ defmodule DevIDE.Terminals.Shims do
     typeset -g DEV_IDE_SHELL_INTEGRATION_LOADED=1
 
     # Belt-and-suspenders PATH repair, mirroring the bash integration: keep
-    # DevIDE shims findable even when the pane inherited a thin release PATH.
+    # Casein shims findable even when the pane inherited a thin release PATH.
     __devide_prepend_path() {
       local d
       local -a prefix rest
@@ -822,7 +822,7 @@ defmodule DevIDE.Terminals.Shims do
 
       if [[ -n "${TMUX:-}" ]]; then
         # tmux consumes plain OSC 133 for its own prompt marks. A passthrough
-        # copy reaches DevIDE's attached client/emulator.
+        # copy reaches Casein's attached client/emulator.
         printf '\\033Ptmux;\\033\\033]%s\\a\\033\\\\' "$payload"
       fi
     }
@@ -893,7 +893,7 @@ defmodule DevIDE.Terminals.Shims do
        """},
       {".zprofile",
        """
-       # Staged by DevIDE (ZDOTDIR bootstrap) — chain to the user's real .zprofile.
+       # Staged by Casein (ZDOTDIR bootstrap) — chain to the user's real .zprofile.
        if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${DEV_IDE_USER_ZDOTDIR}/.zprofile" ]]; then
          source "${DEV_IDE_USER_ZDOTDIR}/.zprofile"
        fi
@@ -901,8 +901,8 @@ defmodule DevIDE.Terminals.Shims do
        """},
       {".zshrc",
        """
-       # Staged by DevIDE (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
-       # chain to their real ~/.zshrc, then load DevIDE shell integration.
+       # Staged by Casein (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
+       # chain to their real ~/.zshrc, then load Casein shell integration.
        __devide_user_zdotdir="${DEV_IDE_USER_ZDOTDIR:-${HOME}}"
        if [[ "${__devide_user_zdotdir}" != "${HOME}" ]]; then
          export ZDOTDIR="${__devide_user_zdotdir}"
@@ -1069,7 +1069,7 @@ defmodule DevIDE.Terminals.Shims do
     """
     [Desktop Entry]
     Type=Application
-    Name=DevIDE Preview
+    Name=Casein Preview
     Exec=devide-open %f
     Terminal=true
     MimeType=text/markdown;text/x-markdown;

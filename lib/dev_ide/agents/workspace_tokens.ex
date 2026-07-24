@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.WorkspaceTokens do
+defmodule Casein.Agents.WorkspaceTokens do
   @moduledoc """
   Resolves the workspace-scoped API bearer token external agents must use.
 
-  `DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2` rejects MCP `tools/call`
+  `CaseinWeb.Endpoint.reject_global_mcp_tool_calls/2` rejects MCP `tools/call`
   requests made with the global admin token, so every path that hands a token
   to an agent (materialized `env.sh`, tmux session env) must resolve a
   workspace-scoped token here — never `:api_token` / `DEV_IDE_API_TOKEN`.

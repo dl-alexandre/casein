@@ -1,4 +1,4 @@
-defmodule DevIDE.Attention.Policy do
+defmodule Casein.Attention.Policy do
   @moduledoc """
   Pure attention-routing rules for operator-facing agent state.
 

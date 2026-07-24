@@ -1,4 +1,4 @@
-defmodule DevIDE.Links.Open do
+defmodule Casein.Links.Open do
   @moduledoc """
   PubSub and JSON helpers for workspace open-target requests.
 
@@ -7,19 +7,19 @@ defmodule DevIDE.Links.Open do
   connected workspace viewers.
   """
 
-  @type resolved_target :: DevIDE.Links.Resolver.target()
+  @type resolved_target :: Casein.Links.Resolver.target()
 
   @spec topic(String.t()) :: String.t()
   def topic(workspace_id) when is_binary(workspace_id), do: "links:" <> workspace_id
 
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    Phoenix.PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @spec broadcast(String.t(), resolved_target()) :: :ok | {:error, term()}
   def broadcast(workspace_id, resolved) when is_binary(workspace_id) do
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:open_target, resolved})
+    Phoenix.PubSub.broadcast(Casein.PubSub, topic(workspace_id), {:open_target, resolved})
   end
 
   @spec to_json(resolved_target()) :: map()

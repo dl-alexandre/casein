@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceFileControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceFileControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
   defmodule OwnedSource do
-    alias DevIDE.Workspace
+    alias Casein.Workspace
 
     def get(id, _auth) do
       root = Application.fetch_env!(:dev_ide, :workspace_file_controller_root)

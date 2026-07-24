@@ -1,9 +1,9 @@
-defmodule DevIDE.SearchNoReplaceTest do
+defmodule Casein.SearchNoReplaceTest do
   @moduledoc """
   Boundary guard: M18 is search-only. No replace, no write, no shell-string
   invocation of `rg`. The argv-only path is the only path.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   @sources [
     "lib/dev_ide/search.ex",
@@ -15,7 +15,7 @@ defmodule DevIDE.SearchNoReplaceTest do
 
   test "Search behaviour exposes only search and available?" do
     callbacks =
-      DevIDE.Search.Adapter.behaviour_info(:callbacks)
+      Casein.Search.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> Enum.sort()
 

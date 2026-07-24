@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ConnectEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
   # Events for the "Connect an external agent" drawer: mint/revoke self-serve
   # orchestrator MCP tokens and reveal a ready-to-paste durable .mcp.json.
   #
@@ -10,7 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ConnectEvents do
 
   import Phoenix.Component, only: [assign: 2]
 
-  alias DevIDE.Agents.OrchestratorTokens
+  alias Casein.Agents.OrchestratorTokens
 
   def handle_event("connect:toggle", _params, socket) do
     open? = not (socket.assigns[:connect_drawer_open] || false)
@@ -89,7 +89,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ConnectEvents do
   # picks workspace_id per call, so this one config outlives any workspace. Uses
   # the public endpoint URL (Door 2) since the panel is reached over it.
   defp durable_mcp_json(token) do
-    base = String.trim_trailing(DevIdeWeb.Endpoint.url(), "/")
+    base = String.trim_trailing(CaseinWeb.Endpoint.url(), "/")
     auth = %{"Authorization" => "Bearer " <> token}
 
     Jason.encode!(

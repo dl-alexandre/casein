@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
+  alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
 
   # Covers the pure handle_event clauses of TerminalEvents — ones that only
   # update socket assigns / put_flash / push_event, plus the deterministic

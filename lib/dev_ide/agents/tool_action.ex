@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ToolAction do
+defmodule Casein.Agents.ToolAction do
   @moduledoc """
   Contract and runner for MCP tools backed by `Jido.Action` modules.
 
@@ -14,15 +14,15 @@ defmodule DevIDE.Agents.ToolAction do
   keys through untouched, so unnormalized string-keyed args would bypass
   validation entirely. The schema doubles as the argument whitelist — keys
   the schema doesn't declare are dropped, and no atom is ever created from
-  input (`DevIDE.PayloadAttrs` handles the string/atom fallback).
+  input (`Casein.PayloadAttrs` handles the string/atom fallback).
 
   Actions are executed via `validate_params/1` + `run/2` directly rather
   than `Jido.Exec.run/3`: Exec adds task-wrapped timeouts and retries, and
   retrying mutating tools that commit to Git would risk duplicate commits.
   """
 
-  alias DevIDE.PayloadAttrs
-  alias DevIDE.Signals.Context
+  alias Casein.PayloadAttrs
+  alias Casein.Signals.Context
   alias McpCtl.Tool
 
   @default_timeout_ms 30_000

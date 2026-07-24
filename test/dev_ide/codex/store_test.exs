@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.StoreTest do
+defmodule Casein.Codex.StoreTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Codex.{Event, Store}
+  alias Casein.Codex.{Event, Store}
 
   setup do
     :ok = Store.clear()

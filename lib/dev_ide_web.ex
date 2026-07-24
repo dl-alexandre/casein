@@ -1,12 +1,12 @@
-defmodule DevIdeWeb do
+defmodule CaseinWeb do
   @moduledoc """
   The entrypoint for defining your web interface, such
   as controllers, components, channels, and so on.
 
   This can be used in your application as:
 
-      use DevIdeWeb, :controller
-      use DevIdeWeb, :html
+      use CaseinWeb, :controller
+      use CaseinWeb, :html
 
   The definitions below will be executed for every controller,
   component, etc, so keep them short and clean, focused
@@ -22,7 +22,7 @@ defmodule DevIdeWeb do
   # compiler — violations are compile warnings, promoted to errors by
   # `mix precommit`'s --warnings-as-errors.
   use Boundary,
-    deps: [DevIDE, DevIDE.Files.PathSafety],
+    deps: [Casein, Casein.Files.PathSafety],
     exports: :all
 
   def static_paths,
@@ -50,7 +50,7 @@ defmodule DevIdeWeb do
     quote do
       use Phoenix.Controller, formats: [:html, :json]
 
-      use Gettext, backend: DevIdeWeb.Gettext
+      use Gettext, backend: CaseinWeb.Gettext
 
       import Plug.Conn
 
@@ -63,7 +63,7 @@ defmodule DevIdeWeb do
       # The :live layout (layouts/live.html.heex) re-renders on connected diffs.
       # Deploy state from DeploymentUpdateHook is surfaced in the notifications
       # bell and drawer on workspace/dashboard headers, not in the layout.
-      use Phoenix.LiveView, layout: {DevIdeWeb.Layouts, :live}
+      use Phoenix.LiveView, layout: {CaseinWeb.Layouts, :live}
 
       unquote(html_helpers())
     end
@@ -93,16 +93,16 @@ defmodule DevIdeWeb do
   defp html_helpers do
     quote do
       # Translation
-      use Gettext, backend: DevIdeWeb.Gettext
+      use Gettext, backend: CaseinWeb.Gettext
 
       # HTML escaping functionality
       import Phoenix.HTML
       # Core UI components
-      import DevIdeWeb.CoreComponents
+      import CaseinWeb.CoreComponents
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS
-      alias DevIdeWeb.Layouts
+      alias CaseinWeb.Layouts
 
       # Routes generation with the ~p sigil
       unquote(verified_routes())
@@ -112,9 +112,9 @@ defmodule DevIdeWeb do
   def verified_routes do
     quote do
       use Phoenix.VerifiedRoutes,
-        endpoint: DevIdeWeb.Endpoint,
-        router: DevIdeWeb.Router,
-        statics: DevIdeWeb.static_paths()
+        endpoint: CaseinWeb.Endpoint,
+        router: CaseinWeb.Router,
+        statics: CaseinWeb.static_paths()
     end
   end
 

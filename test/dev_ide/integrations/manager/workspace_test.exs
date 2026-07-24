@@ -1,7 +1,7 @@
-defmodule DevIDE.Integrations.Manager.WorkspaceTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Integrations.Manager.WorkspaceTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Integrations.Manager.Workspace
+  alias Casein.Integrations.Manager.Workspace
 
   @sample %{
     "id" => "11111111-1111-1111-1111-111111111111",

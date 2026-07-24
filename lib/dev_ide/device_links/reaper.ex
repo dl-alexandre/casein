@@ -1,4 +1,4 @@
-defmodule DevIDE.DeviceLinks.Reaper do
+defmodule Casein.DeviceLinks.Reaper do
   @moduledoc """
   Periodic sweeper for expired and revoked device-link tokens.
 
@@ -10,8 +10,8 @@ defmodule DevIDE.DeviceLinks.Reaper do
 
   import Ecto.Query
 
-  alias DevIDE.DeviceLinks.Token
-  alias DevIDE.Repo
+  alias Casein.DeviceLinks.Token
+  alias Casein.Repo
 
   @default_sweep_interval_ms 21_600_000
   @default_retention_seconds 2_592_000

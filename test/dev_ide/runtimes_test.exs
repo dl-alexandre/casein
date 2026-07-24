@@ -1,18 +1,18 @@
-defmodule DevIDE.RuntimesTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.RuntimesTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AgentEvents
-  alias DevIDE.Workspace
-  alias DevIDE.Previews.EnvPorts
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.AgentEvents
+  alias Casein.Workspace
+  alias Casein.Previews.EnvPorts
+  alias Casein.Runtimes
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   defmodule PreviewRunner do
-    @behaviour DevIDE.Runtimes.PreviewLauncher
+    @behaviour Casein.Runtimes.PreviewLauncher
 
     @impl true
     def start(spec) do
@@ -29,7 +29,7 @@ defmodule DevIDE.RuntimesTest do
     MemoryAdapter.clear()
     Runtimes.clear()
     WorktreeReconciler.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
     AgentEvents.clear()
 
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
@@ -39,13 +39,13 @@ defmodule DevIDE.RuntimesTest do
     prev_runner = Application.get_env(:dev_ide, :runtime_preview_runner)
     prev_runner_pid = Application.get_env(:dev_ide, :runtime_preview_runner_test_pid)
 
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
       WorktreeReconciler.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
       AgentEvents.clear()
 
       restore_env(:runtimes_adapter, prev_runtime)

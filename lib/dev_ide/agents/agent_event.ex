@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AgentEvent do
+defmodule Casein.Agents.AgentEvent do
   @moduledoc """
   Durable, normalized event in an agent session timeline.
 

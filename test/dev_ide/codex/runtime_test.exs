@@ -1,9 +1,9 @@
-defmodule DevIDE.Codex.RuntimeTest do
+defmodule Casein.Codex.RuntimeTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
-  alias DevIDE.Codex.{Approval, Event, Runtime}
+  alias Casein.Codex.{Approval, Event, Runtime}
 
   @fixture Path.expand("../../fixtures/codex_app_server/fake_app_server.sh", __DIR__)
 
@@ -77,7 +77,7 @@ defmodule DevIDE.Codex.RuntimeTest do
   defp start_runtime!(runtime_id) do
     pid =
       start_supervised!(
-        {DevIDE.Codex.Runtime,
+        {Casein.Codex.Runtime,
          workspace_id: "ws-spine",
          runtime_id: runtime_id,
          cwd: File.cwd!(),

@@ -1,11 +1,11 @@
-defmodule DevIDE.UAT.Instance.SystemRunner do
+defmodule Casein.UAT.Instance.SystemRunner do
   @moduledoc """
-  Default `DevIDE.UAT.Instance.Runner` — boots a real dev instance from the
+  Default `Casein.UAT.Instance.Runner` — boots a real dev instance from the
   working tree via `scripts/dev-preview-instance.sh` and tears it down by PID.
 
   > **Not exercised by the unit suite.** Booting a real Phoenix instance can't be
   > done safely or deterministically in CI-of-this-repo, so the lifecycle *logic*
-  > is tested against a fake runner (`DevIDE.UAT.InstanceTest`) and this module is
+  > is tested against a fake runner (`Casein.UAT.InstanceTest`) and this module is
   > verified by the Phase 2 live-smoke step (still open in the plan). Keep side
   > effects here thin and obvious.
 
@@ -14,7 +14,7 @@ defmodule DevIDE.UAT.Instance.SystemRunner do
   (see the devbox process-safety lesson).
   """
 
-  @behaviour DevIDE.UAT.Instance.Runner
+  @behaviour Casein.UAT.Instance.Runner
 
   @script "scripts/dev-preview-instance.sh"
   @probe_timeout 2_000

@@ -1,15 +1,15 @@
-defmodule DevIDE.Codex.AppServer do
+defmodule Casein.Codex.AppServer do
   @moduledoc """
   Supervised owner of one Codex App Server stdio process.
 
   The process performs the mandatory initialize/initialized handshake, tracks
-  JSON-RPC requests, and emits only canonical `DevIDE.Codex.Event` structs to
+  JSON-RPC requests, and emits only canonical `Casein.Codex.Event` structs to
   subscribers. Raw App Server maps remain inside the Codex boundary.
   """
 
   use GenServer
 
-  alias DevIDE.Codex.{ApprovalBroker, EventRouter, JsonRpc, Protocol}
+  alias Casein.Codex.{ApprovalBroker, EventRouter, JsonRpc, Protocol}
 
   @default_request_timeout 30_000
   @default_initialize_timeout 10_000
@@ -445,7 +445,7 @@ defmodule DevIDE.Codex.AppServer do
     client_info =
       %{
         "name" => "devide",
-        "title" => "DevIDE",
+        "title" => "Casein",
         "version" => app_version()
       }
       |> Map.merge(string_key_map(client_info))

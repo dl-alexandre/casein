@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Telemetry do
+defmodule Casein.Terminals.Telemetry do
   @moduledoc """
   Terminal-specific telemetry counters maintained with O(1) ETS reads.
 

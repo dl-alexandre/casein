@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.ApprovalBroker do
+defmodule Casein.Codex.ApprovalBroker do
   @moduledoc """
   Single runtime-local authority for pending Codex approvals.
 
@@ -10,7 +10,7 @@ defmodule DevIDE.Codex.ApprovalBroker do
 
   use GenServer
 
-  alias DevIDE.Codex.{AppServer, Approval, Event, EventRouter, Protocol}
+  alias Casein.Codex.{AppServer, Approval, Event, EventRouter, Protocol}
 
   @type decision ::
           :accept
@@ -41,7 +41,7 @@ defmodule DevIDE.Codex.ApprovalBroker do
   end
 
   @doc false
-  @spec request(server(), GenServer.server(), DevIDE.Codex.JsonRpc.decoded()) ::
+  @spec request(server(), GenServer.server(), Casein.Codex.JsonRpc.decoded()) ::
           {:ok, Approval.t()} | {:error, term()}
   def request(server, app_server, request) do
     GenServer.call(server, {:request, app_server, request})

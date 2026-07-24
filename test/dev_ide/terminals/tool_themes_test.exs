@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.ToolThemesTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.ToolThemesTest do
+  use Casein.TestCase, async: false
 
   import ExUnit.CaptureLog
 
-  alias DevIDE.Terminals.{Shims, ToolThemes}
+  alias Casein.Terminals.{Shims, ToolThemes}
 
   @stale {{2020, 1, 1}, {0, 0, 0}}
 
@@ -101,9 +101,9 @@ defmodule DevIDE.Terminals.ToolThemesTest do
 
   describe "scheme_variant mode (grok)" do
     test "does not stamp while draining", %{home: home} do
-      DevIDE.Deployment.Drain.reset_for_test!()
-      on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
-      assert :ok = DevIDE.Deployment.Drain.start_drain(0)
+      Casein.Deployment.Drain.reset_for_test!()
+      on_exit(fn -> Casein.Deployment.Drain.reset_for_test!() end)
+      assert :ok = Casein.Deployment.Drain.start_drain(0)
 
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :dark)
       refute File.exists?(grok_path(home))
@@ -117,7 +117,7 @@ defmodule DevIDE.Terminals.ToolThemesTest do
     # ~/.grok/config.toml is shared by every workspace on the box and grok
     # hot-reloads it, so whatever the light scheme stamps lands on every
     # running grok pane. grokday is banned: it renders illegibly in the
-    # DevIDE viewer.
+    # Casein viewer.
     test "light scheme stamps tokyonight, never grokday", %{home: home} do
       assert :ok = ToolThemes.ensure("grok", grok_spec(), :light)
       assert File.read!(grok_path(home)) == "[ui]\ntheme = \"tokyonight\"\n"

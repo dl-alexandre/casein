@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.ResolveWorkspace do
+defmodule Casein.Agents.PreviewTools.ResolveWorkspace do
   @moduledoc "preview_resolve_workspace."
 
   use Jido.Action,
@@ -15,12 +15,12 @@ defmodule DevIDE.Agents.PreviewTools.ResolveWorkspace do
       cwd: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(%{
@@ -30,7 +30,7 @@ defmodule DevIDE.Agents.PreviewTools.ResolveWorkspace do
         cwd: Params.workspace_path_param()
       })
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_resolve_workspace")
 
   @impl Jido.Action

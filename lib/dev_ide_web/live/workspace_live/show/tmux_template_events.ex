@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   # Session-template handle_event clauses ("tmux:*_template*" / template
-  # library) extracted from DevIdeWeb.WorkspaceLive.Show. Show delegates the
+  # library) extracted from CaseinWeb.WorkspaceLive.Show. Show delegates the
   # template events here; the heavier helpers still live on Show and are called
   # back via Show.* (apply_session_template, save/update/duplicate/delete,
   # refresh_saved_session_templates, the form builders). Pure code motion.
@@ -9,10 +9,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Terminals
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.TemplatePanels
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias Casein.Terminals
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.TemplatePanels
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
     Show.apply_session_template(socket, template_id)

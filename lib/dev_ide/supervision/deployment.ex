@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.Deployment do
+defmodule Casein.Supervision.Deployment do
   @moduledoc false
 
   use Supervisor
@@ -10,9 +10,9 @@ defmodule DevIDE.Supervision.Deployment do
   @impl true
   def init(_opts) do
     children = [
-      DevIDE.Deployment.Registry,
-      DevIDE.Deployment.Drain,
-      DevIDE.Deployment.PollerWatcher
+      Casein.Deployment.Registry,
+      Casein.Deployment.Drain,
+      Casein.Deployment.PollerWatcher
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

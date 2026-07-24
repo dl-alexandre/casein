@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.Drift do
+defmodule Casein.Deployment.Drift do
   @moduledoc """
   Detects when the running devbox release is not the revision on `origin/master`.
 
@@ -47,7 +47,7 @@ defmodule DevIDE.Deployment.Drift do
   """
   @spec check_and_broadcast(keyword()) :: status()
   def check_and_broadcast(opts \\ []) do
-    current = DevIDE.Deployment.Version.version()
+    current = Casein.Deployment.Version.version()
     remote = remote_head()
 
     status = assess(current, remote, branch())
@@ -55,7 +55,7 @@ defmodule DevIDE.Deployment.Drift do
     case status do
       {:drift, info} ->
         if Keyword.get(opts, :log, true) do
-          Logger.warning("DevIDE deploy drift detected", Map.to_list(info))
+          Logger.warning("Casein deploy drift detected", Map.to_list(info))
         end
 
         if Keyword.get(opts, :broadcast, true), do: broadcast(info)
@@ -204,7 +204,7 @@ defmodule DevIDE.Deployment.Drift do
   end
 
   defp broadcast(info) do
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_drift, info})
+    Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", {:deploy_drift, info})
   rescue
     _ -> :ok
   end

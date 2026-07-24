@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.FileServer.Plug do
+defmodule Casein.Previews.FileServer.Plug do
   @moduledoc """
   Minimal Plug that serves workspace files from a root-jailed location.
 
-  Reuses `DevIDE.Workspaces.FileAccess.stat/2` and `read/2` so path traversal
+  Reuses `Casein.Workspaces.FileAccess.stat/2` and `read/2` so path traversal
   and symlink escapes are refused the same way as the rest of the file stack.
   No auth here — the listener is `127.0.0.1`-only and the preview proxy
   authorizes before forwarding.
@@ -12,9 +12,9 @@ defmodule DevIDE.Previews.FileServer.Plug do
 
   import Plug.Conn
 
-  alias DevIDE.Files.BrowserViewable
-  alias DevIDE.Previews.FileServer
-  alias DevIDE.Workspaces.FileAccess
+  alias Casein.Files.BrowserViewable
+  alias Casein.Previews.FileServer
+  alias Casein.Workspaces.FileAccess
 
   @impl true
   def init(opts), do: opts
@@ -22,7 +22,7 @@ defmodule DevIDE.Previews.FileServer.Plug do
   @impl true
   # Re-serving workspace file bytes is the feature: root-jailed via FileAccess,
   # loopback-only Bandit listener, authorized by the preview proxy. The body is
-  # never DevIDE-trusted markup and carries nosniff so it runs as the file's own
+  # never Casein-trusted markup and carries nosniff so it runs as the file's own
   # content-type — same posture as PreviewProxyController's XSS.SendResp skip.
   # sobelow_skip ["XSS.SendResp"]
   def call(conn, opts) do

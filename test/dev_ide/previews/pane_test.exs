@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.PaneTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Previews.PaneTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Previews.Pane, as: PreviewPane
-  alias DevIDE.PreviewPanes
+  alias Casein.Previews.Pane, as: PreviewPane
+  alias Casein.PreviewPanes
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 

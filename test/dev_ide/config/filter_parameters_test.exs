@@ -1,5 +1,5 @@
-defmodule DevIDE.Config.FilterParametersTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule Casein.Config.FilterParametersTest do
+  use CaseinWeb.ConnCase, async: false
 
   import ExUnit.CaptureLog
 
@@ -96,7 +96,7 @@ defmodule DevIDE.Config.FilterParametersTest do
           %{
             conn: conn,
             log: :info,
-            plug: DevIdeWeb.API.TerminalMCPController,
+            plug: CaseinWeb.API.TerminalMCPController,
             plug_opts: :mcp,
             pipe_through: [:mcp_api],
             path_params: %{},

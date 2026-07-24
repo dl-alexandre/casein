@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   describe "preview_proxied?/1" do
     test "true only for /preview-proxy/ display URLs" do

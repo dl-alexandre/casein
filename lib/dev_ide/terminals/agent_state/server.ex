@@ -1,16 +1,16 @@
-defmodule DevIDE.Terminals.AgentState.Server do
+defmodule Casein.Terminals.AgentState.Server do
   @moduledoc false
 
   use GenServer
 
-  alias DevIDE.Agents.{Activity, AgentEvents}
-  alias DevIDE.Audit
-  alias DevIDE.Export.Sanitizer
+  alias Casein.Agents.{Activity, AgentEvents}
+  alias Casein.Audit
+  alias Casein.Export.Sanitizer
   alias Phoenix.PubSub
 
   @topic_prefix "agent_state:"
   @max_entries 500
-  @registered_name :"Elixir.DevIDE.Terminals.AgentState"
+  @registered_name :"Elixir.Casein.Terminals.AgentState"
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, @registered_name))
@@ -29,7 +29,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
       ) do
     # Causality handoff: the reporter is usually an MCP tool call, so an
     # agent.blocked audit emitted inside the server correlates back to it.
-    signals_ctx = DevIDE.Signals.Context.snapshot()
+    signals_ctx = Casein.Signals.Context.snapshot()
 
     GenServer.cast(
       @registered_name,
@@ -159,7 +159,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
         broadcast(workspace_id, tmux_session, pane_id, entry)
 
-        DevIDE.Signals.Context.with_snapshot(signals_ctx, fn ->
+        Casein.Signals.Context.with_snapshot(signals_ctx, fn ->
           maybe_emit_state_changed(prior_state, entry, tmux_session, pane_id)
           record_transition(prior_state, entry, tmux_session, pane_id)
           maybe_emit_blocked(prior_state, entry, tmux_session, pane_id)
@@ -330,7 +330,7 @@ defmodule DevIDE.Terminals.AgentState.Server do
 
   defp broadcast(workspace_id, tmux_session, pane_id, entry) when is_binary(workspace_id) do
     PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       @topic_prefix <> workspace_id,
       {:agent_state_updated, tmux_session, pane_id, entry}
     )

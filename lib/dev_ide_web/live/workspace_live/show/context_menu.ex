@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
+defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
   @moduledoc """
   Shared right-click context menu for the workspace cockpit.
 
@@ -27,10 +27,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
   (`data-ctx-session-id` → `"sessionId"`).
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  alias DevIDE.Policy
-  alias DevIDE.Policy.Decision
+  alias Casein.Policy
+  alias Casein.Policy.Decision
   alias Phoenix.LiveView.JS
 
   @max_ctx_value_bytes 4096
@@ -623,7 +623,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenu do
   # gate/3; no audit event is emitted here — that happens when an item fires.
   defp can_edit?(assigns) do
     %{assigns: assigns}
-    |> DevIdeWeb.WorkspaceLive.Show.Context.policy_ctx()
+    |> CaseinWeb.WorkspaceLive.Show.Context.policy_ctx()
     |> Policy.can_edit_file?()
     |> Decision.allow?()
   end

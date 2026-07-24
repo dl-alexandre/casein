@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Screenshot do
+defmodule Casein.Agents.PreviewTools.Screenshot do
   @moduledoc "preview_screenshot."
 
   use Jido.Action,
@@ -11,14 +11,14 @@ defmodule DevIDE.Agents.PreviewTools.Screenshot do
       session_id: [type: {:or, [:integer, :string]}, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.session_only()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_screenshot")
 
   @impl Jido.Action

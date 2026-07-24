@@ -1,13 +1,13 @@
-defmodule DevIDE.Workspaces.SessionSummaryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.SessionSummaryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Agents.Activity
+  alias Casein.Runtimes
+  alias Casein.Terminals.AgentState
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.SessionSummary
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -19,7 +19,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     Runtimes.clear()
     Activity.clear()
     AgentState.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :git_adapter, git_stub("git-branch", 2))
 
     on_exit(fn ->
@@ -444,7 +444,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
   end
 
   defp git_stub(branch, dirty_count) do
-    name = :"DevIDE.Test.SessionSummaryGit#{System.unique_integer([:positive])}"
+    name = :"Casein.Test.SessionSummaryGit#{System.unique_integer([:positive])}"
 
     entries =
       for idx <- 1..dirty_count do
@@ -453,7 +453,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
     contents =
       quote do
-        @behaviour DevIDE.Git.Adapter
+        @behaviour Casein.Git.Adapter
         @impl true
         def branch(_root), do: {:ok, unquote(branch)}
         @impl true

@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Navigate do
+defmodule Casein.Agents.PreviewTools.Navigate do
   @moduledoc "preview_navigate."
 
   use Jido.Action,
@@ -12,12 +12,12 @@ defmodule DevIDE.Agents.PreviewTools.Navigate do
       path: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(%{session_id: Params.session_id(), path: Helpers.navigate_path_param()}, [
@@ -25,7 +25,7 @@ defmodule DevIDE.Agents.PreviewTools.Navigate do
         :path
       ])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_navigate")
 
   @impl Jido.Action

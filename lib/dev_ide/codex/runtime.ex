@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Runtime do
+defmodule Casein.Codex.Runtime do
   @moduledoc """
   Supervision boundary for one Codex home/worktree/security context.
 
@@ -8,9 +8,9 @@ defmodule DevIDE.Codex.Runtime do
 
   use Supervisor
 
-  alias DevIDE.Codex.{AppServer, ApprovalBroker, EventRouter}
+  alias Casein.Codex.{AppServer, ApprovalBroker, EventRouter}
 
-  @registry DevIDE.Codex.Registry
+  @registry Casein.Codex.Registry
 
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
@@ -89,12 +89,12 @@ defmodule DevIDE.Codex.Runtime do
   end
 
   @spec resolve_approval(String.t(), String.t(), ApprovalBroker.decision()) ::
-          {:ok, DevIDE.Codex.Approval.t()} | {:error, term()}
+          {:ok, Casein.Codex.Approval.t()} | {:error, term()}
   def resolve_approval(runtime_id, approval_id, decision) do
     ApprovalBroker.resolve(approval_broker(runtime_id), approval_id, decision)
   end
 
-  @spec pending_approvals(String.t()) :: [DevIDE.Codex.Approval.t()]
+  @spec pending_approvals(String.t()) :: [Casein.Codex.Approval.t()]
   def pending_approvals(runtime_id), do: ApprovalBroker.pending(approval_broker(runtime_id))
 
   @spec snapshot(String.t()) :: map()

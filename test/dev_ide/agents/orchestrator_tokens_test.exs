@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.OrchestratorTokensTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.OrchestratorTokensTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.OrchestratorToken
-  alias DevIDE.Agents.OrchestratorTokens
-  alias DevIDE.Repo
+  alias Casein.Agents.OrchestratorToken
+  alias Casein.Agents.OrchestratorTokens
+  alias Casein.Repo
 
   defp user(id \\ "alice"),
     do: %{id: id, username: id, email: "#{id}@example.com", role: :user}

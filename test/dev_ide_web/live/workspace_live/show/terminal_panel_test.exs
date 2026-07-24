@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalPanel
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.TerminalPanel
 
   defp shell_tab(sid, metadata) do
     SessionBarVM.session_tab(SessionInfo.new_shell("ws1", sid, metadata: metadata))

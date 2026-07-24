@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Plugs.DesktopAuth do
+defmodule CaseinWeb.Plugs.DesktopAuth do
   @moduledoc """
   Per-install authentication for the loopback desktop cockpit.
 
@@ -44,7 +44,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
     else
       conn
       |> put_resp_content_type("text/plain")
-      |> send_resp(421, "Desktop DevIDE only accepts localhost requests")
+      |> send_resp(421, "Desktop Casein only accepts localhost requests")
       |> halt()
     end
   end
@@ -69,7 +69,7 @@ defmodule DevIdeWeb.Plugs.DesktopAuth do
   defp verify_launch_claim(conn) do
     expected = Application.get_env(:dev_ide, :desktop_launch_token)
 
-    case DevIDE.Desktop.LaunchClaim.verify_and_consume(conn.query_params, expected) do
+    case Casein.Desktop.LaunchClaim.verify_and_consume(conn.query_params, expected) do
       :ok -> :ok
       {:error, _reason} -> :error
     end

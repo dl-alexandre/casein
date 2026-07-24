@@ -1,12 +1,12 @@
-defmodule DevIDE.Agents.ArtifactTools.Helpers do
+defmodule Casein.Agents.ArtifactTools.Helpers do
   @moduledoc """
   Shared JSON-Schema fragments and domain helpers for the artifact tool
   actions. The schema fragments are the wire shape served on tools/list —
   keep them byte-identical across tools so the MCP contract stays stable.
   """
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.ArtifactProjects.Project
+  alias Casein.ArtifactProjects
+  alias Casein.ArtifactProjects.Project
   alias McpCtl.Tool
 
   @doc false
@@ -14,7 +14,7 @@ defmodule DevIDE.Agents.ArtifactTools.Helpers do
     %{
       type: "string",
       description:
-        "DevIDE workspace id. Pre-scoped Artifact MCP endpoints inject this automatically."
+        "Casein workspace id. Pre-scoped Artifact MCP endpoints inject this automatically."
     }
   end
 

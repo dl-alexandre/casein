@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.PaneStateTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.PaneStateTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.PaneState
+  alias Casein.Terminals.PaneState
 
   @spinner <<0x2802::utf8>>
   @ready <<0x2733::utf8>>

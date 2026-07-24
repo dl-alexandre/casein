@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.Aliases do
+defmodule Casein.Workspaces.Aliases do
   @moduledoc false
 
-  alias DevIDE.Workspaces
+  alias Casein.Workspaces
 
   @doc """
   Workspace ids that should receive preview/browser broadcasts for `workspace_id`.
@@ -47,7 +47,7 @@ defmodule DevIDE.Workspaces.Aliases do
   end
 
   @doc """
-  DevIDE viewer route for a workspace id.
+  Casein viewer route for a workspace id.
 
   Manager workspaces use `/workspaces/{uuid}`; folder-attached workspaces use
   `/workspaces/folder:{base64url-absolute-path}`.
@@ -106,7 +106,7 @@ defmodule DevIDE.Workspaces.Aliases do
   end
 
   defp host_path_from_record(workspace_id) do
-    case DevIDE.Workspaces.State.get(workspace_id) do
+    case Casein.Workspaces.State.get(workspace_id) do
       {:ok, %{host_path: path}} when is_binary(path) and path != "" -> path
       _ -> nil
     end
@@ -115,7 +115,7 @@ defmodule DevIDE.Workspaces.Aliases do
   defp manager_ids_for_path(path) do
     expanded = Path.expand(path)
 
-    DevIDE.Workspaces.State.list()
+    Casein.Workspaces.State.list()
     |> Enum.filter(fn record ->
       case record.host_path do
         host_path when is_binary(host_path) -> Path.expand(host_path) == expanded

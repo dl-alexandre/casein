@@ -1,4 +1,4 @@
-defmodule DevIdeCore do
+defmodule CaseinCore do
   @moduledoc """
   Generic BEAM primitives for code-aware developer tooling.
 
@@ -20,7 +20,7 @@ defmodule DevIdeCore do
 
   ## Vocabulary scrub (pre-1.0)
 
-  `McpCtl.Schema` and `McpCtl.Params` currently encode DevIDE-specific
+  `McpCtl.Schema` and `McpCtl.Params` currently encode Casein-specific
   vocabulary (workspace ids, folder attachment, tmux/preview wording) in
   their runtime description strings. They compile and work standalone, but
   are slated to become host-configurable before a generic 1.0. `McpCtl.Tool`

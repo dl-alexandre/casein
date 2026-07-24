@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.MCPCapabilityScope do
+defmodule CaseinWeb.API.MCPCapabilityScope do
   @moduledoc """
   Filters MCP discovery and authorizes calls for an agent capability.
 
@@ -7,8 +7,8 @@ defmodule DevIdeWeb.API.MCPCapabilityScope do
   bypassing the exact direct-tool grant.
   """
 
-  alias DevIDE.Agents.TerminalTools
-  alias DevIdeWeb.API.MCPToolSearch
+  alias Casein.Agents.TerminalTools
+  alias CaseinWeb.API.MCPToolSearch
 
   @spec filter_tools([map()], keyword()) :: [map()]
   def filter_tools(tools, opts) when is_list(tools) do

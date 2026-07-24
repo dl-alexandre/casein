@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateNotifications do
+defmodule Casein.Repo.Migrations.CreateNotifications do
   use Ecto.Migration
 
   def change do
@@ -17,9 +17,9 @@ defmodule DevIDE.Repo.Migrations.CreateNotifications do
       add :expires_at, :utc_datetime_usec
       add :deep_link, :text
 
-      add :channels, DevIDE.Repo.Adapter.list_storage_type(repo(), :text),
+      add :channels, Casein.Repo.Adapter.list_storage_type(repo(), :text),
         null: false,
-        default: DevIDE.Repo.Adapter.list_default(repo())
+        default: Casein.Repo.Adapter.list_default(repo())
 
       add :default_delivery, :map, null: false, default: %{}
       add :source_type, :text

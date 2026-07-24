@@ -1,9 +1,9 @@
-defmodule DevIDE.Links.MarkdownTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Links.MarkdownTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Links.Markdown
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Workspace
+  alias Casein.Links.Markdown
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Workspace
 
   test "renders sanitized markdown and rewrites verified workspace file links" do
     root = tmp_root!()

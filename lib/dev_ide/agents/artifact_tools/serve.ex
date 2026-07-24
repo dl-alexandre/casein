@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ArtifactTools.Serve do
+defmodule Casein.Agents.ArtifactTools.Serve do
   @moduledoc "artifact_serve: ensure the artifact preview server is running."
 
   use Jido.Action,
@@ -14,13 +14,13 @@ defmodule DevIDE.Agents.ArtifactTools.Serve do
       artifact_id: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.ArtifactTools.Helpers
-  alias DevIDE.ArtifactProjects
+  alias Casein.Agents.ArtifactTools.Helpers
+  alias Casein.ArtifactProjects
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters do
     Tool.object(
       %{workspace_id: Helpers.workspace_id_param(), artifact_id: Helpers.artifact_id_param()},
@@ -28,10 +28,10 @@ defmodule DevIDE.Agents.ArtifactTools.Serve do
     )
   end
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata(:medium, true)
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def param_aliases, do: %{artifact_id: ~w(artifact_id id project_id)}
 
   @impl Jido.Action

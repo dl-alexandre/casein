@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.PreviewTools.BrowserControl do
+defmodule Casein.Agents.PreviewTools.BrowserControl do
   @moduledoc """
-  Workspace-scoped browser control for connected DevIDE LiveView clients.
+  Workspace-scoped browser control for connected Casein LiveView clients.
 
   The server cannot directly manipulate a human's browser tab, but it can ask
   connected workspace LiveViews to run narrow client-side actions through
@@ -8,10 +8,10 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
   not a delivery receipt from every open tab.
   """
 
-  alias DevIDE.Previews.Deps
-  alias DevIDE.PreviewActivity
+  alias Casein.Previews.Deps
+  alias Casein.PreviewActivity
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
   @topic_prefix "workspace_browser:"
   @default_action_timeout_ms 1_000
 
@@ -31,19 +31,19 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
 
   def subscribe(_), do: {:error, :workspace_id_required}
 
-  @doc "Ask connected DevIDE workspace viewers to reload the active preview iframe."
+  @doc "Ask connected Casein workspace viewers to reload the active preview iframe."
   @spec reload_preview_iframe(map(), keyword()) :: {:ok, result()} | {:error, term()}
   def reload_preview_iframe(workspace, opts \\ []) do
     broadcast(workspace, "reload_preview_iframe", opts)
   end
 
-  @doc "Ask connected DevIDE workspace viewers to reload the whole workspace page."
+  @doc "Ask connected Casein workspace viewers to reload the whole workspace page."
   @spec reload_page(map(), keyword()) :: {:ok, result()} | {:error, term()}
   def reload_page(workspace, opts \\ []) do
     broadcast(workspace, "reload_page", opts)
   end
 
-  @doc "Ask connected DevIDE workspace viewers to switch to and focus a preview pane."
+  @doc "Ask connected Casein workspace viewers to switch to and focus a preview pane."
   @spec focus_preview_pane(map(), String.t() | nil, String.t(), keyword()) ::
           {:ok, result()} | {:error, term()}
   def focus_preview_pane(workspace, tmux_session, pane_id, opts \\ [])
@@ -61,7 +61,7 @@ defmodule DevIDE.Agents.PreviewTools.BrowserControl do
   def focus_preview_pane(_workspace, _tmux_session, _pane_id, _opts),
     do: {:error, :pane_id_required}
 
-  @doc "Ask a connected DevIDE preview pane iframe to run a visible mutation and wait for ack."
+  @doc "Ask a connected Casein preview pane iframe to run a visible mutation and wait for ack."
   @spec mutate_preview_pane(map(), String.t(), String.t(), map(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def mutate_preview_pane(workspace, pane_id, action, target, opts \\ [])

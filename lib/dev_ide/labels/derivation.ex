@@ -1,4 +1,4 @@
-defmodule DevIDE.Labels.Derivation do
+defmodule Casein.Labels.Derivation do
   @moduledoc """
   Derives short conversation-aware pane labels from MCP activity and agent input.
   """

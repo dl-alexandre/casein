@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.Store.Projection do
+defmodule Casein.Codex.Store.Projection do
   @moduledoc false
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   @spec thread(map() | nil, Event.t()) :: map() | nil
   def thread(existing, %Event{thread_id: thread_id} = event)

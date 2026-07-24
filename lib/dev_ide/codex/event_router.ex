@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.EventRouter do
+defmodule Casein.Codex.EventRouter do
   @moduledoc """
   Runtime-local fanout and lightweight projection for canonical Codex events.
 
@@ -9,7 +9,7 @@ defmodule DevIDE.Codex.EventRouter do
 
   use GenServer
 
-  alias DevIDE.Codex.{Event, EventSink, Store}
+  alias Casein.Codex.{Event, EventSink, Store}
 
   @type server :: GenServer.server()
 

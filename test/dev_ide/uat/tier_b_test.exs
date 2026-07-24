@@ -1,12 +1,12 @@
-defmodule DevIDE.UAT.TierBTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.TierBTest do
+  use Casein.DataCase, async: false
 
   import Ecto.Query
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.Control, as: PreviewControl
-  alias DevIDE.Previews.ControlObservation
-  alias DevIDE.UAT.{FakeTransport, Run, TierB}
+  alias Casein.PreviewControl.Registry
+  alias Casein.Previews.Control, as: PreviewControl
+  alias Casein.Previews.ControlObservation
+  alias Casein.UAT.{FakeTransport, Run, TierB}
 
   setup do
     _ = Registry.clear()

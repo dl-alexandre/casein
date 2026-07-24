@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
+  alias Casein.Workspace
+  alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
 
   defmodule EmptyHistoryTmux do
     def capture_scrollback(_session, _opts), do: ""
@@ -22,7 +22,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
     previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     flush_mailbox()
 
@@ -40,7 +40,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
       }
     }
 
-    other_session = DevIDE.Terminals.Tmux.session_name("beta", "u-dev")
+    other_session = Casein.Terminals.Tmux.session_name("beta", "u-dev")
 
     assert {:noreply, socket} =
              TerminalEvents.handle_event(
@@ -122,7 +122,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
       previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
       previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
       flush_mailbox()
 

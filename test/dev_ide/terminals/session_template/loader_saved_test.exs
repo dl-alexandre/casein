@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.SessionTemplate.LoaderSavedTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Terminals.SessionTemplate.LoaderSavedTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Loader
-  alias DevIDE.Terminals.Templates
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Loader
+  alias Casein.Terminals.Templates
 
   @ws "ws-saved-1"
 

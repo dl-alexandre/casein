@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.GithubWebhook do
+defmodule Casein.Deployment.GithubWebhook do
   @moduledoc """
   GitHub push-webhook verification and push-event filtering.
 
@@ -6,7 +6,7 @@ defmodule DevIDE.Deployment.GithubWebhook do
   non-deleted pushes to the configured deploy branch on the expected repository.
   """
 
-  alias DevIDE.Deployment.Drift
+  alias Casein.Deployment.Drift
 
   @signature_prefix "sha256="
 

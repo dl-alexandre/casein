@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivityTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivityTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Codex.Event
-  alias DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivity
+  alias Casein.Codex.Event
+  alias CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity
 
   test "renders nested threads, lifecycle events, streaming output, and usage in History" do
     threads = [

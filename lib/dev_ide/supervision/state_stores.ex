@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.StateStores do
+defmodule Casein.Supervision.StateStores do
   @moduledoc false
 
   use Supervisor
@@ -10,17 +10,17 @@ defmodule DevIDE.Supervision.StateStores do
   @impl true
   def init(_opts) do
     children = [
-      DevIDE.Labels.Server,
-      DevIDE.Terminals.AgentState.Server,
-      DevIDE.Audit.MemoryAdapter,
-      DevIDE.Agents.AgentEvents.MemoryAdapter,
-      DevIDE.Codex.Store.MemoryAdapter,
+      Casein.Labels.Server,
+      Casein.Terminals.AgentState.Server,
+      Casein.Audit.MemoryAdapter,
+      Casein.Agents.AgentEvents.MemoryAdapter,
+      Casein.Codex.Store.MemoryAdapter,
       # Push pipeline — Dispatcher before Registry (Registry calls Dispatcher.watch).
-      DevIDE.Push.Dispatcher,
-      DevIDE.Push.Registry,
-      DevIDE.Workspaces.State.MemoryAdapter,
-      DevIDE.Workspaces.AgentWriteUnlockExpirer,
-      DevIDE.Runtimes.MemoryAdapter
+      Casein.Push.Dispatcher,
+      Casein.Push.Registry,
+      Casein.Workspaces.State.MemoryAdapter,
+      Casein.Workspaces.AgentWriteUnlockExpirer,
+      Casein.Runtimes.MemoryAdapter
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

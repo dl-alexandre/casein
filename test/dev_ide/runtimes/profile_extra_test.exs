@@ -1,7 +1,7 @@
-defmodule DevIDE.Runtimes.ProfileExtraTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runtimes.ProfileExtraTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runtimes.{Profile, Runtime}
+  alias Casein.Runtimes.{Profile, Runtime}
 
   defp runtime(metadata) do
     %Runtime{

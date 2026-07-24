@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.Manifest do
+defmodule Casein.UAT.Manifest do
   @moduledoc """
   A UAT scenario manifest (`priv/uat/<scenario>/manifest.json`) — the contract a
   scenario must declare before it can run in a tier.

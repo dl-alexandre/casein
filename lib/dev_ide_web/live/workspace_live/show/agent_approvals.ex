@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AgentApprovals do
+defmodule CaseinWeb.WorkspaceLive.Show.AgentApprovals do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :codex_approvals, :list, default: []
   attr :grok_requests, :list, default: []

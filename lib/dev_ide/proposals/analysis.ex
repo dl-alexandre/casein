@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.Analysis do
+defmodule Casein.Proposals.Analysis do
   @moduledoc """
   Result of comparing a proposal against the current workspace working tree.
   """

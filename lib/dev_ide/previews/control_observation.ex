@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.ControlObservation do
+defmodule Casein.Previews.ControlObservation do
   @moduledoc """
   Ecto schema for a captured observation of a `ControlSession` — a typed `kind`
   (url, dom_summary, console_errors, network_errors, storage, screenshot) with
@@ -12,8 +12,8 @@ defmodule DevIDE.Previews.ControlObservation do
     field :data, :map, default: %{}
     field :artifact_path, :string
 
-    belongs_to :session, DevIDE.Previews.ControlSession
-    belongs_to :action, DevIDE.Previews.ControlAction
+    belongs_to :session, Casein.Previews.ControlSession
+    belongs_to :action, Casein.Previews.ControlAction
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

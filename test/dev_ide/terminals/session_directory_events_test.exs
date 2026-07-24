@@ -1,11 +1,11 @@
-defmodule DevIDE.Terminals.SessionDirectoryEventsTest do
+defmodule Casein.Terminals.SessionDirectoryEventsTest do
   @moduledoc """
   Event-source path for SessionDirectory — FakeEventSource driven, no real tmux.
   """
 
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.SessionDirectory
+  alias Casein.Terminals.SessionDirectory
   alias TmuxCtl.Test.FakeEventSource
   alias TmuxCtl.Test.FakeState
 
@@ -16,7 +16,7 @@ defmodule DevIDE.Terminals.SessionDirectoryEventsTest do
     prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
     prev_reconcile = Application.get_env(:dev_ide, :session_directory_reconcile_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     {:ok, fake} = start_supervised(FakeEventSource)
 
@@ -467,23 +467,23 @@ defmodule DevIDE.Terminals.SessionDirectoryEventsTest do
   end
 end
 
-defmodule DevIDE.Terminals.SessionDirectoryEventsTest.CountingAdapter do
+defmodule Casein.Terminals.SessionDirectoryEventsTest.CountingAdapter do
   @moduledoc false
 
   # Counts list_sessions/0 — every SessionDirectory recompute calls it.
   def list_sessions do
     case :persistent_term.get(
-           {DevIDE.Terminals.SessionDirectoryEventsTest, :recompute_counter},
+           {Casein.Terminals.SessionDirectoryEventsTest, :recompute_counter},
            nil
          ) do
       nil -> :ok
       counter -> :counters.add(counter, 1, 1)
     end
 
-    DevIDE.Test.FakeTmuxAdapter.list_sessions()
+    Casein.Test.FakeTmuxAdapter.list_sessions()
   end
 
-  def directory_inventory, do: DevIDE.Test.FakeTmuxAdapter.directory_inventory()
-  def list_session_windows(session), do: DevIDE.Test.FakeTmuxAdapter.list_session_windows(session)
-  def list_session_panes(session), do: DevIDE.Test.FakeTmuxAdapter.list_session_panes(session)
+  def directory_inventory, do: Casein.Test.FakeTmuxAdapter.directory_inventory()
+  def list_session_windows(session), do: Casein.Test.FakeTmuxAdapter.list_session_windows(session)
+  def list_session_panes(session), do: Casein.Test.FakeTmuxAdapter.list_session_panes(session)
 end

@@ -1,14 +1,14 @@
-defmodule DevIdeWeb.TerminalRender do
+defmodule CaseinWeb.TerminalRender do
   @moduledoc """
   Builds the JSON-safe `ghostty:render` payload from a `Ghostty.Terminal`
   render state, with row-level diffing against the previously sent cells.
 
   This logic is shared between:
 
-    * `DevIdeWeb.WorkspaceLive.PaneWorker` — the per-pane process that drains
+    * `CaseinWeb.WorkspaceLive.PaneWorker` — the per-pane process that drains
       its own PTY output and builds frames off the LiveView process, so heavy
       streaming output can't starve the LiveView channel; and
-    * `DevIdeWeb.GhosttyTerminalComponent` — the in-band path for input-driven
+    * `CaseinWeb.GhosttyTerminalComponent` — the in-band path for input-driven
       refreshes (key/text/resize/ready) where building on the LiveView is fine
       because those are low-frequency, human-paced events.
 
@@ -17,7 +17,7 @@ defmodule DevIdeWeb.TerminalRender do
   process built the frame.
   """
 
-  alias DevIdeWeb.TerminalTelemetry
+  alias CaseinWeb.TerminalTelemetry
 
   @type cells :: list()
   @type payload :: map()

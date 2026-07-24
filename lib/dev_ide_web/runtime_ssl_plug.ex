@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.RuntimeSSLPlug do
+defmodule CaseinWeb.RuntimeSSLPlug do
   @moduledoc false
 
   @default_options [

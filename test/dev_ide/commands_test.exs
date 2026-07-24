@@ -1,8 +1,8 @@
-defmodule DevIDE.CommandsTest do
+defmodule Casein.CommandsTest do
   # async: false — the spawn/3 tests start real OS subprocesses via erlexec and
   # link the spawn proxy into the test process.
-  use DevIDE.TestCase, async: false
-  alias DevIDE.Commands
+  use Casein.TestCase, async: false
+  alias Casein.Commands
 
   setup_all do
     # erlexec ships as an `extra_applications` entry, so it is normally already

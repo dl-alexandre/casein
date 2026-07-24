@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.Plugs.DeployWebhookAuth do
+defmodule CaseinWeb.Plugs.DeployWebhookAuth do
   @moduledoc """
   GitHub deploy-webhook authentication.
 
   Verifies `X-Hub-Signature-256` against the cached raw request body. This plug
   deliberately bypasses `ApiAuth` — GitHub signs the payload with a dedicated
-  webhook secret, not the DevIDE API bearer token.
+  webhook secret, not the Casein API bearer token.
   """
 
   import Plug.Conn
 
-  alias DevIDE.Deployment.GithubWebhook
+  alias Casein.Deployment.GithubWebhook
 
   def init(opts), do: opts
 

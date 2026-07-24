@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEventsTest do
-  use DevIDE.DataCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.PaletteEventsTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.CommandPalette.Usage
-  alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
+  alias Casein.CommandPalette.Usage
+  alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
 
   # Covers palette open/query/nav/execute (including the resolve {:ok, _} dispatch
   # path that records frecency via Usage.record/2) plus the search:run no-root
@@ -10,8 +10,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEventsTest do
 
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       private: %{live_temp: %{}},
       assigns:

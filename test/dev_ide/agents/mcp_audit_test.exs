@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.MCPAuditTest do
+defmodule Casein.Agents.MCPAuditTest do
   @moduledoc """
   Regression coverage for which terminal MCP tools emit durable Audit records.
 
@@ -7,12 +7,12 @@ defmodule DevIDE.Agents.MCPAuditTest do
   missing from the audit list, so agent-pane writes went unaudited. These tests
   pin every mutating tool — including the agent_* variants — to an Audit record.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.{Activity, AgentEvents, MCPAudit}
-  alias DevIDE.Audit
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.PreviousSessions
+  alias Casein.Agents.{Activity, AgentEvents, MCPAudit}
+  alias Casein.Audit
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.PreviousSessions
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
@@ -220,7 +220,7 @@ defmodule DevIDE.Agents.MCPAuditTest do
 
     test "Activity entry carries the same correlation_id as the audit row" do
       assert :ok =
-               DevIDE.Signals.Context.with_new(fn ->
+               Casein.Signals.Context.with_new(fn ->
                  MCPAudit.record_terminal(
                    "terminal_send_command",
                    %{"workspace_id" => "ws-corr", "command" => "true"},

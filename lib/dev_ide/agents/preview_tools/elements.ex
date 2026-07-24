@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Elements do
+defmodule Casein.Agents.PreviewTools.Elements do
   @moduledoc "preview_elements."
 
   use Jido.Action,
@@ -12,19 +12,19 @@ defmodule DevIDE.Agents.PreviewTools.Elements do
       query: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(%{session_id: Params.session_id(), query: Helpers.elements_query_param()}, [
         :session_id
       ])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_elements")
 
   @impl Jido.Action

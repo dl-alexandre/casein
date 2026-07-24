@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.LastDeploy do
+defmodule Casein.Deployment.LastDeploy do
   @moduledoc """
   Reads the on-box deploy poller status file (`/run/devide/last-deploy.json`).
 
@@ -9,7 +9,7 @@ defmodule DevIDE.Deployment.LastDeploy do
 
   require Logger
 
-  alias DevIDE.Deployment.{Drift, Version}
+  alias Casein.Deployment.{Drift, Version}
 
   @default_path "/run/devide/last-deploy.json"
   @stale_in_progress_ms 2_700_000
@@ -129,12 +129,12 @@ defmodule DevIDE.Deployment.LastDeploy do
   def check_and_broadcast(opts \\ []) do
     case banner_status(opts) do
       {:in_progress, info} ->
-        Logger.info("DevIDE deploy poller in progress", target: info.target_short)
+        Logger.info("Casein deploy poller in progress", target: info.target_short)
         broadcast({:deploy_in_progress, info})
         :in_progress
 
       {:failed, info} ->
-        Logger.warning("DevIDE deploy poller failed",
+        Logger.warning("Casein deploy poller failed",
           reason: info.reason,
           target: info.target_short
         )
@@ -311,7 +311,7 @@ defmodule DevIDE.Deployment.LastDeploy do
   end
 
   defp publish_deploy_failure(info) do
-    DevIDE.Signals.Publish.domain_event(
+    Casein.Signals.Publish.domain_event(
       "deploy.failed",
       %{
         outcome: info.outcome,
@@ -328,7 +328,7 @@ defmodule DevIDE.Deployment.LastDeploy do
   end
 
   defp broadcast(message) do
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", message)
+    Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", message)
   rescue
     _ -> :ok
   end

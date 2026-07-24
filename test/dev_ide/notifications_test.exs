@@ -1,9 +1,9 @@
-defmodule DevIDE.NotificationsTest do
-  use DevIDE.DataCase, async: true
+defmodule Casein.NotificationsTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.Notifications
-  alias DevIDE.Notifications.Notification
+  alias Casein.Audit.Event
+  alias Casein.Notifications
+  alias Casein.Notifications.Notification
 
   @now ~U[2026-07-04 20:30:00.000000Z]
   @later ~U[2026-07-04 20:35:00.000000Z]

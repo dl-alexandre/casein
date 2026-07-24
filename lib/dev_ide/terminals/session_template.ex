@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionTemplate do
+defmodule Casein.Terminals.SessionTemplate do
   @moduledoc """
   Declarative tmux workspace template.
 
@@ -7,11 +7,11 @@ defmodule DevIDE.Terminals.SessionTemplate do
   produce dry-run plans without mutating tmux.
   """
 
-  alias DevIDE.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.SessionTemplate.Window
 
-  @loader Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Loader"])
-  @executor Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Executor"])
-  @exporter Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Export"])
+  @loader Module.concat(["Casein", "Terminals", "SessionTemplate", "Loader"])
+  @executor Module.concat(["Casein", "Terminals", "SessionTemplate", "Executor"])
+  @exporter Module.concat(["Casein", "Terminals", "SessionTemplate", "Export"])
 
   @type t :: %__MODULE__{
           id: String.t(),

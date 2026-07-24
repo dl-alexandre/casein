@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.LogsPanelTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.LogsPanelTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.LogsPanel
+  alias CaseinWeb.WorkspaceLive.Show.LogsPanel
 
   defp log_streams(lines) do
     %{

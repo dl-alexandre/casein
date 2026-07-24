@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.ConnectAgentDrawerTest do
+defmodule CaseinWeb.ConnectAgentDrawerTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Agents.OrchestratorToken
-  alias DevIdeWeb.ConnectAgentDrawer
+  alias Casein.Agents.OrchestratorToken
+  alias CaseinWeb.ConnectAgentDrawer
 
   test "closed drawer renders nothing" do
     html =

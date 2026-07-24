@@ -1,13 +1,13 @@
-defmodule DevIDE.Deployment.DeployAuditTest do
+defmodule Casein.Deployment.DeployAuditTest do
   @moduledoc """
   Transition semantics for the durable deploy/drift audit trail: repeated
   polls with an unchanged observation must never add rows.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.Deployment.DeployAudit
+  alias Casein.Audit
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.Deployment.DeployAudit
 
   @ws DeployAudit.workspace_id()
 

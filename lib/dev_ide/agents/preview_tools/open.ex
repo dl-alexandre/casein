@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Open do
+defmodule Casein.Agents.PreviewTools.Open do
   @moduledoc "preview_open."
 
   use Jido.Action,
@@ -36,15 +36,15 @@ defmodule DevIDE.Agents.PreviewTools.Open do
       workspace_id: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.open_unified_props(), [:workspace_id])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open")
 
   @impl Jido.Action

@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.Forms.PreviousSessionsSearchTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.Forms.PreviousSessionsSearchTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.Forms.PreviousSessionsSearch
+  alias CaseinWeb.Forms.PreviousSessionsSearch
 
   test "normalizes URL aliases and clamps limit" do
     changeset =

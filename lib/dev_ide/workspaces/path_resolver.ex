@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.PathResolver do
+defmodule Casein.Workspaces.PathResolver do
   @moduledoc """
   Resolves URL path segments to workspace roots, and workspaces back to
   canonical path routes.
@@ -20,8 +20,8 @@ defmodule DevIDE.Workspaces.PathResolver do
   path params); generated routes percent-encode each segment.
   """
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Workspaces.State
+  alias Casein.Files.PathSafety
+  alias Casein.Workspaces.State
 
   @reserved_prefixes ~w(
     api

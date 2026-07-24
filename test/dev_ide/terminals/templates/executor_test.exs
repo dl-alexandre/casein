@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.Templates.ExecutorTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.Templates.ExecutorTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.Templates.Executor
+  alias Casein.Terminals.Templates.Executor
 
   defp saved(body) do
     %{

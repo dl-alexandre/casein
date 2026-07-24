@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreatePreviews do
+defmodule Casein.Repo.Migrations.CreatePreviews do
   use Ecto.Migration
 
   def change do

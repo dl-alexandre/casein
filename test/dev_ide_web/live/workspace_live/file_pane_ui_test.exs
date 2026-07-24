@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
+defmodule CaseinWeb.WorkspaceLive.FilePaneUiTest do
   @moduledoc """
   End-to-end LiveView coverage for the file-pane overlay UI:
 
     * "tree:open_in_pane" splits a real (fake-tmux) pane off the active
-      terminal pane, registers it in DevIDE.FilePanes, switches the cockpit to
+      terminal pane, registers it in Casein.FilePanes, switches the cockpit to
       the terminal tab, renders the `#file-pane-*` overlay root with its
       server-rendered tab strip, and pushes "file-pane:loaded".
     * With no live tmux topology, "tree:open_in_pane" falls back to today's
@@ -15,12 +15,12 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
     * A `:heartbeat` pane event refreshes the registry state without focus
       churn; `:removed` drops the overlay.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.FilePanes
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.FilePanes
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-file-pane"
   @file_pane_id "%2"
@@ -39,12 +39,12 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
     File.write!(Path.join(workspace_path, "lib/foo.ex"), "defmodule Foo do\nend\n")
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     MemoryAdapter.clear()
     FilePanes.clear()
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
@@ -61,7 +61,7 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
 
     workspace_id = @workspace_id
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
@@ -304,8 +304,8 @@ defmodule DevIdeWeb.WorkspaceLive.FilePaneUiTest do
 
   describe "terminal:open_file_link" do
     setup do
-      DevIDE.FilePanes.LinkResolver.clear_cache()
-      on_exit(fn -> DevIDE.FilePanes.LinkResolver.clear_cache() end)
+      Casein.FilePanes.LinkResolver.clear_cache()
+      on_exit(fn -> Casein.FilePanes.LinkResolver.clear_cache() end)
       :ok
     end
 

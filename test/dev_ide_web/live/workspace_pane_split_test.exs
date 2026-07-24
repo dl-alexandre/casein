@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspacePaneSplitTest do
+defmodule CaseinWeb.WorkspacePaneSplitTest do
   @moduledoc """
   End-to-end coverage of the multi-pane refactor in
-  `DevIdeWeb.WorkspaceLive.Show`. Exercises the pane-mutation event
+  `CaseinWeb.WorkspaceLive.Show`. Exercises the pane-mutation event
   handlers (`split_right`, `split_down`, `close_pane`, tmux pane select) via
   `Phoenix.LiveViewTest.render_click/2`, which routes through
   `handle_event/3` exactly like a browser click would.
 
-  Setup mirrors `DevIdeWeb.TerminalBoundaryLiveTest`: HTTPStub-stubbed
+  Setup mirrors `CaseinWeb.TerminalBoundaryLiveTest`: HTTPStub-stubbed
   workspace payload, `MemoryAdapter` for State, and `:manual` mode so the raw
   Ghostty path renders the split buttons.
 
@@ -15,16 +15,16 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   pane. Tests that require tmux are tagged `@tag :tmux` and skipped when
   the binary is missing.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.CommandPalette
-  alias DevIDE.CommandPalette.Actions
-  alias DevIDE.CommandPalette.Usage
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.CommandPalette
+  alias Casein.CommandPalette.Actions
+  alias Casein.CommandPalette.Usage
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @tmux_available System.find_executable("tmux") != nil
 
@@ -32,7 +32,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     workspace_root = Path.join(System.tmp_dir!(), "devide-pane-split-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     workspace_name = "alpha-#{System.unique_integer([:positive, :monotonic])}"
-    workspace_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(workspace_name)
+    workspace_tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(workspace_name)
     File.mkdir_p!(workspace_path)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
@@ -48,7 +48,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -110,12 +110,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      current_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      current_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       extra_sid = "u-dev-extra"
-      extra_session = DevIDE.Terminals.Tmux.session_name(workspace_name, extra_sid)
+      extra_session = Casein.Terminals.Tmux.session_name(workspace_name, extra_sid)
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -200,10 +200,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -290,10 +290,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -456,10 +456,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -531,10 +531,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Two windows, the active one (@0) holding a single pane.
@@ -599,10 +599,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Single window, single pane: closing it ends the tmux session.
@@ -648,7 +648,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           detail: "",
           title: fallback_id,
           cwd: nil,
-          tmux_session: DevIDE.Terminals.Tmux.session_name(workspace_name, fallback_id),
+          tmux_session: Casein.Terminals.Tmux.session_name(workspace_name, fallback_id),
           windows: [],
           window_count: 0,
           quiet_count: 0,
@@ -682,10 +682,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Active window @0 (single pane) plus a background window @1 holding two
@@ -935,7 +935,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         _ =
           System.cmd(
             "tmux",
-            DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+            Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
             stderr_to_stdout: true
           )
 
@@ -943,13 +943,13 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           _ =
             System.cmd(
               "tmux",
-              DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+              Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
               stderr_to_stdout: true
             )
         end)
 
         {:ok, worker} =
-          DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          CaseinWeb.WorkspaceLive.PaneWorker.start_link(
             parent: self(),
             pane_id: pane_id,
             tmux_session: session,
@@ -958,7 +958,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
             rows: 24
           )
 
-        {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+        {term, pty} = CaseinWeb.WorkspaceLive.PaneWorker.get_handles(worker)
         assert is_pid(term) and Process.alive?(term)
         assert is_pid(pty) and Process.alive?(pty)
 
@@ -1012,7 +1012,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane_id = "pane-worker-shared"
 
       {:ok, worker} =
-        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+        CaseinWeb.WorkspaceLive.PaneWorker.start_link(
           parent: self(),
           pane_id: pane_id,
           tmux_session: "ignored-by-shared-backend",
@@ -1020,14 +1020,14 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           session_sid: "u-dev",
           loc: {:fake, self()},
           backend: :shared_session,
-          session_module: DevIDE.Test.FakeTerminalSession,
+          session_module: Casein.Test.FakeTerminalSession,
           cols: 80,
           rows: 24
         )
 
       assert_receive {:fake_session_subscribed, session_pid, ^worker, "alpha", "u-dev"}, 1_000
 
-      {term, backend_pid} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+      {term, backend_pid} = CaseinWeb.WorkspaceLive.PaneWorker.get_handles(worker)
       assert is_pid(term) and Process.alive?(term)
       assert backend_pid == session_pid
 
@@ -1035,7 +1035,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_session_input, ^session_pid, "echo shared\n"}, 1_000
       assert_pty_data_contains(pane_id, "echo shared\n", 5_000)
 
-      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
+      :ok = CaseinWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
       assert_receive {:fake_session_resize, ^session_pid, 100, 32}, 1_000
       drain_pane_frames(pane_id, 200)
 
@@ -1050,7 +1050,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane_id = "pane-worker-resync"
 
       {:ok, worker} =
-        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+        CaseinWeb.WorkspaceLive.PaneWorker.start_link(
           parent: self(),
           pane_id: pane_id,
           tmux_session: "ignored-by-shared-backend",
@@ -1058,14 +1058,14 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           session_sid: "u-dev",
           loc: {:fake, self()},
           backend: :shared_session,
-          session_module: DevIDE.Test.FakeTerminalSession,
+          session_module: Casein.Test.FakeTerminalSession,
           cols: 80,
           rows: 24
         )
 
       assert_receive {:fake_session_subscribed, session_pid, ^worker, "alpha", "u-dev"}, 1_000
 
-      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resync(worker)
+      :ok = CaseinWeb.WorkspaceLive.PaneWorker.resync(worker)
       assert_receive {:pane_frame, ^pane_id, first_payload}, 1_000
 
       assert first_payload.full_frame == true
@@ -1073,7 +1073,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert first_payload.frame_epoch == 1
       assert is_list(first_payload.cells)
 
-      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resync(worker)
+      :ok = CaseinWeb.WorkspaceLive.PaneWorker.resync(worker)
       assert_receive {:pane_frame, ^pane_id, second_payload}, 1_000
 
       assert second_payload.full_frame == true
@@ -1092,7 +1092,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane_id = "pane-worker-owner"
 
       {:ok, worker} =
-        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+        CaseinWeb.WorkspaceLive.PaneWorker.start_link(
           parent: self(),
           pane_id: pane_id,
           tmux_session: "ignored-by-owner-backend",
@@ -1102,7 +1102,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           loc: {:local, "/tmp"},
           host_id: "local",
           backend: :session_owner,
-          terminal_module: DevIDE.Test.FakeTerminals,
+          terminal_module: Casein.Test.FakeTerminals,
           test_owner: self(),
           cols: 80,
           rows: 24
@@ -1115,7 +1115,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert opts[:workspace_key] == "alpha"
       assert opts[:mode] == :raw
 
-      {term, backend_pid} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+      {term, backend_pid} = CaseinWeb.WorkspaceLive.PaneWorker.get_handles(worker)
       assert is_pid(term) and Process.alive?(term)
       assert backend_pid == owner_pid
 
@@ -1132,8 +1132,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       send(worker, {:pty_write, "\e[?62;22c\e[>1;0;0c"})
       refute_receive {:fake_owner_query_response, ^owner_pid, "\e[?62;22c\e[>1;0;0c"}, 250
 
-      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.set_active(worker, true)
-      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
+      :ok = CaseinWeb.WorkspaceLive.PaneWorker.set_active(worker, true)
+      :ok = CaseinWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
       assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
       drain_pane_frames(pane_id, 200)
 
@@ -1148,7 +1148,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane_id = "pane-worker-owner-theme"
 
       {:ok, worker} =
-        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+        CaseinWeb.WorkspaceLive.PaneWorker.start_link(
           parent: self(),
           pane_id: pane_id,
           tmux_session: "ignored-by-owner-backend",
@@ -1158,7 +1158,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           loc: {:local, "/tmp"},
           host_id: "local",
           backend: :session_owner,
-          terminal_module: DevIDE.Test.FakeTerminals,
+          terminal_module: Casein.Test.FakeTerminals,
           test_owner: self(),
           cols: 80,
           rows: 24
@@ -1195,7 +1195,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane_id = "pane-worker-shared-theme"
 
       {:ok, worker} =
-        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+        CaseinWeb.WorkspaceLive.PaneWorker.start_link(
           parent: self(),
           pane_id: pane_id,
           tmux_session: "ignored-by-shared-backend",
@@ -1203,7 +1203,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           session_sid: "u-dev",
           loc: {:fake, self()},
           backend: :shared_session,
-          session_module: DevIDE.Test.FakeTerminalSession,
+          session_module: Casein.Test.FakeTerminalSession,
           cols: 80,
           rows: 24
         )
@@ -1334,7 +1334,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
   defp kill_tmux_session(session) when is_binary(session) do
     _ =
-      System.cmd("tmux", DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+      System.cmd("tmux", Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
         stderr_to_stdout: true
       )
 
@@ -1348,7 +1348,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
          {sessions, 0} <-
            System.cmd(
              "tmux",
-             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"]
+             Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"]
            ) do
       sessions
       |> String.split("\n", trim: true)
@@ -1546,15 +1546,15 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-      target_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
-      source_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "agent")
+      target_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      source_session = Casein.Terminals.Tmux.session_name(workspace_name, "agent")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
       # The bare /workspaces/{id} mount resumes the most-recently-active shell, so
       # the target session must be newer than the source for it to be the active
       # session that consolidate folds the others into.
       older_activity = activity_now - 100
 
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{

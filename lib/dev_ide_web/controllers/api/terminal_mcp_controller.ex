@@ -1,18 +1,18 @@
-defmodule DevIdeWeb.API.TerminalMCPController do
+defmodule CaseinWeb.API.TerminalMCPController do
   @moduledoc """
   HTTP transport for the terminal-control MCP server.
 
   Agents connect here (`POST /api/terminals/mcp`) to discover and call
-  `DevIDE.Agents.TerminalTools`. Authentication is the same bearer-token gate
-  as the rest of the read-only API (`DevIdeWeb.Plugs.ApiAuth`). The protocol
-  logic lives in `DevIdeWeb.API.TerminalMCP`; this controller only maps its
+  `Casein.Agents.TerminalTools`. Authentication is the same bearer-token gate
+  as the rest of the read-only API (`CaseinWeb.Plugs.ApiAuth`). The protocol
+  logic lives in `CaseinWeb.API.TerminalMCP`; this controller only maps its
   outcomes onto HTTP status codes.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIdeWeb.API.{MCPTransport, TerminalMCP}
-  alias DevIdeWeb.Plugs.AgentCapabilityAuthz
+  alias CaseinWeb.API.{MCPTransport, TerminalMCP}
+  alias CaseinWeb.Plugs.AgentCapabilityAuthz
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
@@ -29,7 +29,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
           [
             default_workspace_id: workspace_id,
             default_caller_pane: caller_pane,
-            actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+            actor: CaseinWeb.Plugs.ApiAuth.actor(conn)
           ] ++ AgentCapabilityAuthz.handler_opts(conn)
 
         case TerminalMCP.handle(conn.body_params, opts) do
@@ -58,7 +58,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
     conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
   end
 
-  # The calling agent's own tmux pane. DevIDE-launched agents send it via the
+  # The calling agent's own tmux pane. Casein-launched agents send it via the
   # X-DevIDE-Caller-Pane header (env-expanded per pane at client startup);
   # hand-built URLs may use a caller_pane query param. Values that are not a
   # tmux pane id (unset/unexpanded env placeholders) are ignored.

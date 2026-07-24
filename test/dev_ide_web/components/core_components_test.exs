@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.CoreComponentsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.CoreComponentsTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.CoreComponents
+  alias CaseinWeb.CoreComponents
 
   describe "button/1" do
     test "renders a default soft primary button with its slot" do

@@ -1,10 +1,10 @@
-defmodule DevIDE.Signals.DegradationWatchTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Signals.DegradationWatchTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.Signals
-  alias DevIDE.Signals.DegradationWatch
+  alias Casein.Audit
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.Signals
+  alias Casein.Signals.DegradationWatch
 
   # threshold intentionally low so tests stay fast; wide window so wall-clock
   # jitter never ages a signal out mid-test.

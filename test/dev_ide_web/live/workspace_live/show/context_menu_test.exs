@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
+  alias CaseinWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.ContextMenuEvents
 
   # items/3 and the ctx:* handlers are pure given assigns. Flat peer model:
   # any authenticated identity may mutate; empty identity is read-only.

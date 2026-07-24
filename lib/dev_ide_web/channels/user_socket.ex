@@ -1,23 +1,23 @@
-defmodule DevIdeWeb.UserSocket do
+defmodule CaseinWeb.UserSocket do
   @moduledoc """
   Phoenix socket for the browser terminal stream. Verifies the signed user
   token (`ChannelAuth.verify_user_token/1`) on connect, assigns `:current_user`,
-  and routes `terminal:*` topics to `DevIdeWeb.TerminalChannel` and
+  and routes `terminal:*` topics to `CaseinWeb.TerminalChannel` and
   `session:*` / `mobile:user:*` topics to the mobile companion channels.
   """
   use Phoenix.Socket
 
-  alias DevIDE.DeviceLinks
+  alias Casein.DeviceLinks
 
-  channel "terminal:*", DevIdeWeb.TerminalChannel
-  channel "session:*", DevIdeWeb.SessionChannel
-  channel "mobile:user:*", DevIdeWeb.MobileUserChannel
+  channel "terminal:*", CaseinWeb.TerminalChannel
+  channel "session:*", CaseinWeb.SessionChannel
+  channel "mobile:user:*", CaseinWeb.MobileUserChannel
 
   @impl true
   def connect(params, socket, _connect_info) do
     token = params["token"]
 
-    case DevIdeWeb.ChannelAuth.verify_user_token(token) do
+    case CaseinWeb.ChannelAuth.verify_user_token(token) do
       {:ok, user_id, email} when is_binary(user_id) ->
         # The token carries the authenticated user id + email. Email is
         # needed because channels forward auth to the workspace source
@@ -33,7 +33,7 @@ defmodule DevIdeWeb.UserSocket do
   end
 
   defp connect_scoped_token(token, socket) do
-    case DevIdeWeb.ChannelAuth.verify_pairing_token(token) do
+    case CaseinWeb.ChannelAuth.verify_pairing_token(token) do
       {:ok, %{workspace_id: workspace_id} = claims} ->
         user = Map.take(claims, [:id, :username, :email, :role])
 

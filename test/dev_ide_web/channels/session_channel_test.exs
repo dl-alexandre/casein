@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.SessionChannelTest do
+defmodule CaseinWeb.SessionChannelTest do
   @moduledoc """
   Covers the mobile companion channel's two load-bearing contracts:
 
@@ -7,17 +7,17 @@ defmodule DevIdeWeb.SessionChannelTest do
     2. The live spine — an emitted audit event triggers a debounced snapshot
        push, proving the `Audit` → `SessionChannel` wire is connected.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.ChannelTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIdeWeb.ChannelAuth
+  alias Casein.Audit
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Mobile.UserObserver
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias CaseinWeb.ChannelAuth
 
-  @endpoint DevIdeWeb.Endpoint
+  @endpoint CaseinWeb.Endpoint
 
   setup do
     workspace_root = Path.join(System.tmp_dir!(), "devide-session-channel")
@@ -91,18 +91,18 @@ defmodule DevIdeWeb.SessionChannelTest do
         "ws-1"
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
     assert socket.assigns.pairing_workspace_id == "ws-1"
 
     assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.SessionChannel, "session:ws-1")
+             subscribe_and_join(socket, CaseinWeb.SessionChannel, "session:ws-1")
 
     assert reply.workspace_id == "ws-1"
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:error, %{reason: "workspace_scope_mismatch"}} =
-             subscribe_and_join(socket, DevIdeWeb.SessionChannel, "session:other-ws")
+             subscribe_and_join(socket, CaseinWeb.SessionChannel, "session:other-ws")
   end
 
   test "peer join is allowed under the flat peer model" do
@@ -148,10 +148,10 @@ defmodule DevIdeWeb.SessionChannelTest do
         "ws-1"
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:error, %{reason: "workspace_scope_mismatch"}} =
-             subscribe_and_join(socket, DevIdeWeb.SessionChannel, "session:other-ws")
+             subscribe_and_join(socket, CaseinWeb.SessionChannel, "session:other-ws")
 
     assert_receive {:mobile_cards_snapshot, %{cards: [card]}}, 1_000
     assert card.type == :connection_issue
@@ -233,10 +233,10 @@ defmodule DevIdeWeb.SessionChannelTest do
   end
 
   defp join_as(workspace_id, current_user) do
-    DevIdeWeb.UserSocket
+    CaseinWeb.UserSocket
     |> socket("users_socket:#{current_user.id}", %{current_user: current_user})
     |> Phoenix.Socket.assign(:current_user, current_user)
-    |> subscribe_and_join(DevIdeWeb.SessionChannel, "session:#{workspace_id}")
+    |> subscribe_and_join(CaseinWeb.SessionChannel, "session:#{workspace_id}")
   end
 
   defp prepare_mobile_observer(user_id) do

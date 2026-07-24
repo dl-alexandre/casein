@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SyncOutput do
+defmodule Casein.Terminals.SyncOutput do
   @moduledoc """
   DEC private mode 2026 (synchronized output) detection for PTY byte streams.
 

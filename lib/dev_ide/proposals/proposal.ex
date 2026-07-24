@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.Proposal do
+defmodule Casein.Proposals.Proposal do
   @moduledoc "A single discovered proposal artifact (read-only, never applied)."
 
   @type status :: :parsed | :too_large | :invalid | :unsupported

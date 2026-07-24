@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Plugs.ApiAuth do
+defmodule CaseinWeb.Plugs.ApiAuth do
   @moduledoc """
   Bearer-token gate for the read-only API.
 
@@ -9,7 +9,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
 
   import Plug.Conn
 
-  alias DevIDE.Agents.{AgentCapabilityTokens, OrchestratorTokens}
+  alias Casein.Agents.{AgentCapabilityTokens, OrchestratorTokens}
 
   def init(opts), do: opts
 
@@ -84,7 +84,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   # NOT the env global secret, so `:api_token_scope` is a distinct non-global
   # value and `:api_workspace_id` is left unassigned (per-call confinement stays
   # in the MCP controllers). This keeps it out of the global-token tool-call
-  # rejection (DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2).
+  # rejection (CaseinWeb.Endpoint.reject_global_mcp_tool_calls/2).
   defp authorize_orchestrator_token(conn, token) do
     case OrchestratorTokens.verify(token) do
       {:ok, claims} ->

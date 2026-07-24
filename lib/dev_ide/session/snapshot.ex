@@ -1,4 +1,4 @@
-defmodule DevIDE.Session.Snapshot do
+defmodule Casein.Session.Snapshot do
   @moduledoc """
   Read-only projection of a workspace's *live supervisory state* for the
   mobile companion (v1a: push-driven awareness + glanceable oversight).
@@ -6,22 +6,22 @@ defmodule DevIDE.Session.Snapshot do
   This is a pure fold over state the runtime already emits — no new tables,
   no new ownership. The runtime owns the session; this is just a view:
 
-    * `mode`            — `DevIDE.Workspaces.State.mode_for/1`
-    * `current_run`     — newest entry from `DevIDE.Runs.Ledger.recent_runs_for/2`
+    * `mode`            — `Casein.Workspaces.State.mode_for/1`
+    * `current_run`     — newest entry from `Casein.Runs.Ledger.recent_runs_for/2`
     * `recent_runs`     — the rest of that ledger window
-    * `last_decision`   — newest `policy.*` row via `DevIDE.Audit`
-    * `recent_audit`    — `DevIDE.Audit.recent_for/2`
-    * `active_agents`   — `DevIDE.Agents.Activity.recent/2`
-    * `pending_reviews` — best-effort count from `DevIDE.Proposals` (read-only)
+    * `last_decision`   — newest `policy.*` row via `Casein.Audit`
+    * `recent_audit`    — `Casein.Audit.recent_for/2`
+    * `active_agents`   — `Casein.Agents.Activity.recent/2`
+    * `pending_reviews` — best-effort count from `Casein.Proposals` (read-only)
 
-  `build/1` is what `DevIdeWeb.SessionChannel` returns on join and re-runs
+  `build/1` is what `CaseinWeb.SessionChannel` returns on join and re-runs
   (debounced) when a live delta arrives.
   """
 
-  alias DevIDE.{Audit, Proposals}
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Workspaces.State
+  alias Casein.{Audit, Proposals}
+  alias Casein.Agents.Activity
+  alias Casein.Runs.Ledger
+  alias Casein.Workspaces.State
 
   @type t :: %__MODULE__{
           workspace_id: String.t(),

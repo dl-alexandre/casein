@@ -1,37 +1,37 @@
-defmodule Mix.Tasks.DevIde.Lan.Down do
+defmodule Mix.Tasks.Casein.Lan.Down do
   @moduledoc """
-  Stops the managed DevIDE LAN service and port-80 edge.
+  Stops the managed Casein LAN service and port-80 edge.
 
       mix dev_ide.lan.down
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  @shortdoc "Stop the managed DevIDE LAN service"
+  @shortdoc "Stop the managed Casein LAN service"
 
   @impl Mix.Task
   def run(args) do
     config = parse_config!(args)
-    commands = DevIDE.Setup.LanRuntime.down_commands(config)
+    commands = Casein.Setup.LanRuntime.down_commands(config)
 
-    Mix.shell().info("Stopping DevIDE LAN...\n")
+    Mix.shell().info("Stopping Casein LAN...\n")
 
-    case DevIDE.Setup.LanRuntime.run_commands_noninteractive(commands) do
+    case Casein.Setup.LanRuntime.run_commands_noninteractive(commands) do
       :ok ->
         config
-        |> DevIDE.Setup.LanRuntime.status()
-        |> DevIDE.Setup.LanRuntime.print_status(Mix.shell())
+        |> Casein.Setup.LanRuntime.status()
+        |> Casein.Setup.LanRuntime.print_status(Mix.shell())
 
       {:error, failed_command, output} ->
-        Mix.shell().info(DevIDE.Setup.LanRuntime.sudo_hint(commands))
+        Mix.shell().info(Casein.Setup.LanRuntime.sudo_hint(commands))
         Mix.shell().info("\nFirst failed command:\n  #{Enum.join(failed_command, " ")}")
 
         if String.trim(output) != "" do
           Mix.shell().info("\nOutput:\n#{String.trim(output)}")
         end
 
-        Mix.raise("could not stop DevIDE LAN")
+        Mix.raise("could not stop Casein LAN")
     end
   end
 
@@ -55,7 +55,7 @@ defmodule Mix.Tasks.DevIde.Lan.Down do
 
     opts
     |> runtime_opts()
-    |> DevIDE.Setup.LanRuntime.config()
+    |> Casein.Setup.LanRuntime.config()
   end
 
   defp runtime_opts(opts) do

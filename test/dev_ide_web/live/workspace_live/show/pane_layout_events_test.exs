@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEventsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
+  alias CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents
 
   # Pure / no-op branches only: missing tmux session, missing pane data, empty
   # ghostty snapshot, already-zoomed mobile focus.

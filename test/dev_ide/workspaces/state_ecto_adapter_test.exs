@@ -1,8 +1,8 @@
-defmodule DevIDE.Workspaces.State.EctoAdapterTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Workspaces.State.EctoAdapterTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Workspaces.State.EctoAdapter
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Workspaces.State.EctoAdapter
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   setup do
     Repo.delete_all(EctoAdapter.Row)

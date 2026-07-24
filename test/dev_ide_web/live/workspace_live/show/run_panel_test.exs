@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.RunPanelTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.RunPanelTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.RunPanel
+  alias CaseinWeb.WorkspaceLive.Show.RunPanel
 
   # Base assigns covering every key the run_panel/1 template references.
   # Individual tests override pieces to drive specific branches.

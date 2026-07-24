@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.TmuxRunner do
+defmodule Casein.Terminals.TmuxRunner do
   @moduledoc """
-  DevIDE argv wrapper for `TmuxCtl` tmux subprocesses.
+  Casein argv wrapper for `TmuxCtl` tmux subprocesses.
 
   Routes tmux through `WorkspaceSource.prepare_local_argv/2` when workspaces
   run inside a manager-owned container, unless `:tmux_host_shell` forces host tmux.
@@ -8,9 +8,9 @@ defmodule DevIDE.Terminals.TmuxRunner do
 
   @behaviour TmuxCtl.Runner
 
-  alias DevIDE.Terminals.TmuxServer
-  alias DevIDE.Terminals.TmuxExecutable
-  alias DevIDE.WorkspaceSource
+  alias Casein.Terminals.TmuxServer
+  alias Casein.Terminals.TmuxExecutable
+  alias Casein.WorkspaceSource
 
   @doc """
   Whether tmux sessions and one-shot topology calls target host tmux directly.
@@ -25,7 +25,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
   True when the configured workspace source wraps local command argv.
 
   Direct local/LAN execution returns identity argv; those tmux clients must use
-  host argv so DevIDE's server label and config file are applied. Wrapped
+  host argv so Casein's server label and config file are applied. Wrapped
   sources, such as devbox Docker exec, should run tmux inside the workspace
   target and therefore keep their wrapper-specific argv.
   """
@@ -100,7 +100,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
   end
 
   @doc """
-  Build a host tmux argv with DevIDE's isolated server label and config file.
+  Build a host tmux argv with Casein's isolated server label and config file.
 
   Raw PTY attach paths use this directly because they need a foreground
   `tmux new-session -A` client, not `System.cmd/3` through `run/2`.

@@ -1,10 +1,10 @@
-defmodule DevIDE.PolicyTest do
-  use DevIDE.TestCase, async: false
-  alias DevIDE.{Policy, Audit}
-  alias DevIDE.Policy.{Decision, WorkspaceMode}
-  alias DevIDE.Agents.Capability
+defmodule Casein.PolicyTest do
+  use Casein.TestCase, async: false
+  alias Casein.{Policy, Audit}
+  alias Casein.Policy.{Decision, WorkspaceMode}
+  alias Casein.Agents.Capability
 
-  alias DevIDE.Workspaces
+  alias Casein.Workspaces
 
   setup do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
@@ -12,13 +12,13 @@ defmodule DevIDE.PolicyTest do
     prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
     Application.delete_env(:dev_ide, :workspace_modes)
-    DevIDE.Workspaces.State.MemoryAdapter.clear()
+    Casein.Workspaces.State.MemoryAdapter.clear()
 
     on_exit(fn ->
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
       restore(:raw_terminal_everywhere, prev_raw_everywhere)
-      DevIDE.Workspaces.State.MemoryAdapter.clear()
+      Casein.Workspaces.State.MemoryAdapter.clear()
     end)
 
     :ok

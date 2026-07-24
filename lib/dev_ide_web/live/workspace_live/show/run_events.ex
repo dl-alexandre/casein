@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.RunEvents do
   # Owner of the run region's socket state: run/workflow/run-ledger
   # handle_event clauses plus the ledger/active-run mutators
   # (refresh_run_ledger, apply_run_data/apply_run_exit). Show delegates
@@ -17,14 +17,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.BoundedBuffer
-  alias DevIDE.Export.WorkspaceStatus
-  alias DevIDE.Policy
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Runs.Status
-  alias DevIdeWeb.WorkspaceLive.Show
+  alias Casein.BoundedBuffer
+  alias Casein.Export.WorkspaceStatus
+  alias Casein.Policy
+  alias Casein.Runs.Ledger
+  alias Casein.Runs.Status
+  alias CaseinWeb.WorkspaceLive.Show
 
   def handle_event("run:start", %{"id" => id}, socket) do
     if Show.interactive_agent?(id) do

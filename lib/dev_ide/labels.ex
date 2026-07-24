@@ -1,12 +1,12 @@
-defmodule DevIDE.Labels do
+defmodule Casein.Labels do
   @moduledoc """
-  Ephemeral conversation-aware pane labels for DevIDE chrome.
+  Ephemeral conversation-aware pane labels for Casein chrome.
 
   Labels are keyed by `{tmux_session, pane_id}` and broadcast to workspace
   LiveViews. They never mutate tmux window or pane titles.
   """
 
-  alias DevIDE.Labels.Derivation
+  alias Casein.Labels.Derivation
   alias Phoenix.PubSub
 
   @topic_prefix "pane_labels:"
@@ -23,7 +23,7 @@ defmodule DevIDE.Labels do
         }
 
   def start_link(opts \\ []) do
-    DevIDE.Labels.Server.start_link(opts)
+    Casein.Labels.Server.start_link(opts)
   end
 
   def child_spec(opts) do
@@ -35,7 +35,7 @@ defmodule DevIDE.Labels do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @spec key(String.t(), String.t()) :: String.t()

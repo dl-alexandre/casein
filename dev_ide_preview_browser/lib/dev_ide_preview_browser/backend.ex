@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.Backend do
+defmodule CaseinPreviewBrowser.Backend do
   @moduledoc """
   Behaviour implemented by browser runtime backends.
 
@@ -6,7 +6,7 @@ defmodule DevIDEPreviewBrowser.Backend do
   and return plain Elixir data to the session process.
   """
 
-  alias DevIDEPreviewBrowser.Screenshot
+  alias CaseinPreviewBrowser.Screenshot
 
   @type runtime_state :: term()
   @type browser_ref :: term()

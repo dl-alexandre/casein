@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ArtifactTools.List do
+defmodule Casein.Agents.ArtifactTools.List do
   @moduledoc "artifact_list: active artifact projects for the workspace."
 
   use Jido.Action,
@@ -11,18 +11,18 @@ defmodule DevIDE.Agents.ArtifactTools.List do
       workspace_id: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.ArtifactTools.Helpers
-  alias DevIDE.ArtifactProjects
+  alias Casein.Agents.ArtifactTools.Helpers
+  alias Casein.ArtifactProjects
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters do
     Tool.object(%{workspace_id: Helpers.workspace_id_param()}, [:workspace_id])
   end
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata(:low, false)
 
   @impl Jido.Action

@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.CoreComponents do
+defmodule CaseinWeb.CoreComponents do
   @moduledoc """
   Provides core UI components.
 
@@ -27,7 +27,7 @@ defmodule DevIdeWeb.CoreComponents do
 
   """
   use Phoenix.Component
-  use Gettext, backend: DevIdeWeb.Gettext
+  use Gettext, backend: CaseinWeb.Gettext
 
   alias Phoenix.LiveView.JS
 
@@ -534,9 +534,9 @@ defmodule DevIdeWeb.CoreComponents do
     # with our gettext backend as first argument. Translations are
     # available in the errors.po file (as we use the "errors" domain).
     if count = opts[:count] do
-      Gettext.dngettext(DevIdeWeb.Gettext, "errors", msg, msg, count, opts)
+      Gettext.dngettext(CaseinWeb.Gettext, "errors", msg, msg, count, opts)
     else
-      Gettext.dgettext(DevIdeWeb.Gettext, "errors", msg, opts)
+      Gettext.dgettext(CaseinWeb.Gettext, "errors", msg, opts)
     end
   end
 

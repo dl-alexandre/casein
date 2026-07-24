@@ -1,13 +1,13 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateExtraTest do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # Pure-function coverage for TerminalState branches the primary test skips:
   # resize parsing, tmux-session-name derivation, session-aliveness adapter
   # dispatch, pane-data construction, and the remaining
   # next_ui_highlight_pane_id / selected_preview_pane arms. Everything here is
   # pure or driven through a swappable tmux adapter (no live IO/process state).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   # ---------------------------------------------------------------------------
   # next_ui_highlight_pane_id/5 — the preview-on-prev-active "hold" arm and the
@@ -307,7 +307,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateExtraTest do
       Application.delete_env(:dev_ide, :tmux_adapter)
 
       try do
-        assert TerminalState.tmux_adapter() == DevIDE.Terminals.Tmux
+        assert TerminalState.tmux_adapter() == Casein.Terminals.Tmux
       after
         if prev, do: Application.put_env(:dev_ide, :tmux_adapter, prev)
       end

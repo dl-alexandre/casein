@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.EnsureServerHere do
+defmodule Casein.Agents.PreviewTools.EnsureServerHere do
   @moduledoc "preview_ensure_server_here."
 
   use Jido.Action,
@@ -38,15 +38,15 @@ defmodule DevIDE.Agents.PreviewTools.EnsureServerHere do
       tmux_session: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.open_props(), [:workspace_id, :tmux_session])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_ensure_server_here")
 
   @impl Jido.Action

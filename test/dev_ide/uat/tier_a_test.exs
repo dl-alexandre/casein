@@ -1,8 +1,8 @@
-defmodule DevIDE.UAT.TierATest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.TierATest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.UAT.{FakeRunner, Manifest, Run, Step, TierA, Trace}
+  alias Casein.PreviewControl.Registry
+  alias Casein.UAT.{FakeRunner, Manifest, Run, Step, TierA, Trace}
 
   @workspace %{
     id: "ws-preview",

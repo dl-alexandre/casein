@@ -1,18 +1,18 @@
-defmodule DevIDE.Signals.ObanMiddleware do
+defmodule Casein.Signals.ObanMiddleware do
   @moduledoc """
-  Oban insert/perform hooks that propagate `DevIDE.Signals.Context` via job `meta`.
+  Oban insert/perform hooks that propagate `Casein.Signals.Context` via job `meta`.
 
   OSS Oban has no worker middleware chain; this module is the convention:
-  stamp on insert (`prepare_job/1` or `use DevIDE.Signals.ObanWorker`), restore
+  stamp on insert (`prepare_job/1` or `use Casein.Signals.ObanWorker`), restore
   in `perform/1` via `perform_job/2` or the worker macro.
   """
 
-  alias DevIDE.Signals.ObanContext
+  alias Casein.Signals.ObanContext
 
   @doc """
   Stamp the active correlation snapshot into an Oban job changeset's `meta`.
 
-  Call before `Oban.insert/1`, or rely on `DevIDE.Signals.ObanWorker`'s `new/2`.
+  Call before `Oban.insert/1`, or rely on `Casein.Signals.ObanWorker`'s `new/2`.
   """
   @spec prepare_job(Ecto.Changeset.t()) :: Ecto.Changeset.t()
   def prepare_job(%Ecto.Changeset{} = changeset), do: ObanContext.stamp_changeset(changeset)

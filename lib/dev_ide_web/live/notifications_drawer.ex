@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.NotificationsDrawer do
+defmodule CaseinWeb.NotificationsDrawer do
   @moduledoc """
   Global notifications drawer: bell + unread badge entry point rendered in the
   workspace cockpit header, opening a right-side drawer with the durable
@@ -7,12 +7,12 @@ defmodule DevIdeWeb.NotificationsDrawer do
 
   Rendering carried over from the removed `/notifications` full-page LiveView,
   restyled to the cockpit's drawer conventions (see `Show.AuditDrawer`). State
-  and events live in `DevIdeWeb.NotificationsDrawerEvents`.
+  and events live in `CaseinWeb.NotificationsDrawerEvents`.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  alias DevIdeWeb.WorkspaceLive.Show.AgentApprovals
+  alias CaseinWeb.WorkspaceLive.Show.AgentApprovals
 
   @event_types [
     {"Needs review", "needs_review"},

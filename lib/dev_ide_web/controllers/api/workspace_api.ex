@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.WorkspaceAPI do
+defmodule CaseinWeb.API.WorkspaceAPI do
   @moduledoc """
   Shared helpers for the workspace API controllers.
 
@@ -12,9 +12,9 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
   import Phoenix.Controller, only: [json: 2]
   import Plug.Conn, only: [put_status: 2]
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Terminals
-  alias DevIDE.Workspaces
+  alias Casein.Files.PathSafety
+  alias Casein.Terminals
+  alias Casein.Workspaces
 
   # ---------------------------------------------------------------------------
   # Responses

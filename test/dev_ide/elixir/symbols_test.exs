@@ -1,6 +1,6 @@
-defmodule DevIDE.Elixir.SymbolsTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Elixir.Symbols
+defmodule Casein.Elixir.SymbolsTest do
+  use Casein.TestCase, async: true
+  alias Casein.Elixir.Symbols
 
   test "extracts module + public/private functions with arity" do
     src = """
@@ -44,7 +44,7 @@ defmodule DevIDE.Elixir.SymbolsTest do
   test "captures describe/test in *_test.exs files" do
     src = """
     defmodule FooTest do
-      use DevIDE.TestCase
+      use Casein.TestCase
       describe "thing" do
         test "works" do
           assert true

@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromePickerTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromePickerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   test "pane_picker_label uses tab title for preview panes" do
     preview = %{display_url: "http://127.0.0.1:4000/workspaces/ws-1", title: "127.0.0.1:4000"}

@@ -1,12 +1,12 @@
-defmodule DevIDE.Signals.ObanContextTest do
+defmodule Casein.Signals.ObanContextTest do
   use ExUnit.Case, async: true
 
   import Oban.Testing
 
-  alias DevIDE.Signals.Context
-  alias DevIDE.Signals.ObanContext
-  alias DevIDE.Signals.ObanMiddleware
-  alias DevIDE.Test.ObanSignalsWorker
+  alias Casein.Signals.Context
+  alias Casein.Signals.ObanContext
+  alias Casein.Signals.ObanMiddleware
+  alias Casein.Test.ObanSignalsWorker
 
   test "prepare_job stamps the active snapshot into job meta" do
     Context.with_new(fn ->

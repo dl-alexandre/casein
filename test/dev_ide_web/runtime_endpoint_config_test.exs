@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.RuntimeEndpointConfigTest do
+defmodule CaseinWeb.RuntimeEndpointConfigTest do
   use ExUnit.Case, async: false
 
   import Plug.Test
 
-  alias DevIdeWeb.RuntimeSSLPlug
-  alias DevIdeWeb.RuntimeSessionPlug
-  alias DevIdeWeb.OriginOptions
-  alias DevIdeWeb.SessionOptions
+  alias CaseinWeb.RuntimeSSLPlug
+  alias CaseinWeb.RuntimeSessionPlug
+  alias CaseinWeb.OriginOptions
+  alias CaseinWeb.SessionOptions
 
   @env_keys [
     :lan_insecure_http,
@@ -86,7 +86,7 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
     Application.put_env(:dev_ide, :runtime_force_ssl, true)
     Application.delete_env(:dev_ide, :lan_insecure_http)
 
-    conn = DevIdeWeb.Endpoint.call(conn(:get, "http://example.com/workspaces"), [])
+    conn = CaseinWeb.Endpoint.call(conn(:get, "http://example.com/workspaces"), [])
 
     assert conn.halted
     assert Plug.Conn.get_resp_header(conn, "location") == ["https://example.com/workspaces"]

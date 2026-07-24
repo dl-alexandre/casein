@@ -171,7 +171,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ ~S(tui.terminal_title=*)
   end
 
-  test "claude launches stage DevIDE-infra skills into the resolved config home" do
+  test "claude launches stage Casein-infra skills into the resolved config home" do
     text = File.read!(@script)
 
     assert text =~ "lib/agent-skills.sh"

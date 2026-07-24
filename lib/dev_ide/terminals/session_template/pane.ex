@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionTemplate.Pane do
+defmodule Casein.Terminals.SessionTemplate.Pane do
   @moduledoc """
   Additional tmux pane declared under a template window.
   """

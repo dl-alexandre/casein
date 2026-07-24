@@ -1,10 +1,10 @@
-defmodule DevIDE.SignalBus do
+defmodule Casein.SignalBus do
   @moduledoc false
 
   alias Jido.Signal.Bus
   alias Jido.Signal.Journal.Adapters.ETS, as: ETSJournal
 
-  @name DevIDE.SignalBus
+  @name Casein.SignalBus
 
   @spec name() :: atom()
   def name, do: @name

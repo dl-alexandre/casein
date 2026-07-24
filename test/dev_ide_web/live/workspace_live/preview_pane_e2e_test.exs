@@ -1,4 +1,4 @@
-defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
+defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
   @moduledoc """
   Slice 1 of preview-driven pane test runs: an end-to-end visual-regression
   check that exercises the REAL stack — pane registration, the `:playwright`
@@ -27,13 +27,13 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
     the golden measures the *pane rendering pipeline*, not some live app whose
     content drifts.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.Artifacts
-  alias DevIDE.Previews.Storage.LocalDisk
-  alias DevIDE.TestSupport.HTTPStub
+  alias Casein.PreviewControl
+  alias Casein.PreviewPanes
+  alias Casein.Previews.Artifacts
+  alias Casein.Previews.Storage.LocalDisk
+  alias Casein.TestSupport.HTTPStub
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -76,7 +76,7 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
     </head>
     <body>
       <div class="box"></div>
-      <h1>DevIDE preview pane</h1>
+      <h1>Casein preview pane</h1>
       <div class="swatch" style="left: 80px; background: #2ea043"></div>
       <div class="swatch" style="left: 280px; background: #d29922"></div>
       <div class="swatch" style="left: 480px; background: #f85149"></div>
@@ -213,8 +213,8 @@ defmodule DevIDEWeb.WorkspaceLive.PreviewPaneE2ETest do
   end
 
   defp restart_bridge! do
-    _ = Supervisor.terminate_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
+    _ = Supervisor.terminate_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
+    {:ok, _} = Supervisor.restart_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
     :ok
   end
 

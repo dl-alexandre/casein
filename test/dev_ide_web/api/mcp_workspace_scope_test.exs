@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.API.MCPWorkspaceScopeTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.API.MCPWorkspaceScopeTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Workspaces.Aliases
-  alias DevIdeWeb.API.MCPWorkspaceScope, as: Scope
+  alias Casein.Workspaces.Aliases
+  alias CaseinWeb.API.MCPWorkspaceScope, as: Scope
 
   @scoped "ws-scoped"
   @other "ws-other"

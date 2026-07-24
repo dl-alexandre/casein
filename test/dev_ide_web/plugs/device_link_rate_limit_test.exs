@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.Plugs.DeviceLinkRateLimitTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.DeviceLinkRateLimitTest do
+  use Casein.TestCase, async: false
 
   import Plug.Conn
   import Plug.Test
 
-  alias DevIdeWeb.Plugs.DeviceLinkRateLimit
-  alias DevIdeWeb.Plugs.TrustedProxyRemoteIp
+  alias CaseinWeb.Plugs.DeviceLinkRateLimit
+  alias CaseinWeb.Plugs.TrustedProxyRemoteIp
 
   # Unique path per test so Hammer buckets never collide across examples.
   defp path(suffix), do: "/api/device-links/exchange-test-#{suffix}"

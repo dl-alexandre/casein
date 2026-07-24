@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.MCPSessions do
+defmodule Casein.Agents.MCPSessions do
   @moduledoc """
   Session registry for the MCP Streamable HTTP transport.
 
@@ -19,7 +19,7 @@ defmodule DevIDE.Agents.MCPSessions do
   Every `initialize` mints a session, including for stateless clients that ignore
   the `Mcp-Session-Id` header and never `DELETE`. A periodic sweep
   (`Process.send_after(self(), :sweep, …)`, mirroring
-  `DevIDE.Terminals.TmuxWindowJanitor`) reaps sessions idle longer than the TTL,
+  `Casein.Terminals.TmuxWindowJanitor`) reaps sessions idle longer than the TTL,
   **except** ones with a live attached SSE stream. `touch/1` refreshes the stamp
   on each request that carries a known session id, so an actively used session is
   not reaped mid-use. Reaping an idle session is spec-safe: a later POST with the

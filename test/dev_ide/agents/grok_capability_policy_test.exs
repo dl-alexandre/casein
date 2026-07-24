@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.GrokCapabilityPolicyTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.GrokCapabilityPolicyTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.GrokCapabilityPolicy
-  alias DevIDE.Workspaces
+  alias Casein.Agents.GrokCapabilityPolicy
+  alias Casein.Workspaces
 
   @workspace_id "grok-policy-ws"
 
@@ -11,7 +11,7 @@ defmodule DevIDE.Agents.GrokCapabilityPolicyTest do
     :ok
   end
 
-  test "every direct DevIDE MCP tool has explicit mutation metadata" do
+  test "every direct Casein MCP tool has explicit mutation metadata" do
     assert GrokCapabilityPolicy.classified?()
   end
 

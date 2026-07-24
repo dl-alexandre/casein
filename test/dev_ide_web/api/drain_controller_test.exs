@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.DrainControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.DrainControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Deployment.Drain
+  alias Casein.Deployment.Drain
 
   @token "test-token"
 
@@ -41,7 +41,7 @@ defmodule DevIdeWeb.API.DrainControllerTest do
   end
 
   test "parses commits_behind from string params", %{conn: conn} do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
     conn = drain_request(conn, "3")
     assert json_response(conn, 200) == %{"ok" => true}
     assert_receive {:update_available, _version, 3}

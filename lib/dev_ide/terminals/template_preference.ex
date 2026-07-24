@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.TemplatePreference do
+defmodule Casein.Terminals.TemplatePreference do
   @moduledoc """
   Remembers the last session template applied per workspace so a tmux server
   wipe can re-apply operator/agent layout (e.g. `agent_pair`) automatically.

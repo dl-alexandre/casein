@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SituationEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.SituationEventsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.SituationEvents
+  alias CaseinWeb.WorkspaceLive.Show.SituationEvents
 
   # Pure: situation_drawer:toggle / close, plus handle_info(:situation_seed) and
   # handle_info({:situation_risk, _, _}) when no SituationServer is registered

@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.GitRepoCase do
+defmodule Casein.Test.GitRepoCase do
   @moduledoc false
 
   import ExUnit.Callbacks, only: [on_exit: 1]

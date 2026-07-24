@@ -1,25 +1,25 @@
-defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
+defmodule CaseinWeb.WorkspaceHistoryPanelTest do
   @moduledoc """
   History (previous sessions) side panel inside the workspace cockpit, plus
   the legacy `/workspaces/:id/previous-sessions` redirect. Replaces the tests
   of the removed WorkspaceLive.PreviousSessions full-page LiveView.
   """
 
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Agents.{Activity, AgentEvents}
-  alias DevIDE.Audit
-  alias DevIDE.Labels
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.{Activity, AgentEvents}
+  alias Casein.Audit
+  alias Casein.Labels
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-1"
   @workspace_name "alpha"
-  @session DevIDE.Terminals.Tmux.session_name(@workspace_name, "api-session")
+  @session Casein.Terminals.Tmux.session_name(@workspace_name, "api-session")
 
   setup do
-    tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(@workspace_name)
+    tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(@workspace_name)
 
     kill_tmux_sessions_with_prefix(tmux_prefix)
     MemoryAdapter.clear()
@@ -289,7 +289,7 @@ defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", @workspace_id, "status"]} =
           conn ->
         conn
@@ -353,7 +353,7 @@ defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
          {sessions, 0} <-
            System.cmd(
              executable,
-             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
+             Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
              stderr_to_stdout: true
            ) do
       sessions
@@ -363,7 +363,7 @@ defmodule DevIdeWeb.WorkspaceHistoryPanelTest do
         _ =
           System.cmd(
             executable,
-            DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+            Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
             stderr_to_stdout: true
           )
       end)

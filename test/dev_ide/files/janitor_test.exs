@@ -1,6 +1,6 @@
-defmodule DevIDE.Files.JanitorTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Files.Janitor
+defmodule Casein.Files.JanitorTest do
+  use Casein.TestCase, async: true
+  alias Casein.Files.Janitor
 
   setup do
     root = Path.join(System.tmp_dir!(), "jan-#{System.unique_integer([:positive])}")

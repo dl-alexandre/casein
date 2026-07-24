@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalInfo do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
 
-  alias DevIdeWeb.WorkspaceLive.PaneWorker
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias CaseinWeb.WorkspaceLive.PaneWorker
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   @doc false
   def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do

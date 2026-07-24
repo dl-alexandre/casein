@@ -1,4 +1,4 @@
-defmodule DevIdeCore.MixProject do
+defmodule CaseinCore.MixProject do
   use Mix.Project
 
   @version "0.1.0"
@@ -16,7 +16,7 @@ defmodule DevIdeCore.MixProject do
           "streaming (erlexec), git worktree inspection, and MCP tool schemas.",
       package: package(),
       docs: docs(),
-      name: "DevIdeCore",
+      name: "CaseinCore",
       source_url: @source_url
     ]
   end

@@ -1,7 +1,7 @@
-defmodule DevIDE.Attention.PolicyTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Attention.PolicyTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Attention.Policy
+  alias Casein.Attention.Policy
 
   describe "surface_state/1" do
     test "normalizes client state strings" do

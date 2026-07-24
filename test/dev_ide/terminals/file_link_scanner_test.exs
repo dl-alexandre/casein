@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.FileLinkScannerTest do
+defmodule Casein.Terminals.FileLinkScannerTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.FileLinkScanner
+  alias Casein.Terminals.FileLinkScanner
 
   describe "scan_row/1 — slash paths" do
     test "relative path with extension" do
@@ -29,7 +29,7 @@ defmodule DevIDE.Terminals.FileLinkScannerTest do
     end
 
     test "Elixir stacktrace line" do
-      row = "    (dev_ide 0.1.0) lib/dev_ide/file_panes.ex:91: DevIDE.FilePanes.open/3"
+      row = "    (dev_ide 0.1.0) lib/dev_ide/file_panes.ex:91: Casein.FilePanes.open/3"
 
       assert [%{path: "lib/dev_ide/file_panes.ex", line: 91}] = FileLinkScanner.scan_row(row)
     end
@@ -66,7 +66,7 @@ defmodule DevIDE.Terminals.FileLinkScannerTest do
     end
 
     test "elixir module/function references do not match" do
-      assert [] = FileLinkScanner.scan_row("DevIDE.FilePanes.open_file_in_pane/3 and Enum.map/2")
+      assert [] = FileLinkScanner.scan_row("Casein.FilePanes.open_file_in_pane/3 and Enum.map/2")
     end
 
     test "version numbers do not match" do

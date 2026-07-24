@@ -1,18 +1,18 @@
-defmodule DevIDE.Terminals.Templates do
+defmodule Casein.Terminals.Templates do
   @moduledoc """
   Persistence boundary for workspace-scoped session template exports.
 
-  Saved templates store DevIDE template schema maps produced by
-  `DevIDE.Terminals.SessionTemplate.Export`. Version 2 exports can be planned
-  and executed by `DevIDE.Terminals.Templates.Executor`.
+  Saved templates store Casein template schema maps produced by
+  `Casein.Terminals.SessionTemplate.Export`. Version 2 exports can be planned
+  and executed by `Casein.Terminals.Templates.Executor`.
   """
 
   import Ecto.Query
 
-  alias DevIDE.Terminals.Templates.Executor
-  alias DevIDE.Terminals.Templates.ReconcileExecutor
-  alias DevIDE.Terminals.Templates.Reconciler
-  alias DevIDE.Repo
+  alias Casein.Terminals.Templates.Executor
+  alias Casein.Terminals.Templates.ReconcileExecutor
+  alias Casein.Terminals.Templates.Reconciler
+  alias Casein.Repo
 
   defmodule Row do
     @moduledoc false
@@ -26,7 +26,7 @@ defmodule DevIDE.Terminals.Templates do
       field :body, :map, default: %{}
       field :source_session, :string
       field :schema_version, :integer, default: 2
-      field :tags, DevIDE.EctoTypes.StringList, default: []
+      field :tags, Casein.EctoTypes.StringList, default: []
       timestamps(type: :utc_datetime_usec)
     end
   end
@@ -430,7 +430,7 @@ defmodule DevIDE.Terminals.Templates do
   defp maybe_filter_tags(query, []), do: query
   defp maybe_filter_tags(query, ""), do: query
 
-  if DevIDE.Repo.Adapter.sqlite?() do
+  if Casein.Repo.Adapter.sqlite?() do
     defp maybe_filter_tags(query, _tags), do: query
 
     defp maybe_filter_tag_rows(rows, tags) do

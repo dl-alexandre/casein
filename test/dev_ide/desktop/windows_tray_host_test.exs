@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.WindowsTrayHostTest do
+defmodule Casein.Desktop.WindowsTrayHostTest do
   use ExUnit.Case, async: true
 
   @tray_script Path.expand("../../../windows/DevIDE.Tray.ps1", __DIR__)
@@ -53,14 +53,14 @@ defmodule DevIDE.Desktop.WindowsTrayHostTest do
     script = File.read!(@tray_script)
 
     for label <- [
-          "Open DevIDE",
+          "Open Casein",
           "Restart",
           "Repair installation",
           "Roll back last update",
           "Open logs",
           "Create support bundle",
           "Launch at Windows sign-in",
-          "Quit DevIDE"
+          "Quit Casein"
         ] do
       assert script =~ label
     end

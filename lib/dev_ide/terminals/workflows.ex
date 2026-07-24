@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Workflows do
+defmodule Casein.Terminals.Workflows do
   @moduledoc """
   Repository-scoped terminal command workflows.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Terminals.Workflows do
   runner-claim time, so assignments never persist executable argv.
   """
 
-  alias DevIDE.Workspaces.State
+  alias Casein.Workspaces.State
 
   @workflow_dirs [".dev_ide/workflows", ".warp/workflows"]
   @placeholder ~r/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/

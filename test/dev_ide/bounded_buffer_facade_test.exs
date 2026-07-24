@@ -1,7 +1,7 @@
-defmodule DevIDE.BoundedBufferFacadeTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.BoundedBufferFacadeTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.BoundedBuffer
+  alias Casein.BoundedBuffer
   alias TerminalCtl.Replay
 
   test "facade delegates append/4 to TerminalCtl.Replay" do

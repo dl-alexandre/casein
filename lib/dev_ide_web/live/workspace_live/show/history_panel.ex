@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.HistoryPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.HistoryPanel do
   @moduledoc """
   History (previous sessions) side panel for the workspace cockpit: a debounced
   bounded search over prior session context (session directory, audit, MCP
@@ -6,12 +6,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.HistoryPanel do
 
   Rendering carried over from the removed `/workspaces/:id/previous-sessions`
   page, restyled to the cockpit's side-panel conventions. State and events
-  live in `DevIdeWeb.WorkspaceLive.Show.HistoryEvents`.
+  live in `CaseinWeb.WorkspaceLive.Show.HistoryEvents`.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  alias DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivity
+  alias CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity
 
   @limit_options [
     {"10", "10"},

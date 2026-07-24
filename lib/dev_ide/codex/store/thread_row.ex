@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Store.ThreadRow do
+defmodule Casein.Codex.Store.ThreadRow do
   @moduledoc false
 
   use Ecto.Schema

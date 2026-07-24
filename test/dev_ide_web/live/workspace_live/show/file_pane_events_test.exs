@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
-  use DevIDE.DataCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
+  use Casein.DataCase, async: false
 
   # Unit coverage for the generic "pane:input" dispatch of FilePaneEvents:
   # authorization (unknown pane / other-workspace pane), the Policy.can_edit_file?
@@ -8,9 +8,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
   # focus model run through the full LiveView in
   # test/dev_ide_web/live/workspace_live/file_pane_ui_test.exs.
 
-  alias DevIDE.FilePanes
-  alias DevIDE.Workspaces
-  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
+  alias Casein.FilePanes
+  alias Casein.Workspaces
+  alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -41,7 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
 
@@ -71,7 +71,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
         workspace: workspace,
         current_user: user,
         workspace_mode_source: :default,
-        db_isolation: %DevIDE.Workspaces.DbIsolation{}
+        db_isolation: %Casein.Workspaces.DbIsolation{}
       }
     }
   end
@@ -124,7 +124,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
 
     # The denial is recorded (gate/3 stores the audited decision) and nothing
     # was written.
-    refute DevIDE.Policy.Decision.allow?(socket.assigns.last_decision)
+    refute Casein.Policy.Decision.allow?(socket.assigns.last_decision)
     assert File.read!(Path.join(ws_root, "note.txt")) == "one"
   end
 
@@ -182,7 +182,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
              )
 
     # A viewer of a different workspace must not reach the pane.
-    other = %DevIDE.Workspace{id: "some-other-workspace", name: "other", user: "dev"}
+    other = %Casein.Workspace{id: "some-other-workspace", name: "other", user: "dev"}
 
     assert {:reply, %{error: "not_found"}, _socket} =
              FilePaneEvents.handle_event(
@@ -215,14 +215,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
       Application.put_env(:dev_ide, :preview_open_preflight, true)
       Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
       FakeState.put(:fake_tmux_test_pid, self())
-      DevIDE.FilePanes.LinkResolver.clear_cache()
-      DevIDE.PreviewPanes.clear()
-      DevIDE.FilePanes.clear()
+      Casein.FilePanes.LinkResolver.clear_cache()
+      Casein.PreviewPanes.clear()
+      Casein.FilePanes.clear()
 
       on_exit(fn ->
-        DevIDE.FilePanes.LinkResolver.clear_cache()
-        DevIDE.PreviewPanes.clear()
-        DevIDE.FilePanes.clear()
+        Casein.FilePanes.LinkResolver.clear_cache()
+        Casein.PreviewPanes.clear()
+        Casein.FilePanes.clear()
         FakeState.delete(:fake_tmux_windows)
         FakeState.delete(:fake_tmux_panes)
         FakeState.delete(:fake_tmux_alive_sessions)
@@ -243,14 +243,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
       _ = open_file_link!(socket, "shot.png", "default")
 
       assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
-      assert %{url: url, source_url: source_url} = DevIDE.PreviewPanes.get_by_pane(new_pane_id)
+      assert %{url: url, source_url: source_url} = Casein.PreviewPanes.get_by_pane(new_pane_id)
       # PreviewPanes may rewrite loopback host to "localhost" for display; the
       # source URL (or the served path) still carries the static file server port.
       served = source_url || url
       assert served =~ ~r{^http://(127\.0\.0\.1|localhost):\d+/}
       assert served =~ "shot.png"
       assert FilePanes.list_for_workspace(workspace.id) == []
-      assert {:ok, _pid} = DevIDE.Previews.FileServer.whereis(workspace.id)
+      assert {:ok, _pid} = Casein.Previews.FileServer.whereis(workspace.id)
     end
 
     test "default mode opens source files in a :file pane" do
@@ -263,7 +263,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
 
       assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
       assert %{active_path: "lib/foo.ex"} = FilePanes.get_by_pane(new_pane_id)
-      refute DevIDE.PreviewPanes.get_by_pane(new_pane_id)
+      refute Casein.PreviewPanes.get_by_pane(new_pane_id)
     end
 
     test "flip mode forces a browser-viewable file into the :file editor" do
@@ -275,7 +275,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
 
       assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
       assert %{active_path: "report.html"} = FilePanes.get_by_pane(new_pane_id)
-      refute DevIDE.PreviewPanes.get_by_pane(new_pane_id)
+      refute Casein.PreviewPanes.get_by_pane(new_pane_id)
     end
 
     test "flip mode forces a source file into a :preview pane" do
@@ -287,7 +287,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
       _ = open_file_link!(socket, "lib/foo.ex", "flip")
 
       assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", new_pane_id}
-      assert %{url: url} = DevIDE.PreviewPanes.get_by_pane(new_pane_id)
+      assert %{url: url} = Casein.PreviewPanes.get_by_pane(new_pane_id)
       assert url =~ "lib"
       assert url =~ "foo.ex"
       assert FilePanes.list_for_workspace(workspace.id) == []
@@ -430,7 +430,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEventsTest do
         workspace: workspace,
         current_user: %{id: "dev", username: "dev"},
         workspace_mode_source: :default,
-        db_isolation: %DevIDE.Workspaces.DbIsolation{},
+        db_isolation: %Casein.Workspaces.DbIsolation{},
         tmux_session: tmux_session,
         tmux_windows: windows,
         tmux_panes: panes,

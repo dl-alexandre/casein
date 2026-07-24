@@ -1,4 +1,4 @@
-defmodule DevIDE.RateLimit do
+defmodule Casein.RateLimit do
   @moduledoc """
   Application-wide Hammer rate limiter (ETS backend).
   """

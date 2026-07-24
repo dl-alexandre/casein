@@ -1,14 +1,14 @@
-defmodule DevIDE.Signals.EntryContextTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Signals.EntryContextTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.Signals.Context
+  alias Casein.Audit
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.Signals.Context
 
-  # A stand-in LiveView: `use DevIDE.Signals.EntryContext` wraps its
+  # A stand-in LiveView: `use Casein.Signals.EntryContext` wraps its
   # handle_event/3 clauses in a fresh correlation context.
   defmodule FakeLive do
-    use DevIDE.Signals.EntryContext
+    use Casein.Signals.EntryContext
 
     def handle_event("emit", _params, socket) do
       {:ok, _} = Audit.emit(%{action: "fake.clicked", workspace_id: "wf"})

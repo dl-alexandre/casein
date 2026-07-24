@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.PreviewTools.Impl do
+defmodule Casein.Agents.PreviewTools.Impl do
   @moduledoc false
 
-  alias DevIDE.Agents.PreviewTools.{
+  alias Casein.Agents.PreviewTools.{
     ControlSession,
     Interactions,
     PortProbing,

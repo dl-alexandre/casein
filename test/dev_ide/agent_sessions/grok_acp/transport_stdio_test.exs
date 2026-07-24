@@ -1,7 +1,7 @@
-defmodule DevIDE.AgentSessions.GrokACP.Transport.StdioTest do
+defmodule Casein.AgentSessions.GrokACP.Transport.StdioTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.AgentSessions.GrokACP.Transport.Stdio
+  alias Casein.AgentSessions.GrokACP.Transport.Stdio
 
   test "attach mode starts only the stdio bridge for an existing leader" do
     root =

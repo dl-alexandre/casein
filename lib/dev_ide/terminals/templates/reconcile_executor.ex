@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
+defmodule Casein.Terminals.Templates.ReconcileExecutor do
   @moduledoc """
   Executes saved-template reconciliation diffs.
 
@@ -7,10 +7,10 @@ defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
   missing windows, split missing panes, send commands, and restore focus.
   """
 
-  alias DevIDE.Panes.Pane, as: PaneBehaviour
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxTopology
 
   @spec execute(String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
   def execute(session, diff, opts \\ []) when is_binary(session) and is_map(diff) do
@@ -237,11 +237,11 @@ defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
 
   defp resolve_cwd("${workspace_root}/" <> relative, workspace_root)
        when is_binary(workspace_root) do
-    DevIDE.Files.PathSafety.resolve(workspace_root, relative)
+    Casein.Files.PathSafety.resolve(workspace_root, relative)
   end
 
   defp resolve_cwd(path, workspace_root) when is_binary(path) and is_binary(workspace_root) do
-    DevIDE.Files.PathSafety.resolve(workspace_root, path)
+    Casein.Files.PathSafety.resolve(workspace_root, path)
   end
 
   defp compact_opts(opts) do

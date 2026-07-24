@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Storage do
+defmodule Casein.Previews.Storage do
   @moduledoc """
   Pluggable persistence for preview artifacts — screenshots and recordings.
 
@@ -19,7 +19,7 @@ defmodule DevIDE.Previews.Storage do
   @doc "The configured storage adapter (defaults to local disk)."
   @spec adapter() :: module()
   def adapter do
-    Application.get_env(:dev_ide, :preview_storage_adapter, DevIDE.Previews.Storage.LocalDisk)
+    Application.get_env(:dev_ide, :preview_storage_adapter, Casein.Previews.Storage.LocalDisk)
   end
 
   @doc "Persist an artifact and return a browser-servable reference."

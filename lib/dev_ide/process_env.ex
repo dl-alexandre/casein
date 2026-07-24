@@ -1,4 +1,4 @@
-defmodule DevIDE.ProcessEnv do
+defmodule Casein.ProcessEnv do
   @moduledoc """
   Process-scoped overrides for `Application` config keys, with `$callers`
   propagation.
@@ -25,10 +25,10 @@ defmodule DevIDE.ProcessEnv do
   ## Example
 
       # in a test running `async: true`
-      DevIDE.ProcessEnv.put(:git_adapter, MyStubAdapter)
+      Casein.ProcessEnv.put(:git_adapter, MyStubAdapter)
 
       # in production code
-      defp impl, do: DevIDE.ProcessEnv.get(:dev_ide, :git_adapter, DevIDE.Git.LocalAdapter)
+      defp impl, do: Casein.ProcessEnv.get(:dev_ide, :git_adapter, Casein.Git.LocalAdapter)
   """
 
   @absent :"$devide_process_env_absent"

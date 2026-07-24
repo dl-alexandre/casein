@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.LogsPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.LogsPanel do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :log_service, :string, required: true
   attr :log_ref, :any, required: true
@@ -20,7 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LogsPanel do
       </.form>
       <%= if is_nil(@log_ref) do %>
         <p class="text-xs text-amber-700">
-          <%= if DevIDE.WorkspaceSource.impl() == DevIDE.WorkspaceSource.Local do %>
+          <%= if Casein.WorkspaceSource.impl() == Casein.WorkspaceSource.Local do %>
             Log streaming is not available for local filesystem workspaces.
           <% else %>
             Log stream unavailable (source unreachable or service not started).

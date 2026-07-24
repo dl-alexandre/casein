@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.ChangePreviewWorkspaceIdToString do
+defmodule Casein.Repo.Migrations.ChangePreviewWorkspaceIdToString do
   use Ecto.Migration
 
   def up do
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       execute """
       ALTER TABLE previews
       ALTER COLUMN workspace_id TYPE varchar(255)
@@ -12,7 +12,7 @@ defmodule DevIDE.Repo.Migrations.ChangePreviewWorkspaceIdToString do
   end
 
   def down do
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       execute """
       ALTER TABLE previews
       ALTER COLUMN workspace_id TYPE uuid

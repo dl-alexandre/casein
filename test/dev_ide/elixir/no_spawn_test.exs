@@ -1,9 +1,9 @@
-defmodule DevIDE.Elixir.NoSpawnTest do
+defmodule Casein.Elixir.NoSpawnTest do
   @moduledoc """
   Boundary guard: M17 may detect Lexical/ElixirLS, but must never start one.
   No `Port.open` / `System.cmd("lexical")` / `:exec.run` paths in this subsystem.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   @sources [
     "lib/dev_ide/elixir.ex",

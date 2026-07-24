@@ -1,10 +1,10 @@
-defmodule DevIDE.Readiness do
+defmodule Casein.Readiness do
   @moduledoc """
   Product-level readiness independent of any deployment integration.
 
-  A ready DevIDE process can serve requests and reach its configured database.
+  A ready Casein process can serve requests and reach its configured database.
   Reverse proxies, Unix sockets, deploy drift, and poller state belong to
-  `DevIDE.Deployment.Health`; portable installations do not need them.
+  `Casein.Deployment.Health`; portable installations do not need them.
   """
 
   @default_timeout 1_000
@@ -33,7 +33,7 @@ defmodule DevIDE.Readiness do
 
   defp query_database do
     timeout = Application.get_env(:dev_ide, :readiness_timeout_ms, @default_timeout)
-    Ecto.Adapters.SQL.query(DevIDE.Repo, "SELECT 1", [], timeout: timeout, log: false)
+    Ecto.Adapters.SQL.query(Casein.Repo, "SELECT 1", [], timeout: timeout, log: false)
   end
 
   defp ready, do: %{ok: true, checks: %{database: :ready}}

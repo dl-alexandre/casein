@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanelMobileNavTest do
   # The mobile nav sheet previously listed only the CURRENT workspace's
   # sessions; these lock in the "Other workspaces" section that brings the
   # desktop rail's cross-workspace reach to touch layouts.
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalPanel
+  alias CaseinWeb.WorkspaceLive.Show.TerminalPanel
 
   defp other_node(attrs) do
     Map.merge(

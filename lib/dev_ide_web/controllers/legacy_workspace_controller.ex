@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.LegacyWorkspaceController do
+defmodule CaseinWeb.LegacyWorkspaceController do
   @moduledoc """
   Legacy URL redirects into the cockpit shell.
 
@@ -9,9 +9,9 @@ defmodule DevIdeWeb.LegacyWorkspaceController do
   Viewer access is enforced by the cockpit mount, not here.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIdeWeb.WorkspaceRoutes
+  alias CaseinWeb.WorkspaceRoutes
 
   def index(conn, _params) do
     redirect(conn, to: ~p"/")

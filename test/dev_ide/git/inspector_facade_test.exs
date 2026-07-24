@@ -1,13 +1,13 @@
-defmodule DevIDE.Git.InspectorFacadeTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Git.InspectorFacadeTest do
+  use Casein.TestCase, async: true
 
-  import DevIDE.Test.GitRepoCase
+  import Casein.Test.GitRepoCase
 
-  alias DevIDE.Git.Inspector
+  alias Casein.Git.Inspector
 
   setup :setup_git_repo
 
-  test "inspect_cwd returns a DevIDE.Git.Inspector struct", %{main: main} do
+  test "inspect_cwd returns a Casein.Git.Inspector struct", %{main: main} do
     assert {:ok, %Inspector{toplevel: ^main, branch: "main"}} = Inspector.inspect_cwd(main)
   end
 

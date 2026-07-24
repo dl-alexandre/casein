@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
+defmodule Casein.Agents.PreviewTools.ScopedLocalServerTest do
   # Serial: mutates process-global Application env
   # (:preview_prefer_scoped_local_server, :preview_surface_prober).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.PreviewTools.SurfaceDiscovery
-  alias DevIDE.Previews.Surface
+  alias Casein.Agents.PreviewTools.SurfaceDiscovery
+  alias Casein.Previews.Surface
 
   # v3 workspace advertising service ports app/tidewave/api. A default "app"
   # open resolves to the shared, workspace-wide manager URL below.
@@ -168,7 +168,7 @@ defmodule DevIDE.Agents.PreviewTools.ScopedLocalServerTest do
 
   describe "real port probe (unstubbed)" do
     test "selects a genuinely listening non-advertised port and rejects it once closed" do
-      # No prober stub: exercise the real DevIDE.Previews.PortProbe against an
+      # No prober stub: exercise the real Casein.Previews.PortProbe against an
       # actual loopback listener, the same connect preview_open's preflight makes.
       Application.delete_env(:dev_ide, :preview_surface_prober)
 

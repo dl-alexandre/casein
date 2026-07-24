@@ -1,5 +1,5 @@
 defmodule McpCtl.ParamsTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias McpCtl.Params
 

@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.Plugs.TrustedProxyRemoteIp do
+defmodule CaseinWeb.Plugs.TrustedProxyRemoteIp do
   @moduledoc """
   Rewrites `conn.remote_ip` from a reverse-proxy forwarded header **only** when
   the direct peer is loopback.
 
-  DevIDE binds loopback behind oauth2-proxy/Caddy, so every external client
+  Casein binds loopback behind oauth2-proxy/Caddy, so every external client
   appears as `127.0.0.1` at Bandit. Without this plug, IP-keyed rate limits
   collapse into one global bucket.
 

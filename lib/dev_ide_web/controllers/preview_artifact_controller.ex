@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.PreviewArtifactController do
+defmodule CaseinWeb.PreviewArtifactController do
   @moduledoc """
   Serves saved preview artifacts (PNG snapshots and webm recordings) for a
-  workspace, path-validated via `DevIDE.Previews.safe_artifact_path!/2`. With
+  workspace, path-validated via `Casein.Previews.safe_artifact_path!/2`. With
   `?fit=preview` it wraps a snapshot in a responsive HTML page for iframe
   embedding, `?fit=playback` wraps a recording in a `<video>` page; otherwise it
   streams the raw bytes with a content type derived from the extension.
   """
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Previews
-  alias DevIDE.Workspaces
+  alias Casein.Previews
+  alias Casein.Workspaces
 
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "preview"}) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do

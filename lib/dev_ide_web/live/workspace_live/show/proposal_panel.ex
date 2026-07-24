@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ProposalPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.ProposalPanel do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   attr :proposals, :list, required: true
   attr :proposal_selected, :any, default: nil

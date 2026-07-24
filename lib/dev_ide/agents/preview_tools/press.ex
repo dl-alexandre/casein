@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Press do
+defmodule Casein.Agents.PreviewTools.Press do
   @moduledoc "preview_press."
 
   use Jido.Action,
@@ -21,12 +21,12 @@ defmodule DevIDE.Agents.PreviewTools.Press do
       key: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(Map.merge(Helpers.visible_mutation_props(), %{key: Params.key()}), [
@@ -34,7 +34,7 @@ defmodule DevIDE.Agents.PreviewTools.Press do
         :key
       ])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_press")
 
   @impl Jido.Action

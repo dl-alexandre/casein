@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.API.DeployStatusControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.DeployStatusControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
   @token "test-token"
   @host "devide.devbox.example.com"

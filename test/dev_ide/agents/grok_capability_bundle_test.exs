@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.GrokCapabilityBundleTest do
+defmodule Casein.Agents.GrokCapabilityBundleTest do
   use ExUnit.Case, async: false
 
   import Bitwise
 
-  alias DevIDE.Agents.GrokCapabilityBundle
+  alias Casein.Agents.GrokCapabilityBundle
 
   @python_builder Path.expand("../../../scripts/lib/grok-capability-bundle.py", __DIR__)
 

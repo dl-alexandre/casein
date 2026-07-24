@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceHeaderChromeTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     unique = System.unique_integer([:positive])
@@ -21,7 +21,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
@@ -311,7 +311,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # windows before the click — so re-read the sid and re-inject on each
     # attempt, and only stop once the injected windows actually rendered.
     windows_for = fn sid ->
-      DevIDE.Terminals.Session.Info.new_shell(workspace_id, sid,
+      Casein.Terminals.Session.Info.new_shell(workspace_id, sid,
         metadata: %{
           windows: [
             %{id: "@1", index: 0, name: "editor", active: true},
@@ -329,7 +329,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
 
         send(
           view.pid,
-          {DevIDE.Terminals.SessionDirectory,
+          {Casein.Terminals.SessionDirectory,
            {:sessions_updated, workspace_id, [windows_for.(sid)]}}
         )
 

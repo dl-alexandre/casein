@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.NotificationsDrawerTest do
+defmodule CaseinWeb.NotificationsDrawerTest do
   @moduledoc """
   Notifications drawer on both global surfaces (the root cockpit at `/`, which
   mounts the workspaceless scratch terminal, and a workspace cockpit), plus the
@@ -6,12 +6,12 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
   NotificationLive.Index full-page LiveView.
   """
 
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Notifications
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Notifications
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-1"
   @workspace_name "alpha"
@@ -157,7 +157,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
   describe "workspace cockpit surface" do
     setup do
-      tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(@workspace_name)
+      tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(@workspace_name)
 
       kill_tmux_sessions_with_prefix(tmux_prefix)
       MemoryAdapter.clear()
@@ -226,7 +226,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
   # --- helpers -----------------------------------------------------------------
 
   defp stub_manager_list(payload) do
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, Jason.encode!(payload))
@@ -248,7 +248,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", @workspace_id, "status"]} =
           conn ->
         conn
@@ -281,7 +281,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
          {sessions, 0} <-
            System.cmd(
              executable,
-             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
+             Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
              stderr_to_stdout: true
            ) do
       sessions
@@ -290,7 +290,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
       |> Enum.each(fn session ->
         System.cmd(
           executable,
-          DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+          Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
           stderr_to_stdout: true
         )
       end)
@@ -302,7 +302,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
   describe "bell deploy severity" do
     test "a deploy failure renders a red alert dot" do
       html =
-        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+        render_component(&CaseinWeb.NotificationsDrawer.notifications_bell/1,
           id: "notifications-bell",
           unread_count: 0,
           deploy_failure: %{message: "gate failed"}
@@ -315,7 +315,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
     test "an available update renders an amber (warning) dot, not red" do
       html =
-        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+        render_component(&CaseinWeb.NotificationsDrawer.notifications_bell/1,
           id: "notifications-bell",
           unread_count: 0,
           update_available: true
@@ -328,7 +328,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
     test "unread notifications keep the numeric badge and suppress the deploy dot" do
       html =
-        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+        render_component(&CaseinWeb.NotificationsDrawer.notifications_bell/1,
           id: "notifications-bell",
           unread_count: 2,
           update_available: true
@@ -340,7 +340,7 @@ defmodule DevIdeWeb.NotificationsDrawerTest do
 
     test "no signals render a plain bell with no dot" do
       html =
-        render_component(&DevIdeWeb.NotificationsDrawer.notifications_bell/1,
+        render_component(&CaseinWeb.NotificationsDrawer.notifications_bell/1,
           id: "notifications-bell",
           unread_count: 0
         )

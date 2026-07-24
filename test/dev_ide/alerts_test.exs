@@ -1,8 +1,8 @@
-defmodule DevIDE.AlertsTest do
+defmodule Casein.AlertsTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Alerts
-  alias DevIDE.Audit.Event
+  alias Casein.Alerts
+  alias Casein.Audit.Event
 
   describe "terminal.size_fight alert" do
     test "is alert-worthy and titled" do

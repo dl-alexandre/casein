@@ -29,7 +29,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
         stderr_to_stdout: true
       )
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, @topic)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, @topic)
 
     name = :"control_listener_tmux_test_#{System.unique_integer([:positive])}"
 
@@ -38,7 +38,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
         {ControlListener,
          [
            label: @label,
-           pubsub: DevIDE.PubSub,
+           pubsub: Casein.PubSub,
            tmux_bin: tmux,
            anchor_session: @anchor,
            name: name,

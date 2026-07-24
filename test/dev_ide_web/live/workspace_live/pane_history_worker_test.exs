@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.PaneHistoryWorkerTest do
+defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorkerTest do
   use ExUnit.Case, async: true
 
-  alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
+  alias CaseinWeb.WorkspaceLive.PaneHistoryWorker
 
   defmodule StubTmux do
     def capture_scrollback(session, opts) do

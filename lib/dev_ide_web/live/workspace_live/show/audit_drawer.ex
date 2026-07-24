@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
+defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawer do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :audit_drawer_open, :boolean, required: true
   attr :audit_events_count, :integer, required: true
@@ -172,7 +172,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   def deny_count(events), do: Enum.count(events, fn e -> e.decision == :deny end)
 
   def ledger_event_count(events),
-    do: Enum.count(events, &DevIDE.Runs.Ledger.ledger_event?/1)
+    do: Enum.count(events, &Casein.Runs.Ledger.ledger_event?/1)
 
   def audit_dot_class(%{decision: :deny}), do: "bg-red-600"
   def audit_dot_class(%{decision: :allow}), do: "bg-green-600"
@@ -224,7 +224,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   defp audit_run_id(_), do: nil
 
   # A correlation id means this event belongs to a causal chain worth drilling
-  # into (stamped by DevIDE.Signals.Context at entry points / MCP tool calls).
+  # into (stamped by Casein.Signals.Context at entry points / MCP tool calls).
   defp audit_correlation_id(%{metadata: metadata}) when is_map(metadata) do
     case Map.get(metadata, "correlation_id") || Map.get(metadata, :correlation_id) do
       cid when is_binary(cid) and cid != "" -> cid

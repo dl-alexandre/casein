@@ -1,4 +1,4 @@
-defmodule DevIDE.Release.Update.InstallPlan do
+defmodule Casein.Release.Update.InstallPlan do
   @moduledoc """
   Read-only planning helpers for release-side LAN update installs.
 
@@ -7,8 +7,8 @@ defmodule DevIDE.Release.Update.InstallPlan do
   compatibility checks in Elixir where structured data is already available.
   """
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Manifest
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Manifest
 
   @type result ::
           {:ok, :current, Metadata.t(), Manifest.artifact(), Manifest.t(), String.t()}

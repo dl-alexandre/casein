@@ -1,14 +1,14 @@
-defmodule DevIDE.Push.Dispatcher do
+defmodule Casein.Push.Dispatcher do
   @moduledoc """
   Delivers OS pushes for alert-worthy audit events (via
-  `DevIDE.Signals.AlertsRouter`) and high-priority mobile-card events.
+  `Casein.Signals.AlertsRouter`) and high-priority mobile-card events.
 
-  Unlike `DevIdeWeb.SessionChannel` (which delivers in-app banners only while a
+  Unlike `CaseinWeb.SessionChannel` (which delivers in-app banners only while a
   device is connected), the dispatcher runs server-side regardless of any live
   connection — that's the point of OS push: reach a backgrounded/killed app.
 
-  Workspace alert watches are lazy: `DevIDE.Push.Registry` calls
-  `DevIDE.Signals.AlertsRouter.watch/1` when a token is registered. Mobile card
+  Workspace alert watches are lazy: `Casein.Push.Registry` calls
+  `Casein.Signals.AlertsRouter.watch/1` when a token is registered. Mobile card
   events are already user-scoped by the observer, so the dispatcher filters
   registered devices by `user_id`.
   """
@@ -16,9 +16,9 @@ defmodule DevIDE.Push.Dispatcher do
 
   require Logger
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.{Alerts, Notifications, Push}
+  alias Casein.Audit.Event
+  alias Casein.Mobile.UserObserver
+  alias Casein.{Alerts, Notifications, Push}
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
@@ -27,7 +27,7 @@ defmodule DevIDE.Push.Dispatcher do
   @doc """
   Deliver an alert-worthy audit event to registered push tokens for its workspace.
 
-  Called by `DevIDE.Signals.AlertsRouter` after signal-bus routing; synchronous
+  Called by `Casein.Signals.AlertsRouter` after signal-bus routing; synchronous
   so a token registered immediately before an alert is not missed.
   """
   @spec deliver_audit_alert(Event.t()) :: :ok
@@ -37,7 +37,7 @@ defmodule DevIDE.Push.Dispatcher do
 
   @impl true
   def init(state) do
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, UserObserver.card_events_topic())
+    Phoenix.PubSub.subscribe(Casein.PubSub, UserObserver.card_events_topic())
     {:ok, state}
   end
 
@@ -67,7 +67,7 @@ defmodule DevIDE.Push.Dispatcher do
     provider = Push.provider()
 
     for entry <- Push.tokens_for(event.workspace_id) do
-      case Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
+      case Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
              deliver_alert(provider, event, entry, notification)
            end) do
         {:ok, _pid} ->
@@ -90,7 +90,7 @@ defmodule DevIDE.Push.Dispatcher do
       |> Enum.uniq_by(&{&1.platform, &1.token})
 
     for entry <- entries do
-      case Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
+      case Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
              deliver_mobile_card(provider, entry, notification, card)
            end) do
         {:ok, _pid} ->

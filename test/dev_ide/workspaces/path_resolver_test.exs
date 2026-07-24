@@ -1,10 +1,10 @@
-defmodule DevIDE.Workspaces.PathResolverTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.PathResolverTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.PathResolver
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspace
+  alias Casein.Workspaces.PathResolver
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @config_keys [:lan_path_root, :workspaces_root, :home_workspace_path]
 

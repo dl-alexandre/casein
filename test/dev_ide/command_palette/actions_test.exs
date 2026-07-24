@@ -1,8 +1,8 @@
-defmodule DevIDE.CommandPalette.ActionsTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.CommandPalette.ActionsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.CommandPalette.Actions
-  alias DevIDE.CommandPalette.Item
+  alias Casein.CommandPalette.Actions
+  alias Casein.CommandPalette.Item
 
   describe "all/0" do
     setup do

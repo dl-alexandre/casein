@@ -1,8 +1,8 @@
-defmodule DevIDE.Runs.Ledger do
+defmodule Casein.Runs.Ledger do
   @moduledoc """
   Canonical event ledger for operational execution.
 
-  The backing store is `DevIDE.Audit`; this module owns the normalized run
+  The backing store is `Casein.Audit`; this module owns the normalized run
   vocabulary on top of it:
 
     * Session — interactive raw terminal attachment.
@@ -12,10 +12,10 @@ defmodule DevIDE.Runs.Ledger do
   run surfaces from inventing incompatible event shapes.
   """
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.Event
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Runs.Status
+  alias Casein.Audit
+  alias Casein.Audit.Event
+  alias Casein.Policy.Decision
+  alias Casein.Runs.Status
 
   @ledger "run"
   @version 1

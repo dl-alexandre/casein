@@ -1,9 +1,9 @@
-defmodule DevIDE.TerminalsFacadeTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.TerminalsFacadeTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.Session.Info
+  alias Casein.Terminals
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.Session.Info
 
   test "new_shell/3 and new_agent/2 build session info structs" do
     shell = Terminals.new_shell("ws-1", "u-dev")

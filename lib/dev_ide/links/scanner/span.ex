@@ -1,4 +1,4 @@
-defmodule DevIDE.Links.Scanner.Span do
+defmodule Casein.Links.Scanner.Span do
   @moduledoc """
   A candidate link span in one terminal row.
 

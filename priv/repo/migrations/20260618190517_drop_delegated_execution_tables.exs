@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.DropDelegatedExecutionTables do
+defmodule Casein.Repo.Migrations.DropDelegatedExecutionTables do
   use Ecto.Migration
 
   # Tables for the removed delegated-execution stack (fleet + runner-assignment

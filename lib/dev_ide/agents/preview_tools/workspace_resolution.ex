@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.PreviewTools.WorkspaceResolution do
+defmodule Casein.Agents.PreviewTools.WorkspaceResolution do
   @moduledoc false
 
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.WorkspaceContext
+  alias Casein.Previews.Deps
+  alias Casein.Previews.WorkspaceContext
 
   def prepare(workspace), do: WorkspaceContext.prepare(workspace)
 
@@ -24,7 +24,7 @@ defmodule DevIDE.Agents.PreviewTools.WorkspaceResolution do
          %{
            error: :missing_workspace_reference,
            message:
-             "Pass workspace_id or workspace_path. Generated DevIDE MCP URLs inject workspace_id automatically.",
+             "Pass workspace_id or workspace_path. Generated Casein MCP URLs inject workspace_id automatically.",
            folder_id_format: "folder:<base64url-absolute-path>"
          }}
     end

@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.ArtifactsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Previews.ArtifactsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.Artifacts
+  alias Casein.Previews.Artifacts
 
   setup do
     root = Path.join(System.tmp_dir!(), "artifacts-test-#{System.unique_integer([:positive])}")
@@ -9,11 +9,11 @@ defmodule DevIDE.Previews.ArtifactsTest do
     prev_max = Application.get_env(:dev_ide, :preview_max_artifacts)
     prev_diff_max = Application.get_env(:dev_ide, :preview_max_diff_artifacts)
 
-    _ = DevIDE.Previews.ArtifactProtection.clear()
+    _ = Casein.Previews.ArtifactProtection.clear()
     Application.put_env(:dev_ide, :preview_artifacts_root, root)
 
     on_exit(fn ->
-      _ = DevIDE.Previews.ArtifactProtection.clear()
+      _ = Casein.Previews.ArtifactProtection.clear()
       restore(:preview_artifacts_root, prev_root)
       restore(:preview_max_artifacts, prev_max)
       restore(:preview_max_diff_artifacts, prev_diff_max)
@@ -107,7 +107,7 @@ defmodule DevIDE.Previews.ArtifactsTest do
     # the time 2.png lands (mirrors the real flow — an artifact is protected
     # while displayed, not retroactively).
     Artifacts.store_png!("ws-protect", 1, "old")
-    :ok = DevIDE.Previews.ArtifactProtection.protect("ws-protect", "1.png")
+    :ok = Casein.Previews.ArtifactProtection.protect("ws-protect", "1.png")
     Artifacts.store_png!("ws-protect", 2, "new")
     Artifacts.store_png!("ws-protect", 3, "newer")
 

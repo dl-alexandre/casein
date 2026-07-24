@@ -1,5 +1,5 @@
 defmodule TmuxCtl.Runner.DefaultTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias TmuxCtl.Runner.Default
 

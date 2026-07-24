@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Endpoint do
+defmodule CaseinWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :dev_ide
 
   @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
@@ -8,17 +8,17 @@ defmodule DevIdeWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  @session_config {DevIdeWeb.SessionOptions, :options, []}
+  @session_config {CaseinWeb.SessionOptions, :options, []}
 
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_config]],
     longpoll: [connect_info: [session: @session_config]]
 
-  socket "/socket", DevIdeWeb.UserSocket,
+  socket "/socket", CaseinWeb.UserSocket,
     websocket: true,
     longpoll: false
 
-  plug DevIdeWeb.RuntimeSSLPlug
+  plug CaseinWeb.RuntimeSSLPlug
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -29,7 +29,7 @@ defmodule DevIdeWeb.Endpoint do
     at: "/",
     from: :dev_ide,
     gzip: not code_reloading?,
-    only: DevIdeWeb.static_paths(),
+    only: CaseinWeb.static_paths(),
     raise_on_missing_only: code_reloading?
 
   # Code reloading can be explicitly enabled under the
@@ -63,8 +63,8 @@ defmodule DevIdeWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug DevIdeWeb.RuntimeSessionPlug
-  plug DevIdeWeb.Router
+  plug CaseinWeb.RuntimeSessionPlug
+  plug CaseinWeb.Router
 
   @doc false
   def reject_oversized_mcp_body(conn, _opts) do

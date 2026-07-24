@@ -1,4 +1,4 @@
-defmodule DevIDE.CommandPalette.Item do
+defmodule Casein.CommandPalette.Item do
   @moduledoc "A single palette result row."
 
   @type kind :: :file | :action | :command | :tab

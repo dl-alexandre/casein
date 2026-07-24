@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.StructuredAgentActivity do
+defmodule CaseinWeb.WorkspaceLive.Show.StructuredAgentActivity do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :loaded?, :boolean, required: true
   attr :threads, :list, required: true

@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Activity do
+defmodule Casein.Terminals.Activity do
   @moduledoc """
   tmux `monitor-silence` analog for agent windows.
 
@@ -14,8 +14,8 @@ defmodule DevIDE.Terminals.Activity do
   reach LiveViews without per-poll churn from raw timestamps.
   """
 
-  alias DevIDE.Terminals.Boundary
-  alias DevIDE.Terminals.PaneState
+  alias Casein.Terminals.Boundary
+  alias Casein.Terminals.PaneState
 
   @silence_after_seconds 60
   @attention_window_seconds 1_800

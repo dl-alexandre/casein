@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   defp socket(assigns) do
     %Phoenix.LiveView.Socket{

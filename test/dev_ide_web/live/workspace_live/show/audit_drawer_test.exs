@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawerTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.AuditDrawerTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.AuditDrawer
-  alias DevIDE.Audit.Event
+  alias CaseinWeb.WorkspaceLive.Show.AuditDrawer
+  alias Casein.Audit.Event
 
   # ---------------------------------------------------------------------------
   # Pure helper: deny_count/1
@@ -29,7 +29,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawerTest do
   end
 
   # ---------------------------------------------------------------------------
-  # Pure helper: ledger_event_count/1 (delegates to DevIDE.Runs.Ledger.ledger_event?/1)
+  # Pure helper: ledger_event_count/1 (delegates to Casein.Runs.Ledger.ledger_event?/1)
   # ---------------------------------------------------------------------------
 
   describe "ledger_event_count/1" do

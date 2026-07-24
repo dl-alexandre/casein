@@ -1,13 +1,13 @@
-defmodule DevIDE.Export.WorkspaceStatusTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Export.WorkspaceStatusTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Export.WorkspaceStatus
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Export.WorkspaceStatus
+  alias Casein.Runs.Ledger
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -18,7 +18,7 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
     MemoryAdapter.clear()
     Audit.clear()
     Activity.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -71,7 +71,7 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
   end
 
   test "status includes compact agent session prompt state" do
-    tmux_session = DevIDE.Terminals.Tmux.session_name("deploy-test", "agent")
+    tmux_session = Casein.Terminals.Tmux.session_name("deploy-test", "agent")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -160,7 +160,7 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
   end
 
   test "status includes layout guidance when sessions lack an agent pane" do
-    tmux_session = DevIDE.Terminals.Tmux.session_name("deploy-test", "agent")
+    tmux_session = Casein.Terminals.Tmux.session_name("deploy-test", "agent")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [

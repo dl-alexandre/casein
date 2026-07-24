@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.PaneInteraction do
+defmodule Casein.Terminals.PaneInteraction do
   @moduledoc """
   Shared policy for how the browser terminal should interact with a focused
   tmux pane — clipboard path format and scroll routing.

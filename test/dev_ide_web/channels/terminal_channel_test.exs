@@ -1,17 +1,17 @@
-defmodule DevIdeWeb.TerminalChannelTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.TerminalChannelTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.ChannelTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Runs.Ledger
-  alias DevIdeWeb.ChannelAuth
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Runs.Ledger
+  alias CaseinWeb.ChannelAuth
+  alias Casein.Terminals.Tmux
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
-  @endpoint DevIdeWeb.Endpoint
+  @endpoint CaseinWeb.Endpoint
 
   setup do
     workspace_root = Path.join(System.tmp_dir!(), "devide-terminal-channel")
@@ -34,10 +34,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
     reset_terminal_fast_path_cache!()
 
     MemoryAdapter.clear()
-    DevIDE.Runtimes.clear()
+    Casein.Runtimes.clear()
     Audit.clear()
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -49,7 +49,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      DevIDE.Runtimes.clear()
+      Casein.Runtimes.clear()
       Audit.clear()
       kill_tmux_sessions_under(workspace_root)
       reset_terminal_fast_path_cache!()
@@ -66,19 +66,19 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   test "malformed topic format is rejected" do
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
     assert {:error, %{reason: "invalid session"}} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:broken-topic", %{
+             subscribe_and_join(socket, CaseinWeb.TerminalChannel, "terminal:broken-topic", %{
                "mode" => "governed"
              })
   end
 
   test "malformed topic variants are rejected" do
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -89,7 +89,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           "terminal:ws-1:"
         ] do
       assert {:error, %{reason: "invalid session"}} =
-               subscribe_and_join(socket, DevIdeWeb.TerminalChannel, topic, %{
+               subscribe_and_join(socket, CaseinWeb.TerminalChannel, topic, %{
                  "mode" => "governed"
                })
     end
@@ -102,7 +102,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -136,7 +136,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket_one =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -145,7 +145,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 1
 
         socket_two =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -171,7 +171,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "synthetic-reconnect"
 
     first_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -182,7 +182,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 1
 
         second_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -216,7 +216,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     try do
       dev_socket =
-        DevIdeWeb.UserSocket
+        CaseinWeb.UserSocket
         |> socket("users_socket:dev", %{
           current_user: %{id: "dev", username: "alice", email: "dev@local"}
         })
@@ -231,7 +231,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           assert :counters.get(counter, 1) == 1
 
           intruder_socket =
-            DevIdeWeb.UserSocket
+            CaseinWeb.UserSocket
             |> socket("users_socket:dev", %{
               current_user: %{id: "intruder", username: "intruder", email: "intruder@local"}
             })
@@ -260,7 +260,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -305,7 +305,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     on_exit(fn -> :telemetry.detach(handler_id) end)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -345,7 +345,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -381,7 +381,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -426,7 +426,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "wildcard-recovery"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -481,7 +481,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -537,7 +537,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "socket-cache-expired"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -563,7 +563,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "numeric-actor-cache"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{
         current_user: %{id: 42, email: "dev@local", username: "dev"}
       })
@@ -600,7 +600,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "socket-cache-host-scope"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -625,7 +625,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert {:error, %{reason: "raw shell requires local host"}} =
                  subscribe_and_join(
                    raw_socket,
-                   DevIdeWeb.TerminalChannel,
+                   CaseinWeb.TerminalChannel,
                    "terminal:ws-1:#{sid}",
                    %{
                      "mode" => "raw",
@@ -691,7 +691,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     :ets.insert(:dev_ide_terminal_fast_path_cache, stale_claims)
 
     reconnect_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -762,7 +762,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     :ets.insert(:dev_ide_terminal_fast_path_cache, [stale_claim, wildcard_claim])
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -813,7 +813,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     }
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
       |> Phoenix.Socket.assign(:terminal_fast_path_cache, stale_wildcard_cache)
@@ -839,7 +839,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-host-boundary-cache"
 
     local_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -861,14 +861,14 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         remote_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
         assert {:error, %{reason: "raw shell requires local host"}} =
                  subscribe_and_join(
                    remote_socket,
-                   DevIdeWeb.TerminalChannel,
+                   CaseinWeb.TerminalChannel,
                    "terminal:ws-1:#{sid}",
                    %{
                      "mode" => "raw",
@@ -894,7 +894,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-host-scope-fresh"
 
     local_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -919,14 +919,14 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         remote_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
         assert {:error, %{reason: "raw shell requires local host"}} =
                  subscribe_and_join(
                    remote_socket,
-                   DevIdeWeb.TerminalChannel,
+                   CaseinWeb.TerminalChannel,
                    "terminal:ws-1:#{sid}",
                    %{
                      "mode" => "raw",
@@ -956,7 +956,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       sid = "forward-auth-fast-path-mismatch"
 
       dev_socket =
-        DevIdeWeb.UserSocket
+        CaseinWeb.UserSocket
         |> socket("users_socket:dev", %{
           current_user: %{id: "dev", email: "dev@local", username: "dev"}
         })
@@ -990,7 +990,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       end
 
       intruder_socket =
-        DevIdeWeb.UserSocket
+        CaseinWeb.UserSocket
         |> socket("users_socket:dev", %{
           current_user: %{id: "intruder", email: "intruder@remote", username: "intruder"}
         })
@@ -1019,7 +1019,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "socket-cache-miss"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1071,7 +1071,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "socket-cache-raw"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1117,7 +1117,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1147,7 +1147,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1168,7 +1168,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1202,7 +1202,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1227,7 +1227,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1257,7 +1257,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: 12, email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: 12, email: "dev@local"})
 
@@ -1279,7 +1279,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   test "terminal capability with owner_ok false is denied" do
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1296,7 +1296,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: "terminal access is not authorized"}} =
              subscribe_and_join(
                socket,
-               DevIdeWeb.TerminalChannel,
+               CaseinWeb.TerminalChannel,
                "terminal:ws-1:owner-deny",
                %{"mode" => "governed", "terminal_capability" => capability}
              )
@@ -1304,7 +1304,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   test "terminal capability with terminal_owner_ok false is denied" do
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1321,7 +1321,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: "terminal access is not authorized"}} =
              subscribe_and_join(
                socket,
-               DevIdeWeb.TerminalChannel,
+               CaseinWeb.TerminalChannel,
                "terminal:ws-1:owner-deny-terminal",
                %{"mode" => "governed", "terminal_capability" => capability}
              )
@@ -1335,7 +1335,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1383,7 +1383,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     user_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1439,7 +1439,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       )
 
     first_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1457,7 +1457,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 0
 
         second_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1488,7 +1488,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1527,7 +1527,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:ok, _} = State.set_mode("ws-1", :review)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1547,7 +1547,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: reason}} =
              subscribe_and_join(
                socket,
-               DevIdeWeb.TerminalChannel,
+               CaseinWeb.TerminalChannel,
                "terminal:ws-1:raw-capability-deny",
                %{"mode" => "raw", "terminal_capability" => capability}
              )
@@ -1562,7 +1562,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1614,7 +1614,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     counter = count_workspace_requests!(workspace_path)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1662,7 +1662,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1682,7 +1682,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: reason}} =
              subscribe_and_join(
                socket,
-               DevIdeWeb.TerminalChannel,
+               CaseinWeb.TerminalChannel,
                "terminal:ws-1:raw-capability-host",
                %{
                  "mode" => "raw",
@@ -1709,7 +1709,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       )
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{
         current_user: %{id: "intruder", username: "intruder", email: "intruder@local"}
       })
@@ -1782,7 +1782,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-session-cache-repeat"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1822,7 +1822,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-cache-workspace"
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1853,7 +1853,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-reconnect-fresh-socket"
 
     first_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1864,7 +1864,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert :counters.get(counter, 1) == 1
 
         second_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1895,14 +1895,14 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-reconnect-no-duplicate-events"
 
     first_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
     first_join =
       subscribe_and_join(
         first_socket,
-        DevIdeWeb.TerminalChannel,
+        CaseinWeb.TerminalChannel,
         "terminal:ws-1:#{sid}",
         %{
           "mode" => "raw"
@@ -1915,7 +1915,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
                  1
 
         second_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1923,7 +1923,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           try do
             subscribe_and_join(
               second_socket,
-              DevIdeWeb.TerminalChannel,
+              CaseinWeb.TerminalChannel,
               "terminal:ws-1:#{sid}",
               %{
                 "mode" => "raw"
@@ -1954,7 +1954,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
                      1
         end
 
-        :ok = DevIDE.Terminals.owner_detach(first_joined.assigns.terminal_owner_pid, self())
+        :ok = Casein.Terminals.owner_detach(first_joined.assigns.terminal_owner_pid, self())
 
       {:error, %{reason: reason}} ->
         assert pty_unavailable?(reason)
@@ -1974,7 +1974,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     sid = "raw-reconnect-no-duplicate-events"
 
     first_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -1984,7 +1984,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         owner_pid = first_joined.assigns.terminal_owner_pid
 
         second_socket =
-          DevIdeWeb.UserSocket
+          CaseinWeb.UserSocket
           |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
           |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
@@ -2033,7 +2033,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
              join_terminal("raw", sid)
 
-    assert Registry.lookup(DevIDE.Terminals.Registry, {:terminal_owner, :shell, "", sid}) == []
+    assert Registry.lookup(Casein.Terminals.Registry, {:terminal_owner, :shell, "", sid}) == []
   end
 
   test "raw join denied on remote host and owner is not started" do
@@ -2043,7 +2043,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
              join_terminal("raw", "raw-remote-deny", "remote")
 
     assert Registry.lookup(
-             DevIDE.Terminals.Registry,
+             Casein.Terminals.Registry,
              {:terminal_owner, :shell, "", "raw-remote-deny"}
            ) == []
   end
@@ -2059,16 +2059,16 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:error, %{reason: "raw shell requires local host"}} =
              join_terminal("raw", sid, "remote")
 
-    assert Registry.lookup(DevIDE.Terminals.Registry, {:terminal_owner, :shell, "", sid}) == []
+    assert Registry.lookup(Casein.Terminals.Registry, {:terminal_owner, :shell, "", sid}) == []
   end
 
   defp join_terminal(mode, sid, host_id \\ "local") do
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
+    subscribe_and_join(socket, CaseinWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
       "mode" => mode,
       "host_id" => host_id
     })
@@ -2102,7 +2102,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   defp count_workspace_requests!(workspace_path) do
     counter = :counters.new(1, [])
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         :counters.add(counter, 1, 1)
         workspace_payload(conn, workspace_path)
@@ -2128,7 +2128,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     killed =
       case System.cmd(
              "tmux",
-             DevIDE.Terminals.TmuxServer.args() ++
+             Casein.Terminals.TmuxServer.args() ++
                ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
              stderr_to_stdout: true
            ) do
@@ -2141,7 +2141,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
               if String.starts_with?(canonical_path(path), root) do
                 System.cmd(
                   "tmux",
-                  DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+                  Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
                   stderr_to_stdout: true
                 )
 
@@ -2190,7 +2190,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   # codes `mode = :raw` on join, so the "mode" param value is irrelevant.
   defp join_lookup(user_socket, topic, params \\ %{}) do
     try do
-      case subscribe_and_join(user_socket, DevIdeWeb.TerminalChannel, topic, params) do
+      case subscribe_and_join(user_socket, CaseinWeb.TerminalChannel, topic, params) do
         {:ok, reply, joined} -> {:ok, reply, joined}
         {:error, _reason} -> :error
       end
@@ -2222,7 +2222,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     params = Map.put_new(params, "mode", "raw")
 
     try do
-      case subscribe_and_join(user_socket, DevIdeWeb.TerminalChannel, topic, params) do
+      case subscribe_and_join(user_socket, CaseinWeb.TerminalChannel, topic, params) do
         {:ok, reply, joined} ->
           {:ok, reply, joined}
 
@@ -2239,7 +2239,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   defp safe_owner_detach(owner_pid, subscriber) when is_pid(owner_pid) do
-    DevIDE.Terminals.owner_detach(owner_pid, subscriber)
+    Casein.Terminals.owner_detach(owner_pid, subscriber)
     :ok
   catch
     :exit, _ -> :ok

@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.MCPUrls do
+defmodule Casein.Agents.MCPUrls do
   @moduledoc """
-  Builds DevIDE terminal/preview/artifact MCP endpoint URLs from app config or env,
+  Builds Casein terminal/preview/artifact MCP endpoint URLs from app config or env,
   optionally pre-scoping a `workspace_id` query param onto them.
   """
 
@@ -13,7 +13,7 @@ defmodule DevIDE.Agents.MCPUrls do
       "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
   end
 
-  @doc "Base URL for plain DevIDE API calls from pane-local shims."
+  @doc "Base URL for plain Casein API calls from pane-local shims."
   def api_base_url do
     Application.get_env(:dev_ide, :api_base_url) ||
       non_empty_env("DEVIDE_API_BASE_URL") ||

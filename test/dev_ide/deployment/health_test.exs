@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.HealthTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Deployment.HealthTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Deployment.Health
+  alias Casein.Deployment.Health
 
   test "portable deployments report optional operator checks as not configured" do
     status =
@@ -86,7 +86,7 @@ defmodule DevIDE.Deployment.HealthTest do
     ]
   end
 
-  test "caddy_app_dial returns the DevIDE app upstream, not oauth2-proxy" do
+  test "caddy_app_dial returns the Casein app upstream, not oauth2-proxy" do
     assert Health.caddy_app_dial(caddy_config(), @host) ==
              "unix//run/devide/current.sock"
   end
@@ -115,7 +115,7 @@ defmodule DevIDE.Deployment.HealthTest do
     assert checks.current_socket_points_to_instance
   end
 
-  test "status reports ok when Caddy routes DevIDE through the loopback proxy" do
+  test "status reports ok when Caddy routes Casein through the loopback proxy" do
     socket =
       Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
 

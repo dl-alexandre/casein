@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.PreviewTools.DevideReloadPage do
+defmodule Casein.Agents.PreviewTools.CaseinReloadPage do
   @moduledoc "devide_reload_page."
 
   use Jido.Action,
     name: "devide_reload_page",
-    description: "Ask connected DevIDE viewers to reload the whole workspace page.",
+    description: "Ask connected Casein viewers to reload the whole workspace page.",
     category: "preview",
     tags: ["preview"],
     vsn: "1.0.0",
@@ -13,12 +13,12 @@ defmodule DevIDE.Agents.PreviewTools.DevideReloadPage do
       reason: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -29,7 +29,7 @@ defmodule DevIDE.Agents.PreviewTools.DevideReloadPage do
         [:workspace_id]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("devide_reload_page")
 
   @impl Jido.Action

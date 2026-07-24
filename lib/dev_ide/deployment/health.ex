@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.Health do
+defmodule Casein.Deployment.Health do
   @moduledoc """
   Runtime health checks for the devbox release handoff.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Deployment.Health do
   the Caddy app upstream for `PHX_HOST`, and deploy drift status.
   """
 
-  alias DevIDE.Deployment.{Capabilities, Drift, LastDeploy, Registry}
+  alias Casein.Deployment.{Capabilities, Drift, LastDeploy, Registry}
 
   @current_symlink "/run/devide/current.sock"
   @expected_caddy_dials [

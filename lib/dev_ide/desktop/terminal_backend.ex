@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.TerminalBackend do
+defmodule Casein.Desktop.TerminalBackend do
   @moduledoc """
   Selects the desktop terminal implementation once at runtime.
 

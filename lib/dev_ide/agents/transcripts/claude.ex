@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.Transcripts.Claude do
+defmodule Casein.Agents.Transcripts.Claude do
   @moduledoc false
 
   @summary_limit 200
@@ -36,7 +36,7 @@ defmodule DevIDE.Agents.Transcripts.Claude do
     end
   end
 
-  # Path is validated by DevIDE.Agents.Transcripts before read/1 is called.
+  # Path is validated by Casein.Agents.Transcripts before read/1 is called.
   # sobelow_skip ["Traversal.FileModule"]
   defp read_lines(path) do
     case File.read(path) do

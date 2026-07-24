@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ArtifactEventsTest do
-  use DevIDE.DataCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.ArtifactEventsTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIdeWeb.WorkspaceLive.Show.ArtifactEvents
+  alias Casein.Test.RuntimeSeed
+  alias CaseinWeb.WorkspaceLive.Show.ArtifactEvents
 
   # Covers artifact:refresh, the not-found path for serve/inspect/open, the
   # workspace-scoping check in artifact_project_for_workspace/2, and the

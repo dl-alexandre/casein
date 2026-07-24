@@ -1,7 +1,7 @@
-defmodule DevIDE.Runtimes.ProfileTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runtimes.ProfileTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runtimes.{Profile, Runtime}
+  alias Casein.Runtimes.{Profile, Runtime}
 
   test "normalizes a built-in Phoenix runtime profile" do
     assert {:ok, profile} = Profile.normalize("phoenix")

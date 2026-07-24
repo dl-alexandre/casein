@@ -1,21 +1,21 @@
-defmodule DevIDE.Terminals.TmuxTopology do
+defmodule Casein.Terminals.TmuxTopology do
   @moduledoc """
-  DevIDE facade over `TmuxCtl.Topology` and `TmuxCtl.Topology.Watcher`.
+  Casein facade over `TmuxCtl.Topology` and `TmuxCtl.Topology.Watcher`.
 
   Preserves the historical public API and PubSub message tuple
-  `{DevIDE.Terminals.TmuxTopology, msg}` for LiveView compatibility.
+  `{Casein.Terminals.TmuxTopology, msg}` for LiveView compatibility.
   Audit on session terminate is emitted via an injected watcher callback.
   """
 
-  alias DevIDE.Audit
-  alias DevIDE.Terminals.PaneState
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Audit
+  alias Casein.Terminals.PaneState
+  alias Casein.Terminals.Tmux
   alias TmuxCtl.Topology
   alias TmuxCtl.Topology.Watcher
 
-  @registry DevIDE.Terminals.TopologyRegistry
-  @supervisor DevIDE.Terminals.TopologySupervisor
-  @pubsub DevIDE.PubSub
+  @registry Casein.Terminals.TopologyRegistry
+  @supervisor Casein.Terminals.TopologySupervisor
+  @pubsub Casein.PubSub
   @topic_prefix "terminal_topology:"
 
   @type window :: Topology.window()
@@ -129,8 +129,8 @@ defmodule DevIDE.Terminals.TmuxTopology do
   end
 
   defp event_source_opt do
-    if DevIDE.Terminals.TmuxEvents.enabled?() do
-      {DevIDE.Terminals.TmuxEvents, []}
+    if Casein.Terminals.TmuxEvents.enabled?() do
+      {Casein.Terminals.TmuxEvents, []}
     end
   end
 

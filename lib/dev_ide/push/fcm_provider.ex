@@ -1,28 +1,28 @@
-defmodule DevIDE.Push.FCMProvider do
+defmodule Casein.Push.FCMProvider do
   @moduledoc """
-  `DevIDE.Push.Provider` for Firebase Cloud Messaging (HTTP v1). Sends a
-  `DevIDE.Alerts` notification to one FCM registration token.
+  `Casein.Push.Provider` for Firebase Cloud Messaging (HTTP v1). Sends a
+  `Casein.Alerts` notification to one FCM registration token.
 
   Android currently registers FCM tokens. iOS currently registers APNs tokens,
   so production native mobile delivery should normally use
-  `DevIDE.Push.NativeProvider` to route Android to this module and iOS to
-  `DevIDE.Push.APNSProvider`.
+  `Casein.Push.NativeProvider` to route Android to this module and iOS to
+  `Casein.Push.APNSProvider`.
 
   Enable with:
 
-      config :dev_ide, :push_provider, DevIDE.Push.FCMProvider
-      config :dev_ide, DevIDE.Push.FCMProvider,
+      config :dev_ide, :push_provider, Casein.Push.FCMProvider
+      config :dev_ide, Casein.Push.FCMProvider,
         project_id: "my-firebase-project",
         # 0-arity fun or {m, f, a} returning {:ok, oauth_access_token}. The
         # built-in service-account minter is:
-        # {DevIDE.Push.FCMToken, :access_token, []}
+        # {Casein.Push.FCMToken, :access_token, []}
         access_token_fun: {MyApp.FCMToken, :access_token, []}
 
   The HTTP transport is injectable (`:http_client`, default
-  `DevIDE.Push.FCM.ReqClient`) so it's testable without network or credentials —
-  see `DevIDE.Push.FCM.HTTP`.
+  `Casein.Push.FCM.ReqClient`) so it's testable without network or credentials —
+  see `Casein.Push.FCM.HTTP`.
   """
-  @behaviour DevIDE.Push.Provider
+  @behaviour Casein.Push.Provider
 
   require Logger
 
@@ -64,8 +64,8 @@ defmodule DevIDE.Push.FCMProvider do
       fun when is_function(fun, 0) ->
         :ok
 
-      {DevIDE.Push.FCMToken, :access_token, []} ->
-        DevIDE.Push.FCMToken.configured?()
+      {Casein.Push.FCMToken, :access_token, []} ->
+        Casein.Push.FCMToken.configured?()
 
       {m, f, a} when is_atom(m) and is_atom(f) and is_list(a) ->
         :ok
@@ -156,7 +156,7 @@ defmodule DevIDE.Push.FCMProvider do
   end
 
   defp inferred_project_id do
-    case DevIDE.Push.FCMToken.project_id() do
+    case Casein.Push.FCMToken.project_id() do
       {:ok, project_id} -> project_id
       {:error, _reason} -> nil
     end
@@ -175,7 +175,7 @@ defmodule DevIDE.Push.FCMProvider do
   defp normalize_token({:error, _} = err), do: err
   defp normalize_token(other), do: {:error, {:bad_access_token, other}}
 
-  defp http_client, do: config()[:http_client] || DevIDE.Push.FCM.ReqClient
+  defp http_client, do: config()[:http_client] || Casein.Push.FCM.ReqClient
 
   defp config, do: Application.get_env(:dev_ide, __MODULE__, [])
 end

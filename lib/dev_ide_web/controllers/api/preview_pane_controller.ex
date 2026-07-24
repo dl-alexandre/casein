@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.API.PreviewPaneController do
+defmodule CaseinWeb.API.PreviewPaneController do
   @moduledoc """
   Register and deregister preview panes opened by the `devide-preview` CLI.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.PreviewPanes
+  alias Casein.PreviewPanes
 
   def create(conn, params) do
     case PreviewPanes.register(params) do

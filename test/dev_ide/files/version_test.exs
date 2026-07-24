@@ -1,6 +1,6 @@
-defmodule DevIDE.Files.VersionTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Files.Version
+defmodule Casein.Files.VersionTest do
+  use Casein.TestCase, async: true
+  alias Casein.Files.Version
 
   test "compute is deterministic for identical content + stat" do
     stat = %File.Stat{size: 5, mtime: {{2026, 5, 8}, {1, 2, 3}}}

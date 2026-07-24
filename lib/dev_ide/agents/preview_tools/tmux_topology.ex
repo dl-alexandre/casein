@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.PreviewTools.TmuxTopology do
+defmodule Casein.Agents.PreviewTools.TmuxTopology do
   @moduledoc false
 
-  alias DevIDE.Agents.AgentPane
-  alias DevIDE.Agents.PreviewTools.ControlSession
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.Deps
+  alias Casein.Agents.AgentPane
+  alias Casein.Agents.PreviewTools.ControlSession
+  alias Casein.PreviewPanes
+  alias Casein.Previews.Deps
 
   defdelegate split_preview_pane(workspace, url, opts), to: ControlSession
 

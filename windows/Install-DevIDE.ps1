@@ -168,7 +168,7 @@ try {
     New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$installedUninstaller`"" -PropertyType String -Force | Out-Null
 
     if ($Launch) { & $launcher }
-    Write-Host "Installed DevIDE $releaseId for $env:USERNAME"
+    Write-Host "Installed Casein $releaseId for $env:USERNAME"
     Write-Host "Launcher: $(Join-Path $installRoot 'DevIDE.cmd')"
 } catch {
     if (Test-Path -LiteralPath $stage) { Remove-ReleaseTree -Path $stage }

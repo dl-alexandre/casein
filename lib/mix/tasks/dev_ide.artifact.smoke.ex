@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Artifact.Smoke do
+defmodule Mix.Tasks.Casein.Artifact.Smoke do
   @shortdoc "Create a static Artifact Project smoke preview"
 
   @moduledoc """
@@ -13,9 +13,9 @@ defmodule Mix.Tasks.DevIde.Artifact.Smoke do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  alias DevIDE.ArtifactProjects
+  alias Casein.ArtifactProjects
 
   @impl true
   def run(argv) do

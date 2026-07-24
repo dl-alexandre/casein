@@ -1,20 +1,20 @@
-defmodule DevIDE.Agents.ArtifactTools do
+defmodule Casein.Agents.ArtifactTools do
   @moduledoc """
   Agent-facing artifact project operations.
 
-  These tools are intentionally a thin wrapper around `DevIDE.ArtifactProjects`:
+  These tools are intentionally a thin wrapper around `Casein.ArtifactProjects`:
   agents create and edit isolated Git worktree-backed artifacts here, then hand
   the returned `preview_open_arguments` to Preview MCP when they need a visible
   browser pane.
 
-  Each tool is a `Jido.Action` module under `DevIDE.Agents.ArtifactTools.*`,
-  invoked through `DevIDE.Agents.ToolAction`: params are schema-validated at
+  Each tool is a `Jido.Action` module under `Casein.Agents.ArtifactTools.*`,
+  invoked through `Casein.Agents.ToolAction`: params are schema-validated at
   runtime while the MCP wire shapes (tools/list JSON Schema, error
   structuredContent) stay exactly as before.
   """
 
-  alias DevIDE.Agents.ArtifactTools.{Create, Get, List, Serve, Snapshot, Update}
-  alias DevIDE.Agents.ToolAction
+  alias Casein.Agents.ArtifactTools.{Create, Get, List, Serve, Snapshot, Update}
+  alias Casein.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
 

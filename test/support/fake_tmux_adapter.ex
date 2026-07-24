@@ -989,7 +989,7 @@ defmodule TmuxCtl.Test.FakeAdapter do
   end
 end
 
-defmodule DevIDE.Test.FakeTmuxAdapter do
+defmodule Casein.Test.FakeTmuxAdapter do
   @moduledoc false
 
   @behaviour TmuxCtl.Adapter

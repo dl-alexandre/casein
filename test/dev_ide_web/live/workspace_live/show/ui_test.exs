@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.UITest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.UITest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.UI
+  alias CaseinWeb.WorkspaceLive.Show.UI
 
   describe "workspace_short_name/1" do
     test "drops the redundant owner prefix from owner/repo names" do

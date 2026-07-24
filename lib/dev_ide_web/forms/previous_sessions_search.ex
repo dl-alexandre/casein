@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Forms.PreviousSessionsSearch do
+defmodule CaseinWeb.Forms.PreviousSessionsSearch do
   @moduledoc "Schemaless changeset for the previous-sessions search form."
 
   import Ecto.Changeset

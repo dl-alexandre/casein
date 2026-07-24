@@ -1,11 +1,11 @@
-defmodule DevIDE.Terminals.TmuxRunnerTest do
+defmodule Casein.Terminals.TmuxRunnerTest do
   # async: false — mutates Application/System env, PATH, and :persistent_term
-  # (the same global state the sibling DevIDE.Terminals.TmuxTest guards).
-  use DevIDE.TestCase, async: false
+  # (the same global state the sibling Casein.Terminals.TmuxTest guards).
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.TmuxExecutable
-  alias DevIDE.Terminals.TmuxRunner
-  alias DevIDE.Terminals.TmuxServer
+  alias Casein.Terminals.TmuxExecutable
+  alias Casein.Terminals.TmuxRunner
+  alias Casein.Terminals.TmuxServer
 
   setup do
     workspace_source = Application.get_env(:dev_ide, :workspace_source)
@@ -127,7 +127,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     setup do
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
       :ok
     end
 
@@ -150,11 +150,11 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     setup do
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
       :ok
     end
 
-    test "uses host tmux argv with DevIDE config when the workspace source is identity" do
+    test "uses host tmux argv with Casein config when the workspace source is identity" do
       dir = make_tmp_dir()
       config = Path.join(dir, "devide.conf")
       File.write!(config, "set-option -g status off\n")
@@ -181,7 +181,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       # -t names an existing host session, so host_session_alive? returns true
       # and we get host tmux argv (not the wrapper's ["sh", ...]).
@@ -199,7 +199,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert ["sh", "-c", _] =
                TmuxRunner.argv(["send-keys", "-t", "devide_alpha_u-dev", "echo hi"])
@@ -208,7 +208,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     test "argv without a -t target never probes for a session and wraps" do
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert ["sh", "-c", _] = TmuxRunner.argv(["list-windows", "-a"])
     end
@@ -221,7 +221,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       # so System.cmd runs for real with stderr folded into stdout.
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert {out, 42} = TmuxRunner.run(["list-sessions"])
       assert out =~ "wrapped"
@@ -230,7 +230,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     test "passes :cd through to System.cmd opts" do
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       dir = make_tmp_dir()
       assert {_out, 42} = TmuxRunner.run(["list-sessions"], cd: dir)
@@ -239,13 +239,13 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
   describe "local_argv_wrapped?/0" do
     test "returns false for direct local identity execution" do
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
 
       refute TmuxRunner.local_argv_wrapped?()
     end
 
     test "returns true when the workspace source wraps local argv" do
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert TmuxRunner.local_argv_wrapped?()
     end
@@ -253,7 +253,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
   describe "container_has_tmux?/1" do
     test "returns true for direct local identity execution" do
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
       cwd = unique_cwd()
 
       assert TmuxRunner.container_has_tmux?(cwd)
@@ -263,7 +263,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       # Any source whose wrapper begins with "sh" short-circuits to true without
       # any System.cmd. Use a unique cwd so the :persistent_term cache key is
       # private to this test.
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
       cwd = unique_cwd()
 
       assert TmuxRunner.container_has_tmux?(cwd)

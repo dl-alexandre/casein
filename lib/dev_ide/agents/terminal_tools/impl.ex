@@ -1,26 +1,26 @@
-defmodule DevIDE.Agents.TerminalTools.Impl do
+defmodule Casein.Agents.TerminalTools.Impl do
   @moduledoc false
 
-  alias DevIDE.Agents
-  alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
-  alias DevIDE.AgentSessions.GrokACP.Attachments
-  alias DevIDE.Audit
-  alias DevIDE.Export.Sanitizer
-  alias DevIDE.FilePanes
-  alias DevIDE.FilePanes.LinkResolver
-  alias DevIDE.Files.BrowserViewable
-  alias DevIDE.Labels
-  alias DevIDE.Operator.SituationServer
-  alias DevIDE.Previews
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.Runtime
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Scratch
-  alias DevIDE.Workspaces.State
+  alias Casein.Agents
+  alias Casein.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
+  alias Casein.AgentSessions.GrokACP.Attachments
+  alias Casein.Audit
+  alias Casein.Export.Sanitizer
+  alias Casein.FilePanes
+  alias Casein.FilePanes.LinkResolver
+  alias Casein.Files.BrowserViewable
+  alias Casein.Labels
+  alias Casein.Operator.SituationServer
+  alias Casein.Previews
+  alias Casein.Runtimes
+  alias Casein.Runtimes.Runtime
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.SessionDirectory
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxTopology
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Scratch
+  alias Casein.Workspaces.State
 
   @session_prefix "devide_"
   @default_capture_lines 120
@@ -32,7 +32,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
                       "change when the operator switches windows. Anchor pane references to " <>
                       "caller.adjacent_panes (or an explicit pane id), not to the active pane."
 
-  @doc "List live DevIDE-managed tmux sessions."
+  @doc "List live Casein-managed tmux sessions."
   @spec list_sessions(map()) :: {:ok, map()}
   def list_sessions(params \\ %{}) do
     contains = Map.get(params, "contains") || Map.get(params, :contains)
@@ -558,7 +558,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
     end
   end
 
-  @doc "Set a DevIDE chrome label for an agent pane."
+  @doc "Set a Casein chrome label for an agent pane."
   @spec set_agent_label(map()) :: {:ok, map()} | {:error, term()}
   def set_agent_label(params) do
     with {:ok, workspace_id} <- workspace_id_arg(params),
@@ -780,7 +780,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
   Record a pre-push gate run verdict as a durable `gate.passed` /
   `gate.failed` audit row. Called (fail-open) by scripts/pre-push-check.sh;
   the MCP layer additionally persists the tool call itself since gate_report
-  is classified mutating in `DevIDE.Agents.MCPAudit`.
+  is classified mutating in `Casein.Agents.MCPAudit`.
   """
   @spec gate_report(map()) :: {:ok, map()} | {:error, term()}
   def gate_report(params) do

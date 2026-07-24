@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.ModePolicyTest do
+defmodule Casein.Terminals.ModePolicyTest do
   # async: false — toggles the global :raw_terminal_everywhere app env.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.ModePolicy
-  alias DevIDE.Terminals.Session.Info
+  alias Casein.Terminals.ModePolicy
+  alias Casein.Terminals.Session.Info
 
   describe "raw_terminal_allowed?/2" do
     test "defaults to local manual workspace access only" do

@@ -1,4 +1,4 @@
-defmodule DevIDE.PayloadAttrs do
+defmodule Casein.PayloadAttrs do
   @moduledoc """
   Mixed-key map access for boundary payloads.
 

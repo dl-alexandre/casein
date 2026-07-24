@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.MCPTransportTest do
+defmodule CaseinWeb.API.MCPTransportTest do
   @moduledoc """
   Streamable HTTP transport over the terminal MCP endpoint: initialize issues an
   Mcp-Session-Id, unknown ids are rejected, DELETE tears the session down, and a
   GET opens (and attaches) the server→client SSE channel.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Agents.MCPSessions
+  alias Casein.Agents.MCPSessions
 
   @token "test-mcp-transport-token"
   @path "/api/terminals/mcp"

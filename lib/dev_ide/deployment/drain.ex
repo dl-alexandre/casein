@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.Drain do
+defmodule Casein.Deployment.Drain do
   @moduledoc """
   Counts active LiveView connections and coordinates graceful shutdown
   when a deploy drain is initiated.
@@ -102,20 +102,20 @@ defmodule DevIDE.Deployment.Drain do
 
   def handle_call({:start_drain, commits_behind}, _from, state) do
     try do
-      DevIDE.Deployment.Registry.mark_draining()
+      Casein.Deployment.Registry.mark_draining()
     rescue
       _ -> :ok
     end
 
     version =
       try do
-        DevIDE.Deployment.Registry.version()
+        Casein.Deployment.Registry.version()
       rescue
         _ -> "unknown"
       end
 
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       "deploy:updates",
       {:update_available, version, commits_behind}
     )
@@ -188,7 +188,7 @@ defmodule DevIDE.Deployment.Drain do
   # letting this node drain to zero and stop via the grace path rather than
   # waiting out the hard timeout. No-op once connections have already drained.
   def handle_info(:auto_reconnect, %{draining: true, count: count} = state) when count > 0 do
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_reconnect})
+    Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", {:deploy_reconnect})
     {:noreply, %{state | auto_ref: nil}}
   end
 

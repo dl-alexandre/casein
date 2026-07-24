@@ -1,12 +1,12 @@
-defmodule DevIDE.Agents.TerminalToolsOpenFileInPaneTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.TerminalToolsOpenFileInPaneTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.TerminalTools
-  alias DevIDE.FilePanes
-  alias DevIDE.FilePanes.LinkResolver
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.FileServer
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Agents.TerminalTools
+  alias Casein.FilePanes
+  alias Casein.FilePanes.LinkResolver
+  alias Casein.PreviewPanes
+  alias Casein.Previews.FileServer
+  alias Casein.Terminals.Tmux
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -58,7 +58,7 @@ defmodule DevIDE.Agents.TerminalToolsOpenFileInPaneTest do
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
 

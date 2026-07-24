@@ -1,15 +1,15 @@
-defmodule DevIDE.SearchTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.SearchTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Search
-  alias DevIDE.Search.Result
+  alias Casein.Search
+  alias Casein.Search.Result
 
   setup do
     root = Path.join(System.tmp_dir!(), "search-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
 
     prev_adapter = Application.get_env(:dev_ide, :search_adapter)
-    Application.put_env(:dev_ide, :search_adapter, DevIDE.Search.MemoryAdapter)
+    Application.put_env(:dev_ide, :search_adapter, Casein.Search.MemoryAdapter)
     Application.delete_env(:dev_ide, :search_memory_results)
     Application.delete_env(:dev_ide, :search_memory_response)
     Application.delete_env(:dev_ide, :search_memory_available)

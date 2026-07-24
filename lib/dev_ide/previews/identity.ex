@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.Identity do
+defmodule Casein.Previews.Identity do
   @moduledoc false
 
-  alias DevIDE.Previews.{Surface, Url}
+  alias Casein.Previews.{Surface, Url}
 
   @doc "Stable key for deduplicating workspace previews."
   def surface_key(%Surface{name: name, url: url}) do

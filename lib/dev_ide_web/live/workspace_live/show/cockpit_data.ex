@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
+defmodule CaseinWeb.WorkspaceLive.Show.CockpitData do
   @moduledoc """
   Read facade for the workspace cockpit's mount and asynchronous hydration data.
 
@@ -6,13 +6,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
   module owns the multi-context reads used to build that state.
   """
 
-  alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Isolation
-  alias DevIDE.Workspaces.PathResolver
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIdeWeb.Plugs.ForwardAuth
-  alias DevIdeWeb.WorkspaceLive.Show.FileOperations
+  alias Casein.Elixir, as: ElixirNav
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Isolation
+  alias Casein.Workspaces.PathResolver
+  alias Casein.Workspaces.SessionSummary
+  alias CaseinWeb.Plugs.ForwardAuth
+  alias CaseinWeb.WorkspaceLive.Show.FileOperations
 
   def resolve_mount_workspace(params, user, path_access_pre_authorized?)
 
@@ -33,7 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
     segments = Map.get(params, "lan_path", [])
 
     if segments in [nil, []] do
-      mount_workspace(DevIDE.Workspaces.Scratch.workspace())
+      mount_workspace(Casein.Workspaces.Scratch.workspace())
     else
       resolve_path_mount(segments)
     end
@@ -81,7 +81,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
 
       _ ->
         %{
-          db_isolation: %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()},
+          db_isolation: %Casein.Workspaces.DbIsolation{detected_at: DateTime.utc_now()},
           project_meta: %{},
           tooling: %{},
           isolation_audit: nil
@@ -167,7 +167,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.CockpitData do
 
   defp format_lan_path_error(:invalid_root), do: "path root is not an absolute directory"
   defp format_lan_path_error(:missing_root), do: "path root is not configured"
-  defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
+  defp format_lan_path_error(:reserved_prefix), do: "path is reserved by Casein"
   defp format_lan_path_error(:invalid_path), do: "path is invalid"
   defp format_lan_path_error(:outside_root), do: "path escapes the path root"
   defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the path root"

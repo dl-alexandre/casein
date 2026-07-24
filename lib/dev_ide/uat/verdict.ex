@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.Verdict do
+defmodule Casein.UAT.Verdict do
   @moduledoc """
   Validates an acceptance-agent verdict in two layers:
 
@@ -12,7 +12,7 @@ defmodule DevIDE.UAT.Verdict do
        `failure_reason: "evidence_validation_failed"` — the agent cannot
        self-certify.
 
-  The trusted `session_id` is passed in by the runner (from the `DevIDE.UAT.Run`),
+  The trusted `session_id` is passed in by the runner (from the `Casein.UAT.Run`),
   never taken from the agent-supplied verdict, which could lie.
 
   ## What grounding does and does not prove
@@ -29,7 +29,7 @@ defmodule DevIDE.UAT.Verdict do
   validation (e.g. URL/element payload checks) is a known follow-up.
   """
 
-  alias DevIDE.Previews.ControlObservation
+  alias Casein.Previews.ControlObservation
 
   @required_top ~w(passed criterion run_id session_id steps_taken assertions)
   @evidence_kinds ~w(element url errors screenshot)
@@ -43,7 +43,7 @@ defmodule DevIDE.UAT.Verdict do
 
   Options:
 
-    * `:repo` — Ecto repo module (default `DevIDE.Repo`), for tests
+    * `:repo` — Ecto repo module (default `Casein.Repo`), for tests
     * `:artifacts_root` — base dir for relative `artifact_path` (default from
       `:dev_ide, :preview_artifacts_root`)
   """
@@ -120,7 +120,7 @@ defmodule DevIDE.UAT.Verdict do
   # --- Layer 2: grounding ---------------------------------------------------
 
   defp ground(verdict, session_id, opts) do
-    repo = Keyword.get(opts, :repo, DevIDE.Repo)
+    repo = Keyword.get(opts, :repo, Casein.Repo)
     artifacts_root = Keyword.get(opts, :artifacts_root, default_artifacts_root())
 
     {assertions, problems} =

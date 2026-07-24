@@ -1,9 +1,9 @@
-defmodule DevIDE.Previews.Deps.Workspaces do
+defmodule Casein.Previews.Deps.Workspaces do
   @moduledoc """
   Preview-owned seam for workspace lookup, path safety, and viewer aliases.
 
-  Merges former direct calls to `DevIDE.Workspaces` and
-  `DevIDE.Workspaces.Aliases` into one injectable behaviour.
+  Merges former direct calls to `Casein.Workspaces` and
+  `Casein.Workspaces.Aliases` into one injectable behaviour.
   """
 
   @type workspace :: map()

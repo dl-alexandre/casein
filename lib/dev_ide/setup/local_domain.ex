@@ -1,6 +1,6 @@
-defmodule DevIDE.Setup.LocalDomain do
+defmodule Casein.Setup.LocalDomain do
   @moduledoc """
-  Helpers for DevIDE's local hosts-file domain.
+  Helpers for Casein's local hosts-file domain.
 
   `.local` is intentionally not the default here. On Linux desktops with
   `nss-mdns`, `.local` is mDNS-owned and may short-circuit before `/etc/hosts`.
@@ -9,8 +9,8 @@ defmodule DevIDE.Setup.LocalDomain do
   """
 
   @default_domain "devide.test"
-  @begin_marker "# BEGIN DevIDE local domain"
-  @end_marker "# END DevIDE local domain"
+  @begin_marker "# BEGIN Casein local domain"
+  @end_marker "# END Casein local domain"
 
   def default_domain, do: System.get_env("DEV_IDE_LOCAL_DOMAIN") || @default_domain
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.Agents do
+defmodule Casein.Supervision.Agents do
   @moduledoc false
 
   use Supervisor
@@ -10,14 +10,14 @@ defmodule DevIDE.Supervision.Agents do
   @impl true
   def init(_opts) do
     children = [
-      {Registry, keys: :unique, name: DevIDE.Agents.Registry},
-      {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
-      DevIDE.AgentSessions.GrokACP.Attachments,
-      {Registry, keys: :unique, name: DevIDE.Codex.Registry},
-      DevIDE.Codex.EventHub,
-      DevIDE.Codex.RuntimeSupervisor,
-      DevIDE.Agents.MCPSessions,
-      DevIDE.Agents.Activity
+      {Registry, keys: :unique, name: Casein.Agents.Registry},
+      {DynamicSupervisor, name: Casein.Agents.Supervisor, strategy: :one_for_one},
+      Casein.AgentSessions.GrokACP.Attachments,
+      {Registry, keys: :unique, name: Casein.Codex.Registry},
+      Casein.Codex.EventHub,
+      Casein.Codex.RuntimeSupervisor,
+      Casein.Agents.MCPSessions,
+      Casein.Agents.Activity
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

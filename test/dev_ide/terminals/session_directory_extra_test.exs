@@ -1,17 +1,17 @@
-defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.SessionDirectoryExtraTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.SessionDirectory
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()
-    DevIDE.Runtimes.clear()
+    Casein.Runtimes.clear()
     WorktreeReconciler.clear()
 
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -19,12 +19,12 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :session_directory_poll_ms, 25)
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      DevIDE.Runtimes.clear()
+      Casein.Runtimes.clear()
       WorktreeReconciler.clear()
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
@@ -340,7 +340,7 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
     test "synthesizes a worktree shell tab and falls git_toplevel back to path" do
       ws = "wsx-#{System.unique_integer([:positive])}"
       name = "alpha-#{System.unique_integer([:positive])}"
-      tmux_session = DevIDE.Terminals.Tmux.session_name(name, "wt-min")
+      tmux_session = Casein.Terminals.Tmux.session_name(name, "wt-min")
       path = Path.join(System.tmp_dir!(), "devide-wt-#{System.unique_integer([:positive])}")
 
       _ =
@@ -497,7 +497,7 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
     test "returns [] when the adapter cannot list sessions" do
       prev = Application.get_env(:dev_ide, :tmux_adapter)
       # A module that exists but does not export list_sessions/0
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Session.Info)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Terminals.Session.Info)
 
       try do
         assert SessionDirectory.list_tmux_sessions() == []
@@ -514,8 +514,8 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
       ws = "wsx-#{System.unique_integer([:positive])}"
       name = "beta-#{System.unique_integer([:positive])}"
 
-      by_name = DevIDE.Terminals.Tmux.session_name(name, "u-alice")
-      by_id = DevIDE.Terminals.Tmux.session_name(ws, "u-bob")
+      by_name = Casein.Terminals.Tmux.session_name(name, "u-alice")
+      by_id = Casein.Terminals.Tmux.session_name(ws, "u-bob")
 
       sids =
         SessionDirectory.read(ws,
@@ -531,7 +531,7 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
 
     test "empty/blank names are filtered, leaving only the id prefix" do
       ws = "wsx-#{System.unique_integer([:positive])}"
-      by_id = DevIDE.Terminals.Tmux.session_name(ws, "u-only")
+      by_id = Casein.Terminals.Tmux.session_name(ws, "u-only")
 
       [tab] =
         SessionDirectory.read(ws,

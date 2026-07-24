@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.NotificationsDrawerEvents do
+defmodule CaseinWeb.NotificationsDrawerEvents do
   # Notifications drawer state + handle_event clauses, delegated from
   # WorkspaceLive.Show (mirrors HistoryEvents). Absorbs the former
   # NotificationLive.Index full-page LiveView into an in-viewer drawer.
@@ -12,15 +12,15 @@ defmodule DevIdeWeb.NotificationsDrawerEvents do
   # User scoping: every read/lifecycle call is keyed by the mounted
   # `socket.assigns.current_user` — notification ids arriving from the client
   # are only honored when the row belongs to that user (mark_read / resolve /
-  # mute look the row up by {id, user_id} inside DevIDE.Notifications).
+  # mute look the row up by {id, user_id} inside Casein.Notifications).
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView, only: [connected?: 1]
 
-  alias DevIDE.Notifications
-  alias DevIDE.Push
-  alias DevIdeWeb.Plugs.ForwardAuth
+  alias Casein.Notifications
+  alias Casein.Push
+  alias CaseinWeb.Plugs.ForwardAuth
 
   @list_opts [limit: 80, open_only: true]
 
@@ -76,7 +76,7 @@ defmodule DevIdeWeb.NotificationsDrawerEvents do
   end
 
   @doc """
-  Live refresh from `DevIDE.Notifications` user-topic broadcasts
+  Live refresh from `Casein.Notifications` user-topic broadcasts
   (`:notification_created` / `:notification_updated`): the badge always
   updates; the inbox list refreshes only while the drawer is open.
   """

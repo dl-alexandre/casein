@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.WorkspacePaneController do
+defmodule CaseinWeb.API.WorkspacePaneController do
   @moduledoc """
   Tmux pane mutations for a workspace: create (split), select, split,
   resize, kill.
@@ -8,19 +8,19 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
   `tmux.pane_*` audit event, and returns the post-mutation topology.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  import DevIdeWeb.API.WorkspaceAPI
+  import CaseinWeb.API.WorkspaceAPI
 
-  alias DevIDE.Audit
-  alias DevIDE.Export
-  alias DevIDE.Terminals
+  alias Casein.Audit
+  alias Casein.Export
+  alias Casein.Terminals
 
   # Root every action in a fresh correlation context so the tmux.pane_* audit
-  # events these mutations emit are traced (DevIDE.Signals.EntryContext is the
+  # events these mutations emit are traced (Casein.Signals.EntryContext is the
   # LiveView analog; MCP tool calls get the same in each *_mcp.ex call_tool/3).
   def action(conn, _opts) do
-    DevIDE.Signals.Context.with_new(fn ->
+    Casein.Signals.Context.with_new(fn ->
       apply(__MODULE__, action_name(conn), [conn, conn.params])
     end)
   end

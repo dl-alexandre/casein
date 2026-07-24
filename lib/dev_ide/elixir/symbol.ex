@@ -1,4 +1,4 @@
-defmodule DevIDE.Elixir.Symbol do
+defmodule Casein.Elixir.Symbol do
   @moduledoc "A single Elixir symbol surfaced from a regex pass over a file."
 
   @type kind ::

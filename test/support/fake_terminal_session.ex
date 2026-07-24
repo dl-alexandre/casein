@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.FakeTerminalSession do
+defmodule Casein.Test.FakeTerminalSession do
   @moduledoc false
 
   use GenServer

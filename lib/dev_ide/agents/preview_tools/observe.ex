@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Observe do
+defmodule Casein.Agents.PreviewTools.Observe do
   @moduledoc "preview_observe."
 
   use Jido.Action,
@@ -11,14 +11,14 @@ defmodule DevIDE.Agents.PreviewTools.Observe do
       session_id: [type: {:or, [:integer, :string]}, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.session_only()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_observe")
 
   @impl Jido.Action

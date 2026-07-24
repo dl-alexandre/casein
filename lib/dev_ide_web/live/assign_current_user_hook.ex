@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.AssignCurrentUserHook do
+defmodule CaseinWeb.AssignCurrentUserHook do
   @moduledoc "LiveView on_mount hook: shares :current_user via assign_new/3 across workspace LiveViews."
 
   import Phoenix.Component
 
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias CaseinWeb.Plugs.AssignCurrentUser
 
   def on_mount(:default, _params, session, socket) do
     {:cont,

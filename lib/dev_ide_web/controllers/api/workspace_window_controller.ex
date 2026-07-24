@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.WorkspaceWindowController do
+defmodule CaseinWeb.API.WorkspaceWindowController do
   @moduledoc """
   Tmux window mutations for a workspace: create, select, rename, kill.
 
@@ -7,18 +7,18 @@ defmodule DevIdeWeb.API.WorkspaceWindowController do
   `tmux.window_*` audit event, and returns the post-mutation topology.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  import DevIdeWeb.API.WorkspaceAPI
+  import CaseinWeb.API.WorkspaceAPI
 
-  alias DevIDE.Audit
-  alias DevIDE.Export
+  alias Casein.Audit
+  alias Casein.Export
 
   # Root every action in a fresh correlation context so the tmux.window_* audit
-  # events these mutations emit are traced (DevIDE.Signals.EntryContext is the
+  # events these mutations emit are traced (Casein.Signals.EntryContext is the
   # LiveView analog; MCP tool calls get the same in each *_mcp.ex call_tool/3).
   def action(conn, _opts) do
-    DevIDE.Signals.Context.with_new(fn ->
+    Casein.Signals.Context.with_new(fn ->
       apply(__MODULE__, action_name(conn), [conn, conn.params])
     end)
   end

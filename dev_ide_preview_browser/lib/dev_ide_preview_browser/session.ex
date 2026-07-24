@@ -1,13 +1,13 @@
-defmodule DevIDEPreviewBrowser.Session do
+defmodule CaseinPreviewBrowser.Session do
   @moduledoc """
   GenServer that owns one browser backend runtime and its browser instances.
   """
 
   use GenServer
 
-  alias DevIDEPreviewBrowser.{Browser, Health}
+  alias CaseinPreviewBrowser.{Browser, Health}
 
-  @default_backend DevIDEPreviewBrowser.FakeBackend
+  @default_backend CaseinPreviewBrowser.FakeBackend
 
   defstruct [
     :backend,
@@ -60,7 +60,7 @@ defmodule DevIDEPreviewBrowser.Session do
     do: call_browser(browser, {:cdp, method, params})
 
   @spec screenshot(Browser.t(), keyword()) ::
-          {:ok, DevIDEPreviewBrowser.Screenshot.t()} | {:error, term()}
+          {:ok, CaseinPreviewBrowser.Screenshot.t()} | {:error, term()}
   def screenshot(%Browser{} = browser, opts \\ []), do: call_browser(browser, {:screenshot, opts})
 
   @spec close(Browser.t()) :: :ok | {:error, term()}

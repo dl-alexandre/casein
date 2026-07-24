@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   @moduledoc false
 
-  use DevIdeWeb, :html
-  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  use CaseinWeb, :html
+  import CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
-  alias DevIDE.Workspaces
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBar
+  alias Casein.Workspaces
+  alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
   def terminal_tab(assigns) do
     assigns =
@@ -150,7 +150,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
     >
       <%= if is_pid(@term) do %>
         <.live_component
-          module={DevIdeWeb.GhosttyTerminalComponent}
+          module={CaseinWeb.GhosttyTerminalComponent}
           id="desktop-workspace-powershell"
           term={@term}
           pty={@pty}
@@ -950,7 +950,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalPanel do
   end
 
   defp active_tmux_window_name(assigns) do
-    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
+    CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
 
   # Name of the currently attached session, used to label the mobile session

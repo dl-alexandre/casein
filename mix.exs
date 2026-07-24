@@ -1,4 +1,4 @@
-defmodule DevIDE.MixProject do
+defmodule Casein.MixProject do
   use Mix.Project
 
   def project do
@@ -43,7 +43,7 @@ defmodule DevIDE.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {DevIDE.Application, []},
+      mod: {Casein.Application, []},
       extra_applications:
         [:logger, :runtime_tools] ++ if(native_windows?(), do: [], else: [:erlexec])
     ]
@@ -337,8 +337,8 @@ defmodule DevIDE.MixProject do
   end
 
   defp write_release_metadata(release) do
-    metadata = DevIDE.Release.Metadata.build_for_assemble()
-    DevIDE.Release.Metadata.write!(release.path, metadata)
+    metadata = Casein.Release.Metadata.build_for_assemble()
+    Casein.Release.Metadata.write!(release.path, metadata)
     release
   end
 

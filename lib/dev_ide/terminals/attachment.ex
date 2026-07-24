@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Attachment do
+defmodule Casein.Terminals.Attachment do
   @moduledoc """
   Unified attachment handle for a terminal session.
 
@@ -7,12 +7,12 @@ defmodule DevIDE.Terminals.Attachment do
   The `:agent` kind has no backend and returns an error on open.
   """
 
-  alias DevIDE.Terminals.{
+  alias Casein.Terminals.{
     GhosttyRawAdapter,
     Session
   }
 
-  alias DevIDE.Terminals.Session.Info
+  alias Casein.Terminals.Session.Info
 
   defstruct [:kind, :backend, :pid, :ref, :cols, :rows]
 

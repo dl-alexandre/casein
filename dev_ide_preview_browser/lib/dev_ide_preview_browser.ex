@@ -1,13 +1,13 @@
-defmodule DevIDEPreviewBrowser do
+defmodule CaseinPreviewBrowser do
   @moduledoc """
   Public facade for supervised preview browser sessions.
 
-  This module is the stable Elixir boundary that DevIDE should eventually call
+  This module is the stable Elixir boundary that Casein should eventually call
   through an adapter. Browser backend details stay behind
-  `DevIDEPreviewBrowser.Backend`.
+  `CaseinPreviewBrowser.Backend`.
   """
 
-  alias DevIDEPreviewBrowser.{Browser, Screenshot, Session}
+  alias CaseinPreviewBrowser.{Browser, Screenshot, Session}
 
   @type browser :: Browser.t()
   @type observation :: map()
@@ -18,7 +18,7 @@ defmodule DevIDEPreviewBrowser do
 
   Options:
 
-    * `:backend` - backend module implementing `DevIDEPreviewBrowser.Backend`
+    * `:backend` - backend module implementing `CaseinPreviewBrowser.Backend`
     * `:event_owner` - process receiving `{:preview_browser, browser_id, event}`
       messages. Defaults to the caller.
   """

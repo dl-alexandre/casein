@@ -1,19 +1,19 @@
-defmodule DevIDE.PushTest do
+defmodule Casein.PushTest do
   @moduledoc """
   Covers the push pipeline end to end: a registered token receives a push when
   an alert-worthy audit event fires for its workspace — and nothing else does.
   Runs against the app-supervised `Registry`/`Dispatcher` with a stub provider.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.{Audit, Push}
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Notifications
+  alias Casein.{Audit, Push}
+  alias Casein.Mobile.UserObserver
+  alias Casein.Notifications
 
   setup do
     prev_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_apns = Application.get_env(:dev_ide, DevIDE.Push.APNSProvider)
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.TestProvider)
+    prev_apns = Application.get_env(:dev_ide, Casein.Push.APNSProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
     Application.put_env(:dev_ide, :push_test_pid, self())
 
     Push.Registry.clear()
@@ -30,16 +30,16 @@ defmodule DevIDE.PushTest do
         else: Application.delete_env(:dev_ide, :push_provider)
 
       if prev_apns,
-        do: Application.put_env(:dev_ide, DevIDE.Push.APNSProvider, prev_apns),
-        else: Application.delete_env(:dev_ide, DevIDE.Push.APNSProvider)
+        do: Application.put_env(:dev_ide, Casein.Push.APNSProvider, prev_apns),
+        else: Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
     end)
 
     :ok
   end
 
   test "native provider readiness loads platform provider before checking config" do
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.NativeProvider)
-    Application.delete_env(:dev_ide, DevIDE.Push.APNSProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
+    Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
 
     assert {:error, :no_team_id} = Push.ready_for?("ios")
   end

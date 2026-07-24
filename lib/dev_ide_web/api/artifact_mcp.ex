@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.API.ArtifactMCP do
+defmodule CaseinWeb.API.ArtifactMCP do
   @moduledoc """
-  MCP JSON-RPC handler for DevIDE artifact project tools.
+  MCP JSON-RPC handler for Casein artifact project tools.
 
   This surface lets external agents create, edit, list, serve, and snapshot
   artifact project worktrees. It returns preview handoff arguments instead of
@@ -8,14 +8,14 @@ defmodule DevIdeWeb.API.ArtifactMCP do
   returned `preview_open_arguments` when a visible preview is needed.
   """
 
-  @behaviour DevIdeWeb.API.MCPEnvelope
+  @behaviour CaseinWeb.API.MCPEnvelope
 
-  alias DevIDE.Agents.{ArtifactTools, MCPAudit, MCPError}
-  alias DevIDE.MCP.Scope
-  alias DevIdeWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
+  alias Casein.Agents.{ArtifactTools, MCPAudit, MCPError}
+  alias Casein.MCP.Scope
+  alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
-  @server_name "DevIDE Artifact MCP Server"
+  @server_name "Casein Artifact MCP Server"
 
   @type outcome :: MCPEnvelope.outcome()
 
@@ -29,7 +29,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
   @impl true
   def instructions(opts) do
     MCPWorkspaceScope.scoped_instructions(
-      "Artifact project tools for DevIDE workspaces. Use artifact_create to " <>
+      "Artifact project tools for Casein workspaces. Use artifact_create to " <>
         "create an isolated Git worktree-backed static/html artifact, artifact_update " <>
         "to iterate, artifact_list/artifact_get to rediscover state, artifact_serve " <>
         "to ensure its preview server is running, and artifact_snapshot to create " <>
@@ -71,7 +71,7 @@ defmodule DevIdeWeb.API.ArtifactMCP do
     audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         case Scope.resolve_tool_call(name, args,
                surface: :artifact,
                default_workspace_id: default_workspace_id,

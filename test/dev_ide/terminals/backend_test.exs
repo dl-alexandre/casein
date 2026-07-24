@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.BackendTest do
+defmodule Casein.Terminals.BackendTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.Backend
-  alias DevIDE.Terminals.Backends.Tmux, as: TmuxBackend
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Terminals.Backend
+  alias Casein.Terminals.Backends.Tmux, as: TmuxBackend
+  alias Casein.Terminals.Tmux
 
   defmodule ConfiguredBackend do
   end

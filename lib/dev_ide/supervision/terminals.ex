@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.Terminals do
+defmodule Casein.Supervision.Terminals do
   @moduledoc false
 
   use Supervisor
@@ -12,19 +12,19 @@ defmodule DevIDE.Supervision.Terminals do
     # Claim the host tmux server from a stable cwd BEFORE the Session
     # DynamicSupervisor (and, transitively, the Endpoint) can lazily spawn it
     # from a disposable worktree. Synchronous + never-raises by design.
-    DevIDE.Terminals.HostServerAnchor.ensure!()
+    Casein.Terminals.HostServerAnchor.ensure!()
 
     children = [
-      {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
-      {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
-      {Registry, keys: :unique, name: DevIDE.Terminals.TopologyRegistry},
-      {DynamicSupervisor, name: DevIDE.Terminals.TopologySupervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Casein.Terminals.Registry},
+      {DynamicSupervisor, name: Casein.Terminals.Supervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Casein.Terminals.TopologyRegistry},
+      {DynamicSupervisor, name: Casein.Terminals.TopologySupervisor, strategy: :one_for_one},
       # Flag-gated control-mode listener; child_spec returns :ignore when off.
       # Placed after HostServerAnchor.ensure!() above so attach-session never
       # races the server-spawn cwd claim.
-      DevIDE.Terminals.TmuxEvents,
-      DevIDE.Terminals.TmuxJanitor,
-      DevIDE.Terminals.TmuxWindowJanitor
+      Casein.Terminals.TmuxEvents,
+      Casein.Terminals.TmuxJanitor,
+      Casein.Terminals.TmuxWindowJanitor
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

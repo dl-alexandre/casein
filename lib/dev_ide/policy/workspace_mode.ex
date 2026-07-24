@@ -1,4 +1,4 @@
-defmodule DevIDE.Policy.WorkspaceMode do
+defmodule Casein.Policy.WorkspaceMode do
   @moduledoc """
   Workspace safety mode.
 

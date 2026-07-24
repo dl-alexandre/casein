@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
-  # Preview-pane web logic, delegated from DevIdeWeb.WorkspaceLive.Show.
+defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
+  # Preview-pane web logic, delegated from CaseinWeb.WorkspaceLive.Show.
   #
   # Since the preview runtime cutover, preview lifecycle flows through the
   # generic feature-pane pipeline:
   #
-  #   * registration/heartbeat/update/removal → DevIDE.Panes.Events
+  #   * registration/heartbeat/update/removal → Casein.Panes.Events
   #     (`apply_pane_event/2`, invoked from FilePaneEvents' {:pane_event, _}
   #     handler), which maintains the derived :preview_panes assign;
   #   * back/forward/refresh/close/recover → the generic "pane:input" event
@@ -27,17 +27,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.Agents
-  alias DevIDE.Panes
-  alias DevIDE.Panes.Pane
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.Agents
+  alias Casein.Panes
+  alias Casein.Panes.Pane
+  alias Casein.PreviewActivity
+  alias Casein.PreviewPanes
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("preview:open", %{"surface" => surface} = params, socket) do
     open_surface_preview(socket, surface, params)
@@ -156,7 +156,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   # Legacy "preview:" lifecycle messages still arrive (the registry
   # dual-broadcasts so its non-LiveView consumers keep working), but the
   # LiveView's preview state is maintained exclusively from the generic
-  # DevIDE.Panes.Events channel (`apply_pane_event/2`). No-op, don't crash.
+  # Casein.Panes.Events channel (`apply_pane_event/2`). No-op, don't crash.
   def handle_info({:preview_pane_registered, _payload}, socket), do: {:noreply, socket}
   def handle_info({:preview_pane_removed, _payload}, socket), do: {:noreply, socket}
 
@@ -378,7 +378,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   defp open_surface_preview(socket, surface, params) do
     workspace = socket.assigns.workspace
 
-    case DevIDE.Previews.get_surface(workspace, surface) do
+    case Casein.Previews.get_surface(workspace, surface) do
       %{url: url} when is_binary(url) ->
         case split_workspace_preview(socket, url, params) do
           {:ok, socket} ->
@@ -539,7 +539,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
       _ ->
         if is_binary(display_url) and display_url != "" do
-          DevIDE.Previews.extract_title_from_url(display_url)
+          Casein.Previews.extract_title_from_url(display_url)
         end
     end
   end
@@ -651,7 +651,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents do
   # workspace-alias match); a refused/unknown pane surfaces as the legacy
   # flash instead of the silent JS reply.
   defp legacy_preview_input(socket, params, type) do
-    case DevIdeWeb.WorkspaceLive.Show.FilePaneEvents.handle_event(
+    case CaseinWeb.WorkspaceLive.Show.FilePaneEvents.handle_event(
            "pane:input",
            Map.put(params, "type", type),
            socket

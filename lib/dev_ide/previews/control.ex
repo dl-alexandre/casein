@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Control do
+defmodule Casein.Previews.Control do
   @moduledoc """
   Agent-first preview control for workspace surfaces.
 
@@ -8,14 +8,14 @@ defmodule DevIDE.Previews.Control do
 
   import Ecto.Query
 
-  alias DevIDE.Audit
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewPanes
+  alias Casein.Audit
+  alias Casein.PreviewActivity
+  alias Casein.PreviewPanes
   alias PreviewCtl.{Runtime, Session}
-  alias DevIDE.Previews
-  alias DevIDE.Previews.Deps
+  alias Casein.Previews
+  alias Casein.Previews.Deps
 
-  alias DevIDE.Previews.{
+  alias Casein.Previews.{
     Artifacts,
     ControlAction,
     ControlObservation,
@@ -26,7 +26,7 @@ defmodule DevIDE.Previews.Control do
     WorkspaceContext
   }
 
-  alias DevIDE.Repo
+  alias Casein.Repo
 
   @type session_id :: integer()
 
@@ -428,7 +428,7 @@ defmodule DevIDE.Previews.Control do
 
   @doc "Latest console and network errors for a preview control session."
   @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
-  if DevIDE.Repo.Adapter.sqlite?() do
+  if Casein.Repo.Adapter.sqlite?() do
     def latest_errors(session_id) do
       by_kind =
         Repo.all(
@@ -780,7 +780,7 @@ defmodule DevIDE.Previews.Control do
 
   defp surface_key(%{surface_key: key}) when is_binary(key) and key != "", do: key
   defp surface_key(%{name: name}) when is_binary(name) and name != "", do: name
-  defp surface_key(%{url: url}) when is_binary(url), do: DevIDE.Previews.Identity.url_key(url)
+  defp surface_key(%{url: url}) when is_binary(url), do: Casein.Previews.Identity.url_key(url)
   defp surface_key(_surface), do: nil
 
   defp storage_profile_metadata(workspace_id, preview, opts) do
@@ -1152,7 +1152,7 @@ defmodule DevIDE.Previews.Control do
 
     for workspace_id <- Deps.impl(:workspaces).viewer_ids(preview.workspace_id) do
       Phoenix.PubSub.broadcast(
-        DevIDE.PubSub,
+        Casein.PubSub,
         "preview:" <> workspace_id,
         {:preview_opened, payload}
       )
@@ -1176,7 +1176,7 @@ defmodule DevIDE.Previews.Control do
 
       for workspace_id <- Deps.impl(:workspaces).viewer_ids(entry.preview.workspace_id) do
         Phoenix.PubSub.broadcast(
-          DevIDE.PubSub,
+          Casein.PubSub,
           "preview:" <> workspace_id,
           {:preview_observation, payload}
         )

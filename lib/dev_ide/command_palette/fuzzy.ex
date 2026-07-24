@@ -1,4 +1,4 @@
-defmodule DevIDE.CommandPalette.Fuzzy do
+defmodule Casein.CommandPalette.Fuzzy do
   @moduledoc """
   Cheap fuzzy scorer.
 

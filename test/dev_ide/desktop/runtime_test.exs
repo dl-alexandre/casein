@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.RuntimeTest do
+defmodule Casein.Desktop.RuntimeTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Desktop.Runtime
+  alias Casein.Desktop.Runtime
 
   @env_vars ~w(DEV_IDE_PROFILE DEV_IDE_DESKTOP_DATA_DIR DEV_IDE_DESKTOP_STATUS_PATH XDG_DATA_HOME LOCALAPPDATA APPDATA DATABASE_PATH SQLITE_DATABASE_PATH PORT)
 
@@ -46,7 +46,7 @@ defmodule DevIDE.Desktop.RuntimeTest do
     System.put_env("LOCALAPPDATA", "C:/Users/test/AppData/Local")
     System.put_env("XDG_DATA_HOME", "/home/test/.local/share")
 
-    assert Runtime.data_dir({:win32, :nt}) == "C:/Users/test/AppData/Local/DevIDE"
+    assert Runtime.data_dir({:win32, :nt}) == "C:/Users/test/AppData/Local/Casein"
     assert Runtime.data_dir({:unix, :linux}) == "/home/test/.local/share/devide"
 
     assert Runtime.data_dir({:unix, :darwin}) ==

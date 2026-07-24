@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.UnifiedDiff do
+defmodule Casein.Proposals.UnifiedDiff do
   @moduledoc """
   Tiny unified-diff header parser.
 
@@ -15,7 +15,7 @@ defmodule DevIDE.Proposals.UnifiedDiff do
   path escaped the root or was malformed.
   """
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
   @type range :: {non_neg_integer(), non_neg_integer()}
   @type hunk :: %{old_range: range(), new_range: range()}
@@ -145,7 +145,7 @@ defmodule DevIDE.Proposals.UnifiedDiff do
           {:halt, {:error, :invalid_path}}
 
         {kind, path} ->
-          case DevIDE.Files.PathSafety.resolve(root, path) do
+          case Casein.Files.PathSafety.resolve(root, path) do
             {:ok, _} -> {:cont, {:ok, [%{path: path, kind: kind, hunks: hunks} | acc]}}
             {:error, _} -> {:halt, {:error, :invalid_path}}
           end

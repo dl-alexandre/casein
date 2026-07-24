@@ -1,4 +1,4 @@
-defmodule DevIDE.WorkspaceSource.Local do
+defmodule Casein.WorkspaceSource.Local do
   @moduledoc """
   Workspace source that discovers workspaces as subdirectories of a
   configurable root.
@@ -20,9 +20,9 @@ defmodule DevIDE.WorkspaceSource.Local do
   external service required.
   """
 
-  @behaviour DevIDE.WorkspaceSource
+  @behaviour Casein.WorkspaceSource
 
-  alias DevIDE.Workspace
+  alias Casein.Workspace
   @home_workspace_name "home"
 
   @impl true
@@ -139,7 +139,7 @@ defmodule DevIDE.WorkspaceSource.Local do
 
   @impl true
   def detect_capabilities(workspace, root) do
-    base = DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+    base = Casein.Agents.LocalAdapter.detect_filesystem_only(root)
 
     # Enrich with Tidewave if the workspace provides explicit port info
     metadata = get_metadata(workspace)
@@ -149,7 +149,7 @@ defmodule DevIDE.WorkspaceSource.Local do
     tidewave =
       case metadata_value(metadata, :ports) do
         %{"tidewave" => port} when is_integer(port) and is_binary(domain_base) ->
-          %DevIDE.Agents.Capability{
+          %Casein.Agents.Capability{
             kind: :tidewave,
             status: :detected,
             source: :manager,
@@ -166,7 +166,7 @@ defmodule DevIDE.WorkspaceSource.Local do
     end)
   end
 
-  defp get_metadata(%DevIDE.Workspace{metadata: m}), do: m
+  defp get_metadata(%Casein.Workspace{metadata: m}), do: m
   defp get_metadata(%{metadata: m}), do: m
   defp get_metadata(_), do: %{}
 
@@ -176,7 +176,7 @@ defmodule DevIDE.WorkspaceSource.Local do
 
   defp metadata_value(_, _), do: nil
 
-  defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
+  defp local_tidewave_capability, do: Casein.Agents.TidewaveCapability.detect()
 
   @impl true
   def safe_host_path(%Workspace{path: nil}), do: {:error, :missing_path}

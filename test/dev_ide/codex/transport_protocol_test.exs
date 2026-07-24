@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.TransportProtocolTest do
+defmodule Casein.Codex.TransportProtocolTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Codex.{ExecProtocol, HookProtocol}
+  alias Casein.Codex.{ExecProtocol, HookProtocol}
 
   test "exec JSONL records normalize into lifecycle, item, and usage events" do
     assert {:ok, [thread]} =

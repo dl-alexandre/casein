@@ -1,14 +1,14 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
+defmodule CaseinWeb.WorkspaceLive.Show.PaletteItems do
   @moduledoc false
 
-  alias DevIDE.CommandPalette
-  alias DevIDE.CommandPalette.Fuzzy
-  alias DevIDE.CommandPalette.Item, as: PaletteItem
-  alias DevIDE.CommandPalette.Usage
-  alias DevIDE.Previews
-  alias DevIDE.Terminals
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
-  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
+  alias Casein.CommandPalette
+  alias Casein.CommandPalette.Fuzzy
+  alias Casein.CommandPalette.Item, as: PaletteItem
+  alias Casein.CommandPalette.Usage
+  alias Casein.Previews
+  alias Casein.Terminals
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
+  alias CaseinWeb.WorkspaceLive.Show.WindowTerminalMode
 
   @max_results 50
 
@@ -625,7 +625,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     end
   end
 
-  # One item per named preview surface (manager URLs, host DevIDE, and
+  # One item per named preview surface (manager URLs, host Casein, and
   # terminal-detected localhost:PORT candidates). Surfaces come from workspace
   # metadata, so listing them is cheap on the query path.
   defp preview_surface_items(socket, query, category) when category in [:all, :preview] do

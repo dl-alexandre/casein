@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.ArtifactProjectController do
+defmodule CaseinWeb.API.ArtifactProjectController do
   @moduledoc """
   Bearer-authenticated artifact project lifecycle mutations.
 
@@ -6,15 +6,15 @@ defmodule DevIdeWeb.API.ArtifactProjectController do
   filesystem work is attempted.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   require Logger
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Audit
+  alias Casein.ArtifactProjects
+  alias Casein.Audit
 
   def action(conn, _opts) do
-    DevIDE.Signals.Context.with_new(fn ->
+    Casein.Signals.Context.with_new(fn ->
       apply(__MODULE__, action_name(conn), [conn, conn.params])
     end)
   end

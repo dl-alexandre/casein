@@ -1,16 +1,16 @@
-defmodule DevIDE.Terminals.Templates.Executor do
+defmodule Casein.Terminals.Templates.Executor do
   @moduledoc """
-  Plans and executes saved DevIDE session template v2 exports.
+  Plans and executes saved Casein session template v2 exports.
 
   This is intentionally imperative: it creates new tmux windows and panes from
   the saved tree, sends captured command hints, then restores focus. It does
   not attempt declarative reconciliation against existing panes yet.
   """
 
-  alias DevIDE.Panes.Pane, as: PaneBehaviour
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxTopology
 
   @type saved :: map()
 
@@ -230,7 +230,7 @@ defmodule DevIDE.Terminals.Templates.Executor do
 
   defp execute_step(%{action: "new_window"} = step, state) do
     with {:ok, cwd} <- resolve_cwd(get_in(step, [:params, :cwd]), state.workspace_root),
-         # New windows and their panes inherit DevIDE terminal theme env from the tmux session.
+         # New windows and their panes inherit Casein terminal theme env from the tmux session.
          opts <- compact_opts(name: get_in(step, [:params, :name]), cwd: cwd),
          {:ok, window_id} <- state.tmux.new_window(state.session, opts),
          {:ok, root_pane_id} <- active_pane_for_window(state, window_id) do
@@ -360,11 +360,11 @@ defmodule DevIDE.Terminals.Templates.Executor do
 
   defp resolve_cwd("${workspace_root}/" <> relative, workspace_root)
        when is_binary(workspace_root) do
-    DevIDE.Files.PathSafety.resolve(workspace_root, relative)
+    Casein.Files.PathSafety.resolve(workspace_root, relative)
   end
 
   defp resolve_cwd(path, workspace_root) when is_binary(path) and is_binary(workspace_root) do
-    DevIDE.Files.PathSafety.resolve(workspace_root, path)
+    Casein.Files.PathSafety.resolve(workspace_root, path)
   end
 
   defp add_focus_step(steps, nil), do: steps

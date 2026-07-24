@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.ExecRunTest do
+defmodule Casein.Codex.ExecRunTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Codex.{Event, ExecRun, Store}
+  alias Casein.Codex.{Event, ExecRun, Store}
 
   @fixture Path.expand("../../fixtures/codex_exec/fake_codex.sh", __DIR__)
 

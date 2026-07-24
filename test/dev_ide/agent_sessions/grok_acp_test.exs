@@ -1,9 +1,9 @@
-defmodule DevIDE.AgentSessions.GrokACPTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.AgentSessions.GrokACPTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.AgentSessions.GrokACP
-  alias DevIDE.Agents.{Activity, AgentEvents}
-  alias DevIDE.Test.GrokACPFakeTransport
+  alias Casein.AgentSessions.GrokACP
+  alias Casein.Agents.{Activity, AgentEvents}
+  alias Casein.Test.GrokACPFakeTransport
 
   setup do
     Activity.clear()

@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.SessionTemplate.Window do
+defmodule Casein.Terminals.SessionTemplate.Window do
   @moduledoc """
   One tmux window in a session template.
   """
 
-  alias DevIDE.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Pane
 
   @type t :: %__MODULE__{
           id: String.t(),

@@ -1,4 +1,4 @@
-defmodule DevIDE.Factory do
+defmodule Casein.Factory do
   @moduledoc """
   Shared ExMachina factories for Ecto-backed domain rows.
 
@@ -10,10 +10,10 @@ defmodule DevIDE.Factory do
     top_level?: true,
     check: [in: false, out: false]
 
-  use ExMachina.Ecto, repo: DevIDE.Repo
+  use ExMachina.Ecto, repo: Casein.Repo
 
-  alias DevIDE.Audit.EctoAdapter, as: AuditEcto
-  alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceEcto
+  alias Casein.Audit.EctoAdapter, as: AuditEcto
+  alias Casein.Workspaces.State.EctoAdapter, as: WorkspaceEcto
 
   def workspace_record_factory do
     external_id = sequence(:workspace_external_id, &"ws-#{&1}")

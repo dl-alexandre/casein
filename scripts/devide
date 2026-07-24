@@ -51,9 +51,9 @@ invoke_release_cli() {
   export DEV_IDE_RELEASE_CLI=1
 
   if command -v mise >/dev/null 2>&1; then
-    (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'Casein.Release.CLI.main() |> then(&System.halt/1)')
   else
-    (cd "$DEVIDE_ROOT" && mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mix eval 'Casein.Release.CLI.main() |> then(&System.halt/1)')
   fi
 }
 

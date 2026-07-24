@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.ArtifactProtectionTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Previews.ArtifactProtectionTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.ArtifactProtection
-  alias DevIDE.Previews.Artifacts
+  alias Casein.Previews.ArtifactProtection
+  alias Casein.Previews.Artifacts
 
   setup do
     prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)

@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.TemplatePanels
+  alias CaseinWeb.WorkspaceLive.Show.TemplatePanels
 
   # ---------------------------------------------------------------------------
   # Pure / public helpers

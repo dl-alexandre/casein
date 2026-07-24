@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AnnotationTools.List do
+defmodule Casein.Agents.AnnotationTools.List do
   @moduledoc "annotation_list: workspace annotations with optional filters."
 
   use Jido.Action,
@@ -18,14 +18,14 @@ defmodule DevIDE.Agents.AnnotationTools.List do
       pane_id: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.AnnotationTools.{Helpers, Impl}
+  alias Casein.Agents.AnnotationTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.list_parameters()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("annotation_list")
 
   @impl Jido.Action

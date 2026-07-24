@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Osc133 do
+defmodule Casein.Terminals.Osc133 do
   @moduledoc """
   Streaming parser for OSC 133 shell-integration markers.
 

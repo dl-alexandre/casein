@@ -1,5 +1,5 @@
 defmodule TmuxCtl.ClientExtraTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
@@ -81,13 +81,13 @@ defmodule TmuxCtl.ClientExtraTest do
   # Force the shared-write guard to report "draining" deterministically.
   #
   # The production wiring routes `TmuxCtl.SharedWriteGuard` at the singleton
-  # `DevIDE.Deployment.Drain` GenServer (`config :tmux_ctl, :shared_write_guard`).
+  # `Casein.Deployment.Drain` GenServer (`config :tmux_ctl, :shared_write_guard`).
   # Driving these tests through the *live* Drain process makes them flaky: under
   # full-suite load that process is busy with `:track`/`:DOWN` traffic, its
   # `draining?/0` call can transiently time out, and `guard_shared_write/1`
   # deliberately fails open (`catch :exit -> fun.()`) — so the guarded write
   # slips through and the `refute_receive` trips. The Drain -> guard wiring is
-  # covered in `DevIDE.Deployment.DrainTest`; here we only need the Client to
+  # covered in `Casein.Deployment.DrainTest`; here we only need the Client to
   # honor a guard that says `:noop`, so we install a stub via the documented
   # config seam. `setup` restores the real guard on exit.
   defp stub_draining_guard,

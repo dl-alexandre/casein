@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.PaneCommand do
+defmodule Casein.Terminals.PaneCommand do
   @moduledoc """
   Structured command record extracted from terminal shell-integration marks.
   """

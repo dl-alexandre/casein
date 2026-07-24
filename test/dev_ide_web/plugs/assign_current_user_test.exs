@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.Plugs.AssignCurrentUserTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.AssignCurrentUserTest do
+  use Casein.TestCase, async: false
 
   import Plug.Test
 
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias CaseinWeb.Plugs.AssignCurrentUser
 
   @default_user %{id: "dev", username: "dev", email: "dev@local", role: :user}
 

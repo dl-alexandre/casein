@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.WorkspaceTemplateController do
+defmodule CaseinWeb.API.WorkspaceTemplateController do
   @moduledoc """
   Tmux session-template endpoints for a workspace: list, export (preview),
   save, apply (with dry-run/reconcile modes), update, duplicate, delete.
@@ -8,19 +8,19 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   `tmux.template_*` audit events.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  import DevIdeWeb.API.WorkspaceAPI
+  import CaseinWeb.API.WorkspaceAPI
 
-  alias DevIDE.Audit
-  alias DevIDE.Export
-  alias DevIDE.Terminals
+  alias Casein.Audit
+  alias Casein.Export
+  alias Casein.Terminals
 
   # Root every action in a fresh correlation context so the tmux.template_* audit
-  # events these mutations emit are traced (DevIDE.Signals.EntryContext is the
+  # events these mutations emit are traced (Casein.Signals.EntryContext is the
   # LiveView analog; MCP tool calls get the same in each *_mcp.ex call_tool/3).
   def action(conn, _opts) do
-    DevIDE.Signals.Context.with_new(fn ->
+    Casein.Signals.Context.with_new(fn ->
       apply(__MODULE__, action_name(conn), [conn, conn.params])
     end)
   end

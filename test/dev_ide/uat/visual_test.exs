@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.VisualTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.VisualTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.Visual
+  alias Casein.UAT.Visual
 
   defp tmp(content) do
     path = Path.join(System.tmp_dir!(), "uat-vis-#{System.unique_integer([:positive])}")

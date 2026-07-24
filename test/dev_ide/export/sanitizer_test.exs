@@ -1,6 +1,6 @@
-defmodule DevIDE.Export.SanitizerTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Export.Sanitizer
+defmodule Casein.Export.SanitizerTest do
+  use Casein.TestCase, async: true
+  alias Casein.Export.Sanitizer
 
   test "strips top-level secret keys regardless of case" do
     map = %{
@@ -54,7 +54,7 @@ defmodule DevIDE.Export.SanitizerTest do
   end
 
   test "scrubs arbitrary structs recursively instead of passing them through" do
-    struct = %DevIDE.TestSupport.ExportSecretStruct{
+    struct = %Casein.TestSupport.ExportSecretStruct{
       name: "visible",
       token: "secret",
       nested: %{"password" => "hidden", "host" => "localhost"}

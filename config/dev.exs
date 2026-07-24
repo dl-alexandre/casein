@@ -16,7 +16,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, DevIDE.Repo,
+  config :dev_ide, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
@@ -27,9 +27,9 @@ if sqlite_repo? do
     show_sensitive_data_on_connection_error: true
 else
   if System.get_env("DATABASE_URL") do
-    config :dev_ide, DevIDE.Repo, url: System.get_env("DATABASE_URL")
+    config :dev_ide, Casein.Repo, url: System.get_env("DATABASE_URL")
   else
-    config :dev_ide, DevIDE.Repo,
+    config :dev_ide, Casein.Repo,
       username: "postgres",
       password: "postgres",
       hostname: "localhost",
@@ -44,7 +44,7 @@ end
 # distinct from prod's `devide` (config/prod.exs) and test's `devide_test`
 # (config/test.exs). On the devbox the :4000 mix dev server and the release run
 # as the same user, so a shared label would collide on one socket. Resolved by
-# DevIDE.Terminals.TmuxServer.
+# Casein.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_dev"
 
 # Slice 3 rollout ladder step 1: event-driven tmux topology ON in dev.
@@ -140,7 +140,7 @@ devide_endpoint_config =
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
-config :dev_ide, DevIdeWeb.Endpoint, devide_endpoint_config
+config :dev_ide, CaseinWeb.Endpoint, devide_endpoint_config
 
 # ## SSL Support
 #
@@ -189,7 +189,7 @@ case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
 end
 
 # Reload browser tabs when matching files change.
-config :dev_ide, DevIdeWeb.Endpoint,
+config :dev_ide, CaseinWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
@@ -234,7 +234,7 @@ config :dev_ide, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 # Local workspace source root — `/tmp/...` is always writable by the
 # developer running `mix phx.server`, so the picker renders without
 # requiring `/workspaces` to exist with special perms. The default
-# `DevIDE.WorkspaceSource.Local` discovers subdirectories here as
+# `Casein.WorkspaceSource.Local` discovers subdirectories here as
 # workspaces.
 # Honors DEV_IDE_WORKSPACES_ROOT so an isolated preview instance
 # (scripts/dev-preview-instance.sh) can point at a persistent seed root.

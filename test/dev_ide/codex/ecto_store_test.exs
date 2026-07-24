@@ -1,8 +1,8 @@
-defmodule DevIDE.Codex.EctoStoreTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Codex.EctoStoreTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Codex.Event
-  alias DevIDE.Codex.Store.EctoAdapter
+  alias Casein.Codex.Event
+  alias Casein.Codex.Store.EctoAdapter
 
   test "persists canonical events and rebuilds query projections" do
     suffix = Integer.to_string(System.unique_integer([:positive]))

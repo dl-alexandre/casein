@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Type do
+defmodule Casein.Agents.PreviewTools.Type do
   @moduledoc "preview_type."
 
   use Jido.Action,
@@ -21,12 +21,12 @@ defmodule DevIDE.Agents.PreviewTools.Type do
       text: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -38,7 +38,7 @@ defmodule DevIDE.Agents.PreviewTools.Type do
         [:session_id, :text]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_type")
 
   @impl Jido.Action

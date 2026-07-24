@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.GateReport do
+defmodule Casein.Agents.TerminalTools.GateReport do
   @moduledoc "gate_report."
 
   use Jido.Action,
@@ -17,12 +17,12 @@ defmodule DevIDE.Agents.TerminalTools.GateReport do
       failed_step: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -36,7 +36,7 @@ defmodule DevIDE.Agents.TerminalTools.GateReport do
         ["workspace_id", "passed"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("gate_report")
 
   @impl Jido.Action

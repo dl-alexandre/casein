@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TemplatesReconcileExecutorTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Templates.ReconcileExecutor
-  alias DevIDE.Terminals.Templates.Reconciler
+  alias Casein.Terminals.Templates.ReconcileExecutor
+  alias Casein.Terminals.Templates.Reconciler
 
   setup do
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -32,7 +32,7 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
 
     assert {:ok, result} =
              ReconcileExecutor.execute("api-session", diff,
-               tmux: DevIDE.Test.FakeTmuxAdapter,
+               tmux: Casein.Test.FakeTmuxAdapter,
                workspace_root: root
              )
 
@@ -71,7 +71,7 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
 
     assert {:ok, result} =
              ReconcileExecutor.execute("api-session", diff,
-               tmux: DevIDE.Test.FakeTmuxAdapter,
+               tmux: Casein.Test.FakeTmuxAdapter,
                workspace_root: root
              )
 

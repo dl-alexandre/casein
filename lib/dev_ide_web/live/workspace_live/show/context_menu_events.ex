@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents do
-  # "ctx:*" handle_event clauses delegated from DevIdeWeb.WorkspaceLive.Show.
+defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuEvents do
+  # "ctx:*" handle_event clauses delegated from CaseinWeb.WorkspaceLive.Show.
   # The ContextMenu JS hook pushes ctx:open with a menu id, the trigger's
   # data-ctx-* payload, and viewport coordinates; the item list is rebuilt
   # server-side on every open (ContextMenu.items/3) so stale or fabricated
@@ -9,7 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents do
 
   import Phoenix.Component
 
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.ContextMenu
 
   def handle_event("ctx:open", %{"menu" => menu, "x" => x, "y" => y} = params, socket)
       when is_binary(menu) do

@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
+defmodule CaseinWeb.WorkspaceLive.AuditDrawerComponent do
   @moduledoc """
   Audit drawer as a stateful LiveComponent: owns the audit-event stream,
   the visible/deny/ledger counters, and the window filter.
@@ -13,14 +13,14 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
   itself when `open` transitions to true.
   """
 
-  use DevIdeWeb, :live_component
+  use CaseinWeb, :live_component
 
-  import DevIdeWeb.WorkspaceLive.Show.AuditDrawer, only: [audit_drawer: 1]
+  import CaseinWeb.WorkspaceLive.Show.AuditDrawer, only: [audit_drawer: 1]
 
-  alias DevIDE.Audit
-  alias DevIDE.Runs.Ledger
-  alias DevIdeWeb.WorkspaceLive.Show.AuditDrawer
-  alias DevIdeWeb.WorkspaceLive.Show.PanelGate
+  alias Casein.Audit
+  alias Casein.Runs.Ledger
+  alias CaseinWeb.WorkspaceLive.Show.AuditDrawer
+  alias CaseinWeb.WorkspaceLive.Show.PanelGate
 
   @max_audit_stream 50
 
@@ -101,7 +101,7 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponent do
   end
 
   # Drill into one event's causal chain (correlation stamped by
-  # DevIDE.Signals.Context). list_by_correlation reads the durable audit table
+  # Casein.Signals.Context). list_by_correlation reads the durable audit table
   # and returns the chain in causal order.
   def handle_event("audit_drawer:trace" = event, %{"correlation" => cid}, socket)
       when is_binary(cid) and cid != "" do

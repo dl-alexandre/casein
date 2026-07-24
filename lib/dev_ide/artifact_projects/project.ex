@@ -1,8 +1,8 @@
-defmodule DevIDE.ArtifactProjects.Project do
+defmodule Casein.ArtifactProjects.Project do
   @moduledoc """
   Runtime-backed generated artifact project.
 
-  Artifact project records are projected from `DevIDE.Runtimes.Runtime`
+  Artifact project records are projected from `Casein.Runtimes.Runtime`
   metadata. The generated source lives in a dedicated Git worktree; the runtime
   record owns preview server status and URL metadata.
   """

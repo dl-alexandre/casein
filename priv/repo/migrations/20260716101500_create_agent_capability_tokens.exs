@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateAgentCapabilityTokens do
+defmodule Casein.Repo.Migrations.CreateAgentCapabilityTokens do
   use Ecto.Migration
 
   def change do

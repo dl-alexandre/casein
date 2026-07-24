@@ -3,8 +3,8 @@ defmodule TerminalCtl do
   Generic terminal session primitives for the BEAM.
 
   Bounded replay buffers and PTY escape-sequence filtering live here.
-  DevIDE-specific session owners, attachments, and audit remain in
-  `DevIDE.Terminals.*`.
+  Casein-specific session owners, attachments, and audit remain in
+  `Casein.Terminals.*`.
   """
 
   use Boundary,

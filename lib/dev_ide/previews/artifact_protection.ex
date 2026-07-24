@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.ArtifactProtection do
+defmodule Casein.Previews.ArtifactProtection do
   @moduledoc """
   Tracks preview artifact filenames currently displayed in panes so prune logic
   does not evict screenshots a viewer is still showing.

@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.Plugs.ForwardAuthTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.ForwardAuthTest do
+  use Casein.TestCase, async: false
 
   import Plug.Test
   import Plug.Conn
 
-  alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
+  alias CaseinWeb.Plugs.{AssignCurrentUser, ForwardAuth}
 
   setup do
     prev = Application.get_env(:dev_ide, :forward_auth)
@@ -155,7 +155,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
   describe "assert_safe_listener_bind!/0" do
     setup do
       prev_forward = Application.get_env(:dev_ide, :forward_auth)
-      prev_endpoint = Application.get_env(:dev_ide, DevIdeWeb.Endpoint)
+      prev_endpoint = Application.get_env(:dev_ide, CaseinWeb.Endpoint)
 
       on_exit(fn ->
         case prev_forward do
@@ -164,8 +164,8 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
         end
 
         case prev_endpoint do
-          nil -> Application.delete_env(:dev_ide, DevIdeWeb.Endpoint)
-          val -> Application.put_env(:dev_ide, DevIdeWeb.Endpoint, val)
+          nil -> Application.delete_env(:dev_ide, CaseinWeb.Endpoint)
+          val -> Application.put_env(:dev_ide, CaseinWeb.Endpoint, val)
         end
       end)
 
@@ -174,14 +174,14 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
     test "passes when forward-auth is disabled" do
       Application.put_env(:dev_ide, :forward_auth, false)
-      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {0, 0, 0, 0}])
+      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0}])
 
       assert :ok = ForwardAuth.assert_safe_listener_bind!()
     end
 
     test "passes when forward-auth is enabled on loopback" do
       Application.put_env(:dev_ide, :forward_auth, true)
-      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {127, 0, 0, 1}])
+      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {127, 0, 0, 1}])
 
       assert :ok = ForwardAuth.assert_safe_listener_bind!()
       assert ForwardAuth.listener_bind_safe?()
@@ -189,7 +189,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
     test "raises when forward-auth is enabled outside loopback (fail closed in all envs)" do
       Application.put_env(:dev_ide, :forward_auth, true)
-      Application.put_env(:dev_ide, DevIdeWeb.Endpoint, http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}])
+      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}])
 
       assert_raise RuntimeError, ~r/Forward-auth is enabled/, fn ->
         ForwardAuth.assert_safe_listener_bind!()

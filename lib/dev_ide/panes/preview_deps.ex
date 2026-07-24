@@ -1,13 +1,13 @@
-defmodule DevIDE.Panes.PreviewDeps do
+defmodule Casein.Panes.PreviewDeps do
   @moduledoc """
-  Core-side impl of `DevIDE.Previews.Deps.PaneSink`.
+  Core-side impl of `Casein.Previews.Deps.PaneSink`.
 
-  Thin pure delegation to `DevIDE.Panes.Events.broadcast/1`.
+  Thin pure delegation to `Casein.Panes.Events.broadcast/1`.
   """
 
-  @behaviour DevIDE.Previews.Deps.PaneSink
+  @behaviour Casein.Previews.Deps.PaneSink
 
-  alias DevIDE.Panes.Events
+  alias Casein.Panes.Events
 
   @impl true
   def broadcast(event), do: Events.broadcast(event)

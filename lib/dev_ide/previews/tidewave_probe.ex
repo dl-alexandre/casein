@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.TidewaveProbe do
+defmodule Casein.Previews.TidewaveProbe do
   @moduledoc """
   Fingerprints listening localhost ports as Tidewave endpoints.
 
@@ -9,8 +9,8 @@ defmodule DevIDE.Previews.TidewaveProbe do
 
   require Logger
 
-  alias DevIDE.HostMode
-  alias DevIDE.Previews.Deps
+  alias Casein.HostMode
+  alias Casein.Previews.Deps
 
   @max_probes 3
   @probe_timeout_ms 1_200

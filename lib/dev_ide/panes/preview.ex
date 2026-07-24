@@ -1,15 +1,15 @@
-defmodule DevIDE.Panes.Preview do
+defmodule Casein.Panes.Preview do
   @moduledoc """
-  Deprecated alias for `DevIDE.Previews.Pane`.
+  Deprecated alias for `Casein.Previews.Pane`.
 
   Kept so the historical module atom remains resolvable if any pane-type
-  registry or external reference still points at `DevIDE.Panes.Preview`.
-  New code should use `DevIDE.Previews.Pane`.
+  registry or external reference still points at `Casein.Panes.Preview`.
+  New code should use `Casein.Previews.Pane`.
   """
 
-  @behaviour DevIDE.Panes.Pane
+  @behaviour Casein.Panes.Pane
 
-  alias DevIDE.Previews.Pane
+  alias Casein.Previews.Pane
 
   @impl true
   defdelegate attach(node, ctx), to: Pane

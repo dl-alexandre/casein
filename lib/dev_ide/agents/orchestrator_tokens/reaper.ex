@@ -1,18 +1,18 @@
-defmodule DevIDE.Agents.OrchestratorTokens.Reaper do
+defmodule Casein.Agents.OrchestratorTokens.Reaper do
   @moduledoc """
   Periodic sweeper for expired and revoked orchestrator API tokens.
 
-  Deletes rows past a retention grace so `DevIDE.Agents.OrchestratorTokens.verify/1`
+  Deletes rows past a retention grace so `Casein.Agents.OrchestratorTokens.verify/1`
   can still return `:expired` or `:revoked` for recently-lapsed credentials.
-  Mirrors `DevIDE.DeviceLinks.Reaper`.
+  Mirrors `Casein.DeviceLinks.Reaper`.
   """
 
   use GenServer
 
   import Ecto.Query
 
-  alias DevIDE.Agents.OrchestratorToken
-  alias DevIDE.Repo
+  alias Casein.Agents.OrchestratorToken
+  alias Casein.Repo
 
   @default_sweep_interval_ms 21_600_000
   @default_retention_seconds 2_592_000

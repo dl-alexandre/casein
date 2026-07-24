@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.GhosttyTerminalComponentTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.GhosttyTerminalComponentTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.GhosttyTerminalComponent
+  alias CaseinWeb.GhosttyTerminalComponent
 
   setup do
     {:ok, term} = start_supervised({Ghostty.Terminal, cols: 40, rows: 6, max_scrollback: 200})
@@ -14,7 +14,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> Phoenix.Component.assign(%{})
-      |> Map.put(:endpoint, DevIdeWeb.Endpoint)
+      |> Map.put(:endpoint, CaseinWeb.Endpoint)
 
     assigns =
       Map.merge(
@@ -56,7 +56,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     socket =
       %Phoenix.LiveView.Socket{}
       |> Phoenix.Component.assign(%{})
-      |> Map.put(:endpoint, DevIdeWeb.Endpoint)
+      |> Map.put(:endpoint, CaseinWeb.Endpoint)
 
     {:ok, socket} =
       GhosttyTerminalComponent.update(

@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.ControlAction do
+defmodule Casein.Previews.ControlAction do
   @moduledoc """
   Ecto schema for one audited control action (click, type, navigate, observe,
   screenshot, ...) performed against a `ControlSession`, with its params,
@@ -15,8 +15,8 @@ defmodule DevIDE.Previews.ControlAction do
     field :actor_id, :string
     field :assignment_id, :string
 
-    belongs_to :session, DevIDE.Previews.ControlSession
-    has_many :observations, DevIDE.Previews.ControlObservation, foreign_key: :action_id
+    belongs_to :session, Casein.Previews.ControlSession
+    has_many :observations, Casein.Previews.ControlObservation, foreign_key: :action_id
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

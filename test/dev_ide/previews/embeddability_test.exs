@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.EmbeddabilityTest do
+defmodule Casein.Previews.EmbeddabilityTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Previews.Embeddability
+  alias Casein.Previews.Embeddability
 
   describe "frame_blocked?/1" do
     test "X-Frame-Options DENY / SAMEORIGIN block" do

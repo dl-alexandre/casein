@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.MatcherTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.MatcherTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.Matcher
+  alias Casein.UAT.Matcher
 
   defp elements do
     [

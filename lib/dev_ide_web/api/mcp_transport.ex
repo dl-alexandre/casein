@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.MCPTransport do
+defmodule CaseinWeb.API.MCPTransport do
   @moduledoc """
   Shared HTTP plumbing for the MCP Streamable HTTP transport, used by the
   preview, terminal, and artifact controllers.
@@ -9,7 +9,7 @@ defmodule DevIdeWeb.API.MCPTransport do
     * `initialize` issues an `Mcp-Session-Id` (response header).
     * A client opens a server→client SSE channel with `GET` carrying that header;
       the server pushes `notifications/*` (e.g. progress) to it via
-      `DevIDE.Agents.MCPSessions.notify/2`.
+      `Casein.Agents.MCPSessions.notify/2`.
     * `DELETE` tears the session down.
 
   Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
@@ -21,7 +21,7 @@ defmodule DevIdeWeb.API.MCPTransport do
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
 
-  alias DevIDE.Agents.MCPSessions
+  alias Casein.Agents.MCPSessions
 
   @session_header "mcp-session-id"
   @error_version "mcp-streamable-http-v1"

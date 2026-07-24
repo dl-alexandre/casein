@@ -1,10 +1,10 @@
-defmodule DevIDE.DeviceLinksTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.DeviceLinksTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.DeviceLinks
-  alias DevIDE.DeviceLinks.Token
-  alias DevIDE.Workspace
-  alias DevIDE.Repo
+  alias Casein.DeviceLinks
+  alias Casein.DeviceLinks.Token
+  alias Casein.Workspace
+  alias Casein.Repo
 
   defmodule OwnedSource do
     def get("missing", _auth), do: {:error, :not_found}

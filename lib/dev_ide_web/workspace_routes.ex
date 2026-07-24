@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceRoutes do
+defmodule CaseinWeb.WorkspaceRoutes do
   @moduledoc """
   Canonical workspace UI routes.
 
@@ -7,10 +7,10 @@ defmodule DevIdeWeb.WorkspaceRoutes do
   opaque `/workspaces/:id` URLs even when a workspace has a local host path.
   """
 
-  use DevIdeWeb, :verified_routes
+  use CaseinWeb, :verified_routes
 
-  alias DevIDE.Workspaces.PathResolver
-  alias DevIdeWeb.Plugs.ForwardAuth
+  alias Casein.Workspaces.PathResolver
+  alias CaseinWeb.Plugs.ForwardAuth
 
   @spec path_routes_trusted?() :: boolean()
   def path_routes_trusted? do

@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.AppServerRealTest do
+defmodule Casein.Codex.AppServerRealTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Codex.AppServer
+  alias Casein.Codex.AppServer
 
   @codex_executable System.find_executable("codex")
 

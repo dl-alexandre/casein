@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.Theme do
+defmodule Casein.Terminals.Theme do
   @moduledoc """
-  Renderer-first terminal themes for DevIDE raw Ghostty panes.
+  Renderer-first terminal themes for Casein raw Ghostty panes.
 
   Loads optional Ghostty-style `ghostty.conf` files (e.g. omarchy theme exports),
   falls back to built-in Catppuccin Mocha/Latte presets, and supplies:
@@ -12,7 +12,7 @@ defmodule DevIDE.Terminals.Theme do
   @type scheme :: :dark | :light
   @type rgb :: {byte(), byte(), byte()}
 
-  alias DevIDE.Terminals.Theme.Builtins
+  alias Casein.Terminals.Theme.Builtins
 
   defstruct [:id, :chrome, :palette, :background, :foreground, :cursor]
 
@@ -164,7 +164,7 @@ defmodule DevIDE.Terminals.Theme do
 
   @doc """
   Rewrites tmux 3.6 client theme reports (`\\e[?997;1n` / `\\e[?997;2n`) to match
-  the active DevIDE scheme. Passthrough when no `997` sequence is present.
+  the active Casein scheme. Passthrough when no `997` sequence is present.
   """
   @spec rewrite_theme_reports(binary(), scheme()) :: binary()
   def rewrite_theme_reports(data, scheme) when is_binary(data) and scheme in [:dark, :light] do
@@ -193,7 +193,7 @@ defmodule DevIDE.Terminals.Theme do
 
   @doc """
   Rewrites libghostty OSC color query responses so shell programs see the
-  active DevIDE theme instead of the renderer baseline palette.
+  active Casein theme instead of the renderer baseline palette.
   """
   @spec rewrite_pty_write(binary(), %__MODULE__{}) :: binary()
   def rewrite_pty_write(data, %__MODULE__{} = theme) when is_binary(data) do

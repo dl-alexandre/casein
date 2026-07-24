@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.WorkspaceLiveTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceLiveTest do
+  use CaseinWeb.ConnCase, async: false
 
   # Not imported: `Phoenix.ChannelTest.connect/2` collides with ConnTest's
   # HTTP CONNECT verb macro and `push/3` with `Plug.Conn.push/3` (both
@@ -7,25 +7,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   require Phoenix.ChannelTest
   import Phoenix.LiveViewTest
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Terminals.Templates
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.ArtifactProjects
+  alias Casein.Audit
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Runs.Ledger
+  alias Casein.Terminals.Templates
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
-    alpha_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix("alpha")
+    alpha_tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix("alpha")
 
     kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
     MemoryAdapter.clear()
     Audit.clear()
-    DevIDE.Runtimes.clear()
+    Casein.Runtimes.clear()
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Audit.clear()
-      DevIDE.Runtimes.clear()
+      Casein.Runtimes.clear()
       kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
     end)
 
@@ -65,12 +65,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
-    extra_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev-extra")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    extra_tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev-extra")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -207,7 +207,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -459,7 +459,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     help_html = render(view)
     assert help_html =~ "devide agent auth signin codex"
     assert help_html =~ "devide agent auth signin claude"
-    assert help_html =~ "DevIDE detects the owner"
+    assert help_html =~ "Casein detects the owner"
     assert help_html =~ "devide agent auth status"
     # Inline next/prev window chips lived on the removed dropdown; cycling uses
     # hidden leader targets and the always-visible tab bar.
@@ -595,11 +595,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "leader-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -646,7 +646,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -743,7 +743,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     Application.put_env(:dev_ide, :current_user, %{
       id: "alice",
@@ -752,14 +752,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       role: :owner
     })
 
-    current_tmux = DevIDE.Terminals.Tmux.session_name("alpha", "u-alice")
-    owned_tmux = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned")
-    owned_tmux2 = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-2")
+    current_tmux = Casein.Terminals.Tmux.session_name("alpha", "u-alice")
+    owned_tmux = Casein.Terminals.Tmux.session_name("alice-owned", "u-alice-owned")
+    owned_tmux2 = Casein.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-2")
     # The owned workspace's landing (home) shell folds away in the cross-workspace
     # tree; a newer home shell keeps the two `u-alice-owned*` shells as real,
     # navigable folded sessions to assert on.
-    owned_home_tmux = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-home")
-    teammate_tmux = DevIDE.Terminals.Tmux.session_name("bob-owned", "u-bob-owned")
+    owned_home_tmux = Casein.Terminals.Tmux.session_name("alice-owned", "u-alice-owned-home")
+    teammate_tmux = Casein.Terminals.Tmux.session_name("bob-owned", "u-bob-owned")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -779,7 +779,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     _ =
-      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+      Casein.Workspaces.State.sync(%Casein.Workspace{
         id: "owned-ws",
         name: "alice-owned",
         user: "alice",
@@ -789,7 +789,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       })
 
     _ =
-      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+      Casein.Workspaces.State.sync(%Casein.Workspace{
         id: "teammate-ws",
         name: "bob-owned",
         user: "bob",
@@ -807,7 +807,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn conn ->
       assert conn.method == "GET"
       assert conn.request_path == "/api/workspaces/ws-1/status"
       workspace_payload(conn, workspace_path, "alpha", "running", "alice")
@@ -859,16 +859,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha"
     current_sid = "u-dev-abcd1234"
     stale_sid = "u-dev-deadbeef"
     explicit_sid = "u-dev-extra"
-    current_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, current_sid)
-    stale_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, stale_sid)
-    explicit_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, explicit_sid)
+    current_tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, current_sid)
+    stale_tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, stale_sid)
+    explicit_tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, explicit_sid)
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -946,7 +946,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", stale_sid}, nil)
+    {:ok, _} = Registry.register(Casein.Terminals.Registry, {"ws-1", stale_sid}, nil)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -957,7 +957,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -982,7 +982,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # A session appearing elsewhere reaches this viewer via the directory
     # broadcast — no click on the refresh button involved.
     second_sid = "u-dev-second"
-    second_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, second_sid)
+    second_tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, second_sid)
 
     TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, second_tmux_session, [
@@ -998,7 +998,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ])
     end)
 
-    _ = DevIDE.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
+    _ = Casein.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
 
     assert has_element?(view, "[phx-value-session-id='#{second_sid}']")
     assert has_element?(view, "[phx-value-session-id='#{stale_sid}']")
@@ -1018,11 +1018,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "stale-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1059,7 +1059,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
+    {:ok, _} = Registry.register(Casein.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1070,7 +1070,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -1110,11 +1110,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "dead-link-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1160,7 +1160,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -1198,11 +1198,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "pane-link-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1234,7 +1234,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -1269,12 +1269,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
-    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     workspace_name = "raw-stale-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1311,7 +1311,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
+    {:ok, _} = Registry.register(Casein.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1322,7 +1322,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -1357,8 +1357,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1366,7 +1366,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux_adapter)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, "alpha", "stopped")
 
@@ -1396,8 +1396,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1405,7 +1405,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux_adapter)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, "alpha", "stopped")
 
@@ -1447,14 +1447,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
 
-    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -1500,7 +1500,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -1559,7 +1559,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     on_exit(fn -> File.rm_rf(workspace_root) end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -1597,11 +1597,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1646,7 +1646,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -1742,11 +1742,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
@@ -1791,7 +1791,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 
@@ -2014,7 +2014,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:forward_auth, prev_forward_auth)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["viewer@example.com"]
         workspace_payload(conn, workspace_path, "alpha", "running", "viewer")
@@ -2047,7 +2047,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2088,7 +2088,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2127,7 +2127,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2192,7 +2192,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     pane = tmux_pane_with_id("%1", path: workspace_path)
     sync_fake_tmux_topology_state(tmux_session, window, [pane])
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2203,7 +2203,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     on_exit(fn ->
-      DevIDE.PreviewPanes.clear()
+      Casein.PreviewPanes.clear()
       TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
       TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
       File.rm_rf(workspace_root)
@@ -2212,7 +2212,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, _record} =
-      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+      Casein.Workspaces.State.sync(%Casein.Workspace{
         id: "ws-1",
         name: "alpha",
         user: "dev",
@@ -2224,7 +2224,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     url = "https://devide.example.test/assets/whitehouse-preview.html"
 
     assert {:ok, registration} =
-             DevIDE.PreviewPanes.register(%{
+             Casein.PreviewPanes.register(%{
                "pane_id" => "%1",
                "url" => url,
                "workspace_id" => "ws-1",
@@ -2233,7 +2233,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              })
 
     assert registration.workspace_id == "ws-1"
-    assert [%{pane_id: "%1"}] = DevIDE.PreviewPanes.list_for_workspace_exact("ws-1")
+    assert [%{pane_id: "%1"}] = Casein.PreviewPanes.list_for_workspace_exact("ws-1")
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
@@ -2248,14 +2248,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     sync_fake_tmux_topology_state(tmux_session, window, [pane, live_pane])
 
     assert {:ok, live_registration} =
-             DevIDE.PreviewPanes.register(%{
+             Casein.PreviewPanes.register(%{
                "pane_id" => "%2",
                "url" => live_url,
                "cwd" => workspace_path,
                "tmux_session" => tmux_session
              })
 
-    assert DevIDE.Workspaces.Aliases.linked?(
+    assert Casein.Workspaces.Aliases.linked?(
              live_registration.workspace_id,
              registration.workspace_id
            )
@@ -2289,7 +2289,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2326,7 +2326,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2348,7 +2348,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {DevIDE.Terminals.TmuxTopology,
+      {Casein.Terminals.TmuxTopology,
        {:updated,
         %{
           session: session,
@@ -2390,7 +2390,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2417,7 +2417,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {DevIDE.Terminals.TmuxTopology,
+      {Casein.Terminals.TmuxTopology,
        {:updated,
         %{
           session: session,
@@ -2464,7 +2464,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {DevIDE.Terminals.TmuxTopology,
+      {Casein.Terminals.TmuxTopology,
        {:updated,
         %{
           session: session,
@@ -2496,7 +2496,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-opened-msg")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
-    _ = DevIDE.PreviewControl.Registry.clear()
+    _ = Casein.PreviewControl.Registry.clear()
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
@@ -2504,10 +2504,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     on_exit(fn ->
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
-      _ = DevIDE.PreviewControl.Registry.clear()
+      _ = Casein.PreviewControl.Registry.clear()
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2548,7 +2548,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2562,7 +2562,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert {:ok, %{request_id: iframe_request_id}} =
-             DevIDE.Agents.PreviewTools.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
+             Casein.Agents.PreviewTools.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
                actor_id: "agent-1"
              )
 
@@ -2574,7 +2574,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     assert {:ok, %{request_id: page_request_id}} =
-             DevIDE.Agents.PreviewTools.BrowserControl.reload_page(%{id: "ws-1"},
+             Casein.Agents.PreviewTools.BrowserControl.reload_page(%{id: "ws-1"},
                actor_id: "agent-1"
              )
 
@@ -2606,7 +2606,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2627,7 +2627,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {DevIDE.Terminals.TmuxTopology,
+      {Casein.Terminals.TmuxTopology,
        {:updated,
         %{
           session: tmux_session,
@@ -2643,7 +2643,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     broadcast_preview_pane(view, "%2", "http://localhost:5173")
 
     assert {:ok, %{request_id: request_id}} =
-             DevIDE.Agents.PreviewTools.BrowserControl.focus_preview_pane(
+             Casein.Agents.PreviewTools.BrowserControl.focus_preview_pane(
                %{id: "ws-1"},
                tmux_session,
                "%2",
@@ -2678,7 +2678,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2716,7 +2716,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:artifact_projects_root, prev_artifact_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2763,7 +2763,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2788,14 +2788,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+    {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
     end)
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path)
 
@@ -2809,18 +2809,18 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
     render_click(view, "switch_tab", %{"tab" => "run"})
 
-    assert DevIDE.Workspaces.agent_write_unlock_for("ws-1") == :inactive
+    assert Casein.Workspaces.agent_write_unlock_for("ws-1") == :inactive
 
     html = render_submit(view, "workspace:grant_agent_write_unlock", %{"minutes" => "30"})
     assert html =~ "Agent write unlocked for 30 min."
     assert has_element?(view, "#agent-write-unlock-revoke")
 
-    assert {:active, _until, _by} = DevIDE.Workspaces.agent_write_unlock_for("ws-1")
+    assert {:active, _until, _by} = Casein.Workspaces.agent_write_unlock_for("ws-1")
 
     html = render_click(view, "workspace:revoke_agent_write_unlock", %{})
     assert html =~ "Revoked."
     refute has_element?(view, "#agent-write-unlock-revoke")
-    assert DevIDE.Workspaces.agent_write_unlock_for("ws-1") == :inactive
+    assert Casein.Workspaces.agent_write_unlock_for("ws-1") == :inactive
   end
 
   defp workspace_index_payload(name) do
@@ -2853,7 +2853,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   # Preview lifecycle reaches the LiveView through the generic
-  # DevIDE.Panes.Events channel since the preview runtime cutover.
+  # Casein.Panes.Events channel since the preview runtime cutover.
   defp broadcast_preview_pane(view, pane_id, url, workspace_id \\ "ws-1") do
     send(
       view.pid,
@@ -2901,7 +2901,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(
       view.pid,
-      {DevIDE.Terminals.TmuxTopology,
+      {Casein.Terminals.TmuxTopology,
        {:updated,
         %{
           session: session,
@@ -2919,7 +2919,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   defp sync_fake_tmux_topology_state(session, window, panes) do
     case Application.get_env(:dev_ide, :tmux_adapter) do
-      adapter when adapter in [TmuxCtl.Test.FakeAdapter, DevIDE.Test.FakeTmuxAdapter] ->
+      adapter when adapter in [TmuxCtl.Test.FakeAdapter, Casein.Test.FakeTmuxAdapter] ->
         TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => [window]})
         TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{session => panes})
 
@@ -3009,7 +3009,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     File.write!(Path.join(path, "README.md"), "# Workspace\n")
     git!(path, ["init", "--initial-branch=main"])
     git!(path, ["config", "user.email", "test@example.com"])
-    git!(path, ["config", "user.name", "DevIDE Test"])
+    git!(path, ["config", "user.name", "Casein Test"])
     git!(path, ["add", "README.md"])
     git!(path, ["commit", "-m", "init"])
   end
@@ -3032,7 +3032,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
          {sessions, 0} <-
            System.cmd(
              executable,
-             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
+             Casein.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
              stderr_to_stdout: true
            ) do
       sessions
@@ -3050,7 +3050,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   defp kill_tmux_session(session) when is_binary(session) do
     _ =
-      System.cmd("tmux", DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+      System.cmd("tmux", Casein.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
         stderr_to_stdout: true
       )
 

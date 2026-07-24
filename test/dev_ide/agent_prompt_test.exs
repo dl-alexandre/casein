@@ -1,7 +1,7 @@
-defmodule DevIDE.AgentPromptTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.AgentPromptTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.AgentPrompt
+  alias Casein.AgentPrompt
 
   describe "chunks/2" do
     test "returns no chunks for empty text" do

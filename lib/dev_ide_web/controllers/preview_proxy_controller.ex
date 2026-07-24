@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.PreviewProxyController do
+defmodule CaseinWeb.PreviewProxyController do
   @moduledoc """
   Reverse proxy that makes a workspace's own loopback dev server embeddable in
   a preview iframe even when it sends frame-blocking headers.
 
-  Instead of degrading a frame-blocked app to a static screenshot, DevIDE
+  Instead of degrading a frame-blocked app to a static screenshot, Casein
   fetches it server-side and re-serves it from its own origin with
   `x-frame-options` / CSP `frame-ancestors` stripped, so it stays live and
   interactive inside the preview pane.
@@ -27,7 +27,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   ## HMR / WebSocket tunneling
 
   When `:preview_proxy_hmr` is enabled, the proxy additionally tunnels WebSocket
-  upgrades to the workspace dev server (`DevIdeWeb.PreviewProxy.WebSocketBridge`,
+  upgrades to the workspace dev server (`CaseinWeb.PreviewProxy.WebSocketBridge`,
   via `Mint.WebSocket`) and injects an import map + WebSocket-reroute shim plus
   loopback-origin rewriting (see `Rewrite.inject_hmr_assets/2` and
   `Rewrite.rewrite_loopback_origins/2`) so Vite / webpack HMR and Phoenix
@@ -35,15 +35,15 @@ defmodule DevIdeWeb.PreviewProxyController do
   owner/SSRF gate, is capped per workspace, and is **disabled by default** —
   flag-off behavior is exactly the static/SSR proxy above, unchanged.
   """
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   require Logger
 
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews
-  alias DevIDE.Workspaces
-  alias DevIdeWeb.PreviewProxy.Rewrite
-  alias DevIdeWeb.PreviewProxy.WebSocketBridge
+  alias Casein.PreviewPanes
+  alias Casein.Previews
+  alias Casein.Workspaces
+  alias CaseinWeb.PreviewProxy.Rewrite
+  alias CaseinWeb.PreviewProxy.WebSocketBridge
 
   # Don't JSON/term-decode the body (we forward bytes), don't follow redirects
   # (the browser should see them, rewritten), bounded timeouts. Decompression
@@ -222,8 +222,8 @@ defmodule DevIdeWeb.PreviewProxyController do
 
   # sobelow_skip ["XSS.SendResp"]
   # Re-serving the upstream body verbatim IS the feature: the user's own,
-  # authorized loopback app rendered live. The body is never DevIDE-trusted
-  # markup, and the response carries no DevIDE session/CSP authority (see the
+  # authorized loopback app rendered live. The body is never Casein-trusted
+  # markup, and the response carries no Casein session/CSP authority (see the
   # :preview_proxy pipeline) — it runs as the proxied app's own document.
   defp fetch_and_stream(conn, url, workspace_id, port) do
     maybe_log_transport_request(conn, url, workspace_id, port)

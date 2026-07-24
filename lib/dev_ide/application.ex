@@ -1,11 +1,11 @@
-defmodule DevIDE.Application do
+defmodule Casein.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
 
   use Boundary,
     top_level?: true,
-    deps: [DevIDE, DevIDE.Repo, DevIdeWeb],
+    deps: [Casein, Casein.Repo, CaseinWeb],
     exports: []
 
   use Application
@@ -14,60 +14,60 @@ defmodule DevIDE.Application do
 
   @impl true
   def start(_type, _args) do
-    DevIdeWeb.Plugs.ForwardAuth.assert_safe_listener_bind!()
+    CaseinWeb.Plugs.ForwardAuth.assert_safe_listener_bind!()
     unless desktop_powershell?() or native_windows?(), do: configure_tmux_ctl!()
     configure_preview_ctl!()
     configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
-    DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
-    DevIDE.Terminals.CommandLog.ensure_table!()
-    DevIDE.Terminals.ScrollbackArchive.ensure_table!()
-    DevIDE.Terminals.TemplatePreference.ensure_table!()
-    DevIDE.Terminals.SessionRecovery.ensure_table!()
+    Casein.Terminals.WorkspaceAccessCache.ensure_table!()
+    Casein.Terminals.CommandLog.ensure_table!()
+    Casein.Terminals.ScrollbackArchive.ensure_table!()
+    Casein.Terminals.TemplatePreference.ensure_table!()
+    Casein.Terminals.SessionRecovery.ensure_table!()
 
     # jido_signal extensions self-register only via @after_compile, which
     # never fires for precompiled deps — without this, the trace extension
-    # is unknown at runtime and DevIDE.Signals.from_audit_event/1 raises.
+    # is unknown at runtime and Casein.Signals.from_audit_event/1 raises.
     _ = Jido.Signal.Ext.Registry.register(Jido.Signal.Ext.Trace)
 
     children =
       [
-        DevIdeWeb.Telemetry,
-        DevIDE.Repo,
+        CaseinWeb.Telemetry,
+        Casein.Repo,
         {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
-        {Phoenix.PubSub, name: DevIDE.PubSub},
-        DevIDE.Desktop.LaunchReplayStore,
-        DevIDE.Supervision.PlatformServices,
-        DevIDE.Supervision.StateStores,
-        DevIDE.Supervision.Terminals,
-        DevIDE.Supervision.Commands,
-        DevIDE.Supervision.Agents,
-        DevIDE.Supervision.Operator,
-        DevIDE.Supervision.Previews,
+        {Phoenix.PubSub, name: Casein.PubSub},
+        Casein.Desktop.LaunchReplayStore,
+        Casein.Supervision.PlatformServices,
+        Casein.Supervision.StateStores,
+        Casein.Supervision.Terminals,
+        Casein.Supervision.Commands,
+        Casein.Supervision.Agents,
+        Casein.Supervision.Operator,
+        Casein.Supervision.Previews,
         PreviewCtl.Playwright.Bridge,
-        DevIDE.Supervision.Deployment,
-        DevIdeWeb.Endpoint
+        Casein.Supervision.Deployment,
+        CaseinWeb.Endpoint
       ] ++ desktop_terminal_sessions() ++ preview_tidewave_listener() ++ desktop_status()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: DevIDE.Supervisor]
+    opts = [strategy: :one_for_one, name: Casein.Supervisor]
     res = Supervisor.start_link(children, opts)
-    _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
+    _ = Task.start(fn -> Casein.Files.Janitor.run_on_boot() end)
 
     res
   end
 
   defp desktop_powershell? do
-    DevIDE.Desktop.TerminalBackend.native_session?(desktop_mode?())
+    Casein.Desktop.TerminalBackend.native_session?(desktop_mode?())
   end
 
   defp desktop_terminal_sessions do
     if desktop_powershell?() do
       [
-        {Registry, keys: :unique, name: DevIDE.Desktop.PowerShellSession.Registry},
+        {Registry, keys: :unique, name: Casein.Desktop.PowerShellSession.Registry},
         {DynamicSupervisor,
-         strategy: :one_for_one, name: DevIDE.Desktop.PowerShellSession.Supervisor}
+         strategy: :one_for_one, name: Casein.Desktop.PowerShellSession.Supervisor}
       ]
     else
       []
@@ -78,7 +78,7 @@ defmodule DevIDE.Application do
   # (DEVIDE_HTTP_SOCKET, wired in runtime.exs) so the Caddy preview router can
   # dial them collision-free, mirroring the live /run/devide/current.sock model.
   # But the Tidewave agent integration dials Tidewave over a *loopback TCP* URL
-  # (http://127.0.0.1:<port>/tidewave/mcp — see DevIDE.Agents.TidewaveMCP), which
+  # (http://127.0.0.1:<port>/tidewave/mcp — see Casein.Agents.TidewaveMCP), which
   # a unix socket can't serve. So when DEVIDE_PREVIEW_TIDEWAVE_PORT is set we run
   # a SECOND Bandit listener on that loopback port serving the same endpoint plug
   # (Tidewave is `plug Tidewave` in the endpoint), giving Tidewave its TCP front
@@ -90,7 +90,7 @@ defmodule DevIDE.Application do
          {port, ""} when port > 0 and port < 65_536 <- Integer.parse(raw) do
       [
         Supervisor.child_spec(
-          {Bandit, plug: DevIdeWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: port},
+          {Bandit, plug: CaseinWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: port},
           id: :preview_tidewave_listener
         )
       ]
@@ -120,14 +120,14 @@ defmodule DevIDE.Application do
       Application.put_env(:tmux_ctl, key, value)
     end
 
-    # Publish PATH (incl. the DevIDE shim dirs) synchronously so the first
+    # Publish PATH (incl. the Casein shim dirs) synchronously so the first
     # window sees the shim dirs on PATH, then heal the shim FILES off the boot
     # path: ensure_best_effort/0 may shell out to install-agent-shims.sh, and a
     # stalled install must not block start/2 before the Endpoint/Repo come up.
     # Per-pane shell integration and PaneEnv re-heal, so async is a head start,
     # not a correctness dependency.
-    Application.put_env(:tmux_ctl, :terminal_env, DevIDE.Terminals.Shims.env())
-    Task.start(fn -> DevIDE.Terminals.Shims.sync_tmux_terminal_env!() end)
+    Application.put_env(:tmux_ctl, :terminal_env, Casein.Terminals.Shims.env())
+    Task.start(fn -> Casein.Terminals.Shims.sync_tmux_terminal_env!() end)
 
     if Application.get_env(:tmux_ctl, :default_command, :unset) == :unset do
       Application.put_env(:tmux_ctl, :default_command, terminal_shell_command())
@@ -136,18 +136,18 @@ defmodule DevIDE.Application do
     Application.put_env(
       :tmux_ctl,
       :shared_write_guard,
-      {DevIDE.Deployment.Drain, :guard_shared_write}
+      {Casein.Deployment.Drain, :guard_shared_write}
     )
   end
 
   # Publishes runtime.json for the desktop host once the endpoint is bound
   # (docs/desktop/platform_architecture.md, "Status contract"). Ordered after
-  # DevIdeWeb.Endpoint so server_info/1 reports the real port — desktop
-  # requests PORT=0. The resolver is injected here because the DevIDE domain
-  # boundary cannot reference DevIdeWeb.
+  # CaseinWeb.Endpoint so server_info/1 reports the real port — desktop
+  # requests PORT=0. The resolver is injected here because the Casein domain
+  # boundary cannot reference CaseinWeb.
   defp desktop_status do
     if desktop_mode?() do
-      [{DevIDE.Desktop.Status, port_resolver: fn -> DevIdeWeb.Endpoint.server_info(:http) end}]
+      [{Casein.Desktop.Status, port_resolver: fn -> CaseinWeb.Endpoint.server_info(:http) end}]
     else
       []
     end
@@ -160,7 +160,7 @@ defmodule DevIDE.Application do
   defp terminal_shell_command do
     Application.get_env(:dev_ide, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
-      DevIDE.Terminals.Shims.shell_command()
+      Casein.Terminals.Shims.shell_command()
   end
 
   defp configure_git_ctl! do
@@ -206,7 +206,7 @@ defmodule DevIDE.Application do
 
   @impl true
   def config_change(changed, _new, removed) do
-    DevIdeWeb.Endpoint.config_change(changed, removed)
+    CaseinWeb.Endpoint.config_change(changed, removed)
     :ok
   end
 end

@@ -1,12 +1,12 @@
-defmodule DevIDE.Release.Package do
+defmodule Casein.Release.Package do
   @moduledoc """
   Local LAN release packaging helpers — tarball manifest emission for `dist/`.
 
   See `docs/lan-release-updates.md` and `scripts/package-release.sh`.
   """
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Manifest
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Manifest
 
   @default_channel "canary"
   @github_repo "dl-alexandre/dev_ide"

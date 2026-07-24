@@ -1,6 +1,6 @@
-defmodule DevIDE.Elixir.ProjectTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Elixir.{Project, Tooling}
+defmodule Casein.Elixir.ProjectTest do
+  use Casein.TestCase, async: true
+  alias Casein.Elixir.{Project, Tooling}
 
   setup do
     root = Path.join(System.tmp_dir!(), "proj-#{System.unique_integer([:positive])}")

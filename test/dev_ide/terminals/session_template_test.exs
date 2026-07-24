@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.SessionTemplateTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Terminals.SessionTemplateTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Window
 
   setup do
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -61,7 +61,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
     }
 
     assert {:ok, saved} =
-             DevIDE.Terminals.Templates.save(%{
+             Casein.Terminals.Templates.save(%{
                workspace_id: "ws-templates",
                name: "saved_layout",
                description: "Saved export",
@@ -264,7 +264,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
              right["panes"]
              |> Enum.map(&Map.take(&1, ["name", "focus"]))
 
-    yaml = DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+    yaml = Casein.Terminals.SessionTemplate.Export.to_yaml(template)
     assert yaml =~ "version: 2"
     assert yaml =~ ~s(name: "current_layout")
     assert yaml =~ ~s(direction: "horizontal")
@@ -276,7 +276,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
 
     assert {:ok, result} =
              SessionTemplate.execute("template-session", "generic_project",
-               tmux: DevIDE.Test.FakeTmuxAdapter,
+               tmux: Casein.Test.FakeTmuxAdapter,
                workspace_root: root
              )
 
@@ -318,7 +318,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
 
     assert {:ok, result} =
              SessionTemplate.execute(session, "agent_pair",
-               tmux: DevIDE.Test.FakeTmuxAdapter,
+               tmux: Casein.Test.FakeTmuxAdapter,
                workspace_root: root
              )
 

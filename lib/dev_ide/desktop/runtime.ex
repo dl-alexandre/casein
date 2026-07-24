@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.Runtime do
+defmodule Casein.Desktop.Runtime do
   @moduledoc """
   Runtime configuration helpers for the local desktop profile.
 
@@ -49,7 +49,7 @@ defmodule DevIDE.Desktop.Runtime do
         present_env("APPDATA") ||
         Path.join(user_home!(), "AppData/Local")
 
-    Path.join(root, "DevIDE")
+    Path.join(root, "Casein")
   end
 
   defp default_data_dir({:unix, :darwin}) do

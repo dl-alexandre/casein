@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
+defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :connect_new_token, :string, default: nil
   attr :connect_mcp_json, :string, default: nil
@@ -132,7 +132,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
         >
           <p class="mb-3 text-[11px] text-base-content/60">
             A browser pane for your workspace apps — run a dev server, then preview it
-            right inside DevIDE: click, type, navigate, screenshot.
+            right inside Casein: click, type, navigate, screenshot.
           </p>
           <div class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
             <.tip_row term="Open one">
@@ -187,7 +187,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
           class="hidden"
         >
           <p class="mb-3 text-[11px] text-base-content/60">
-            DevIDE wires external coding agents into your workspace over MCP, giving them
+            Casein wires external coding agents into your workspace over MCP, giving them
             narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive the
             <strong>agent</strong>
             pane (not the operator pane). Watch live tool calls under <em>Agents → Live MCP activity</em>.
@@ -195,7 +195,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
           <div class="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-2">
             <.tip_row term="Claude">
               A bare <code class="rounded bg-base-200 px-1 py-0.5">claude</code>
-              in a paired pane auto-loads DevIDE's terminal + preview MCP servers. It reads
+              in a paired pane auto-loads Casein's terminal + preview MCP servers. It reads
               <code class="rounded bg-base-200 px-1 py-0.5">AGENTS.md</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">CLAUDE.md</code>
               first — keep your workspace notes and the push/deploy rules there. Strongest on
@@ -207,11 +207,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
                 bash scripts/launch-devide-agent.sh grok
               </code>)
               picks up the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
-              DevIDE materializes. If tools are missing, refresh pairing and relaunch from the
+              Casein materializes. If tools are missing, refresh pairing and relaunch from the
               checkout so project MCP is rewritten — not global <code class="rounded bg-base-200 px-1 py-0.5">~/.grok/config.toml</code>.
             </.tip_row>
             <.tip_row term="Codex">
-              Codex gets DevIDE MCP through launch-time flags, not a project file — start
+              Codex gets Casein MCP through launch-time flags, not a project file — start
               <code class="rounded bg-base-200 px-1 py-0.5">codex</code>
               from the paired pane (or <code class="rounded bg-base-200 px-1 py-0.5">
                 bash scripts/launch-devide-agent.sh codex
@@ -226,7 +226,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
               <code class="rounded bg-base-200 px-1 py-0.5">
                 bash scripts/launch-devide-agent.sh opencode
               </code>
-              so DevIDE injects project <code class="rounded bg-base-200 px-1 py-0.5">.opencode/opencode.json</code>.
+              so Casein injects project <code class="rounded bg-base-200 px-1 py-0.5">.opencode/opencode.json</code>.
               A bare start outside that path may miss workspace MCP.
             </.tip_row>
             <.tip_row term="Sign in">
@@ -234,7 +234,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LeaderHelp do
               owner-isolated login instead, sign in once with
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
-              DevIDE detects the owner from the current workspace; once signed in,
+              Casein detects the owner from the current workspace; once signed in,
               matching workspaces share that owner login automatically. Use
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
               to check sign-in state.

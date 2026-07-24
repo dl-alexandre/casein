@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.Helpers do
+defmodule Casein.Agents.PreviewTools.Helpers do
   @moduledoc """
   Shared JSON-Schema fragments and MCP metadata for preview tool actions.
   Wire shapes are served on tools/list — keep them aligned with the previous

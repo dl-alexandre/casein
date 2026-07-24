@@ -1,18 +1,18 @@
-defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
+defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
   @moduledoc """
   End-to-end proof that a WebSocket survives the *whole* stack: a real HTTP
-  listener for `DevIdeWeb.Endpoint`, the `:preview_proxy` pipeline + auth gate,
+  listener for `CaseinWeb.Endpoint`, the `:preview_proxy` pipeline + auth gate,
   the controller's `WebSockAdapter.upgrade` dispatch, the `WebSocketBridge`, and
   a real upstream dev-server socket. A `Mint.WebSocket` client drives it over a
-  real TCP connection and asserts a frame round-trips browser→DevIDE→upstream→back.
+  real TCP connection and asserts a frame round-trips browser→Casein→upstream→back.
 
   This closes the one seam the unit tests can't cross (route → upgrade → bridge
   over a real socket); the headed "edit file → HMR update in the browser" loop
   still has to be eyeballed against a real Vite app.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewPanes
+  alias Casein.PreviewPanes
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -51,7 +51,7 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :forward_auth, true)
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
@@ -86,11 +86,11 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
                "tmux_session" => session
              })
 
-    # Real HTTP listener for the DevIDE endpoint on a free port.
+    # Real HTTP listener for the Casein endpoint on a free port.
     devide_port = free_port()
 
     start_supervised!(
-      {Bandit, plug: DevIdeWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: devide_port}
+      {Bandit, plug: CaseinWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: devide_port}
     )
 
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
@@ -142,7 +142,7 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
     port
   end
 
-  test "a frame round-trips browser -> DevIDE -> upstream -> browser through the tunnel",
+  test "a frame round-trips browser -> Casein -> upstream -> browser through the tunnel",
        %{devide_port: devide_port, upstream_port: upstream_port, workspace_id: workspace_id} do
     path = "/preview-proxy/#{workspace_id}/#{upstream_port}/socket"
 

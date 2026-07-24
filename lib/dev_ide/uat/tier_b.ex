@@ -1,12 +1,12 @@
-defmodule DevIDE.UAT.TierB do
+defmodule Casein.UAT.TierB do
   @moduledoc """
   Tier B — the post-deploy acceptance smoke. Drives the **live release node** over
   its real MCP surface (`POST /api/preview/mcp` on `/run/devide/current.sock`) as
   the workspace owner's forward-auth identity, runs a small set of read-mostly
-  criteria agent-driven, and persists each as a `tier_b` `DevIDE.UAT.Run`.
+  criteria agent-driven, and persists each as a `tier_b` `Casein.UAT.Run`.
 
   Unlike Tier A this is not deterministic replay; the agent drives live. The wire
-  is behind `DevIDE.UAT.TierB.Transport` (default `SocketTransport`) so envelope,
+  is behind `Casein.UAT.TierB.Transport` (default `SocketTransport`) so envelope,
   identity, and failure-policy logic are testable without a running node.
 
   ## Failure policy (`alert_for/1`)
@@ -27,7 +27,7 @@ defmodule DevIDE.UAT.TierB do
   config-only — never derived from agent/verdict data.
   """
 
-  alias DevIDE.UAT.{Run, TierB.SocketTransport, Verdict}
+  alias Casein.UAT.{Run, TierB.SocketTransport, Verdict}
 
   @default_socket "/run/devide/current.sock"
   @forward_auth_header "X-Auth-Request-Email"
@@ -82,7 +82,7 @@ defmodule DevIDE.UAT.TierB do
   @spec run_criterion(String.t(), integer(), map(), keyword()) ::
           {atom(), atom(), Run.t()} | {:error, term()}
   def run_criterion(criterion, session_id, attrs, opts) do
-    repo = Keyword.get(opts, :repo, DevIDE.Repo)
+    repo = Keyword.get(opts, :repo, Casein.Repo)
     {outcome, verdict} = evaluate(criterion, session_id, opts)
     {_, alert} = alert_for(outcome)
 

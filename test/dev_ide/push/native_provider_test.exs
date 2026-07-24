@@ -1,7 +1,7 @@
-defmodule DevIDE.Push.NativeProviderTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Push.NativeProviderTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Push.{APNSProvider, FCMProvider, NativeProvider}
+  alias Casein.Push.{APNSProvider, FCMProvider, NativeProvider}
 
   @notification %{workspace_id: "ws-1", action: "policy.blocked", title: "Blocked"}
 
@@ -12,7 +12,7 @@ defmodule DevIDE.Push.NativeProviderTest do
     Application.put_env(:dev_ide, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
-      http_client: DevIDE.Push.FCM.StubHTTP
+      http_client: Casein.Push.FCM.StubHTTP
     )
 
     Application.put_env(:dev_ide, APNSProvider,
@@ -20,7 +20,7 @@ defmodule DevIDE.Push.NativeProviderTest do
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
       private_key: private_key_pem(),
-      http_client: DevIDE.Push.APNS.StubHTTP
+      http_client: Casein.Push.APNS.StubHTTP
     )
 
     Application.put_env(:dev_ide, :fcm_test_pid, self())

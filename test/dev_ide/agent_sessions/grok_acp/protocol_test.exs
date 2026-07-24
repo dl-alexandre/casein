@@ -1,7 +1,7 @@
-defmodule DevIDE.AgentSessions.GrokACP.ProtocolTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.AgentSessions.GrokACP.ProtocolTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.AgentSessions.GrokACP.Protocol
+  alias Casein.AgentSessions.GrokACP.Protocol
 
   test "decodes partial and multiple JSONL messages without merging stderr" do
     first = Jason.encode!(%{jsonrpc: "2.0", id: 1, result: %{protocolVersion: 1}})

@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.GhosttySnapshotTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.GhosttySnapshotTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.GhosttySnapshot
+  alias Casein.Terminals.GhosttySnapshot
 
   setup do
     tmp =

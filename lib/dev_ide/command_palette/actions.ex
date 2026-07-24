@@ -1,4 +1,4 @@
-defmodule DevIDE.CommandPalette.Actions do
+defmodule Casein.CommandPalette.Actions do
   @moduledoc """
   Fixed allowlist of command palette actions.
 
@@ -11,15 +11,15 @@ defmodule DevIDE.CommandPalette.Actions do
   `pane:close_others`, `pane:cycle_layout`, `pane:focus_next`,
   `pane:focus_previous`, and `pane:zoom_focused`). Preview items are not
   static — `PaletteItems.preview_surface_items/3` derives them per workspace
-  from `DevIDE.Previews.surfaces/1`; `preview:open` stays in
+  from `Casein.Previews.surfaces/1`; `preview:open` stays in
   `allowed_events/0` for that path. The palette never
   invents new mutation events; it only routes to gated existing ones, and it
   never sends arbitrary keystrokes to a pane.
   """
 
-  alias DevIDE.Commands.Allowlist
-  alias DevIDE.CommandPalette.Item
-  alias DevIDE.Terminals.Theme
+  alias Casein.Commands.Allowlist
+  alias Casein.CommandPalette.Item
+  alias Casein.Terminals.Theme
 
   @tabs ~w(terminal files search diff artifacts run proposals logs history)
 

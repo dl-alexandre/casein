@@ -1,7 +1,7 @@
-defmodule DevIDE.Setup.LanServiceTest do
+defmodule Casein.Setup.LanServiceTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Setup.LanService
+  alias Casein.Setup.LanService
 
   @opts [
     backend_port: 4000,
@@ -21,7 +21,7 @@ defmodule DevIDE.Setup.LanServiceTest do
   test "service unit runs the LAN backend as the developer user" do
     text = LanService.service_unit_text(@opts)
 
-    assert text =~ "Description=DevIDE LAN backend"
+    assert text =~ "Description=Casein LAN backend"
     assert text =~ "User=milc"
     assert text =~ "Group=milc"
     assert text =~ "WorkingDirectory=/tmp/devide-agent-worktrees/lan-mode-20260624"

@@ -1,4 +1,4 @@
-defmodule DevIDE.Mobile.UserObserver do
+defmodule Casein.Mobile.UserObserver do
   @moduledoc """
   Per-user mobile card observer.
 
@@ -9,14 +9,14 @@ defmodule DevIDE.Mobile.UserObserver do
 
   use GenServer
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.Event
-  alias DevIDE.Mobile.Card
-  alias DevIDE.Notifications
-  alias DevIDE.Workspaces.State
+  alias Casein.Audit
+  alias Casein.Audit.Event
+  alias Casein.Mobile.Card
+  alias Casein.Notifications
+  alias Casein.Workspaces.State
 
-  @registry DevIDE.Mobile.UserObserverRegistry
-  @supervisor DevIDE.Mobile.UserObserverSupervisor
+  @registry Casein.Mobile.UserObserverRegistry
+  @supervisor Casein.Mobile.UserObserverSupervisor
   @topic_prefix "mobile:user:"
   @card_events_topic "mobile:cards"
   @telemetry_prefix [:dev_ide, :mobile]
@@ -65,7 +65,7 @@ defmodule DevIDE.Mobile.UserObserver do
 
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(user_id) when is_binary(user_id) do
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(user_id))
+    Phoenix.PubSub.subscribe(Casein.PubSub, topic(user_id))
   end
 
   @spec snapshot(String.t()) :: snapshot()
@@ -303,7 +303,7 @@ defmodule DevIDE.Mobile.UserObserver do
 
   defp unsubscribe_all(state) do
     Enum.each(state.watched_workspaces, fn workspace_id ->
-      Phoenix.PubSub.unsubscribe(DevIDE.PubSub, Audit.topic(workspace_id))
+      Phoenix.PubSub.unsubscribe(Casein.PubSub, Audit.topic(workspace_id))
     end)
 
     %{state | watched_workspaces: MapSet.new()}
@@ -328,7 +328,7 @@ defmodule DevIDE.Mobile.UserObserver do
     started_at = System.monotonic_time()
 
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       topic(state.user_id),
       {:mobile_cards_snapshot, payload}
     )
@@ -342,7 +342,7 @@ defmodule DevIDE.Mobile.UserObserver do
 
   defp maybe_broadcast_card_created(card, :create) do
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       @card_events_topic,
       {:mobile_card_created, card}
     )

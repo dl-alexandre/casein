@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.API.MCPToolSearch do
+defmodule CaseinWeb.API.MCPToolSearch do
   @moduledoc """
-  Opt-in tool-discovery front-end for DevIDE's MCP servers.
+  Opt-in tool-discovery front-end for Casein's MCP servers.
 
-  DevIDE's per-runtime MCP surface is large (terminal ~17, preview ~25, artifact,
+  Casein's per-runtime MCP surface is large (terminal ~17, preview ~25, artifact,
   tidewave), and flat-injecting every tool schema into an agent's context costs
   tokens and, past ~30-50 tools, hurts tool-selection accuracy. When enabled
   (`DEV_IDE_MCP_TOOL_SEARCH=1`), `tools/list` advertises only a small always-on
@@ -12,7 +12,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   scope + audit path.
 
   This is deliberately the **client-agnostic** design: it does NOT rely on MCP
-  `tools/list_changed` re-fetching (which DevIDE advertises as `false` and which
+  `tools/list_changed` re-fetching (which Casein advertises as `false` and which
   grok/codex/claude do not reliably honor), so the reduced surface + on-demand
   discovery behave identically across every client. The hot control loop
   (`terminal_list_sessions`, `terminal_topology`, `terminal_capture`,
@@ -25,19 +25,19 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   it is purely a context optimization, never a capability change.
   """
 
-  alias DevIDE.Agents.MCPError
-  alias DevIdeWeb.API.MCPEnvelope
+  alias Casein.Agents.MCPError
+  alias CaseinWeb.API.MCPEnvelope
 
   @meta_tool_names ~w(search_tools invoke_tool)
 
-  # The DevIDE-authored MCP servers that share one cross-server tool catalog.
+  # The Casein-authored MCP servers that share one cross-server tool catalog.
   # search_tools ranks over all of them and invoke_tool routes to the owner, so
-  # an agent connected to ANY endpoint can discover and run every DevIDE tool.
+  # an agent connected to ANY endpoint can discover and run every Casein tool.
   # Tidewave is excluded on purpose (dev-only, third-party plug — no seam).
   @surface_modules [
-    {"terminal", DevIdeWeb.API.TerminalMCP},
-    {"preview", DevIdeWeb.API.PreviewMCP},
-    {"artifact", DevIdeWeb.API.ArtifactMCP}
+    {"terminal", CaseinWeb.API.TerminalMCP},
+    {"preview", CaseinWeb.API.PreviewMCP},
+    {"artifact", CaseinWeb.API.ArtifactMCP}
   ]
 
   # Always-on core per surface: the tools an agent needs every loop, which must
@@ -174,9 +174,9 @@ defmodule DevIdeWeb.API.MCPToolSearch do
   end
 
   @doc """
-  The combined tool catalog across every DevIDE MCP server, each spec tagged
+  The combined tool catalog across every Casein MCP server, each spec tagged
   with its owning `:server`. `search_tools` ranks over this, so an agent on any
-  one endpoint can discover every DevIDE tool (not just its own server's).
+  one endpoint can discover every Casein tool (not just its own server's).
   """
   @spec catalog() :: [map()]
   def catalog do
@@ -232,7 +232,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     end
   end
 
-  @doc "The server module that owns `name`, or nil if no DevIDE server does."
+  @doc "The server module that owns `name`, or nil if no Casein server does."
   @spec owning_module(String.t()) :: module() | nil
   def owning_module(name) when is_binary(name) do
     Enum.find_value(@surface_modules, fn {_server, mod} ->
@@ -266,7 +266,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     %{
       name: "search_tools",
       description:
-        "Find a DevIDE tool by natural-language intent, across ALL DevIDE MCP " <>
+        "Find a Casein tool by natural-language intent, across ALL Casein MCP " <>
           "servers (terminal, preview, artifact) — not just this endpoint's. " <>
           "Returns matching tool names (each tagged with its `server`) + input " <>
           "schemas; then call invoke_tool with one from this same endpoint. Use " <>
@@ -302,7 +302,7 @@ defmodule DevIdeWeb.API.MCPToolSearch do
     %{
       name: "invoke_tool",
       description:
-        "Invoke a DevIDE tool by name with its arguments — used to run a tool " <>
+        "Invoke a Casein tool by name with its arguments — used to run a tool " <>
           "discovered via search_tools, including one that lives on a different " <>
           "server (invoke_tool routes to the owning server). Runs through the " <>
           "same auth, workspace scoping, and audit as a direct call.",

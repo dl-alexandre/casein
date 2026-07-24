@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.RunPanel do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
-  alias DevIDE.Commands.Allowlist
-  alias DevIDE.Runs.Status
+  alias Casein.Commands.Allowlist
+  alias Casein.Runs.Status
 
   attr :host_loc, :any, required: true
   attr :active_run, :any, default: nil

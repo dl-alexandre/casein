@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.PreviewMCPTest.Source do
-  @behaviour DevIDE.WorkspaceSource
+defmodule CaseinWeb.API.PreviewMCPTest.Source do
+  @behaviour Casein.WorkspaceSource
 
-  alias DevIDE.Workspace
+  alias Casein.Workspace
 
   @workspace %Workspace{
     id: "ws-mcp",
@@ -36,26 +36,26 @@ defmodule DevIdeWeb.API.PreviewMCPTest.Source do
   end
 end
 
-defmodule DevIdeWeb.API.PreviewMCPTest do
+defmodule CaseinWeb.API.PreviewMCPTest do
   @moduledoc """
   Protocol-level tests for the preview-control MCP handler. The handler is
   pure (decoded message in, JSON-RPC outcome out), so these exercise the wire
   contract directly, plus one real tools/call path through PreviewTools.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.TestSupport.HTTPStub
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIdeWeb.API.PreviewMCP
+  alias Casein.Agents.PreviewTools
+  alias Casein.PreviewActivity
+  alias Casein.PreviewControl.Registry
+  alias Casein.PreviewPanes
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
+  alias Casein.Test.RuntimeSeed
+  alias Casein.TestSupport.HTTPStub
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias CaseinWeb.API.PreviewMCP
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -78,7 +78,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     MemoryAdapter.clear()
     Runtimes.clear()
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :workspace_source, DevIdeWeb.API.PreviewMCPTest.Source)
+    Application.put_env(:dev_ide, :workspace_source, CaseinWeb.API.PreviewMCPTest.Source)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     PreviewPanes.clear()
@@ -212,7 +212,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     FakeState.put(:fake_tmux_panes, panes)
 
     FakeState.update(:fake_tmux_scrollback, %{}, fn scrollback ->
-      Map.put(scrollback, {session, pane_id}, "# DevIDE agent pane\n")
+      Map.put(scrollback, {session, pane_id}, "# Casein agent pane\n")
     end)
   end
 
@@ -268,7 +268,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     end)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%11"} => "# DevIDE agent pane\n"
+      {session, "%11"} => "# Casein agent pane\n"
     })
   end
 

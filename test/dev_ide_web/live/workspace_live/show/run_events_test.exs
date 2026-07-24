@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.RunEventsTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.RunEventsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.RunEvents
+  alias CaseinWeb.WorkspaceLive.Show.RunEvents
 
   setup do
     root = Path.join(System.tmp_dir!(), "run-events-#{System.unique_integer([:positive])}")
@@ -12,8 +12,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEventsTest do
 
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       private: %{live_temp: %{}},
       assigns:

@@ -1,8 +1,8 @@
-defmodule DevIDE.UAT.VerdictTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.VerdictTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Previews.{ControlObservation, ControlSession}
-  alias DevIDE.UAT.Verdict
+  alias Casein.Previews.{ControlObservation, ControlSession}
+  alias Casein.UAT.Verdict
 
   setup do
     session = insert_session!()

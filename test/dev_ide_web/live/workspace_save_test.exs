@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceSaveTest do
+defmodule CaseinWeb.WorkspaceSaveTest do
   @moduledoc """
   LiveView-level safety: the file:save handler must refuse a payload whose
   `path`/`version` pair does not match `socket.assigns.open_file`. We exercise
   the handler directly instead of routing through the full LiveView so the
   test stays focused.
   """
-  use DevIDE.TestCase, async: false
-  alias DevIdeWeb.WorkspaceLive.Show
+  use Casein.TestCase, async: false
+  alias CaseinWeb.WorkspaceLive.Show
 
   setup do
     root = Path.join(System.tmp_dir!(), "lvsave-#{System.unique_integer([:positive])}")
@@ -17,7 +17,7 @@ defmodule DevIdeWeb.WorkspaceSaveTest do
   end
 
   test "refuses save with stale version even if path matches", %{root: root} do
-    {:ok, file} = DevIDE.Files.read_text(root, "a.txt")
+    {:ok, file} = Casein.Files.read_text(root, "a.txt")
 
     socket =
       %Phoenix.LiveView.Socket{}
@@ -38,7 +38,7 @@ defmodule DevIdeWeb.WorkspaceSaveTest do
   end
 
   test "refuses save with mismatched path", %{root: root} do
-    {:ok, file} = DevIDE.Files.read_text(root, "a.txt")
+    {:ok, file} = Casein.Files.read_text(root, "a.txt")
 
     socket =
       %Phoenix.LiveView.Socket{}

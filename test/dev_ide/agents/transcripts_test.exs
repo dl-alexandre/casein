@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.TranscriptsTest do
+defmodule Casein.Agents.TranscriptsTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Agents.Transcripts
+  alias Casein.Agents.Transcripts
 
   setup do
     previous_home = System.get_env("HOME")
@@ -79,14 +79,14 @@ defmodule DevIDE.Agents.TranscriptsTest do
       pending = Path.join([home, ".grok", "sessions", "project", "pending", "updates.jsonl"])
       File.mkdir_p!(Path.dirname(pending))
 
-      assert DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(pending)
+      assert Casein.Agents.Transcripts.Grok.allowed_pending_path?(pending)
 
       outside = Path.join([home, "outside", "pending"])
       File.mkdir_p!(outside)
       linked = Path.join([home, ".grok", "sessions", "linked"])
       File.ln_s!(outside, linked)
 
-      refute DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(
+      refute Casein.Agents.Transcripts.Grok.allowed_pending_path?(
                Path.join(linked, "updates.jsonl")
              )
 
@@ -102,10 +102,10 @@ defmodule DevIDE.Agents.TranscriptsTest do
         ])
 
       File.mkdir_p!(Path.dirname(managed_pending))
-      assert DevIDE.Agents.Transcripts.Grok.allowed_pending_path?(managed_pending)
+      assert Casein.Agents.Transcripts.Grok.allowed_pending_path?(managed_pending)
     end
 
-    test "accepts jsonl under DevIDE auth profiles", %{home: home} do
+    test "accepts jsonl under Casein auth profiles", %{home: home} do
       auth_root = Path.join([home, ".devide", "agent-auth"])
       Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
 

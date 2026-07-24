@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.WorkspaceContext do
+defmodule Casein.Previews.WorkspaceContext do
   @moduledoc """
   Prepares workspace values for agent preview control.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Previews.WorkspaceContext do
   see ad-hoc dev servers started in tmux panes.
   """
 
-  alias DevIDE.Previews.{SocketDetector, TerminalOutput, TidewaveProbe, Url}
+  alias Casein.Previews.{SocketDetector, TerminalOutput, TidewaveProbe, Url}
 
   @doc """
   Enrich a workspace with terminal output and detected localhost ports.
@@ -153,7 +153,7 @@ defmodule DevIDE.Previews.WorkspaceContext do
     Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
   end
 
-  defp put_metadata(%DevIDE.Workspace{} = ws, metadata), do: %{ws | metadata: metadata}
+  defp put_metadata(%Casein.Workspace{} = ws, metadata), do: %{ws | metadata: metadata}
 
   defp put_metadata(workspace, metadata) when is_map(workspace),
     do: Map.put(workspace, :metadata, metadata)

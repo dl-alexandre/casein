@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.TmuxExecutable do
+defmodule Casein.Terminals.TmuxExecutable do
   @moduledoc """
   Resolves the tmux executable used for host-side terminal operations.
 

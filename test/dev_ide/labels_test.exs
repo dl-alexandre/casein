@@ -1,7 +1,7 @@
-defmodule DevIDE.LabelsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.LabelsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Labels
+  alias Casein.Labels
 
   setup do
     Labels.clear()

@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.PaneHistoryWorker do
+defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorker do
   @moduledoc """
   Owner of a read-only `Ghostty.Terminal` seeded from one tmux pane's
   scrollback, for the per-pane history viewer.
@@ -64,7 +64,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneHistoryWorker do
     tmux_session = Keyword.fetch!(opts, :tmux_session)
     cols = Keyword.fetch!(opts, :cols)
     rows = Keyword.fetch!(opts, :rows)
-    adapter = Keyword.get(opts, :tmux_adapter, DevIDE.Terminals.tmux_adapter())
+    adapter = Keyword.get(opts, :tmux_adapter, Casein.Terminals.tmux_adapter())
 
     Process.flag(:trap_exit, true)
 

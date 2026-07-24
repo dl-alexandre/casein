@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.UrlTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Previews.UrlTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Previews.Url
+  alias Casein.Previews.Url
 
   @v3_workspace %{
     metadata: %{

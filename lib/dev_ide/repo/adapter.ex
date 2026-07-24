@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Adapter do
+defmodule Casein.Repo.Adapter do
   @moduledoc false
 
   @sqlite Ecto.Adapters.SQLite3

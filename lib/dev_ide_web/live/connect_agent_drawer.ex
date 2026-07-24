@@ -1,13 +1,13 @@
-defmodule DevIdeWeb.ConnectAgentDrawer do
+defmodule CaseinWeb.ConnectAgentDrawer do
   @moduledoc """
   "Connect an external agent" drawer: a header trigger + right-side slide-over
   where a logged-in cockpit user mints a self-serve, revocable MCP bearer token
   and copies a ready-to-paste durable `.mcp.json`. State + events live in
-  `DevIdeWeb.WorkspaceLive.Show.ConnectEvents`; the token lifecycle is
-  `DevIDE.Agents.OrchestratorTokens`. Styled to match `NotificationsDrawer`.
+  `CaseinWeb.WorkspaceLive.Show.ConnectEvents`; the token lifecycle is
+  `Casein.Agents.OrchestratorTokens`. Styled to match `NotificationsDrawer`.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :id, :string, default: "connect-agent-button"
 
@@ -77,7 +77,7 @@ defmodule DevIdeWeb.ConnectAgentDrawer do
         <div class="min-h-0 flex-1 space-y-4 overflow-auto px-4 py-4">
           <section class="space-y-2 text-sm text-zinc-700">
             <p>
-              Mint a bearer token and point an off-box agent at DevIDE's MCP. The token is <strong>revocable</strong>, expires automatically, and is stored hashed — it is
+              Mint a bearer token and point an off-box agent at Casein's MCP. The token is <strong>revocable</strong>, expires automatically, and is stored hashed — it is
               <strong>not</strong>
               the root token. It reaches every workspace; confine a call by
               passing <code class="rounded bg-zinc-100 px-1">workspace_id</code>, omit it to traverse.

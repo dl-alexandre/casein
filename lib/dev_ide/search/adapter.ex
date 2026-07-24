@@ -1,7 +1,7 @@
-defmodule DevIDE.Search.Adapter do
+defmodule Casein.Search.Adapter do
   @moduledoc "Behaviour for workspace search adapters."
 
-  alias DevIDE.Search.Result
+  alias Casein.Search.Result
 
   @callback search(root :: String.t(), query :: String.t(), opts :: keyword()) ::
               {:ok, [Result.t()]}

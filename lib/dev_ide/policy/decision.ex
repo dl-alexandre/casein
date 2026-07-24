@@ -1,4 +1,4 @@
-defmodule DevIDE.Policy.Decision do
+defmodule Casein.Policy.Decision do
   @moduledoc """
   Outcome of a policy check. `mode` is the workspace mode at decision time so
   audit records carry both the verdict and the policy that produced it.

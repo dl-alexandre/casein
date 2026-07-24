@@ -1,20 +1,20 @@
-defmodule DevIDE.Agents.PreviewToolsExtraTest do
+defmodule Casein.Agents.PreviewToolsExtraTest do
   @moduledoc """
-  Additional branch coverage for `DevIDE.Agents.PreviewTools`.
+  Additional branch coverage for `Casein.Agents.PreviewTools`.
 
   Focuses on argument validation, not-found / unknown error tuples, dispatch
   fall-through, and pure formatting/normalization helpers that the primary
   suite (`preview_tools_test.exs`) does not exercise. Reuses the same setup,
   fakes, and seeding helpers.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Agents.PreviewTools
+  alias Casein.PreviewActivity
+  alias Casein.PreviewControl.Registry
+  alias Casein.PreviewPanes
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -118,7 +118,7 @@ defmodule DevIDE.Agents.PreviewToolsExtraTest do
     end)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {session, pane_id} => "# DevIDE agent pane\n"
+      {session, pane_id} => "# Casein agent pane\n"
     })
   end
 
@@ -520,7 +520,7 @@ defmodule DevIDE.Agents.PreviewToolsExtraTest do
   # ---------------------------------------------------------------------------
 
   test "reload_iframe drops blank actor_id and reason from browser control opts" do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok, %{status: "queued", action: "reload_preview_iframe", request_id: request_id}} =
              PreviewTools.invoke("preview_reload_iframe", @v3_workspace, %{
@@ -535,7 +535,7 @@ defmodule DevIDE.Agents.PreviewToolsExtraTest do
   end
 
   test "reload_page queues a workspace page reload without optional opts" do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok, %{status: "queued", action: "reload_page", workspace_id: "ws-tools"}} =
              PreviewTools.invoke("devide_reload_page", @v3_workspace, %{})

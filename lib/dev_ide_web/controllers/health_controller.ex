@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.HealthController do
+defmodule CaseinWeb.HealthController do
   @moduledoc "Product readiness endpoint for operators and container platforms."
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   def show(conn, _params) do
     opts = Application.get_env(:dev_ide, :readiness_opts, [])
-    status = DevIDE.Readiness.status(opts)
+    status = Casein.Readiness.status(opts)
 
     conn
     |> put_resp_header("cache-control", "no-store")

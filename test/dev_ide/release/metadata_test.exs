@@ -1,7 +1,7 @@
-defmodule DevIDE.Release.MetadataTest do
+defmodule Casein.Release.MetadataTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Release.Metadata
+  alias Casein.Release.Metadata
 
   @valid %{
     "metadata_version" => 1,

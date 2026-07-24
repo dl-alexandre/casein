@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
+defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
   @moduledoc """
   Side-panel tabs for the workspace cockpit: the Files tree (with project
   card and Elixir symbols outline), Search, and Diff panels.
@@ -8,10 +8,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   the whole assigns bag and change tracking stays per-attr.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  alias DevIDE.Links.Markdown
-  alias DevIDE.Search
+  alias Casein.Links.Markdown
+  alias Casein.Search
 
   attr :host_loc, :any, required: true, doc: "{:ok, loc} | error tuple from HostLoc"
   attr :selected_dir, :string, required: true
@@ -493,10 +493,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   defp search_error_text(:timeout), do: "search timed out; try a more specific query."
 
   defp search_error_text(:too_short),
-    do: "query must be at least #{DevIDE.Search.min_query()} characters."
+    do: "query must be at least #{Casein.Search.min_query()} characters."
 
   defp search_error_text(:too_long),
-    do: "query must be at most #{DevIDE.Search.max_query()} characters."
+    do: "query must be at most #{Casein.Search.max_query()} characters."
 
   defp search_error_text(:no_root), do: "workspace path unavailable."
   defp search_error_text(other), do: "search failed: #{inspect(other)}"

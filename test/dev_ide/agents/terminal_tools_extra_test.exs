@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalToolsExtraTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.TerminalToolsExtraTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.TerminalTools
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.TerminalTools
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     previous = %{
@@ -19,7 +19,7 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
 
     MemoryAdapter.clear()
     Runtimes.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
 
     # Fake tmux state lives in global :tmux_ctl app env (see FakeState), so it
     # leaks across the run — including from async tests in other files. Start
@@ -46,7 +46,7 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
 
       MemoryAdapter.clear()
       Runtimes.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
     end)
 
     :ok
@@ -102,10 +102,10 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
       ]
     })
 
-    DevIDE.Terminals.AgentState.clear()
-    on_exit(fn -> DevIDE.Terminals.AgentState.clear() end)
+    Casein.Terminals.AgentState.clear()
+    on_exit(fn -> Casein.Terminals.AgentState.clear() end)
 
-    :ok = DevIDE.Terminals.AgentState.report("alpha", session, "%1", :blocked, "needs permission")
+    :ok = Casein.Terminals.AgentState.report("alpha", session, "%1", :blocked, "needs permission")
 
     assert {:ok, snapshot} =
              TerminalTools.invoke("terminal_topology", %{
@@ -313,7 +313,7 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\nhello\n"
+      {session, "%2"} => "# Casein agent pane\nhello\n"
     })
 
     assert {:ok, %{session: ^session, target: "%2", output: output}} =
@@ -342,7 +342,7 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     assert {:ok, %{session: ^session, target: "%2", status: "sent"}} =
@@ -446,7 +446,7 @@ defmodule DevIDE.Agents.TerminalToolsExtraTest do
   end
 
   defp fake_adapter do
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
   end
 
   defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)

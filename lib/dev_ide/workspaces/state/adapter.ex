@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.State.Adapter do
+defmodule Casein.Workspaces.State.Adapter do
   @moduledoc "Behaviour for workspace record persistence adapters."
 
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   @callback upsert(WorkspaceRecord.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
   @callback upsert_all([WorkspaceRecord.t()]) :: {:ok, [WorkspaceRecord.t()]} | {:error, term()}

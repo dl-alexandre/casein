@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.TerminalBoundaryLiveTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.TerminalBoundaryLiveTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     unique = System.unique_integer([:positive])
@@ -24,7 +24,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
         "git",
         [
           "-c",
-          "user.name=DevIDE Test",
+          "user.name=Casein Test",
           "-c",
           "user.email=devide-test@example.invalid",
           "commit",
@@ -49,7 +49,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
         workspace_payload(conn, workspace_id, workspace_path, workspace_name)
 

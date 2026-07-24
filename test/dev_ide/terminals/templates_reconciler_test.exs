@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TemplatesReconcilerTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.TemplatesReconcilerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.Templates.Reconciler
+  alias Casein.Terminals.Templates.Reconciler
 
   test "diff reuses matching windows and panes while planning missing splits" do
     root = "/workspace"

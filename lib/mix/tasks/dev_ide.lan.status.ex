@@ -1,22 +1,22 @@
-defmodule Mix.Tasks.DevIde.Lan.Status do
+defmodule Mix.Tasks.Casein.Lan.Status do
   @moduledoc """
-  Prints the current DevIDE LAN service status.
+  Prints the current Casein LAN service status.
 
       mix dev_ide.lan.status
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  @shortdoc "Show DevIDE LAN readiness"
+  @shortdoc "Show Casein LAN readiness"
 
   @impl Mix.Task
   def run(args) do
     config = parse_config!(args)
 
     config
-    |> DevIDE.Setup.LanRuntime.status()
-    |> DevIDE.Setup.LanRuntime.print_status(Mix.shell())
+    |> Casein.Setup.LanRuntime.status()
+    |> Casein.Setup.LanRuntime.print_status(Mix.shell())
   end
 
   defp parse_config!(args) do
@@ -39,7 +39,7 @@ defmodule Mix.Tasks.DevIde.Lan.Status do
 
     opts
     |> runtime_opts()
-    |> DevIDE.Setup.LanRuntime.config()
+    |> Casein.Setup.LanRuntime.config()
   end
 
   defp runtime_opts(opts) do

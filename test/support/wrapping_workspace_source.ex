@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.WrappingWorkspaceSource do
+defmodule Casein.Test.WrappingWorkspaceSource do
   @moduledoc false
 
   def prepare_local_argv(argv), do: prepare_local_argv(argv, [])

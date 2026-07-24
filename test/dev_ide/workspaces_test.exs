@@ -1,11 +1,11 @@
-defmodule DevIDE.WorkspacesTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.WorkspacesTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIDE.Workspaces.State.WorkspaceRecord
-  alias DevIDE.Workspace
+  alias Casein.Workspaces
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias Casein.Workspaces.State.WorkspaceRecord
+  alias Casein.Workspace
 
   setup do
     keys = [:workspaces_root, :workspaces_roots, :workspace_source, :workspace_state_adapter]
@@ -104,7 +104,7 @@ defmodule DevIDE.WorkspacesTest do
     alpha_path = Path.join(root, "alpha")
     File.mkdir_p!(alpha_path)
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :workspaces_root, root)
 
     assert {:ok, [%Workspace{id: "alpha", path: ^alpha_path}]} = Workspaces.list()
@@ -147,7 +147,7 @@ defmodule DevIDE.WorkspacesTest do
 
   describe "safe_host_loc/1 — Local source" do
     setup do
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
       Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
       :ok
     end

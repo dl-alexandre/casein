@@ -1,12 +1,12 @@
-defmodule DevIDE.Policy do
+defmodule Casein.Policy do
   @moduledoc """
   Single decision point for sensitive actions in dev_ide.
 
-  Pure functions — every check returns `%DevIDE.Policy.Decision{}`. Callers
+  Pure functions — every check returns `%Casein.Policy.Decision{}`. Callers
   must funnel here **before** doing the work and **before** mutating any
   state. Audit logging is the caller's responsibility. Generic blocked
   decisions use `policy.blocked`; command-plane denials use
-  `DevIDE.Runs.Ledger` events such as `run.command_denied`.
+  `Casein.Runs.Ledger` events such as `run.command_denied`.
 
   M10 contract:
     * `apply_proposal?` is real logic as of the `ProposalApply` write path —
@@ -19,9 +19,9 @@ defmodule DevIDE.Policy do
     * Other actions delegate to the existing allowlists they already used.
   """
 
-  alias DevIDE.Policy.{Decision, WorkspaceMode}
-  alias DevIDE.Workspaces.Scratch
-  alias DevIDE.Workspaces.State
+  alias Casein.Policy.{Decision, WorkspaceMode}
+  alias Casein.Workspaces.Scratch
+  alias Casein.Workspaces.State
 
   @type ctx :: %{
           optional(:workspace_id) => String.t(),
@@ -75,7 +75,7 @@ defmodule DevIDE.Policy do
   workspace operator/owner, only in `:manual` mode, never on a
   shared-stage-guarded or unsafe-DB workspace. This decides *who/when* only —
   conflict-risk gating (clean/overlap/conflict) against the current working
-  tree is proposal-specific IO decided by `DevIDE.ProposalApply.apply/4`
+  tree is proposal-specific IO decided by `Casein.ProposalApply.apply/4`
   after this check passes, keeping this module's contract pure.
   """
   def can_apply_proposal?(ctx) do
@@ -99,7 +99,7 @@ defmodule DevIDE.Policy do
 
   @doc """
   Whether a server-spawned review-agent run may self-apply its own proposal
-  with no per-change human click (`DevIDE.Proposals.AutoApply`).
+  with no per-change human click (`Casein.Proposals.AutoApply`).
 
   `:shared_stage_guarded`/`:unsafe_db` are absolute — checked before mode or
   unlock state, and never overridable by an active unlock. Otherwise requires
@@ -203,13 +203,13 @@ defmodule DevIDE.Policy do
   def can_run_command?(ctx), do: deny(:run_command, ctx, :not_allowed)
 
   defp command_allowed?(id) do
-    DevIDE.Commands.allowed?(id) or match?({:ok, _}, DevIDE.Terminals.Workflows.fetch_command(id))
+    Casein.Commands.allowed?(id) or match?({:ok, _}, Casein.Terminals.Workflows.fetch_command(id))
   end
 
   def can_start_review_agent?(%{agent_run_id: id, caps: caps} = ctx) do
-    case DevIDE.Agents.ReviewCommand.fetch(id) do
+    case Casein.Agents.ReviewCommand.fetch(id) do
       {:ok, cmd} ->
-        if DevIDE.Agents.ReviewCommand.available?(cmd, caps),
+        if Casein.Agents.ReviewCommand.available?(cmd, caps),
           do: allow(:start_review_agent, ctx),
           else: deny(:start_review_agent, ctx, :requires_not_met)
 

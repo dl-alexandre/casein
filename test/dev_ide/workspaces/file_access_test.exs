@@ -1,9 +1,9 @@
-defmodule DevIDE.Workspaces.FileAccessTest do
+defmodule Casein.Workspaces.FileAccessTest do
   # Serial: mutates process-global Application env (:ssh_runner).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces.FileAccess
-  alias DevIDE.Test.FakeSshRunner
+  alias Casein.Workspaces.FileAccess
+  alias Casein.Test.FakeSshRunner
 
   @host "boxhost"
   @root "/data/workspaces/ws"

@@ -1,12 +1,12 @@
-defmodule DevIDE.PreviewPanesTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.PreviewPanesTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.ControlSession
-  alias DevIDE.Previews.Preview
-  alias DevIDE.PreviewPanes.PreviewPaneRegistration
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Repo
+  alias Casein.PreviewPanes
+  alias Casein.Previews.ControlSession
+  alias Casein.Previews.Preview
+  alias Casein.PreviewPanes.PreviewPaneRegistration
+  alias Casein.Terminals.TmuxTopology
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -120,7 +120,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%9"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -159,7 +159,7 @@ defmodule DevIDE.PreviewPanesTest do
     assert registration.display_url == url
   end
 
-  test "register uses loopback control URL for DevIDE-hosted display URLs" do
+  test "register uses loopback control URL for Casein-hosted display URLs" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_devide_host"
     pane_id = "%13"
@@ -184,7 +184,7 @@ defmodule DevIDE.PreviewPanesTest do
     assert "http://localhost:4100" in session.metadata["allowed_origins"]
   end
 
-  test "register displays DevIDE loopback previews as same-origin paths" do
+  test "register displays Casein loopback previews as same-origin paths" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_devide_loopback"
     pane_id = "%14"
@@ -262,7 +262,7 @@ defmodule DevIDE.PreviewPanesTest do
              "/preview-proxy/#{workspace_id}/41034/superadmin?preview_superadmin=1"
   end
 
-  test "sync control navigation keeps DevIDE loopback previews on same-origin paths" do
+  test "sync control navigation keeps Casein loopback previews on same-origin paths" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_devide_loopback_sync"
     pane_id = "%15"
@@ -360,7 +360,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%14"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -417,7 +417,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%18"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, _registration} =
              PreviewPanes.register(%{
@@ -504,7 +504,7 @@ defmodule DevIDE.PreviewPanesTest do
       File.rm_rf(artifacts_root)
     end)
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, _registration} =
              PreviewPanes.register(%{
@@ -548,7 +548,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%15"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -579,7 +579,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%16"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -756,7 +756,7 @@ defmodule DevIDE.PreviewPanesTest do
     pane_id = "%22"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
 
     assert {:ok, first} =
              PreviewPanes.register(%{
@@ -960,8 +960,8 @@ defmodule DevIDE.PreviewPanesTest do
     FakeState.put(:fake_tmux_panes, %{session => []})
 
     send(
-      DevIDE.PreviewPanes,
-      {DevIDE.Terminals.TmuxTopology,
+      Casein.PreviewPanes,
+      {Casein.Terminals.TmuxTopology,
        {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 

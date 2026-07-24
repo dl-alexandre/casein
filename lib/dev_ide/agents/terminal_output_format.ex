@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalOutputFormat do
+defmodule Casein.Agents.TerminalOutputFormat do
   @moduledoc """
   Normalizes tmux scrollback for agent-facing terminal tools.
 

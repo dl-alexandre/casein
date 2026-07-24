@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEventsTest do
+defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEventsTest do
   # Policy.gate → Audit.MemoryAdapter on deny/invalid-mode branches.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEvents
+  alias CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents
 
   # Pure-ish deny / invalid branches that never call Workspaces.start/stop/set_mode.
   # SKIPPED (Workspaces manager HTTP / State mutations): workspace:start, workspace:stop,
@@ -76,7 +76,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEventsTest do
              )
 
     # Policy allowed, string_to_mode returned nil → no-op beyond last_decision.
-    assert DevIDE.Policy.Decision.allow?(s2.assigns.last_decision)
+    assert Casein.Policy.Decision.allow?(s2.assigns.last_decision)
     assert s2.assigns.workspace_mode == :review
     assert s2.assigns.flash == %{}
   end
@@ -115,7 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEventsTest do
 
   test "workspace:grant_agent_write_unlock denies outside manual mode" do
     ws_id = "ws-policy-#{System.unique_integer([:positive])}"
-    assert {:ok, _} = DevIDE.Workspaces.State.set_mode(ws_id, :review)
+    assert {:ok, _} = Casein.Workspaces.State.set_mode(ws_id, :review)
 
     s =
       socket(%{

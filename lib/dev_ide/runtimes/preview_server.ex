@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.PreviewServer do
+defmodule Casein.Runtimes.PreviewServer do
   @moduledoc """
   Runtime-scoped preview server launch metadata.
 
@@ -7,9 +7,9 @@ defmodule DevIDE.Runtimes.PreviewServer do
   a launcher needs to start the runtime's own preview server from its worktree.
   """
 
-  alias DevIDE.Previews.EnvPorts
-  alias DevIDE.Runtimes.Profile
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Previews.EnvPorts
+  alias Casein.Runtimes.Profile
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   @app_surface "app"
   @default_launcher "runtime-preview-launch.sh"

@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Deps.Test.Fakes do
+defmodule Casein.Previews.Deps.Test.Fakes do
   @moduledoc """
   In-memory fakes for preview-domain outbound seams.
 
@@ -9,7 +9,7 @@ defmodule DevIDE.Previews.Deps.Test.Fakes do
 
   defmodule Workspaces do
     @moduledoc false
-    @behaviour DevIDE.Previews.Deps.Workspaces
+    @behaviour Casein.Previews.Deps.Workspaces
 
     @impl true
     def get(_id), do: {:error, :not_found}
@@ -46,7 +46,7 @@ defmodule DevIDE.Previews.Deps.Test.Fakes do
 
   defmodule Terminals do
     @moduledoc false
-    @behaviour DevIDE.Previews.Deps.Terminals
+    @behaviour Casein.Previews.Deps.Terminals
 
     @impl true
     def list_sessions, do: []
@@ -87,7 +87,7 @@ defmodule DevIDE.Previews.Deps.Test.Fakes do
 
   defmodule Runtimes do
     @moduledoc false
-    @behaviour DevIDE.Previews.Deps.Runtimes
+    @behaviour Casein.Previews.Deps.Runtimes
 
     @impl true
     def list_runtimes(_filters), do: []
@@ -104,7 +104,7 @@ defmodule DevIDE.Previews.Deps.Test.Fakes do
 
   defmodule PaneSink do
     @moduledoc false
-    @behaviour DevIDE.Previews.Deps.PaneSink
+    @behaviour Casein.Previews.Deps.PaneSink
 
     @impl true
     def broadcast(_event), do: :ok

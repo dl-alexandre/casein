@@ -1,4 +1,4 @@
-defmodule DevIDE.Export.Sanitizer do
+defmodule Casein.Export.Sanitizer do
   @moduledoc """
   Deny-list-based redaction for outbound JSON payloads.
 

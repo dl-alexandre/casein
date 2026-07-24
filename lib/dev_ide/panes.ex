@@ -1,4 +1,4 @@
-defmodule DevIDE.Panes do
+defmodule Casein.Panes do
   @moduledoc """
   Facade over every feature-pane type, so the web layer sees one uniform surface.
 
@@ -7,13 +7,13 @@ defmodule DevIDE.Panes do
   served by `PaneWorker`. The facade folds only the types that implement the
   runtime callbacks (`render_payload/1` + `list/1`); terminals are skipped.
 
-  Convention: `c:DevIDE.Panes.Pane.render_payload/1` returns a **non-empty** map
+  Convention: `c:Casein.Panes.Pane.render_payload/1` returns a **non-empty** map
   for a pane the type owns and an **empty** map (`%{}`) for an unknown pane id.
   The facade relies on this to identify a pane's owning type without a separate
   lookup callback.
   """
 
-  alias DevIDE.Panes.Pane
+  alias Casein.Panes.Pane
 
   @type snapshot :: %{optional(String.t()) => %{type: atom(), payload: map()}}
 

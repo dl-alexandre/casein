@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.InstanceTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.UAT.InstanceTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.UAT.{FakeRunner, Instance, Manifest}
+  alias Casein.UAT.{FakeRunner, Instance, Manifest}
 
   setup do
     FakeRunner.set_probe(:ok)

@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Detector do
+defmodule Casein.Previews.Detector do
   @moduledoc """
   Detects browser-preview candidates from terminal output.
 
@@ -39,7 +39,7 @@ defmodule DevIDE.Previews.Detector do
 
   defp urls_from_text(text) do
     text
-    |> DevIDE.Links.Scanner.scan_urls()
+    |> Casein.Links.Scanner.scan_urls()
     |> Enum.map(fn span -> normalize_url(span.raw) end)
     |> Enum.reject(&is_nil/1)
   end
@@ -58,7 +58,7 @@ defmodule DevIDE.Previews.Detector do
   defp normalize_url(url) do
     url
     |> String.trim_trailing(".")
-    |> DevIDE.Previews.Url.normalize_localhost()
+    |> Casein.Previews.Url.normalize_localhost()
     |> candidate()
   end
 

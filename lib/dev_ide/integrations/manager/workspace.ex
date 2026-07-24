@@ -1,4 +1,4 @@
-defmodule DevIDE.Integrations.Manager.Workspace do
+defmodule Casein.Integrations.Manager.Workspace do
   @moduledoc """
   Normalized view of a milc-devbox workspace.
 

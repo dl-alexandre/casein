@@ -1,4 +1,4 @@
-defmodule DevIDE.Git do
+defmodule Casein.Git do
   @moduledoc """
   Git operations on a workspace. Behaviour-based so a remote/SSH adapter can
   slot in later without changing callers.
@@ -9,7 +9,7 @@ defmodule DevIDE.Git do
   def diff(root, rel), do: impl().diff(root, rel)
   def diff_all(root), do: impl().diff_all(root)
 
-  # Resolved through DevIDE.ProcessEnv so a test can swap the adapter for its
+  # Resolved through Casein.ProcessEnv so a test can swap the adapter for its
   # own process (and run async: true) instead of mutating global Application env.
-  defp impl, do: DevIDE.ProcessEnv.get(:dev_ide, :git_adapter, DevIDE.Git.LocalAdapter)
+  defp impl, do: Casein.ProcessEnv.get(:dev_ide, :git_adapter, Casein.Git.LocalAdapter)
 end

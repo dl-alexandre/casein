@@ -1,7 +1,7 @@
-defmodule DevIDE.Integrations.Manager.ClientAuthHeadersTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Client
 
   defp json(conn, status, payload) do
     conn

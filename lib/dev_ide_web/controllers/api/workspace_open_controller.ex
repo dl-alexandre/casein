@@ -1,18 +1,18 @@
-defmodule DevIdeWeb.API.WorkspaceOpenController do
+defmodule CaseinWeb.API.WorkspaceOpenController do
   @moduledoc """
   Agent/API endpoint for opening resolver-verified workspace targets in all
-  connected DevIDE viewers.
+  connected Casein viewers.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  import DevIdeWeb.API.WorkspaceAPI
+  import CaseinWeb.API.WorkspaceAPI
 
-  alias DevIDE.Links.Open
-  alias DevIDE.Links.Resolver
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces
+  alias Casein.Links.Open
+  alias Casein.Links.Resolver
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Workspace
+  alias Casein.Workspaces
 
   def open(conn, %{"id" => workspace_id}) do
     with {:ok, target} <- required_trimmed_param(conn, "target", :target_required),

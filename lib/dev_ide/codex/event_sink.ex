@@ -1,10 +1,10 @@
-defmodule DevIDE.Codex.EventSink do
+defmodule Casein.Codex.EventSink do
   @moduledoc false
 
   require Logger
 
-  alias DevIDE.Codex.{Event, Store}
-  alias DevIDE.Signals.Publish
+  alias Casein.Codex.{Event, Store}
+  alias Casein.Signals.Publish
 
   @topic_prefix "codex:workspace:"
   @semantic_types [
@@ -23,7 +23,7 @@ defmodule DevIDE.Codex.EventSink do
   @spec route(Event.t()) :: :ok | {:error, term()}
   def route(%Event{} = event) do
     with :ok <- maybe_persist(event) do
-      Phoenix.PubSub.broadcast(DevIDE.PubSub, topic(event.workspace_id), {:codex_event, event})
+      Phoenix.PubSub.broadcast(Casein.PubSub, topic(event.workspace_id), {:codex_event, event})
       emit_semantic_signal(event)
       emit_audit(event)
       emit_telemetry(event)
@@ -33,7 +33,7 @@ defmodule DevIDE.Codex.EventSink do
 
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(workspace_id) when is_binary(workspace_id),
-    do: Phoenix.PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    do: Phoenix.PubSub.subscribe(Casein.PubSub, topic(workspace_id))
 
   @spec topic(String.t()) :: String.t()
   def topic(workspace_id), do: @topic_prefix <> workspace_id
@@ -68,7 +68,7 @@ defmodule DevIDE.Codex.EventSink do
   defp emit_semantic_signal(_event), do: :ok
 
   defp emit_audit(%Event{type: :approval_requested} = event) do
-    DevIDE.Audit.emit!(%{
+    Casein.Audit.emit!(%{
       workspace_id: event.workspace_id,
       action: "codex.approval_requested",
       target_type: "codex_approval",
@@ -81,7 +81,7 @@ defmodule DevIDE.Codex.EventSink do
   defp emit_audit(%Event{type: :approval_resolved} = event) do
     status = payload_value(event.payload, :status)
 
-    DevIDE.Audit.emit!(%{
+    Casein.Audit.emit!(%{
       workspace_id: event.workspace_id,
       action: "codex.approval_resolved",
       target_type: "codex_approval",

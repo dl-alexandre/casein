@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents do
+defmodule Casein.Agents do
   @moduledoc """
   Public API for agent capability detection and agent-owned tool surfaces.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Agents do
   explicit facade calls so web code does not reach into tool internals.
   """
 
-  alias DevIDE.Agents.{Capability, Artifact, PreviewTools, ReviewCommand}
+  alias Casein.Agents.{Capability, Artifact, PreviewTools, ReviewCommand}
 
   @callback detect(root :: String.t(), manager_workspace :: map() | nil) :: [Capability.t()]
   @callback transcripts(root :: String.t()) :: [Artifact.t()]
@@ -25,5 +25,5 @@ defmodule DevIDE.Agents do
     PreviewTools.split_preview_pane(workspace, url, opts)
   end
 
-  defp impl, do: Application.get_env(:dev_ide, :agents_adapter, DevIDE.Agents.LocalAdapter)
+  defp impl, do: Application.get_env(:dev_ide, :agents_adapter, Casein.Agents.LocalAdapter)
 end

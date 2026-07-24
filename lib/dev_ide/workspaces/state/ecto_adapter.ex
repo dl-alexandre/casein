@@ -1,10 +1,10 @@
-defmodule DevIDE.Workspaces.State.EctoAdapter do
-  @moduledoc "Postgres-backed adapter for `DevIDE.Workspaces.State`."
+defmodule Casein.Workspaces.State.EctoAdapter do
+  @moduledoc "Postgres-backed adapter for `Casein.Workspaces.State`."
 
-  @behaviour DevIDE.Workspaces.State.Adapter
+  @behaviour Casein.Workspaces.State.Adapter
 
-  alias DevIDE.Workspaces.State.WorkspaceRecord
-  alias DevIDE.Repo
+  alias Casein.Workspaces.State.WorkspaceRecord
+  alias Casein.Repo
   import Ecto.Query
 
   defmodule Row do

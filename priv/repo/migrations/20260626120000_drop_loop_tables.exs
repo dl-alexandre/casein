@@ -1,7 +1,7 @@
-defmodule DevIDE.Repo.Migrations.DropLoopTables do
+defmodule Casein.Repo.Migrations.DropLoopTables do
   use Ecto.Migration
 
-  # The experimental self-improving Loops subsystem (DevIDE.Loops) was removed —
+  # The experimental self-improving Loops subsystem (Casein.Loops) was removed —
   # it was dormant (disabled by default, no generator configured, no caller, no
   # UI/MCP surface). Drop its tables. `down/0` recreates them to mirror
   # 20260620000000_create_loop_tables.exs so the migration is reversible.

@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.WorktreeAlarm do
+defmodule Casein.Runtimes.WorktreeAlarm do
   @moduledoc """
   Detects stale agent worktrees that need human attention.
 
@@ -9,14 +9,14 @@ defmodule DevIDE.Runtimes.WorktreeAlarm do
 
   require Logger
 
-  alias DevIDE.Audit
-  alias DevIDE.Git
-  alias DevIDE.Git.Inspector, as: GitInspector
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.Runtime
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Audit
+  alias Casein.Git
+  alias Casein.Git.Inspector, as: GitInspector
+  alias Casein.Runtimes
+  alias Casein.Runtimes.Runtime
+  alias Casein.Terminals.Tmux
+  alias Casein.Workspaces
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   @default_ttl_seconds 86_400
 

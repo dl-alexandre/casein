@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ArtifactTools.Create do
+defmodule Casein.Agents.ArtifactTools.Create do
   @moduledoc "artifact_create: new artifact project in an isolated Git worktree."
 
   use Jido.Action,
@@ -21,13 +21,13 @@ defmodule DevIDE.Agents.ArtifactTools.Create do
       branch: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.ArtifactTools.Helpers
-  alias DevIDE.ArtifactProjects
+  alias Casein.Agents.ArtifactTools.Helpers
+  alias Casein.ArtifactProjects
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters do
     Tool.object(
       %{
@@ -43,7 +43,7 @@ defmodule DevIDE.Agents.ArtifactTools.Create do
     )
   end
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata(:medium, true)
 
   @impl Jido.Action

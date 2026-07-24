@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.API.MCPEnvelope do
+defmodule CaseinWeb.API.MCPEnvelope do
   @moduledoc """
-  Shared JSON-RPC 2.0 envelope for DevIDE's MCP servers.
+  Shared JSON-RPC 2.0 envelope for Casein's MCP servers.
 
-  `DevIdeWeb.API.PreviewMCP`, `DevIdeWeb.API.TerminalMCP`, and
-  `DevIdeWeb.API.ArtifactMCP` speak the same wire shape — JSON-RPC 2.0 over a
+  `CaseinWeb.API.PreviewMCP`, `CaseinWeb.API.TerminalMCP`, and
+  `CaseinWeb.API.ArtifactMCP` speak the same wire shape — JSON-RPC 2.0 over a
   single HTTP POST — and share the routing skeleton (`handle/2`, `route/2`, the
   `ping` clause) and response helpers (`result/2`, `error/4`, `parse_error/0`,
   `text/1`, `jsonable/1`, `server_version/0`). That envelope lives here once.
@@ -22,14 +22,14 @@ defmodule DevIdeWeb.API.MCPEnvelope do
       tool invocation, audit). Builds its response with the public helpers below.
 
   `initialize`, `ping`, notification routing, unknown-method errors, parse
-  errors, and protocol-version negotiation are handled here for every DevIDE MCP
+  errors, and protocol-version negotiation are handled here for every Casein MCP
   server.
   """
 
   @default_protocol_version "2025-03-26"
   @error_version "mcp-jsonrpc-v1"
 
-  alias DevIdeWeb.API.MCPCapabilityScope
+  alias CaseinWeb.API.MCPCapabilityScope
 
   # Protocol versions this minimal tool surface is wire-compatible with. When a
   # client asks for one of these on `initialize`, we echo it back (per the MCP

@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.AgentStateTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.AgentStateTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AgentEvents
-  alias DevIDE.Terminals.AgentState
+  alias Casein.Agents.AgentEvents
+  alias Casein.Terminals.AgentState
 
   setup do
     AgentState.clear()
@@ -132,7 +132,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
   describe "agent.blocked audit" do
     test "emits once on transition into blocked, not on re-report" do
       ws = "ws-audit-#{System.unique_integer([:positive])}"
-      :ok = DevIDE.Audit.subscribe(ws)
+      :ok = Casein.Audit.subscribe(ws)
 
       :ok = AgentState.report(ws, "devide_alpha_u-dev", "%3", :working, nil)
       refute_receive {:audit_event, %{action: "agent.blocked"}}, 100
@@ -177,12 +177,12 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
     test "blocked audit inherits the reporter's causality context" do
       ws = "ws-audit-ctx-#{System.unique_integer([:positive])}"
-      :ok = DevIDE.Audit.subscribe(ws)
+      :ok = Casein.Audit.subscribe(ws)
 
       cid =
-        DevIDE.Signals.Context.with_new(fn ->
+        Casein.Signals.Context.with_new(fn ->
           :ok = AgentState.report(ws, "devide_alpha_u-dev", "%9", :blocked, "stuck")
-          DevIDE.Signals.Context.current().trace_id
+          Casein.Signals.Context.current().trace_id
         end)
 
       assert_receive {:audit_event, %{action: "agent.blocked", metadata: metadata}}
@@ -192,7 +192,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
   describe "agent.state_changed audit" do
     test "emits a durable row for every real state transition, with from/to" do
-      :ok = DevIDE.Audit.subscribe("ws-timeline")
+      :ok = Casein.Audit.subscribe("ws-timeline")
 
       :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%5", :working, "compiling")
       assert_receive {:audit_event, %{action: "agent.state_changed", metadata: metadata}}
@@ -209,7 +209,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "identical or message-only re-reports do not add timeline rows" do
-      :ok = DevIDE.Audit.subscribe("ws-timeline")
+      :ok = Casein.Audit.subscribe("ws-timeline")
 
       :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%6", :working, "step 1")
       assert_receive {:audit_event, %{action: "agent.state_changed"}}
@@ -241,7 +241,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
       assert %{state: :working} = AgentState.get("devide_evict", "%0")
 
       actions =
-        "ws-evict-probe" |> DevIDE.Audit.recent_for(10) |> Enum.map(& &1.action)
+        "ws-evict-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
 
       assert actions == ["agent.state_changed"]
     end
@@ -255,7 +255,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
       assert %{state: :working} = AgentState.get("devide_prune", "%1")
 
       actions =
-        "ws-prune-probe" |> DevIDE.Audit.recent_for(10) |> Enum.map(& &1.action)
+        "ws-prune-probe" |> Casein.Audit.recent_for(10) |> Enum.map(& &1.action)
 
       assert actions == ["agent.state_changed"]
     end
@@ -274,7 +274,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
 
       [row | _] =
         "ws-evict-flip"
-        |> DevIDE.Audit.recent_for(10)
+        |> Casein.Audit.recent_for(10)
         |> Enum.filter(&(&1.action == "agent.state_changed"))
 
       assert row.metadata.from == :working
@@ -282,7 +282,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "a blocked transition also keeps the dedicated agent.blocked row" do
-      :ok = DevIDE.Audit.subscribe("ws-timeline")
+      :ok = Casein.Audit.subscribe("ws-timeline")
 
       :ok = AgentState.report("ws-timeline", "devide_alpha_u-dev", "%7", :blocked, "needs perm")
 
@@ -291,7 +291,7 @@ defmodule DevIDE.Terminals.AgentStateTest do
     end
 
     test "secrets in the report message are redacted before persistence" do
-      :ok = DevIDE.Audit.subscribe("ws-timeline")
+      :ok = Casein.Audit.subscribe("ws-timeline")
 
       :ok =
         AgentState.report(

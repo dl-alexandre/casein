@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Surface do
+defmodule Casein.Previews.Surface do
   @moduledoc """
   A named preview surface for a workspace — the app URL, Tidewave endpoint,
   API gateway, or a localhost dev server discovered from terminal output.

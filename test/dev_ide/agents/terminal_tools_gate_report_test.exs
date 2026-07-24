@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalToolsGateReportTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.TerminalToolsGateReportTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Agents.MCPAudit
-  alias DevIDE.Agents.TerminalTools
-  alias DevIDE.Audit
+  alias Casein.Agents.Activity
+  alias Casein.Agents.MCPAudit
+  alias Casein.Agents.TerminalTools
+  alias Casein.Audit
 
   setup do
     Audit.clear()

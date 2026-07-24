@@ -1,9 +1,9 @@
-defmodule DevIDE.PreviewPanesExtraTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.PreviewPanesExtraTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.ControlSession
-  alias DevIDE.Repo
+  alias Casein.PreviewPanes
+  alias Casein.Previews.ControlSession
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -151,7 +151,7 @@ defmodule DevIDE.PreviewPanesExtraTest do
                "tmux_session" => session
              })
 
-    preview = Repo.get!(DevIDE.Previews.Preview, registration.preview_id)
+    preview = Repo.get!(Casein.Previews.Preview, registration.preview_id)
     assert preview.url == url
     assert "https://cdn.external.example:443" in preview.metadata["allowed_origins"]
   end
@@ -171,7 +171,7 @@ defmodule DevIDE.PreviewPanesExtraTest do
                "tmux_session" => session
              })
 
-    preview = Repo.get!(DevIDE.Previews.Preview, registration.preview_id)
+    preview = Repo.get!(Casein.Previews.Preview, registration.preview_id)
     assert preview.url == url
     assert "http://api.external.example:8080" in preview.metadata["allowed_origins"]
   end
@@ -496,7 +496,7 @@ defmodule DevIDE.PreviewPanesExtraTest do
 
     send(
       Process.whereis(PreviewPanes),
-      {DevIDE.Terminals.TmuxTopology, {:session_terminated, %{session: session}}}
+      {Casein.Terminals.TmuxTopology, {:session_terminated, %{session: session}}}
     )
 
     # Offloaded persist close + deregister I/O — poll past the task pipeline.

@@ -1,14 +1,14 @@
-defmodule DevIDE.Panes.EventsParityTest do
+defmodule Casein.Panes.EventsParityTest do
   # Parity harness for the preview runtime cutover: every legacy "preview:"
-  # lifecycle broadcast from DevIDE.PreviewPanes must be mirrored by a generic
-  # DevIDE.Panes.Events event with an equivalent payload, so the web layer can
+  # lifecycle broadcast from Casein.PreviewPanes must be mirrored by a generic
+  # Casein.Panes.Events event with an equivalent payload, so the web layer can
   # switch its preview state maintenance from the legacy topic to the generic
   # one without losing a channel.
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Panes
-  alias DevIDE.Panes.Events
-  alias DevIDE.PreviewPanes
+  alias Casein.Panes
+  alias Casein.Panes.Events
+  alias Casein.PreviewPanes
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -75,7 +75,7 @@ defmodule DevIDE.Panes.EventsParityTest do
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "preview:" <> workspace_id)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "preview:" <> workspace_id)
     [_ | _] = Events.subscribe(workspace_id)
 
     assert {:ok, registration} =

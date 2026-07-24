@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.Plugs.DesktopAuthTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.DesktopAuthTest do
+  use Casein.TestCase, async: false
 
   import Plug.Conn
   import Plug.Test
 
-  alias DevIdeWeb.Plugs.DesktopAuth
-  alias DevIDE.Desktop.{LaunchClaim, LaunchReplayStore}
+  alias CaseinWeb.Plugs.DesktopAuth
+  alias Casein.Desktop.{LaunchClaim, LaunchReplayStore}
 
   @launch_secret String.duplicate("a", 48)
 

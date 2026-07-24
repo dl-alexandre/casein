@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.TerminalTelemetry do
+defmodule CaseinWeb.TerminalTelemetry do
   @moduledoc """
   Shared helpers for terminal render/push telemetry.
 

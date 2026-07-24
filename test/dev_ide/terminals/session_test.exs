@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.SessionTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.SessionTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.{Session, Tmux}
+  alias Casein.Terminals.{Session, Tmux}
 
   @moduletag :pty
 
@@ -363,7 +363,7 @@ defmodule DevIDE.Terminals.SessionTest do
   end
 
   defp tmux_show_environment(session, key) do
-    case DevIDE.Terminals.TmuxRunner.run(["show-environment", "-t", session, key]) do
+    case Casein.Terminals.TmuxRunner.run(["show-environment", "-t", session, key]) do
       {out, 0} -> {:ok, String.trim(out)}
       {out, code} -> {:error, {code, out}}
     end

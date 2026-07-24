@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.SelfHealTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.SelfHealTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.{FakeGit, Run, SelfHeal, Step, Trace}
+  alias Casein.UAT.{FakeGit, Run, SelfHeal, Step, Trace}
 
   defp trace(selector) do
     %Trace{

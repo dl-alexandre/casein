@@ -1,5 +1,5 @@
 defmodule TmuxCtl.ClientTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
@@ -264,7 +264,7 @@ defmodule TmuxCtl.ClientTest do
     assert :ok = Client.apply_defaults(@session)
   end
 
-  test "apply_defaults sets window-size manual so DevIDE owns resizing" do
+  test "apply_defaults sets window-size manual so Casein owns resizing" do
     assert :ok = Client.apply_defaults(@session)
     assert_receive {:tmux_runner, argv}
 

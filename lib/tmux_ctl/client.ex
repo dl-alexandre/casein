@@ -145,7 +145,7 @@ defmodule TmuxCtl.Client do
 
   # `automatic-rename` (hyphenated, the window-option lookup) is 0 once a
   # window has been deliberately named — by the user, `new-window -n`, or a
-  # DevIDE rename — and 1 while tmux still auto-names it after the running
+  # Casein rename — and 1 while tmux still auto-names it after the running
   # command. The underscored spelling is NOT a tmux format variable and
   # silently expands to "".
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{automatic-rename}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
@@ -812,7 +812,7 @@ defmodule TmuxCtl.Client do
 
   Windows are appended to the target session and source sessions naturally
   disappear when their final window is moved. The mutation is intentionally
-  scoped to managed DevIDE sessions, matching the destructive pane/window
+  scoped to managed Casein sessions, matching the destructive pane/window
   guards elsewhere in this adapter.
   """
   @spec consolidate_sessions(String.t(), [String.t()]) :: {:ok, map()} | {:error, term()}
@@ -1182,7 +1182,7 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
-  Set or clear a pane's DevIDE role metadata.
+  Set or clear a pane's Casein role metadata.
 
   The role is stored as the per-pane tmux user option `@devide_pane_role`, so
   it survives app restarts and is visible through topology reads.
@@ -1403,7 +1403,7 @@ defmodule TmuxCtl.Client do
       [
         {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
         {["set-option", "-s", "escape-time", "0"], "escape-time"},
-        # Survive last-session teardown; DevIDE owns session lifecycle.
+        # Survive last-session teardown; Casein owns session lifecycle.
         {["set-option", "-s", "exit-empty", "off"], "exit-empty"},
         {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
         {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
@@ -1416,11 +1416,11 @@ defmodule TmuxCtl.Client do
         {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
         {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
         default_command_options(session),
-        # `window-size manual` makes DevIDE's SessionOwner the sole writer via
+        # `window-size manual` makes Casein's SessionOwner the sole writer via
         # explicit `resize-window` calls. `latest` invites any attached tmux
         # client (SSH attach, agent pairing, etc.) to re-pin the window and
-        # race DevIDE's focused-viewer policy — the narrow-column-with-dots
-        # failure mode. External clients may see letterboxing; DevIDE viewers
+        # race Casein's focused-viewer policy — the narrow-column-with-dots
+        # failure mode. External clients may see letterboxing; Casein viewers
         # never will.
         #
         # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
@@ -1671,7 +1671,7 @@ defmodule TmuxCtl.Client do
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
   attached tmux client) should be enough, but with `tmux new-session -A`
   re-attaching to a session that survives BEAM/page-reload cycles, tmux's
-  Under `window-size manual`, DevIDE's SessionOwner is the sole writer; an
+  Under `window-size manual`, Casein's SessionOwner is the sole writer; an
   explicit `resize-window` is how the authoritative viewer size reaches tmux.
 
   Resizes EVERY window in the session, not just the current one: under
@@ -1728,7 +1728,7 @@ defmodule TmuxCtl.Client do
   @doc """
   Force a full redraw of every client attached to `session`.
 
-  DevIDE renders tmux through server-side emulator grids that consume the
+  Casein renders tmux through server-side emulator grids that consume the
   attached PTY client's byte stream, and tmux only sends diffs against its own
   model of that client's screen. Once an emulator grid diverges from that
   model (replay on reconnect, resize races, dropped bytes), the corruption is

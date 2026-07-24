@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TmuxJanitorTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TmuxJanitorTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.TmuxJanitor
+  alias Casein.Terminals.TmuxJanitor
 
   # The janitor is started in the application supervision tree. Tests just
   # reach in via the public API and inspect __state__/0. Each test uses a
@@ -158,12 +158,12 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
     sid = unique("shell_")
     session = "devide_#{workspace_key}_#{sid}"
 
-    info = DevIDE.Terminals.Session.Info.new_shell("ws-id", sid)
+    info = Casein.Terminals.Session.Info.new_shell("ws-id", sid)
 
     assert {:ok, owner_pid} =
              DynamicSupervisor.start_child(
-               DevIDE.Terminals.Supervisor,
-               {DevIDE.Terminals.SessionOwner, {"ws-id", info}}
+               Casein.Terminals.Supervisor,
+               {Casein.Terminals.SessionOwner, {"ws-id", info}}
              )
 
     on_exit(fn ->
@@ -172,7 +172,7 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
 
     :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
 
-    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(session)
+    assert Casein.Terminals.SessionOwner.durable_shell_session?(session)
 
     TmuxJanitor.subscribe(session)
     TmuxJanitor.unsubscribe(session)
@@ -189,14 +189,14 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
     Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
     workspace_key = "__scratch__"
     sid = unique("shell_")
-    session = DevIDE.Terminals.Tmux.session_name(workspace_key, sid)
+    session = Casein.Terminals.Tmux.session_name(workspace_key, sid)
 
-    info = DevIDE.Terminals.Session.Info.new_shell("__scratch__", sid)
+    info = Casein.Terminals.Session.Info.new_shell("__scratch__", sid)
 
     assert {:ok, owner_pid} =
              DynamicSupervisor.start_child(
-               DevIDE.Terminals.Supervisor,
-               {DevIDE.Terminals.SessionOwner, {"__scratch__", info}}
+               Casein.Terminals.Supervisor,
+               {Casein.Terminals.SessionOwner, {"__scratch__", info}}
              )
 
     on_exit(fn ->
@@ -205,7 +205,7 @@ defmodule DevIDE.Terminals.TmuxJanitorTest do
 
     :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
 
-    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(session)
+    assert Casein.Terminals.SessionOwner.durable_shell_session?(session)
 
     TmuxJanitor.subscribe(session)
     TmuxJanitor.unsubscribe(session)

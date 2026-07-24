@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.PaletteEvents do
   # Command-palette and search handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates every "palette:*" and "search:*" event here via prefix
   # delegators.
   # `palette:execute` resolves a palette item to a concrete event and dispatches
@@ -10,13 +10,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.CommandPalette.Usage
-  alias DevIDE.Workspaces.FileAccess
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.CommandPalette.Usage
+  alias Casein.Workspaces.FileAccess
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.PaletteItems
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("palette:open", _, socket) do
     # The active screen picks the default category tab, so opening the palette

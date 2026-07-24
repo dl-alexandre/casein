@@ -1,4 +1,4 @@
-defmodule DevIDE.TestSupport.HTTPStub do
+defmodule Casein.TestSupport.HTTPStub do
   @moduledoc """
   Bandit-backed localhost HTTP stub for tests.
 
@@ -26,7 +26,7 @@ defmodule DevIDE.TestSupport.HTTPStub do
     def init(stub_pid), do: stub_pid
 
     def call(conn, stub_pid) do
-      DevIDE.TestSupport.HTTPStub.__dispatch__(stub_pid, conn)
+      Casein.TestSupport.HTTPStub.__dispatch__(stub_pid, conn)
     end
   end
 

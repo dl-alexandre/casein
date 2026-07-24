@@ -1,9 +1,9 @@
-defmodule DevIDE.Runs.LedgerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Runs.LedgerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Runs.Ledger
+  alias Casein.Audit
+  alias Casein.Policy.Decision
+  alias Casein.Runs.Ledger
 
   setup do
     Audit.clear()

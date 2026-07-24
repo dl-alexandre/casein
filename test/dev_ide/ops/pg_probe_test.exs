@@ -1,9 +1,9 @@
-defmodule DevIDE.Ops.PgProbeTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Ops.PgProbeTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Operator.SituationDigest
-  alias DevIDE.Ops.PgProbe
+  alias Casein.Audit
+  alias Casein.Operator.SituationDigest
+  alias Casein.Ops.PgProbe
 
   @app_env ~w(pg_probe pg_probe_targets pg_probe_targets_json pg_probe_interval_ms
               pg_probe_warn_utilization pg_probe_critical_utilization

@@ -1,4 +1,4 @@
-defmodule DevIDEMix do
+defmodule CaseinMix do
   @moduledoc """
   Boundary root for repository-local Mix tasks.
 
@@ -10,6 +10,6 @@ defmodule DevIDEMix do
 
   use Boundary,
     top_level?: true,
-    deps: [DevIDE, DevIDE.Repo],
+    deps: [Casein, Casein.Repo],
     exports: :all
 end

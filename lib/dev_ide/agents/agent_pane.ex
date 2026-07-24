@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.AgentPane do
+defmodule Casein.Agents.AgentPane do
   @moduledoc """
-  Resolves the dedicated agent pane in a DevIDE tmux session.
+  Resolves the dedicated agent pane in a Casein tmux session.
 
   When the caller is itself a pane in the session (`:exclude_pane` /
   `:prefer_window_of`), resolution anchors to the caller: panes sharing the
@@ -8,7 +8,7 @@ defmodule DevIDE.Agents.AgentPane do
   returned — an agent asking for "the agent pane" wants a peer, not itself.
   """
 
-  @agent_marker "DevIDE agent pane"
+  @agent_marker "Casein agent pane"
   @agent_processes ~w(claude grok codex opencode)
 
   @spec find(String.t(), module(), keyword()) :: {:ok, map()} | {:error, map()}

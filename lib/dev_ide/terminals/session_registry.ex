@@ -1,12 +1,12 @@
-defmodule DevIDE.Terminals.SessionRegistry do
+defmodule Casein.Terminals.SessionRegistry do
   @moduledoc """
   Registry for discovering attachable terminal sessions.
 
   Sessions are workspace shell sessions backed by tmux/Ghostty PTYs. This
-  module provides the discovery mechanism used by `DevIDE.Terminals`.
+  module provides the discovery mechanism used by `Casein.Terminals`.
   """
 
-  alias DevIDE.Terminals.Session.Info
+  alias Casein.Terminals.Session.Info
 
   @type session_kind :: :shell
 
@@ -27,7 +27,7 @@ defmodule DevIDE.Terminals.SessionRegistry do
   # --- Workspace Shell Sessions (Terminals.Session path) ---
 
   defp list_workspace_shells(workspace_id) do
-    Registry.select(DevIDE.Terminals.Registry, [
+    Registry.select(Casein.Terminals.Registry, [
       {
         {{:"$1", :"$2"}, :_, :_},
         [{:==, :"$1", workspace_id}],

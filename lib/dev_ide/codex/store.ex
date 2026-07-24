@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Store do
+defmodule Casein.Codex.Store do
   @moduledoc """
   Durable query boundary for canonical Codex operations.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Codex.Store do
   LiveView never has to replay an unbounded event stream for first paint.
   """
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   @spec record(Event.t()) :: :ok | {:error, term()}
   def record(%Event{} = event), do: impl().record(event)
@@ -29,6 +29,6 @@ defmodule DevIDE.Codex.Store do
   def clear, do: impl().clear()
 
   defp impl do
-    Application.get_env(:dev_ide, :codex_store_adapter, DevIDE.Codex.Store.EctoAdapter)
+    Application.get_env(:dev_ide, :codex_store_adapter, Casein.Codex.Store.EctoAdapter)
   end
 end

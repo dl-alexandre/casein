@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.Supervisor do
+defmodule CaseinPreviewBrowser.Supervisor do
   @moduledoc """
   Dynamic supervisor for preview browser sessions.
   """
@@ -13,7 +13,7 @@ defmodule DevIDEPreviewBrowser.Supervisor do
   @spec start_session(DynamicSupervisor.supervisor(), keyword()) ::
           DynamicSupervisor.on_start_child()
   def start_session(supervisor, opts \\ []) do
-    DynamicSupervisor.start_child(supervisor, {DevIDEPreviewBrowser.Session, opts})
+    DynamicSupervisor.start_child(supervisor, {CaseinPreviewBrowser.Session, opts})
   end
 
   @impl true

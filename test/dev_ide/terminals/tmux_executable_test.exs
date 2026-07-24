@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TmuxExecutableTest do
+defmodule Casein.Terminals.TmuxExecutableTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.{TmuxExecutable, TmuxRunner}
+  alias Casein.Terminals.{TmuxExecutable, TmuxRunner}
 
   setup do
     previous = Application.get_env(:dev_ide, :tmux_executable)

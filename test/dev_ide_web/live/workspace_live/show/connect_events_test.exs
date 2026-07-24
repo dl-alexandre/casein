@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ConnectEventsTest do
-  use DevIDE.DataCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.ConnectEventsTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Agents.OrchestratorTokens
-  alias DevIdeWeb.WorkspaceLive.Show.ConnectEvents
+  alias Casein.Agents.OrchestratorTokens
+  alias CaseinWeb.WorkspaceLive.Show.ConnectEvents
 
   defp socket(assigns) do
     %Phoenix.LiveView.Socket{assigns: Map.merge(%{__changed__: %{}}, assigns)}

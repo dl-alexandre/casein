@@ -1,13 +1,13 @@
-defmodule DevIDE.Terminals.AgentState do
+defmodule Casein.Terminals.AgentState do
   @moduledoc """
   Semantic agent pane state, reported explicitly by agents (via Claude Code
   hooks or the `terminal_report_agent_state` MCP tool) and merged with the
-  title-derived heuristic from `DevIDE.Terminals.PaneState`.
+  title-derived heuristic from `Casein.Terminals.PaneState`.
 
   States are `:working | :blocked | :done | :idle | :unknown`. `:blocked` and
   `:done` are **report-only** — the title heuristic can never claim them. Claude's
   heavy-asterisk marker means "ready *or waiting for input*" (see
-  `DevIDE.Terminals.PaneState`), so treating it as `:done` would render a blocked
+  `Casein.Terminals.PaneState`), so treating it as `:done` would render a blocked
   permission prompt as finished whenever hooks are absent.
 
   Entries are keyed by `{tmux_session, pane_id}`, held in an in-memory GenServer,
@@ -18,8 +18,8 @@ defmodule DevIDE.Terminals.AgentState do
   tested directly.
   """
 
-  alias DevIDE.Terminals.AgentState.Server
-  alias DevIDE.Terminals.PaneState
+  alias Casein.Terminals.AgentState.Server
+  alias Casein.Terminals.PaneState
   alias Phoenix.PubSub
 
   @topic_prefix "agent_state:"
@@ -133,7 +133,7 @@ defmodule DevIDE.Terminals.AgentState do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @doc false

@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.Screenshot do
+defmodule CaseinPreviewBrowser.Screenshot do
   @moduledoc """
   Screenshot bytes and metadata returned by a browser backend.
   """

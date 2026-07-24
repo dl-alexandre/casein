@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.API.DeviceLinkControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.DeviceLinkControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.DeviceLinks
-  alias DevIDE.Workspace
-  alias DevIdeWeb.ChannelAuth
+  alias Casein.DeviceLinks
+  alias Casein.Workspace
+  alias CaseinWeb.ChannelAuth
 
   defmodule OwnedSource do
     def get(id, _auth),

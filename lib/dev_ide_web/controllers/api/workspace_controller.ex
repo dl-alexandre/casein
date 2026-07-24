@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.WorkspaceController do
+defmodule CaseinWeb.API.WorkspaceController do
   @moduledoc """
   Core workspace API: listing, status, topology snapshot, run history,
   proposals, and audit export.
@@ -6,14 +6,14 @@ defmodule DevIdeWeb.API.WorkspaceController do
   Window, pane, and template endpoints live in their own controllers
   (`WorkspaceWindowController`, `WorkspacePaneController`,
   `WorkspaceTemplateController`) and share helpers via
-  `DevIdeWeb.API.WorkspaceAPI`.
+  `CaseinWeb.API.WorkspaceAPI`.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  import DevIdeWeb.API.WorkspaceAPI
+  import CaseinWeb.API.WorkspaceAPI
 
-  alias DevIDE.Export
+  alias Casein.Export
 
   def index(conn, _params), do: json(conn, Export.list_summary())
 

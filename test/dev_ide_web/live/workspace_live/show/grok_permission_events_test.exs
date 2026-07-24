@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.GrokPermissionEventsTest do
+defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEventsTest do
   # Attachments GenServer + Audit.MemoryAdapter on decision error paths.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.GrokPermissionEvents
+  alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
 
   # Pure: mount (not connected), handle_info snapshot normalize/mismatch,
   # invalid catch-all event, respond/cancel when Attachments has no entry.

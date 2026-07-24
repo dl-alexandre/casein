@@ -1,16 +1,16 @@
-defmodule DevIDE.Git.LocalAdapter do
+defmodule Casein.Git.LocalAdapter do
   @moduledoc """
   Local-host git adapter. Shells out to the `git` binary using **argv-style**
   invocation (no shell interpolation). All path arguments must be relative
-  and validated via `DevIDE.Files.PathSafety` before reaching this module.
+  and validated via `Casein.Files.PathSafety` before reaching this module.
 
   All commands run with `git -C <root>` so the workspace root is the only
   cwd assumption.
   """
 
-  @behaviour DevIDE.Git.Adapter
+  @behaviour Casein.Git.Adapter
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
   @max_diff_bytes 256 * 1024
   @diff_args ["diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"]

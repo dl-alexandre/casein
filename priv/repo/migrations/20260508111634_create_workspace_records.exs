@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateWorkspaceRecords do
+defmodule Casein.Repo.Migrations.CreateWorkspaceRecords do
   use Ecto.Migration
 
   def change do

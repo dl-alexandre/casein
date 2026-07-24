@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.TmuxTemplateEventsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
+  alias CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents
 
   # Pure assign-only clauses: close library, cancel edit/duplicate/preview,
   # apply_previewed without a preview.

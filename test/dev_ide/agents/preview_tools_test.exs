@@ -1,17 +1,17 @@
-defmodule DevIDE.Agents.PreviewToolsTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.PreviewToolsTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.ControlSession
-  alias DevIDE.Previews.ControlObservation
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.TestSupport.HTTPStub
-  alias DevIDE.Repo
+  alias Casein.Agents.PreviewTools
+  alias Casein.PreviewActivity
+  alias Casein.PreviewControl.Registry
+  alias Casein.PreviewPanes
+  alias Casein.Previews.ControlSession
+  alias Casein.Previews.ControlObservation
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
+  alias Casein.Test.RuntimeSeed
+  alias Casein.TestSupport.HTTPStub
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -117,7 +117,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     end)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {session, pane_id} => "# DevIDE agent pane\n"
+      {session, pane_id} => "# Casein agent pane\n"
     })
   end
 
@@ -173,7 +173,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     end)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%11"} => "# DevIDE agent pane\n"
+      {session, "%11"} => "# Casein agent pane\n"
     })
   end
 
@@ -318,7 +318,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "reload tools broadcast workspace browser control requests" do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
             %{
@@ -1286,7 +1286,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
             result = %{
@@ -1324,7 +1324,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
     Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:ws-tools")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     task =
       Task.async(fn ->
@@ -1440,7 +1440,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert PreviewPanes.get_by_pane(pane_id).tmux_session == fresh
   end
 
-  test "invoke open_app auto-navigates loopback DevIDE to the workspace viewer" do
+  test "invoke open_app auto-navigates loopback Casein to the workspace viewer" do
     previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
     previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
     previous_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
@@ -1689,7 +1689,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     bypass = HTTPStub.open()
     Application.put_env(:dev_ide, :preview_open_preflight, true)
 
-    # Mirrors what DevIDE's preview-router (scripts/preview-router.sh) returns
+    # Mirrors what Casein's preview-router (scripts/preview-router.sh) returns
     # when a stopped workspace's subdomain falls through Caddy.
     HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 404, "No active preview environment for localhost:#{bypass.port}")
@@ -1805,7 +1805,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     browser =
       spawn(fn ->
-        Phoenix.PubSub.subscribe(DevIDE.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:#{@v3_workspace.id}")
         send(parent, :browser_ready)
 
         receive do

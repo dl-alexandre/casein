@@ -1,4 +1,4 @@
-defmodule DevIDEGhosttyWindows.MixProject do
+defmodule CaseinGhosttyWindows.MixProject do
   use Mix.Project
 
   def project do

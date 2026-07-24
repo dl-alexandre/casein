@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TmuxTopologyTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TmuxTopologyTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Terminals.TmuxTopology
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -10,12 +10,12 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     prev_fake_alive_sessions = TmuxCtl.Test.FakeState.get(:fake_tmux_alive_sessions)
     prev_refresh_ms = Application.get_env(:dev_ide, :tmux_topology_refresh_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :tmux_topology_refresh_ms, 60_000)
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
 
     on_exit(fn ->
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
       restore_env(:tmux_adapter, prev_tmux_adapter)
       restore_env(:fake_tmux_windows, prev_fake_windows)
       restore_env(:fake_tmux_panes, prev_fake_panes)
@@ -194,8 +194,8 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
 
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
 
-    _ = :sys.get_state(DevIDE.Audit.MemoryAdapter)
-    [event] = DevIDE.Audit.recent_for("ws-topology", 1)
+    _ = :sys.get_state(Casein.Audit.MemoryAdapter)
+    [event] = Casein.Audit.recent_for("ws-topology", 1)
     assert event.action == "tmux.session_terminated"
     assert event.actor_id == "system"
     assert event.target_type == "tmux_session"
@@ -336,7 +336,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   end
 
   defp await_unregistered(session, attempts \\ 50) do
-    case Registry.lookup(DevIDE.Terminals.TopologyRegistry, session) do
+    case Registry.lookup(Casein.Terminals.TopologyRegistry, session) do
       [] ->
         :ok
 

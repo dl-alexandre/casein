@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.AnnotationToolsActionTest do
+defmodule Casein.Agents.AnnotationToolsActionTest do
   @moduledoc """
   Unit tests for the Jido.Action-backed annotation tool surface.
   """
   use ExUnit.Case, async: true
 
-  alias DevIDE.Agents.AnnotationTools
+  alias Casein.Agents.AnnotationTools
 
   describe "definitions/0" do
     test "exposes list and propose with annotation metadata" do

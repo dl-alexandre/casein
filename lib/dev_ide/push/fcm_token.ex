@@ -1,4 +1,4 @@
-defmodule DevIDE.Push.FCMToken.HTTP do
+defmodule Casein.Push.FCMToken.HTTP do
   @moduledoc """
   HTTP seam for minting short-lived Google OAuth tokens from a service account.
   """
@@ -11,9 +11,9 @@ defmodule DevIDE.Push.FCMToken.HTTP do
               {:ok, %{status: non_neg_integer(), body: term()}} | {:error, term()}
 end
 
-defmodule DevIDE.Push.FCMToken.ReqClient do
-  @moduledoc "Default `DevIDE.Push.FCMToken.HTTP` over Req."
-  @behaviour DevIDE.Push.FCMToken.HTTP
+defmodule Casein.Push.FCMToken.ReqClient do
+  @moduledoc "Default `Casein.Push.FCMToken.HTTP` over Req."
+  @behaviour Casein.Push.FCMToken.HTTP
 
   @impl true
   def post_form(url, headers, body) do
@@ -24,19 +24,19 @@ defmodule DevIDE.Push.FCMToken.ReqClient do
   end
 end
 
-defmodule DevIDE.Push.FCMToken do
+defmodule Casein.Push.FCMToken do
   @moduledoc """
   Mints Firebase Cloud Messaging OAuth access tokens from Google service-account
   credentials.
 
-  `DevIDE.Push.FCMProvider` needs a short-lived bearer token for FCM HTTP v1.
+  `Casein.Push.FCMProvider` needs a short-lived bearer token for FCM HTTP v1.
   This module implements Google's JWT bearer flow without adding a credential
   dependency:
 
-      config :dev_ide, DevIDE.Push.FCMProvider,
-        access_token_fun: {DevIDE.Push.FCMToken, :access_token, []}
+      config :dev_ide, Casein.Push.FCMProvider,
+        access_token_fun: {Casein.Push.FCMToken, :access_token, []}
 
-      config :dev_ide, DevIDE.Push.FCMToken,
+      config :dev_ide, Casein.Push.FCMToken,
         service_account_path: "/run/secrets/firebase-service-account.json"
 
   Runtime config also supports:
@@ -287,7 +287,7 @@ defmodule DevIDE.Push.FCMToken do
 
   defp cache_enabled?, do: Keyword.get(config(), :cache, true)
 
-  defp http_client, do: config()[:http_client] || DevIDE.Push.FCMToken.ReqClient
+  defp http_client, do: config()[:http_client] || Casein.Push.FCMToken.ReqClient
 
   defp now_seconds do
     case config()[:now_fun] do

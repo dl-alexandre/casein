@@ -1,8 +1,8 @@
-defmodule DevIDE.Workspaces.State do
+defmodule Casein.Workspaces.State do
   @moduledoc """
   Persistence boundary for workspace records.
 
-  Public API maps `DevIDE.Workspace` and `DevIDE.Workspaces.DbIsolation`
+  Public API maps `Casein.Workspace` and `Casein.Workspaces.DbIsolation`
   into `WorkspaceRecord` upserts. Adapters do the storage. Only
   **redacted** fields are persisted — see `sanitize_manager_payload/1`
   for the deny list.
@@ -12,10 +12,10 @@ defmodule DevIDE.Workspaces.State do
   default.
   """
 
-  alias DevIDE.Workspaces.State.WorkspaceRecord
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspace
-  alias DevIDE.Policy.WorkspaceMode
+  alias Casein.Workspaces.State.WorkspaceRecord
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspace
+  alias Casein.Policy.WorkspaceMode
 
   ## Public API
 
@@ -106,12 +106,12 @@ defmodule DevIDE.Workspaces.State do
   """
   @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_mode_changes(external_id) when is_binary(external_id) do
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, mode_topic(external_id))
+    Phoenix.PubSub.subscribe(Casein.PubSub, mode_topic(external_id))
   end
 
   defp broadcast_mode_changed(external_id, mode) do
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       mode_topic(external_id),
       {:workspace_mode_changed, external_id, mode}
     )
@@ -122,7 +122,7 @@ defmodule DevIDE.Workspaces.State do
   @doc """
   Grants a time-boxed, explicit, revocable unlock allowing a server-spawned
   review-agent run to self-apply its own proposal without a per-change human
-  click (`DevIDE.Proposals.AutoApply`). Never permanent — always has an
+  click (`Casein.Proposals.AutoApply`). Never permanent — always has an
   expiry — and always attributable to the human who granted it.
   """
   @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
@@ -193,7 +193,7 @@ defmodule DevIDE.Workspaces.State do
   """
   @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_agent_write_unlock_changes(external_id) when is_binary(external_id) do
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, agent_write_unlock_topic(external_id))
+    Phoenix.PubSub.subscribe(Casein.PubSub, agent_write_unlock_topic(external_id))
   end
 
   defp existing_or_new(external_id) do
@@ -205,7 +205,7 @@ defmodule DevIDE.Workspaces.State do
 
   defp broadcast_agent_write_unlock_changed(external_id, until, by) do
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       agent_write_unlock_topic(external_id),
       {:agent_write_unlock_changed, external_id, until, by}
     )
@@ -376,6 +376,6 @@ defmodule DevIDE.Workspaces.State do
       Application.get_env(
         :dev_ide,
         :workspace_state_adapter,
-        DevIDE.Workspaces.State.MemoryAdapter
+        Casein.Workspaces.State.MemoryAdapter
       )
 end

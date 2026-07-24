@@ -1,8 +1,8 @@
-defmodule DevIDE.PreviewsExtraTest do
-  use DevIDE.DataCase, async: true
+defmodule Casein.PreviewsExtraTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Previews
-  alias DevIDE.Previews.{Preview, Surface}
+  alias Casein.Previews
+  alias Casein.Previews.{Preview, Surface}
 
   @workspace %{id: "ws-extra-1"}
 

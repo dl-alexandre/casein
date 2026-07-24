@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.SshRunner do
+defmodule Casein.Workspaces.SshRunner do
   @moduledoc """
   Seam over the `ssh` invocation so `FileAccess` can be tested without a real
   remote host. The default implementation shells out via `System.cmd/3` and
@@ -18,7 +18,7 @@ defmodule DevIDE.Workspaces.SshRunner do
 
   defmodule System do
     @moduledoc "Default `SshRunner` — real ssh via System.cmd/Port."
-    @behaviour DevIDE.Workspaces.SshRunner
+    @behaviour Casein.Workspaces.SshRunner
 
     @impl true
     def run(host, argv) do

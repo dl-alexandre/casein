@@ -1,4 +1,4 @@
-defmodule DevIDE.Notifications.Preference do
+defmodule Casein.Notifications.Preference do
   @moduledoc """
   Per-user notification routing preferences.
 

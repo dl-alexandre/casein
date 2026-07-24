@@ -1,5 +1,5 @@
 defmodule TmuxCtl.FakeAdapterTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Test.{FakeAdapter, FakeState}
 

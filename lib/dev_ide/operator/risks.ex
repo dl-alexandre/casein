@@ -1,6 +1,6 @@
-defmodule DevIDE.Operator.Risks do
+defmodule Casein.Operator.Risks do
   @moduledoc """
-  Pure risk rules over a `DevIDE.Operator.SituationDigest` map.
+  Pure risk rules over a `Casein.Operator.SituationDigest` map.
 
   `detect/1` never reads live state: every rule pattern-matches fields the
   digest already carries, so the same digest always yields the same risks.

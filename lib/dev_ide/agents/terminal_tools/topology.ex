@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.Topology do
+defmodule Casein.Agents.TerminalTools.Topology do
   @moduledoc "terminal_topology."
 
   use Jido.Action,
@@ -14,12 +14,12 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
       caller_pane: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -30,7 +30,7 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
         ["session"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_topology")
 
   @impl Jido.Action

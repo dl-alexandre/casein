@@ -1,15 +1,15 @@
-defmodule DevIDE.ProposalsNoApplyTest do
+defmodule Casein.ProposalsNoApplyTest do
   @moduledoc """
   Boundary guard for M9. The read-only Proposals subsystem (discover/parse)
   must never itself gain a write/apply path — the write path lives
-  exclusively in `DevIDE.ProposalApply`, gated by
-  `DevIDE.Policy.can_apply_proposal?/1`. This guard doesn't forbid applying
-  proposals (see `DevIDE.ProposalApplyTest`); it forbids the *read-only*
+  exclusively in `Casein.ProposalApply`, gated by
+  `Casein.Policy.can_apply_proposal?/1`. This guard doesn't forbid applying
+  proposals (see `Casein.ProposalApplyTest`); it forbids the *read-only*
   modules listed below from ever doing it themselves.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Policy
+  alias Casein.Policy
 
   @forbidden_callbacks ~w(apply apply_patch write_file mutate_workspace grant_write)a
 
@@ -23,7 +23,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
 
   test "Proposals behaviour exposes only discover and parse" do
     callbacks =
-      DevIDE.Proposals.Adapter.behaviour_info(:callbacks)
+      Casein.Proposals.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> Enum.sort()
 
@@ -32,7 +32,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
 
   test "Proposals behaviour does not expose forbidden callbacks" do
     set =
-      DevIDE.Proposals.Adapter.behaviour_info(:callbacks)
+      Casein.Proposals.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> MapSet.new()
 
@@ -78,7 +78,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
       )
 
     assert component_src =~ "ProposalApply.apply",
-           "the component must apply via DevIDE.ProposalApply, never DevIDE.Proposals"
+           "the component must apply via Casein.ProposalApply, never Casein.Proposals"
 
     # Component events bypass Show's authz hook, so every handler must gate.
     handler_count =
@@ -96,7 +96,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
            "write-style call found in proposal_panel_component.ex"
   end
 
-  test "the write path lives only in DevIDE.ProposalApply, gated by Policy" do
+  test "the write path lives only in Casein.ProposalApply, gated by Policy" do
     src = File.read!(Path.expand("lib/dev_ide/proposal_apply.ex", File.cwd!()))
     assert src =~ "Policy.can_apply_proposal?", "ProposalApply must funnel through Policy"
 

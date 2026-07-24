@@ -1,7 +1,7 @@
-defmodule DevIDEPreviewBrowser.AdapterTest do
+defmodule CaseinPreviewBrowser.AdapterTest do
   use ExUnit.Case, async: true
 
-  alias DevIDEPreviewBrowser.Adapter
+  alias CaseinPreviewBrowser.Adapter
 
   @preview_ctl_callbacks [
     start_session: 1,

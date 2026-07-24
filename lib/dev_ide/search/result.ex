@@ -1,4 +1,4 @@
-defmodule DevIDE.Search.Result do
+defmodule Casein.Search.Result do
   @moduledoc "A single ripgrep match, normalised for the UI."
 
   @type t :: %__MODULE__{

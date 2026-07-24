@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.CleanExecTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.CleanExecTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.CleanExec
+  alias Casein.Terminals.CleanExec
 
   describe "wrap_argv/1 — non-tmux execs are scrubbed" do
     test "wraps a bare shell exec in the fd-closing /bin/sh wrapper" do

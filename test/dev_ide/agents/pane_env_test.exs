@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.PaneEnvTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.PaneEnvTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AgentShims
-  alias DevIDE.Agents.AuthProfile
-  alias DevIDE.Agents.PaneEnv
+  alias Casein.Agents.AgentShims
+  alias Casein.Agents.AuthProfile
+  alias Casein.Agents.PaneEnv
 
   @workspace %{
     id: "ws-123",

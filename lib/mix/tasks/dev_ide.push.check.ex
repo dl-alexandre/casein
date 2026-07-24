@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.DevIde.Push.Check do
+defmodule Mix.Tasks.Casein.Push.Check do
   @moduledoc """
   Checks whether the configured server push provider can deliver to native platforms.
 
@@ -10,9 +10,9 @@ defmodule Mix.Tasks.DevIde.Push.Check do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  alias DevIDE.Push.Diagnostics
+  alias Casein.Push.Diagnostics
 
   @shortdoc "Checks APNs/FCM push provider readiness"
 

@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.PreviewPaneControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.PreviewPaneControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.PreviewPanes
+  alias Casein.PreviewPanes
 
   @token "test-preview-pane-token"
 

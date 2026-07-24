@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.API.WorkspaceOpenControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.WorkspaceOpenControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Links.Open
+  alias Casein.Links.Open
   @token "workspace-open-token"
 
   defmodule Source do
-    alias DevIDE.Workspace
+    alias Casein.Workspace
 
     def get(id, _auth) do
       root = Application.fetch_env!(:dev_ide, :workspace_open_controller_root)

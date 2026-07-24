@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.SessionDirectory.AttentionTest do
+defmodule Casein.Terminals.SessionDirectory.AttentionTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.SessionDirectory.Attention
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.SessionDirectory.Attention
 
   describe "classify/1" do
     test "puts blocked and failed sessions in Needs You" do

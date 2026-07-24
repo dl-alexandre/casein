@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.Plugs.AssignCurrentUser do
+defmodule CaseinWeb.Plugs.AssignCurrentUser do
   @moduledoc """
   Identity seam for downstream code (terminal session naming, ownership).
 
-  In forward-auth deployments `DevIdeWeb.Plugs.ForwardAuth` is the request
+  In forward-auth deployments `CaseinWeb.Plugs.ForwardAuth` is the request
   plug — it derives identity from `X-Auth-Request-Email` and writes it to the
   session. This module retains the static-user fallback for local
   single-user dev and the `from_session/1` reader LiveView mounts use.

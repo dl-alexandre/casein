@@ -1,6 +1,6 @@
-defmodule DevIDE.Setup.LanService do
+defmodule Casein.Setup.LanService do
   @moduledoc """
-  Helpers for the DevIDE LAN backend systemd service.
+  Helpers for the Casein LAN backend systemd service.
 
   The LAN service runs the Phoenix development server as the invoking user on a
   loopback backend port. A separate privileged socket edge exposes port 80 on
@@ -29,7 +29,7 @@ defmodule DevIDE.Setup.LanService do
 
     """
     [Unit]
-    Description=DevIDE LAN backend
+    Description=Casein LAN backend
     Wants=network-online.target
     After=network.target network-online.target postgresql.service
 

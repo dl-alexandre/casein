@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.Store.Adapter do
+defmodule Casein.Codex.Store.Adapter do
   @moduledoc false
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   @callback record(Event.t()) :: :ok | {:error, term()}
   @callback latest_sequence(String.t()) :: non_neg_integer()

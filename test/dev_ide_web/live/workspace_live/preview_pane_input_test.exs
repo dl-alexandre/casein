@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.WorkspaceLive.PreviewPaneInputTest do
+defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
   # Preview runtime cutover: back/forward/refresh/close reach the LiveView as
   # generic "pane:input" events (the legacy "preview-pane:*" names remain as
   # thin translations for the session-bar buttons), dispatch through
   # Pane.impl(:preview).handle_input/2, and the resulting registration state
-  # flows back via DevIDE.Panes.Events.
-  use DevIdeWeb.ConnCase, async: false
+  # flows back via Casein.Panes.Events.
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.PreviewPanes
+  alias Casein.Workspaces.State.MemoryAdapter
   alias TmuxCtl.Test.FakeState
 
   @workspace_id "ws-1"
@@ -68,7 +68,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewPaneInputTest do
       ]
     })
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", @workspace_id, "status"]} =
           conn ->
         conn
@@ -93,7 +93,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewPaneInputTest do
     end)
 
     {:ok, _record} =
-      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+      Casein.Workspaces.State.sync(%Casein.Workspace{
         id: @workspace_id,
         name: "alpha",
         user: "dev",

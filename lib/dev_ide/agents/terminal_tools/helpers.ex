@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.Helpers do
+defmodule Casein.Agents.TerminalTools.Helpers do
   @moduledoc """
   Shared JSON-Schema fragments and MCP metadata for terminal tool actions.
   Wire shapes are served on tools/list — keep them aligned with the previous
@@ -204,7 +204,7 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
     %{
       type: "string",
       enum: ["grok", "claude", "codex", "opencode", "agent"],
-      description: "Agent runtime identity supplied by an installed DevIDE hook."
+      description: "Agent runtime identity supplied by an installed Casein hook."
     }
   end
 
@@ -220,7 +220,7 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
   def grok_bundle_dir_param do
     %{
       type: "string",
-      description: "Content-addressed DevIDE Grok capability bundle directory."
+      description: "Content-addressed Casein Grok capability bundle directory."
     }
   end
 
@@ -374,7 +374,7 @@ defmodule DevIDE.Agents.TerminalTools.Helpers do
       mutation?: true,
       danger_level: :low,
       capabilities: [:terminal_metadata],
-      recovery_hints: ["Pass workspace_id so DevIDE can associate the update with the workspace."]
+      recovery_hints: ["Pass workspace_id so Casein can associate the update with the workspace."]
     }
   end
 

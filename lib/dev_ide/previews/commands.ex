@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Commands do
+defmodule Casein.Previews.Commands do
   @moduledoc """
   Preview commands for terminals and agents.
 
@@ -6,9 +6,9 @@ defmodule DevIDE.Previews.Commands do
   control sessions, observe pages, and interact — without arbitrary URLs.
   """
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.Previews
-  alias DevIDE.Previews.Control, as: PreviewControl
+  alias Casein.Agents.PreviewTools
+  alias Casein.Previews
+  alias Casein.Previews.Control, as: PreviewControl
 
   @type result :: %{
           status: String.t(),

@@ -1,11 +1,11 @@
-defmodule DevIDE.Terminals.AgentPromptSenderTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.AgentPromptSenderTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.AgentPromptSender
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Labels
+  alias Casein.Terminals
+  alias Casein.Terminals.AgentPromptSender
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Labels
   alias TmuxCtl.Test.FakeState
 
   defmodule FailingTmux do

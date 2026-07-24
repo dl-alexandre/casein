@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.TraceTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.TraceTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.{Step, Trace}
+  alias Casein.UAT.{Step, Trace}
 
   # JSON-native fixture (string values for free-form maps) so the round-trip is
   # stable — that is exactly what gets loaded from priv/uat/<scenario>/trace.json.

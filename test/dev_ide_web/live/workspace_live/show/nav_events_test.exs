@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.NavEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.NavEventsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.NavEvents
+  alias CaseinWeb.WorkspaceLive.Show.NavEvents
 
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{

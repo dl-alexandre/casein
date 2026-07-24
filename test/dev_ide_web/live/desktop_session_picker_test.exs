@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub do
+defmodule CaseinWeb.DesktopSessionPickerTest.PowerShellSessionStub do
   @moduledoc false
   # Minimal stand-in registered under the real PowerShellSession name so the
   # desktop `tmux:refresh_windows` handler (restart → attach_desktop_terminal)
@@ -7,7 +7,7 @@ defmodule DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub do
   use GenServer
 
   def start_link(_opts),
-    do: GenServer.start_link(__MODULE__, :ok, name: DevIDE.Desktop.PowerShellSession)
+    do: GenServer.start_link(__MODULE__, :ok, name: Casein.Desktop.PowerShellSession)
 
   @impl true
   def init(_), do: {:ok, %{}}
@@ -20,19 +20,19 @@ defmodule DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub do
     do: {:reply, {:ok, self(), self(), :running}, state}
 end
 
-defmodule DevIdeWeb.DesktopSessionPickerTest do
+defmodule CaseinWeb.DesktopSessionPickerTest do
   use ExUnit.Case, async: true
 
-  alias DevIdeWeb.DesktopSessionPickerTest.PowerShellSessionStub
+  alias CaseinWeb.DesktopSessionPickerTest.PowerShellSessionStub
 
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveViewTest, only: [render_component: 2]
 
-  alias DevIDE.Workspaces.Scratch
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
-  alias DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader
+  alias Casein.Workspaces.Scratch
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.Sidebar
+  alias CaseinWeb.WorkspaceLive.Show.WorkspaceHeader
 
   test "desktop picker opens from seeded state and closes without touching tmux" do
     socket = desktop_socket()

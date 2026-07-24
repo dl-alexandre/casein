@@ -1,9 +1,9 @@
-defmodule DevIDE.Workspaces.ScratchTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.ScratchTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Scratch
+  alias Casein.Workspace
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Scratch
 
   setup do
     prev_home = Application.get_env(:dev_ide, :home_workspace_path)

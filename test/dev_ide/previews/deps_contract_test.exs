@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.DepsContractTest do
+defmodule Casein.Previews.DepsContractTest do
   @moduledoc """
   Contract tests for preview-domain outbound dependency seams.
 
@@ -7,12 +7,12 @@ defmodule DevIDE.Previews.DepsContractTest do
 
   use ExUnit.Case, async: true
 
-  alias DevIDE.Panes.PreviewDeps, as: PaneSinkImpl
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.Deps.{PaneSink, Runtimes, Terminals, Workspaces}
-  alias DevIDE.Runtimes.PreviewDeps, as: RuntimesImpl
-  alias DevIDE.Terminals.PreviewDeps, as: TerminalsImpl
-  alias DevIDE.Workspaces.PreviewDeps, as: WorkspacesImpl
+  alias Casein.Panes.PreviewDeps, as: PaneSinkImpl
+  alias Casein.Previews.Deps
+  alias Casein.Previews.Deps.{PaneSink, Runtimes, Terminals, Workspaces}
+  alias Casein.Runtimes.PreviewDeps, as: RuntimesImpl
+  alias Casein.Terminals.PreviewDeps, as: TerminalsImpl
+  alias Casein.Workspaces.PreviewDeps, as: WorkspacesImpl
 
   describe "core impls satisfy behaviour callbacks" do
     test "Workspaces.PreviewDeps implements Deps.Workspaces" do
@@ -74,10 +74,10 @@ defmodule DevIDE.Previews.DepsContractTest do
 
       try do
         Application.put_env(:dev_ide, :on_devbox, true)
-        assert DevIDE.HostMode.on_host?()
+        assert Casein.HostMode.on_host?()
 
         Application.put_env(:dev_ide, :on_devbox, false)
-        refute DevIDE.HostMode.on_host?()
+        refute Casein.HostMode.on_host?()
       after
         restore(:on_devbox, previous)
       end
@@ -88,9 +88,9 @@ defmodule DevIDE.Previews.DepsContractTest do
 
       try do
         Application.put_env(:dev_ide, :on_devbox, false)
-        assert DevIDE.WorkspaceSource.Manager.on_host?() == DevIDE.HostMode.on_host?()
-        assert DevIDE.WorkspaceSource.Manager.prepare_local_argv(["echo"]) == ["echo"]
-        assert DevIDE.HostMode.prepare_local_argv(["echo"]) == ["echo"]
+        assert Casein.WorkspaceSource.Manager.on_host?() == Casein.HostMode.on_host?()
+        assert Casein.WorkspaceSource.Manager.prepare_local_argv(["echo"]) == ["echo"]
+        assert Casein.HostMode.prepare_local_argv(["echo"]) == ["echo"]
       after
         restore(:on_devbox, previous)
       end

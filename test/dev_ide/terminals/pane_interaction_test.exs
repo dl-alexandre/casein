@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.PaneInteractionTest do
+defmodule Casein.Terminals.PaneInteractionTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.PaneInteraction
+  alias Casein.Terminals.PaneInteraction
 
   test "agent_pane? matches role and agent commands" do
     assert PaneInteraction.agent_pane?(%{role: "agent", current_command: "node"})

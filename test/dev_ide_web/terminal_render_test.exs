@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.TerminalRenderTest do
+defmodule CaseinWeb.TerminalRenderTest do
   use ExUnit.Case, async: true
 
-  alias DevIdeWeb.TerminalRender
+  alias CaseinWeb.TerminalRender
 
   test "forced full frames include cells and sequencing metadata" do
     payload =

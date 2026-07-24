@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.DesktopHealthController do
+defmodule CaseinWeb.DesktopHealthController do
   @moduledoc """
   Loopback readiness probe for the desktop host (menu bar extra).
 
@@ -8,14 +8,14 @@ defmodule DevIdeWeb.DesktopHealthController do
   deployments. See `docs/desktop/platform_architecture.md`.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   def show(conn, _params) do
     if Application.get_env(:dev_ide, :desktop_mode, false) do
       {uptime_ms, _since_last} = :erlang.statistics(:wall_clock)
 
       base =
-        case DevIDE.Desktop.Status.current() do
+        case Casein.Desktop.Status.current() do
           %{} = payload -> Map.take(payload, ~w(status version revision port base_url))
           nil -> %{"status" => "ready"}
         end

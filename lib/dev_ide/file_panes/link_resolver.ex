@@ -1,8 +1,8 @@
-defmodule DevIDE.FilePanes.LinkResolver do
+defmodule Casein.FilePanes.LinkResolver do
   @moduledoc """
   Validates terminal file-link candidates against a **local** workspace root.
 
-  Sits between `DevIDE.Terminals.FileLinkScanner` (pure span detection, runs
+  Sits between `Casein.Terminals.FileLinkScanner` (pure span detection, runs
   per frame in PaneWorker) and consumers:
 
     * `validate_frame/3` filters a frame's candidates down to links whose
@@ -21,12 +21,12 @@ defmodule DevIDE.FilePanes.LinkResolver do
   put SSH round-trips on the frame path. Callers with a remote loc skip
   scanning entirely.
 
-  Unlike `DevIDE.Links.Resolver` (the workspace open API's resolver), this
+  Unlike `Casein.Links.Resolver` (the workspace open API's resolver), this
   module never classifies targets or touches `FileAccess` — it is a cheap,
   cached existence + confinement check built for the render hot path.
 
   Candidates that miss root-relatively fall back to
-  `DevIDE.FilePanes.SuffixIndex`: bare names (`foo.ex`), subdir-relative
+  `Casein.FilePanes.SuffixIndex`: bare names (`foo.ex`), subdir-relative
   paths (`js/app.js` printed from a pane below the root), and absolute paths
   outside the root (linked-worktree stacktraces) resolve when exactly one
   workspace file's path ends with the candidate's trailing segments. While a
@@ -37,8 +37,8 @@ defmodule DevIDE.FilePanes.LinkResolver do
 
   use GenServer
 
-  alias DevIDE.FilePanes.SuffixIndex
-  alias DevIDE.Files.PathSafety
+  alias Casein.FilePanes.SuffixIndex
+  alias Casein.Files.PathSafety
 
   @table :dev_ide_file_link_cache
   @default_max_new_per_frame 16

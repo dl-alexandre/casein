@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Backends.Tmux do
+defmodule Casein.Terminals.Backends.Tmux do
   @moduledoc """
   Platform-neutral terminal backend backed by the existing tmux facade.
 
@@ -7,21 +7,21 @@ defmodule DevIDE.Terminals.Backends.Tmux do
   clean peer module.
   """
 
-  @behaviour DevIDE.Terminals.Backend
+  @behaviour Casein.Terminals.Backend
 
-  alias DevIDE.Terminals.Backend.SpawnSpec
-  alias DevIDE.Terminals.CleanExec
-  alias DevIDE.Terminals.Shims
-  alias DevIDE.Terminals.Theme
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxRunner
+  alias Casein.Terminals.Backend.SpawnSpec
+  alias Casein.Terminals.CleanExec
+  alias Casein.Terminals.Shims
+  alias Casein.Terminals.Theme
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxRunner
 
   @impl true
   defdelegate session_name(workspace_name, sid), to: Tmux
 
   @impl true
   def spawn_spec({:local, cwd}, session) do
-    exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
+    exec_cwd = Casein.WorkspaceSource.local_exec_cwd(cwd)
     host_cwd = safe_local_cwd(cwd)
     theme_opts = [scheme: Theme.default_scheme(), preset: Theme.default_preset_id()]
 
@@ -49,14 +49,14 @@ defmodule DevIDE.Terminals.Backends.Tmux do
           host_argv.(integrated_shell)
 
         Tmux.local_argv_wrapped?() and Tmux.container_has_tmux?(cwd) ->
-          DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(integrated_shell),
+          Casein.WorkspaceSource.prepare_local_argv(container_argv.(integrated_shell),
             tty: true,
             cwd: cwd,
             normal_cwd: exec_cwd
           )
 
         true ->
-          case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
+          case Casein.WorkspaceSource.local_tmux_pane_shell(cwd) do
             nil -> host_argv.(integrated_shell)
             shell -> host_argv.([shell])
           end

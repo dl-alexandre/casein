@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.ArtifactProjectControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.ArtifactProjectControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Audit
-  alias DevIDE.Runtimes
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.ArtifactProjects
+  alias Casein.Audit
+  alias Casein.Runtimes
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @global_token "test-artifact-restore-global-token"
   @workspace_token "test-artifact-restore-workspace-token"
@@ -37,7 +37,7 @@ defmodule DevIdeWeb.API.ArtifactProjectControllerTest do
     })
 
     Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
     Application.put_env(:dev_ide, :agent_worktree_roots, [])
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
@@ -157,7 +157,7 @@ defmodule DevIdeWeb.API.ArtifactProjectControllerTest do
   defp init_repo!(repo) do
     File.mkdir_p!(repo)
     git!(repo, ["init", "--initial-branch=main"])
-    git!(repo, ["config", "user.name", "DevIDE Test"])
+    git!(repo, ["config", "user.name", "Casein Test"])
     git!(repo, ["config", "user.email", "devide-test@localhost"])
     File.write!(Path.join(repo, "README.md"), "# Artifact Restore Test\n")
     git!(repo, ["add", "README.md"])

@@ -1,11 +1,11 @@
 defmodule McpCtl do
   @moduledoc """
-  MCP tool schema fragments shared across DevIDE's agent-facing tools.
+  MCP tool schema fragments shared across Casein's agent-facing tools.
 
-  Not a generic MCP library: the parameter descriptions encode DevIDE's
-  workspace-id and folder-attachment conventions. It lives outside `DevIDE.*`
+  Not a generic MCP library: the parameter descriptions encode Casein's
+  workspace-id and folder-attachment conventions. It lives outside `Casein.*`
   only so tool schema definitions stay dependency-free; tool implementations
-  remain in `DevIDE.Agents.*Tools`.
+  remain in `Casein.Agents.*Tools`.
   """
 
   use Boundary,

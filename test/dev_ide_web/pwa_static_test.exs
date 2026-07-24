@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.PwaStaticTest do
-  use DevIdeWeb.ConnCase, async: true
+defmodule CaseinWeb.PwaStaticTest do
+  use CaseinWeb.ConnCase, async: true
 
   test "site manifest is served with installable mobile metadata", %{conn: conn} do
     conn = get(conn, "/site.webmanifest")
 
     assert {:ok, manifest} = Jason.decode(response(conn, 200))
-    assert manifest["name"] == "DevIDE"
-    assert manifest["short_name"] == "DevIDE"
+    assert manifest["name"] == "Casein"
+    assert manifest["short_name"] == "Casein"
     assert manifest["start_url"] == "/"
     assert manifest["scope"] == "/"
     assert manifest["display"] == "standalone"

@@ -1,17 +1,17 @@
-defmodule DevIDE.UAT.FakeRunner do
+defmodule Casein.UAT.FakeRunner do
   @moduledoc """
-  In-memory `DevIDE.UAT.Instance.Runner` for tests. Records launch/seed/kill into
+  In-memory `Casein.UAT.Instance.Runner` for tests. Records launch/seed/kill into
   the *calling* process dictionary (Instance drives the runner synchronously), so
   a test can assert teardown killed the exact handle — never a broad pattern —
   and that probe retries behave, without booting a real instance.
 
   Configure the probe outcome before boot with `set_probe/1`:
 
-      DevIDE.UAT.FakeRunner.set_probe(:ok)
-      DevIDE.UAT.FakeRunner.set_probe({:error, :econnrefused})
+      Casein.UAT.FakeRunner.set_probe(:ok)
+      Casein.UAT.FakeRunner.set_probe({:error, :econnrefused})
   """
 
-  @behaviour DevIDE.UAT.Instance.Runner
+  @behaviour Casein.UAT.Instance.Runner
 
   @os_pid 4242
 

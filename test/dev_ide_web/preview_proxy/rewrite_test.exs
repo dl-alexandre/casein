@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.PreviewProxy.RewriteTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.PreviewProxy.RewriteTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.PreviewProxy.Rewrite
+  alias CaseinWeb.PreviewProxy.Rewrite
 
   describe "droppable_header?/1" do
     test "drops frame blockers regardless of case" do

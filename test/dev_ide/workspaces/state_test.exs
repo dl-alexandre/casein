@@ -1,10 +1,10 @@
-defmodule DevIDE.Workspaces.StateTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.StateTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.{MemoryAdapter, WorkspaceRecord}
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.{MemoryAdapter, WorkspaceRecord}
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspace
 
   setup do
     MemoryAdapter.clear()

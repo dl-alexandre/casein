@@ -1,14 +1,14 @@
-defmodule DevIDE.Signals.Publish do
+defmodule Casein.Signals.Publish do
   @moduledoc false
 
-  alias DevIDE.Agents.AgentEvent
-  alias DevIDE.Audit.Event
-  alias DevIDE.SignalBus
-  alias DevIDE.Signals
+  alias Casein.Agents.AgentEvent
+  alias Casein.Audit.Event
+  alias Casein.SignalBus
+  alias Casein.Signals
   alias Jido.Signal.Bus
 
-  @audit_pattern DevIDE.Signals.type_prefix() <> "**"
-  @domain_pattern DevIDE.Signals.domain_type("**")
+  @audit_pattern Casein.Signals.type_prefix() <> "**"
+  @domain_pattern Casein.Signals.domain_type("**")
 
   @spec audit_event(Event.t()) :: :ok
   def audit_event(%Event{} = event) do

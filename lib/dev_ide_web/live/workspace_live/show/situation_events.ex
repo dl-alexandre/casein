@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SituationEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.SituationEvents do
   # Situation risk badge/drawer state + handle_info/handle_event clauses,
-  # delegated from DevIdeWeb.WorkspaceLive.Show (mirrors HistoryEvents).
+  # delegated from CaseinWeb.WorkspaceLive.Show (mirrors HistoryEvents).
   #
   # Reflect-only: the LiveView never *starts* a SituationServer — it renders
   # the badge only when the :situation_server flag is on AND a server is
@@ -12,7 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SituationEvents do
   import Phoenix.Component
   import Phoenix.LiveView, only: [connected?: 1]
 
-  alias DevIDE.Operator.SituationServer
+  alias Casein.Operator.SituationServer
 
   @doc """
   Mount-time state: subscribe (flag on + connected) and defer the risk seed.

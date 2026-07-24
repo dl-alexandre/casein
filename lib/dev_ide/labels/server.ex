@@ -1,4 +1,4 @@
-defmodule DevIDE.Labels.Server do
+defmodule Casein.Labels.Server do
   @moduledoc false
 
   use GenServer
@@ -9,7 +9,7 @@ defmodule DevIDE.Labels.Server do
   @debounce_ms 30_000
   @max_entries 500
   @quiet_suffix " · quiet"
-  @registered_name :"Elixir.DevIDE.Labels"
+  @registered_name :"Elixir.Casein.Labels"
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, %{}, Keyword.put_new(opts, :name, @registered_name))
@@ -172,7 +172,7 @@ defmodule DevIDE.Labels.Server do
 
   defp broadcast(workspace_id, tmux_session, pane_id, entry) when is_binary(workspace_id) do
     PubSub.broadcast(
-      DevIDE.PubSub,
+      Casein.PubSub,
       topic(workspace_id),
       {:pane_label_updated, tmux_session, pane_id, entry}
     )

@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.Activity do
+defmodule Casein.Agents.Activity do
   @moduledoc """
   Recent agent activity feed for human operators watching external agents.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Agents.Activity do
 
   use GenServer
 
-  alias DevIDE.Agents.{AgentEvent, AgentEvents}
+  alias Casein.Agents.{AgentEvent, AgentEvents}
   alias Phoenix.PubSub
 
   @topic_prefix "agent_activity:"
@@ -40,7 +40,7 @@ defmodule DevIDE.Agents.Activity do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @spec recent(String.t(), pos_integer()) :: [entry()]
@@ -74,7 +74,7 @@ defmodule DevIDE.Agents.Activity do
 
   def handle_call(:clear, _from, _state) do
     if Application.get_env(:dev_ide, :agent_events_adapter) ==
-         DevIDE.Agents.AgentEvents.MemoryAdapter do
+         Casein.Agents.AgentEvents.MemoryAdapter do
       _ = AgentEvents.clear()
     end
 
@@ -98,7 +98,7 @@ defmodule DevIDE.Agents.Activity do
       end
 
     if is_binary(workspace_id) do
-      PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:agent_mcp_activity, entry})
+      PubSub.broadcast(Casein.PubSub, topic(workspace_id), {:agent_mcp_activity, entry})
     end
 
     {:reply, entry, updated}

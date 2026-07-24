@@ -434,7 +434,7 @@ function Set-DevIDEStartup {
         $escapedRoot = $script:Paths.ReleaseRoot.Replace('"', '""')
         $shortcut.Arguments = "-NoLogo -NoProfile -WindowStyle Hidden -File `"$escapedScript`" -ReleaseRoot `"$escapedRoot`""
         $shortcut.WorkingDirectory = $script:Paths.ReleaseRoot
-        $shortcut.Description = 'Start DevIDE in the Windows notification area'
+        $shortcut.Description = 'Start Casein in the Windows notification area'
         $shortcut.Save()
     } else {
         Remove-Item -LiteralPath $script:Paths.StartupLink -Force -ErrorAction SilentlyContinue
@@ -506,7 +506,7 @@ function Start-DevIDETray {
     $errorIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(239, 68, 68))
 
     $tray = [Windows.Forms.NotifyIcon]::new()
-    $tray.Text = 'DevIDE is starting'
+    $tray.Text = 'Casein is starting'
     $tray.Icon = $stoppedIcon
     $tray.Visible = $true
 
@@ -514,7 +514,7 @@ function Start-DevIDETray {
     $statusItem = $menu.Items.Add('Starting...')
     $statusItem.Enabled = $false
     [void]$menu.Items.Add('-')
-    $openItem = $menu.Items.Add('Open DevIDE')
+    $openItem = $menu.Items.Add('Open Casein')
     $restartItem = $menu.Items.Add('Restart')
     $repairItem = $menu.Items.Add('Repair installation')
     $rollbackItem = $menu.Items.Add('Roll back last update')
@@ -523,12 +523,12 @@ function Start-DevIDETray {
     $startupItem = $menu.Items.Add('Launch at Windows sign-in')
     $startupItem.Checked = $script:LaunchAtSignIn
     [void]$menu.Items.Add('-')
-    $quitItem = $menu.Items.Add('Quit DevIDE')
+    $quitItem = $menu.Items.Add('Quit Casein')
     $tray.ContextMenuStrip = $menu
 
     $open = {
         if (-not (Open-DevIDECockpit $script:Port)) {
-            $tray.ShowBalloonTip(3000, 'DevIDE', 'DevIDE is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
+            $tray.ShowBalloonTip(3000, 'Casein', 'Casein is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
         }
     }
     $openItem.Add_Click($open)
@@ -552,7 +552,7 @@ function Start-DevIDETray {
         $ready = Start-DevIDERuntime $script:Port
         $restartItem.Enabled = $true
         if (-not $ready) {
-            $tray.ShowBalloonTip(5000, 'DevIDE failed to start', "Open logs for details.", [Windows.Forms.ToolTipIcon]::Error)
+            $tray.ShowBalloonTip(5000, 'Casein failed to start', "Open logs for details.", [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $repairItem.Add_Click({
@@ -561,10 +561,10 @@ function Start-DevIDETray {
             Stop-DevIDERuntime $script:Port
             & (Join-Path $script:Paths.ReleaseRoot 'windows\Repair-DevIDE.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE')
             if (-not (Start-DevIDERuntime $script:Port)) { throw 'Runtime did not become ready after repair.' }
-            $tray.ShowBalloonTip(3000, 'DevIDE repaired', 'The local database and runtime state are healthy.', [Windows.Forms.ToolTipIcon]::Info)
+            $tray.ShowBalloonTip(3000, 'Casein repaired', 'The local database and runtime state are healthy.', [Windows.Forms.ToolTipIcon]::Info)
         } catch {
             Write-DevIDELog "Repair failed: $($_.Exception.Message)"
-            $tray.ShowBalloonTip(5000, 'DevIDE repair failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
+            $tray.ShowBalloonTip(5000, 'Casein repair failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
         } finally {
             $repairItem.Enabled = $true
         }
@@ -578,7 +578,7 @@ function Start-DevIDETray {
             [Windows.Forms.Application]::Exit()
         } catch {
             Write-DevIDELog "Rollback failed: $($_.Exception.Message)"
-            $tray.ShowBalloonTip(5000, 'DevIDE rollback failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
+            $tray.ShowBalloonTip(5000, 'Casein rollback failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $supportItem.Add_Click({
@@ -603,13 +603,13 @@ function Start-DevIDETray {
     $timer.Add_Tick({
         if (Test-DevIDEReady $script:Port) {
             $statusItem.Text = 'Running'
-            $tray.Text = 'DevIDE - Running'
+            $tray.Text = 'Casein - Running'
             $tray.Icon = $runningIcon
             $openItem.Enabled = $true
             $script:RecoveryAttempts = 0
         } else {
             $statusItem.Text = 'Stopped'
-            $tray.Text = 'DevIDE - Stopped'
+            $tray.Text = 'Casein - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
             Clear-DevIDEStaleRuntimeState $script:Port | Out-Null
@@ -629,12 +629,12 @@ function Start-DevIDETray {
     try {
         if (Start-DevIDERuntime $script:Port) {
             $tray.Icon = $runningIcon
-            $tray.Text = 'DevIDE - Running'
+            $tray.Text = 'Casein - Running'
             $statusItem.Text = 'Running'
-            $tray.ShowBalloonTip(2500, 'DevIDE is ready', 'Double-click the tray icon to open it.', [Windows.Forms.ToolTipIcon]::Info)
+            $tray.ShowBalloonTip(2500, 'Casein is ready', 'Double-click the tray icon to open it.', [Windows.Forms.ToolTipIcon]::Info)
         } else {
             $tray.Icon = $errorIcon
-            $tray.Text = 'DevIDE - Start failed'
+            $tray.Text = 'Casein - Start failed'
             $statusItem.Text = 'Start failed'
         }
         [Windows.Forms.Application]::Run()
@@ -662,8 +662,8 @@ if (-not $LibraryOnly) {
         Write-DevIDELog "Fatal tray host error: $($_.Exception.ToString())"
         Add-Type -AssemblyName System.Windows.Forms
         [Windows.Forms.MessageBox]::Show(
-            "DevIDE could not start.`r`n`r`n$($_.Exception.Message)`r`n`r`nLog: $($script:Paths.Log)",
-            'DevIDE',
+            "Casein could not start.`r`n`r`n$($_.Exception.Message)`r`n`r`nLog: $($script:Paths.Log)",
+            'Casein',
             [Windows.Forms.MessageBoxButtons]::OK,
             [Windows.Forms.MessageBoxIcon]::Error
         ) | Out-Null

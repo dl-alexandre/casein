@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.PreviewArtifactControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.PreviewArtifactControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Previews.Artifacts
+  alias Casein.Previews.Artifacts
 
   # Fake workspace source returning a workspace owned by "owner" for any id, so
   # the controller's ownership gate can be exercised without the manager backend.
   defmodule OwnedSource do
-    alias DevIDE.Workspace
+    alias Casein.Workspace
     def get(id, _auth), do: {:ok, %Workspace{id: id, name: id, user: "owner", status: :running}}
   end
 
@@ -61,7 +61,7 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
 
   test "escapes artifact paths in fitted preview HTML attributes", %{conn: conn} do
     {:ok, path} =
-      DevIDE.Previews.Storage.put(
+      Casein.Previews.Storage.put(
         "ws-preview-fit",
         ~s(bad"onerror="alert),
         "png",
@@ -117,7 +117,7 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
   end
 
   defp store_webm!(workspace_id, id, bytes) do
-    {:ok, ref} = DevIDE.Previews.Storage.put(workspace_id, id, "webm", {:bytes, bytes})
+    {:ok, ref} = Casein.Previews.Storage.put(workspace_id, id, "webm", {:bytes, bytes})
     ref
   end
 

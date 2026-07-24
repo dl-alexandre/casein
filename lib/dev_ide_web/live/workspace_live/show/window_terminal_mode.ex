@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
+defmodule CaseinWeb.WorkspaceLive.Show.WindowTerminalMode do
   @moduledoc """
   Active-window terminal helpers.
 
@@ -10,7 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   palette) keep a stable API.
   """
 
-  alias DevIdeWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show
 
   @type mode :: :raw
 

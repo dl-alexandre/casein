@@ -4,8 +4,8 @@ defmodule TmuxCtl.SharedWriteGuard do
   @doc """
   Runs `fun` unless a configured shared-write guard returns `:noop`.
 
-  DevIDE wires `config :tmux_ctl, :shared_write_guard` to
-  `{DevIDE.Deployment.Drain, :guard_shared_write}` at boot. When unset, `fun`
+  Casein wires `config :tmux_ctl, :shared_write_guard` to
+  `{Casein.Deployment.Drain, :guard_shared_write}` at boot. When unset, `fun`
   always runs (generic tmux_ctl consumers).
   """
   @spec guard((-> term())) :: term() | :noop

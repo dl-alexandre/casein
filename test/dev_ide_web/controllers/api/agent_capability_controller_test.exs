@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.API.AgentCapabilityControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.AgentCapabilityControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Agents.{AgentCapabilityToken, AgentCapabilityTokens}
-  alias DevIDE.Repo
-  alias DevIDE.Workspaces
+  alias Casein.Agents.{AgentCapabilityToken, AgentCapabilityTokens}
+  alias Casein.Repo
+  alias Casein.Workspaces
 
   @workspace_id "grok-cap-ws"
   @workspace_token "grok-cap-workspace-token"
@@ -36,7 +36,7 @@ defmodule DevIdeWeb.API.AgentCapabilityControllerTest do
       restore(:mcp_tool_search, previous.tool_search)
     end)
 
-    tmux_session = DevIDE.Terminals.tmux_workspace_session_prefix(@workspace_id) <> "agent"
+    tmux_session = Casein.Terminals.tmux_workspace_session_prefix(@workspace_id) <> "agent"
     %{tmux_session: tmux_session}
   end
 
@@ -215,7 +215,7 @@ defmodule DevIdeWeb.API.AgentCapabilityControllerTest do
     assert initialized.status == 200
     assert [mcp_session_id] = get_resp_header(initialized, "mcp-session-id")
 
-    other_session = DevIDE.Terminals.tmux_workspace_session_prefix(@workspace_id) <> "other"
+    other_session = Casein.Terminals.tmux_workspace_session_prefix(@workspace_id) <> "other"
 
     replacement =
       issue(build_conn(), @workspace_token, other_session, %{

@@ -1,11 +1,11 @@
-defmodule DevIDE.Codex.Store.MemoryAdapter do
+defmodule Casein.Codex.Store.MemoryAdapter do
   @moduledoc "In-memory Codex operations store used by tests."
 
   use GenServer
-  @behaviour DevIDE.Codex.Store.Adapter
+  @behaviour Casein.Codex.Store.Adapter
 
-  alias DevIDE.Codex.Event
-  alias DevIDE.Codex.Store.Projection
+  alias Casein.Codex.Event
+  alias Casein.Codex.Store.Projection
 
   @max_events 5_000
 

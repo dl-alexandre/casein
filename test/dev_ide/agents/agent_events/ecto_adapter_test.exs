@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.AgentEvents.EctoAdapterTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.AgentEvents.EctoAdapterTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.AgentEvents
-  alias DevIDE.Agents.AgentEvents.EctoAdapter
+  alias Casein.Agents.AgentEvents
+  alias Casein.Agents.AgentEvents.EctoAdapter
 
   setup do
     previous = Application.get_env(:dev_ide, :agent_events_adapter)

@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.ExternalBackend do
+defmodule CaseinPreviewBrowser.ExternalBackend do
   @moduledoc """
   External process backend using a newline-delimited JSON protocol.
 
@@ -7,9 +7,9 @@ defmodule DevIDEPreviewBrowser.ExternalBackend do
   browser process as long as they speak the request/response/event contract.
   """
 
-  @behaviour DevIDEPreviewBrowser.Backend
+  @behaviour CaseinPreviewBrowser.Backend
 
-  alias DevIDEPreviewBrowser.{ExternalBackend.Worker, Health, Screenshot}
+  alias CaseinPreviewBrowser.{ExternalBackend.Worker, Health, Screenshot}
 
   defstruct [:worker, request_timeout: 5_000]
 

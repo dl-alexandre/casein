@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.TerminalOutputFormatTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Agents.TerminalOutputFormatTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Agents.TerminalOutputFormat
+  alias Casein.Agents.TerminalOutputFormat
 
   test "strips CSI color sequences by default" do
     assert TerminalOutputFormat.format("\e[31merror\e[0m\n") == "error\n"

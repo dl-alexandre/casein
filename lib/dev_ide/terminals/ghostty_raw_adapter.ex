@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.GhosttyRawAdapter do
+defmodule Casein.Terminals.GhosttyRawAdapter do
   @moduledoc """
   Migration bridge / adapter for raw shell channel joins.
 
@@ -20,7 +20,7 @@ defmodule DevIDE.Terminals.GhosttyRawAdapter do
   All errors are surfaced cleanly to callers (no swallowed child failures).
   """
 
-  alias DevIDE.Terminals.Session
+  alias Casein.Terminals.Session
 
   @doc """
   Ensures the canonical raw shell PTY owner is running for the given

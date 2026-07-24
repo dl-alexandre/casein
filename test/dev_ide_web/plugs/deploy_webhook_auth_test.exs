@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.Plugs.DeployWebhookAuthTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.DeployWebhookAuthTest do
+  use Casein.TestCase, async: false
 
   import Plug.Conn
   import Plug.Test
 
-  alias DevIdeWeb.Plugs.DeployWebhookAuth
+  alias CaseinWeb.Plugs.DeployWebhookAuth
 
   @secret "webhook-test-secret"
   @body ~s({"ref":"refs/heads/master"})

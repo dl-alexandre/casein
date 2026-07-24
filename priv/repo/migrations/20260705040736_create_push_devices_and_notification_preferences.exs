@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreatePushDevicesAndNotificationPreferences do
+defmodule Casein.Repo.Migrations.CreatePushDevicesAndNotificationPreferences do
   use Ecto.Migration
 
   def change do

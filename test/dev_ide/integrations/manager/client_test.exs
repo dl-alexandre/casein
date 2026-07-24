@@ -1,9 +1,9 @@
-defmodule DevIDE.Integrations.Manager.ClientTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Integrations.Manager.ClientTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Integrations.Manager.Workspace
-  alias DevIDE.Test.ManagerStub
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Workspace
+  alias Casein.Test.ManagerStub
 
   defp json(conn, status, payload) do
     conn

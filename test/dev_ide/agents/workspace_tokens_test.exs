@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.WorkspaceTokensTest do
+defmodule Casein.Agents.WorkspaceTokensTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Agents.WorkspaceTokens
+  alias Casein.Agents.WorkspaceTokens
 
   setup do
     prev_registry = Application.get_env(:dev_ide, :workspace_api_tokens)

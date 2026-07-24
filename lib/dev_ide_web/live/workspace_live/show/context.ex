@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.Context do
-  # Cross-cutting socket helpers shared between DevIdeWeb.WorkspaceLive.Show and
+defmodule CaseinWeb.WorkspaceLive.Show.Context do
+  # Cross-cutting socket helpers shared between CaseinWeb.WorkspaceLive.Show and
   # its extracted handle_event delegation modules (PaletteEvents, FileEvents,
   # RunEvents). Moved verbatim from Show — pure functions of the
   # socket, no behavior change. `import` this module to call them unqualified.
@@ -7,7 +7,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Context do
 
   import Phoenix.Component
 
-  alias DevIDE.Audit
+  alias Casein.Audit
 
   @doc "Host filesystem root for the selected terminal context, or :error when unavailable."
   def context_host_path(%{assigns: %{terminal_context: %{root_path: root}}})
@@ -36,7 +36,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Context do
   def home_host_loc(_), do: :error
 
   @doc """
-  Builds the `DevIDE.Policy` decision context from the socket, merging any
+  Builds the `Casein.Policy` decision context from the socket, merging any
   per-action `extra` (e.g. `%{command_id: id}`).
   """
   def policy_ctx(socket, extra \\ %{}) do

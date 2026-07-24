@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.PreviewTools.Interactions do
+defmodule Casein.Agents.PreviewTools.Interactions do
   @moduledoc false
 
-  alias DevIDE.Agents.PreviewTools.ControlSession
-  alias DevIDE.Agents.PreviewTools.BrowserControl
-  alias DevIDE.PreviewControl
+  alias Casein.Agents.PreviewTools.ControlSession
+  alias Casein.Agents.PreviewTools.BrowserControl
+  alias Casein.PreviewControl
 
   def navigate(params) when is_map(params) do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),

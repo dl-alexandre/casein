@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.DeploymentUpdateHookTest do
+defmodule CaseinWeb.DeploymentUpdateHookTest do
   @moduledoc """
   Covers deploy-state wiring in `DeploymentUpdateHook`.
 
@@ -13,11 +13,11 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
       on code-only deploys and loop against the JS background-reconnect, so a
       stale `client_version` connect param must be ignored here.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()
@@ -55,7 +55,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     # The dashboard mount fetches the workspace list from the manager over HTTP;
     # an empty list keeps the mount light — we only care about the on_mount hook.
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, "[]")
@@ -74,7 +74,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     assert :sys.get_state(view.pid).socket.assigns.update_available == false
 
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:update_available, "v2", 3})
+    Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", {:update_available, "v2", 3})
 
     assert :sys.get_state(view.pid).socket.assigns.update_available == true
 
@@ -130,7 +130,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     end)
 
     branch = "hook-failure-#{System.unique_integer([:positive])}"
-    key = {DevIDE.Deployment.Drift, :remote_head, branch}
+    key = {Casein.Deployment.Drift, :remote_head, branch}
     remote = String.duplicate("c", 40)
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
@@ -194,7 +194,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
     end)
 
     branch = "hook-progress-#{System.unique_integer([:positive])}"
-    key = {DevIDE.Deployment.Drift, :remote_head, branch}
+    key = {Casein.Deployment.Drift, :remote_head, branch}
     remote = String.duplicate("d", 40)
 
     :persistent_term.put(key, {{:ok, remote}, System.monotonic_time(:millisecond)})
@@ -220,7 +220,7 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
        %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "deploy:updates", {:deploy_reconnect})
+    Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", {:deploy_reconnect})
 
     assert_push_event(view, "devide:deploy_reconnect", %{})
   end

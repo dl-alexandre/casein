@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.TmuxWindowJanitor do
+defmodule Casein.Terminals.TmuxWindowJanitor do
   @moduledoc """
   Periodic sweep that reaps blank, auto-named, never-used tmux windows that
   accumulate inside `devide_*` sessions.
 
-  This complements `DevIDE.Terminals.TmuxJanitor` (which is subscriber-driven
+  This complements `Casein.Terminals.TmuxJanitor` (which is subscriber-driven
   and works at the *session* level): the subscriber bookkeeping is in-memory and
   lost on a server restart, and it never reaches *inside* a session to trim the
   extra windows a user spins up (tmux `Ctrl-b c`) and abandons. This sweep is the
@@ -42,7 +42,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
 
   require Logger
 
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Terminals.Tmux
 
   @default_idle_seconds 600
 

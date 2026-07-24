@@ -1,5 +1,5 @@
 defmodule ExecCtl.AllowlistTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias ExecCtl.Allowlist
 

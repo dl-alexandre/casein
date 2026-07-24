@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.OpenLocalhost do
+defmodule Casein.Agents.PreviewTools.OpenLocalhost do
   @moduledoc "preview_open_localhost."
 
   use Jido.Action,
@@ -37,12 +37,12 @@ defmodule DevIDE.Agents.PreviewTools.OpenLocalhost do
       port: [type: {:or, [:integer, :string]}]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(Map.merge(Helpers.open_props(), %{port: Params.port(), path: Params.path()}), [
@@ -50,7 +50,7 @@ defmodule DevIDE.Agents.PreviewTools.OpenLocalhost do
         :port
       ])
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open_localhost")
 
   @impl Jido.Action

@@ -1,6 +1,6 @@
-defmodule DevIDE.WorkspaceSource.Manager do
+defmodule Casein.WorkspaceSource.Manager do
   @moduledoc """
-  `DevIDE.WorkspaceSource` adapter for the milc-devbox manager integration.
+  `Casein.WorkspaceSource` adapter for the milc-devbox manager integration.
 
   Hides the integration-specific HTTP client, payload shape, and special
   filesystem roots behind the generic source contract. All integration
@@ -8,15 +8,15 @@ defmodule DevIDE.WorkspaceSource.Manager do
   lives in this module — nowhere else in the application.
   """
 
-  @behaviour DevIDE.WorkspaceSource
+  @behaviour Casein.WorkspaceSource
 
-  alias DevIDE.Agents.Capability
-  alias DevIDE.Agents.LocalAdapter
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Integrations.Manager.Workspace, as: ManagerWorkspace
-  alias DevIDE.Workspace
+  alias Casein.Agents.Capability
+  alias Casein.Agents.LocalAdapter
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Workspace, as: ManagerWorkspace
+  alias Casein.Workspace
 
-  # Filesystem root used by the integration when DevIDE runs colocated on
+  # Filesystem root used by the integration when Casein runs colocated on
   # the integration host (mirrors what the manager mounts).
   @on_host_workspaces_root "/data/workspaces"
 
@@ -161,15 +161,15 @@ defmodule DevIDE.WorkspaceSource.Manager do
     do: safe_host_loc(%Workspace{path: path})
 
   ## Integration-specific configuration — env-var reads for on-host mode
-  ## live in `DevIDE.HostMode` (leaf, no SCC edges). Manager keeps the
+  ## live in `Casein.HostMode` (leaf, no SCC edges). Manager keeps the
   ## public surface and delegates.
 
   @doc """
-  True when DevIDE runs colocated on the integration host. Set via
+  True when Casein runs colocated on the integration host. Set via
   `:dev_ide, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
-  defdelegate on_host?(), to: DevIDE.HostMode
+  defdelegate on_host?(), to: Casein.HostMode
 
   @doc """
   Compose service to exec into for command/terminal execution in on-host
@@ -177,7 +177,7 @@ defmodule DevIDE.WorkspaceSource.Manager do
   `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
   """
   @spec exec_service() :: String.t()
-  defdelegate exec_service(), to: DevIDE.HostMode
+  defdelegate exec_service(), to: Casein.HostMode
 
   @doc """
   Working directory inside the exec service container.
@@ -188,7 +188,7 @@ defmodule DevIDE.WorkspaceSource.Manager do
   changing terminal/session code.
   """
   @spec exec_workdir() :: String.t()
-  defdelegate exec_workdir(), to: DevIDE.HostMode
+  defdelegate exec_workdir(), to: Casein.HostMode
 
   @doc "SSH host for remote integration workspaces, or nil for local-only mode."
   @spec remote_ssh_host() :: String.t() | nil
@@ -197,14 +197,14 @@ defmodule DevIDE.WorkspaceSource.Manager do
       System.get_env("MILC_DEVBOX_SSH_HOST")
   end
 
-  ## Generic command-shape overrides — called from DevIDE.Workspaces.
+  ## Generic command-shape overrides — called from Casein.Workspaces.
 
   @impl true
-  def prepare_local_argv(argv) when is_list(argv), do: DevIDE.HostMode.prepare_local_argv(argv)
+  def prepare_local_argv(argv) when is_list(argv), do: Casein.HostMode.prepare_local_argv(argv)
 
   @impl true
   def prepare_local_argv(argv, opts) when is_list(argv) and is_list(opts) do
-    DevIDE.HostMode.prepare_local_argv(argv, opts)
+    Casein.HostMode.prepare_local_argv(argv, opts)
   end
 
   @impl true

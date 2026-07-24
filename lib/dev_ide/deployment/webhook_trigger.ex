@@ -1,10 +1,10 @@
-defmodule DevIDE.Deployment.WebhookTrigger do
+defmodule Casein.Deployment.WebhookTrigger do
   @moduledoc """
   Handles verified GitHub deploy webhooks by starting the deploy poller unit.
   """
 
-  alias DevIDE.Audit
-  alias DevIDE.Deployment.{GithubWebhook, PollerTrigger}
+  alias Casein.Audit
+  alias Casein.Deployment.{GithubWebhook, PollerTrigger}
 
   require Logger
 
@@ -15,7 +15,7 @@ defmodule DevIDE.Deployment.WebhookTrigger do
   def handle("push", payload) when is_map(payload) do
     case GithubWebhook.master_push?(payload) do
       :ok ->
-        Logger.info("DevIDE deploy webhook accepted master push — starting poller")
+        Logger.info("Casein deploy webhook accepted master push — starting poller")
 
         result = PollerTrigger.trigger()
         emit_triggered(result)

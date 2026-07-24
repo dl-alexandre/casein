@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.MCPAudit do
+defmodule Casein.Agents.MCPAudit do
   @moduledoc """
   Audit + activity helpers for agent MCP tool invocations.
   """
 
-  alias DevIDE.Agents.{Activity, AgentEvents, MCPError}
-  alias DevIDE.{Audit, Labels}
-  alias DevIDE.Export.Sanitizer
+  alias Casein.Agents.{Activity, AgentEvents, MCPError}
+  alias Casein.{Audit, Labels}
+  alias Casein.Export.Sanitizer
 
   @spec record_terminal(String.t(), map(), :ok | {:error, term()}, keyword()) :: :ok
   def record_terminal(tool, args, result, opts \\ []) when is_map(args) do
@@ -230,7 +230,7 @@ defmodule DevIDE.Agents.MCPAudit do
 
   # Stamp the in-memory Activity entry with the same correlation_id the durable
   # audit row gets, so the memory tail reconciles with audit_events.
-  defp stamp_correlation(attrs), do: DevIDE.Signals.Context.stamp(attrs)
+  defp stamp_correlation(attrs), do: Casein.Signals.Context.stamp(attrs)
 
   # Terminal calls resolve their workspace from args — safe on the normal
   # paths because those args are the scope-validated `scope.args`. The

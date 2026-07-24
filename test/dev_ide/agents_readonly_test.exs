@@ -1,4 +1,4 @@
-defmodule DevIDE.AgentsReadOnlyTest do
+defmodule Casein.AgentsReadOnlyTest do
   @moduledoc """
   Boundary guard: M8 expands the Agents behaviour with run-control callbacks
   but must not introduce write/apply/grant/prompt callbacks. The set of
@@ -6,9 +6,9 @@ defmodule DevIDE.AgentsReadOnlyTest do
 
   We also keep a static source-level guard against shelling OpenCode with
   arbitrary args from these modules — argv must come from
-  `DevIDE.Agents.ReviewCommand` only.
+  `Casein.Agents.ReviewCommand` only.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   @allowed_callbacks ~w(detect transcripts review_commands)a
   @forbidden_callbacks ~w(apply_patch write_file grant_write send_prompt mutate_mcp)a
@@ -25,7 +25,7 @@ defmodule DevIDE.AgentsReadOnlyTest do
 
   test "Agents behaviour exposes exactly the allowed callbacks" do
     callbacks =
-      DevIDE.Agents.behaviour_info(:callbacks)
+      Casein.Agents.behaviour_info(:callbacks)
       |> Enum.map(fn {name, _arity} -> name end)
       |> Enum.sort()
 
@@ -34,7 +34,7 @@ defmodule DevIDE.AgentsReadOnlyTest do
 
   test "Agents behaviour does not expose forbidden callbacks" do
     callbacks =
-      DevIDE.Agents.behaviour_info(:callbacks)
+      Casein.Agents.behaviour_info(:callbacks)
       |> Enum.map(fn {name, _arity} -> name end)
       |> MapSet.new()
 

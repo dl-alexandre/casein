@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.EventHub do
+defmodule Casein.Codex.EventHub do
   @moduledoc """
   Serializes canonical events from transports that do not own a runtime router.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Codex.EventHub do
 
   use GenServer
 
-  alias DevIDE.Codex.{Event, EventSink, Store}
+  alias Casein.Codex.{Event, EventSink, Store}
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 

@@ -1,6 +1,6 @@
-defmodule DevIDE.Signals.DegradationWatch do
+defmodule Casein.Signals.DegradationWatch do
   @moduledoc """
-  Second consumer on `DevIDE.SignalBus`: watches audit-derived signals for
+  Second consumer on `Casein.SignalBus`: watches audit-derived signals for
   *degradation storms* — the same signal firing repeatedly with an identical
   degraded payload — and raises one loud alert per episode.
 
@@ -31,10 +31,10 @@ defmodule DevIDE.Signals.DegradationWatch do
   use GenServer
   require Logger
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.Event
-  alias DevIDE.SignalBus
-  alias DevIDE.Signals.Publish
+  alias Casein.Audit
+  alias Casein.Audit.Event
+  alias Casein.SignalBus
+  alias Casein.Signals.Publish
   alias Jido.Signal
   alias Jido.Signal.Bus
 

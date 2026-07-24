@@ -1,13 +1,13 @@
-defmodule DevIDE.Agents.Transcripts do
+defmodule Casein.Agents.Transcripts do
   @moduledoc """
   Read and normalize agent CLI session transcripts.
 
   Supports Claude Code JSONL and Grok's persisted ACP `updates.jsonl` stream.
   Callers must pass an explicit `transcript_path` reported by the agent pane —
-  DevIDE never lists profile directories to discover sessions.
+  Casein never lists profile directories to discover sessions.
   """
 
-  alias DevIDE.Agents.Transcripts.{Claude, Grok}
+  alias Casein.Agents.Transcripts.{Claude, Grok}
 
   @default_tail 30
 

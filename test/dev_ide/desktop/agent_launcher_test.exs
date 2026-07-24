@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.AgentLauncherTest do
+defmodule Casein.Desktop.AgentLauncherTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Desktop.AgentLauncher
+  alias Casein.Desktop.AgentLauncher
 
   test "constructs only known token-free provider commands" do
     for id <- ~w(agent claude clauded codex grok opencode cursor) do

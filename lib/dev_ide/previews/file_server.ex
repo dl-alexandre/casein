@@ -1,9 +1,9 @@
-defmodule DevIDE.Previews.FileServer do
+defmodule Casein.Previews.FileServer do
   @moduledoc """
   Per-workspace loopback static file server for browser-viewable workspace paths.
 
-  One GenServer per `workspace_id`, keyed in `DevIDE.Previews.FileServer.Registry`
-  and supervised under `DevIDE.Previews.FileServer.Supervisor` (`restart: :temporary`).
+  One GenServer per `workspace_id`, keyed in `Casein.Previews.FileServer.Registry`
+  and supervised under `Casein.Previews.FileServer.Supervisor` (`restart: :temporary`).
   On start it binds a Bandit listener to `127.0.0.1` on an ephemeral port rooted
   at `Workspaces.safe_host_loc/1`, then exposes that port so a `:preview` pane can
   load `http://127.0.0.1:<port>/<rel>` through the existing preview proxy.
@@ -20,11 +20,11 @@ defmodule DevIDE.Previews.FileServer do
   use GenServer
   require Logger
 
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.FileServer.Plug, as: FileServerPlug
+  alias Casein.Previews.Deps
+  alias Casein.Previews.FileServer.Plug, as: FileServerPlug
 
   # Topology PubSub messages use this atom tag; resolved at runtime so this
-  # module never names DevIDE.Terminals.TmuxTopology at compile time.
+  # module never names Casein.Terminals.TmuxTopology at compile time.
   @topology_tag Deps.topology_tag()
   # Belt-and-suspenders: stop after this long with no ensure_started / HTTP
   # activity even if the topology signal is missed.
@@ -43,10 +43,10 @@ defmodule DevIDE.Previews.FileServer do
   def start_link(arg), do: GenServer.start_link(__MODULE__, arg, name: via(workspace_id(arg)))
 
   def via(workspace_id) when is_binary(workspace_id),
-    do: {:via, Registry, {DevIDE.Previews.FileServer.Registry, workspace_id}}
+    do: {:via, Registry, {Casein.Previews.FileServer.Registry, workspace_id}}
 
   def whereis(workspace_id) when is_binary(workspace_id) do
-    case Registry.lookup(DevIDE.Previews.FileServer.Registry, workspace_id) do
+    case Registry.lookup(Casein.Previews.FileServer.Registry, workspace_id) do
       [{pid, _}] -> {:ok, pid}
       [] -> :error
     end
@@ -69,7 +69,7 @@ defmodule DevIDE.Previews.FileServer do
 
       :error ->
         case DynamicSupervisor.start_child(
-               DevIDE.Previews.FileServer.Supervisor,
+               Casein.Previews.FileServer.Supervisor,
                {__MODULE__, {workspace, opts}}
              ) do
           {:ok, pid} ->

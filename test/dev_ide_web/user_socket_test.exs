@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.UserSocketTest do
-  use DevIDE.DataCase, async: false
+defmodule CaseinWeb.UserSocketTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.DeviceLinks
-  alias DevIDE.Workspace
-  alias DevIdeWeb.{ChannelAuth, UserSocket}
+  alias Casein.DeviceLinks
+  alias Casein.Workspace
+  alias CaseinWeb.{ChannelAuth, UserSocket}
 
   defmodule OwnedSource do
     def get(id, _auth), do: {:ok, %Workspace{id: id, name: id, user: "owner", status: :running}}
@@ -32,7 +32,7 @@ defmodule DevIdeWeb.UserSocketTest do
   end
 
   test "connect accepts legacy tokens that sign only the user id" do
-    token = Phoenix.Token.sign(DevIdeWeb.Endpoint, "user socket", "legacy-user")
+    token = Phoenix.Token.sign(CaseinWeb.Endpoint, "user socket", "legacy-user")
 
     assert {:ok, socket} = UserSocket.connect(%{"token" => token}, %Phoenix.Socket{}, %{})
 

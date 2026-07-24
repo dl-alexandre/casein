@@ -1,8 +1,8 @@
-defmodule DevIDE.Push.FCMToken.StubHTTP do
+defmodule Casein.Push.FCMToken.StubHTTP do
   @moduledoc """
-  Test double for `DevIDE.Push.FCMToken.HTTP`.
+  Test double for `Casein.Push.FCMToken.HTTP`.
   """
-  @behaviour DevIDE.Push.FCMToken.HTTP
+  @behaviour Casein.Push.FCMToken.HTTP
 
   @impl true
   def post_form(url, headers, body) do

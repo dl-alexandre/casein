@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
+defmodule CaseinWeb.WorkspaceLive.Show.PanelGate do
   # Viewer-authorization gate shared by the Show LiveView's :handle_event
   # hook and the panel LiveComponents. LiveComponent events bypass the LV's
   # attach_hook, so any panel that owns its own handle_event MUST call
@@ -7,11 +7,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
-  import DevIdeWeb.WorkspaceLive.Show.Context, only: [policy_ctx: 1]
+  import CaseinWeb.WorkspaceLive.Show.Context, only: [policy_ctx: 1]
 
-  alias DevIDE.Audit
-  alias DevIDE.Policy
-  alias DevIDE.Workspaces
+  alias Casein.Audit
+  alias Casein.Policy
+  alias Casein.Workspaces
 
   @doc """
   Runs `fun` when the viewer may access the workspace; otherwise emits the
@@ -46,7 +46,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PanelGate do
   trusted only in LAN mode, and LAN trust never overrides forward auth.
   """
   def path_access_pre_authorized? do
-    DevIdeWeb.WorkspaceRoutes.path_routes_trusted?()
+    CaseinWeb.WorkspaceRoutes.path_routes_trusted?()
   end
 
   @doc "Builds + audits the :forbidden denial for a UI event; returns the decision."

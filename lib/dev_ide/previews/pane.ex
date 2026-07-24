@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.Pane do
+defmodule Casein.Previews.Pane do
   @moduledoc """
-  `DevIDE.Panes.Pane` implementation for preview (feature) panes.
+  `Casein.Panes.Pane` implementation for preview (feature) panes.
 
-  Thin adapter over the existing `DevIDE.PreviewPanes` registry — it does not
+  Thin adapter over the existing `Casein.PreviewPanes` registry — it does not
   reimplement preview lifecycle, it gives the uniform pane pipeline a typed entry
   point into it. This is the proof case that a non-terminal surface can be a
   first-class declarative node: a `:preview` leaf in a session template gets brought
@@ -15,9 +15,9 @@ defmodule DevIDE.Previews.Pane do
   in the reconcile diff ensures a preview node's payload is never sent to a shell.
   """
 
-  @behaviour DevIDE.Panes.Pane
+  @behaviour Casein.Panes.Pane
 
-  alias DevIDE.PreviewPanes
+  alias Casein.PreviewPanes
 
   @impl true
   def attach(node, ctx) do
@@ -65,8 +65,8 @@ defmodule DevIDE.Previews.Pane do
   @doc """
   The `render_payload/1` shape built from an in-hand registration.
 
-  Used by `DevIDE.PreviewPanes` at its broadcast sites so the generic
-  `DevIDE.Panes.Events` payload matches what `render_payload/1`/`snapshot/1`
+  Used by `Casein.PreviewPanes` at its broadcast sites so the generic
+  `Casein.Panes.Events` payload matches what `render_payload/1`/`snapshot/1`
   would return for the same pane — one shape for events and hydration.
   """
   def render_payload_from(reg) when is_map(reg) do

@@ -1,14 +1,14 @@
-defmodule DevIDE.FilePanesOffloadTest do
+defmodule Casein.FilePanesOffloadTest do
   @moduledoc """
   I/O offload regression tests for FilePanes: per-pane queues, shape-correct
   rehydrate crash replies, clear/0 waiter release, window_index consistency,
   and session_terminated batch close.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.FilePanes
-  alias DevIDE.FilePanes.FilePaneRegistration
-  alias DevIDE.Repo
+  alias Casein.FilePanes
+  alias Casein.FilePanes.FilePaneRegistration
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -73,7 +73,7 @@ defmodule DevIDE.FilePanesOffloadTest do
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
 
@@ -579,7 +579,7 @@ defmodule DevIDE.FilePanesOffloadTest do
       assert FilePanes.get_by_pane(pane_id)
     end
 
-    send(FilePanes, {DevIDE.Terminals.TmuxTopology, {:session_terminated, %{session: session}}})
+    send(FilePanes, {Casein.Terminals.TmuxTopology, {:session_terminated, %{session: session}}})
 
     wait_until(fn ->
       Enum.all?(panes, fn {pane_id, _} ->

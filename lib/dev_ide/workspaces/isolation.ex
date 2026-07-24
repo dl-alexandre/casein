@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.Isolation do
+defmodule Casein.Workspaces.Isolation do
   @moduledoc """
   Public API for DB isolation detection + the configurable host pattern lists.
 
@@ -12,7 +12,7 @@ defmodule DevIDE.Workspaces.Isolation do
   `~r/.../` regexes — those are matched with `Regex.match?/2`.
   """
 
-  alias DevIDE.Workspaces.DbIsolation
+  alias Casein.Workspaces.DbIsolation
 
   @spec detect(map() | nil, String.t() | nil) :: DbIsolation.t()
   def detect(workspace, root) when is_binary(root) do
@@ -27,16 +27,16 @@ defmodule DevIDE.Workspaces.Isolation do
     }
 
   @spec shared?(String.t()) :: boolean()
-  def shared?(host) when is_binary(host), do: DevIDE.Workspaces.Isolation.Patterns.shared?(host)
+  def shared?(host) when is_binary(host), do: Casein.Workspaces.Isolation.Patterns.shared?(host)
 
   @spec unsafe?(String.t()) :: boolean()
-  def unsafe?(host) when is_binary(host), do: DevIDE.Workspaces.Isolation.Patterns.unsafe?(host)
+  def unsafe?(host) when is_binary(host), do: Casein.Workspaces.Isolation.Patterns.unsafe?(host)
 
   defp impl,
     do:
       Application.get_env(
         :dev_ide,
         :isolation_probe,
-        DevIDE.Workspaces.IsolationProbe.LocalAdapter
+        Casein.Workspaces.IsolationProbe.LocalAdapter
       )
 end

@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Store.EventRow do
+defmodule Casein.Codex.Store.EventRow do
   @moduledoc false
 
   use Ecto.Schema

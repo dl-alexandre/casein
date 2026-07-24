@@ -1,9 +1,9 @@
-defmodule Mix.Tasks.DevIde do
-  use Boundary, classify_to: DevIDEMix
+defmodule Mix.Tasks.Casein do
+  use Boundary, classify_to: CaseinMix
   use Mix.Task
 
-  @shortdoc "Lists the DevIDE task namespace"
-  @moduledoc "Repository-local DevIDE task namespace."
+  @shortdoc "Lists the Casein task namespace"
+  @moduledoc "Repository-local Casein task namespace."
 
   @impl Mix.Task
   def run(_args), do: Mix.Task.run("help", ["--search", "dev_ide"])

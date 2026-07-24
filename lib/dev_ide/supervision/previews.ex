@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.Previews do
+defmodule Casein.Supervision.Previews do
   @moduledoc false
 
   use Supervisor
@@ -10,16 +10,16 @@ defmodule DevIDE.Supervision.Previews do
   @impl true
   def init(_opts) do
     children = [
-      DevIDE.PreviewActivity,
-      DevIDE.Previews.ArtifactProtection,
-      DevIDE.PreviewPanes,
-      DevIDE.FilePanes,
-      DevIDE.FilePanes.SuffixIndex,
-      DevIDE.FilePanes.LinkResolver,
-      {Registry, keys: :unique, name: DevIDE.Previews.FileServer.Registry},
-      {DynamicSupervisor, name: DevIDE.Previews.FileServer.Supervisor, strategy: :one_for_one},
+      Casein.PreviewActivity,
+      Casein.Previews.ArtifactProtection,
+      Casein.PreviewPanes,
+      Casein.FilePanes,
+      Casein.FilePanes.SuffixIndex,
+      Casein.FilePanes.LinkResolver,
+      {Registry, keys: :unique, name: Casein.Previews.FileServer.Registry},
+      {DynamicSupervisor, name: Casein.Previews.FileServer.Supervisor, strategy: :one_for_one},
       PreviewCtl.Registry,
-      {Registry, keys: :duplicate, name: DevIdeWeb.PreviewProxy.WebSocketRegistry}
+      {Registry, keys: :duplicate, name: CaseinWeb.PreviewProxy.WebSocketRegistry}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

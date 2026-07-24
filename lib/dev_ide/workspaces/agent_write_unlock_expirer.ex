@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.AgentWriteUnlockExpirer do
+defmodule Casein.Workspaces.AgentWriteUnlockExpirer do
   @moduledoc """
   Always-on sweeper that revokes agent-write unlocks whose timestamp has
-  passed and audits the expiry — same category as `DevIDE.Terminals.TmuxJanitor`.
+  passed and audits the expiry — same category as `Casein.Terminals.TmuxJanitor`.
 
   Necessary because nothing else re-reads the unlock flag continuously: a
   workspace with zero connected viewers would otherwise sit with a stale
@@ -13,7 +13,7 @@ defmodule DevIDE.Workspaces.AgentWriteUnlockExpirer do
 
   require Logger
 
-  alias DevIDE.Workspaces
+  alias Casein.Workspaces
 
   @sweep_ms 30_000
 
@@ -54,7 +54,7 @@ defmodule DevIDE.Workspaces.AgentWriteUnlockExpirer do
     case Workspaces.revoke_agent_write_unlock(record.external_id) do
       {:ok, _} ->
         _ =
-          DevIDE.Audit.emit!(%{
+          Casein.Audit.emit!(%{
             action: "workspace.agent_write_unlock_expired",
             workspace_id: record.external_id,
             target_type: "workspace",

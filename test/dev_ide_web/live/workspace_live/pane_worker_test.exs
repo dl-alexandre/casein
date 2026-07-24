@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.PaneWorkerTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Test.FakeTerminalSession
-  alias DevIDE.Test.FakeTerminals
-  alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias Casein.Test.FakeTerminalSession
+  alias Casein.Test.FakeTerminals
+  alias CaseinWeb.WorkspaceLive.PaneWorker
 
   defp start_worker do
     start_supervised!(
@@ -161,10 +161,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorkerTest do
       File.mkdir_p!(Path.join(root, "lib"))
       File.write!(Path.join(root, "lib/foo.ex"), "defmodule Foo do\nend\n")
 
-      DevIDE.FilePanes.LinkResolver.clear_cache()
+      Casein.FilePanes.LinkResolver.clear_cache()
 
       on_exit(fn ->
-        DevIDE.FilePanes.LinkResolver.clear_cache()
+        Casein.FilePanes.LinkResolver.clear_cache()
         File.rm_rf(root)
       end)
 

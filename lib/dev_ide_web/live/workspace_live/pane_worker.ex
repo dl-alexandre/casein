@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
+defmodule CaseinWeb.WorkspaceLive.PaneWorker do
   @moduledoc """
   Per-pane owner of a `Ghostty.Terminal` plus a writable terminal backend.
 
@@ -23,7 +23,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   PTY output is written into the pane's `Ghostty.Terminal` *in this worker
   process* and the resulting `ghostty:render` frame is built here too
-  (`DevIdeWeb.TerminalRender`). Only the finished frame is sent to the LV as
+  (`CaseinWeb.TerminalRender`). Only the finished frame is sent to the LV as
   `{:pane_frame, pane_id, payload}`; the LV just forwards it to the browser
   with `push_event`. This matters because `Ghostty.Terminal.write/2` and
   `render_state/1` are synchronous `GenServer.call`s — running them on the LV
@@ -43,12 +43,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   """
   use GenServer
 
-  alias DevIDE.FilePanes.LinkResolver
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.FileLinkScanner
-  alias DevIDE.Terminals.WebLinkScanner
-  alias DevIdeWeb.TerminalRender
-  alias DevIdeWeb.TerminalTelemetry
+  alias Casein.FilePanes.LinkResolver
+  alias Casein.Terminals
+  alias Casein.Terminals.FileLinkScanner
+  alias Casein.Terminals.WebLinkScanner
+  alias CaseinWeb.TerminalRender
+  alias CaseinWeb.TerminalTelemetry
 
   # Output coalescing windows. Isolated/small output stays at 8ms for low
   # keystroke echo latency; sustained or large output moves to 24ms so bursty
@@ -121,7 +121,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     rows = Keyword.fetch!(opts, :rows)
     backend = Keyword.get(opts, :backend, :session_owner)
     session_module = Keyword.get(opts, :session_module, Terminals.session_backend_module())
-    terminal_module = Keyword.get(opts, :terminal_module, DevIDE.Terminals)
+    terminal_module = Keyword.get(opts, :terminal_module, Casein.Terminals)
 
     Process.flag(:trap_exit, true)
 
@@ -796,7 +796,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —
         # Ghostty.PTY can't set the process cwd, and compose otherwise can't
         # find the workspace project.
-        DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true, cwd: cwd)
+        Casein.WorkspaceSource.prepare_local_argv(argv, tty: true, cwd: cwd)
       else
         argv
       end

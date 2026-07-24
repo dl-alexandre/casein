@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.MCPError do
+defmodule Casein.Agents.MCPError do
   @moduledoc """
   Normalizes agent tool errors into MCP-friendly structured payloads.
 

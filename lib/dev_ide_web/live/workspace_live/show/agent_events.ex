@@ -1,20 +1,20 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.AgentEvents do
   # Agent / annotation / audit-drawer handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates "agent:*", "annotation:*", and "audit_drawer:*" events here.
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.{Agents, Policy}
-  alias DevIDE.Agents.ReviewCommand
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Proposals.AutoApply
-  alias DevIDE.Runs.Ledger
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.RunEvents
+  alias Casein.{Agents, Policy}
+  alias Casein.Agents.ReviewCommand
+  alias Casein.Policy.Decision
+  alias Casein.Proposals.AutoApply
+  alias Casein.Runs.Ledger
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.RunEvents
 
   def handle_event("audit_drawer:toggle", _params, socket) do
     {:noreply, assign(socket, :audit_drawer_open, not socket.assigns.audit_drawer_open)}
@@ -34,8 +34,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
   end
 
   @doc """
-  Starts a review-mode agent run (`DevIDE.Agents.Run`, fixed allowlisted argv
-  from `DevIDE.Agents.ReviewCommand` — no arbitrary command, no prompt, no
+  Starts a review-mode agent run (`Casein.Agents.Run`, fixed allowlisted argv
+  from `Casein.Agents.ReviewCommand` — no arbitrary command, no prompt, no
   patch apply). Gated by `Policy.can_start_review_agent?/1`; the ledger entry
   makes the run visible in the Run tab exactly like any other run event.
   """
@@ -67,7 +67,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
 
   @doc """
   Loads the review-agent command list with per-command capability
-  availability. Called from select_tab (tab == "run") so DevIDE.Agents.detect
+  availability. Called from select_tab (tab == "run") so Casein.Agents.detect
   runs once per tab switch, not once per render.
   """
   def load_review_commands(socket) do
@@ -89,7 +89,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
 
         # Scoped context (never a bare put): the LiveView process is
         # long-lived, and AutoApply.watch snapshots it before this returns.
-        DevIDE.Signals.Context.with_new(fn ->
+        Casein.Signals.Context.with_new(fn ->
           case ReviewCommand.fetch(id) do
             {:ok, cmd} ->
               Ledger.run_started(%{

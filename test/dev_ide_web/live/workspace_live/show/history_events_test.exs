@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.HistoryEventsTest do
+defmodule CaseinWeb.WorkspaceLive.Show.HistoryEventsTest do
   # Workspaces.State.MemoryAdapter + Export.previous_sessions on search/refresh.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
+  alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
 
   # Pure: assign_defaults, open (not connected), refresh_if_open no-ops.
   # history:search / clear / refresh call Export.previous_sessions — with an

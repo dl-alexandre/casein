@@ -1,7 +1,7 @@
-defmodule DevIDEPreviewBrowser.HealthTest do
+defmodule CaseinPreviewBrowser.HealthTest do
   use ExUnit.Case, async: true
 
-  alias DevIDEPreviewBrowser.Health
+  alias CaseinPreviewBrowser.Health
 
   test "normalizes wire snapshots" do
     assert %Health{

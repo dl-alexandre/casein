@@ -1,6 +1,6 @@
-defmodule DevIDE.Git.InspectorCache do
+defmodule Casein.Git.InspectorCache do
   @moduledoc """
-  Owner process for `DevIDE.Git.Inspector`'s ETS result cache.
+  Owner process for `Casein.Git.Inspector`'s ETS result cache.
 
   The table must outlive the transient callers that read through it
   (SessionDirectory processes stop when their last watcher leaves), so a

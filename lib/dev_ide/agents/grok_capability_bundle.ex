@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.GrokCapabilityBundle do
+defmodule Casein.Agents.GrokCapabilityBundle do
   @moduledoc """
   Compiles Grok plugins into immutable, content-addressed capability bundles.
 
@@ -367,7 +367,7 @@ defmodule DevIDE.Agents.GrokCapabilityBundle do
     # Grok's built-in profiles grant the whole system temp directory write
     # access. A short fallback there would let one managed session alter its
     # siblings. /dev/shm stays short for Unix sockets but is writable only at
-    # the exact per-leader directory added to DevIDE's custom profile.
+    # the exact per-leader directory added to Casein's custom profile.
     uid = current_uid()
     base = if File.dir?("/dev/shm"), do: "/dev/shm", else: "/tmp"
     Path.join(base, "devide-grok-leaders-#{uid}")

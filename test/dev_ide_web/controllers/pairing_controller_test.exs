@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.PairingControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.PairingControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIdeWeb.ChannelAuth
+  alias Casein.Workspace
+  alias CaseinWeb.ChannelAuth
 
   defmodule OwnedSource do
     def get(id, _auth), do: {:ok, %Workspace{id: id, name: id, user: "owner", status: :running}}

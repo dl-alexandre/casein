@@ -11,7 +11,7 @@ defmodule ExecCtl.Allowlist do
     "assets.build" => ["mix", "assets.build"],
     "agent" => ["agent"],
     "claude" => ["claude"],
-    # Host alias for skip-permissions; DevIDE claude shim already defaults to that.
+    # Host alias for skip-permissions; Casein claude shim already defaults to that.
     "clauded" => ["claude"],
     "codex" => ["codex"],
     "dogfood.fail" => [

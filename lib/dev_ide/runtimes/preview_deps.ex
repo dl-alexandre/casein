@@ -1,14 +1,14 @@
-defmodule DevIDE.Runtimes.PreviewDeps do
+defmodule Casein.Runtimes.PreviewDeps do
   @moduledoc """
-  Core-side impl of `DevIDE.Previews.Deps.Runtimes`.
+  Core-side impl of `Casein.Previews.Deps.Runtimes`.
 
-  Thin pure delegation to `DevIDE.Runtimes` / `DevIDE.Runtimes.PreviewLauncher`.
+  Thin pure delegation to `Casein.Runtimes` / `Casein.Runtimes.PreviewLauncher`.
   """
 
-  @behaviour DevIDE.Previews.Deps.Runtimes
+  @behaviour Casein.Previews.Deps.Runtimes
 
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.PreviewLauncher
+  alias Casein.Runtimes
+  alias Casein.Runtimes.PreviewLauncher
 
   @impl true
   def list_runtimes(filters), do: Runtimes.list_runtimes(filters)

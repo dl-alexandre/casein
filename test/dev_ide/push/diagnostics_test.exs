@@ -1,7 +1,7 @@
-defmodule DevIDE.Push.DiagnosticsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Push.DiagnosticsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Push.{APNSProvider, Diagnostics, FCMProvider, FCMToken}
+  alias Casein.Push.{APNSProvider, Diagnostics, FCMProvider, FCMToken}
 
   setup do
     prev_provider = Application.get_env(:dev_ide, :push_provider)
@@ -20,11 +20,11 @@ defmodule DevIDE.Push.DiagnosticsTest do
   end
 
   test "reports default log provider as not deliverable" do
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.LogProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
 
     report = Diagnostics.report(["android"])
 
-    assert report.provider == DevIDE.Push.LogProvider
+    assert report.provider == Casein.Push.LogProvider
     assert report.ready? == false
 
     assert [%{platform: "android", status: :not_ready, reason: :push_provider_unconfigured}] =
@@ -32,7 +32,7 @@ defmodule DevIDE.Push.DiagnosticsTest do
   end
 
   test "reports native provider ready when APNs and FCM are configured" do
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.NativeProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
 
     Application.put_env(:dev_ide, FCMProvider,
       project_id: "demo-project",
@@ -50,7 +50,7 @@ defmodule DevIDE.Push.DiagnosticsTest do
 
     report = Diagnostics.report(["android", "ios"])
 
-    assert report.provider == DevIDE.Push.NativeProvider
+    assert report.provider == Casein.Push.NativeProvider
     assert report.ready? == true
     assert Enum.map(report.platforms, & &1.status) == [:ready, :ready]
   end

@@ -1,4 +1,4 @@
-defmodule DevIDE.Release.CLI do
+defmodule Casein.Release.CLI do
   @moduledoc """
   Operator CLI entrypoints for LAN release metadata and update checks.
 
@@ -6,8 +6,8 @@ defmodule DevIDE.Release.CLI do
   `docs/lan-release-updates.md`.
   """
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Check
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Check
 
   @doc "Run CLI argv and return an exit code."
   @spec main([String.t()]) :: non_neg_integer()

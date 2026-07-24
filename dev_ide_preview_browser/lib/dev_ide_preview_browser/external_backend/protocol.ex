@@ -1,9 +1,9 @@
-defmodule DevIDEPreviewBrowser.ExternalBackend.Protocol do
+defmodule CaseinPreviewBrowser.ExternalBackend.Protocol do
   @moduledoc """
   Newline-delimited JSON protocol for external browser sidecars.
   """
 
-  alias DevIDEPreviewBrowser.Health
+  alias CaseinPreviewBrowser.Health
 
   @type response :: {:ok, map()} | {:error, term()}
   @type decoded :: {:response, String.t(), response()} | {:event, String.t(), term()} | :ignore

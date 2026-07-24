@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalInfoTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
+  alias Casein.Terminals.Tmux
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.TerminalInfo
   alias TmuxCtl.Test.FakeState
 
   defmodule ResizeStub do
@@ -41,7 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
       fake_tmux_test_pid: FakeState.get(:fake_tmux_test_pid)
     }
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     FakeState.put(:fake_tmux_test_pid, self())
     FakeState.put(:fake_tmux_windows, %{})
     FakeState.put(:fake_tmux_panes, %{})
@@ -242,8 +242,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
 
   defp base_socket(assigns) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       assigns: Map.merge(default_assigns(), assigns)
     }

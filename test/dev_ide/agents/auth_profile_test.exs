@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.AuthProfileTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.AuthProfileTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AuthProfile
+  alias Casein.Agents.AuthProfile
 
   setup do
     prev_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
@@ -58,7 +58,7 @@ defmodule DevIDE.Agents.AuthProfileTest do
            }
 
     assert File.read!(Path.join(claude_dir, "README.devide-profile")) =~
-             "opt-in DevIDE owner auth home"
+             "opt-in Casein owner auth home"
   end
 
   test "registered owners fail closed before sign-in", %{root: root} do

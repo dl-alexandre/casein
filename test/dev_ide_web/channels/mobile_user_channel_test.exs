@@ -1,20 +1,20 @@
-defmodule DevIdeWeb.MobileUserChannelTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.MobileUserChannelTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.ChannelTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Mobile.ActionOutcome
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Push
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIDE.Repo
-  alias DevIdeWeb.ChannelAuth
+  alias Casein.Audit
+  alias Casein.Mobile.ActionOutcome
+  alias Casein.Mobile.UserObserver
+  alias Casein.Push
+  alias Casein.Runs.Ledger
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias Casein.Repo
+  alias CaseinWeb.ChannelAuth
 
-  @endpoint DevIdeWeb.Endpoint
+  @endpoint CaseinWeb.Endpoint
 
   setup do
     workspace_root =
@@ -26,10 +26,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     prev_workspace_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_workspace_source = Application.get_env(:dev_ide, :workspace_source)
     prev_push_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_apns_config = Application.get_env(:dev_ide, DevIDE.Push.APNSProvider)
+    prev_apns_config = Application.get_env(:dev_ide, Casein.Push.APNSProvider)
     File.mkdir_p!(workspace_root)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
 
     Audit.clear()
     MemoryAdapter.clear()
@@ -43,7 +43,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
       restore_env(:workspaces_root, prev_workspace_root)
       restore_env(:workspace_source, prev_workspace_source)
       restore_env(:push_provider, prev_push_provider)
-      restore_module_env(DevIDE.Push.APNSProvider, prev_apns_config)
+      restore_module_env(Casein.Push.APNSProvider, prev_apns_config)
     end)
 
     {:ok, workspace_root: workspace_root}
@@ -54,21 +54,21 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     prepare_user(user_id)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:#{user_id}", %{
         current_user: %{id: user_id, email: "#{user_id}@local"}
       })
       |> Phoenix.Socket.assign(:current_user, %{id: user_id, email: "#{user_id}@local"})
 
     assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:me")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     assert reply.user_id == user_id
     assert Jason.encode!(reply)
     assert reply.cards == []
 
     other_socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:#{user_id}", %{
         current_user: %{id: user_id, email: "#{user_id}@local"}
       })
@@ -77,7 +77,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     assert {:error, %{reason: "unauthorized"}} =
              subscribe_and_join(
                other_socket,
-               DevIdeWeb.MobileUserChannel,
+               CaseinWeb.MobileUserChannel,
                "mobile:user:someone-else"
              )
   end
@@ -87,14 +87,14 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     prepare_user(user_id)
 
     socket =
-      DevIdeWeb.UserSocket
+      CaseinWeb.UserSocket
       |> socket("users_socket:#{user_id}", %{
         current_user: %{id: user_id, email: "#{user_id}@local"}
       })
       |> Phoenix.Socket.assign(:current_user, %{id: user_id, email: "#{user_id}@local"})
 
     assert {:ok, reply, joined_socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:me")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     assert reply.user_id == user_id
     assert joined_socket.assigns.mobile_user_id == user_id
@@ -123,7 +123,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
   test "mobile user topic rejects push registration when provider is not deliverable" do
     user_id = unique_id("dev")
     prepare_user(user_id)
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.LogProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
 
     assert {:ok, _reply, socket} = join_mobile(user_id, [])
 
@@ -159,10 +159,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         workspace_id
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:me")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     assert reply.user_id == user_id
     assert reply.cards == []
@@ -200,10 +200,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         workspace_id
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:ok, _reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:#{user_id}")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:#{user_id}")
 
     ref =
       Phoenix.ChannelTest.push(socket, "watch_workspace", %{"workspace_id" => "other-workspace"})
@@ -300,8 +300,8 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     prepare_user(user_id)
     create_workspace(workspace_root, workspace_id, user_id)
 
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.NativeProvider)
-    Application.delete_env(:dev_ide, DevIDE.Push.APNSProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
+    Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
 
     assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
 
@@ -330,10 +330,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         paired_workspace_id
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:ok, _reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:me")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     ref =
       Phoenix.ChannelTest.push(socket, "register_push", %{
@@ -465,10 +465,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         paired_workspace_id
       )
 
-    assert {:ok, socket} = Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => token})
+    assert {:ok, socket} = Phoenix.ChannelTest.connect(CaseinWeb.UserSocket, %{"token" => token})
 
     assert {:ok, _reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.MobileUserChannel, "mobile:user:me")
+             subscribe_and_join(socket, CaseinWeb.MobileUserChannel, "mobile:user:me")
 
     ref =
       Phoenix.ChannelTest.push(socket, "card_action", %{
@@ -785,11 +785,11 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     role = Keyword.get(opts, :role)
     user = %{id: user_id, email: "#{user_id}@local", role: role}
 
-    DevIdeWeb.UserSocket
+    CaseinWeb.UserSocket
     |> socket("users_socket:#{user_id}", %{current_user: user})
     |> Phoenix.Socket.assign(:current_user, user)
     |> apply_test_assigns(Keyword.get(opts, :assigns, %{}))
-    |> subscribe_and_join(DevIdeWeb.MobileUserChannel, "mobile:user:me")
+    |> subscribe_and_join(CaseinWeb.MobileUserChannel, "mobile:user:me")
   end
 
   defp apply_test_assigns(socket, assigns) do
@@ -824,7 +824,7 @@ defmodule DevIdeWeb.MobileUserChannelTest do
   defp unique_id(prefix), do: "#{prefix}-#{System.unique_integer([:positive])}"
 
   defp configure_ready_push_provider do
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.TestProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)

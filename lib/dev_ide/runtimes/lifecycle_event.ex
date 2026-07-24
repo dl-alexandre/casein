@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.LifecycleEvent do
+defmodule Casein.Runtimes.LifecycleEvent do
   @moduledoc "Append-only runtime lifecycle event."
 
   @type t :: %__MODULE__{

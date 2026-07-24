@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.Profile do
+defmodule Casein.Runtimes.Profile do
   @moduledoc """
   Normalized dev-server intent for a runtime.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Runtimes.Profile do
   command execution authority to the runtime registry.
   """
 
-  alias DevIDE.Runtimes.Runtime
+  alias Casein.Runtimes.Runtime
 
   @type t :: map()
 
@@ -110,7 +110,7 @@ defmodule DevIDE.Runtimes.Profile do
   Build preview surface payloads for a runtime profile.
 
   These payloads are intentionally plain maps so callers can turn them into
-  `DevIDE.Previews.Surface` structs or API JSON without coupling this module to
+  `Casein.Previews.Surface` structs or API JSON without coupling this module to
   the preview context.
   """
   @spec preview_surfaces(Runtime.t(), keyword()) :: [map()]

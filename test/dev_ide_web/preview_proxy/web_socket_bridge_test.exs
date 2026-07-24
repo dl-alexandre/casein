@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.PreviewProxy.WebSocketBridgeTest do
+defmodule CaseinWeb.PreviewProxy.WebSocketBridgeTest do
   @moduledoc """
   Drives the `WebSock` callbacks of the bridge directly against a real upstream
   WebSocket echo server, so the `Mint.WebSocket` integration (handshake, encode,
@@ -7,12 +7,12 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketBridgeTest do
   The test process owns the Mint socket (callbacks run inline here), so upstream
   socket messages land in this mailbox and we feed them back via `handle_info/2`.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.PreviewProxy.WebSocketBridge
-  alias DevIdeWeb.PreviewProxy.WebSocketBridge.State
+  alias CaseinWeb.PreviewProxy.WebSocketBridge
+  alias CaseinWeb.PreviewProxy.WebSocketBridge.State
 
-  @registry DevIdeWeb.PreviewProxy.WebSocketRegistry
+  @registry CaseinWeb.PreviewProxy.WebSocketRegistry
 
   defmodule EchoWS do
     @moduledoc false

@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.Version do
+defmodule Casein.Files.Version do
   @moduledoc """
   File version token for optimistic concurrency.
 

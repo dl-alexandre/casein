@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AgentEvents do
+defmodule Casein.Agents.AgentEvents do
   @moduledoc """
   Durable, append-only projection for normalized agent session events.
 
@@ -8,8 +8,8 @@ defmodule DevIDE.Agents.AgentEvents do
   operator-authored content.
   """
 
-  alias DevIDE.Agents.AgentEvent
-  alias DevIDE.Signals.{Context, Publish}
+  alias Casein.Agents.AgentEvent
+  alias Casein.Signals.{Context, Publish}
 
   require Logger
 
@@ -387,6 +387,6 @@ defmodule DevIDE.Agents.AgentEvents do
   end
 
   defp impl do
-    Application.get_env(:dev_ide, :agent_events_adapter, DevIDE.Agents.AgentEvents.EctoAdapter)
+    Application.get_env(:dev_ide, :agent_events_adapter, Casein.Agents.AgentEvents.EctoAdapter)
   end
 end

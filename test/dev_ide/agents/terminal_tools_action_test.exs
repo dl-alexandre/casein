@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalToolsActionTest do
+defmodule Casein.Agents.TerminalToolsActionTest do
   @moduledoc """
   Unit tests for the Jido.Action-backed terminal tool surface.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Agents.TerminalToolsActionTest do
   """
   use ExUnit.Case, async: true
 
-  alias DevIDE.Agents.TerminalTools
+  alias Casein.Agents.TerminalTools
 
   describe "definitions/0" do
     test "exposes 18 terminal tools plus annotation tools" do

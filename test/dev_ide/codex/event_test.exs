@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.EventTest do
+defmodule Casein.Codex.EventTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   test "builds a versioned event with stable runtime ordering" do
     occurred_at = ~U[2026-07-15 22:00:00Z]

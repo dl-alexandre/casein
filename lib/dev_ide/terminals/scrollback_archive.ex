@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.ScrollbackArchive do
+defmodule Casein.Terminals.ScrollbackArchive do
   @moduledoc """
-  Out-of-band scrollback spill for DevIDE-managed tmux sessions.
+  Out-of-band scrollback spill for Casein-managed tmux sessions.
 
   tmux is still the live source of truth while the server is up. This module
   persists a bounded tail of each session's output so a **tmux server death**
@@ -138,7 +138,7 @@ defmodule DevIDE.Terminals.ScrollbackArchive do
   end
 
   defp disk_path(session) do
-    # Session names are already constrained to [a-zA-Z0-9_-] style by DevIDE.
+    # Session names are already constrained to [a-zA-Z0-9_-] style by Casein.
     safe =
       session
       |> String.replace(~r/[^A-Za-z0-9._-]+/, "_")

@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.TmuxEvents do
+defmodule Casein.Terminals.TmuxEvents do
   @moduledoc """
-  DevIDE facade for the host-tmux control-mode event source.
+  Casein facade for the host-tmux control-mode event source.
 
   Flag-gated by `config :dev_ide, :tmux_events` (env `DEVIDE_TMUX_EVENTS`).
   When off, `child_spec/1` starts as `:ignore` and `subscribe/2` returns
@@ -9,7 +9,7 @@ defmodule DevIDE.Terminals.TmuxEvents do
 
   @behaviour TmuxCtl.EventSource
 
-  alias DevIDE.Terminals.TmuxServer
+  alias Casein.Terminals.TmuxServer
   alias TmuxCtl.Events.ControlListener
 
   @topic_prefix "tmux_events:"
@@ -109,6 +109,6 @@ defmodule DevIDE.Terminals.TmuxEvents do
 
   defp pubsub do
     Application.get_env(:tmux_ctl, :pubsub) ||
-      Application.get_env(:dev_ide, :pubsub, DevIDE.PubSub)
+      Application.get_env(:dev_ide, :pubsub, Casein.PubSub)
   end
 end

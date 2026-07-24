@@ -1,15 +1,15 @@
-defmodule DevIDE.Terminals do
+defmodule Casein.Terminals do
   @moduledoc """
   Public API for terminal sessions.
 
   Ownership goal:
-  - This module (and submodules under DevIDE.Terminals) will become the single
+  - This module (and submodules under Casein.Terminals) will become the single
     place for session identity, creation, attachment, and state.
   - The web layer (LiveViews and Channels) will only call into this API.
   """
   require Logger
 
-  alias DevIDE.Terminals.{
+  alias Casein.Terminals.{
     Attachment,
     Activity,
     AgentPane,
@@ -39,9 +39,9 @@ defmodule DevIDE.Terminals do
     Workflows
   }
 
-  alias DevIDE.Terminals.Session.Info
-  alias DevIDE.Terminals.SessionTemplate.Export, as: SessionTemplateExport
-  alias DevIDE.Terminals.SessionDirectory.Compose
+  alias Casein.Terminals.Session.Info
+  alias Casein.Terminals.SessionTemplate.Export, as: SessionTemplateExport
+  alias Casein.Terminals.SessionDirectory.Compose
 
   @type session_loc :: Session.loc()
 
@@ -228,19 +228,19 @@ defmodule DevIDE.Terminals do
   @doc "True when raw terminal access is allowed for the workspace/host pair."
   @spec raw_terminal_allowed?(String.t(), String.t() | nil) :: boolean()
   def raw_terminal_allowed?(workspace_id, host_id) do
-    DevIDE.Terminals.Boundary.raw_allowed?(workspace_id, host_id)
+    Casein.Terminals.Boundary.raw_allowed?(workspace_id, host_id)
   end
 
   @doc "Authorizes raw terminal access through the terminal boundary policy."
   @spec authorize_raw_terminal(String.t(), keyword()) :: :ok | {:error, term()}
   def authorize_raw_terminal(workspace_id, opts) do
-    DevIDE.Terminals.Boundary.authorize_raw(workspace_id, opts)
+    Casein.Terminals.Boundary.authorize_raw(workspace_id, opts)
   end
 
   @doc "Formats a terminal boundary reason for clients."
   @spec terminal_boundary_reason(term()) :: String.t()
   def terminal_boundary_reason(reason) do
-    DevIDE.Terminals.Boundary.format_reason(reason)
+    Casein.Terminals.Boundary.format_reason(reason)
   end
 
   @doc "True when raw terminal mode is reachable for a workspace mode/host pair."
@@ -351,7 +351,7 @@ defmodule DevIDE.Terminals do
 
   @doc "Configured platform terminal backend."
   @spec backend() :: module()
-  def backend, do: DevIDE.Terminals.Backend.module()
+  def backend, do: Casein.Terminals.Backend.module()
 
   @doc "Configured tmux-compatible adapter during the platform migration."
   @spec tmux_adapter() :: module()
@@ -387,7 +387,7 @@ defmodule DevIDE.Terminals do
     TmuxServer.args()
   end
 
-  @doc "Host tmux argv for terminal invocations, including DevIDE server label and config."
+  @doc "Host tmux argv for terminal invocations, including Casein server label and config."
   @spec tmux_host_argv([String.t()]) :: [String.t()]
   def tmux_host_argv(args) when is_list(args) do
     TmuxRunner.host_argv(args)
@@ -411,7 +411,7 @@ defmodule DevIDE.Terminals do
     Shims.argv_env(opts)
   end
 
-  @doc "Shell command for panes that should enter DevIDE's shell integration."
+  @doc "Shell command for panes that should enter Casein's shell integration."
   @spec terminal_shell_command() :: String.t()
   def terminal_shell_command do
     Shims.shell_command()

@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Preview do
+defmodule Casein.Previews.Preview do
   @moduledoc """
   Ecto schema for a workspace-scoped preview: an open surface or URL with its
   display mode, status, trust flag, and terminal/pane provenance. The changeset
@@ -48,7 +48,7 @@ defmodule DevIDE.Previews.Preview do
     allowed_origins = allowed_origins_from_changeset(changeset)
 
     validate_change(changeset, :url, fn :url, url ->
-      if DevIDE.Previews.Url.valid_preview_url?(url, allowed_origins) do
+      if Casein.Previews.Url.valid_preview_url?(url, allowed_origins) do
         []
       else
         [url: "must be an http or https URL"]
@@ -60,7 +60,7 @@ defmodule DevIDE.Previews.Preview do
     case get_change(changeset, :metadata) || get_field(changeset, :metadata) do
       %{"allowed_origins" => origins} when is_list(origins) -> origins
       %{allowed_origins: origins} when is_list(origins) -> origins
-      _ -> DevIDE.Previews.Url.allowed_origins(nil)
+      _ -> Casein.Previews.Url.allowed_origins(nil)
     end
   end
 

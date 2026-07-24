@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
+defmodule Casein.Agents.TerminalTools.WaitAgentState do
   @moduledoc "terminal_wait_agent_state."
 
   use Jido.Action,
@@ -18,12 +18,12 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
       include_answer: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -38,7 +38,7 @@ defmodule DevIDE.Agents.TerminalTools.WaitAgentState do
         ["workspace_id", "states"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_wait_agent_state")
 
   @impl Jido.Action

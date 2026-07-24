@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.SessionTemplate.Planner do
+defmodule Casein.Terminals.SessionTemplate.Planner do
   @moduledoc """
   Builds dry-run tmux mutation plans from session templates.
   """
 
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Window
 
   @spec plan(String.t() | SessionTemplate.t(), keyword()) :: {:ok, [map()]} | {:error, atom()}
   def plan(template_or_id, opts \\ []) do

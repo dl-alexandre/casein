@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateLoopTables do
+defmodule Casein.Repo.Migrations.CreateLoopTables do
   use Ecto.Migration
 
   def change do
@@ -43,6 +43,6 @@ defmodule DevIDE.Repo.Migrations.CreateLoopTables do
     create unique_index(:loop_attempts, [:loop_run_id, :iteration])
   end
 
-  defp list_type(inner_type), do: DevIDE.Repo.Adapter.list_storage_type(repo(), inner_type)
-  defp list_default, do: DevIDE.Repo.Adapter.list_default(repo())
+  defp list_type(inner_type), do: Casein.Repo.Adapter.list_storage_type(repo(), inner_type)
+  defp list_default, do: Casein.Repo.Adapter.list_default(repo())
 end

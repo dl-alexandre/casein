@@ -1,8 +1,8 @@
-defmodule DevIDE.FactoryTest do
-  use DevIDE.DataCase, async: true
+defmodule Casein.FactoryTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Audit.EctoAdapter, as: AuditEcto
-  alias DevIDE.Workspaces.State.EctoAdapter, as: WorkspaceEcto
+  alias Casein.Audit.EctoAdapter, as: AuditEcto
+  alias Casein.Workspaces.State.EctoAdapter, as: WorkspaceEcto
 
   test "workspace_record factory persists a row" do
     row = insert(:workspace_record)

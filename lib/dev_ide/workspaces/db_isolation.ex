@@ -1,8 +1,8 @@
-defmodule DevIDE.Workspaces.DbIsolation do
+defmodule Casein.Workspaces.DbIsolation do
   @moduledoc """
   Snapshot of a workspace's database isolation classification.
 
-  Read-only; produced by `DevIDE.Workspaces.IsolationProbe`. Never carries
+  Read-only; produced by `Casein.Workspaces.IsolationProbe`. Never carries
   raw credentials — `summary` is the redacted host/port/db form intended
   for UI and audit.
   """

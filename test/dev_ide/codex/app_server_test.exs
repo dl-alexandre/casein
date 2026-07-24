@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.AppServerTest do
+defmodule Casein.Codex.AppServerTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Codex.{AppServer, Event}
+  alias Casein.Codex.{AppServer, Event}
 
   @fixture Path.expand("../../fixtures/codex_app_server/fake_app_server.sh", __DIR__)
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateMobileActionOutcomes do
+defmodule Casein.Repo.Migrations.CreateMobileActionOutcomes do
   use Ecto.Migration
 
   def change do

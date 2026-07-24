@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.Proposal do
+defmodule Casein.UAT.Proposal do
   @moduledoc """
   Self-heal proposals. When Tier A replay drifts because the UI legitimately
   changed (not a regression), the agent re-authors the trace and this module
@@ -6,12 +6,12 @@ defmodule DevIDE.UAT.Proposal do
   committed trace. A human merges or dismisses it; CI stays red until then.
 
   `build/3` produces the proposal document (old + new trace + per-step diff);
-  `propose/4` publishes it through a `DevIDE.UAT.Git` implementation, writing the
+  `propose/4` publishes it through a `Casein.UAT.Git` implementation, writing the
   proposal artifact and the updated trace onto a fresh `uat/reheal-<scenario>`
   branch.
   """
 
-  alias DevIDE.UAT.{Git, Step, Trace}
+  alias Casein.UAT.{Git, Step, Trace}
 
   @doc "Build the proposal document comparing `old` and `new` traces."
   @spec build(Trace.t(), Trace.t(), map()) :: map()
@@ -29,7 +29,7 @@ defmodule DevIDE.UAT.Proposal do
   @doc """
   Publish a proposal as a PR. Options:
 
-    * `:git` — a `DevIDE.UAT.Git` impl (default `DevIDE.UAT.Git.System`)
+    * `:git` — a `Casein.UAT.Git` impl (default `Casein.UAT.Git.System`)
     * `:trace_path` — path of the committed trace to update on the branch
       (default `priv/uat/<scenario>/trace.json`)
     * `:proposal_path` — path for the proposal artifact on the branch

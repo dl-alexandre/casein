@@ -1,13 +1,13 @@
-defmodule DevIDE.Links.Scanner do
+defmodule Casein.Links.Scanner do
   @moduledoc """
   Pure terminal-row link candidate scanner.
 
   This module does no filesystem or network verification. It only finds
-  plausible spans; callers pass each span to `DevIDE.Links.Resolver` when they
+  plausible spans; callers pass each span to `Casein.Links.Resolver` when they
   need a verified target.
   """
 
-  alias DevIDE.Links.Scanner.Span
+  alias Casein.Links.Scanner.Span
 
   @url_regex ~r/https?:\/\/[^\s\)\]"'<>]+/i
 

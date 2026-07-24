@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader do
+defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceHeader do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  import CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   attr :desktop_terminal?, :boolean, default: false
   attr :notif_unread_count, :integer, default: 0

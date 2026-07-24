@@ -1,7 +1,7 @@
-defmodule DevIDE.Push.APNSProviderTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Push.APNSProviderTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Push.APNSProvider
+  alias Casein.Push.APNSProvider
 
   @notification %{
     workspace_id: "ws-7",
@@ -22,7 +22,7 @@ defmodule DevIDE.Push.APNSProviderTest do
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
       private_key: private_key_pem(),
-      http_client: DevIDE.Push.APNS.StubHTTP,
+      http_client: Casein.Push.APNS.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
     )
 
@@ -85,7 +85,7 @@ defmodule DevIDE.Push.APNSProviderTest do
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
       private_key: private_key_pem(),
-      http_client: DevIDE.Push.APNS.StubHTTP,
+      http_client: Casein.Push.APNS.StubHTTP,
       environment: "production"
     )
 

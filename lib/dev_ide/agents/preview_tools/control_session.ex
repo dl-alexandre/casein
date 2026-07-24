@@ -1,15 +1,15 @@
-defmodule DevIDE.Agents.PreviewTools.ControlSession do
+defmodule Casein.Agents.PreviewTools.ControlSession do
   @moduledoc false
 
-  alias DevIDE.Agents.PreviewTools.{PortProbing, SurfaceDiscovery}
-  alias DevIDE.Agents.PreviewTools.TmuxTopology, as: PreviewTmuxTopology
-  alias DevIDE.PreviewActivity
-  alias DevIDE.Agents.PreviewTools.BrowserControl
-  alias DevIDE.PreviewControl
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.Url
+  alias Casein.Agents.PreviewTools.{PortProbing, SurfaceDiscovery}
+  alias Casein.Agents.PreviewTools.TmuxTopology, as: PreviewTmuxTopology
+  alias Casein.PreviewActivity
+  alias Casein.Agents.PreviewTools.BrowserControl
+  alias Casein.PreviewControl
+  alias Casein.PreviewPanes
+  alias Casein.Previews
+  alias Casein.Previews.Deps
+  alias Casein.Previews.Url
 
   # Unified entry point for the preview_open tool. Routes by `mode` to the
   # existing per-surface handlers, which each validate their own required

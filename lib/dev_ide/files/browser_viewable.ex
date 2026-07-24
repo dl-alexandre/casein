@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.BrowserViewable do
+defmodule Casein.Files.BrowserViewable do
   @moduledoc """
   Surface routing for opening a workspace path in a `:file` editor pane vs a
   `:preview` (browser) pane.

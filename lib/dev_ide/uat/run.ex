@@ -1,16 +1,16 @@
-defmodule DevIDE.UAT.Run do
+defmodule Casein.UAT.Run do
   @moduledoc """
   One execution of a UAT scenario — Tier A (deterministic replay of a frozen
-  `DevIDE.UAT.Trace`) or Tier B (agent-driven against the live release node).
+  `Casein.UAT.Trace`) or Tier B (agent-driven against the live release node).
 
   Stores run *history and verdicts* only; the trace definition itself lives in
-  `priv/uat/<scenario>/trace.json` (see `DevIDE.UAT.Trace`).
+  `priv/uat/<scenario>/trace.json` (see `Casein.UAT.Trace`).
 
-  `session_id` is the `DevIDE.Previews.ControlSession` the run drove. It is a
+  `session_id` is the `Casein.Previews.ControlSession` the run drove. It is a
   plain integer, not a DB foreign key: a Tier B run targets a session on the
   live release node, which may be a different instance than the one persisting
   this row, so a cross-instance FK constraint is not enforceable. The verdict
-  validator (`DevIDE.UAT.Verdict`) still checks that every cited observation
+  validator (`Casein.UAT.Verdict`) still checks that every cited observation
   belongs to this `session_id`.
   """
 

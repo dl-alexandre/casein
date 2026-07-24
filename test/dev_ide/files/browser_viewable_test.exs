@@ -1,7 +1,7 @@
-defmodule DevIDE.Files.BrowserViewableTest do
+defmodule Casein.Files.BrowserViewableTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Files.BrowserViewable
+  alias Casein.Files.BrowserViewable
 
   describe "surface/1" do
     test "routes browser-native types to :preview" do

@@ -1,23 +1,23 @@
-defmodule DevIDE do
+defmodule Casein do
   @moduledoc """
-  Boundary root for the DevIDE domain contexts (`DevIDE.*`): terminals,
+  Boundary root for the Casein domain contexts (`Casein.*`): terminals,
   audit, workspaces, policy, agents, preview, and friends.
 
-  The domain layer may depend on the repo (`DevIDE.Repo`, its own
-  boundary) but never on the web layer (`DevIdeWeb`) or application
+  The domain layer may depend on the repo (`Casein.Repo`, its own
+  boundary) but never on the web layer (`CaseinWeb`) or application
   infrastructure. The `boundary` compiler enforces this at build time;
   violations surface as compile warnings, which `mix precommit` promotes
   to errors.
 
-  Infrastructure roots such as `DevIDE.Application` and `DevIDE.Repo` declare
-  their own top-level boundaries. Do not introduce a case-only `DevIde` root:
+  Infrastructure roots such as `Casein.Application` and `Casein.Repo` declare
+  their own top-level boundaries. Do not introduce a case-only `Casein` root:
   its BEAM filename overwrites this module on case-insensitive filesystems.
   """
 
   use Boundary,
     deps: [
-      DevIDE.Repo,
-      DevIDE.Files.PathSafety,
+      Casein.Repo,
+      Casein.Files.PathSafety,
       TmuxCtl,
       PreviewCtl,
       TerminalCtl,

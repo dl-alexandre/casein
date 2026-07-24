@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.Layouts do
+defmodule CaseinWeb.Layouts do
   @moduledoc """
   App and root layout templates, embedded from `layouts/*`.
   """
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
@@ -42,7 +42,7 @@ defmodule DevIdeWeb.Layouts do
       <div class="flex-1">
         <a href="/" class="flex-1 flex w-fit items-center gap-2">
           <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">DevIDE</span>
+          <span class="text-sm font-semibold">Casein</span>
         </a>
       </div>
       <div class="flex-none">

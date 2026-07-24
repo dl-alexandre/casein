@@ -1,17 +1,17 @@
-defmodule DevIDE.Operator.SituationDigestTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Operator.SituationDigestTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Operator.SituationDigest
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Operator.SituationDigest
+  alias Casein.Runtimes
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.Tmux
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -27,8 +27,8 @@ defmodule DevIDE.Operator.SituationDigestTest do
     Activity.clear()
     AgentState.clear()
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta)

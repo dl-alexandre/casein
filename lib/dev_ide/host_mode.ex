@@ -1,18 +1,18 @@
-defmodule DevIDE.HostMode do
+defmodule Casein.HostMode do
   @moduledoc """
   Pure environment introspection for on-host (devbox-colocated) execution.
 
-  Extracted from `DevIDE.WorkspaceSource.Manager` so preview can call a leaf
+  Extracted from `Casein.WorkspaceSource.Manager` so preview can call a leaf
   that has no edges into the runtime SCC. Manager continues to expose the same
   public functions by delegating here.
   """
 
-  # Filesystem root used when DevIDE runs colocated on the integration host
+  # Filesystem root used when Casein runs colocated on the integration host
   # (mirrors what the manager mounts).
   @on_host_workspaces_root "/data/workspaces"
 
   @doc """
-  True when DevIDE runs colocated on the integration host. Set via
+  True when Casein runs colocated on the integration host. Set via
   `:dev_ide, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
@@ -51,7 +51,7 @@ defmodule DevIDE.HostMode do
 
   @doc """
   Wrap a local-spawn argv with opts. Recognised opts match
-  `DevIDE.WorkspaceSource.prepare_local_argv/2` (`:tty`, `:cwd`, `:workdir`,
+  `Casein.WorkspaceSource.prepare_local_argv/2` (`:tty`, `:cwd`, `:workdir`,
   `:normal_cwd`).
   """
   @spec prepare_local_argv([String.t()], keyword()) :: [String.t()]

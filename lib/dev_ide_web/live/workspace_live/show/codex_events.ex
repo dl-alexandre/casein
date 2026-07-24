@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.CodexEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.CodexEvents do
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.Codex.{Event, EventSink, ExecRun, Runtime, Store}
+  alias Casein.Codex.{Event, EventSink, ExecRun, Runtime, Store}
 
   @delta_flush_ms 150
   @max_live_delta_bytes 32_000

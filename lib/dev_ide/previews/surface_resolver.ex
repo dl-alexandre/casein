@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.SurfaceResolver do
+defmodule Casein.Previews.SurfaceResolver do
   @moduledoc """
   Resolves named preview surfaces from workspace metadata.
 
@@ -10,13 +10,13 @@ defmodule DevIDE.Previews.SurfaceResolver do
   (v2), matching how the manager routes each type.
   """
 
-  alias DevIDE.Agents.MCPUrls
-  alias DevIDE.HostMode
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.Surface
-  alias DevIDE.Previews.Url
+  alias Casein.Agents.MCPUrls
+  alias Casein.HostMode
+  alias Casein.Previews.Deps
+  alias Casein.Previews.Surface
+  alias Casein.Previews.Url
   # Struct-only leaf (not in the runtime SCC).
-  alias DevIDE.Runtimes.Runtime
+  alias Casein.Runtimes.Runtime
 
   @v3_surface_order ~w(app http tidewave api milc-platform-server opencode)
   @port_aliases %{"http" => "app", "milc-platform-server" => "app"}
@@ -49,7 +49,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
   URL safe to load in the user's browser preview panel.
 
   Loopback surfaces (`app-local`, `localhost:PORT`) only work when the browser
-  runs on the devbox. Remote DevIDE sessions use the manager public URL instead
+  runs on the devbox. Remote Casein sessions use the manager public URL instead
   while agents keep controlling the loopback origin server-side.
   """
   @spec embed_url(map(), Surface.t()) :: String.t()
@@ -404,7 +404,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
       _ ->
         case terminal_output(workspace) do
           output when is_binary(output) and output != "" ->
-            output |> DevIDE.Previews.Detector.discover() |> Enum.map(& &1.port)
+            output |> Casein.Previews.Detector.discover() |> Enum.map(& &1.port)
 
           _ ->
             []
@@ -485,7 +485,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
             %Surface{
               name: "devide",
               url: "#{base_url}/workspaces/#{id}",
-              title: "DevIDE workspace",
+              title: "Casein workspace",
               source: :host
             }
           ]

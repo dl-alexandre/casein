@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.TelemetryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TelemetryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.Telemetry
+  alias Casein.Terminals
+  alias Casein.Terminals.Telemetry
 
   test "owner count increases while owner is attached and drops on stop" do
     unique = "telemetry-count-#{System.unique_integer([:positive])}"

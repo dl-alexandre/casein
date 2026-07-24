@@ -1,18 +1,18 @@
-defmodule DevIDE.Commands do
+defmodule Casein.Commands do
   @moduledoc """
   Allowlist enumeration for the command palette, plus local subprocess spawning
-  for `DevIDE.Agents.Run` (review-mode agent runs).
+  for `Casein.Agents.Run` (review-mode agent runs).
 
   Allowlist enumeration is allowlisted, argv-style, no shell interpolation. The
   delegated-execution adapters were removed; the only remaining executor is the
-  local erlexec spawn below, used solely to run fixed `DevIDE.Agents.ReviewCommand`
+  local erlexec spawn below, used solely to run fixed `Casein.Agents.ReviewCommand`
   argv on the local host. Output streams to the subscriber pid:
 
       {:cmd_data, ref, :stdout | :stderr, binary}
       {:cmd_exit, ref, exit_code :: integer()}
   """
 
-  alias DevIDE.Commands.Allowlist
+  alias Casein.Commands.Allowlist
 
   @type id :: String.t()
   @type argv :: [String.t()]

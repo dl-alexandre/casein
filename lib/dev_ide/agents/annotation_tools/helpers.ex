@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AnnotationTools.Helpers do
+defmodule Casein.Agents.AnnotationTools.Helpers do
   @moduledoc """
   Shared JSON-Schema fragments and MCP metadata for annotation tool actions.
   """

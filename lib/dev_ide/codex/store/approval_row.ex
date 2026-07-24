@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Store.ApprovalRow do
+defmodule Casein.Codex.Store.ApprovalRow do
   @moduledoc false
 
   use Ecto.Schema

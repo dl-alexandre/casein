@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.ClipboardPaste do
+defmodule Casein.Terminals.ClipboardPaste do
   @moduledoc """
   Workspace-backed clipboard paste helpers for browser terminals.
 
@@ -70,11 +70,11 @@ defmodule DevIDE.Terminals.ClipboardPaste do
   @doc """
   Choose how the browser should type a saved clipboard path into the PTY.
 
-  Delegates to `DevIDE.Terminals.PaneInteraction.path_format/1` so paste and
+  Delegates to `Casein.Terminals.PaneInteraction.path_format/1` so paste and
   scroll share one agent-pane detector.
   """
   @spec path_format(term()) :: String.t()
-  defdelegate path_format(pane_or_command), to: DevIDE.Terminals.PaneInteraction
+  defdelegate path_format(pane_or_command), to: Casein.Terminals.PaneInteraction
 
   defp default_name(type) when is_binary(type) do
     case extension_for(type) do

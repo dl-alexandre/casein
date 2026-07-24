@@ -1,8 +1,8 @@
-defmodule DevIDE.Audit.EctoAdapterTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Audit.EctoAdapterTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.{Event, EctoAdapter}
+  alias Casein.Audit
+  alias Casein.Audit.{Event, EctoAdapter}
 
   setup do
     prev = Application.get_env(:dev_ide, :audit_adapter)
@@ -73,7 +73,7 @@ defmodule DevIDE.Audit.EctoAdapterTest do
   end
 
   test "metadata round-trips, including atom mode tag from emit_decision" do
-    decision = DevIDE.Policy.can_apply_proposal?(%{workspace_id: "wm"})
+    decision = Casein.Policy.can_apply_proposal?(%{workspace_id: "wm"})
     Audit.emit_decision(decision, %{workspace_id: "wm", target_ref: "fix.diff"})
 
     [stored] = Audit.recent_for("wm", 1)
@@ -107,11 +107,11 @@ defmodule DevIDE.Audit.EctoAdapterTest do
 
   test "list_by_correlation returns only the chain, ascending" do
     cid =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         {:ok, _} = Audit.emit(%{action: "chain.first", workspace_id: "wcor"})
         Process.sleep(2)
         {:ok, _} = Audit.emit(%{action: "chain.second", workspace_id: "wcor"})
-        DevIDE.Signals.Context.current().trace_id
+        Casein.Signals.Context.current().trace_id
       end)
 
     {:ok, _} = Audit.emit(%{action: "unrelated", workspace_id: "wcor"})
@@ -125,9 +125,9 @@ defmodule DevIDE.Audit.EctoAdapterTest do
     huge = String.duplicate("x", 64 * 1024)
 
     cid =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         {:ok, _} = Audit.emit(%{action: "big", workspace_id: "wtc", metadata: %{"blob" => huge}})
-        DevIDE.Signals.Context.current().trace_id
+        Casein.Signals.Context.current().trace_id
       end)
 
     [stored] = Audit.recent_for("wtc", 1)

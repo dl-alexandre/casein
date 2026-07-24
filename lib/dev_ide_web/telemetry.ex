@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Telemetry do
+defmodule CaseinWeb.Telemetry do
   use Supervisor
   import Telemetry.Metrics
 
@@ -137,6 +137,6 @@ defmodule DevIdeWeb.Telemetry do
   defp periodic_measurements do
     # Delegate to the terminal facade so terminal-specific measurements stay
     # owned by the terminal context.
-    DevIDE.Terminals.periodic_measurements()
+    Casein.Terminals.periodic_measurements()
   end
 end

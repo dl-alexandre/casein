@@ -1,9 +1,9 @@
-defmodule DevIDE.Codex.Event do
+defmodule Casein.Codex.Event do
   @moduledoc """
   Stable, transport-independent events emitted by Codex integrations.
 
   App Server JSON-RPC, non-interactive JSONL, and CLI hooks must normalize into
-  this contract before their data reaches the rest of DevIDE. The runtime-local
+  this contract before their data reaches the rest of Casein. The runtime-local
   `sequence` preserves receive order; `occurred_at` is the UTC wall-clock value
   used for persistence and display.
   """

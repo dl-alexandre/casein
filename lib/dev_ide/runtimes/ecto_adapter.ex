@@ -1,11 +1,11 @@
-defmodule DevIDE.Runtimes.EctoAdapter do
+defmodule Casein.Runtimes.EctoAdapter do
   @moduledoc "Postgres-backed adapter for runtime orchestration records."
 
-  @behaviour DevIDE.Runtimes
+  @behaviour Casein.Runtimes
 
   import Ecto.Query
 
-  alias DevIDE.Runtimes.{
+  alias Casein.Runtimes.{
     HostRow,
     LifecycleEvent,
     LifecycleEventRow,
@@ -13,7 +13,7 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     RuntimeRow
   }
 
-  alias DevIDE.Repo
+  alias Casein.Repo
 
   @impl true
   def create_runtime(%Runtime{} = runtime, %LifecycleEvent{} = event) do

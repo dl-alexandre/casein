@@ -1,7 +1,7 @@
-defmodule DevIDE.Files.WatcherTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Files.WatcherTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Files.Watcher
+  alias Casein.Files.Watcher
 
   setup do
     root = Path.join(System.tmp_dir!(), "fw-#{System.unique_integer([:positive])}")
@@ -42,7 +42,7 @@ defmodule DevIDE.Files.WatcherTest do
   end
 
   test "debounces and broadcasts non-ignored relative paths", %{root: root, ws_id: ws_id} do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
     assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
 
     abs_readme = Path.join(root, "README.md")
@@ -66,7 +66,7 @@ defmodule DevIDE.Files.WatcherTest do
   end
 
   test "drops events outside the workspace root", %{root: root, ws_id: ws_id} do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
     assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 20, linger_ms: 50)
 
     outside = Path.join(System.tmp_dir!(), "outside-#{System.unique_integer([:positive])}.txt")
@@ -133,7 +133,7 @@ defmodule DevIDE.Files.WatcherTest do
     ws_id: ws_id
   } do
     if System.find_executable("inotifywait") do
-      :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+      :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
       assert :ok = Watcher.watch(ws_id, root, backend: :native, debounce_ms: 40, linger_ms: 200)
       # Give inotifywait time to finish its initial recursive walk.
       Process.sleep(200)
@@ -154,7 +154,7 @@ defmodule DevIDE.Files.WatcherTest do
     ws_id: ws_id
   } do
     if System.find_executable("inotifywait") do
-      :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+      :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
       assert :ok = Watcher.watch(ws_id, root, backend: :native, debounce_ms: 40, linger_ms: 500)
       Process.sleep(250)
 
@@ -268,7 +268,7 @@ defmodule DevIDE.Files.WatcherTest do
     root: root,
     ws_id: ws_id
   } do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
     assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
     assert {:ok, pid} = Watcher.whereis(ws_id)
 
@@ -304,7 +304,7 @@ defmodule DevIDE.Files.WatcherTest do
     root: root,
     ws_id: ws_id
   } do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
     assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 30, linger_ms: 50)
 
     new_dir = Path.join(root, "apps")
@@ -322,7 +322,7 @@ defmodule DevIDE.Files.WatcherTest do
     root: root,
     ws_id: ws_id
   } do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, Watcher.topic(ws_id))
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, Watcher.topic(ws_id))
     assert :ok = Watcher.watch(ws_id, root, backend: :test, debounce_ms: 40, linger_ms: 50)
 
     # More than @max_pending_paths (500) distinct relative paths in one window.

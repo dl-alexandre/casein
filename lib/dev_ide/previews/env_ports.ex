@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.EnvPorts do
+defmodule Casein.Previews.EnvPorts do
   @moduledoc """
   Preview infrastructure port helpers.
 
@@ -76,7 +76,7 @@ defmodule DevIDE.Previews.EnvPorts do
   def runtime_preview_port?(_), do: false
 
   @doc """
-  Loopback port for the running DevIDE HTTP endpoint.
+  Loopback port for the running Casein HTTP endpoint.
 
   Prefer `:preview_loopback_port` (set from `PORT` in `runtime.exs`), then
   parse `PORT` from the environment, then default to 4000.

@@ -1,9 +1,9 @@
-defmodule DevIDE.Previews.Deps.Terminals do
+defmodule Casein.Previews.Deps.Terminals do
   @moduledoc """
   Preview-owned seam for tmux session/pane ops and topology subscriptions.
 
   The production impl owns the `:tmux_adapter` env read so preview modules
-  never carry a compile-time default naming `DevIDE.Terminals.Tmux`.
+  never carry a compile-time default naming `Casein.Terminals.Tmux`.
   """
 
   @callback list_sessions() :: [map()]

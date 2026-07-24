@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.AgentShimsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.AgentShimsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AgentShims
+  alias Casein.Agents.AgentShims
 
   setup do
     prev_bin = Application.get_env(:dev_ide, :agent_bin_dir)

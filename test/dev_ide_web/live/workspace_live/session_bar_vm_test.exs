@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVMTest do
+defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVMTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Workspaces.Scratch
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Workspaces.Scratch
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
 
   defp shell_info(sid) do
     SessionInfo.new_shell("ws-a", sid, metadata: %{})

@@ -1,12 +1,12 @@
-defmodule DevIDE.Mobile.UserObserverTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Mobile.UserObserverTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Mobile.UserObserver
+  alias Casein.Runs.Ledger
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     Audit.clear()
@@ -94,7 +94,7 @@ defmodule DevIDE.Mobile.UserObserverTest do
   test "needs_review updates dedupe by user workspace session and type" do
     user_id = unique_user()
     prepare_user(user_id)
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, UserObserver.card_events_topic())
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, UserObserver.card_events_topic())
 
     UserObserver.needs_review_changed(user_id, %{
       workspace_id: "ws-1",

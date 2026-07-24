@@ -1,18 +1,18 @@
-defmodule DevIDE.Search do
+defmodule Casein.Search do
   @moduledoc """
   Cross-file workspace search.
 
   Argv-only. The query is an argv element, never a shell string. The
   workspace root is supplied by the caller (already resolved via
   `Workspaces.safe_host_path/1`). Results are filtered through
-  `DevIDE.Files.PathSafety.resolve/2` before reaching the UI — anything
+  `Casein.Files.PathSafety.resolve/2` before reaching the UI — anything
   that would point outside the workspace root is dropped.
 
   M18 contract: search-only. No replace, no write, no callback that mutates
   files.
   """
 
-  alias DevIDE.Search.Result
+  alias Casein.Search.Result
 
   @min_query 2
   @max_query 200
@@ -40,5 +40,5 @@ defmodule DevIDE.Search do
     do: [timeout_ms: @default_timeout_ms, result_cap: @result_cap]
 
   defp impl,
-    do: Application.get_env(:dev_ide, :search_adapter, DevIDE.Search.RipgrepAdapter)
+    do: Application.get_env(:dev_ide, :search_adapter, Casein.Search.RipgrepAdapter)
 end

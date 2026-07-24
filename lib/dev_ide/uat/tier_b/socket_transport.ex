@@ -1,6 +1,6 @@
-defmodule DevIDE.UAT.TierB.SocketTransport do
+defmodule Casein.UAT.TierB.SocketTransport do
   @moduledoc """
-  Default `DevIDE.UAT.TierB.Transport` — POSTs a JSON-RPC request to the live
+  Default `Casein.UAT.TierB.Transport` — POSTs a JSON-RPC request to the live
   release node over its Unix domain socket (`/run/devide/current.sock`, the canary
   units, NOT the `:4000` dev server — the two-instance split).
 
@@ -12,7 +12,7 @@ defmodule DevIDE.UAT.TierB.SocketTransport do
   the socket path; the MCP route is `/api/preview/mcp`.
   """
 
-  @behaviour DevIDE.UAT.TierB.Transport
+  @behaviour Casein.UAT.TierB.Transport
 
   @mcp_path "/api/preview/mcp"
 

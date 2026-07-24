@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionOwner do
+defmodule Casein.Terminals.SessionOwner do
   @moduledoc """
   Per-session terminal owner process.
 
@@ -9,12 +9,12 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
-  alias DevIDE.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
-  alias DevIDE.Terminals.ScrollbackArchive
-  alias DevIDE.Terminals.SessionRecovery
-  alias DevIDE.Terminals.Telemetry
-  alias DevIDE.Terminals.Theme
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
+  alias Casein.Terminals.ScrollbackArchive
+  alias Casein.Terminals.SessionRecovery
+  alias Casein.Terminals.Telemetry
+  alias Casein.Terminals.Theme
+  alias Casein.Terminals.Tmux
 
   # Default replay buffer; overridable via Application env for the knob.
   # See `replay_buffer_limit/0`.
@@ -135,8 +135,8 @@ defmodule DevIDE.Terminals.SessionOwner do
     # Session-level terminal theme used to rewrite OSC color query responses
     # (last-writer-wins across viewers via `set_theme/3`). `theme` caches the
     # lazily built active `Theme` struct and is invalidated on set_theme.
-    theme_scheme: DevIDE.Terminals.Theme.default_scheme(),
-    theme_preset: DevIDE.Terminals.Theme.default_preset_id(),
+    theme_scheme: Casein.Terminals.Theme.default_scheme(),
+    theme_preset: Casein.Terminals.Theme.default_preset_id(),
     theme: nil,
     # `{class, monotonic_ms}` of the last query response forwarded to the PTY,
     # used to collapse same-class duplicates arriving in a short window.
@@ -153,7 +153,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   def start_link({workspace_id, info}) do
     GenServer.start_link(__MODULE__, {workspace_id, info},
-      name: {:via, Registry, {DevIDE.Terminals.Registry, owner_key(info)}}
+      name: {:via, Registry, {Casein.Terminals.Registry, owner_key(info)}}
     )
   end
 
@@ -893,10 +893,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp do_start_session_exists_probe(state, session, purpose) do
-    tmux = DevIDE.Terminals.tmux_adapter()
+    tmux = Casein.Terminals.tmux_adapter()
 
     task =
-      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+      Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
         tmux.session_exists?(session)
       end)
 
@@ -979,14 +979,14 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp ensure_started(workspace_id, info) do
     key = owner_key(info)
 
-    case Registry.lookup(DevIDE.Terminals.Registry, key) do
+    case Registry.lookup(Casein.Terminals.Registry, key) do
       [{pid, _}] ->
         {:ok, pid}
 
       [] ->
         spec = {__MODULE__, {workspace_id, info}}
 
-        DynamicSupervisor.start_child(DevIDE.Terminals.Supervisor, spec)
+        DynamicSupervisor.start_child(Casein.Terminals.Supervisor, spec)
     end
   end
 
@@ -1300,13 +1300,13 @@ defmodule DevIDE.Terminals.SessionOwner do
     # owners are already asserting the live viewers' sizes. Both writing means
     # the two releases ping-pong `resize-window` against each other every drift
     # tick — the operator sees the window snap between sizes twice a minute.
-    case DevIDE.Deployment.Drain.guard_shared_write(fn ->
+    case Casein.Deployment.Drain.guard_shared_write(fn ->
            session = Tmux.session_name(key, sid)
            # Resolve inside the owner (not the task) so test adapter swaps are stable.
-           tmux = DevIDE.Terminals.tmux_adapter()
+           tmux = Casein.Terminals.tmux_adapter()
 
            task =
-             Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+             Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
                _ = tmux.resize_window(session, cols, rows)
                _ = tmux.refresh_client(session)
                :ok
@@ -1368,7 +1368,7 @@ defmodule DevIDE.Terminals.SessionOwner do
       # here would drift-fight the live owner.
       state
     else
-      case DevIDE.Deployment.Drain.guard_shared_write(fn -> :proceed end) do
+      case Casein.Deployment.Drain.guard_shared_write(fn -> :proceed end) do
         :noop ->
           # See start_tmux_resize/2: a draining instance's applied_size is stale by
           # definition — the replacement instance owns the shared size now.
@@ -1415,10 +1415,10 @@ defmodule DevIDE.Terminals.SessionOwner do
       nil ->
         session = Tmux.session_name(key, sid)
         # Resolve inside the owner (not the task) so test adapter swaps are stable.
-        tmux = DevIDE.Terminals.tmux_adapter()
+        tmux = Casein.Terminals.tmux_adapter()
 
         task =
-          Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+          Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
             tmux.window_size(session)
           end)
 
@@ -1504,12 +1504,12 @@ defmodule DevIDE.Terminals.SessionOwner do
   # Scratch is synthetic — skip audit rows for a non-existent workspace.
   defp emit_size_fight_alert(%{workspace_id: workspace_id} = state, {cols, rows}, actual, streak)
        when is_binary(workspace_id) do
-    if DevIDE.Workspaces.Scratch.scratch?(workspace_id) do
+    if Casein.Workspaces.Scratch.scratch?(workspace_id) do
       :ok
     else
       {actual_cols, actual_rows} = actual
 
-      DevIDE.Audit.emit!(%{
+      Casein.Audit.emit!(%{
         workspace_id: workspace_id,
         action: "terminal.size_fight",
         target_type: "terminal_session",
@@ -1562,11 +1562,11 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp request_tmux_refresh(%{workspace_key: key, info: %{sid: sid}})
        when is_binary(key) and is_binary(sid) do
     _ =
-      DevIDE.Deployment.Drain.guard_shared_write(fn ->
+      Casein.Deployment.Drain.guard_shared_write(fn ->
         session = Tmux.session_name(key, sid)
-        tmux = DevIDE.Terminals.tmux_adapter()
+        tmux = Casein.Terminals.tmux_adapter()
 
-        Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
+        Task.Supervisor.start_child(Casein.TaskSupervisor, fn ->
           _ = tmux.refresh_client(session)
         end)
       end)
@@ -1715,7 +1715,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # bytes would surface as key input inside a pane — hard version-gated, and a
   # no-op until the host tmux cutover installs a >= 3.6 binary (pinned 3.7).
   defp tmux_tracks_client_colors? do
-    case DevIDE.Terminals.tmux_version() do
+    case Casein.Terminals.tmux_version() do
       {_major, _minor} = version -> version >= {3, 5}
       _ -> false
     end
@@ -1725,7 +1725,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # forwards them into panes that opted into DECSET 2031. On <= 3.5 those bytes
   # would surface as pane input — hard version-gated.
   defp tmux_reports_pane_theme? do
-    case DevIDE.Terminals.tmux_version() do
+    case Casein.Terminals.tmux_version() do
       {_major, _minor} = version -> version >= {3, 6}
       _ -> false
     end
@@ -2171,7 +2171,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # `tmux new-session -A` and reused across clients). :agent owners are
   # ephemeral and stop once their last subscriber detaches.
   # (Private helper; see also the public attach/detach docs in this module and
-  # in DevIDE.Terminals for the immortality contract.)
+  # in Casein.Terminals for the immortality contract.)
   defp should_stop?(state) do
     case state.info.kind do
       :agent -> map_size(state.subscribers) == 0

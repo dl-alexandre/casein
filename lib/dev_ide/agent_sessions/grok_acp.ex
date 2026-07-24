@@ -1,11 +1,11 @@
-defmodule DevIDE.AgentSessions.GrokACP do
+defmodule Casein.AgentSessions.GrokACP do
   @moduledoc """
   Supervised ACP observer for a Grok leader session.
 
   The process performs ACP initialization, authenticates with the method Grok
   advertises, then creates or loads a session. Loading the same Grok session as
   a TUI makes this client a leader subscriber, so structured tool, plan, and
-  permission events can be projected into `DevIDE.Agents.Activity` without
+  permission events can be projected into `Casein.Agents.Activity` without
   scraping terminal output.
 
   Permission requests are deliberately left pending until an operator calls
@@ -17,9 +17,9 @@ defmodule DevIDE.AgentSessions.GrokACP do
 
   require Logger
 
-  alias DevIDE.Agents.{Activity, AgentEvents}
-  alias DevIDE.AgentSessions.GrokACP.Protocol
-  alias DevIDE.AgentSessions.GrokACP.Transport.Stdio
+  alias Casein.Agents.{Activity, AgentEvents}
+  alias Casein.AgentSessions.GrokACP.Protocol
+  alias Casein.AgentSessions.GrokACP.Transport.Stdio
 
   @protocol_version 1
 
@@ -45,7 +45,7 @@ defmodule DevIDE.AgentSessions.GrokACP do
   def ensure_started(workspace_id, cwd, opts \\ [])
       when is_binary(workspace_id) and is_binary(cwd) and is_list(opts) do
     case DynamicSupervisor.start_child(
-           DevIDE.Agents.Supervisor,
+           Casein.Agents.Supervisor,
            {__MODULE__, {workspace_id, cwd, opts}}
          ) do
       {:ok, pid} -> {:ok, pid}
@@ -57,7 +57,7 @@ defmodule DevIDE.AgentSessions.GrokACP do
   @doc "Looks up a Grok ACP attachment by workspace and attachment key."
   @spec whereis(String.t(), attachment_key()) :: {:ok, pid()} | :error
   def whereis(workspace_id, key \\ "default") do
-    case Registry.lookup(DevIDE.Agents.Registry, registry_key(workspace_id, key)) do
+    case Registry.lookup(Casein.Agents.Registry, registry_key(workspace_id, key)) do
       [{pid, _value}] -> {:ok, pid}
       [] -> :error
     end
@@ -86,7 +86,7 @@ defmodule DevIDE.AgentSessions.GrokACP do
   def stop(server), do: GenServer.stop(server, :normal)
 
   def via(workspace_id, key) do
-    {:via, Registry, {DevIDE.Agents.Registry, registry_key(workspace_id, key)}}
+    {:via, Registry, {Casein.Agents.Registry, registry_key(workspace_id, key)}}
   end
 
   @impl true
@@ -249,7 +249,7 @@ defmodule DevIDE.AgentSessions.GrokACP do
         fs: %{readTextFile: false, writeTextFile: false},
         terminal: false
       },
-      clientInfo: %{name: "devide", title: "DevIDE", version: client_version},
+      clientInfo: %{name: "devide", title: "Casein", version: client_version},
       _meta: %{
         startupHints: %{
           nonInteractive: true,
@@ -369,7 +369,7 @@ defmodule DevIDE.AgentSessions.GrokACP do
   defp handle_protocol({:unsupported_request, id, method, _params}, state) do
     # We advertise no client filesystem or terminal support. A future Grok
     # capability must be negotiated and implemented before it is accepted.
-    _ = write(state, Protocol.error(id, -32_601, "DevIDE does not support #{method}"))
+    _ = write(state, Protocol.error(id, -32_601, "Casein does not support #{method}"))
     state
   end
 

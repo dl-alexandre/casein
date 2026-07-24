@@ -1,12 +1,12 @@
-defmodule DevIDE.Setup.LanEdgeTest do
+defmodule Casein.Setup.LanEdgeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Setup.LanEdge
+  alias Casein.Setup.LanEdge
 
   test "socket unit listens on the configured edge port" do
     text = LanEdge.socket_unit_text(443)
 
-    assert text =~ "Description=DevIDE LAN HTTPS edge socket"
+    assert text =~ "Description=Casein LAN HTTPS edge socket"
     assert text =~ "ListenStream=443"
     assert text =~ "WantedBy=sockets.target"
   end

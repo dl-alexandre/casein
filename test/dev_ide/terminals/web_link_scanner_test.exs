@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.WebLinkScannerTest do
+defmodule Casein.Terminals.WebLinkScannerTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.WebLinkScanner
+  alias Casein.Terminals.WebLinkScanner
 
   describe "scan_row/1" do
     test "plain https URL, cell columns are inclusive" do

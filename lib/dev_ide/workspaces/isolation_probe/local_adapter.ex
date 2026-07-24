@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
+defmodule Casein.Workspaces.IsolationProbe.LocalAdapter do
   @moduledoc """
   Filesystem-only DB isolation probe.
 
@@ -13,14 +13,14 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
 
     * Never opens a DB connection.
     * Never prints secrets — credentials in URLs are masked at parse time.
-    * All file reads go through `DevIDE.Files.PathSafety`.
+    * All file reads go through `Casein.Files.PathSafety`.
   """
 
-  @behaviour DevIDE.Workspaces.IsolationProbe
+  @behaviour Casein.Workspaces.IsolationProbe
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspaces.Isolation.Patterns
+  alias Casein.Files.PathSafety
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.Isolation.Patterns
 
   @env_files ~w(.env .env.local .env.dev .env.development)
   @compose_files ~w(docker-compose.yml docker-compose.yaml compose.yml compose.yaml)

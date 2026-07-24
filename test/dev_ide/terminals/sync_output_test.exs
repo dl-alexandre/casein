@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.SyncOutputTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.SyncOutputTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.SyncOutput
+  alias Casein.Terminals.SyncOutput
 
   @bsu "\e[?2026h"
   @esu "\e[?2026l"

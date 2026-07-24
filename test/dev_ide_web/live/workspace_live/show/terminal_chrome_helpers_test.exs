@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   @moduledoc """
   Direct-call unit tests for the PURE helper functions of
-  `DevIdeWeb.WorkspaceLive.Show.TerminalChrome`.
+  `CaseinWeb.WorkspaceLive.Show.TerminalChrome`.
 
   These exercise geometry math, activity/status derivation, title/path
   formatting, pane selection, preview helpers, and session label helpers by
@@ -10,10 +10,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   tmux_pane_geometry) are intentionally NOT exercised here — they
   require a LiveView render harness and are out of scope.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome, as: TC
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome, as: TC
+  alias Casein.Terminals.Session.Info, as: SessionInfo
 
   # ── geometry: tmux_dimension / percentage ──────────────────────────────
 

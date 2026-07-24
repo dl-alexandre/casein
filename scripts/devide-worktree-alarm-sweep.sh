@@ -70,7 +70,7 @@ run_release_sweep() {
     exit 1
   fi
 
-  expr="IO.inspect(DevIDE.Runtimes.WorktreeAlarm.sweep_now(ttl_seconds: ${TTL_SECONDS}), limit: :infinity)"
+  expr="IO.inspect(Casein.Runtimes.WorktreeAlarm.sweep_now(ttl_seconds: ${TTL_SECONDS}), limit: :infinity)"
 
   local rpc_env=(
     RELEASE_NODE="$node"

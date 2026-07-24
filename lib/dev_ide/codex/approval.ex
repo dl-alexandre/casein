@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.Approval do
+defmodule Casein.Codex.Approval do
   @moduledoc """
   Canonical representation of an App Server approval request.
 

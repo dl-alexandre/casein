@@ -1,4 +1,4 @@
-defmodule DevIDE.Codex.JsonRpc do
+defmodule Casein.Codex.JsonRpc do
   @moduledoc """
   Small JSON-RPC codec for Codex App Server's newline-delimited stdio protocol.
 

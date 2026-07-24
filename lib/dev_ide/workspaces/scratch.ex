@@ -1,8 +1,8 @@
-defmodule DevIDE.Workspaces.Scratch do
+defmodule Casein.Workspaces.Scratch do
   @moduledoc """
   Synthetic workspaceless "scratch" terminal.
 
-  Scratch is a real `%DevIDE.Workspace{}` with sentinel id/name `"__scratch__"`
+  Scratch is a real `%Casein.Workspace{}` with sentinel id/name `"__scratch__"`
   so the cockpit's ~250 unguarded `workspace.id` / `workspace.name` derefs keep
   working. The PTY is rooted at the configured home path (`:home_workspace_path`
   or `$HOME`) rather than a managed workspace checkout.
@@ -10,7 +10,7 @@ defmodule DevIDE.Workspaces.Scratch do
   Do not thread `nil` workspace through LiveViews — use this module instead.
   """
 
-  alias DevIDE.Workspace
+  alias Casein.Workspace
 
   @id "__scratch__"
 

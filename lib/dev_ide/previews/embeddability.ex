@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Embeddability do
+defmodule Casein.Previews.Embeddability do
   @moduledoc """
   Decides whether an http(s) URL can be shown inside the preview iframe, or
   whether it hard-blocks framing and should open in a browser tab instead.

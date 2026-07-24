@@ -1,10 +1,10 @@
-defmodule DevIDE.Logs.Adapter do
+defmodule Casein.Logs.Adapter do
   @moduledoc """
   Behaviour for workspace log streaming backends.
 
   LiveViews depend on this module, not on a specific transport. The default
-  adapter is `DevIDE.Logs.SSE`, which streams from the manager API. A
-  `DevIDE.Logs.DockerCompose` fallback can be wired in later without changing
+  adapter is `Casein.Logs.SSE`, which streams from the manager API. A
+  `Casein.Logs.DockerCompose` fallback can be wired in later without changing
   callers.
   """
 
@@ -15,7 +15,7 @@ defmodule DevIDE.Logs.Adapter do
 
   @callback stop_stream(ref()) :: :ok
 
-  @default_adapter :"Elixir.DevIDE.Logs.SSE"
+  @default_adapter :"Elixir.Casein.Logs.SSE"
 
   def start_stream(workspace_id, service, pid \\ self()),
     do: impl().start_stream(workspace_id, service, pid)

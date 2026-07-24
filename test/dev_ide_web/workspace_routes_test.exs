@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceRoutesTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceRoutesTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIdeWeb.WorkspaceRoutes
+  alias CaseinWeb.WorkspaceRoutes
 
   setup do
     keys = [:forward_auth, :home_workspace_path, :lan_mode, :lan_path_root, :workspaces_root]

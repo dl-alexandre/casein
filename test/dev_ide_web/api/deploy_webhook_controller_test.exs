@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.API.DeployWebhookControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.DeployWebhookControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
   @secret "deploy-webhook-test-secret"
   @repo "dl-alexandre/dev_ide"
@@ -133,7 +133,7 @@ defmodule DevIdeWeb.API.DeployWebhookControllerTest do
   end
 
   test "an accepted master push emits a correlated deploy.triggered root event", %{conn: conn} do
-    :ok = DevIDE.Audit.clear()
+    :ok = Casein.Audit.clear()
     body = master_push_body()
 
     conn =
@@ -143,14 +143,14 @@ defmodule DevIdeWeb.API.DeployWebhookControllerTest do
     assert %{"ok" => true, "triggered" => true} = json_response(conn, 200)
     assert_receive :poller_triggered
 
-    [event] = DevIDE.Audit.recent_for("platform", 1)
+    [event] = Casein.Audit.recent_for("platform", 1)
     assert event.action == "deploy.triggered"
     assert event.actor_id == "github"
     assert event.metadata["result"] == "ok"
     assert is_binary(event.metadata["correlation_id"])
 
     assert [%{action: "deploy.triggered"}] =
-             DevIDE.Audit.list_by_correlation(event.metadata["correlation_id"])
+             Casein.Audit.list_by_correlation(event.metadata["correlation_id"])
   end
 
   defp master_push_body do

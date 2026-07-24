@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.Janitor do
+defmodule Casein.Files.Janitor do
   @moduledoc """
   Removes stale `.devide.tmp.*` sidecar files left by aborted atomic writes.
 
@@ -8,12 +8,12 @@ defmodule DevIDE.Files.Janitor do
     * Only inside an allowed workspace root (`PathSafety.resolve/2`-checked).
 
   Pure function `clean/2` is what tests target. The `run_on_boot/0` helper is
-  a thin wrapper called from `DevIDE.Application.start/2`; it iterates the
+  a thin wrapper called from `Casein.Application.start/2`; it iterates the
   configured `:workspaces_roots` and is best-effort (errors are logged, never
   raised).
   """
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
   require Logger
 
   @prefix ".devide.tmp."

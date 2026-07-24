@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.AgentEventsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.AgentEventsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AgentEvents
+  alias Casein.Agents.AgentEvents
 
   setup do
     AgentEvents.clear()
@@ -109,7 +109,7 @@ defmodule DevIDE.Agents.AgentEventsTest do
 
   test "causality is stored in columns and preserved in the Jido envelope" do
     event =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         assert {:ok, event, :inserted} =
                  AgentEvents.append_runtime(%{
                    workspace_id: "ws-trace",
@@ -126,7 +126,7 @@ defmodule DevIDE.Agents.AgentEventsTest do
     assert is_binary(event.correlation_id)
     assert event.payload["correlation_id"] == event.correlation_id
 
-    signal = DevIDE.Signals.from_agent_event(event)
+    signal = Casein.Signals.from_agent_event(event)
     assert signal.id == event.id
     assert signal.data.agent_session_id == "grok-trace-session"
     assert signal.data.event_type == "permission.requested"

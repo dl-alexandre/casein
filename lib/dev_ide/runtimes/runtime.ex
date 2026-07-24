@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.Runtime do
+defmodule Casein.Runtimes.Runtime do
   @moduledoc "Durable projection of a workspace execution environment."
 
   @type status :: String.t()

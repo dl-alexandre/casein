@@ -1,9 +1,9 @@
-defmodule DevIDE.AuditTest do
-  use DevIDE.TestCase, async: false
-  alias DevIDE.Audit
-  alias DevIDE.Audit.Event
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.Policy.Decision
+defmodule Casein.AuditTest do
+  use Casein.TestCase, async: false
+  alias Casein.Audit
+  alias Casein.Audit.Event
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.Policy.Decision
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
@@ -91,7 +91,7 @@ defmodule DevIDE.AuditTest do
   end
 
   describe "causality" do
-    alias DevIDE.Signals.Context
+    alias Casein.Signals.Context
 
     test "emit inside a context stamps correlation and chains causation" do
       {cid, first, second} =

@@ -1,8 +1,8 @@
-defmodule DevIDE.Mobile.ActionOutcome do
+defmodule Casein.Mobile.ActionOutcome do
   @moduledoc """
   Durable record of a mobile card action, used as the idempotency anchor.
 
-  Cards themselves stay transient in `DevIDE.Mobile.UserObserver`, but every
+  Cards themselves stay transient in `Casein.Mobile.UserObserver`, but every
   accepted or rejected action is persisted here so that:
 
     * a retried submission (same `request_id`) replays the recorded outcome
@@ -10,7 +10,7 @@ defmodule DevIDE.Mobile.ActionOutcome do
     * a second device racing on the same card cannot both mutate the run
       (enforced by a partial unique index on `card_id` where status = "accepted").
 
-  See `DevIDE.Mobile.Actions` for the dispatch flow that writes these rows.
+  See `Casein.Mobile.Actions` for the dispatch flow that writes these rows.
   """
 
   use Ecto.Schema

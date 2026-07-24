@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateUatRuns do
+defmodule Casein.Repo.Migrations.CreateUatRuns do
   use Ecto.Migration
 
   def change do

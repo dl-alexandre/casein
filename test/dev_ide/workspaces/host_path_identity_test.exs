@@ -1,10 +1,10 @@
-defmodule DevIDE.Workspaces.HostPathIdentityTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.HostPathIdentityTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.{MemoryAdapter, WorkspaceRecord}
+  alias Casein.Workspace
+  alias Casein.Workspaces
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.{MemoryAdapter, WorkspaceRecord}
 
   @config_keys [:workspace_source, :workspaces_root, :lan_path_root, :home_workspace_path]
 
@@ -17,7 +17,7 @@ defmodule DevIDE.Workspaces.HostPathIdentityTest do
 
     File.mkdir_p!(root)
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :workspaces_root, root)
     Application.delete_env(:dev_ide, :lan_path_root)
     Application.delete_env(:dev_ide, :home_workspace_path)

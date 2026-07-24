@@ -1,20 +1,20 @@
-defmodule DevIDE.Operator.Detectors do
+defmodule Casein.Operator.Detectors do
   @moduledoc """
   Pure rules for the *stateful* operator risks.
 
-  `DevIDE.Operator.Risks.detect/1` covers everything a single digest can
+  `Casein.Operator.Risks.detect/1` covers everything a single digest can
   prove; these rules additionally need observations a live
-  `DevIDE.Operator.SituationServer` accumulates over time (agent-state
+  `Casein.Operator.SituationServer` accumulates over time (agent-state
   reports with their `reported_at`, per-session output freshness, cached
   worktree-alarm sweeps). Every function takes that observation state
   explicitly — no live reads — so the same inputs always yield the same
   risks and each rule is unit-testable with fabricated state.
 
-  Risks share the `DevIDE.Operator.Risks.risk/0` shape so consumers see one
+  Risks share the `Casein.Operator.Risks.risk/0` shape so consumers see one
   uniform list.
   """
 
-  alias DevIDE.Export.Sanitizer
+  alias Casein.Export.Sanitizer
 
   @doc """
   Agent panes reporting `:blocked` for longer than `threshold_s`.
@@ -84,7 +84,7 @@ defmodule DevIDE.Operator.Detectors do
   end
 
   @doc """
-  Stale agent worktrees from a cached `DevIDE.Runtimes.WorktreeAlarm` sweep.
+  Stale agent worktrees from a cached `Casein.Runtimes.WorktreeAlarm` sweep.
 
   `alarms` is the alarm list of the latest sweep (the server refreshes it at
   most once per minute); only alarms attributed to `workspace_id` surface

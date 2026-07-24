@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionTemplate.Executor do
+defmodule Casein.Terminals.SessionTemplate.Executor do
   @moduledoc """
   Execution boundary for session templates.
 
@@ -7,12 +7,12 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
   applied.
   """
 
-  alias DevIDE.Panes.Pane, as: PaneBehaviour
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.SessionTemplate.Planner
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Planner
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxTopology
 
   @spec plan(String.t() | SessionTemplate.t(), keyword()) :: {:ok, [map()]} | {:error, atom()}
   def plan(template_or_id, opts \\ []), do: Planner.plan(template_or_id, opts)
@@ -62,7 +62,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
 
   defp execute_step(%{action: "new_window"} = step, state) do
     with {:ok, cwd} <- resolve_cwd(get_in(step, [:params, :cwd]), state.workspace_root),
-         # New windows and their panes inherit DevIDE terminal theme env from the tmux session.
+         # New windows and their panes inherit Casein terminal theme env from the tmux session.
          opts <- compact_opts(name: get_in(step, [:params, :name]), cwd: cwd),
          {:ok, window_id} <- state.tmux.new_window(state.session, opts),
          {:ok, root_pane_id} <- active_pane_for_window(state, window_id),
@@ -192,7 +192,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
   defp resolve_cwd(path, nil) when is_binary(path), do: {:ok, path}
 
   defp resolve_cwd(path, workspace_root) when is_binary(path) and is_binary(workspace_root) do
-    DevIDE.Files.PathSafety.resolve(workspace_root, path)
+    Casein.Files.PathSafety.resolve(workspace_root, path)
   end
 
   defp compact_opts(opts) do

@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.ArtifactProjectControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.ArtifactProjectControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Runtimes
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.ArtifactProjects
+  alias Casein.Runtimes
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-art-public"
 
@@ -30,7 +30,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     repo = Path.join(base, "repo")
 
     Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     Application.put_env(:dev_ide, :artifact_projects_root, Path.join(base, "artifacts"))
     Application.put_env(:dev_ide, :agent_worktree_roots, [])
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
@@ -40,7 +40,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
 
     MemoryAdapter.clear()
     Runtimes.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
     init_repo!(repo)
     seed_workspace!(@workspace_id, repo)
 
@@ -49,7 +49,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
       File.rm_rf!(base)
       Enum.each(prev, fn {k, v} -> restore(env_key(k), v) end)
     end)
@@ -146,7 +146,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
 
     assert [event] =
-             DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
+             Casein.Audit.MemoryAdapter.recent_with_action_prefix(
                @workspace_id,
                "artifact_project.served",
                10
@@ -173,7 +173,7 @@ defmodule DevIdeWeb.ArtifactProjectControllerTest do
     assert csp =~ "default-src 'none'"
 
     assert [_retired] =
-             DevIDE.Audit.MemoryAdapter.recent_with_action_prefix(
+             Casein.Audit.MemoryAdapter.recent_with_action_prefix(
                @workspace_id,
                "artifact_project.retired",
                10

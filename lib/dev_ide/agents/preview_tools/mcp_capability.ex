@@ -1,13 +1,13 @@
-defmodule DevIDE.Agents.PreviewTools.MCPCapability do
+defmodule Casein.Agents.PreviewTools.MCPCapability do
   @moduledoc """
-  Detects the DevIDE-hosted preview-control MCP endpoint.
+  Detects the Casein-hosted preview-control MCP endpoint.
 
   The endpoint is served by the web layer, but capability detection lives in
   context code. The base URL is resolved through a configured MFA to keep that
   dependency inverted.
   """
 
-  alias DevIDE.Agents.{Capability, MCPUrls, PreviewTools}
+  alias Casein.Agents.{Capability, MCPUrls, PreviewTools}
 
   @spec detect() :: Capability.t()
   def detect do

@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.CompareSnapshots do
+defmodule Casein.Agents.PreviewTools.CompareSnapshots do
   @moduledoc "preview_compare_snapshots."
 
   use Jido.Action,
@@ -13,14 +13,14 @@ defmodule DevIDE.Agents.PreviewTools.CompareSnapshots do
       artifact_b: [type: :string, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.compare_props()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_compare_snapshots")
 
   @impl Jido.Action

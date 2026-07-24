@@ -1,4 +1,4 @@
-defmodule DevIDE.PreviewPanes do
+defmodule Casein.PreviewPanes do
   @moduledoc """
   Registry of preview panes bound to tmux pane ids.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.PreviewPanes do
   pane binding for refresh/restart recovery, subscribes to tmux topology
   updates to expire vanished panes, and broadcasts pane lifecycle on both the
   legacy workspace preview PubSub topic (MCP tools, controllers) and the
-  generic `DevIDE.Panes.Events` channel (the web layer's feature-pane
+  generic `Casein.Panes.Events` channel (the web layer's feature-pane
   pipeline).
   """
 
@@ -15,17 +15,17 @@ defmodule DevIDE.PreviewPanes do
 
   import Ecto.Query
 
-  alias DevIDE.Audit
-  alias DevIDE.Previews.Pane, as: PreviewPane
-  alias DevIDE.PreviewActivity
-  alias DevIDE.Previews.ArtifactProtection
-  alias DevIDE.PreviewControl
-  alias DevIDE.Previews
-  alias DevIDE.Previews.Deps
-  alias DevIDE.PreviewPanes.PreviewPaneRegistration
-  alias DevIDE.Previews.Url
-  alias DevIDE.Previews.WorkspaceContext
-  alias DevIDE.Repo
+  alias Casein.Audit
+  alias Casein.Previews.Pane, as: PreviewPane
+  alias Casein.PreviewActivity
+  alias Casein.Previews.ArtifactProtection
+  alias Casein.PreviewControl
+  alias Casein.Previews
+  alias Casein.Previews.Deps
+  alias Casein.PreviewPanes.PreviewPaneRegistration
+  alias Casein.Previews.Url
+  alias Casein.Previews.WorkspaceContext
+  alias Casein.Repo
 
   @table :dev_ide_preview_panes
   # Topology PubSub tag; atom form avoids a compile-time core-module edge.
@@ -534,7 +534,7 @@ defmodule DevIDE.PreviewPanes do
       end
 
     task =
-      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+      Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
         # Prepend the originating caller's pid so Req.Test private-mode ownership
         # resolves to the test process (not the named PreviewPanes singleton).
         Process.put(:"$callers", [caller | List.wrap(Process.get(:"$callers"))])
@@ -584,7 +584,7 @@ defmodule DevIDE.PreviewPanes do
   defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
     Enum.each(parents, fn parent ->
       try do
-        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(Casein.Repo, parent, task_pid)
       catch
         _, _ -> :ok
       end
@@ -2165,7 +2165,7 @@ defmodule DevIDE.PreviewPanes do
 
   # Self-include both the control URL's origin and the pane's own target
   # origin. The persisted `:url`/`display_url` isn't always the control URL —
-  # e.g. a DevIDE-hosted target (playback artifacts, proxy paths) keeps its
+  # e.g. a Casein-hosted target (playback artifacts, proxy paths) keeps its
   # own origin as the displayed/persisted URL while control_url_for/1 maps
   # only the *control-session* URL to the loopback address.
   defp allowed_origins(workspace, control_url, url) do
@@ -2239,7 +2239,7 @@ defmodule DevIDE.PreviewPanes do
   defp preview_title(url), do: "preview " <> url
 
   # Dual broadcast: every legacy "preview:" lifecycle broadcast also emits a
-  # generic DevIDE.Panes.Events event so the web layer can consume preview panes
+  # generic Casein.Panes.Events event so the web layer can consume preview panes
   # through the uniform feature-pane pipeline. The legacy topic stays — MCP
   # tools, PreviewPaneController and Previews.Control consume it unchanged.
   #
@@ -2256,7 +2256,7 @@ defmodule DevIDE.PreviewPanes do
     # the named process, cascading unrelated work. Fan-out is best-effort; a
     # cold cache degrades to the canonical id, which self-heals on next poll.
     for workspace_id <- workspaces().viewer_ids(registration.workspace_id, resolve_remote?: false) do
-      Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
+      Phoenix.PubSub.broadcast(Casein.PubSub, "preview:" <> workspace_id, {
         :preview_pane_registered,
         payload
       })
@@ -2273,7 +2273,7 @@ defmodule DevIDE.PreviewPanes do
     # resolve_remote?: false — see broadcast_registered/2; this also runs inline
     # in the singleton via the deregister commit path.
     for workspace_id <- workspaces().viewer_ids(registration.workspace_id, resolve_remote?: false) do
-      Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, {
+      Phoenix.PubSub.broadcast(Casein.PubSub, "preview:" <> workspace_id, {
         :preview_pane_removed,
         payload
       })

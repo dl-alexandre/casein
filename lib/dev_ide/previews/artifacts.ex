@@ -1,14 +1,14 @@
-defmodule DevIDE.Previews.Artifacts do
+defmodule Casein.Previews.Artifacts do
   @moduledoc """
   Facade for persisting and resolving preview screenshot artifacts.
 
-  Writes route through the pluggable `DevIDE.Previews.Storage` behaviour
+  Writes route through the pluggable `Casein.Previews.Storage` behaviour
   (`LocalDisk` by default), so screenshots and recordings share one storage path
   and a future object-store adapter drops in without touching callers.
   """
 
-  alias DevIDE.Previews.Storage
-  alias DevIDE.Previews.Storage.LocalDisk
+  alias Casein.Previews.Storage
+  alias Casein.Previews.Storage.LocalDisk
 
   @doc "Store PNG bytes under a named artifact id and return a browser-servable path."
   @spec store_named_png!(String.t(), String.t(), binary()) :: String.t()

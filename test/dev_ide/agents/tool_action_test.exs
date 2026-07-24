@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.ToolActionTest do
+defmodule Casein.Agents.ToolActionTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Agents.ToolAction
-  alias DevIDE.Test.ToolActionFixtures.{AliasedAction, FastAction, SlowAction}
+  alias Casein.Agents.ToolAction
+  alias Casein.Test.ToolActionFixtures.{AliasedAction, FastAction, SlowAction}
 
   setup do
     handler = fn _event, measurements, metadata, _config ->

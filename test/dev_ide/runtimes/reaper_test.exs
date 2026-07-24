@@ -1,15 +1,15 @@
-defmodule DevIDE.Runtimes.ReaperTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Runtimes.ReaperTest do
+  use Casein.DataCase, async: false
 
   import ExUnit.CaptureLog
 
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.Reaper
-  alias DevIDE.Supervision.PlatformServices
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Runtimes
+  alias Casein.Runtimes.Reaper
+  alias Casein.Supervision.PlatformServices
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
 
   setup do
     _ = Reaper
@@ -19,9 +19,9 @@ defmodule DevIDE.Runtimes.ReaperTest do
   end
 
   test "scheduled :sweep is the PlatformServices-supervised production janitor path" do
-    assert DevIDE.Runtimes.Reaper in PlatformServices.child_specs()
+    assert Casein.Runtimes.Reaper in PlatformServices.child_specs()
 
-    reaper_pid = Process.whereis(DevIDE.Runtimes.Reaper)
+    reaper_pid = Process.whereis(Casein.Runtimes.Reaper)
     assert is_pid(reaper_pid)
 
     prev_level = Logger.level()

@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.ClearStorage do
+defmodule Casein.Agents.PreviewTools.ClearStorage do
   @moduledoc "preview_clear_storage."
 
   use Jido.Action,
@@ -12,14 +12,14 @@ defmodule DevIDE.Agents.PreviewTools.ClearStorage do
       session_id: [type: {:or, [:integer, :string]}, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.session_only()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_clear_storage")
 
   @impl Jido.Action

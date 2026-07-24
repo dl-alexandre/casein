@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.Plugs.ForwardAuth do
+defmodule CaseinWeb.Plugs.ForwardAuth do
   @moduledoc """
   Trusted-header identity for forward-auth deployments.
 
-  When DevIDE runs behind an authenticating reverse proxy
+  When Casein runs behind an authenticating reverse proxy
   (e.g. Caddy + oauth2-proxy), the proxy sets `X-Auth-Request-Email` on
   every upstream request. This plug reads that header, derives the
   workspace username (`email |> split("@") |> hd |> downcase`), assigns
@@ -16,7 +16,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   local single-user dev is unaffected.
 
   SECURITY: the header is only trustworthy because the proxy strips any
-  client-supplied copy and re-sets it from its authenticator. DevIDE
+  client-supplied copy and re-sets it from its authenticator. Casein
   must bind to localhost / the internal bridge so it is unreachable
   except through the proxy — otherwise a client could spoof the header
   directly.
@@ -43,8 +43,8 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
 
   import Plug.Conn
 
-  alias DevIdeWeb.Plugs.AssignCurrentUser
-  alias DevIdeWeb.Plugs.DesktopAuth
+  alias CaseinWeb.Plugs.AssignCurrentUser
+  alias CaseinWeb.Plugs.DesktopAuth
 
   @session_key "current_user"
 
@@ -173,7 +173,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   end
 
   defp bind_unsafe_message(ip) do
-    "Forward-auth is enabled (DevIDE trusts X-Auth-Request-Email) but the HTTP " <>
+    "Forward-auth is enabled (Casein trusts X-Auth-Request-Email) but the HTTP " <>
       "listener is bound to #{inspect(ip)}, not loopback/unix-socket — a client " <>
       "that reaches this port directly can spoof identity. Bind 127.0.0.1, ::1, " <>
       "or a unix socket behind the proxy. (audit #10 / F3)"
@@ -187,7 +187,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   defp loopback_or_socket_ip?(_), do: false
 
   defp endpoint_bind_ip do
-    Application.get_env(:dev_ide, DevIdeWeb.Endpoint, [])
+    Application.get_env(:dev_ide, CaseinWeb.Endpoint, [])
     |> Keyword.get(:http, [])
     |> Keyword.get(:ip)
   end

@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.FileEvents do
   # File-tree / editor handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change). Show
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change). Show
   # delegates "tree:*" and "file:*" events here. Cross-cutting helpers come from
   # Show.Context (gate/policy_ctx/host_*/format_file_error); tree/diff/git
   # helpers that drive Show's async callbacks (handle_async lives in Show) stay
@@ -10,15 +10,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.Files
-  alias DevIDE.Files.Watcher, as: FilesWatcher
-  alias DevIDE.Links.Markdown
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Policy
-  alias DevIDE.Workspaces.FileAccess
-  alias DevIdeWeb.WorkspaceLive.Show
+  alias Casein.Files
+  alias Casein.Files.Watcher, as: FilesWatcher
+  alias Casein.Links.Markdown
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Policy
+  alias Casein.Workspaces.FileAccess
+  alias CaseinWeb.WorkspaceLive.Show
 
   @doc """
   Start/stop the per-workspace filesystem watcher as the Files tab is entered
@@ -141,7 +141,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: String.trim(name)
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          {kind, dir} when kind in [:file, :dir] <- socket.assigns.new_input,
          {:ok, root} <- context_host_path(socket),
          rel = Path.join(dir, String.trim(name)),
@@ -211,7 +211,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: to
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          from when is_binary(from) <- socket.assigns.node_rename,
          {:ok, root} <- context_host_path(socket),
          :ok <- Files.rename(root, from, to) do
@@ -247,7 +247,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: socket.assigns.node_delete
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          rel when is_binary(rel) <- socket.assigns.node_delete,
          {:ok, root} <- context_host_path(socket),
          :ok <- Files.delete(root, rel, recursive: true) do
@@ -278,7 +278,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: path
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          {:ok, root} <- context_host_path(socket),
          {:ok, _dest} <- duplicate_node(root, path) do
       {:noreply,
@@ -315,7 +315,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: new_path
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          {:ok, root} <- context_host_path(socket),
          %{path: from} = _open <- socket.assigns.open_file,
          :ok <- Files.rename(root, from, new_path) do
@@ -368,7 +368,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: socket.assigns.delete_confirm
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          rel when is_binary(rel) <- socket.assigns.delete_confirm,
          {:ok, root} <- context_host_path(socket),
          :ok <- Files.delete(root, rel) do
@@ -463,7 +463,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
         target_ref: path
       })
 
-    with true <- DevIDE.Policy.Decision.allow?(decision),
+    with true <- Casein.Policy.Decision.allow?(decision),
          {:ok, loc} <- context_host_loc(socket),
          %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
          {:ok, %{version: new_version}} <-

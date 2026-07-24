@@ -1,4 +1,4 @@
-defmodule DevIDE.CommandPalette.Usage do
+defmodule Casein.CommandPalette.Usage do
   @moduledoc """
   Per-workspace palette execution history ("frecency").
 
@@ -13,7 +13,7 @@ defmodule DevIDE.CommandPalette.Usage do
 
   require Logger
 
-  alias DevIDE.Repo
+  alias Casein.Repo
 
   defmodule Row do
     @moduledoc false

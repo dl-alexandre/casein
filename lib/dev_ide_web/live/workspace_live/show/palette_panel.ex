@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PalettePanel do
+defmodule CaseinWeb.WorkspaceLive.Show.PalettePanel do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
   import Phoenix.Component
 
   # Ordered category tabs shown in the palette. `:all` is always first so the

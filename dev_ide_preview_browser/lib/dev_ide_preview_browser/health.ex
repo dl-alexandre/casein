@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.Health do
+defmodule CaseinPreviewBrowser.Health do
   @moduledoc """
   LiveView-aware preview health snapshot.
 

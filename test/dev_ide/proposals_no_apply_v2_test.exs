@@ -1,12 +1,12 @@
-defmodule DevIDE.ProposalsNoApplyV2Test do
+defmodule Casein.ProposalsNoApplyV2Test do
   @moduledoc """
   Boundary guard for M12: extending the analyzer must not introduce a write
   or apply path. The original M9 guard catches the obvious smells; this one
   asserts the new analyzer modules in particular. These modules are also
-  relied upon (read-only) by `DevIDE.ProposalApply`'s risk gating — see
-  `DevIDE.ProposalsNoApplyTest`.
+  relied upon (read-only) by `Casein.ProposalApply`'s risk gating — see
+  `Casein.ProposalsNoApplyTest`.
   """
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   @sources [
     "lib/dev_ide/proposals/conflict_analyzer.ex",
@@ -28,7 +28,7 @@ defmodule DevIDE.ProposalsNoApplyV2Test do
   end
 
   test "Analysis struct has no apply or write fields" do
-    fields = %DevIDE.Proposals.Analysis{} |> Map.from_struct() |> Map.keys() |> MapSet.new()
+    fields = %Casein.Proposals.Analysis{} |> Map.from_struct() |> Map.keys() |> MapSet.new()
 
     for forbidden <- ~w(apply applied apply_path apply_result write_path)a do
       refute MapSet.member?(fields, forbidden), "Analysis exposes #{forbidden}"

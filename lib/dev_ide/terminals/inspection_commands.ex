@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.InspectionCommands do
+defmodule Casein.Terminals.InspectionCommands do
   @moduledoc """
   Read-only governed terminal commands.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
   bounded runtime and output.
   """
 
-  alias DevIDE.Previews
+  alias Casein.Previews
 
   @max_output 64 * 1024
 
@@ -99,11 +99,11 @@ defmodule DevIDE.Terminals.InspectionCommands do
   end
 
   defp tidewave_status(root, line, workspace) do
-    caps = DevIDE.WorkspaceSource.detect_capabilities(workspace || %{}, root)
+    caps = Casein.WorkspaceSource.detect_capabilities(workspace || %{}, root)
 
     cap =
       Enum.find(caps, &(&1.kind == :tidewave)) ||
-        %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
+        %Casein.Agents.Capability{kind: :tidewave, status: :missing}
 
     output =
       case cap.status do
@@ -136,9 +136,9 @@ defmodule DevIDE.Terminals.InspectionCommands do
   defp tidewave_missing_lines do
     base = [
       "Tidewave: missing",
-      "No Tidewave endpoint on this DevIDE instance (prod release excludes the :tidewave dep).",
+      "No Tidewave endpoint on this Casein instance (prod release excludes the :tidewave dep).",
       "Workspace apps: expected manager metadata domain_base plus ports.tidewave.",
-      "DevIDE preview: run scripts/preview-env.sh up — Tidewave is available on the allocated loopback port."
+      "Casein preview: run scripts/preview-env.sh up — Tidewave is available on the allocated loopback port."
     ]
 
     preview_lines =

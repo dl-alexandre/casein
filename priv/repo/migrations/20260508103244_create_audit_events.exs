@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateAuditEvents do
+defmodule Casein.Repo.Migrations.CreateAuditEvents do
   use Ecto.Migration
 
   def change do

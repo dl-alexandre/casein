@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.SshRunner.SystemTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.SshRunner.SystemTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces.SshRunner.System, as: SshSystem
+  alias Casein.Workspaces.SshRunner.System, as: SshSystem
 
   @invalid_host "devide-ssh-invalid.#{System.unique_integer([:positive])}.invalid"
 

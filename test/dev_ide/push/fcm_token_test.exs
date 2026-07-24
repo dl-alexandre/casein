@@ -1,7 +1,7 @@
-defmodule DevIDE.Push.FCMTokenTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Push.FCMTokenTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Push.FCMToken
+  alias Casein.Push.FCMToken
 
   setup do
     prev = Application.get_env(:dev_ide, FCMToken)
@@ -31,7 +31,7 @@ defmodule DevIDE.Push.FCMTokenTest do
   test "mints and caches an OAuth token from service-account JSON" do
     Application.put_env(:dev_ide, FCMToken,
       service_account_json: Jason.encode!(service_account()),
-      http_client: DevIDE.Push.FCMToken.StubHTTP,
+      http_client: Casein.Push.FCMToken.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
     )
 
@@ -67,7 +67,7 @@ defmodule DevIDE.Push.FCMTokenTest do
   test "returns endpoint errors without caching" do
     Application.put_env(:dev_ide, FCMToken,
       service_account_json: Jason.encode!(service_account()),
-      http_client: DevIDE.Push.FCMToken.StubHTTP,
+      http_client: Casein.Push.FCMToken.StubHTTP,
       cache: false
     )
 

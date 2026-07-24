@@ -1,11 +1,11 @@
-defmodule DevIDE.FilePanes do
+defmodule Casein.FilePanes do
   @moduledoc """
   Registry of file-editor panes bound to tmux pane ids.
 
   A file pane rides a real tmux pane (tmux stays the geometry allocator) whose
   content is a native CodeMirror overlay rendered by the web layer. This module
   owns the binding + the pane's ordered list of open tabs, mirroring the shape of
-  `DevIDE.PreviewPanes` but without any browser-control machinery.
+  `Casein.PreviewPanes` but without any browser-control machinery.
 
   Policy: **one file pane per tmux window**. Opening a file in a window that
   already has a file pane reuses it and adds/activates a tab; otherwise a pane is
@@ -14,7 +14,7 @@ defmodule DevIDE.FilePanes do
 
   State ownership: the registration persists the tab list + active path only.
   File **content and version tokens are never stored** — they are read fresh from
-  disk via `DevIDE.Workspaces.FileAccess` on every render/save so a stale token
+  disk via `Casein.Workspaces.FileAccess` on every render/save so a stale token
   can never clobber a concurrently-edited file.
 
   I/O (Repo + tmux) runs in `Task.Supervisor.async_nolink` offload tasks with
@@ -26,17 +26,17 @@ defmodule DevIDE.FilePanes do
 
   import Ecto.Query
 
-  alias DevIDE.FilePanes.FilePaneRegistration
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Panes.Events, as: PaneEvents
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-  alias DevIDE.Workspaces.FileAccess
-  alias DevIDE.Repo
+  alias Casein.FilePanes.FilePaneRegistration
+  alias Casein.Files.PathSafety
+  alias Casein.Panes.Events, as: PaneEvents
+  alias Casein.Terminals.TmuxTopology
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
+  alias Casein.Workspaces.FileAccess
+  alias Casein.Repo
 
   @table :dev_ide_file_panes
-  @topology_tag DevIDE.Terminals.TmuxTopology
+  @topology_tag Casein.Terminals.TmuxTopology
   @pane_type :file
   # Register/deregister/clear wait on offloaded Repo/tmux I/O.
   @lifecycle_call_timeout 30_000
@@ -241,7 +241,7 @@ defmodule DevIDE.FilePanes do
 
   @doc """
   Build the render payload for a pane (reads the active file fresh). Returns `%{}`
-  for an unknown pane so `DevIDE.Panes` can identify ownership.
+  for an unknown pane so `Casein.Panes` can identify ownership.
   """
   @spec render_state(String.t()) :: map()
   def render_state(pane_id) when is_binary(pane_id) do
@@ -525,7 +525,7 @@ defmodule DevIDE.FilePanes do
       end
 
     task =
-      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+      Task.Supervisor.async_nolink(Casein.TaskSupervisor, fn ->
         # Prepend the originating caller's pid so Ecto sandbox ownership
         # resolves to the test process (not the named FilePanes singleton).
         Process.put(:"$callers", [caller | List.wrap(Process.get(:"$callers"))])
@@ -573,7 +573,7 @@ defmodule DevIDE.FilePanes do
   defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
     Enum.each(parents, fn parent ->
       try do
-        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIDE.Repo, parent, task_pid)
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(Casein.Repo, parent, task_pid)
       catch
         _, _ -> :ok
       end
@@ -1696,6 +1696,6 @@ defmodule DevIDE.FilePanes do
   defp require_binary(_value, error), do: {:error, error}
 
   defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
+    Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
   end
 end

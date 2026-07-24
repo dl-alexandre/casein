@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.ViewDeepLinkTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
+  alias CaseinWeb.WorkspaceLive.Show.ViewDeepLink
 
   test "workspace_view_path includes pane and zoom when multi-pane window is zoomed" do
     socket = %{
@@ -154,8 +154,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
     }
 
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       assigns: Map.merge(defaults, Map.new(overrides)) |> Map.put(:__changed__, %{}),
       redirected: nil
     }

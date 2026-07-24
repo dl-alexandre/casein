@@ -1,11 +1,11 @@
-defmodule DevIDE.Terminals.FileLinkScanner do
+defmodule Casein.Terminals.FileLinkScanner do
   @moduledoc """
   Pure per-row scanner for workspace file-path candidates in rendered
   terminal rows (the `ghostty:render` frame hot path).
 
-  Unlike `DevIDE.Links.Scanner` — the permissive URL/path candidate scanner
+  Unlike `Casein.Links.Scanner` — the permissive URL/path candidate scanner
   behind the workspace open API — this scanner runs inside
-  `DevIdeWeb.WorkspaceLive.PaneWorker`'s frame build, up to ~125 times/s per
+  `CaseinWeb.WorkspaceLive.PaneWorker`'s frame build, up to ~125 times/s per
   pane under load, so it is deliberately narrow and cheap:
 
     * a `:binary.match/2` gate rejects rows without `/` or `.` before any
@@ -27,12 +27,12 @@ defmodule DevIDE.Terminals.FileLinkScanner do
   converted, so underline overlays can position directly from cell metrics.
 
   Candidates are *plausible spans only* — no filesystem access happens here.
-  Callers validate them with `DevIDE.FilePanes.LinkResolver`.
+  Callers validate them with `Casein.FilePanes.LinkResolver`.
   """
 
   @max_candidates_per_row 8
 
-  # Mirrors DevIDE.Links.Scanner's allowlist (kept local: that module does not
+  # Mirrors Casein.Links.Scanner's allowlist (kept local: that module does not
   # export it, and the two scanners evolve independently).
   @known_extensions ~w(
     astro bash c cjs cpp cs css cts eex erl ex exs go h heex hpp hrl html
@@ -142,7 +142,7 @@ defmodule DevIDE.Terminals.FileLinkScanner do
   # URL innards ("localhost:4000/assets/app.js") look like slash paths once
   # the scheme is out of frame. Rows carrying "://" get their URL spans
   # computed once and overlapping candidates dropped (same approach as
-  # DevIDE.Links.Scanner). Byte ranges — compared before column conversion.
+  # Casein.Links.Scanner). Byte ranges — compared before column conversion.
   @url_regex ~r{[a-z][a-z0-9+.-]*://[^\s"'<>]+}
   defp url_ranges(text) do
     case :binary.match(text, "://") do

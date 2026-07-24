@@ -1,4 +1,4 @@
-defmodule DevIDE.Panes.Pane do
+defmodule Casein.Panes.Pane do
   @moduledoc """
   Uniform abstraction for a workspace pane, regardless of what lives inside it.
 
@@ -100,7 +100,7 @@ defmodule DevIDE.Panes.Pane do
   List the live pane refs of this type for a workspace (resolving aliases).
 
   Feature panes (preview, file) that are addressable purely from a registry
-  implement this so the `DevIDE.Panes` facade can fold every renderable pane
+  implement this so the `Casein.Panes` facade can fold every renderable pane
   into a single snapshot. Terminal panes are served by `PaneWorker`, not by a
   registry, so they do not implement it — the facade skips types that don't.
   """
@@ -108,9 +108,9 @@ defmodule DevIDE.Panes.Pane do
 
   @optional_callbacks render_payload: 1, handle_input: 2, set_active: 2, list: 1
 
-  @terminal_impl :"Elixir.DevIDE.Panes.Terminal"
-  @preview_impl :"Elixir.DevIDE.Previews.Pane"
-  @file_impl :"Elixir.DevIDE.Panes.FilePane"
+  @terminal_impl :"Elixir.Casein.Panes.Terminal"
+  @preview_impl :"Elixir.Casein.Previews.Pane"
+  @file_impl :"Elixir.Casein.Panes.FilePane"
   @impls %{terminal: @terminal_impl, preview: @preview_impl, file: @file_impl}
 
   @doc """

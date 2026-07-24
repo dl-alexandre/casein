@@ -1,20 +1,20 @@
-defmodule DevIDE.DeviceLinks do
+defmodule Casein.DeviceLinks do
   @moduledoc """
   Persistent links between an external device and a domain resource.
 
-  DevIDE currently issues links for workspace-scoped mobile companion access,
+  Casein currently issues links for workspace-scoped mobile companion access,
   but the stored shape is intentionally origin/resource based so other domains
   can reuse the same bootstrap-and-exchange pattern.
   """
 
   import Ecto.Query
 
-  alias DevIDE.DeviceLinks.Token
-  alias DevIDE.Repo
-  alias DevIDE.Workspaces
+  alias Casein.DeviceLinks.Token
+  alias Casein.Repo
+  alias Casein.Workspaces
 
   @origin_id "dev_ide"
-  @origin_name "DevIDE"
+  @origin_name "Casein"
   @resource_kind "workspace"
   @capabilities [
     "phoenix_socket",

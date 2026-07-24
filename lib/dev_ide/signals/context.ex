@@ -1,4 +1,4 @@
-defmodule DevIDE.Signals.Context do
+defmodule Casein.Signals.Context do
   @moduledoc """
   Process-scoped causality context for audit provenance.
 
@@ -11,7 +11,7 @@ defmodule DevIDE.Signals.Context do
 
   Entry points wrap their work in `with_new/1`; process boundaries hand off
   explicitly — capture `snapshot/0` in the client, re-install with
-  `with_snapshot/2` inside the other process. `DevIDE.Audit.emit/1` stamps
+  `with_snapshot/2` inside the other process. `Casein.Audit.emit/1` stamps
   the ids into event metadata and calls `advance/1` after each recorded
   event so consecutive emissions form a linked causation chain.
   """
@@ -32,13 +32,13 @@ defmodule DevIDE.Signals.Context do
   def with_snapshot(nil, fun) when is_function(fun, 0), do: fun.()
   def with_snapshot(%Trace.Context{} = ctx, fun) when is_function(fun, 0), do: scoped(ctx, fun)
 
-  @default_task_supervisor DevIDE.TaskSupervisor
+  @default_task_supervisor Casein.TaskSupervisor
 
   @doc """
   Run `fun` in a supervised task, propagating the caller's context snapshot.
 
   Returns a `Task` suitable for `Task.yield/2` / `Task.await/2`. Uses
-  `DevIDE.TaskSupervisor` by default; pass a supervisor to `async/2`.
+  `Casein.TaskSupervisor` by default; pass a supervisor to `async/2`.
   """
   @spec async((-> term())) :: Task.t()
   def async(fun) when is_function(fun, 0), do: async(@default_task_supervisor, fun)

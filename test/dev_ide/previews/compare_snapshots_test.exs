@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.CompareSnapshotsTest do
+defmodule Casein.Previews.CompareSnapshotsTest do
   # async: false — mutates :dev_ide app env (differ + artifacts root).
   use ExUnit.Case, async: false
 
-  alias DevIDE.Previews.{Artifacts, Control}
+  alias Casein.Previews.{Artifacts, Control}
 
   # A 1x1 PNG so persist_compare_diff has valid base64 to decode + store.
   @png_b64 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"

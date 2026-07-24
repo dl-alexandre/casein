@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.PickerBadges do
+defmodule CaseinWeb.WorkspaceLive.PickerBadges do
   @moduledoc """
   Presentation helpers for workspace rows: status colors, per-session agent
   badges, and the workspace agent-layout badge.
@@ -88,6 +88,6 @@ defmodule DevIdeWeb.WorkspaceLive.PickerBadges do
       "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
 
   def session_share_url(href) when is_binary(href) and href != "" do
-    DevIdeWeb.Endpoint.url() <> href
+    CaseinWeb.Endpoint.url() <> href
   end
 end

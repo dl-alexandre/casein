@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.MCPCapabilityScopeTest do
+defmodule CaseinWeb.API.MCPCapabilityScopeTest do
   use ExUnit.Case, async: true
 
-  alias DevIdeWeb.API.MCPCapabilityScope
+  alias CaseinWeb.API.MCPCapabilityScope
 
   @claims %{
     workspace_id: "ws",

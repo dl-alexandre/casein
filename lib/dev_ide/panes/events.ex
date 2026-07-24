@@ -1,10 +1,10 @@
-defmodule DevIDE.Panes.Events do
+defmodule Casein.Panes.Events do
   @moduledoc """
   Generic, type-agnostic pane lifecycle PubSub.
 
   Every feature-pane registry (previews, files) broadcasts through here so the
   web layer maintains a single `:feature_panes` assign and dispatches render/input
-  through `DevIDE.Panes.Pane` callbacks instead of per-type plumbing.
+  through `Casein.Panes.Pane` callbacks instead of per-type plumbing.
 
   ## Alias awareness
 
@@ -31,9 +31,9 @@ defmodule DevIDE.Panes.Events do
   focus-churn guard the preview path relies on).
   """
 
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
   @topic_prefix "panes:"
 
   @type reason :: :registered | :updated | :removed | :heartbeat

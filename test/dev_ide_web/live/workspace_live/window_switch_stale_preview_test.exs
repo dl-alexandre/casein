@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
+defmodule CaseinWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   @moduledoc """
   Reproduces the "window-switch stale-preview" bug.
 
@@ -12,7 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     1. Mount Show for a 2-window tmux session (`@0` shell / 1 pane, `@1` tests /
        3 panes). Window `@1` is active and contains preview pane `%2`.
     2. Register a preview pane on `%2` (the generic `{:pane_event, ...}`
-       DevIDE.Panes.Events seam, which also makes `%2` the selected preview).
+       Casein.Panes.Events seam, which also makes `%2` the selected preview).
     3. Drive a real window switch to `@0` via the `tmux:select_window` event the
        LiveView handles (FakeTmuxAdapter flips the active window; the LiveView
        refreshes topology through `assign_tmux_topology`).
@@ -23,12 +23,12 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   PASSES once the window-scoped selection is re-seated on the active-window
   change (commit 18f74c0 / branch fix/window-picker-stale-preview).
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIDE.Integrations.Manager.Client
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias Casein.Integrations.Manager.Client
 
   @workspace_id "ws-1"
   @preview_pane_id "%2"
@@ -45,12 +45,12 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     File.mkdir_p!(workspace_path)
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     MemoryAdapter.clear()
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     # Window @0 (shell, 1 pane: %0) inactive; window @1 (tests, 3 panes) active.
@@ -100,7 +100,7 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
 
     workspace_id = @workspace_id
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
@@ -183,7 +183,7 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   end
 
   # Preview lifecycle reaches the LiveView through the generic
-  # DevIDE.Panes.Events channel since the preview runtime cutover.
+  # Casein.Panes.Events channel since the preview runtime cutover.
   defp register_preview_pane(view, pane_id, url) do
     send(
       view.pid,

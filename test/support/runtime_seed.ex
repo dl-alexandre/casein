@@ -1,6 +1,6 @@
-defmodule DevIDE.Test.RuntimeSeed do
+defmodule Casein.Test.RuntimeSeed do
   @moduledoc """
-  Test-only seam for inserting `DevIDE.Runtimes.Runtime` records directly through
+  Test-only seam for inserting `Casein.Runtimes.Runtime` records directly through
   the configured runtimes adapter.
 
   The production runtime *setters* (`request_runtime/provision_runtime/...`) were
@@ -17,7 +17,7 @@ defmodule DevIDE.Test.RuntimeSeed do
   used so existing fixtures port over unchanged.
   """
 
-  alias DevIDE.Runtimes.{LifecycleEvent, Profile, Runtime}
+  alias Casein.Runtimes.{LifecycleEvent, Profile, Runtime}
 
   @doc """
   Inserts a runtime record for `workspace_id` and returns `{:ok, runtime}`.
@@ -117,5 +117,5 @@ defmodule DevIDE.Test.RuntimeSeed do
   defp generate_id, do: "rt-" <> Ecto.UUID.generate()
 
   defp impl,
-    do: Application.get_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    do: Application.get_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 end

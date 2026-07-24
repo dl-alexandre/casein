@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.AssignCurrentUserHookTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.AssignCurrentUserHookTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.AssignCurrentUserHook
+  alias CaseinWeb.AssignCurrentUserHook
 
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
+      endpoint: CaseinWeb.Endpoint,
       assigns: Map.merge(%{__changed__: %{}}, assigns)
     }
   end

@@ -1,7 +1,7 @@
-defmodule DevIDE.FilePanes.SuffixIndexTest do
+defmodule Casein.FilePanes.SuffixIndexTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.FilePanes.SuffixIndex
+  alias Casein.FilePanes.SuffixIndex
 
   setup do
     root =

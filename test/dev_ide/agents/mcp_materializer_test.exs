@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.MCPMaterializerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.MCPMaterializerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.AuthProfile
-  alias DevIDE.Agents.MCPMaterializer
+  alias Casein.Agents.AuthProfile
+  alias Casein.Agents.MCPMaterializer
 
   @workspace %{
     id: "ws-abc",

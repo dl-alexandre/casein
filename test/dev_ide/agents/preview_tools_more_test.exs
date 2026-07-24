@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.PreviewToolsMoreTest do
+defmodule Casein.Agents.PreviewToolsMoreTest do
   @moduledoc """
-  Further branch coverage for `DevIDE.Agents.PreviewTools`.
+  Further branch coverage for `Casein.Agents.PreviewTools`.
 
   Complements `preview_tools_test.exs` (happy paths) and
   `preview_tools_extra_test.exs` (validation/error paths). Focuses on branches
@@ -12,14 +12,14 @@ defmodule DevIDE.Agents.PreviewToolsMoreTest do
 
   Reuses the same setup, fakes, and seeding helpers as the sibling suites.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Agents.PreviewTools
+  alias Casein.PreviewActivity
+  alias Casein.PreviewControl.Registry
+  alias Casein.PreviewPanes
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -123,7 +123,7 @@ defmodule DevIDE.Agents.PreviewToolsMoreTest do
     end)
 
     FakeState.put(:fake_tmux_scrollback, %{
-      {session, pane_id} => "# DevIDE agent pane\n"
+      {session, pane_id} => "# Casein agent pane\n"
     })
   end
 

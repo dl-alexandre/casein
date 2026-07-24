@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.Router do
+defmodule CaseinWeb.Router do
   @moduledoc """
   HTTP/LiveView/MCP route table and request pipelines (`:browser`,
-  `:preview_proxy`, `:api`, `:mcp_api`) for the DevIDE cockpit, including the
+  `:preview_proxy`, `:api`, `:mcp_api`) for the Casein cockpit, including the
   cockpit UI, preview proxy/artifacts, the read-only workspace API, the deploy
   drain/status endpoints, and the agent-facing terminal/preview/artifact MCP
   routes.
   """
-  use DevIdeWeb, :router
+  use CaseinWeb, :router
 
   # Content-Security-Policy for the cockpit UI.
   #
@@ -53,7 +53,7 @@ defmodule DevIdeWeb.Router do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
-    plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
+    plug :put_root_layout, html: {CaseinWeb.Layouts, :root}
     plug :protect_from_forgery
 
     plug :put_secure_browser_headers,
@@ -63,7 +63,7 @@ defmodule DevIdeWeb.Router do
          }
 
     plug :put_content_security_policy
-    plug DevIdeWeb.Plugs.ForwardAuth
+    plug CaseinWeb.Plugs.ForwardAuth
   end
 
   # Preview reverse proxy. Deliberately omits the cockpit's secure-browser
@@ -75,7 +75,7 @@ defmodule DevIdeWeb.Router do
   # 127.0.0.1 upstream keep it from becoming a general-purpose proxy.
   pipeline :preview_proxy do
     plug :fetch_session
-    plug DevIdeWeb.Plugs.ForwardAuth
+    plug CaseinWeb.Plugs.ForwardAuth
   end
 
   # Browser-authenticated workspace file bytes for rendered Markdown. This is
@@ -84,7 +84,7 @@ defmodule DevIdeWeb.Router do
   pipeline :workspace_file do
     plug :fetch_session
     plug :protect_from_forgery
-    plug DevIdeWeb.Plugs.ForwardAuth
+    plug CaseinWeb.Plugs.ForwardAuth
   end
 
   # Client-streamed preview recordings. Raw octet-stream chunk bodies pass
@@ -94,45 +94,45 @@ defmodule DevIdeWeb.Router do
   # ownership per request.
   pipeline :api do
     plug :accepts, ["json"]
-    plug DevIdeWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.ApiAuth
   end
 
   pipeline :device_link_api do
     plug :accepts, ["json"]
     # Resolve real client IP from XFF only when the direct peer is loopback
     # (oauth2-proxy/Caddy → Bandit). Must run before IP-keyed rate limiting.
-    plug DevIdeWeb.Plugs.TrustedProxyRemoteIp
-    plug DevIdeWeb.Plugs.DeviceLinkRateLimit
+    plug CaseinWeb.Plugs.TrustedProxyRemoteIp
+    plug CaseinWeb.Plugs.DeviceLinkRateLimit
   end
 
   pipeline :mcp_api do
     plug :accepts, ["json"]
-    plug DevIdeWeb.Plugs.ApiAuth
-    plug DevIdeWeb.Plugs.AgentCapabilityAuthz
-    plug DevIdeWeb.Plugs.McpRateLimit
+    plug CaseinWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.AgentCapabilityAuthz
+    plug CaseinWeb.Plugs.McpRateLimit
   end
 
   # GitHub push webhook — authenticated via X-Hub-Signature-256, not ApiAuth.
   pipeline :deploy_webhook do
     plug :accepts, ["json"]
-    plug DevIdeWeb.Plugs.DeployWebhookAuth
+    plug CaseinWeb.Plugs.DeployWebhookAuth
   end
 
   # Streamable HTTP transport (GET SSE channel + DELETE session teardown). No
   # strict :accepts — SSE clients send `Accept: text/event-stream` only.
   pipeline :mcp_stream do
-    plug DevIdeWeb.Plugs.ApiAuth
-    plug DevIdeWeb.Plugs.AgentCapabilityAuthz
-    plug DevIdeWeb.Plugs.McpRateLimit
+    plug CaseinWeb.Plugs.ApiAuth
+    plug CaseinWeb.Plugs.AgentCapabilityAuthz
+    plug CaseinWeb.Plugs.McpRateLimit
   end
 
-  scope "/", DevIdeWeb do
+  scope "/", CaseinWeb do
     pipe_through :browser
 
     live_session :default,
       on_mount: [
-        {DevIdeWeb.AssignCurrentUserHook, :default},
-        {DevIdeWeb.DeploymentUpdateHook, :default}
+        {CaseinWeb.AssignCurrentUserHook, :default},
+        {CaseinWeb.DeploymentUpdateHook, :default}
       ] do
       # Root lands in the cockpit on the workspaceless scratch PTY ($HOME).
       # Dir browse is the SESSIONS Browse tier (Stage 4b). No separate
@@ -165,19 +165,19 @@ defmodule DevIdeWeb.Router do
     plug :accepts, ["json"]
   end
 
-  scope "/desktop", DevIdeWeb do
+  scope "/desktop", CaseinWeb do
     pipe_through :desktop_health
 
     get "/health", DesktopHealthController, :show
   end
 
-  scope "/", DevIdeWeb do
+  scope "/", CaseinWeb do
     # Deliberately unauthenticated, Accept-header agnostic, and independent of
     # devbox deploy checks. Platforms need a status code, not infra details.
     get "/healthz", HealthController, :show
   end
 
-  scope "/preview-proxy", DevIdeWeb do
+  scope "/preview-proxy", CaseinWeb do
     pipe_through :preview_proxy
 
     match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
@@ -188,19 +188,19 @@ defmodule DevIdeWeb.Router do
   # server). Uses :workspace_file (session + ForwardAuth, no cockpit CSP — the
   # controller sets its own tight CSP for workspace-authored content) and gates
   # on workspace ownership. This is the PR-shareable artifact link.
-  scope "/artifact-projects", DevIdeWeb do
+  scope "/artifact-projects", CaseinWeb do
     pipe_through :workspace_file
 
     get "/:workspace_id/:artifact_project_id/*path", ArtifactProjectController, :show
   end
 
-  scope "/api", DevIdeWeb do
+  scope "/api", CaseinWeb do
     pipe_through :workspace_file
 
     get "/workspaces/:id/files/*path", WorkspaceFileController, :show
   end
 
-  scope "/api", DevIdeWeb.API do
+  scope "/api", CaseinWeb.API do
     pipe_through :device_link_api
 
     post "/device-links/exchange", DeviceLinkController, :exchange
@@ -208,7 +208,7 @@ defmodule DevIdeWeb.Router do
     post "/device-links/revoke", DeviceLinkController, :revoke
   end
 
-  scope "/api", DevIdeWeb.API do
+  scope "/api", CaseinWeb.API do
     pipe_through :api
 
     get "/workspaces", WorkspaceController, :index
@@ -271,23 +271,23 @@ defmodule DevIdeWeb.Router do
     post "/drain", DrainController, :drain
   end
 
-  scope "/api", DevIdeWeb.API do
+  scope "/api", CaseinWeb.API do
     pipe_through :deploy_webhook
 
     post "/deploy_webhook", DeployWebhookController, :github
   end
 
-  scope "/api", DevIdeWeb.API do
+  scope "/api", CaseinWeb.API do
     pipe_through :mcp_api
 
     post "/workspaces/:id/open", WorkspaceOpenController, :open
 
     # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
-    # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
+    # opencode) discover and call Casein.Agents.PreviewTools over MCP. Kept on
     # its own route rather than Tidewave's, which has no external-tool hook.
     post "/preview/mcp", PreviewMCPController, :rpc
 
-    # Terminal-control MCP server: lets external agents discover DevIDE tmux
+    # Terminal-control MCP server: lets external agents discover Casein tmux
     # sessions and read panes / send keys, mirroring PreviewMCP's transport.
     post "/terminals/mcp", TerminalMCPController, :rpc
 
@@ -298,7 +298,7 @@ defmodule DevIdeWeb.Router do
 
   # Streamable HTTP: server→client SSE channel (GET) and session teardown
   # (DELETE), keyed by the Mcp-Session-Id issued on initialize.
-  scope "/api", DevIdeWeb.API do
+  scope "/api", CaseinWeb.API do
     pipe_through :mcp_stream
 
     get "/preview/mcp", PreviewMCPController, :info
@@ -321,18 +321,18 @@ defmodule DevIdeWeb.Router do
     scope "/dev" do
       pipe_through :browser
 
-      live_dashboard "/dashboard", metrics: DevIdeWeb.Telemetry
+      live_dashboard "/dashboard", metrics: CaseinWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
   end
 
-  scope "/", DevIdeWeb do
+  scope "/", CaseinWeb do
     pipe_through :browser
 
     live_session :path_workspaces,
       on_mount: [
-        {DevIdeWeb.AssignCurrentUserHook, :default},
-        {DevIdeWeb.DeploymentUpdateHook, :default}
+        {CaseinWeb.AssignCurrentUserHook, :default},
+        {CaseinWeb.DeploymentUpdateHook, :default}
       ] do
       live "/*lan_path", WorkspaceLive.Show, :lan_path
     end

@@ -1,15 +1,15 @@
 defmodule McpCtl.Schema do
   @moduledoc """
-  JSON-schema fragments shared by DevIDE MCP tool definitions.
+  JSON-schema fragments shared by Casein MCP tool definitions.
 
-  Encodes DevIDE workspace-scoping conventions (workspace ids, folder
+  Encodes Casein workspace-scoping conventions (workspace ids, folder
   attachment paths) so every tool describes them consistently.
   """
 
   @preview_workspace_id_param %{
     type: "string",
     description:
-      "Workspace id. Generated DevIDE MCP URLs are pre-scoped and can omit this. " <>
+      "Workspace id. Generated Casein MCP URLs are pre-scoped and can omit this. " <>
         "Manager workspaces use the manager UUID. Folder-attached workspaces use " <>
         "folder:<base64url-absolute-path>; prefer preview_resolve_workspace with a path " <>
         "instead of hand-encoding."
@@ -26,7 +26,7 @@ defmodule McpCtl.Schema do
     type: "string",
     description:
       "Absolute or allowed-root-relative workspace folder path. Use when workspace_id is unknown; " <>
-        "DevIDE will attach/resolve the folder and return its folder:<base64url-path> id."
+        "Casein will attach/resolve the folder and return its folder:<base64url-path> id."
   }
 
   @doc false

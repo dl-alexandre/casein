@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionRecovery do
+defmodule Casein.Terminals.SessionRecovery do
   @moduledoc """
   Cross-cutting recovery helpers when a tmux session (or whole server) is gone.
 
@@ -9,10 +9,10 @@ defmodule DevIDE.Terminals.SessionRecovery do
 
   require Logger
 
-  alias DevIDE.Audit
-  alias DevIDE.Terminals.{ScrollbackArchive, SessionEvents, TemplatePreference}
+  alias Casein.Audit
+  alias Casein.Terminals.{ScrollbackArchive, SessionEvents, TemplatePreference}
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
   @dedupe_table :dev_ide_session_recovery_dedupe
   # Collapse double notifies from drift + term_exit recover within this window.
   @dedupe_ms 5_000
@@ -191,7 +191,7 @@ defmodule DevIDE.Terminals.SessionRecovery do
       {<<>>, false}
     else
       banner =
-        "\r\n\e[33m[DevIDE]\e[0m tmux session was recreated; restoring archived scrollback tail.\r\n\r\n"
+        "\r\n\e[33m[Casein]\e[0m tmux session was recreated; restoring archived scrollback tail.\r\n\r\n"
 
       {banner <> data, true}
     end

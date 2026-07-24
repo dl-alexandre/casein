@@ -1,8 +1,8 @@
-defmodule DevIDE.FilePanes.LinkResolverTest do
+defmodule Casein.FilePanes.LinkResolverTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.FilePanes.LinkResolver
-  alias DevIDE.FilePanes.SuffixIndex
+  alias Casein.FilePanes.LinkResolver
+  alias Casein.FilePanes.SuffixIndex
 
   setup do
     root =

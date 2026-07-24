@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalCommandPolicy do
+defmodule Casein.Agents.TerminalCommandPolicy do
   @moduledoc """
   Allow/deny gate for terminal MCP command execution.
 

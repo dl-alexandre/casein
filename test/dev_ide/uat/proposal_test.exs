@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.ProposalTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.ProposalTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.{FakeGit, Proposal, Step, Trace}
+  alias Casein.UAT.{FakeGit, Proposal, Step, Trace}
 
   defp trace(selector) do
     %Trace{

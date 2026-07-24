@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.DeploymentUpdateHook do
+defmodule CaseinWeb.DeploymentUpdateHook do
   @moduledoc "LiveView on_mount hook: subscribes to deploy updates and tracks connections for graceful drain."
 
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Deployment.LastDeploy
+  alias Casein.Deployment.LastDeploy
 
   def on_mount(:default, _params, _session, socket) do
     socket =
@@ -17,8 +17,8 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
 
     socket =
       if connected?(socket) do
-        Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
-        DevIDE.Deployment.Drain.track(self())
+        Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
+        Casein.Deployment.Drain.track(self())
         apply_poller_status(socket)
       else
         socket

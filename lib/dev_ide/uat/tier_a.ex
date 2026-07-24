@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.TierA do
+defmodule Casein.UAT.TierA do
   @moduledoc """
   Tier A orchestration: for each eligible scenario, boot an ephemeral instance,
   replay the frozen trace deterministically (no LLM), and tear the instance down
@@ -12,7 +12,7 @@ defmodule DevIDE.UAT.TierA do
   failure (`:errored`) — none of which silently green.
   """
 
-  alias DevIDE.UAT.{Instance, Manifest, Replay, Trace}
+  alias Casein.UAT.{Instance, Manifest, Replay, Trace}
 
   @doc """
   Run one scenario from an already-loaded manifest + trace against `workspace`.
@@ -21,7 +21,7 @@ defmodule DevIDE.UAT.TierA do
   or `{:error, {:boot_failed, reason}}`.
   """
   @spec run_scenario(Manifest.t(), Trace.t(), map(), keyword()) ::
-          {:ok, DevIDE.UAT.Run.t()} | {:skipped, :tier_b_only} | {:error, term()}
+          {:ok, Casein.UAT.Run.t()} | {:skipped, :tier_b_only} | {:error, term()}
   def run_scenario(%Manifest{} = manifest, %Trace{} = trace, workspace, opts \\ []) do
     if Manifest.tier_eligible?(manifest, :tier_a) do
       boot_and_replay(manifest, trace, workspace, opts)

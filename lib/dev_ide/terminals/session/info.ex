@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Session.Info do
+defmodule Casein.Terminals.Session.Info do
   @moduledoc """
   Unified data structure representing any terminal session.
 

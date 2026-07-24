@@ -1,14 +1,14 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.ArtifactEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.ArtifactEvents do
   # Artifact tab handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates every "artifact:*" event here via a prefix delegator.
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.ArtifactProjects
-  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
+  alias Casein.ArtifactProjects
+  alias CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents
 
   def handle_event("artifact:refresh", _params, socket) do
     {:noreply, refresh_artifact_projects(socket)}

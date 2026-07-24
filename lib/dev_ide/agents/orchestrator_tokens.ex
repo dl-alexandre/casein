@@ -1,23 +1,23 @@
-defmodule DevIDE.Agents.OrchestratorTokens do
+defmodule Casein.Agents.OrchestratorTokens do
   @moduledoc """
   Self-serve, subject-attributed MCP bearer tokens for connecting off-box agents.
 
   A minted token traverses every workspace like the global token, but — unlike
   the root env secret — it is hashed at rest (only the SHA-256 is stored), TTL'd,
   revocable, and attributable to the cockpit user who minted it. It resolves in
-  `DevIdeWeb.Plugs.ApiAuth` to a `{:orchestrator, subject}` scope: non-global, so
-  `DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2` does not block its
+  `CaseinWeb.Plugs.ApiAuth` to a `{:orchestrator, subject}` scope: non-global, so
+  `CaseinWeb.Endpoint.reject_global_mcp_tool_calls/2` does not block its
   `tools/call` and it needs no `DEV_IDE_ALLOW_GLOBAL_MCP_TOOL_CALLS` flag.
 
-  Storage/lifecycle mirrors `DevIDE.DeviceLinks` (hash-at-rest + TTL + revoke +
+  Storage/lifecycle mirrors `Casein.DeviceLinks` (hash-at-rest + TTL + revoke +
   subject-scoped list + reaper GC). The raw token is returned exactly once, at
   mint time.
   """
 
   import Ecto.Query
 
-  alias DevIDE.Agents.OrchestratorToken
-  alias DevIDE.Repo
+  alias Casein.Agents.OrchestratorToken
+  alias Casein.Repo
 
   @default_ttl_seconds 60 * 60 * 24 * 30
 

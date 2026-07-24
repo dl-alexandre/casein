@@ -1,6 +1,6 @@
-defmodule Mix.Tasks.DevIde.Lan.Up do
+defmodule Mix.Tasks.Casein.Lan.Up do
   @moduledoc """
-  Starts DevIDE LAN HTTP mode as a managed local service.
+  Starts Casein LAN HTTP mode as a managed local service.
 
       mix dev_ide.lan.up
 
@@ -15,35 +15,35 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  @shortdoc "Start the product-like DevIDE LAN HTTP service"
+  @shortdoc "Start the product-like Casein LAN HTTP service"
 
   @impl Mix.Task
   def run(args) do
     config = parse_config!(args)
 
-    case DevIDE.Setup.LanRuntime.validate(config) do
+    case Casein.Setup.LanRuntime.validate(config) do
       :ok -> :ok
       {:error, message} -> Mix.raise(message)
     end
 
     ensure_workspace_paths!(config)
 
-    paths = DevIDE.Setup.LanRuntime.prepare_units!(config)
-    commands = DevIDE.Setup.LanRuntime.install_commands(paths, config)
+    paths = Casein.Setup.LanRuntime.prepare_units!(config)
+    commands = Casein.Setup.LanRuntime.install_commands(paths, config)
 
-    Mix.shell().info("Installing and starting DevIDE LAN...\n")
+    Mix.shell().info("Installing and starting Casein LAN...\n")
 
-    case DevIDE.Setup.LanRuntime.run_commands_noninteractive(commands) do
+    case Casein.Setup.LanRuntime.run_commands_noninteractive(commands) do
       :ok ->
         timeout_ms = config.timeout_seconds * 1_000
-        status = DevIDE.Setup.LanRuntime.wait_until_ready(config, timeout_ms)
-        DevIDE.Setup.LanRuntime.print_status(status, Mix.shell())
+        status = Casein.Setup.LanRuntime.wait_until_ready(config, timeout_ms)
+        Casein.Setup.LanRuntime.print_status(status, Mix.shell())
 
         unless status.ready? do
           Mix.raise("""
-          DevIDE LAN did not become ready within #{config.timeout_seconds}s.
+          Casein LAN did not become ready within #{config.timeout_seconds}s.
 
           Inspect the backend with:
 
@@ -52,14 +52,14 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
         end
 
       {:error, failed_command, output} ->
-        Mix.shell().info(DevIDE.Setup.LanRuntime.sudo_hint(commands))
+        Mix.shell().info(Casein.Setup.LanRuntime.sudo_hint(commands))
         Mix.shell().info("\nFirst failed command:\n  #{Enum.join(failed_command, " ")}")
 
         if String.trim(output) != "" do
           Mix.shell().info("\nOutput:\n#{String.trim(output)}")
         end
 
-        Mix.raise("could not install or start DevIDE LAN")
+        Mix.raise("could not install or start Casein LAN")
     end
   end
 
@@ -90,7 +90,7 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
     opts
     |> runtime_opts()
     |> Keyword.put(:timeout_seconds, Keyword.get(opts, :timeout, 30))
-    |> DevIDE.Setup.LanRuntime.config()
+    |> Casein.Setup.LanRuntime.config()
   end
 
   defp runtime_opts(opts) do

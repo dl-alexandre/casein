@@ -1,13 +1,13 @@
-defmodule DevIDE.Runtimes.WorktreeReconciler do
+defmodule Casein.Runtimes.WorktreeReconciler do
   @moduledoc """
   Cached reconciliation for Git worktrees attached to a workspace checkout.
 
-  `DevIDE.Runtimes.discover_worktrees/1` is the low-level, shelling primitive.
+  `Casein.Runtimes.discover_worktrees/1` is the low-level, shelling primitive.
   This module is the UI/control-plane boundary: it keeps discovery explicit,
   rate-limited, and inspectable.
   """
 
-  alias DevIDE.Runtimes
+  alias Casein.Runtimes
 
   @cache_key {__MODULE__, :cache}
   @default_ttl_ms 15_000

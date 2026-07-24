@@ -1,17 +1,17 @@
-defmodule DevIDE.Runtimes.EctoAdapterTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Runtimes.EctoAdapterTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Runtimes
-  alias DevIDE.Test.RuntimeSeed
+  alias Casein.Runtimes
+  alias Casein.Test.RuntimeSeed
 
   setup do
-    DevIDE.Runtimes.EctoAdapter.clear()
+    Casein.Runtimes.EctoAdapter.clear()
 
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.EctoAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.EctoAdapter)
 
     on_exit(fn ->
-      DevIDE.Runtimes.EctoAdapter.clear()
+      Casein.Runtimes.EctoAdapter.clear()
 
       if prev_runtime,
         do: Application.put_env(:dev_ide, :runtimes_adapter, prev_runtime),

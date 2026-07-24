@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.RuntimeSupervisorTest do
+defmodule Casein.Codex.RuntimeSupervisorTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Codex.{Runtime, RuntimeSupervisor}
+  alias Casein.Codex.{Runtime, RuntimeSupervisor}
 
   @fixture Path.expand("../../fixtures/codex_app_server/fake_app_server.sh", __DIR__)
 

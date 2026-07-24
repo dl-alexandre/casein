@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.TmuxServer do
+defmodule Casein.Terminals.TmuxServer do
   @moduledoc """
   Shared tmux server-label (`-L`) resolution for every tmux invocation.
 
   ## Why this exists
 
-  Every environment runs DevIDE's tmux sessions on its **own** dedicated
+  Every environment runs Casein's tmux sessions on its **own** dedicated
   server, so they never collide with each other or with a plain SSH user's
   `tmux` (which uses the host's *default* server). Each `-L <label>` is a fully
   independent server: its own socket, session list, option state, and — for
@@ -24,12 +24,12 @@ defmodule DevIDE.Terminals.TmuxServer do
   sessions, so they can never see or touch prod sessions.
 
   Set via `config :dev_ide, :tmux_server_label, "<label>"`. If left unset
-  (`args/0` returns `[]`), DevIDE falls back to the host's default server and
+  (`args/0` returns `[]`), Casein falls back to the host's default server and
   shares it with plain SSH tmux — avoid that on a shared host.
 
-  > **Migration note.** Changing or first-introducing a label points DevIDE at
+  > **Migration note.** Changing or first-introducing a label points Casein at
   > a *fresh, empty* server. Sessions on the previously-used server stay alive
-  > but become invisible to DevIDE (it won't list/attach/reconcile them); new
+  > but become invisible to Casein (it won't list/attach/reconcile them); new
   > sessions are created on the new server as workspaces reopen. See
   > `docs/subsystems/terminals.md` for the operator cutover note.
   """

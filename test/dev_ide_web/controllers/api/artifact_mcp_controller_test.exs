@@ -1,14 +1,14 @@
-defmodule DevIdeWeb.API.ArtifactMCPControllerTest do
+defmodule CaseinWeb.API.ArtifactMCPControllerTest do
   @moduledoc """
   HTTP transport + auth tests for POST /api/artifacts/mcp.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Runtimes
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.Activity
+  alias Casein.Runtimes
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @global_token "test-artifact-mcp-global-token"
   @workspace_token "test-artifact-mcp-workspace-token"
@@ -30,7 +30,7 @@ defmodule DevIdeWeb.API.ArtifactMCPControllerTest do
     Application.put_env(:dev_ide, :api_token, @global_token)
     Application.put_env(:dev_ide, :workspace_api_tokens, %{@workspace_token => @workspace_id})
     Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
     Application.put_env(:dev_ide, :agent_worktree_roots, [])
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
@@ -156,7 +156,7 @@ defmodule DevIdeWeb.API.ArtifactMCPControllerTest do
     seed_workspace!("ws-other-artifacts", "other-artifacts", other_repo)
 
     assert {:ok, other_project} =
-             DevIDE.ArtifactProjects.create("ws-other-artifacts", %{
+             Casein.ArtifactProjects.create("ws-other-artifacts", %{
                name: "Other Artifact",
                files: %{"index.html" => "<h1>Other</h1>\n"}
              })
@@ -217,7 +217,7 @@ defmodule DevIdeWeb.API.ArtifactMCPControllerTest do
   defp init_repo!(repo) do
     File.mkdir_p!(repo)
     git!(repo, ["init"])
-    git!(repo, ["config", "user.name", "DevIDE Test"])
+    git!(repo, ["config", "user.name", "Casein Test"])
     git!(repo, ["config", "user.email", "devide-test@localhost"])
     File.write!(Path.join(repo, "README.md"), "# Artifact MCP Test\n")
     git!(repo, ["add", "README.md"])

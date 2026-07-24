@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.PortProbeTest do
+defmodule Casein.Previews.PortProbeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Previews.PortProbe
+  alias Casein.Previews.PortProbe
 
   test "alive? is true for a listening loopback port and false after it closes" do
     {:ok, listener} = :gen_tcp.listen(0, ip: {127, 0, 0, 1}, active: false)

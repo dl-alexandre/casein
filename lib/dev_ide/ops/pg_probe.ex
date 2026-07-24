@@ -1,4 +1,4 @@
-defmodule DevIDE.Ops.PgProbe do
+defmodule Casein.Ops.PgProbe do
   @moduledoc """
   Periodic Postgres connection-saturation probe for the box's servers.
 
@@ -31,19 +31,19 @@ defmodule DevIDE.Ops.PgProbe do
   `:pg_probe_leak_suspects_max` 10) follow the `operator.risk_*` pattern:
   transitions only, an `ops.pg_saturation_raised` / `ops.pg_saturation_cleared`
   audit row first (box-global — the `"_ops"` sentinel workspace, like
-  `DevIDE.Deployment.DeployAudit`'s `"_deploy"`), then a
+  `Casein.Deployment.DeployAudit`'s `"_deploy"`), then a
   `{:ops_health, :pg_saturation, :raised | :cleared, risk}` broadcast on the
-  box-global `"ops:health"` topic. `DevIDE.Operator.SituationServer`
+  box-global `"ops:health"` topic. `Casein.Operator.SituationServer`
   subscribes and folds the risks into every workspace digest.
   """
 
   use GenServer
   require Logger
 
-  alias DevIDE.Audit
-  alias DevIDE.Export.Sanitizer
+  alias Casein.Audit
+  alias Casein.Export.Sanitizer
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
   @topic "ops:health"
 
   # Box-global rows: audit_events.workspace_id is NOT NULL, so ops events use
@@ -226,7 +226,7 @@ defmodule DevIDE.Ops.PgProbe do
 
   @doc """
   Evaluate one sample against the thresholds: `nil` when healthy, otherwise a
-  `DevIDE.Operator.Risks.risk/0`-shaped map with the breach reasons in
+  `Casein.Operator.Risks.risk/0`-shaped map with the breach reasons in
   evidence.
   """
   @spec evaluate(map()) :: map() | nil

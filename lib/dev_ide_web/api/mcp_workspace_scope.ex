@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.MCPWorkspaceScope do
+defmodule CaseinWeb.API.MCPWorkspaceScope do
   @moduledoc false
 
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
   @doc "Return a non-empty default workspace id from MCP handler opts."
   def default_workspace_id(opts) do

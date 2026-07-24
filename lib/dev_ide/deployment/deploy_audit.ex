@@ -1,8 +1,8 @@
-defmodule DevIDE.Deployment.DeployAudit do
+defmodule Casein.Deployment.DeployAudit do
   @moduledoc """
   Persists durable audit rows on deploy-pipeline and drift *transitions*.
 
-  `DevIDE.Deployment.PollerWatcher` re-reads the poller status file (and
+  `Casein.Deployment.PollerWatcher` re-reads the poller status file (and
   re-checks drift) every tick; this module keeps the last-seen
   `{outcome, target_sha}` key and drift flag so each transition writes exactly
   one row instead of one per poll:
@@ -21,8 +21,8 @@ defmodule DevIDE.Deployment.DeployAudit do
   `deploy.drift_detected` immediately because that state is actionable now.
   """
 
-  alias DevIDE.Audit
-  alias DevIDE.Export.Sanitizer
+  alias Casein.Audit
+  alias Casein.Export.Sanitizer
 
   @workspace_id "_deploy"
 
@@ -44,9 +44,9 @@ defmodule DevIDE.Deployment.DeployAudit do
   any transitions since the previous observation. Returns the updated state.
 
   `record` is the decoded last-deploy JSON map (or nil when missing/invalid);
-  `drift_status` is `DevIDE.Deployment.Drift.check_and_broadcast/0` output.
+  `drift_status` is `Casein.Deployment.Drift.check_and_broadcast/0` output.
   """
-  @spec observe(t(), map() | nil, DevIDE.Deployment.Drift.status() | nil) :: t()
+  @spec observe(t(), map() | nil, Casein.Deployment.Drift.status() | nil) :: t()
   def observe(state, record, drift_status) do
     state
     |> observe_deploy(record)

@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.CommandTracker do
+defmodule Casein.Terminals.CommandTracker do
   @moduledoc """
   Accumulates OSC 133 tokens into command records for one terminal session.
   """
 
-  alias DevIDE.Terminals.{CommandLog, CommandRedactor, Osc133, PaneCommand}
+  alias Casein.Terminals.{CommandLog, CommandRedactor, Osc133, PaneCommand}
 
   @default_output_limit 64 * 1024
 

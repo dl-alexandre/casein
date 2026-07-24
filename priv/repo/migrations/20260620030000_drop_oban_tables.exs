@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.DropObanTables do
+defmodule Casein.Repo.Migrations.DropObanTables do
   use Ecto.Migration
 
   # Oban was removed — the supervisor, Pruner, and config were all wired up but
@@ -8,7 +8,7 @@ defmodule DevIDE.Repo.Migrations.DropObanTables do
   # the create migration (fresh dev/CI). Irreversible: to bring Oban back, add a
   # fresh `Oban.Migrations.up()` migration.
   def up do
-    if DevIDE.Repo.Adapter.sqlite?(repo()) do
+    if Casein.Repo.Adapter.sqlite?(repo()) do
       execute("DROP TABLE IF EXISTS oban_jobs")
       execute("DROP TABLE IF EXISTS oban_peers")
     else

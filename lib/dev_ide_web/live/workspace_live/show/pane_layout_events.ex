@@ -1,17 +1,17 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents do
   # Tmux pane layout handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates split/zoom/close/cycle-layout/equalize/snapshot events here.
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.{Audit, Terminals}
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.{Audit, Terminals}
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("split_right", _params, socket) do
     do_split(socket, :horizontal)

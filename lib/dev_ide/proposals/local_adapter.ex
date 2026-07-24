@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.LocalAdapter do
+defmodule Casein.Proposals.LocalAdapter do
   @moduledoc """
   Filesystem discovery + parsing of proposal artifacts. Read-only.
 
@@ -8,10 +8,10 @@ defmodule DevIDE.Proposals.LocalAdapter do
   extraction — no patch application code path exists.
   """
 
-  @behaviour DevIDE.Proposals.Adapter
+  @behaviour Casein.Proposals.Adapter
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Proposals.{Proposal, UnifiedDiff}
+  alias Casein.Files.PathSafety
+  alias Casein.Proposals.{Proposal, UnifiedDiff}
 
   @discovery_dirs [
     ".opencode/proposals",

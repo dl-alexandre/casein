@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.PreviewVisualDiffTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Agents.PreviewVisualDiffTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.Previews.Artifacts
+  alias Casein.Agents.PreviewTools
+  alias Casein.Previews.Artifacts
 
   describe "compute_affected_element_ids/2" do
     test "maps changed regions to overlapping element ids" do

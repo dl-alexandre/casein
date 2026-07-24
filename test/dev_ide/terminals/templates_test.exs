@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TemplatesTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Terminals.TemplatesTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Terminals.Templates
+  alias Casein.Terminals.Templates
 
   setup do
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -111,7 +111,7 @@ defmodule DevIDE.Terminals.TemplatesTest do
 
     assert {:ok, result} =
              Templates.execute("ws-1", "template-session", saved.id,
-               tmux: DevIDE.Test.FakeTmuxAdapter,
+               tmux: Casein.Test.FakeTmuxAdapter,
                workspace_root: root
              )
 

@@ -139,10 +139,10 @@ run_release_sweep() {
 
   case "$rpc_mode" in
     dry-run)
-      expr='case Code.ensure_loaded(DevIDE.Terminals.TmuxWindowJanitor) do
-  {:module, DevIDE.Terminals.TmuxWindowJanitor} ->
-    if function_exported?(DevIDE.Terminals.TmuxWindowJanitor, :dry_run_now, 0) do
-      IO.inspect(DevIDE.Terminals.TmuxWindowJanitor.dry_run_now(), limit: :infinity)
+      expr='case Code.ensure_loaded(Casein.Terminals.TmuxWindowJanitor) do
+  {:module, Casein.Terminals.TmuxWindowJanitor} ->
+    if function_exported?(Casein.Terminals.TmuxWindowJanitor, :dry_run_now, 0) do
+      IO.inspect(Casein.Terminals.TmuxWindowJanitor.dry_run_now(), limit: :infinity)
     else
       IO.puts("dry_run_not_available: deploy the checkout with TmuxWindowJanitor.dry_run_now/0 first")
     end
@@ -152,7 +152,7 @@ run_release_sweep() {
 end'
       ;;
     sweep)
-      expr='IO.puts(DevIDE.Terminals.TmuxWindowJanitor.sweep_now())'
+      expr='IO.puts(Casein.Terminals.TmuxWindowJanitor.sweep_now())'
       ;;
   esac
 

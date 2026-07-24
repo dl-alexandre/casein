@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.AgentPane do
+defmodule Casein.Terminals.AgentPane do
   @moduledoc """
-  Resolves the role-marked agent pane in a DevIDE tmux session.
+  Resolves the role-marked agent pane in a Casein tmux session.
 
   The `agent_pair` template persists `@devide_pane_role=agent`; this module is
   the terminal-layer lookup that callers can use before sending agent-only
@@ -25,7 +25,7 @@ defmodule DevIDE.Terminals.AgentPane do
   """
   @spec find(String.t(), keyword()) :: {:ok, result()} | {:error, error()}
   def find(session, opts \\ []) when is_binary(session) and is_list(opts) do
-    tmux = Keyword.get(opts, :tmux, DevIDE.Terminals.tmux_adapter())
+    tmux = Keyword.get(opts, :tmux, Casein.Terminals.tmux_adapter())
     panes = tmux.list_session_panes(session)
 
     case Enum.find(panes, &agent_role?/1) do
@@ -42,7 +42,7 @@ defmodule DevIDE.Terminals.AgentPane do
   """
   @spec layout_status([map()], keyword()) :: map()
   def layout_status(sessions, opts \\ []) when is_list(sessions) and is_list(opts) do
-    tmux = Keyword.get(opts, :tmux, DevIDE.Terminals.tmux_adapter())
+    tmux = Keyword.get(opts, :tmux, Casein.Terminals.tmux_adapter())
 
     candidate_sessions =
       sessions

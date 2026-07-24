@@ -1,12 +1,12 @@
-defmodule DevIDE.Alerts do
+defmodule Casein.Alerts do
   @moduledoc """
   Single source of truth for which audit actions are worth surfacing as a
-  discrete alert, and how they render. Consumed by both `DevIdeWeb.SessionChannel`
-  (in-app banner over the live channel) and `DevIDE.Push.Dispatcher` (OS push
+  discrete alert, and how they render. Consumed by both `CaseinWeb.SessionChannel`
+  (in-app banner over the live channel) and `Casein.Push.Dispatcher` (OS push
   when the app isn't connected) so the two delivery surfaces never drift.
   """
 
-  alias DevIDE.Audit.Event
+  alias Casein.Audit.Event
 
   @definitions %{
     "run.approval_requested" => %{
@@ -55,7 +55,7 @@ defmodule DevIDE.Alerts do
       ttl_seconds: 3_600,
       dedupe_window_seconds: 900
     },
-    # Platform/operator signal from `DevIDE.Signals.DegradationWatch`: an audit
+    # Platform/operator signal from `Casein.Signals.DegradationWatch`: an audit
     # signal is storming with an identical degraded payload (e.g. a detector
     # stuck reporting unknown/none). Loud on push too — a stuck detector is a
     # latent bug, and this is the pattern the db_isolation issue hid behind.
@@ -70,7 +70,7 @@ defmodule DevIDE.Alerts do
       dedupe_window_seconds: 300
     },
     # Host tmux control-mode listener flap (Slice 3). Raised by
-    # `DevIDE.Signals.TmuxEventsFlapWatch` when reconnects exceed the threshold;
+    # `Casein.Signals.TmuxEventsFlapWatch` when reconnects exceed the threshold;
     # in-app only — platform/operator signal, not an end-user run event.
     "tmux.events_listener_degraded" => %{
       type: "tmux_events_listener_degraded",

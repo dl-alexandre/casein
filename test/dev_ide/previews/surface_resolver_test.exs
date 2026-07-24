@@ -1,9 +1,9 @@
-defmodule DevIDE.Previews.SurfaceResolverTest do
+defmodule Casein.Previews.SurfaceResolverTest do
   # Serial: mutates process-global Application env (:preview_loopback_port,
   # :workspaces_root, :on_devbox), which other suites read concurrently.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.SurfaceResolver
+  alias Casein.Previews.SurfaceResolver
 
   @v3_workspace %{
     id: "ws-v3",

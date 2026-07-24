@@ -1,4 +1,4 @@
-defmodule DevIDEPreviewBrowser.Browser do
+defmodule CaseinPreviewBrowser.Browser do
   @moduledoc """
   Opaque handle for a browser instance owned by a session.
   """

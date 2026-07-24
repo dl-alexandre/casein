@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.Show.RunPanel
-  alias DevIdeWeb.WorkspaceLive.Show.SidePanels
+  alias CaseinWeb.WorkspaceLive.Show.RunPanel
+  alias CaseinWeb.WorkspaceLive.Show.SidePanels
 
   # ----- Shared fixtures -------------------------------------------------
 
   defp file_entry(name, rel_path, kind) do
-    %DevIDE.Files.Entry{
+    %Casein.Files.Entry{
       name: name,
       rel_path: rel_path,
       kind: kind,
@@ -387,7 +387,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
   end
 
   defp search_result(path, line, column, preview) do
-    %DevIDE.Search.Result{path: path, line: line, column: column, preview: preview}
+    %Casein.Search.Result{path: path, line: line, column: column, preview: preview}
   end
 
   describe "search_panel/1" do

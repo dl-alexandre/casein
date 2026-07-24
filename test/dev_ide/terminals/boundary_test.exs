@@ -1,12 +1,12 @@
-defmodule DevIDE.Terminals.BoundaryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.BoundaryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Workspace
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Terminals.Boundary
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Workspace
+  alias Casein.Runs.Ledger
+  alias Casein.Terminals.Boundary
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()

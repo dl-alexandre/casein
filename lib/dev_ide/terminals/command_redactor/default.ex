@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.CommandRedactor.Default do
+defmodule Casein.Terminals.CommandRedactor.Default do
   @moduledoc false
 
-  @behaviour DevIDE.Terminals.CommandRedactor
+  @behaviour Casein.Terminals.CommandRedactor
 
   @assignment ~r/((?:api[_-]?key|token|secret|password|passwd|authorization)\s*[:=]\s*)(["']?)[^\s"';&]+/i
   @bearer ~r/(Bearer\s+)[A-Za-z0-9._~+\/=-]{12,}/i

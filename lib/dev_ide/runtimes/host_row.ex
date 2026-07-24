@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.HostRow do
+defmodule Casein.Runtimes.HostRow do
   @moduledoc false
 
   use Ecto.Schema
@@ -6,8 +6,8 @@ defmodule DevIDE.Runtimes.HostRow do
   @primary_key {:id, :string, autogenerate: false}
   schema "runtime_hosts" do
     field :os, :string
-    field :capabilities, DevIDE.EctoTypes.StringList, default: []
-    field :tools, DevIDE.EctoTypes.StringList, default: []
+    field :capabilities, Casein.EctoTypes.StringList, default: []
+    field :tools, Casein.EctoTypes.StringList, default: []
     field :concurrency_limit, :integer, default: 1
     field :heartbeat_at, :utc_datetime_usec
     field :metadata, :map, default: %{}

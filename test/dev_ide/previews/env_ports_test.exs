@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.EnvPortsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Previews.EnvPortsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.EnvPorts
+  alias Casein.Previews.EnvPorts
 
   setup do
     prev_range = Application.get_env(:dev_ide, :preview_env_port_range)

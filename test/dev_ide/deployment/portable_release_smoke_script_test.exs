@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.PortableReleaseSmokeScriptTest do
+defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
   use ExUnit.Case, async: true
 
   @script Path.expand("../../../scripts/portable-release-smoke.sh", __DIR__)

@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
+defmodule CaseinWeb.WorkspaceLive.Show.FileOperations do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
 
   require Phoenix.LiveView
 
-  alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Files
-  alias DevIDE.Links.Markdown
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Workspaces.FileAccess
-  alias DevIdeWeb.WorkspaceLive.Show.Context
+  alias Casein.Elixir, as: ElixirNav
+  alias Casein.Files
+  alias Casein.Links.Markdown
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Workspaces.FileAccess
+  alias CaseinWeb.WorkspaceLive.Show.Context
 
   def open_annotation_file(socket, loc, path, line) do
     case FileAccess.read_text(loc, path) do
@@ -216,7 +216,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileOperations do
   end
 
   defp remote_entry_to_files_shape(%{name: name, dir?: dir?, size: size}, parent) do
-    %DevIDE.Files.Entry{
+    %Casein.Files.Entry{
       name: name,
       rel_path: Path.join(parent, name),
       kind: if(dir?, do: :dir, else: :file),

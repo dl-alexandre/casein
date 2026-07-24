@@ -1,12 +1,12 @@
-defmodule DevIDE.Setup.LanRuntime do
+defmodule Casein.Setup.LanRuntime do
   @moduledoc """
   Runtime helpers behind `mix dev_ide.lan.*`.
   """
 
-  alias DevIDE.Setup.InsecureHttpEdge
-  alias DevIDE.Setup.LanEdge
-  alias DevIDE.Setup.LanService
-  alias DevIDE.Setup.LocalDomain
+  alias Casein.Setup.InsecureHttpEdge
+  alias Casein.Setup.LanEdge
+  alias Casein.Setup.LanService
+  alias Casein.Setup.LocalDomain
 
   @default_workspaces_root "/tmp/dev_ide_workspaces"
   @status_timeout 4_000
@@ -145,7 +145,7 @@ defmodule DevIDE.Setup.LanRuntime do
     ]
   end
 
-  # Commands are built as argv lists by DevIDE setup code, not shell input.
+  # Commands are built as argv lists by Casein setup code, not shell input.
   # sobelow_skip ["CI.System"]
   def run_commands_noninteractive(commands) do
     Enum.reduce_while(commands, :ok, fn command, :ok ->
@@ -249,7 +249,7 @@ defmodule DevIDE.Setup.LanRuntime do
     """
     Administrator access is needed to install or control the LAN systemd units.
 
-    Run this once in your terminal, then rerun the DevIDE LAN command:
+    Run this once in your terminal, then rerun the Casein LAN command:
 
       sudo -v
 
@@ -289,7 +289,7 @@ defmodule DevIDE.Setup.LanRuntime do
          :ok <-
            :gen_tcp.send(
              socket,
-             "HEAD / HTTP/1.1\r\nHost: #{host}\r\nConnection: close\r\nUser-Agent: DevIDE-LAN\r\n\r\n"
+             "HEAD / HTTP/1.1\r\nHost: #{host}\r\nConnection: close\r\nUser-Agent: Casein-LAN\r\n\r\n"
            ),
          {:ok, response} <- :gen_tcp.recv(socket, 0, timeout_ms) do
       :gen_tcp.close(socket)

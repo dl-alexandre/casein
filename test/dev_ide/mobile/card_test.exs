@@ -1,7 +1,7 @@
-defmodule DevIDE.Mobile.CardTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Mobile.CardTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Mobile.Card
+  alias Casein.Mobile.Card
 
   @now ~U[2026-06-27 20:12:00Z]
   @later ~U[2026-06-27 20:13:00Z]

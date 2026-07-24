@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.PreviewTools.PortProbing do
+defmodule Casein.Agents.PreviewTools.PortProbing do
   @moduledoc false
 
-  alias DevIDE.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
-  alias DevIDE.Previews.Deps
-  alias DevIDE.Previews.WorkspaceContext
+  alias Casein.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
+  alias Casein.Previews.Deps
+  alias Casein.Previews.WorkspaceContext
   # Struct-only leaf (not in the runtime SCC).
-  alias DevIDE.Runtimes.Runtime
+  alias Casein.Runtimes.Runtime
 
   @doc "Ensure the runtime-owned preview server for the scoped agent session."
   @spec ensure_server_here(map(), map()) :: {:ok, map()} | {:error, term()}
@@ -81,7 +81,7 @@ defmodule DevIDE.Agents.PreviewTools.PortProbing do
         :ok
 
       # A stopped devbox workspace has no active Caddy route, so its public
-      # subdomain falls through to DevIDE's preview-router, which answers 404
+      # subdomain falls through to Casein's preview-router, which answers 404
       # with this marker body (scripts/preview-router.sh). That is "the app
       # isn't running", NOT a bad URL — classify it distinctly so the caller
       # knows to start the workspace rather than fix the URL.

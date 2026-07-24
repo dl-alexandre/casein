@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.TmuxTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TmuxTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxRunner
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxRunner
 
   setup do
     workspace_source = Application.get_env(:dev_ide, :workspace_source)
@@ -58,7 +58,7 @@ defmodule DevIDE.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
     Application.put_env(:dev_ide, :tmux_host_shell, true)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
@@ -96,7 +96,7 @@ defmodule DevIDE.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
     Application.put_env(:dev_ide, :tmux_host_shell, false)
     Application.put_env(:tmux_ctl, :config_file, config_file)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
@@ -104,7 +104,7 @@ defmodule DevIDE.Terminals.TmuxTest do
     # Host invocations carry the configured server label (`-L devide_test` in :test).
     expected =
       [tmux_bin] ++
-        DevIDE.Terminals.TmuxServer.args() ++
+        Casein.Terminals.TmuxServer.args() ++
         ["-f", config_file, "new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"]
 
     assert expected ==
@@ -134,7 +134,7 @@ defmodule DevIDE.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
     Application.put_env(:dev_ide, :tmux_host_shell, true)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 

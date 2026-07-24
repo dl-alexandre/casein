@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.PathSafety do
+defmodule Casein.Files.PathSafety do
   use Boundary, top_level?: true, deps: [], exports: []
 
   @moduledoc """

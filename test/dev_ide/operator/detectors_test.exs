@@ -1,7 +1,7 @@
-defmodule DevIDE.Operator.DetectorsTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Operator.DetectorsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Operator.Detectors
+  alias Casein.Operator.Detectors
 
   @now ~U[2026-07-16 12:00:00Z]
 

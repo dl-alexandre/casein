@@ -1,7 +1,7 @@
 defmodule Scripts.PrePushCheckTest do
   @moduledoc """
   Guards the pre-push gate's run-recording contract: the script must report
-  its verdict to DevIDE via the terminal MCP `gate_report` tool, and that
+  its verdict to Casein via the terminal MCP `gate_report` tool, and that
   reporting must be fail-open on every path — a dead API, missing env, or
   missing python3 must never change the gate's exit code.
   """

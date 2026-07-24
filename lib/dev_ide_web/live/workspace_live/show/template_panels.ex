@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
+defmodule CaseinWeb.WorkspaceLive.Show.TemplatePanels do
   @moduledoc """
   Session-template UI for the workspace cockpit: the template preview
   modal (apply / reconcile dry-run) and the template library drawer
@@ -8,9 +8,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
   assigns it reads instead of receiving the LiveView's whole assigns bag.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  alias DevIDE.Terminals
+  alias Casein.Terminals
 
   @template_reconcile_summary_fields [
     {:reuse_windows, "Reuse windows"},

@@ -1,17 +1,17 @@
-defmodule DevIdeWeb.WindowTerminalModeLiveTest do
+defmodule CaseinWeb.WindowTerminalModeLiveTest do
   @moduledoc """
   Terminals are raw everywhere now — there is no governed mode and no
   per-window mode to remember. These cover the raw-only invariants that remain:
   every window resolves to raw, re-issuing `terminal:set_mode` keeps it raw, and
   the audit drawer / palette read the active window name.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Workspaces.State
+  alias Casein.Audit
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Workspaces.State
 
   setup do
     workspace_root = Path.join(System.tmp_dir!(), "devide-window-mode-live")
@@ -25,11 +25,11 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    tmux_session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -92,7 +92,7 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
       ]
     })
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
         workspace_payload(conn, workspace_path, workspace_name)
 

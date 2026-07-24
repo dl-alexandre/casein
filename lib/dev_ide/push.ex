@@ -1,20 +1,20 @@
-defmodule DevIDE.Push do
+defmodule Casein.Push do
   @moduledoc """
   OS push fan-out for session alerts and high-priority mobile cards.
 
   Two collaborators:
 
-    * `DevIDE.Push.Registry` — stores device push tokens per workspace
-      (registered over `DevIdeWeb.SessionChannel` after the join authorized the
+    * `Casein.Push.Registry` — stores device push tokens per workspace
+      (registered over `CaseinWeb.SessionChannel` after the join authorized the
       identity for that workspace).
-    * `DevIDE.Signals.AlertsRouter` — routes alert-worthy audit signals from
-      `DevIDE.SignalBus` to the dispatcher when a workspace has registered tokens.
-    * `DevIDE.Push.Dispatcher` — delivers OS pushes for routed audit alerts and
+    * `Casein.Signals.AlertsRouter` — routes alert-worthy audit signals from
+      `Casein.SignalBus` to the dispatcher when a workspace has registered tokens.
+    * `Casein.Push.Dispatcher` — delivers OS pushes for routed audit alerts and
       newly-created high-priority `:needs_review` mobile cards via the configured
       provider.
 
   The provider is swappable (`config :dev_ide, :push_provider, ...`), defaulting
-  to `DevIDE.Push.LogProvider`. `DevIDE.Push.NativeProvider` routes Android FCM
+  to `Casein.Push.LogProvider`. `Casein.Push.NativeProvider` routes Android FCM
   tokens and iOS APNs tokens to the right transport without caller changes.
 
   Device note: native clients register OS push tokens over the user card stream
@@ -22,7 +22,7 @@ defmodule DevIDE.Push do
   workspace-scoped audit alerts.
   """
 
-  alias DevIDE.Push.Registry
+  alias Casein.Push.Registry
 
   defdelegate register(attrs), to: Registry
   defdelegate register_user(attrs), to: Registry
@@ -34,14 +34,14 @@ defmodule DevIDE.Push do
   defdelegate stats(), to: Registry
 
   @spec provider() :: module()
-  def provider, do: Application.get_env(:dev_ide, :push_provider, DevIDE.Push.LogProvider)
+  def provider, do: Application.get_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
 
   @spec ready_for?(String.t()) :: :ok | {:error, term()}
   def ready_for?(platform) do
     configured_for_provider?(provider(), platform)
   end
 
-  defp configured_for_provider?(DevIDE.Push.LogProvider, _platform),
+  defp configured_for_provider?(Casein.Push.LogProvider, _platform),
     do: {:error, :push_provider_unconfigured}
 
   defp configured_for_provider?(provider, platform) do

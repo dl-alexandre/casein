@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SituationPanel do
+defmodule CaseinWeb.WorkspaceLive.Show.SituationPanel do
   @moduledoc """
   Minimal operator situation surface: a floating risk badge (active-risk
   count, colored by max severity) that opens a drawer listing the active
-  risks from `DevIDE.Operator.SituationServer`.
+  risks from `Casein.Operator.SituationServer`.
 
   Both components render nothing unless `enabled` — the Show LiveView sets
   it only when the `:situation_server` flag is on AND a live server has been
-  seen for the workspace (`DevIdeWeb.WorkspaceLive.Show.SituationEvents`),
+  seen for the workspace (`CaseinWeb.WorkspaceLive.Show.SituationEvents`),
   so with the flag off this surface adds zero DOM.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   attr :enabled, :boolean, required: true
   attr :risks, :list, required: true

@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.SessionOwnerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.SessionOwnerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.Telemetry
-  alias DevIDE.Terminals.Session.Info
-  alias DevIDE.Terminals.{CommandLog, SessionEvents}
+  alias Casein.Terminals
+  alias Casein.Terminals.Telemetry
+  alias Casein.Terminals.Session.Info
+  alias Casein.Terminals.{CommandLog, SessionEvents}
 
   test "durable_shell_session? matches a live shell owner's tmux session name" do
     workspace_key = "ws-durable-guard"
@@ -18,9 +18,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: workspace_key} end)
 
-    expected = DevIDE.Terminals.Tmux.session_name(workspace_key, sid)
-    assert DevIDE.Terminals.SessionOwner.durable_shell_session?(expected)
-    refute DevIDE.Terminals.SessionOwner.durable_shell_session?("devide_other_ws_other_sid")
+    expected = Casein.Terminals.Tmux.session_name(workspace_key, sid)
+    assert Casein.Terminals.SessionOwner.durable_shell_session?(expected)
+    refute Casein.Terminals.SessionOwner.durable_shell_session?("devide_other_ws_other_sid")
   end
 
   test "shell owners remain alive after explicit detach (no auto-stop)" do
@@ -39,7 +39,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert match?(
              [{^owner_pid, _}],
              Registry.lookup(
-               DevIDE.Terminals.Registry,
+               Casein.Terminals.Registry,
                {:terminal_owner, :shell, "ws-shell-stop", "shell-keep-alive"}
              )
            )
@@ -733,7 +733,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   test "GhosttyRawAdapter provides canonical raw shell bridge (PaneWorker tmux coexistence)" do
     # The adapter ensures channel raw joins (owner path) work for tmux sessions
     # that may be live from Ghostty/PaneWorker without any changes to LV side.
-    alias DevIDE.Terminals.GhosttyRawAdapter
+    alias Casein.Terminals.GhosttyRawAdapter
 
     assert {:ok, first_pid} =
              GhosttyRawAdapter.ensure_raw_shell("ws-adapter", "sid-adapter", {:local, "."})
@@ -873,16 +873,16 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       Path.join(System.tmp_dir!(), "devide-kill-archive-#{System.unique_integer([:positive])}")
 
     Application.put_env(:dev_ide, :tmux_scrollback_archive_dir, dir)
-    DevIDE.Terminals.ScrollbackArchive.ensure_table!()
-    DevIDE.Terminals.ScrollbackArchive.put(session, "doomed output\n")
-    assert DevIDE.Terminals.ScrollbackArchive.present?(session)
+    Casein.Terminals.ScrollbackArchive.ensure_table!()
+    Casein.Terminals.ScrollbackArchive.put(session, "doomed output\n")
+    assert Casein.Terminals.ScrollbackArchive.present?(session)
 
     # kill may fail if tmux has no such session; archive still must be cleared.
     _ = Terminals.tmux_adapter().kill(session)
     # Prefer the real facade when the adapter is the default Tmux module.
-    _ = DevIDE.Terminals.Tmux.kill(session)
+    _ = Casein.Terminals.Tmux.kill(session)
 
-    refute DevIDE.Terminals.ScrollbackArchive.present?(session)
+    refute Casein.Terminals.ScrollbackArchive.present?(session)
   after
     Application.delete_env(:dev_ide, :tmux_scrollback_archive_dir)
   end
@@ -895,13 +895,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     register_subscriber(owner_pid, self(), :raw)
 
     assert Terminals.owner_subscriber_count(owner_pid) == 1
-    assert DevIDE.Terminals.SessionOwner.subscriber_count(owner_pid) == 1
+    assert Casein.Terminals.SessionOwner.subscriber_count(owner_pid) == 1
 
     assert :ok = Terminals.owner_detach(owner_pid, self())
     # Stronger coverage: count drops to 0 immediately after detach (before stop)
     # and the GenServer handler is exercised for both growth and shrink paths.
     assert Terminals.owner_subscriber_count(owner_pid) == 0
-    assert DevIDE.Terminals.SessionOwner.subscriber_count(owner_pid) == 0
+    assert Casein.Terminals.SessionOwner.subscriber_count(owner_pid) == 0
 
     GenServer.stop(owner_pid, :normal)
   end
@@ -915,18 +915,18 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     fake_session =
       start_supervised!(%{
-        id: {DevIDE.Test.FakeTerminalSession, unique},
+        id: {Casein.Test.FakeTerminalSession, unique},
         start:
           {GenServer, :start_link,
-           [DevIDE.Test.FakeTerminalSession, {"ws-sync-resize", "sid-#{unique}", self()}, []]}
+           [Casein.Test.FakeTerminalSession, {"ws-sync-resize", "sid-#{unique}", self()}, []]}
       })
 
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: fake_session
           }
       }
@@ -950,18 +950,18 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     fake_session =
       start_supervised!(%{
-        id: {DevIDE.Test.FakeTerminalSession, unique},
+        id: {Casein.Test.FakeTerminalSession, unique},
         start:
           {GenServer, :start_link,
-           [DevIDE.Test.FakeTerminalSession, {"ws-focus", "sid-#{unique}", self()}, []]}
+           [Casein.Test.FakeTerminalSession, {"ws-focus", "sid-#{unique}", self()}, []]}
       })
 
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: fake_session
           }
       }
@@ -1162,7 +1162,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     ])
 
     # A sustained fight also raises a drawer alert through the audit spine.
-    :ok = DevIDE.Audit.subscribe("ws-drift-fight")
+    :ok = Casein.Audit.subscribe("ws-drift-fight")
 
     # Play the fighting writer: after every re-assert, knock the window back
     # to 80x24 before the owner's next drift tick (the fake adapter's
@@ -1189,13 +1189,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     # ...and exactly one alert-worthy audit event, scoped to the workspace so
     # it deep-links from the notifications drawer.
     assert_receive {:audit_event,
-                    %DevIDE.Audit.Event{
+                    %Casein.Audit.Event{
                       action: "terminal.size_fight",
                       workspace_id: "ws-drift-fight"
                     } = alert_event}
 
-    assert DevIDE.Alerts.alert?(alert_event)
-    refute_receive {:audit_event, %DevIDE.Audit.Event{action: "terminal.size_fight"}}, 50
+    assert Casein.Alerts.alert?(alert_event)
+    refute_receive {:audit_event, %Casein.Audit.Event{action: "terminal.size_fight"}}, 50
 
     # The window settling at the applied size resets the streak.
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {120, 40}})
@@ -1301,8 +1301,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       "devide_ws-drain-guard_sid-#{unique}" => {80, 24}
     })
 
-    :ok = DevIDE.Deployment.Drain.start_drain(1)
-    on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
+    :ok = Casein.Deployment.Drain.start_drain(1)
+    on_exit(fn -> Casein.Deployment.Drain.reset_for_test!() end)
 
     send(owner_pid, :tmux_drift_check)
     refute_receive {:fake_tmux_resize_window, _, _, _}, 200
@@ -1328,8 +1328,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       %{state | workspace_key: "ws-drain-refresh", replay_buffer: "\e[2Jretained tail"}
     end)
 
-    :ok = DevIDE.Deployment.Drain.start_drain(1)
-    on_exit(fn -> DevIDE.Deployment.Drain.reset_for_test!() end)
+    :ok = Casein.Deployment.Drain.start_drain(1)
+    on_exit(fn -> Casein.Deployment.Drain.reset_for_test!() end)
 
     assert {:ok, _payload} = GenServer.call(owner_pid, {:attach, self(), :raw, []})
     assert_receive {:terminal_payload, :data, %{replay: true}}
@@ -1411,18 +1411,18 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     fake_session =
       start_supervised!(%{
-        id: {DevIDE.Test.FakeTerminalSession, unique},
+        id: {Casein.Test.FakeTerminalSession, unique},
         start:
           {GenServer, :start_link,
-           [DevIDE.Test.FakeTerminalSession, {"ws-direct-resize", "sid-#{unique}", self()}, []]}
+           [Casein.Test.FakeTerminalSession, {"ws-direct-resize", "sid-#{unique}", self()}, []]}
       })
 
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: fake_session
           }
       }
@@ -1465,9 +1465,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         | workspace_key: "ws-bind-keep",
           loc: {:cwd, "/tmp/ws-bind-keep"},
           host_id: "local",
-          attachment: %DevIDE.Terminals.Attachment{
+          attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: self()
           }
       }
@@ -1501,9 +1501,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         state
         | workspace_key: "ws-bind-conflict",
           loc: {:cwd, "/tmp/original"},
-          attachment: %DevIDE.Terminals.Attachment{
+          attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: self()
           }
       }
@@ -1532,12 +1532,12 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     owner_pid = start_shell_owner("ws-snap", info)
 
     {:ok, fake_session} =
-      DevIDE.Test.FakeTerminalSession.ensure_started("ws-snap", sid, {:fake, self()})
+      Casein.Test.FakeTerminalSession.ensure_started("ws-snap", sid, {:fake, self()})
 
     # Output produced while NO raw subscriber was attached — the owner's
     # replay_buffer never saw it, but the Session buffer (authoritative) did.
     :ok =
-      DevIDE.Test.FakeTerminalSession.seed_buffer(
+      Casein.Test.FakeTerminalSession.seed_buffer(
         fake_session,
         "pre-attach-output\e[3;7Rtail"
       )
@@ -1545,9 +1545,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: fake_session,
             cols: 120,
             rows: 40
@@ -1686,7 +1686,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.cast(owner_pid, {:query_response, self(), "\e]11;#000000\a"})
       assert_receive {:fake_session_input, ^fake_session, "\e]11;rgb:1e1e/1e1e/2e2e\a"}, 1_000
 
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
 
       # Outwait the same-class duplicate window so the flip is observable.
       Process.sleep(150)
@@ -1704,13 +1704,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       {owner_pid, fake_session} = start_owner_with_fake_session("theme-report")
 
       # Default session theme is dark catppuccin, so :light is a real change.
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
 
       expected =
-        DevIDE.Terminals.Theme.client_color_reports(
-          DevIDE.Terminals.Theme.builtin_preset(:light, "catppuccin")
+        Casein.Terminals.Theme.client_color_reports(
+          Casein.Terminals.Theme.builtin_preset(:light, "catppuccin")
         ) <>
-          DevIDE.Terminals.Theme.client_theme_report(:light)
+          Casein.Terminals.Theme.client_theme_report(:light)
 
       assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
 
@@ -1722,11 +1722,11 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       set_fake_tmux_version({3, 5})
       {owner_pid, fake_session} = start_owner_with_fake_session("theme-report-35")
 
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
 
       expected =
-        DevIDE.Terminals.Theme.client_color_reports(
-          DevIDE.Terminals.Theme.builtin_preset(:light, "catppuccin")
+        Casein.Terminals.Theme.client_color_reports(
+          Casein.Terminals.Theme.builtin_preset(:light, "catppuccin")
         )
 
       assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
@@ -1746,7 +1746,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
       assert_receive {:fake_session_input, ^fake_session, "\e[?997;1n"}, 1_000
 
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
       Process.sleep(150)
 
       GenServer.cast(owner_pid, {:query_response, self(), "\e[?997;1n"})
@@ -1775,10 +1775,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       {owner_pid, fake_session} = start_owner_with_fake_session("fresh-seed")
 
       expected =
-        DevIDE.Terminals.Theme.client_color_reports(
-          DevIDE.Terminals.Theme.builtin_preset(:dark, "catppuccin")
+        Casein.Terminals.Theme.client_color_reports(
+          Casein.Terminals.Theme.builtin_preset(:dark, "catppuccin")
         ) <>
-          DevIDE.Terminals.Theme.client_theme_report(:dark)
+          Casein.Terminals.Theme.client_theme_report(:dark)
 
       Application.put_env(:dev_ide, :test_shell_attachment_pid, fake_session)
 
@@ -1803,7 +1803,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       set_fake_tmux_version({3, 4})
       {owner_pid, fake_session} = start_owner_with_fake_session("theme-no-report")
 
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
 
       refute_receive {:fake_session_input, ^fake_session, _}, 200
 
@@ -1816,7 +1816,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       {owner_pid, fake_session} = start_owner_with_fake_session("theme-unchanged")
 
       # Matches the owner's default theme, so nothing changed.
-      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :dark, "catppuccin")
+      Casein.Terminals.SessionOwner.set_theme(owner_pid, :dark, "catppuccin")
 
       refute_receive {:fake_session_input, ^fake_session, _}, 200
 
@@ -1857,7 +1857,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
@@ -2114,18 +2114,18 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     fake_session =
       start_supervised!(%{
-        id: {DevIDE.Test.FakeTerminalSession, unique},
+        id: {Casein.Test.FakeTerminalSession, unique},
         start:
           {GenServer, :start_link,
-           [DevIDE.Test.FakeTerminalSession, {"ws-#{tag}", "sid-#{unique}", self()}, []]}
+           [Casein.Test.FakeTerminalSession, {"ws-#{tag}", "sid-#{unique}", self()}, []]}
       })
 
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: fake_session
           }
       }
@@ -2137,8 +2137,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   defp start_shell_owner(workspace_id, info) do
     {:ok, pid} =
       DynamicSupervisor.start_child(
-        DevIDE.Terminals.Supervisor,
-        {DevIDE.Terminals.SessionOwner, {workspace_id, info}}
+        Casein.Terminals.Supervisor,
+        {Casein.Terminals.SessionOwner, {workspace_id, info}}
       )
 
     pid
@@ -2158,9 +2158,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     :sys.replace_state(owner_pid, fn state ->
       %{
         state
-        | attachment: %DevIDE.Terminals.Attachment{
+        | attachment: %Casein.Terminals.Attachment{
             kind: :shell,
-            backend: DevIDE.Terminals.Session,
+            backend: Casein.Terminals.Session,
             pid: dead
           }
       }

@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.Entry do
+defmodule Casein.Files.Entry do
   @moduledoc "A single file or directory entry surfaced to the UI."
 
   @type kind :: :file | :dir | :symlink | :other

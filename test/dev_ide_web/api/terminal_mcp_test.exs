@@ -1,14 +1,14 @@
-defmodule DevIdeWeb.API.TerminalMCPTest do
+defmodule CaseinWeb.API.TerminalMCPTest do
   @moduledoc """
   Protocol-level tests for the terminal-control MCP handler. The handler is
   pure (decoded message in, JSON-RPC outcome out), so these exercise the wire
   contract directly, plus the session-name guardrail that needs no live tmux.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.TerminalTools
-  alias DevIDE.Terminals.Tmux
-  alias DevIdeWeb.API.TerminalMCP
+  alias Casein.Agents.TerminalTools
+  alias Casein.Terminals.Tmux
+  alias CaseinWeb.API.TerminalMCP
 
   test "initialize returns protocol version and server info" do
     assert {:reply, %{jsonrpc: "2.0", id: 1, result: result}} =
@@ -178,7 +178,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     session_a = prefix <> "_a"
     session_b = prefix <> "_b"
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{

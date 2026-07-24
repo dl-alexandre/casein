@@ -1,5 +1,5 @@
 defmodule TmuxCtl.TopologyTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias TmuxCtl.Topology
 

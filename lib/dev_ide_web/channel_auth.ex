@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.ChannelAuth do
+defmodule CaseinWeb.ChannelAuth do
   @moduledoc """
   Centralised auth helpers for Phoenix channels.
 
@@ -30,7 +30,7 @@ defmodule DevIdeWeb.ChannelAuth do
   """
   def sign_user_token(user_id, email \\ nil)
       when is_binary(user_id) and (is_binary(email) or is_nil(email)) do
-    Phoenix.Token.sign(DevIdeWeb.Endpoint, @user_socket_salt, %{id: user_id, email: email})
+    Phoenix.Token.sign(CaseinWeb.Endpoint, @user_socket_salt, %{id: user_id, email: email})
   end
 
   @doc """
@@ -42,7 +42,7 @@ defmodule DevIdeWeb.ChannelAuth do
   those that do.
   """
   def verify_user_token(token) when is_binary(token) and byte_size(token) > 0 do
-    case Phoenix.Token.verify(DevIdeWeb.Endpoint, @user_socket_salt, token, max_age: @max_age) do
+    case Phoenix.Token.verify(CaseinWeb.Endpoint, @user_socket_salt, token, max_age: @max_age) do
       {:ok, %{id: id, email: email}} when is_binary(id) -> {:ok, id, email}
       # Legacy: token from before the email round-trip landed.
       {:ok, id} when is_binary(id) -> {:ok, id, nil}
@@ -63,7 +63,7 @@ defmodule DevIdeWeb.ChannelAuth do
     email = Map.get(user, :email)
 
     if is_binary(user_id) and (is_binary(email) or is_nil(email)) do
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, @mobile_pairing_salt, %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, @mobile_pairing_salt, %{
         kind: :mobile_pairing,
         id: user_id,
         email: email,
@@ -78,7 +78,7 @@ defmodule DevIdeWeb.ChannelAuth do
 
   @doc "Verify a mobile pairing token and return its scoped identity claims."
   def verify_pairing_token(token) when is_binary(token) and byte_size(token) > 0 do
-    case Phoenix.Token.verify(DevIdeWeb.Endpoint, @mobile_pairing_salt, token,
+    case Phoenix.Token.verify(CaseinWeb.Endpoint, @mobile_pairing_salt, token,
            max_age: @mobile_pairing_max_age
          ) do
       {:ok, claims} -> normalize_pairing_claims(claims)
@@ -109,7 +109,7 @@ defmodule DevIdeWeb.ChannelAuth do
       |> Keyword.merge(opts)
       |> Map.new()
 
-    Phoenix.Token.sign(DevIdeWeb.Endpoint, @terminal_workspace_salt, claims)
+    Phoenix.Token.sign(CaseinWeb.Endpoint, @terminal_workspace_salt, claims)
   end
 
   @doc """
@@ -117,7 +117,7 @@ defmodule DevIdeWeb.ChannelAuth do
   """
   def verify_terminal_capability(token) when is_binary(token) and byte_size(token) > 0 do
     with {:ok, claims} <-
-           Phoenix.Token.verify(DevIdeWeb.Endpoint, @terminal_workspace_salt, token,
+           Phoenix.Token.verify(CaseinWeb.Endpoint, @terminal_workspace_salt, token,
              max_age: @terminal_capability_max_age
            ) do
       claims =

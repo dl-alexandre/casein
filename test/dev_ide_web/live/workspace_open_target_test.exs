@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceOpenTargetTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceOpenTargetTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component, only: [assign: 3]
 
-  alias DevIDE.Workspace
-  alias DevIdeWeb.WorkspaceLive.Show
+  alias Casein.Workspace
+  alias CaseinWeb.WorkspaceLive.Show
 
   setup do
     root =

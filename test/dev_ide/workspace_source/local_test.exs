@@ -1,8 +1,8 @@
-defmodule DevIDE.WorkspaceSource.LocalTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.WorkspaceSource.LocalTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.WorkspaceSource.Local
-  alias DevIDE.Workspace
+  alias Casein.WorkspaceSource.Local
+  alias Casein.Workspace
 
   setup do
     # Save and restore global config

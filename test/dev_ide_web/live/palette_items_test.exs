@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.PaletteItemsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias CaseinWeb.WorkspaceLive.Show.PaletteItems
 
   setup do
     MemoryAdapter.clear()

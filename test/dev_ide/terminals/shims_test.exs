@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.ShimsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.ShimsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Shims
+  alias Casein.Terminals.Shims
 
   setup do
     previous_dir = Application.get_env(:dev_ide, :terminal_shims_dir)
@@ -65,7 +65,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert File.regular?(desktop_entry)
 
     desktop = File.read!(desktop_entry)
-    assert desktop =~ "Name=DevIDE Preview"
+    assert desktop =~ "Name=Casein Preview"
     assert desktop =~ "Exec=devide-open %f"
     assert desktop =~ "Terminal=true"
     assert desktop =~ "MimeType=text/markdown;text/x-markdown;"
@@ -101,7 +101,7 @@ defmodule DevIDE.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert out == "Opened docs/readme.md in DevIDE viewer\n"
+    assert out == "Opened docs/readme.md in Casein viewer\n"
     {canonical_workdir, 0} = System.cmd("pwd", [], cd: workdir)
 
     assert File.read!(capture) ==
@@ -349,8 +349,8 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert Shims.env()["PATH"] =~ Shims.tools_bin_dir()
     # Agent launcher + npm bins must be on every pane PATH so template panes
     # do not depend on bashrc alone for `claude` / `grok`.
-    assert Shims.env()["PATH"] =~ DevIDE.Agents.AgentShims.bin_dir()
-    assert Shims.env()["PATH"] =~ DevIDE.Agents.AgentShims.npm_bin_dir()
+    assert Shims.env()["PATH"] =~ Casein.Agents.AgentShims.bin_dir()
+    assert Shims.env()["PATH"] =~ Casein.Agents.AgentShims.npm_bin_dir()
   end
 
   test "sync_tmux_terminal_env! publishes agent PATH for new-window -e flags" do
@@ -366,8 +366,8 @@ defmodule DevIDE.Terminals.ShimsTest do
     published = Application.get_env(:tmux_ctl, :terminal_env)
 
     assert published == env
-    assert published["PATH"] =~ DevIDE.Agents.AgentShims.bin_dir()
-    assert published["PATH"] =~ DevIDE.Agents.AgentShims.npm_bin_dir()
+    assert published["PATH"] =~ Casein.Agents.AgentShims.bin_dir()
+    assert published["PATH"] =~ Casein.Agents.AgentShims.npm_bin_dir()
     assert published["PATH"] =~ Shims.dir()
   end
 
@@ -435,7 +435,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     File.mkdir_p!(local_bin)
     File.mkdir_p!(npm_bin)
 
-    # A DevIDE agent-launcher shim and a bare npm package binary of the SAME
+    # A Casein agent-launcher shim and a bare npm package binary of the SAME
     # name: PATH order decides which `claude` a fresh pane launches, and the
     # agent-shims launcher (skip-permissions + MCP env) must win. Prepending
     # each dir individually used to reverse the order and let the npm bin
@@ -487,7 +487,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     # The pane env put agent-shims first, then a user rc file prepended the
     # grok installer dir on top. Presence-only dedupe would leave the real
     # binary winning (silent unpaired launch) — sourcing shell integration
-    # must move the DevIDE launcher back to the front.
+    # must move the Casein launcher back to the front.
     {out, 0} =
       System.cmd(
         bash!(),

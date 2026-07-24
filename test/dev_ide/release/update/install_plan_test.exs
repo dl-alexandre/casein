@@ -1,9 +1,9 @@
-defmodule DevIDE.Release.Update.InstallPlanTest do
+defmodule Casein.Release.Update.InstallPlanTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.InstallPlan
-  alias DevIDE.Release.Update.Manifest
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.InstallPlan
+  alias Casein.Release.Update.Manifest
 
   @manifest_json """
   {

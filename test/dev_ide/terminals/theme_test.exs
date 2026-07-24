@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.ThemeTest do
+defmodule Casein.Terminals.ThemeTest do
   # Serial: mutates process-global Application env (:terminal_theme_paths).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Theme
+  alias Casein.Terminals.Theme
 
   describe "defaults" do
     test "exposes the startup scheme and preset" do

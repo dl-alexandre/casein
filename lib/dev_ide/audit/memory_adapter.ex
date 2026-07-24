@@ -1,12 +1,12 @@
-defmodule DevIDE.Audit.MemoryAdapter do
+defmodule Casein.Audit.MemoryAdapter do
   @moduledoc """
   Capped in-memory audit ring. Mainly used in test environments.
   """
 
   use GenServer
-  @behaviour DevIDE.Audit.Adapter
+  @behaviour Casein.Audit.Adapter
 
-  alias DevIDE.Audit.Event
+  alias Casein.Audit.Event
 
   @max 1_000
 
@@ -16,39 +16,39 @@ defmodule DevIDE.Audit.MemoryAdapter do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def record(%Event{} = e) do
     GenServer.cast(__MODULE__, {:record, e})
     :ok
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def list(opts \\ []) do
     n = Keyword.get(opts, :limit, @max)
     GenServer.call(__MODULE__, {:list, n})
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def recent_for(workspace_id, n) do
     GenServer.call(__MODULE__, {:recent_for, workspace_id, n})
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def recent_with_action_prefix(workspace_id, action_prefix, n) do
     GenServer.call(__MODULE__, {:recent_with_action_prefix, workspace_id, action_prefix, n})
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def recent_for_tool(workspace_id, tool, n) do
     GenServer.call(__MODULE__, {:recent_for_tool, workspace_id, tool, n})
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def list_by_correlation(correlation_id) do
     GenServer.call(__MODULE__, {:list_by_correlation, correlation_id})
   end
 
-  @impl DevIDE.Audit.Adapter
+  @impl Casein.Audit.Adapter
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks

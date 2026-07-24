@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.LastDeployTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Deployment.LastDeployTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Deployment.LastDeploy
+  alias Casein.Deployment.LastDeploy
 
   @deployed "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   @remote "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -185,16 +185,16 @@ defmodule DevIDE.Deployment.LastDeployTest do
     System.put_env("DEVIDE_GIT_REVISION", @deployed)
     on_exit(fn -> restore_env("DEVIDE_GIT_REVISION", prev_rev) end)
 
-    Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+    Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
 
     {:ok, sub_id} =
       Jido.Signal.Bus.subscribe(
-        DevIDE.SignalBus.name(),
-        DevIDE.Signals.Publish.domain_subscription_pattern(),
+        Casein.SignalBus.name(),
+        Casein.Signals.Publish.domain_subscription_pattern(),
         dispatch: {:pid, target: self()}
       )
 
-    on_exit(fn -> Jido.Signal.Bus.unsubscribe(DevIDE.SignalBus.name(), sub_id) end)
+    on_exit(fn -> Jido.Signal.Bus.unsubscribe(Casein.SignalBus.name(), sub_id) end)
 
     assert :failed = LastDeploy.check_and_broadcast(remote_head: {:ok, @remote})
     assert_receive {:deploy_failure, %{phase: "gate"}}

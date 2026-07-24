@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.WindowTerminalModeTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
+  alias CaseinWeb.WorkspaceLive.Show.WindowTerminalMode
 
   test "active_window_name/1 returns the name of the active tmux window" do
     socket = %{

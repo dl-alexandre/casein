@@ -1,11 +1,11 @@
-defmodule DevIDE.UAT.Instance.Runner do
+defmodule Casein.UAT.Instance.Runner do
   @moduledoc """
-  The seam between `DevIDE.UAT.Instance` and the operating system.
+  The seam between `Casein.UAT.Instance` and the operating system.
 
   `Instance` owns the *logic* — port allocation, the readiness loop, temp-root
   setup/teardown, seed ordering — and delegates every side effect (spawning a
   server, probing it, killing it) to a Runner. The default
-  `DevIDE.UAT.Instance.SystemRunner` shells out; tests inject a fake so the
+  `Casein.UAT.Instance.SystemRunner` shells out; tests inject a fake so the
   lifecycle is verifiable without booting a real Phoenix instance.
 
   `launch/1` returns an opaque `handle` that is threaded back into `kill/1`, so a

@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.AgentEnvironment do
+defmodule Casein.Desktop.AgentEnvironment do
   @moduledoc """
   Builds the workspace-scoped environment inherited by native desktop shells.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Desktop.AgentEnvironment do
   the project checkout.
   """
 
-  alias DevIDE.Agents.{MCPMaterializer, MCPUrls, WorkspaceTokens}
+  alias Casein.Agents.{MCPMaterializer, MCPUrls, WorkspaceTokens}
 
   @spec build(map(), String.t()) :: {:ok, map()} | {:error, term()}
   def build(workspace, checkout) when is_map(workspace) and is_binary(checkout) do

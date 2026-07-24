@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.Plugs.ApiAuthTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.Plugs.ApiAuthTest do
+  use Casein.TestCase, async: false
 
   import Plug.Test
   import Plug.Conn
 
-  alias DevIdeWeb.Plugs.ApiAuth
+  alias CaseinWeb.Plugs.ApiAuth
 
   @workspace_id "ws-scoped"
   @workspace_token "ws-token-secret"

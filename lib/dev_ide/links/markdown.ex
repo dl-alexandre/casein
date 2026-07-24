@@ -1,15 +1,15 @@
-defmodule DevIDE.Links.Markdown do
+defmodule Casein.Links.Markdown do
   @moduledoc """
   Renders workspace Markdown for the file viewer.
 
   Markdown is parsed to an MDEx document first so link and image destinations
-  can be resolved through `DevIDE.Links.Resolver` before HTML is emitted. The
+  can be resolved through `Casein.Links.Resolver` before HTML is emitted. The
   final HTML is sanitized and is intended to be inserted by the file-viewer JS
   hook.
   """
 
-  alias DevIDE.Links.Resolver
-  alias DevIDE.Links.Resolver.Ctx
+  alias Casein.Links.Resolver
+  alias Casein.Links.Resolver.Ctx
 
   @markdown_exts [".md", ".markdown"]
   @extension_options [

@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.Forms.TemplateFormTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.Forms.TemplateFormTest do
+  use Casein.TestCase, async: true
 
-  alias DevIdeWeb.Forms.TemplateForm
+  alias CaseinWeb.Forms.TemplateForm
 
   test "requires a non-blank name" do
     changeset =

@@ -1,9 +1,9 @@
-defmodule DevIDE.FilePanes.SuffixIndex do
+defmodule Casein.FilePanes.SuffixIndex do
   @moduledoc """
   Basename-keyed index of a local workspace's files, for terminal file-link
   fallback resolution.
 
-  `DevIDE.FilePanes.LinkResolver` resolves candidates root-relatively; paths
+  `Casein.FilePanes.LinkResolver` resolves candidates root-relatively; paths
   that miss — bare `foo.ex` names, subdir-relative `js/app.js` printed from a
   pane cd'd below the root, absolute stacktrace paths from a linked worktree —
   fall back to this index. A candidate resolves only when exactly one indexed

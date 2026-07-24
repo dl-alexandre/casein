@@ -1,4 +1,4 @@
-defmodule DevIDE.Mobile.Card do
+defmodule Casein.Mobile.Card do
   @moduledoc """
   Pure builders for the mobile card contract.
 

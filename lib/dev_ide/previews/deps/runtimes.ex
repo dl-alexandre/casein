@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.Deps.Runtimes do
+defmodule Casein.Previews.Deps.Runtimes do
   @moduledoc """
   Preview-owned seam for runtime listing and runtime-owned preview servers.
 

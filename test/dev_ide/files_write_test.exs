@@ -1,6 +1,6 @@
-defmodule DevIDE.FilesWriteTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Files
+defmodule Casein.FilesWriteTest do
+  use Casein.TestCase, async: true
+  alias Casein.Files
 
   setup do
     root = Path.join(System.tmp_dir!(), "fw-#{System.unique_integer([:positive])}")

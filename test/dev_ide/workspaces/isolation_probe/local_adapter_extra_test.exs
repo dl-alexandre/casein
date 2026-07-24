@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapterExtraTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces.IsolationProbe.LocalAdapter
+  alias Casein.Workspaces.IsolationProbe.LocalAdapter
 
   # Mirrors isolation_test.exs: a real temp dir holds crafted env/compose
   # files, and the shared/unsafe host patterns are configured per-run so the
@@ -250,7 +250,7 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapterExtraTest do
 
   test "the production docker-compose.yml classifies as :ephemeral (container postgres)",
        %{root: root} do
-    # Verbatim from the DevIDE repo root: an interpolated DATABASE_URL in YAML
+    # Verbatim from the Casein repo root: an interpolated DATABASE_URL in YAML
     # mapping form pointing at the `postgres` compose service. Before the
     # mapping-form fix this regressed to unknown/none — the exact bug the live
     # audit bus surfaced (workspace.db_isolation_detected: unknown/none).

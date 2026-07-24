@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.PaneState do
+defmodule Casein.Terminals.PaneState do
   @moduledoc """
   Derives low-cardinality agent pane state from tmux pane titles.
 
@@ -122,7 +122,7 @@ defmodule DevIDE.Terminals.PaneState do
 
   def agent_or_active_pane(_window), do: nil
 
-  @doc "True when a pane is marked as the DevIDE agent pane."
+  @doc "True when a pane is marked as the Casein agent pane."
   @spec agent_role?(map()) :: boolean()
   def agent_role?(pane) when is_map(pane), do: map_get(pane, :role) == "agent"
   def agent_role?(_pane), do: false

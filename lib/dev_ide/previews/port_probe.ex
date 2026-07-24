@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.PortProbe do
+defmodule Casein.Previews.PortProbe do
   @moduledoc """
   Fast loopback TCP liveness probe for discovered preview surfaces.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Previews.PortProbe do
   those surfaces as active sends agents to dead ports.
 
   `probe/1` answers the question `preview_open`'s preflight would ask — can
-  the DevIDE node connect to this loopback port right now — with a bounded
+  the Casein node connect to this loopback port right now — with a bounded
   concurrent TCP connect per port. Best-effort: any failure is `false`,
   never an exception.
   """

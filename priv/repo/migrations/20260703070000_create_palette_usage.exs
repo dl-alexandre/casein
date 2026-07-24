@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreatePaletteUsage do
+defmodule Casein.Repo.Migrations.CreatePaletteUsage do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionTemplate.Loader do
+defmodule Casein.Terminals.SessionTemplate.Loader do
   @moduledoc """
   Loads session templates from all sources.
 
@@ -7,14 +7,14 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
   returned alongside built-ins when a `workspace_id` is supplied.
 
   The `get/1` function resolves built-ins by their stable string ID. Saved
-  templates are resolved by the caller through `DevIDE.Terminals.Templates`
+  templates are resolved by the caller through `Casein.Terminals.Templates`
   because saved templates need workspace scoping for apply/diff operations.
   """
 
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.SessionTemplate.Window
-  alias DevIDE.Terminals.Templates
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.Templates
 
   @spec list :: [SessionTemplate.t()]
   def list, do: list(nil)
@@ -171,7 +171,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
               role: "agent",
               split_direction: "h",
               command:
-                "printf '# DevIDE agent pane\\n# MCP: terminal_topology then target this pane\\n'"
+                "printf '# Casein agent pane\\n# MCP: terminal_topology then target this pane\\n'"
             },
             %Pane{
               id: "verify",

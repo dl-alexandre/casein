@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.Storage.LocalDiskTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Previews.Storage.LocalDiskTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.Storage.LocalDisk
+  alias Casein.Previews.Storage.LocalDisk
 
   setup do
     root = Path.join(System.tmp_dir!(), "local-disk-test-#{System.unique_integer([:positive])}")

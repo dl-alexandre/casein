@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.TmuxJanitor do
+defmodule Casein.Terminals.TmuxJanitor do
   @moduledoc """
   Idle GC for `devide_*` tmux sessions backing the Ghostty raw shell.
 
@@ -18,7 +18,7 @@ defmodule DevIDE.Terminals.TmuxJanitor do
 
   require Logger
 
-  alias DevIDE.Terminals.{SessionOwner, Tmux}
+  alias Casein.Terminals.{SessionOwner, Tmux}
 
   @prefix "devide_"
 

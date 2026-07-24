@@ -1,6 +1,6 @@
-defmodule DevIDE.GitTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Git
+defmodule Casein.GitTest do
+  use Casein.TestCase, async: true
+  alias Casein.Git
 
   setup do
     root = Path.join(System.tmp_dir!(), "git-#{System.unique_integer([:positive])}")

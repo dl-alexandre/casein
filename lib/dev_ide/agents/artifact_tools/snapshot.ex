@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ArtifactTools.Snapshot do
+defmodule Casein.Agents.ArtifactTools.Snapshot do
   @moduledoc "artifact_snapshot: explicit Git version marker commit."
 
   use Jido.Action,
@@ -14,13 +14,13 @@ defmodule DevIDE.Agents.ArtifactTools.Snapshot do
       message: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.ArtifactTools.Helpers
-  alias DevIDE.ArtifactProjects
+  alias Casein.Agents.ArtifactTools.Helpers
+  alias Casein.ArtifactProjects
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters do
     Tool.object(
       %{
@@ -33,10 +33,10 @@ defmodule DevIDE.Agents.ArtifactTools.Snapshot do
     )
   end
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata(:medium, true)
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def param_aliases, do: %{artifact_id: ~w(artifact_id id project_id)}
 
   @impl Jido.Action

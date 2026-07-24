@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.PreviewTools.SurfaceDiscovery do
+defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   @moduledoc false
 
-  alias DevIDE.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
-  alias DevIDE.PreviewActivity
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews
-  alias DevIDE.Previews.{EnvPorts, PortProbe, Surface, SurfaceResolver, Url, WorkspaceContext}
+  alias Casein.Agents.PreviewTools.{ControlSession, WorkspaceResolution}
+  alias Casein.PreviewActivity
+  alias Casein.PreviewPanes
+  alias Casein.Previews
+  alias Casein.Previews.{EnvPorts, PortProbe, Surface, SurfaceResolver, Url, WorkspaceContext}
 
   @doc "List discoverable preview surfaces for agent planning."
   @spec surfaces(map(), map()) :: {:ok, map()} | {:error, term()}

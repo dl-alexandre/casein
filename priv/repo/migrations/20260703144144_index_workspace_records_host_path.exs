@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.IndexWorkspaceRecordsHostPath do
+defmodule Casein.Repo.Migrations.IndexWorkspaceRecordsHostPath do
   use Ecto.Migration
 
   # Non-unique on purpose: a manager record and a folder-attach record can

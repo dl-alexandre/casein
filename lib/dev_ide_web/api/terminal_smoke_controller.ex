@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.API.TerminalSmokeController do
+defmodule CaseinWeb.API.TerminalSmokeController do
   @moduledoc """
   Internal post-deploy terminal acceptance smoke.
 
@@ -8,10 +8,10 @@ defmodule DevIdeWeb.API.TerminalSmokeController do
   socket + `ApiAuth`); the deploy script gates promotion on it.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   def show(conn, _params) do
-    case DevIDE.Deployment.TerminalSmoke.run() do
+    case Casein.Deployment.TerminalSmoke.run() do
       :ok ->
         conn |> put_status(200) |> json(%{ok: true})
 

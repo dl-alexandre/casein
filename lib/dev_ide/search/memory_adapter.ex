@@ -1,11 +1,11 @@
-defmodule DevIDE.Search.MemoryAdapter do
+defmodule Casein.Search.MemoryAdapter do
   @moduledoc """
   Test-only search adapter. Reads canned results from
   `Application.get_env(:dev_ide, :search_memory_results, %{})` keyed by query.
   Setting `:available?` to `false` simulates a missing ripgrep binary.
   """
 
-  @behaviour DevIDE.Search.Adapter
+  @behaviour Casein.Search.Adapter
 
   @impl true
   def available?, do: Application.get_env(:dev_ide, :search_memory_available, true)
@@ -29,9 +29,9 @@ defmodule DevIDE.Search.MemoryAdapter do
     end
   end
 
-  defp normalize(%DevIDE.Search.Result{} = r, _), do: r
+  defp normalize(%Casein.Search.Result{} = r, _), do: r
 
   defp normalize(map, _root) when is_map(map) do
-    struct(DevIDE.Search.Result, map)
+    struct(Casein.Search.Result, map)
   end
 end

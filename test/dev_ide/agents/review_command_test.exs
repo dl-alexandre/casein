@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.ReviewCommandTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Agents.{ReviewCommand, Capability}
+defmodule Casein.Agents.ReviewCommandTest do
+  use Casein.TestCase, async: true
+  alias Casein.Agents.{ReviewCommand, Capability}
 
   test "all/0 ids are unique" do
     ids = ReviewCommand.all() |> Enum.map(& &1.id)

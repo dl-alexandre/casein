@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.FileServerPreviewProxyTest do
+defmodule CaseinWeb.FileServerPreviewProxyTest do
   @moduledoc """
   Runtime verification that terminal file-link previews work end-to-end:
 
@@ -9,13 +9,13 @@ defmodule DevIdeWeb.FileServerPreviewProxyTest do
 
   This is the plan's "Route A" evidence without a full headless viewer walk.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Files.BrowserViewable
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Previews
-  alias DevIDE.Previews.FileServer
-  alias DevIDE.Workspaces
+  alias Casein.Files.BrowserViewable
+  alias Casein.PreviewPanes
+  alias Casein.Previews
+  alias Casein.Previews.FileServer
+  alias Casein.Workspaces
 
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
@@ -49,7 +49,7 @@ defmodule DevIdeWeb.FileServerPreviewProxyTest do
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :forward_auth, true)
 
     {:ok, workspace} = Workspaces.attach_folder(path)

@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.AgentCapabilityTokensTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Agents.AgentCapabilityTokensTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.AgentCapabilityToken
-  alias DevIDE.Agents.AgentCapabilityTokens
-  alias DevIDE.Repo
+  alias Casein.Agents.AgentCapabilityToken
+  alias Casein.Agents.AgentCapabilityTokens
+  alias Casein.Repo
 
   @leader_id "0123456789abcdef01234567"
   @bundle_digest String.duplicate("a", 64)

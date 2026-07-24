@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.ClipboardPasteTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.ClipboardPasteTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.ClipboardPaste
+  alias Casein.Terminals.ClipboardPaste
 
   setup do
     root =

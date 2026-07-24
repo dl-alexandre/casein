@@ -1,12 +1,12 @@
-defmodule DevIDE.Agents.MCPSessionsTest do
+defmodule Casein.Agents.MCPSessionsTest do
   @moduledoc """
   The Streamable HTTP session registry: create/fetch/delete, attaching an SSE
   consumer, pushing notifications to it, and auto-detaching when the consumer
   process dies.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.MCPSessions
+  alias Casein.Agents.MCPSessions
 
   setup do
     prev_ttl = Application.get_env(:dev_ide, :mcp_session_ttl_ms)

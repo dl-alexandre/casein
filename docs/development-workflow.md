@@ -1,4 +1,4 @@
-# Development workflow for DevIDE
+# Development workflow for Casein
 
 **Status**: Draft v0.1 — 2026-06-24  
 **Audience**: Human developers + AI agents operating in this repository  

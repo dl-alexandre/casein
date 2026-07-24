@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.PreviewTools.ReloadIframe do
+defmodule Casein.Agents.PreviewTools.ReloadIframe do
   @moduledoc "preview_reload_iframe."
 
   use Jido.Action,
     name: "preview_reload_iframe",
-    description: "Ask connected DevIDE viewers to reload the active embedded preview iframe.",
+    description: "Ask connected Casein viewers to reload the active embedded preview iframe.",
     category: "preview",
     tags: ["preview"],
     vsn: "1.0.0",
@@ -13,12 +13,12 @@ defmodule DevIDE.Agents.PreviewTools.ReloadIframe do
       reason: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.{Params, Tool}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -29,7 +29,7 @@ defmodule DevIDE.Agents.PreviewTools.ReloadIframe do
         [:workspace_id]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_reload_iframe")
 
   @impl Jido.Action

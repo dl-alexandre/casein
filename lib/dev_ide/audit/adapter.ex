@@ -1,7 +1,7 @@
-defmodule DevIDE.Audit.Adapter do
+defmodule Casein.Audit.Adapter do
   @moduledoc "Behaviour for audit event persistence adapters."
 
-  alias DevIDE.Audit.Event
+  alias Casein.Audit.Event
 
   @callback record(Event.t()) :: :ok | {:error, term()}
   @callback list(opts :: keyword()) :: [Event.t()]

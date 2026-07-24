@@ -1,13 +1,13 @@
-defmodule DevIDE.Operator.SituationServerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Operator.SituationServerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Operator.SituationServer
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Operator.SituationServer
+  alias Casein.Terminals.AgentState
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @app_env ~w(situation_server situation_blocked_too_long_seconds tmux_adapter
               runtimes_adapter agent_worktree_roots)a
@@ -16,13 +16,13 @@ defmodule DevIDE.Operator.SituationServerTest do
     prev = Map.new(@app_env, &{&1, Application.get_env(:dev_ide, &1)})
 
     MemoryAdapter.clear()
-    DevIDE.Runtimes.clear()
+    Casein.Runtimes.clear()
     Audit.clear()
     Activity.clear()
     AgentState.clear()
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     # Point the WorktreeAlarm sweep (spawned by the detector engine) at an
     # empty root so tests never scan the box's real agent worktrees.
     Application.put_env(:dev_ide, :agent_worktree_roots, [
@@ -31,7 +31,7 @@ defmodule DevIDE.Operator.SituationServerTest do
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      DevIDE.Runtimes.clear()
+      Casein.Runtimes.clear()
       Audit.clear()
       Activity.clear()
       AgentState.clear()
@@ -382,8 +382,8 @@ defmodule DevIDE.Operator.SituationServerTest do
     }
 
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
-      DevIDE.Ops.PgProbe.topic(),
+      Casein.PubSub,
+      Casein.Ops.PgProbe.topic(),
       {:ops_health, :pg_saturation, :raised, risk}
     )
 
@@ -399,8 +399,8 @@ defmodule DevIDE.Operator.SituationServerTest do
            )
 
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
-      DevIDE.Ops.PgProbe.topic(),
+      Casein.PubSub,
+      Casein.Ops.PgProbe.topic(),
       {:ops_health, :pg_saturation, :cleared, risk}
     )
 

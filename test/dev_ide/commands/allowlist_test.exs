@@ -1,7 +1,7 @@
-defmodule DevIDE.Commands.AllowlistTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Commands.AllowlistTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Commands.Allowlist
+  alias Casein.Commands.Allowlist
   alias ExecCtl.Allowlist, as: CtlAllowlist
 
   test "facade delegates to ExecCtl.Allowlist" do

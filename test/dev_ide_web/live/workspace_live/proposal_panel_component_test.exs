@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.ProposalPanelComponentTest do
+  use Casein.TestCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIdeWeb.WorkspaceLive.ProposalPanelComponent
+  alias CaseinWeb.WorkspaceLive.ProposalPanelComponent
 
   setup do
     root = Path.join(System.tmp_dir!(), "proposal-panel-#{System.unique_integer([:positive])}")
@@ -30,8 +30,8 @@ defmodule DevIdeWeb.WorkspaceLive.ProposalPanelComponentTest do
 
   defp socket(root, overrides \\ %{}) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       private: %{live_temp: %{}},
       assigns:

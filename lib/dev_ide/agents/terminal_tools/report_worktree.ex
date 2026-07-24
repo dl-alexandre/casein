@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalTools.ReportWorktree do
+defmodule Casein.Agents.TerminalTools.ReportWorktree do
   @moduledoc "terminal_report_worktree."
 
   use Jido.Action,
     name: "terminal_report_worktree",
     description:
-      "Report an agent-created Git worktree so DevIDE can show it under the owning workspace. Call after creating or switching to a worktree, and again at session end with exit_status/handoff when work is not landing immediately. Requires workspace_id and worktree_path; optional fields include branch, agent, runner_id, session_id, tmux_session_id, exit_status (landed|wip|handoff), and handoff (short status message).",
+      "Report an agent-created Git worktree so Casein can show it under the owning workspace. Call after creating or switching to a worktree, and again at session end with exit_status/handoff when work is not landing immediately. Requires workspace_id and worktree_path; optional fields include branch, agent, runner_id, session_id, tmux_session_id, exit_status (landed|wip|handoff), and handoff (short status message).",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -20,12 +20,12 @@ defmodule DevIDE.Agents.TerminalTools.ReportWorktree do
       handoff: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -42,7 +42,7 @@ defmodule DevIDE.Agents.TerminalTools.ReportWorktree do
         ["workspace_id", "worktree_path"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_report_worktree")
 
   @impl Jido.Action

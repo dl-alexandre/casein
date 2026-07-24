@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
-  use DevIdeWeb.ConnCase, async: true
+defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
+  use CaseinWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest, only: [render_component: 2]
 
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   describe "terminal_surface_pane_id/4" do
     test "keeps the sticky operator pane when a preview pane becomes tmux-active" do
@@ -335,7 +335,7 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
 
       assert html =~ ~s(data-pane-paired="false")
       assert html =~ ~s(data-role="pane-unpaired-badge")
-      assert html =~ "Agent launched without DevIDE MCP — no agent env"
+      assert html =~ "Agent launched without Casein MCP — no agent env"
     end
 
     test "renders no badge for paired or never-launched panes" do

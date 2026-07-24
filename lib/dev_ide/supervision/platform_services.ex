@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.PlatformServices do
+defmodule Casein.Supervision.PlatformServices do
   @moduledoc false
 
   use Supervisor
@@ -10,26 +10,26 @@ defmodule DevIDE.Supervision.PlatformServices do
   @spec child_specs() :: [Supervisor.child_spec() | module()]
   def child_specs do
     [
-      {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
-      {Task.Supervisor, name: DevIDE.TaskSupervisor},
-      {Registry, keys: :unique, name: DevIDE.Mobile.UserObserverRegistry},
-      {DynamicSupervisor, name: DevIDE.Mobile.UserObserverSupervisor, strategy: :one_for_one},
+      {Casein.RateLimit, clean_period: :timer.minutes(10)},
+      {Task.Supervisor, name: Casein.TaskSupervisor},
+      {Registry, keys: :unique, name: Casein.Mobile.UserObserverRegistry},
+      {DynamicSupervisor, name: Casein.Mobile.UserObserverSupervisor, strategy: :one_for_one},
       # Lazy per-workspace filesystem watchers for the Files panel tree.
-      {Registry, keys: :unique, name: DevIDE.Files.Watcher.Registry},
-      {DynamicSupervisor, name: DevIDE.Files.Watcher.Supervisor, strategy: :one_for_one},
+      {Registry, keys: :unique, name: Casein.Files.Watcher.Registry},
+      {DynamicSupervisor, name: Casein.Files.Watcher.Supervisor, strategy: :one_for_one},
       # Dedicated HTTP/2 Finch pool for APNs (it refuses HTTP/1.1). Idle until a
       # push is sent; started here so the connection is warm before the first.
-      {Finch, name: DevIDE.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
-      DevIDE.Git.InspectorCache,
-      DevIDE.DeviceLinks.Reaper,
-      DevIDE.Agents.OrchestratorTokens.Reaper,
-      DevIDE.Runtimes.Reaper,
-      DevIDE.SignalBus.child_spec(),
-      DevIDE.Signals.AlertsRouter,
-      DevIDE.Signals.DegradationWatch,
+      {Finch, name: Casein.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
+      Casein.Git.InspectorCache,
+      Casein.DeviceLinks.Reaper,
+      Casein.Agents.OrchestratorTokens.Reaper,
+      Casein.Runtimes.Reaper,
+      Casein.SignalBus.child_spec(),
+      Casein.Signals.AlertsRouter,
+      Casein.Signals.DegradationWatch,
       # Slice 3: host tmux control-listener flap → audit / ops:health (mirrors
       # DegradationWatch patterns; thresholds via :tmux_events_flap_watch).
-      DevIDE.Signals.TmuxEventsFlapWatch
+      Casein.Signals.TmuxEventsFlapWatch
     ]
   end
 

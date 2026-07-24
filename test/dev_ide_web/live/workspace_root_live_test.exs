@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.WorkspaceRootLiveTest do
+defmodule CaseinWeb.WorkspaceRootLiveTest do
   @moduledoc """
   Root `/` lands in the cockpit on the synthetic scratch workspace (Stage 4c).
   There is no full-page dashboard or workspace-admin drawer.
   """
 
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Workspaces.Scratch
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspaces.Scratch
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()

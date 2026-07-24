@@ -1,13 +1,13 @@
-defmodule DevIDE.Workspaces.FileAccess do
+defmodule Casein.Workspaces.FileAccess do
   @moduledoc """
   File and directory access for workspace locations, local or remote.
 
   Dispatches on a `workspace_loc` tagged tuple from
-  `DevIDE.Workspaces.safe_host_loc/1`. Remote operations shell out via `ssh`
+  `Casein.Workspaces.safe_host_loc/1`. Remote operations shell out via `ssh`
   using the user's `~/.ssh/config` (no in-band credentials).
   """
 
-  alias DevIDE.Workspaces
+  alias Casein.Workspaces
 
   @type loc :: Workspaces.workspace_loc()
   @type entry :: %{name: String.t(), dir?: boolean(), size: non_neg_integer() | nil}
@@ -23,7 +23,7 @@ defmodule DevIDE.Workspaces.FileAccess do
   def ls(loc, subpath \\ "")
 
   def ls({:local, root}, sub) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub),
          {:ok, names} <- File.ls(target) do
       entries =
         names
@@ -50,7 +50,7 @@ defmodule DevIDE.Workspaces.FileAccess do
   def ls({:remote, host, root}, sub) do
     # `ls -lAp --time-style=+%s` is portable enough for our purposes on Linux.
     # `-p` appends `/` to directories so we can flag them without an extra stat.
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub),
          {:ok, out} <- ssh_quoted(host, ["ls", "-lAp", "--time-style=+%s", "--", target]) do
       {:ok, parse_ls(out)}
     end
@@ -59,14 +59,14 @@ defmodule DevIDE.Workspaces.FileAccess do
   @doc "Stat one workspace-relative path without reading file content."
   @spec stat(loc(), String.t()) :: {:ok, stat()} | {:error, term()}
   def stat({:local, root}, sub) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub),
          {:ok, stat} <- File.stat(target) do
       {:ok, %{type: stat.type, size: stat_size(stat)}}
     end
   end
 
   def stat({:remote, host, root}, sub) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub),
          {:ok, out} <- ssh_quoted(host, ["stat", "-L", "-c", "%F\t%s", "--", target]) do
       parse_stat(out)
     end
@@ -77,13 +77,13 @@ defmodule DevIDE.Workspaces.FileAccess do
   # target is confined by PathSafety.resolve/2 before File.read/1.
   # sobelow_skip ["Traversal.FileModule"]
   def read({:local, root}, sub) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub) do
       File.read(target)
     end
   end
 
   def read({:remote, host, root}, sub) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, sub) do
       case ssh_quoted(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]) do
         {:ok, bin} when byte_size(bin) <= @max_read_bytes -> {:ok, bin}
         {:ok, bin} -> {:ok, binary_part(bin, 0, @max_read_bytes)}
@@ -98,7 +98,7 @@ defmodule DevIDE.Workspaces.FileAccess do
   def label({:remote, host, path}), do: "#{host}:#{path}"
 
   @doc """
-  Read a text file, returning the same shape as `DevIDE.Files.read_text/2`:
+  Read a text file, returning the same shape as `Casein.Files.read_text/2`:
 
       {:ok, %{path, size, content, mtime, version}}
 
@@ -109,14 +109,14 @@ defmodule DevIDE.Workspaces.FileAccess do
   @spec read_text(loc(), String.t()) :: {:ok, map()} | {:error, term()}
   def read_text({:local, _root} = loc, rel) do
     {:local, root} = loc
-    DevIDE.Files.read_text(root, rel)
+    Casein.Files.read_text(root, rel)
   end
 
   def read_text({:remote, host, root}, rel) do
-    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, rel),
+    with {:ok, target} <- Casein.Files.PathSafety.resolve(root, rel),
          {:ok, bin} <-
            ssh_quoted(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]),
-         false <- DevIDE.Files.PathSafety.likely_binary?(bin) do
+         false <- Casein.Files.PathSafety.likely_binary?(bin) do
       content =
         if byte_size(bin) > @max_read_bytes, do: binary_part(bin, 0, @max_read_bytes), else: bin
 
@@ -138,13 +138,13 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   @doc """
   Write content to `rel`, atomically. Returns the same shape as
-  `DevIDE.Files.write_text/4`. Optimistic concurrency: the on-disk content's
+  `Casein.Files.write_text/4`. Optimistic concurrency: the on-disk content's
   current version must equal `expected_version`, else `{:error, :conflict}`.
   """
   @spec write_text(loc(), String.t(), binary(), String.t()) ::
           {:ok, %{version: String.t(), size: non_neg_integer()}} | {:error, term()}
   def write_text({:local, root}, rel, content, expected_version) do
-    DevIDE.Files.write_text(root, rel, content, expected_version)
+    Casein.Files.write_text(root, rel, content, expected_version)
   end
 
   def write_text({:remote, host, root} = loc, rel, content, expected_version)
@@ -153,7 +153,7 @@ defmodule DevIDE.Workspaces.FileAccess do
       byte_size(content) > @max_read_bytes ->
         {:error, :too_large}
 
-      DevIDE.Files.PathSafety.likely_binary?(content) ->
+      Casein.Files.PathSafety.likely_binary?(content) ->
         {:error, :binary}
 
       true ->
@@ -190,13 +190,13 @@ defmodule DevIDE.Workspaces.FileAccess do
   end
 
   @doc """
-  Workspace-wide text search. Matches `DevIDE.Search.search/3`'s return shape:
-  `{:ok, [%DevIDE.Search.Result{}]}`. For remote workspaces, runs `rg` on the
+  Workspace-wide text search. Matches `Casein.Search.search/3`'s return shape:
+  `{:ok, [%Casein.Search.Result{}]}`. For remote workspaces, runs `rg` on the
   far side over ssh.
   """
   @spec search(loc(), String.t(), keyword()) ::
-          {:ok, [DevIDE.Search.Result.t()]} | {:error, term()}
-  def search({:local, root}, query, opts), do: DevIDE.Search.search(root, query, opts)
+          {:ok, [Casein.Search.Result.t()]} | {:error, term()}
+  def search({:local, root}, query, opts), do: Casein.Search.search(root, query, opts)
 
   def search({:remote, host, root}, query, opts) when is_binary(query) do
     cond do
@@ -249,7 +249,7 @@ defmodule DevIDE.Workspaces.FileAccess do
           []
         else
           [
-            %DevIDE.Search.Result{
+            %Casein.Search.Result{
               path: rel,
               line: parse_int(lineno),
               column: nil,
@@ -278,7 +278,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   @doc "Git status --short for the workspace."
   @spec git_status_short(loc()) :: {:ok, [map()]} | {:error, term()}
-  def git_status_short({:local, root}), do: DevIDE.Git.status_short(root)
+  def git_status_short({:local, root}), do: Casein.Git.status_short(root)
 
   def git_status_short({:remote, host, root}) do
     cmd = ["git", "-C", root, "status", "--short", "--untracked-files=all"]
@@ -292,7 +292,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   @doc "Git diff of one path."
   @spec git_diff(loc(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def git_diff({:local, root}, rel), do: DevIDE.Git.diff(root, rel)
+  def git_diff({:local, root}, rel), do: Casein.Git.diff(root, rel)
 
   def git_diff({:remote, host, root}, rel) do
     cmd = ["git", "-C", root, "diff", "--no-color", "--", rel]
@@ -331,9 +331,9 @@ defmodule DevIDE.Workspaces.FileAccess do
   end
 
   defp ssh_with_stdin(host, argv, stdin),
-    do: DevIDE.Workspaces.SshRunner.run_with_stdin(host, argv, stdin)
+    do: Casein.Workspaces.SshRunner.run_with_stdin(host, argv, stdin)
 
-  defp ssh(host, argv), do: DevIDE.Workspaces.SshRunner.run(host, argv)
+  defp ssh(host, argv), do: Casein.Workspaces.SshRunner.run(host, argv)
 
   # Parses `ls -lAp` output. First line is "total N"; subsequent lines:
   #   "drwxr-xr-x 5 user grp 4096 2024-01-01 name/"   (directory; trailing /)

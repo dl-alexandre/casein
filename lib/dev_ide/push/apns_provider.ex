@@ -1,12 +1,12 @@
-defmodule DevIDE.Push.APNSProvider do
+defmodule Casein.Push.APNSProvider do
   @moduledoc """
-  `DevIDE.Push.Provider` for Apple Push Notification service.
+  `Casein.Push.Provider` for Apple Push Notification service.
 
   iOS currently registers a native APNs device token. That token is not an FCM
   registration token, so iOS delivery must use APNs directly unless the native
   app later adopts Firebase Messaging on iOS.
   """
-  @behaviour DevIDE.Push.Provider
+  @behaviour Casein.Push.Provider
 
   require Logger
 
@@ -245,6 +245,6 @@ defmodule DevIDE.Push.APNSProvider do
     end
   end
 
-  defp http_client, do: config()[:http_client] || DevIDE.Push.APNS.ReqClient
+  defp http_client, do: config()[:http_client] || Casein.Push.APNS.ReqClient
   defp config, do: Application.get_env(:dev_ide, __MODULE__, [])
 end

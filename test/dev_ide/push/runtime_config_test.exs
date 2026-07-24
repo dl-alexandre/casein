@@ -1,5 +1,5 @@
-defmodule DevIDE.Push.RuntimeConfigTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Push.RuntimeConfigTest do
+  use Casein.TestCase, async: false
 
   @push_envs ~w(
     DEV_IDE_PUSH_PROVIDER
@@ -33,7 +33,7 @@ defmodule DevIDE.Push.RuntimeConfigTest do
   test "FCM credentials select native platform routing by default" do
     System.put_env("DEV_IDE_FCM_PROJECT_ID", "demo-project")
 
-    assert devide_runtime_config()[:push_provider] == DevIDE.Push.NativeProvider
+    assert devide_runtime_config()[:push_provider] == Casein.Push.NativeProvider
   end
 
   test "APNs credentials select native platform routing by default" do
@@ -44,9 +44,9 @@ defmodule DevIDE.Push.RuntimeConfigTest do
 
     config = devide_runtime_config()
 
-    assert config[:push_provider] == DevIDE.Push.NativeProvider
+    assert config[:push_provider] == Casein.Push.NativeProvider
 
-    assert config[DevIDE.Push.APNSProvider] == [
+    assert config[Casein.Push.APNSProvider] == [
              team_id: "TEAM123456",
              key_id: "KEY1234567",
              topic: "com.example.devide_mob",
@@ -57,10 +57,10 @@ defmodule DevIDE.Push.RuntimeConfigTest do
 
   test "explicit provider overrides are preserved" do
     System.put_env("DEV_IDE_PUSH_PROVIDER", "fcm")
-    assert devide_runtime_config()[:push_provider] == DevIDE.Push.FCMProvider
+    assert devide_runtime_config()[:push_provider] == Casein.Push.FCMProvider
 
     System.put_env("DEV_IDE_PUSH_PROVIDER", "apns")
-    assert devide_runtime_config()[:push_provider] == DevIDE.Push.APNSProvider
+    assert devide_runtime_config()[:push_provider] == Casein.Push.APNSProvider
   end
 
   defp devide_runtime_config do

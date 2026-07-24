@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TidewaveMCP do
+defmodule Casein.Agents.TidewaveMCP do
   @moduledoc """
   Resolves an optional Tidewave MCP URL for agent client materialization.
 
@@ -10,8 +10,8 @@ defmodule DevIDE.Agents.TidewaveMCP do
   4. Latest running ephemeral preview environment from the registry
   """
 
-  alias DevIDE.Agents.TidewaveCapability
-  alias DevIDE.Previews.EnvRegistry
+  alias Casein.Agents.TidewaveCapability
+  alias Casein.Previews.EnvRegistry
 
   @doc "MCP server key for agent client configs."
   @spec server_key(map() | nil) :: String.t()

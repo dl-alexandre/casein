@@ -1,20 +1,20 @@
-defmodule DevIDE.WorkspaceSource do
+defmodule Casein.WorkspaceSource do
   @moduledoc """
   Pluggable backend for workspace discovery and lifecycle.
 
-  The default `DevIDE.WorkspaceSource.Local` discovers workspaces as
+  The default `Casein.WorkspaceSource.Local` discovers workspaces as
   directories on disk. Production deployments select an integration-specific
   source via config:
 
       config :dev_ide, :workspace_source, MySource
 
-  Sources implement this behaviour and return `%DevIDE.Workspace{}` values.
-  Source-specific extras belong in `Workspace.metadata`; `DevIDE.Workspaces`
+  Sources implement this behaviour and return `%Casein.Workspace{}` values.
+  Source-specific extras belong in `Workspace.metadata`; `Casein.Workspaces`
   is the stable consumer-facing facade.
   """
 
-  alias DevIDE.Agents.LocalAdapter
-  alias DevIDE.Workspace
+  alias Casein.Agents.LocalAdapter
+  alias Casein.Workspace
 
   @type auth :: String.t() | nil
   @type id :: String.t()
@@ -71,7 +71,7 @@ defmodule DevIDE.WorkspaceSource do
   control what capabilities are advertised without polluting generic code.
   """
   @callback detect_capabilities(workspace :: Workspace.t() | map(), root :: String.t() | nil) :: [
-              DevIDE.Agents.Capability.t()
+              Casein.Agents.Capability.t()
             ]
 
   @doc """
@@ -92,11 +92,11 @@ defmodule DevIDE.WorkspaceSource do
 
   @doc """
   Returns the configured workspace source module. Defaults to
-  `DevIDE.WorkspaceSource.Local` — the no-integration, real-directory backend
+  `Casein.WorkspaceSource.Local` — the no-integration, real-directory backend
   that the dev `mix phx.server` flow uses.
   """
   @spec impl() :: module()
-  def impl, do: Application.get_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+  def impl, do: Application.get_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
 
   @doc "Wrap a local-spawn argv via the configured source, or identity."
   @spec prepare_local_argv([String.t()]) :: [String.t()]
@@ -180,7 +180,7 @@ defmodule DevIDE.WorkspaceSource do
   when possible. Falls back to the legacy filesystem detection.
   """
   @spec detect_capabilities(Workspace.t() | map(), String.t() | nil) :: [
-          DevIDE.Agents.Capability.t()
+          Casein.Agents.Capability.t()
         ]
   def detect_capabilities(workspace, root) do
     impl = impl()

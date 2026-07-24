@@ -1,17 +1,17 @@
-defmodule DevIDE.ArtifactProjectsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.ArtifactProjectsTest do
+  use Casein.TestCase, async: false
 
   import ExUnit.CaptureIO
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.MemoryAdapter, as: RuntimeAdapter
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.ArtifactProjects
+  alias Casein.Runtimes
+  alias Casein.Runtimes.MemoryAdapter, as: RuntimeAdapter
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   defmodule PreviewRunner do
-    @behaviour DevIDE.Runtimes.PreviewLauncher
+    @behaviour Casein.Runtimes.PreviewLauncher
 
     @impl true
     def start(spec) do
@@ -38,7 +38,7 @@ defmodule DevIDE.ArtifactProjectsTest do
     artifact_root = Path.join(base, "artifacts")
 
     Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
     Application.put_env(:dev_ide, :agent_worktree_roots, [])
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
@@ -455,7 +455,7 @@ defmodule DevIDE.ArtifactProjectsTest do
   test "smoke mix task creates an artifact and prints preview_open arguments" do
     output =
       capture_io(fn ->
-        Mix.Tasks.DevIde.Artifact.Smoke.run([
+        Mix.Tasks.Casein.Artifact.Smoke.run([
           "ws-artifacts",
           "--name",
           "Task Artifact",
@@ -477,7 +477,7 @@ defmodule DevIDE.ArtifactProjectsTest do
   test "smoke mix task can print JSON payloads for agent handoff" do
     output =
       capture_io(fn ->
-        Mix.Tasks.DevIde.Artifact.Smoke.run([
+        Mix.Tasks.Casein.Artifact.Smoke.run([
           "ws-artifacts",
           "--name",
           "JSON Task Artifact",

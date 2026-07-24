@@ -1,25 +1,25 @@
-defmodule DevIDE.ProposalApply do
+defmodule Casein.ProposalApply do
   @moduledoc """
-  Governed write path for applying a discovered `DevIDE.Proposals.Proposal`
+  Governed write path for applying a discovered `Casein.Proposals.Proposal`
   diff to a workspace's working tree.
 
   Deliberately lives outside `lib/dev_ide/proposals/` — the read-only
   discovery/parse/analyze subsystem there must never gain a write path (see
   `test/dev_ide/proposals_no_apply_test.exs`). This module is the *only*
-  sanctioned write path: it calls `DevIDE.Proposals.parse/2` and
-  `DevIDE.Proposals.analyze/2` read-only, then shells out via
-  `DevIDE.ProposalApply.GitAdapter`.
+  sanctioned write path: it calls `Casein.Proposals.parse/2` and
+  `Casein.Proposals.analyze/2` read-only, then shells out via
+  `Casein.ProposalApply.GitAdapter`.
 
-  Socket-free by design: runs its own `DevIDE.Policy.can_apply_proposal?/1`
-  check and `DevIDE.Audit.emit_decision/2` internally (rather than relying on
+  Socket-free by design: runs its own `Casein.Policy.can_apply_proposal?/1`
+  check and `Casein.Audit.emit_decision/2` internally (rather than relying on
   the LiveView-coupled `Show.Context.gate/3`) so both a human's LiveView click
   and a future server-side agent-run hook get identical, un-bypassable
   enforcement.
   """
 
-  alias DevIDE.{Audit, Policy, Proposals}
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Proposals.{Analysis, Proposal}
+  alias Casein.{Audit, Policy, Proposals}
+  alias Casein.Policy.Decision
+  alias Casein.Proposals.{Analysis, Proposal}
 
   @type apply_error ::
           {:policy, Decision.t()}
@@ -168,5 +168,5 @@ defmodule DevIDE.ProposalApply do
   end
 
   defp adapter,
-    do: Application.get_env(:dev_ide, :proposal_apply_adapter, DevIDE.ProposalApply.GitAdapter)
+    do: Application.get_env(:dev_ide, :proposal_apply_adapter, Casein.ProposalApply.GitAdapter)
 end

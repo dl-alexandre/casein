@@ -1,4 +1,4 @@
-defmodule DevIDE.Mobile.Actions do
+defmodule Casein.Mobile.Actions do
   @moduledoc """
   Server-authoritative dispatcher for mobile card actions.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Mobile.Actions do
     1. **Reload** the authoritative card server-side from `UserObserver` — the
        client-provided card/resource/workspace ids are never trusted.
     2. **Validate** the requested action against the card-declared action specs
-       and validate params deterministically (`DevIDE.Mobile.Card`).
+       and validate params deterministically (`Casein.Mobile.Card`).
     3. **Authorize** the actor against the *reloaded* card's resource on every
        action, including pairing scope and workspace ownership.
     4. **Persist + idempotency**: write a durable `ActionOutcome` keyed by
@@ -23,10 +23,10 @@ defmodule DevIDE.Mobile.Actions do
 
   import Ecto.Query, only: [from: 2]
 
-  alias DevIDE.Mobile.{ActionOutcome, Card, UserObserver}
-  alias DevIDE.Repo
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Workspaces
+  alias Casein.Mobile.{ActionOutcome, Card, UserObserver}
+  alias Casein.Repo
+  alias Casein.Runs.Ledger
+  alias Casein.Workspaces
 
   @type context :: %{
           required(:user_id) => String.t(),

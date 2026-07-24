@@ -1,4 +1,4 @@
-defmodule DevIDE.PreviewPanes.PreviewPaneRegistration do
+defmodule Casein.PreviewPanes.PreviewPaneRegistration do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -20,8 +20,8 @@ defmodule DevIDE.PreviewPanes.PreviewPaneRegistration do
     field :pane_window_id, :string
     field :status, Ecto.Enum, values: [:open, :closed]
 
-    belongs_to :preview, DevIDE.Previews.Preview
-    belongs_to :control_session, DevIDE.Previews.ControlSession
+    belongs_to :preview, Casein.Previews.Preview
+    belongs_to :control_session, Casein.Previews.ControlSession
 
     timestamps(type: :utc_datetime)
   end

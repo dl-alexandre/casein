@@ -1,14 +1,14 @@
-defmodule DevIDE.PreviewControl do
+defmodule Casein.PreviewControl do
   @moduledoc """
   Compatibility facade for preview browser control.
 
-  The implementation lives in `DevIDE.Previews.Control`; keep this root module
+  The implementation lives in `Casein.Previews.Control`; keep this root module
   while existing preview pane and agent-tool callers migrate to the previews
   context boundary.
   """
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.Control
+  alias Casein.PreviewControl.Registry
+  alias Casein.Previews.Control
 
   defdelegate open_session(workspace, surface_name, opts \\ []), to: Control
   defdelegate observe(session_id), to: Control

@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.API.PreviewMCPControllerTest do
+defmodule CaseinWeb.API.PreviewMCPControllerTest do
   @moduledoc """
   HTTP transport + auth tests for POST /api/preview/mcp.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   @token "test-preview-mcp-token"
 

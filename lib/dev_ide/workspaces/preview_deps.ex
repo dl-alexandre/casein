@@ -1,15 +1,15 @@
-defmodule DevIDE.Workspaces.PreviewDeps do
+defmodule Casein.Workspaces.PreviewDeps do
   @moduledoc """
-  Core-side impl of `DevIDE.Previews.Deps.Workspaces`.
+  Core-side impl of `Casein.Previews.Deps.Workspaces`.
 
   Thin pure delegation — no logic lives here. Preview resolves this module via
   `config :dev_ide, :preview_deps`.
   """
 
-  @behaviour DevIDE.Previews.Deps.Workspaces
+  @behaviour Casein.Previews.Deps.Workspaces
 
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Aliases
 
   @impl true
   def get(id), do: Workspaces.get(id)

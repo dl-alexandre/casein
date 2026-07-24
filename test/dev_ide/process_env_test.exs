@@ -1,9 +1,9 @@
-defmodule DevIDE.ProcessEnvTest do
+defmodule Casein.ProcessEnvTest do
   # async: true is the whole point — these tests set overrides in their own
   # processes and must not see each other's.
   use ExUnit.Case, async: true
 
-  alias DevIDE.ProcessEnv
+  alias Casein.ProcessEnv
 
   # A per-test unique key so nothing collides with real config or a sibling
   # async test mutating Application env.

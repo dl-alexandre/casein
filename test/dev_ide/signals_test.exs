@@ -1,8 +1,8 @@
-defmodule DevIDE.SignalsTest do
+defmodule Casein.SignalsTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.Signals
+  alias Casein.Audit.Event
+  alias Casein.Signals
   alias Jido.Signal.Trace
 
   test "type_for prefixes audit actions" do

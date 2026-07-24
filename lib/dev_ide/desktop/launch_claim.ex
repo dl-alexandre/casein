@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.LaunchClaim do
+defmodule Casein.Desktop.LaunchClaim do
   @moduledoc """
   Verifies short-lived, single-use claims minted by a trusted desktop host.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.Desktop.LaunchClaim do
   replay during the acceptance window.
   """
 
-  alias DevIDE.Desktop.LaunchReplayStore
+  alias Casein.Desktop.LaunchReplayStore
 
   @maximum_age_seconds 120
   @future_skew_seconds 10

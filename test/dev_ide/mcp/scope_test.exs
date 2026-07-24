@@ -1,7 +1,7 @@
-defmodule DevIDE.MCP.ScopeTest.Source do
-  @behaviour DevIDE.WorkspaceSource
+defmodule Casein.MCP.ScopeTest.Source do
+  @behaviour Casein.WorkspaceSource
 
-  alias DevIDE.Workspace
+  alias Casein.Workspace
 
   @workspace %Workspace{
     id: "ws-scope",
@@ -32,15 +32,15 @@ defmodule DevIDE.MCP.ScopeTest.Source do
   end
 end
 
-defmodule DevIDE.MCP.ScopeTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.MCP.ScopeTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Agents.PreviewTools
-  alias DevIDE.MCP.Scope
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.PreviewTools
+  alias Casein.MCP.Scope
+  alias Casein.PreviewControl.Registry
+  alias Casein.Workspace
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     prev_source = Application.get_env(:dev_ide, :workspace_source)
@@ -49,7 +49,7 @@ defmodule DevIDE.MCP.ScopeTest do
 
     MemoryAdapter.clear()
     _ = Registry.clear()
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.MCP.ScopeTest.Source)
+    Application.put_env(:dev_ide, :workspace_source, Casein.MCP.ScopeTest.Source)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -236,7 +236,7 @@ defmodule DevIDE.MCP.ScopeTest do
   end
 
   test "every caller-pane tool accepts caller_pane in its schema" do
-    by_name = Map.new(DevIDE.Agents.TerminalTools.definitions(), &{&1.name, &1})
+    by_name = Map.new(Casein.Agents.TerminalTools.definitions(), &{&1.name, &1})
 
     for tool_name <- Scope.terminal_caller_pane_tool_names() do
       tool = Map.fetch!(by_name, tool_name)

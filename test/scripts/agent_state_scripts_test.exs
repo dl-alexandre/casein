@@ -36,7 +36,7 @@ defmodule Scripts.AgentStateScriptsTest do
     end
   end
 
-  test "state script exits 0 and stays silent without DevIDE env" do
+  test "state script exits 0 and stays silent without Casein env" do
     assert {"", 0} =
              System.cmd("bash", [@state_script],
                env: [
@@ -145,7 +145,7 @@ defmodule Scripts.AgentStateScriptsTest do
     assert body =~ ~s("reason":"Network access")
   end
 
-  test "codex exits 0 without DevIDE env" do
+  test "codex exits 0 without Casein env" do
     assert {"", 0} =
              System.cmd("bash", [@codex_script, "{}"],
                env: [

@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.ProtocolTest do
+defmodule Casein.Codex.ProtocolTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Codex.{Event, JsonRpc, Protocol}
+  alias Casein.Codex.{Event, JsonRpc, Protocol}
 
   @fixture Path.expand("../../fixtures/codex_app_server/notifications.jsonl", __DIR__)
 

@@ -1,14 +1,14 @@
-defmodule DevIDE.Terminals.Templates.Reconciler do
+defmodule Casein.Terminals.Templates.Reconciler do
   @moduledoc """
-  Read-only diff engine for saved DevIDE session template v2 exports.
+  Read-only diff engine for saved Casein session template v2 exports.
 
   The reconciler compares a saved template's exact replay plan with the
   current tmux topology and reports what could be reused versus created. It is
   deliberately side-effect free; executable reconciliation is a later step.
   """
 
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.Templates.Executor
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.Templates.Executor
 
   @type saved :: map()
 

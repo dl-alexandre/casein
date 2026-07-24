@@ -52,7 +52,7 @@ end
 # config/test.exs) when the run finishes, so leaked test sessions don't pile up.
 # Best-effort and scoped to the sandbox server — it can never touch the default
 # server's live workspace sessions.
-case {:os.type(), DevIDE.Terminals.TmuxServer.label()} do
+case {:os.type(), Casein.Terminals.TmuxServer.label()} do
   {{:win32, _}, _label} ->
     :ok
 
@@ -67,8 +67,8 @@ end
 
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
-if Process.whereis(DevIDE.Repo) do
-  Ecto.Adapters.SQL.Sandbox.mode(DevIDE.Repo, :manual)
+if Process.whereis(Casein.Repo) do
+  Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
 end
 
 ExUnit.after_suite(fn _result ->

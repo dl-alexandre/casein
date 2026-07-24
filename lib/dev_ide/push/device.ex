@@ -1,4 +1,4 @@
-defmodule DevIDE.Push.Device do
+defmodule Casein.Push.Device do
   @moduledoc """
   Persistent OS/browser push registration.
 

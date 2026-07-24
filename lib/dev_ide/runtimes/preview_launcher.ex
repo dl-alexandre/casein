@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.PreviewLauncher do
+defmodule Casein.Runtimes.PreviewLauncher do
   @moduledoc """
   Starts runtime-owned preview servers from their persisted preview_server record.
 
@@ -9,8 +9,8 @@ defmodule DevIDE.Runtimes.PreviewLauncher do
 
   require Logger
 
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.{PreviewServer, Runtime}
+  alias Casein.Runtimes
+  alias Casein.Runtimes.{PreviewServer, Runtime}
 
   @callback start(map()) :: :ok | {:error, term()}
 
@@ -123,7 +123,7 @@ defmodule DevIDE.Runtimes.PreviewLauncher do
       end
     end
 
-    case Task.Supervisor.start_child(DevIDE.TaskSupervisor, starter) do
+    case Task.Supervisor.start_child(Casein.TaskSupervisor, starter) do
       {:ok, _pid} ->
         :ok
 
@@ -177,7 +177,7 @@ defmodule DevIDE.Runtimes.PreviewLauncher do
     Application.get_env(
       :dev_ide,
       :runtime_preview_runner,
-      DevIDE.Runtimes.PreviewLauncher.SystemRunner
+      Casein.Runtimes.PreviewLauncher.SystemRunner
     )
   end
 
@@ -185,10 +185,10 @@ defmodule DevIDE.Runtimes.PreviewLauncher do
   defp inspect_reason(reason), do: inspect(reason)
 end
 
-defmodule DevIDE.Runtimes.PreviewLauncher.SystemRunner do
+defmodule Casein.Runtimes.PreviewLauncher.SystemRunner do
   @moduledoc false
 
-  @behaviour DevIDE.Runtimes.PreviewLauncher
+  @behaviour Casein.Runtimes.PreviewLauncher
 
   require Logger
 

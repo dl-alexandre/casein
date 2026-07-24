@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.SessionTemplate.ExportTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.SessionTemplate.ExportTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.SessionTemplate.Export
+  alias Casein.Terminals.SessionTemplate.Export
 
   # Builds a pane map using the TmuxCtl.Topology.pane() field names.
   defp pane(attrs) do

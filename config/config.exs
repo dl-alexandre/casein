@@ -25,7 +25,7 @@ repo_adapter =
 
 config :dev_ide, :repo_adapter, repo_adapter
 
-config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
+config :dev_ide, CaseinWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
@@ -48,31 +48,31 @@ config :dev_ide,
     sustained_ms: 60_000
   ],
   tmux_ctl: [
-    runner: DevIDE.Terminals.TmuxRunner,
+    runner: Casein.Terminals.TmuxRunner,
     session_prefix: "devide",
-    pubsub: DevIDE.PubSub,
+    pubsub: Casein.PubSub,
     topology_reconcile_ms: 10_000,
-    prefix_window_picker_hint: "DevIDE: use the browser window picker (C-b w)",
-    prefix_session_picker_hint: "DevIDE: use the browser session picker (C-b s)"
+    prefix_window_picker_hint: "Casein: use the browser window picker (C-b w)",
+    prefix_session_picker_hint: "Casein: use the browser session picker (C-b s)"
   ],
   preview_ctl: [
     priv_app: :dev_ide,
     registry_table: :preview_ctl_sessions
   ],
   # Preview-domain outbound seams (extraction slice 3). Preview modules resolve
-  # core impls at runtime via DevIDE.Previews.Deps.impl/1 — never compile-time
+  # core impls at runtime via Casein.Previews.Deps.impl/1 — never compile-time
   # module defaults (those re-create the xref edges this map severs). Test env
   # may repoint individual keys at fakes via Application.put_env.
   preview_deps: [
-    workspaces: DevIDE.Workspaces.PreviewDeps,
-    terminals: DevIDE.Terminals.PreviewDeps,
-    runtimes: DevIDE.Runtimes.PreviewDeps,
-    pane_sink: DevIDE.Panes.PreviewDeps
+    workspaces: Casein.Workspaces.PreviewDeps,
+    terminals: Casein.Terminals.PreviewDeps,
+    runtimes: Casein.Runtimes.PreviewDeps,
+    pane_sink: Casein.Panes.PreviewDeps
   ],
   git_ctl: [
     cache_table: :devide_git_inspector_cache,
     cache_ttl_ms: 10_000,
-    agent_inference: {DevIDE.Git.Inspector, :infer_agent}
+    agent_inference: {Casein.Git.Inspector, :infer_agent}
   ],
   deployment: [
     default_host: "devide.devbox.milcgroup.com",
@@ -93,26 +93,26 @@ config :dev_ide,
   # Must be :public — TerminalChannel and other connection processes write entries;
   # :protected only allows the Application process to insert and breaks joins.
   ets_table_access: :public,
-  ecto_repos: [DevIDE.Repo],
+  ecto_repos: [Casein.Repo],
   generators: [timestamp_type: :utc_datetime],
-  audit_adapter: DevIDE.Audit.EctoAdapter,
-  agent_events_adapter: DevIDE.Agents.AgentEvents.EctoAdapter,
-  codex_store_adapter: DevIDE.Codex.Store.EctoAdapter,
-  workspace_state_adapter: DevIDE.Workspaces.State.EctoAdapter,
-  runtimes_adapter: DevIDE.Runtimes.EctoAdapter,
+  audit_adapter: Casein.Audit.EctoAdapter,
+  agent_events_adapter: Casein.Agents.AgentEvents.EctoAdapter,
+  codex_store_adapter: Casein.Codex.Store.EctoAdapter,
+  workspace_state_adapter: Casein.Workspaces.State.EctoAdapter,
+  runtimes_adapter: Casein.Runtimes.EctoAdapter,
   # Persistent mobile companion tokens expire after this many seconds (default 90 days).
   device_link_ttl_seconds: 60 * 60 * 24 * 90,
   device_link_reaper_enabled: true
 
 # Configure the endpoint
-config :dev_ide, DevIdeWeb.Endpoint,
+config :dev_ide, CaseinWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: DevIdeWeb.ErrorHTML, json: DevIdeWeb.ErrorJSON],
+    formats: [html: CaseinWeb.ErrorHTML, json: CaseinWeb.ErrorJSON],
     layout: false
   ],
-  pubsub_server: DevIDE.PubSub,
+  pubsub_server: Casein.PubSub,
   live_view: [signing_salt: "Emi+CmP2"]
 
 # Configure the mailer
@@ -122,7 +122,7 @@ config :dev_ide, DevIdeWeb.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :dev_ide, DevIDE.Mailer, adapter: Swoosh.Adapters.Local
+config :dev_ide, Casein.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
@@ -197,13 +197,13 @@ config :phoenix, :filter_parameters, [
   "secret"
 ]
 
-# Where DevIDE.Agents.TidewaveCapability resolves the locally-hosted Tidewave
+# Where Casein.Agents.TidewaveCapability resolves the locally-hosted Tidewave
 # base URL from. Configured as an MFA so contexts never reference the web
 # endpoint directly (keeps the context->web dependency inverted). Only fires
 # when the :tidewave dep is present (dev); a no-op everywhere else.
-config :dev_ide, :tidewave_url_provider, {DevIdeWeb.Endpoint, :url, []}
-config :dev_ide, :preview_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
-config :dev_ide, :terminal_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
+config :dev_ide, :tidewave_url_provider, {CaseinWeb.Endpoint, :url, []}
+config :dev_ide, :preview_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
+config :dev_ide, :terminal_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
 
 # Preview infrastructure uses a partitioned 41000-41099 block:
 #   41000-41049: ephemeral preview envs (scripts/preview-env.sh, Tidewave)

@@ -1,4 +1,4 @@
-defmodule DevIDE.Elixir.Symbols do
+defmodule Casein.Elixir.Symbols do
   @moduledoc """
   Regex-based symbol extractor for `.ex` / `.exs` source.
 
@@ -12,7 +12,7 @@ defmodule DevIDE.Elixir.Symbols do
   render a "HEEx symbols not supported yet" hint without errors.
   """
 
-  alias DevIDE.Elixir.Symbol
+  alias Casein.Elixir.Symbol
 
   @ident "[A-Za-z_][A-Za-z0-9_!?]*"
   @module_path "[A-Z][A-Za-z0-9_.]*"

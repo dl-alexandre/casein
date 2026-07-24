@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.SessionDirectory.Compose do
+defmodule Casein.Terminals.SessionDirectory.Compose do
   @moduledoc """
   Pure composition rules for the workspace session tab list.
 
@@ -12,8 +12,8 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   Shell button.
   """
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.Tmux
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.Tmux
 
   @doc """
   Merges scanned tmux sessions with live attachable sessions into the
@@ -88,19 +88,19 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   param in `WorkspaceLive.Show.mount/3`). Plain `u-<user>` sids have no
   family — they are deliberate, shared shells and never filtered.
 
-      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-abcd1234")
+      iex> Casein.Terminals.SessionDirectory.Compose.shell_family("u-alice-abcd1234")
       "u-alice"
 
-      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-abc1234")
+      iex> Casein.Terminals.SessionDirectory.Compose.shell_family("u-alice-abc1234")
       "u-alice"
 
-      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-tabc123")
+      iex> Casein.Terminals.SessionDirectory.Compose.shell_family("u-alice-tabc123")
       "u-alice"
 
-      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice")
+      iex> Casein.Terminals.SessionDirectory.Compose.shell_family("u-alice")
       nil
 
-      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("custom-shell")
+      iex> Casein.Terminals.SessionDirectory.Compose.shell_family("custom-shell")
       nil
   """
   @spec shell_family(String.t() | nil) :: String.t() | nil

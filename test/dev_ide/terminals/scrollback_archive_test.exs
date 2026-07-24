@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.ScrollbackArchiveTest do
+defmodule Casein.Terminals.ScrollbackArchiveTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.ScrollbackArchive
+  alias Casein.Terminals.ScrollbackArchive
 
   setup do
     dir =

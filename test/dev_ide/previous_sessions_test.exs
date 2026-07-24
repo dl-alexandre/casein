@@ -1,9 +1,9 @@
-defmodule DevIDE.PreviousSessionsTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.PreviousSessionsTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.PreviousSessions
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Audit.Event
+  alias Casein.PreviousSessions
+  alias Casein.Terminals.Session.Info, as: SessionInfo
 
   @workspace_id "ws-alpha"
 

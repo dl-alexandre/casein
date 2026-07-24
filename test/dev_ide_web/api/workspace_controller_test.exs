@@ -1,19 +1,19 @@
-defmodule DevIdeWeb.API.WorkspaceControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.WorkspaceControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspace
-  alias DevIDE.Terminals.Templates
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspace
+  alias Casein.Terminals.Templates
 
   @token "test-token"
-  @api_session DevIDE.Terminals.Tmux.session_name("alpha", "api-session")
+  @api_session Casein.Terminals.Tmux.session_name("alpha", "api-session")
 
   setup %{conn: conn} do
     MemoryAdapter.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
-    DevIDE.Agents.Activity.clear()
+    Casein.Audit.MemoryAdapter.clear()
+    Casein.Agents.Activity.clear()
     prev_token = Application.get_env(:dev_ide, :api_token)
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -24,14 +24,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_agent_mcp_base_url = Application.get_env(:dev_ide, :agent_mcp_base_url)
 
     Application.put_env(:dev_ide, :api_token, @token)
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
-      DevIDE.Agents.Activity.clear()
+      Casein.Audit.MemoryAdapter.clear()
+      Casein.Agents.Activity.clear()
 
       if prev_token,
         do: Application.put_env(:dev_ide, :api_token, prev_token),
@@ -132,7 +132,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     System.delete_env("DEV_IDE_API_TOKEN")
 
     # Earlier tests may have minted workspace-scoped tokens into the registry
-    # (DevIDE.Agents.WorkspaceTokens); 503 means NO token source is configured.
+    # (Casein.Agents.WorkspaceTokens); 503 means NO token source is configured.
     Application.delete_env(:dev_ide, :workspace_api_tokens)
     System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
@@ -319,7 +319,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "/api/workspaces/:id/topology rejects a session outside workspace scope", %{conn: conn} do
     seed_workspace()
 
-    other_session = DevIDE.Terminals.Tmux.session_name("beta", "api-session")
+    other_session = Casein.Terminals.Tmux.session_name("beta", "api-session")
     seed_tmux_session(other_session)
 
     body =
@@ -336,7 +336,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   } do
     seed_workspace()
 
-    DevIDE.Agents.Activity.record(%{
+    Casein.Agents.Activity.record(%{
       workspace_id: "ws-1",
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
@@ -351,7 +351,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       inserted_at: ~U[2026-06-28 10:00:00Z]
     })
 
-    DevIDE.Agents.Activity.record(%{
+    Casein.Agents.Activity.record(%{
       workspace_id: "ws-1",
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
@@ -412,7 +412,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   } do
     seed_workspace()
 
-    DevIDE.Agents.Activity.record(%{
+    Casein.Agents.Activity.record(%{
       workspace_id: "ws-1",
       source: :preview_mcp,
       tool: "preview_record_stop",
@@ -485,7 +485,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "GET /api/workspaces/:id/previous_sessions honors source_limit", %{conn: conn} do
     seed_workspace()
 
-    DevIDE.Agents.Activity.record(%{
+    Casein.Agents.Activity.record(%{
       workspace_id: "ws-1",
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
@@ -500,7 +500,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     })
 
     for index <- 1..10 do
-      DevIDE.Agents.Activity.record(%{
+      Casein.Agents.Activity.record(%{
         workspace_id: "ws-1",
         source: :terminal_mcp,
         tool: "terminal_send_agent_prompt",
@@ -551,7 +551,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> get("/api/workspaces/ws-1/previous_sessions", %{"limit" => "999"})
       |> json_response(200)
 
-    assert body["limit"] == DevIDE.PreviousSessions.max_limit()
+    assert body["limit"] == Casein.PreviousSessions.max_limit()
   end
 
   test "GET /api/workspaces/:id/previous_sessions returns 404 for unknown workspace", %{
@@ -730,7 +730,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert filtered_out == []
 
     assert [%{action: "tmux.template_exported", target_ref: ^saved_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert event.target_type == "tmux_template"
     assert event.metadata.session == @api_session
@@ -766,7 +766,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute Enum.any?(listed, &(&1["id"] == "dry_saved_layout"))
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_exported")
            )
   end
@@ -792,7 +792,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_applied")
            )
   end
@@ -832,7 +832,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_select_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert event.target_type == "tmux_template"
     assert event.metadata.session == @api_session
@@ -872,7 +872,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_applied")
            )
   end
@@ -919,7 +919,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_applied")
            )
   end
@@ -965,7 +965,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_select_pane, @api_session, "%4"}
 
     assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert template_id == saved.id
     assert event.metadata.template_source == "exported"
@@ -1015,7 +1015,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_select_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert template_id == saved.id
     assert event.metadata.template_source == "exported"
@@ -1060,7 +1060,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert updated.body["name"] == "saved_layout"
 
     assert [%{action: "tmux.template_updated", target_ref: template_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert template_id == saved.id
     assert event.actor_id == "api"
@@ -1096,7 +1096,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert unchanged.tags == ["saved"]
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_updated")
            )
   end
@@ -1177,7 +1177,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert duplicated.body == saved.body
 
     assert [%{action: "tmux.template_duplicated", target_ref: template_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert template_id == duplicated.id
     assert event.actor_id == "api"
@@ -1212,7 +1212,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert [%{id: ^saved_id}] = Templates.list_for_workspace("ws-1")
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.template_duplicated")
            )
   end
@@ -1281,7 +1281,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert missing == %{"error" => "template_not_found"}
 
     assert [%{action: "tmux.template_deleted", target_ref: template_id} = event] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     assert template_id == saved.id
     assert event.metadata.template_name == "saved_layout"
@@ -1362,7 +1362,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert opts[:name] == "server"
     assert opts[:cwd] == Path.expand(root)
 
-    [event] = DevIDE.Audit.recent_for("ws-1", 1)
+    [event] = Casein.Audit.recent_for("ws-1", 1)
     assert event.action == "tmux.window_created"
     assert event.actor_id == "api"
     assert event.target_type == "tmux_window"
@@ -1411,7 +1411,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute_received {:fake_tmux_select_window, @api_session, "@2"}
 
     refute Enum.any?(
-             DevIDE.Audit.recent_for("ws-1", 10),
+             Casein.Audit.recent_for("ws-1", 10),
              &(&1.action == "tmux.window_selected")
            )
 
@@ -1425,7 +1425,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_select_window, @api_session, "@2"}
 
     assert [%{action: "tmux.window_selected", target_ref: "@2"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     renamed =
       conn
@@ -1444,7 +1444,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_rename_window, @api_session, "@2", "specs"}
 
     assert [%{action: "tmux.window_renamed", target_ref: "@2"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     killed =
       conn
@@ -1457,7 +1457,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_kill_window, @api_session, "@2"}
 
     assert [%{action: "tmux.window_killed", target_ref: "@2"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
   end
 
   test "window mutation endpoints return stable errors", %{conn: conn} do
@@ -1492,7 +1492,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "window mutation endpoints reject cross-workspace tmux sessions", %{conn: conn} do
     seed_workspace()
 
-    other_session = DevIDE.Terminals.Tmux.session_name("beta", "api-session")
+    other_session = Casein.Terminals.Tmux.session_name("beta", "api-session")
     seed_tmux_session(other_session)
 
     body =
@@ -1522,7 +1522,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert dry_run["dry_run"] == true
     assert dry_run["topology"]["active_pane_id"] == "%1"
     refute_received {:fake_tmux_select_pane, @api_session, "%1"}
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+    assert Casein.Audit.recent_for("ws-1", 10) == []
 
     split =
       conn
@@ -1541,7 +1541,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_split_pane, @api_session, "%1", "h", "%3"}
 
     assert [%{action: "tmux.pane_split", target_ref: "%3", target_type: "tmux_pane"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     selected =
       conn
@@ -1553,7 +1553,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_select_pane, @api_session, "%1"}
 
     assert [%{action: "tmux.pane_selected", target_ref: "%1"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     resized =
       conn
@@ -1569,7 +1569,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_resize_pane, @api_session, "%1", "right", 5}
 
     assert [%{action: "tmux.pane_resized", target_ref: "%1"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
 
     killed =
       conn
@@ -1582,7 +1582,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_kill_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.pane_killed", target_ref: "%3"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
   end
 
   test "POST /api/workspaces/:id/panes creates a pane by splitting a target pane", %{conn: conn} do
@@ -1740,7 +1740,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert saved["inserted_at"]
 
     assert [%{action: "tmux.template_exported", target_type: "tmux_template"}] =
-             DevIDE.Audit.recent_for("ws-1", 1)
+             Casein.Audit.recent_for("ws-1", 1)
   end
 
   test "POST /api/workspaces/:id/templates/export requires session param", %{conn: conn} do

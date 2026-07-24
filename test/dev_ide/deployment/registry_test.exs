@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.RegistryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Deployment.RegistryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Deployment.Registry
+  alias Casein.Deployment.Registry
 
   setup do
     prev_dir = Application.get_env(:dev_ide, :deployment_instance_dir)
@@ -56,7 +56,7 @@ defmodule DevIDE.Deployment.RegistryTest do
   # the deploy's stale-record cleanup delete it, and the instance then never
   # received its drain signal. Liveness is injected (see owner_alive?/1) so this
   # runs the same on macOS dev machines as on the Linux devbox.
-  test "init leaves a heartbeat owned by another live DevIDE process untouched" do
+  test "init leaves a heartbeat owned by another live Casein process untouched" do
     dir = isolated_instance_dir!()
     put_instance_uuid!("conflict-test")
     stub_owner_liveness!(fn _pid -> true end)
@@ -68,7 +68,7 @@ defmodule DevIDE.Deployment.RegistryTest do
     assert %{"pid" => "424242"} = path |> File.read!() |> Jason.decode!()
   end
 
-  test "init overwrites a heartbeat whose owner is not a live DevIDE process" do
+  test "init overwrites a heartbeat whose owner is not a live Casein process" do
     dir = isolated_instance_dir!()
     put_instance_uuid!("dead-owner-test")
     # False stands in for both "pid is dead" and "pid was recycled by an

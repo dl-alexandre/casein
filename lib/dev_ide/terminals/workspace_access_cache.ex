@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.WorkspaceAccessCache do
+defmodule Casein.Terminals.WorkspaceAccessCache do
   @moduledoc """
   Short-lived cache for `Workspaces.get/2` results used on terminal reconnect.
 

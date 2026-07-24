@@ -1,7 +1,7 @@
-defmodule DevIDE.Runtimes.PreviewLauncher.SystemRunnerTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runtimes.PreviewLauncher.SystemRunnerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runtimes.PreviewLauncher.SystemRunner
+  alias Casein.Runtimes.PreviewLauncher.SystemRunner
 
   test "start/1 rejects invalid launch specs" do
     assert {:error, :invalid_runtime_preview_launch_spec} = SystemRunner.start(%{})

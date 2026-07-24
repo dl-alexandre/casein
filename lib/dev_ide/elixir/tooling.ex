@@ -1,4 +1,4 @@
-defmodule DevIDE.Elixir.Tooling do
+defmodule Casein.Elixir.Tooling do
   @moduledoc """
   Read-only tooling presence checks. No process starts.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Elixir.Tooling do
   the workspace ships with," not "what could be invoked."
   """
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
   @type t :: %{
           formatter?: boolean(),

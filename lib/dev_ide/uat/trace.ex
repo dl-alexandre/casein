@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.Trace do
+defmodule Casein.UAT.Trace do
   @moduledoc """
   A frozen UAT trace: the durable, version-controlled definition of one
   user-acceptance scenario. Authored once by the acceptance agent (driving the
@@ -12,14 +12,14 @@ defmodule DevIDE.UAT.Trace do
 
   `element_id` ("el_N") from `preview_elements` is a *positional index into the
   observation that produced it* — it is not stable across sessions or markup
-  edits. A frozen `DevIDE.UAT.Step` therefore stores a durable `match`
-  (selector + role/name + nth/near_text), which `DevIDE.UAT.Replay` re-resolves
+  edits. A frozen `Casein.UAT.Step` therefore stores a durable `match`
+  (selector + role/name + nth/near_text), which `Casein.UAT.Replay` re-resolves
   to a live `element_id` against a fresh `preview_elements` at replay time. The
   authoring `resolved_el` is kept under `from` for audit only — never a replay
   key.
   """
 
-  alias DevIDE.UAT.Step
+  alias Casein.UAT.Step
 
   @enforce_keys [:id, :criterion]
   defstruct id: nil,

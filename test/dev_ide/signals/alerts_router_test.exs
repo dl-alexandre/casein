@@ -1,20 +1,20 @@
-defmodule DevIDE.Signals.AlertsRouterTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Signals.AlertsRouterTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.SignalBus
-  alias DevIDE.Signals
-  alias DevIDE.Signals.AlertsRouter
+  alias Casein.Audit.Event
+  alias Casein.SignalBus
+  alias Casein.Signals
+  alias Casein.Signals.AlertsRouter
   alias Jido.Signal.Bus
 
   setup do
     prev = Application.get_env(:dev_ide, :push_test_pid)
-    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.TestProvider)
+    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
     Application.put_env(:dev_ide, :push_test_pid, self())
-    DevIDE.Push.Registry.clear()
+    Casein.Push.Registry.clear()
 
     on_exit(fn ->
-      DevIDE.Push.Registry.clear()
+      Casein.Push.Registry.clear()
       Application.delete_env(:dev_ide, :push_test_pid)
 
       if prev,
@@ -27,7 +27,7 @@ defmodule DevIDE.Signals.AlertsRouterTest do
 
   test "routes alert-worthy bus signals to push for watched workspaces" do
     :ok =
-      DevIDE.Push.register(%{
+      Casein.Push.register(%{
         workspace_id: "ws-signal",
         token: "tok-signal",
         platform: "ios"

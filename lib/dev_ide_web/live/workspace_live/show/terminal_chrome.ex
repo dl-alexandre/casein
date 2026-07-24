@@ -1,20 +1,20 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   @moduledoc """
   Terminal chrome for the workspace cockpit: raw terminal surface and
   tmux pane geometry overlay, plus the pane/window/session presentation
-  helpers shared with `DevIdeWeb.WorkspaceLive.Show` (raw terminal panes)
-  and `DevIdeWeb.WorkspaceLive.Show.SessionBarVM` (session/window tab
+  helpers shared with `CaseinWeb.WorkspaceLive.Show` (raw terminal panes)
+  and `CaseinWeb.WorkspaceLive.Show.SessionBarVM` (session/window tab
   view-models). The session/window bar markup itself lives in
-  `DevIdeWeb.WorkspaceLive.Show.SessionBar`.
+  `CaseinWeb.WorkspaceLive.Show.SessionBar`.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.PaneInteraction
-  alias DevIDE.Terminals.PaneState
+  alias Casein.Terminals
+  alias Casein.Terminals.PaneInteraction
+  alias Casein.Terminals.PaneState
 
   @window_activity_fresh_seconds 30
   @window_activity_recent_seconds 300
@@ -371,10 +371,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def pane_unpaired_title(pane) do
     case Map.get(pane, :paired_reason) do
       reason when is_binary(reason) and reason != "" ->
-        "Agent launched without DevIDE MCP — #{reason}"
+        "Agent launched without Casein MCP — #{reason}"
 
       _ ->
-        "Agent launched without DevIDE MCP"
+        "Agent launched without Casein MCP"
     end
   end
 
@@ -617,7 +617,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         </div>
       <% is_pid(@raw_pane[:ghostty_term]) -> %>
         <.live_component
-          module={DevIdeWeb.GhosttyTerminalComponent}
+          module={CaseinWeb.GhosttyTerminalComponent}
           id={"ghostty-" <> @raw_pane_id}
           term={@raw_pane.ghostty_term}
           pty={@raw_pane.ghostty_pty}
@@ -972,7 +972,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           >
             <%= if @pane_history.term do %>
               <.live_component
-                module={DevIdeWeb.GhosttyTerminalComponent}
+                module={CaseinWeb.GhosttyTerminalComponent}
                 id={"pane-history-" <> dom_fragment(@pane_history.pane_id)}
                 term={@pane_history.term}
                 cols={@pane_history.cols}
@@ -1400,7 +1400,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   @doc """
   True when the pane is served through the reverse proxy (`/preview-proxy/...`).
-  Proxied previews re-serve an external app's HTML from DevIDE's own origin, so
+  Proxied previews re-serve an external app's HTML from Casein's own origin, so
   they can bypass upstream frame-blocking headers.
   """
   def preview_proxied?(%{display_url: url}) when is_binary(url),
@@ -1415,7 +1415,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   iframe `sandbox` for a preview pane.
 
   Preview-proxy iframes need `allow-same-origin` because the proxy endpoint is
-  authenticated by the viewer's DevIDE session cookie. The controller still
+  authenticated by the viewer's Casein session cookie. The controller still
   limits upstream access to authorized workspace loopback ports.
   """
   def preview_iframe_sandbox(_preview) do
@@ -1572,7 +1572,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
       _ ->
         case preview_display_url(preview) do
-          url when is_binary(url) and url != "" -> DevIDE.Previews.extract_title_from_url(url)
+          url when is_binary(url) and url != "" -> Casein.Previews.extract_title_from_url(url)
           _ -> nil
         end
     end

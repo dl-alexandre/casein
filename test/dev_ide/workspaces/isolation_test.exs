@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.IsolationTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.IsolationTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces.{Isolation, IsolationProbe.LocalAdapter}
+  alias Casein.Workspaces.{Isolation, IsolationProbe.LocalAdapter}
 
   setup do
     root = Path.join(System.tmp_dir!(), "iso-#{System.unique_integer([:positive])}")

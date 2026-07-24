@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.WorkspaceAccessCacheTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.WorkspaceAccessCacheTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.WorkspaceAccessCache, as: Cache
+  alias Casein.Terminals.WorkspaceAccessCache, as: Cache
 
   @table :dev_ide_workspace_access_cache
   @ttl_ms 60_000

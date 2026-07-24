@@ -1,4 +1,4 @@
-defmodule DevIDE.PreviewControl.Registry do
+defmodule Casein.PreviewControl.Registry do
   @moduledoc false
 
   defdelegate start_link(opts \\ []), to: PreviewCtl.Registry

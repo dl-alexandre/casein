@@ -90,7 +90,7 @@ defmodule McpCtl.Tool do
     |> maybe_put_public_metadata(tool)
   end
 
-  @doc "Derive standard MCP safety hints from DevIDE's richer tool metadata."
+  @doc "Derive standard MCP safety hints from Casein's richer tool metadata."
   @spec annotations(t()) :: map()
   def annotations(tool) do
     metadata = Map.get(tool, :metadata, %{})

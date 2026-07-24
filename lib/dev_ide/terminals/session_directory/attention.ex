@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.SessionDirectory.Attention do
+defmodule Casein.Terminals.SessionDirectory.Attention do
   @moduledoc """
   Provider-neutral attention classification for session picker rows.
 
   The classifier consumes the semantic metadata already attached by
-  `DevIDE.Terminals.SessionDirectory`: reported agent state and the stable,
+  `Casein.Terminals.SessionDirectory`: reported agent state and the stable,
   quantized quiet flag. It deliberately does not infer an agent provider or
   inspect host processes. tmux remains the session transport, not agent identity.
 
@@ -11,7 +11,7 @@ defmodule DevIDE.Terminals.SessionDirectory.Attention do
   name ordering before grouping into `:needs_you`, `:working`, and `:recent`.
   """
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.Session.Info, as: SessionInfo
 
   @type section :: :needs_you | :working | :recent
 

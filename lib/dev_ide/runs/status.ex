@@ -1,4 +1,4 @@
-defmodule DevIDE.Runs.Status do
+defmodule Casein.Runs.Status do
   @moduledoc """
   Centralized run-status semantics across run lifecycle and audit events.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Runs.Status do
   "expired", and "abandoned" have a single source of truth.
   """
 
-  alias DevIDE.Policy
+  alias Casein.Policy
 
   @terminal ~w(succeeded failed timed_out denied approval_denied expired abandoned)
   @failed ~w(failed timed_out denied approval_denied expired abandoned)
@@ -59,7 +59,7 @@ defmodule DevIDE.Runs.Status do
     * the current policy context allows the command
 
   The caller must supply the run summary and a function that returns a
-  `%DevIDE.Policy.Decision{}` for the command.
+  `%Casein.Policy.Decision{}` for the command.
   """
   @spec retryable?(map(), (String.t() -> Policy.Decision.t())) :: boolean()
   def retryable?(%{command_id: command_id, status: status}, decision_fun)
@@ -76,7 +76,7 @@ defmodule DevIDE.Runs.Status do
 
   Returns `nil` when the run is not in a failed state.
   """
-  @spec failure_reason(map(), [DevIDE.Audit.Event.t()]) :: String.t() | nil
+  @spec failure_reason(map(), [Casein.Audit.Event.t()]) :: String.t() | nil
   def failure_reason(%{status: status} = summary, timeline) do
     cond do
       blocked?(status) ->

@@ -1,23 +1,23 @@
-defmodule DevIDE.Signals do
+defmodule Casein.Signals do
   @moduledoc """
-  CloudEvents envelopes for DevIDE domain events, built on `jido_signal`.
+  CloudEvents envelopes for Casein domain events, built on `jido_signal`.
 
-  `DevIDE.Signals.Context` propagates correlation/causation ids and
-  `DevIDE.Audit` stamps them into event metadata; this module converts an
+  `Casein.Signals.Context` propagates correlation/causation ids and
+  `Casein.Audit` stamps them into event metadata; this module converts an
   audit event into its CloudEvents form.
 
-  Phase 3: `DevIDE.SignalBus` runs under `DevIDE.Supervision.PlatformServices`,
-  `DevIDE.Signals.Publish` publishes envelopes from `DevIDE.Audit`'s broadcast
-  path, and `DevIDE.Signals.AlertsRouter` routes alert-worthy signals to
-  `DevIDE.Push.Dispatcher`.
+  Phase 3: `Casein.SignalBus` runs under `Casein.Supervision.PlatformServices`,
+  `Casein.Signals.Publish` publishes envelopes from `Casein.Audit`'s broadcast
+  path, and `Casein.Signals.AlertsRouter` routes alert-worthy signals to
+  `Casein.Push.Dispatcher`.
   """
 
-  alias DevIDE.Agents.AgentEvent
-  alias DevIDE.Audit.Event
+  alias Casein.Agents.AgentEvent
+  alias Casein.Audit.Event
   alias Jido.Signal
   alias Jido.Signal.Trace
 
-  alias DevIDE.Signals.Context
+  alias Casein.Signals.Context
 
   @type_prefix "devide.audit."
   @domain_prefix "devide."

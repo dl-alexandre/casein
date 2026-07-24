@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents do
   # Workspace lifecycle and policy handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates every "workspace:*" event here.
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.{Audit, Policy, Workspaces}
-  alias DevIDE.Policy.Decision
-  alias DevIdeWeb.WorkspaceLive.Show
+  alias Casein.{Audit, Policy, Workspaces}
+  alias Casein.Policy.Decision
+  alias CaseinWeb.WorkspaceLive.Show
 
   @agent_write_unlock_min_minutes 5
   @agent_write_unlock_max_minutes 240

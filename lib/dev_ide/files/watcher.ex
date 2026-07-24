@@ -1,4 +1,4 @@
-defmodule DevIDE.Files.Watcher do
+defmodule Casein.Files.Watcher do
   @moduledoc """
   Per-workspace filesystem watcher that debounces native change events and
   broadcasts a single refresh signal over PubSub.
@@ -8,7 +8,7 @@ defmodule DevIDE.Files.Watcher do
   native `file_system` backend (scoped to the workspace root); the last
   watcher leaving stops the process after a short linger so quick tab reopen
   reuses the same inotify setup. Events under paths ignored by
-  `DevIDE.Files.PathSafety` are dropped before broadcast.
+  `Casein.Files.PathSafety` are dropped before broadcast.
 
   Native scope subtracts ignored top-level directories (`.git`, `_build`,
   `deps`, `node_modules`, …) from the recursive watch set and pairs that with
@@ -30,11 +30,11 @@ defmodule DevIDE.Files.Watcher do
   use GenServer
   require Logger
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
-  @registry DevIDE.Files.Watcher.Registry
-  @supervisor DevIDE.Files.Watcher.Supervisor
-  @pubsub DevIDE.PubSub
+  @registry Casein.Files.Watcher.Registry
+  @supervisor Casein.Files.Watcher.Supervisor
+  @pubsub Casein.PubSub
   @topic_prefix "files:watch:"
   @default_debounce_ms 400
   @default_linger_ms 30_000

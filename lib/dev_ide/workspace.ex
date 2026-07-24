@@ -1,8 +1,8 @@
-defmodule DevIDE.Workspace do
+defmodule Casein.Workspace do
   @moduledoc """
   Public workspace value. Source-agnostic.
 
-  Every `DevIDE.WorkspaceSource` returns this struct. Source-specific extras
+  Every `Casein.WorkspaceSource` returns this struct. Source-specific extras
   (HTTP payloads, ports, slots, domain bases) live under `:metadata` so the
   rest of the system never sees source-shape leakage.
   """

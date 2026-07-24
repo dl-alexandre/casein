@@ -1,7 +1,7 @@
-defmodule DevIDE.Elixir do
+defmodule Casein.Elixir do
   @moduledoc "Public facade for lightweight Elixir/Phoenix navigation helpers."
 
-  alias DevIDE.Elixir.{Symbols, Project, Tooling}
+  alias Casein.Elixir.{Symbols, Project, Tooling}
 
   defdelegate symbols(content, path), to: Symbols, as: :extract
 

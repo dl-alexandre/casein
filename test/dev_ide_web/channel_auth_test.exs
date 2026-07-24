@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.ChannelAuthTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.ChannelAuthTest do
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.ChannelAuth
+  alias CaseinWeb.ChannelAuth
 
   @user_id "dev"
   @workspace_id "ws-1"
@@ -24,7 +24,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
 
   test "mobile pairing token verification rejects wrong signing salt payload" do
     bad_token =
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, "user socket", %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, "user socket", %{
         kind: :mobile_pairing,
         id: @user_id,
         workspace_id: @workspace_id
@@ -35,7 +35,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
 
   test "mobile pairing token verification rejects malformed claims" do
     bad_token =
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, "mobile pairing", %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, "mobile pairing", %{
         kind: :mobile_pairing,
         id: @user_id
       })
@@ -67,7 +67,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
 
   test "terminal capability verification rejects wrong signing salt payload" do
     bad_token =
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, "terminal-workspace", %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, "terminal-workspace", %{
         kind: :terminal_workspace,
         user_id: @user_id,
         workspace_id: @workspace_id
@@ -78,7 +78,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
 
   test "terminal capability verification rejects wrong claim kind" do
     bad_token =
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, "terminal workspace", %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, "terminal workspace", %{
         kind: :other,
         user_id: @user_id,
         workspace_id: @workspace_id
@@ -90,7 +90,7 @@ defmodule DevIdeWeb.ChannelAuthTest do
 
   test "terminal capability verification rejects malformed claims" do
     bad_token =
-      Phoenix.Token.sign(DevIdeWeb.Endpoint, "terminal workspace", %{
+      Phoenix.Token.sign(CaseinWeb.Endpoint, "terminal workspace", %{
         kind: :terminal_workspace,
         user_id: @user_id
       })

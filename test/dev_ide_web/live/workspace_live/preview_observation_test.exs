@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
+  use CaseinWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Audit
+  alias Casein.Integrations.Manager.Client
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     unique = System.unique_integer([:positive])
@@ -31,7 +31,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+    Req.Test.stub(Casein.Integrations.Manager.Client, fn
       %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
@@ -73,15 +73,15 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
   end
 
   defp broadcast(workspace_id, message) do
-    Phoenix.PubSub.broadcast(DevIDE.PubSub, "preview:" <> workspace_id, message)
+    Phoenix.PubSub.broadcast(Casein.PubSub, "preview:" <> workspace_id, message)
   end
 
-  # Preview lifecycle rides the generic DevIDE.Panes.Events channel since the
+  # Preview lifecycle rides the generic Casein.Panes.Events channel since the
   # preview runtime cutover; observations stay on the legacy "preview:" topic.
   defp broadcast_pane_event(workspace_id, reason, pane_id, payload) do
     Phoenix.PubSub.broadcast(
-      DevIDE.PubSub,
-      DevIDE.Panes.Events.topic(workspace_id),
+      Casein.PubSub,
+      Casein.Panes.Events.topic(workspace_id),
       {:pane_event,
        %{
          reason: reason,

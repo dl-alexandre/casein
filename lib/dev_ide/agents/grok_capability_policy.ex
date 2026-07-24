@@ -1,16 +1,16 @@
-defmodule DevIDE.Agents.GrokCapabilityPolicy do
+defmodule Casein.Agents.GrokCapabilityPolicy do
   @moduledoc """
-  Computes the exact DevIDE MCP grant for a managed Grok leader.
+  Computes the exact Casein MCP grant for a managed Grok leader.
 
   A token's issued tool map is a ceiling. Every request intersects that ceiling
   with the workspace's current mode, DB-isolation state, and time-boxed agent
   write unlock, so revoking an unlock takes effect without waiting for expiry.
   """
 
-  alias DevIDE.Agents.{ArtifactTools, PreviewTools, TerminalTools}
-  alias DevIDE.Policy
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Workspaces
+  alias Casein.Agents.{ArtifactTools, PreviewTools, TerminalTools}
+  alias Casein.Policy
+  alias Casein.Policy.Decision
+  alias Casein.Workspaces
   alias McpCtl.Tool
 
   @policy_version 1
@@ -62,7 +62,7 @@ defmodule DevIDE.Agents.GrokCapabilityPolicy do
 
   def effective_tools(_claims), do: {:error, :invalid_capability_claims}
 
-  @doc "Every direct DevIDE MCP tool must carry explicit mutation metadata."
+  @doc "Every direct Casein MCP tool must carry explicit mutation metadata."
   @spec classified?() :: boolean()
   def classified? do
     definitions()
@@ -74,7 +74,7 @@ defmodule DevIDE.Agents.GrokCapabilityPolicy do
     end)
   end
 
-  @doc "Validate a DevIDE tmux session name against a workspace id/name."
+  @doc "Validate a Casein tmux session name against a workspace id/name."
   @spec valid_tmux_session?(String.t(), String.t()) :: boolean()
   def valid_tmux_session?(workspace_id, session)
       when is_binary(workspace_id) and is_binary(session) and session != "" do
@@ -86,7 +86,7 @@ defmodule DevIDE.Agents.GrokCapabilityPolicy do
 
     workspace_keys
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
-    |> Enum.map(&DevIDE.Terminals.tmux_workspace_session_prefix/1)
+    |> Enum.map(&Casein.Terminals.tmux_workspace_session_prefix/1)
     |> Enum.uniq()
     |> Enum.any?(&String.starts_with?(session, &1))
   end

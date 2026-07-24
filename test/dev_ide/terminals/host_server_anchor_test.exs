@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.HostServerAnchorTest do
+defmodule Casein.Terminals.HostServerAnchorTest do
   # async: false — toggles :dev_ide app env (tmux_host_anchor / tmux_server_label).
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.HostServerAnchor
+  alias Casein.Terminals.HostServerAnchor
 
   describe "stable_dir/2" do
     test "returns the first candidate directory that exists" do

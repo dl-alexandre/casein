@@ -408,7 +408,7 @@ defmodule Scripts.AgentWorktreeTest do
 
     git!(["init", "--initial-branch=master", repo])
     git!(["-C", repo, "config", "user.email", "devide@example.invalid"])
-    git!(["-C", repo, "config", "user.name", "DevIDE Test"])
+    git!(["-C", repo, "config", "user.name", "Casein Test"])
     File.write!(Path.join(repo, "README.md"), "test\n")
     git!(["-C", repo, "add", "README.md"])
     git!(["-C", repo, "commit", "-m", "init"])

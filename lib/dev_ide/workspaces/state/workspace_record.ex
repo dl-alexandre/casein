@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.State.WorkspaceRecord do
+defmodule Casein.Workspaces.State.WorkspaceRecord do
   @moduledoc """
   Domain struct for a persisted workspace cache entry.
 

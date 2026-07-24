@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalTools.OpenFileInPane do
+defmodule Casein.Agents.TerminalTools.OpenFileInPane do
   @moduledoc "file_open_in_pane."
 
   use Jido.Action,
     name: "file_open_in_pane",
     description:
-      "Open a workspace file in a DevIDE file pane (or a preview pane for browser-viewable " <>
+      "Open a workspace file in a Casein file pane (or a preview pane for browser-viewable " <>
         "types: html/svg/pdf/images). Pass a workspace-relative `path`; optional `session` " <>
         "targets a tmux session and optional `line` reveals a 1-based line after open. " <>
         "Reuses the window's existing file pane when one is already open. Paths are " <>
@@ -20,12 +20,12 @@ defmodule DevIDE.Agents.TerminalTools.OpenFileInPane do
       line: [type: :integer]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -37,7 +37,7 @@ defmodule DevIDE.Agents.TerminalTools.OpenFileInPane do
         ["workspace_id", "path"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("file_open_in_pane")
 
   @impl Jido.Action

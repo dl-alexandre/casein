@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.DeviceLinkController do
+defmodule CaseinWeb.API.DeviceLinkController do
   @moduledoc """
   Exchanges a short-lived pairing token for a persistent device credential.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.DeviceLinks
-  alias DevIdeWeb.ChannelAuth
+  alias Casein.DeviceLinks
+  alias CaseinWeb.ChannelAuth
 
   def exchange(conn, params) do
     token = params["token"] || params["pairing_token"]
@@ -105,7 +105,7 @@ defmodule DevIdeWeb.API.DeviceLinkController do
   defp origin_payload(base) do
     %{
       id: "dev_ide",
-      name: "DevIDE",
+      name: "Casein",
       base_url: base,
       socket_url: base <> "/socket/websocket",
       token_exchange_url: base <> "/api/device-links/exchange",

@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.LocalAdapterTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Agents.LocalAdapter
+defmodule Casein.Agents.LocalAdapterTest do
+  use Casein.TestCase, async: true
+  alias Casein.Agents.LocalAdapter
 
   setup do
     root = Path.join(System.tmp_dir!(), "agents-#{System.unique_integer([:positive])}")
@@ -44,7 +44,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert "terminal_list_sessions" in terminal_mcp.details.tools
     assert "terminal_capture" in terminal_mcp.details.tools
 
-    # The DevIDE-hosted MCP capabilities are always detected; everything else
+    # The Casein-hosted MCP capabilities are always detected; everything else
     # is filesystem/manager driven and missing on a bare workspace.
     assert caps
            |> Enum.reject(&(&1.kind in [:artifact_mcp, :preview_mcp, :terminal_mcp]))

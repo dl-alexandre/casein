@@ -1,10 +1,10 @@
-defmodule DevIDE.AgentPrompt do
+defmodule Casein.AgentPrompt do
   @moduledoc """
   Utilities for staging agent prompts without turning a large prompt into one
   opaque paste payload.
 
   Some agent TUIs collapse large multiline injections into paste-summary chips.
-  DevIDE keeps the terminal transport separate from this module: callers can use
+  Casein keeps the terminal transport separate from this module: callers can use
   the returned chunks with whatever pane-safe send path they own.
   """
 

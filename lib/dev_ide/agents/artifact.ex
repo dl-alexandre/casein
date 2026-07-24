@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.Artifact do
+defmodule Casein.Agents.Artifact do
   @moduledoc "A read-only file pointer surfaced by Agents detection (e.g. transcripts)."
 
   @type t :: %__MODULE__{

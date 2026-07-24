@@ -1,7 +1,7 @@
-defmodule DevIDE.Setup.LanRuntimeTest do
+defmodule Casein.Setup.LanRuntimeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Setup.LanRuntime
+  alias Casein.Setup.LanRuntime
 
   test "prepare_units keeps backend and edge service paths separate" do
     config =

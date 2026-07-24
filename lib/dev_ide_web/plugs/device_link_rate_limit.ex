@@ -1,19 +1,19 @@
-defmodule DevIdeWeb.Plugs.DeviceLinkRateLimit do
+defmodule CaseinWeb.Plugs.DeviceLinkRateLimit do
   @moduledoc """
   Per-client-IP rate limiting for unauthenticated device-link endpoints.
 
   Device-link exchange cannot use the MCP limiter's bearer-token key because
   the pairing credential is supplied in the request body. This plug reuses the
-  shared `DevIDE.RateLimit` service with an IP-scoped bucket per action.
+  shared `Casein.RateLimit` service with an IP-scoped bucket per action.
 
-  Expects `DevIdeWeb.Plugs.TrustedProxyRemoteIp` earlier in the pipeline so
+  Expects `CaseinWeb.Plugs.TrustedProxyRemoteIp` earlier in the pipeline so
   `conn.remote_ip` is the real client behind a loopback reverse proxy (not a
   shared `127.0.0.1` bucket for every peer).
   """
 
   import Plug.Conn
 
-  alias DevIDE.RateLimit
+  alias Casein.RateLimit
 
   @default_scale_ms 60_000
   @default_limit 30

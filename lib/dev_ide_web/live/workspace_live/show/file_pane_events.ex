@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEvents do
   # File-pane overlay handle_event/handle_info clauses, delegated from
-  # DevIdeWeb.WorkspaceLive.Show (mirrors how FileEvents/PreviewPaneEvents are
+  # CaseinWeb.WorkspaceLive.Show (mirrors how FileEvents/PreviewPaneEvents are
   # delegated). Owns:
   #
   #   * the generic "pane:input" event for feature panes — authorized via
-  #     DevIDE.Panes.get_by_pane/1 + workspace-alias match, then dispatched by
+  #     Casein.Panes.get_by_pane/1 + workspace-alias match, then dispatched by
   #     pane type: :file inputs go through Pane.impl(:file).handle_input/2
   #     (`save` additionally gated by Policy.can_edit_file?, mirroring
   #     FileEvents "file:save"), :preview inputs are handled by
@@ -15,10 +15,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
   #   * "terminal:open_file_link" — click (or Cmd/Ctrl+Click; Shift flips the
   #     surface) on a scanner-detected path in terminal output (delegated
   #     through TerminalEvents). Re-validates the path via
-  #     DevIDE.FilePanes.LinkResolver (never trusts the client),
+  #     Casein.FilePanes.LinkResolver (never trusts the client),
   #     anchors on the emitting pane, and opens the file at :line in a file
   #     pane; unresolvable links fall back to the files tab;
-  #   * {:pane_event, evt} PubSub (DevIDE.Panes.Events) — maintains the
+  #   * {:pane_event, evt} PubSub (Casein.Panes.Events) — maintains the
   #     :feature_panes assign and pushes "file-pane:loaded" (broadcast-with-id,
   #     filtered client-side by pane id like ghostty:render) when a file pane's
   #     active tab changes/loads. The :heartbeat reason refreshes state without
@@ -27,20 +27,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
 
   import Phoenix.Component
   import Phoenix.LiveView
-  import DevIdeWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.Context
 
-  alias DevIDE.FilePanes
-  alias DevIDE.FilePanes.LinkResolver
-  alias DevIDE.Files.BrowserViewable
-  alias DevIDE.Panes
-  alias DevIDE.Panes.Pane
-  alias DevIDE.Policy
-  alias DevIDE.Previews
-  alias DevIDE.Workspaces
-  alias DevIdeWeb.WorkspaceLive.Show.FileEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.FilePanes
+  alias Casein.FilePanes.LinkResolver
+  alias Casein.Files.BrowserViewable
+  alias Casein.Panes
+  alias Casein.Panes.Pane
+  alias Casein.Policy
+  alias Casein.Previews
+  alias Casein.Workspaces
+  alias CaseinWeb.WorkspaceLive.Show.FileEvents
+  alias CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   # --- handle_event -------------------------------------------------------------
 
@@ -244,7 +244,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FilePaneEvents do
         target_ref: input["path"]
       })
 
-    if DevIDE.Policy.Decision.allow?(decision) do
+    if Casein.Policy.Decision.allow?(decision) do
       case Pane.impl(:file).handle_input(pane_id, input) do
         :ok ->
           {:reply, %{ok: true}, socket}

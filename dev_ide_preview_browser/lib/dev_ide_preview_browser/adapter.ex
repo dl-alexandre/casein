@@ -1,15 +1,15 @@
-defmodule DevIDEPreviewBrowser.Adapter do
+defmodule CaseinPreviewBrowser.Adapter do
   @moduledoc """
   Adapter-shaped boundary for host preview orchestration.
 
   This module intentionally does not declare `@behaviour PreviewCtl.Adapter`:
   `dev_ide_preview_browser` is a standalone sibling library and must not depend
-  back on the host DevIDE application. It implements the same callback-shaped
+  back on the host Casein application. It implements the same callback-shaped
   functions so the host can wire it into `PreviewCtl` later without exposing
   browser backend details.
   """
 
-  alias DevIDEPreviewBrowser.{Browser, Screenshot}
+  alias CaseinPreviewBrowser.{Browser, Screenshot}
 
   @runtime_opt_keys [:backend, :event_owner, :executable, :args, :request_timeout]
   @browser_opt_keys [
@@ -30,15 +30,15 @@ defmodule DevIDEPreviewBrowser.Adapter do
   @doc "Start a preview-browser session and open one browser instance."
   @spec start_session(map()) :: {:ok, state()} | {:error, term()}
   def start_session(%{current_url: url} = session) when is_binary(url) and url != "" do
-    with {:ok, runtime} <- DevIDEPreviewBrowser.start_link(runtime_opts(session)),
-         {:ok, browser} <- DevIDEPreviewBrowser.open_browser(runtime, browser_opts(session)) do
+    with {:ok, runtime} <- CaseinPreviewBrowser.start_link(runtime_opts(session)),
+         {:ok, browser} <- CaseinPreviewBrowser.open_browser(runtime, browser_opts(session)) do
       state = %{
         session: runtime,
         browser: browser,
         current_url: url
       }
 
-      case DevIDEPreviewBrowser.observe(browser) do
+      case CaseinPreviewBrowser.observe(browser) do
         {:ok, observation} -> {:ok, put_observation(state, observation, url)}
         {:error, _reason} -> {:ok, state}
       end
@@ -50,7 +50,7 @@ defmodule DevIDEPreviewBrowser.Adapter do
   @doc "Navigate the browser to a caller-approved URL."
   @spec navigate(state(), String.t()) :: {:ok, state(), map()} | {:error, term()}
   def navigate(%{browser: %Browser{} = browser} = state, url) when is_binary(url) do
-    with {:ok, observation} <- DevIDEPreviewBrowser.navigate(browser, url) do
+    with {:ok, observation} <- CaseinPreviewBrowser.navigate(browser, url) do
       {:ok, put_observation(state, observation, url), observation}
     end
   end
@@ -72,12 +72,12 @@ defmodule DevIDEPreviewBrowser.Adapter do
 
   @doc "Return the latest browser observation."
   @spec observe(state()) :: {:ok, map()} | {:error, term()}
-  def observe(%{browser: %Browser{} = browser}), do: DevIDEPreviewBrowser.observe(browser)
+  def observe(%{browser: %Browser{} = browser}), do: CaseinPreviewBrowser.observe(browser)
 
   @doc "Live observation currently maps to the same backend observation call."
   @spec observe_live(state()) :: {:ok, state(), map()} | {:error, term()}
   def observe_live(%{browser: %Browser{} = browser} = state) do
-    with {:ok, observation} <- DevIDEPreviewBrowser.observe(browser) do
+    with {:ok, observation} <- CaseinPreviewBrowser.observe(browser) do
       {:ok, put_observation(state, observation), observation}
     end
   end
@@ -97,7 +97,7 @@ defmodule DevIDEPreviewBrowser.Adapter do
   @doc "Capture a screenshot and return a PreviewCtl-compatible artifact value."
   @spec screenshot(state()) :: {:ok, state(), map(), String.t() | nil} | {:error, term()}
   def screenshot(%{browser: %Browser{} = browser} = state) do
-    with {:ok, %Screenshot{} = screenshot} <- DevIDEPreviewBrowser.screenshot(browser),
+    with {:ok, %Screenshot{} = screenshot} <- CaseinPreviewBrowser.screenshot(browser),
          {:ok, observation} <- observe(state) do
       observation =
         Map.put(observation, :screenshot, %{
@@ -129,7 +129,7 @@ defmodule DevIDEPreviewBrowser.Adapter do
   @doc "Close the browser instance and stop its runtime process."
   @spec close(state()) :: :ok
   def close(%{browser: %Browser{} = browser, session: session}) do
-    _ = DevIDEPreviewBrowser.close(browser)
+    _ = CaseinPreviewBrowser.close(browser)
     stop_session(session)
     :ok
   end

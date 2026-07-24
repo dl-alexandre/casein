@@ -1,4 +1,4 @@
-defmodule DevIDE.Signals.TmuxEventsFlapWatch do
+defmodule Casein.Signals.TmuxEventsFlapWatch do
   @moduledoc """
   DegradationWatch-family consumer for the host-tmux control listener.
 
@@ -74,9 +74,9 @@ defmodule DevIDE.Signals.TmuxEventsFlapWatch do
   use GenServer
   require Logger
 
-  alias DevIDE.Audit
+  alias Casein.Audit
 
-  @pubsub DevIDE.PubSub
+  @pubsub Casein.PubSub
   @ops_topic "ops:health"
   @workspace_id "_ops"
   @telemetry_event [:tmux_ctl, :events, :listener]

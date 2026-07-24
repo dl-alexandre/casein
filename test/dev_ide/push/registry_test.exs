@@ -1,14 +1,14 @@
-defmodule DevIDE.Push.RegistryTest do
+defmodule Casein.Push.RegistryTest do
   @moduledoc """
   Direct unit tests for the in-memory token store. The fan-out behaviour (what
-  gets pushed where) lives in `DevIDE.PushTest`; this covers the store's own
+  gets pushed where) lives in `Casein.PushTest`; this covers the store's own
   semantics: per-workspace vs per-user registration, token refresh, unregister
   across both maps, and the lazy dispatcher subscription a workspace token
   triggers.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Push.Registry
+  alias Casein.Push.Registry
 
   setup do
     Registry.clear()
@@ -102,6 +102,6 @@ defmodule DevIDE.Push.RegistryTest do
     # watch/1 is synchronous and idempotent; a second registration must not error
     # or block, proving the dispatcher already holds the subscription.
     assert :ok = Registry.register(%{workspace_id: workspace_id, token: "tok-2", platform: "ios"})
-    assert :ok = DevIDE.Signals.AlertsRouter.watch(workspace_id)
+    assert :ok = Casein.Signals.AlertsRouter.watch(workspace_id)
   end
 end

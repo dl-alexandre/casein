@@ -1,37 +1,37 @@
-defmodule DevIDE.Workspaces.State.MemoryAdapter do
-  @moduledoc "In-memory adapter for `DevIDE.Workspaces.State`. Used by tests and dev fallback."
+defmodule Casein.Workspaces.State.MemoryAdapter do
+  @moduledoc "In-memory adapter for `Casein.Workspaces.State`. Used by tests and dev fallback."
   use GenServer
-  @behaviour DevIDE.Workspaces.State.Adapter
+  @behaviour Casein.Workspaces.State.Adapter
 
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   ## API
 
   def start_link(_opts \\ []),
     do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def upsert(%WorkspaceRecord{} = r), do: GenServer.call(__MODULE__, {:upsert, r})
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def upsert_all(records) when is_list(records),
     do: GenServer.call(__MODULE__, {:upsert_all, records})
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def get(external_id), do: GenServer.call(__MODULE__, {:get, external_id})
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def get_many(external_ids) when is_list(external_ids),
     do: GenServer.call(__MODULE__, {:get_many, external_ids})
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def records_for_host_paths(host_paths) when is_list(host_paths),
     do: GenServer.call(__MODULE__, {:records_for_host_paths, host_paths})
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def list, do: GenServer.call(__MODULE__, :list)
 
-  @impl DevIDE.Workspaces.State.Adapter
+  @impl Casein.Workspaces.State.Adapter
   def delete(external_id), do: GenServer.call(__MODULE__, {:delete, external_id})
 
   def clear, do: GenServer.call(__MODULE__, :clear)

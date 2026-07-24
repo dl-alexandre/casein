@@ -1,7 +1,7 @@
-defmodule DevIDE.ScopeTest do
+defmodule Casein.ScopeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Scope
+  alias Casein.Scope
 
   test "from_conn builds a web scope from connection assigns" do
     identity = %{id: "web-user"}

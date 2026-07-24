@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.PreviewProxyControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.PreviewProxyControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
-    DevIDE.PreviewPanes.clear()
+    Casein.PreviewPanes.clear()
 
     on_exit(fn ->
-      DevIDE.PreviewPanes.clear()
+      Casein.PreviewPanes.clear()
       restore(:workspaces_root, prev_root)
       restore(:workspace_source, prev_source)
       restore(:forward_auth, prev_forward_auth)
@@ -33,7 +33,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
       with true <- port_bindable?(port),
            {:ok, pid} <-
              Bandit.start_link(
-               plug: {DevIdeWeb.PreviewProxyControllerTest.EchoPlug, []},
+               plug: {CaseinWeb.PreviewProxyControllerTest.EchoPlug, []},
                scheme: :http,
                ip: {127, 0, 0, 1},
                port: port
@@ -89,7 +89,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
     Application.put_env(:dev_ide, :forward_auth, true)
 
     {root, "folder:" <> Base.url_encode64(path, padding: false)}
@@ -119,7 +119,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     url = "http://127.0.0.1:#{port}/"
 
     assert {:ok, _registration} =
-             DevIDE.PreviewPanes.register(%{
+             Casein.PreviewPanes.register(%{
                "pane_id" => pane_id,
                "url" => url,
                "workspace_id" => workspace_id
@@ -503,7 +503,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
 
     {:ok, holder} =
       Task.start(fn ->
-        Registry.register(DevIdeWeb.PreviewProxy.WebSocketRegistry, workspace_id, 5173)
+        Registry.register(CaseinWeb.PreviewProxy.WebSocketRegistry, workspace_id, 5173)
         send(parent, :registered)
         Process.sleep(:infinity)
       end)
@@ -607,7 +607,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
   end
 end
 
-defmodule DevIdeWeb.PreviewProxyControllerTest.EchoWS do
+defmodule CaseinWeb.PreviewProxyControllerTest.EchoWS do
   @moduledoc false
   @behaviour WebSock
 
@@ -624,7 +624,7 @@ defmodule DevIdeWeb.PreviewProxyControllerTest.EchoWS do
   def terminate(_reason, _state), do: :ok
 end
 
-defmodule DevIdeWeb.PreviewProxyControllerTest.EchoPlug do
+defmodule CaseinWeb.PreviewProxyControllerTest.EchoPlug do
   @moduledoc false
   import Plug.Conn
 
@@ -633,6 +633,6 @@ defmodule DevIdeWeb.PreviewProxyControllerTest.EchoPlug do
   def call(conn, _opts),
     do:
       conn
-      |> WebSockAdapter.upgrade(DevIdeWeb.PreviewProxyControllerTest.EchoWS, [], [])
+      |> WebSockAdapter.upgrade(CaseinWeb.PreviewProxyControllerTest.EchoWS, [], [])
       |> halt()
 end

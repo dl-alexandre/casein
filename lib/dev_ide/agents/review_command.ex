@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ReviewCommand do
+defmodule Casein.Agents.ReviewCommand do
   @moduledoc """
   Allowlisted review-mode agent command.
 
@@ -12,7 +12,7 @@ defmodule DevIDE.Agents.ReviewCommand do
   here when one does; do not invent argv inline elsewhere.
   """
 
-  alias DevIDE.Agents.Capability
+  alias Casein.Agents.Capability
 
   @type id :: String.t()
   @type output_kind :: :diagnostic | :transcript | :proposal

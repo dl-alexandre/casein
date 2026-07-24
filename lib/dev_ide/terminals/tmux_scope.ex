@@ -1,15 +1,15 @@
-defmodule DevIDE.Terminals.TmuxScope do
+defmodule Casein.Terminals.TmuxScope do
   @moduledoc """
   Workspace boundary checks for tmux session names.
 
-  DevIDE tmux sessions are named from either the workspace manager id or the
+  Casein tmux sessions are named from either the workspace manager id or the
   human-facing workspace name. Any user-supplied tmux target must match one of
   those prefixes before the web/API layer captures or mutates it.
   """
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.State
+  alias Casein.Terminals.Tmux
+  alias Casein.Workspaces
+  alias Casein.Workspaces.State
 
   @doc "Returns the tmux session prefixes allowed for a workspace struct/id."
   def workspace_session_prefixes(%{id: id, name: name}) do

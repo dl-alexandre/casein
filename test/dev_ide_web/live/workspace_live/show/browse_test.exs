@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.BrowseTest do
+defmodule CaseinWeb.WorkspaceLive.Show.BrowseTest do
   use ExUnit.Case, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.Browse
+  alias CaseinWeb.WorkspaceLive.Show.Browse
 
   setup do
     root = Path.join(System.tmp_dir!(), "devide-browse-#{System.unique_integer([:positive])}")

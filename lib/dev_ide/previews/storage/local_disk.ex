@@ -1,16 +1,16 @@
-defmodule DevIDE.Previews.Storage.LocalDisk do
+defmodule Casein.Previews.Storage.LocalDisk do
   @moduledoc """
-  Disk-backed `DevIDE.Previews.Storage`.
+  Disk-backed `Casein.Previews.Storage`.
 
   Writes one servable file per artifact at `{root}/{workspace_id}/{id}.{ext}` and
   prunes each workspace directory with separate budgets for screenshot captures
   and visual-diff overlays (`*-diff.png`). Filenames registered with
-  `DevIDE.Previews.ArtifactProtection` are never pruned while displayed.
+  `Casein.Previews.ArtifactProtection` are never pruned while displayed.
   """
 
-  @behaviour DevIDE.Previews.Storage
+  @behaviour Casein.Previews.Storage
 
-  alias DevIDE.Previews.ArtifactProtection
+  alias Casein.Previews.ArtifactProtection
 
   @default_max_artifacts 50
   @default_max_diff_artifacts 100
@@ -73,7 +73,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
   Resolve an artifact path under the artifacts root, rejecting traversal.
 
   Raises on an invalid filename or a missing file so callers can rescue into a
-  404, matching the previous `DevIDE.Previews.Artifacts.safe_path!/2` contract.
+  404, matching the previous `Casein.Previews.Artifacts.safe_path!/2` contract.
   """
   @spec safe_path!(String.t(), String.t()) :: Path.t()
   def safe_path!(workspace_id, filename) when is_binary(workspace_id) and is_binary(filename) do

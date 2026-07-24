@@ -1,7 +1,7 @@
-defmodule DevIDE.Deployment.CapabilitiesTest do
+defmodule Casein.Deployment.CapabilitiesTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Deployment.Capabilities
+  alias Casein.Deployment.Capabilities
 
   setup do
     previous = Application.get_env(:dev_ide, :deployment_capabilities)

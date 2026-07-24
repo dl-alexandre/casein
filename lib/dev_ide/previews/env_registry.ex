@@ -1,4 +1,4 @@
-defmodule DevIDE.Previews.EnvRegistry do
+defmodule Casein.Previews.EnvRegistry do
   @moduledoc """
   Reads ephemeral preview-environment instances written by `scripts/preview-env.sh`.
 

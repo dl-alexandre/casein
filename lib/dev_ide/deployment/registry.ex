@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.Registry do
+defmodule Casein.Deployment.Registry do
   @moduledoc """
   Tracks this running process instance by writing a JSON heartbeat file into a
   well-known directory (`/run/devide/instances` or `/tmp/devide/instances`).
@@ -101,11 +101,11 @@ defmodule DevIDE.Deployment.Registry do
 
         if socket_path, do: maybe_init_current_symlink(socket_path)
 
-        if DevIDE.Deployment.Capabilities.enabled?(:deploy_drift),
-          do: DevIDE.Deployment.Drift.check_async()
+        if Casein.Deployment.Capabilities.enabled?(:deploy_drift),
+          do: Casein.Deployment.Drift.check_async()
 
-        if DevIDE.Deployment.Capabilities.enabled?(:deploy_status),
-          do: DevIDE.Deployment.LastDeploy.check_async()
+        if Casein.Deployment.Capabilities.enabled?(:deploy_status),
+          do: Casein.Deployment.LastDeploy.check_async()
 
         {:ok, %{id: id, file_path: file_path, data: data}}
     end
@@ -142,7 +142,7 @@ defmodule DevIDE.Deployment.Registry do
   end
 
   # A heartbeat is owned by another process when its recorded pid is a live
-  # *DevIDE* process that isn't us. Liveness and identity come from /proc (the
+  # *Casein* process that isn't us. Liveness and identity come from /proc (the
   # deploy target is Linux); where /proc is unavailable this degrades to today's
   # overwrite behavior rather than blocking the boot.
   #
@@ -151,7 +151,7 @@ defmodule DevIDE.Deployment.Registry do
   # an unrelated process — we would then refuse to write our heartbeat and run
   # invisibly to list_instances/0 (health, drift). Requiring a beam/dev_ide
   # cmdline matches the deploy script's dev_ide_release_pid_alive and confines a
-  # conflict to a genuine sibling DevIDE boot under the shared instance UUID.
+  # conflict to a genuine sibling Casein boot under the shared instance UUID.
   #
   # The pid is digit-validated before any path use.
   # sobelow_skip ["Traversal.FileModule"]
@@ -168,7 +168,7 @@ defmodule DevIDE.Deployment.Registry do
   end
 
   # Seam for tests: /proc-based identity is Linux-only and hard to fabricate
-  # (you can't easily spawn an OS process whose cmdline reads as a DevIDE beam),
+  # (you can't easily spawn an OS process whose cmdline reads as a Casein beam),
   # so the conflict path would otherwise be untestable off the devbox. Defaults
   # to the real check; tests inject a predicate. Mirrors Drain.stop_system/1.
   defp owner_alive?(pid) do
@@ -178,7 +178,7 @@ defmodule DevIDE.Deployment.Registry do
     end
   end
 
-  # True when /proc/<pid>/cmdline belongs to a DevIDE beam. cmdline is
+  # True when /proc/<pid>/cmdline belongs to a Casein beam. cmdline is
   # NUL-separated; match the same markers the deploy script keys on (a release
   # under /opt/devide/release, or a dev_ide_*@host node name).
   # sobelow_skip ["Traversal.FileModule"]
@@ -246,7 +246,7 @@ defmodule DevIDE.Deployment.Registry do
     end) || System.tmp_dir!()
   end
 
-  @doc "Delegates to `DevIDE.Deployment.Version.version/0` (kept for callers)."
+  @doc "Delegates to `Casein.Deployment.Version.version/0` (kept for callers)."
   @spec version() :: String.t()
-  defdelegate version, to: DevIDE.Deployment.Version
+  defdelegate version, to: Casein.Deployment.Version
 end

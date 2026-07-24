@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.PreviewTools.ObservePane do
+defmodule Casein.Agents.PreviewTools.ObservePane do
   @moduledoc "preview_observe_pane."
 
   use Jido.Action,
     name: "preview_observe_pane",
-    description: "Observe an existing DevIDE preview pane by tmux pane id.",
+    description: "Observe an existing Casein preview pane by tmux pane id.",
     category: "preview",
     tags: ["preview"],
     vsn: "1.0.0",
@@ -13,12 +13,12 @@ defmodule DevIDE.Agents.PreviewTools.ObservePane do
       limit: [type: :integer]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -29,7 +29,7 @@ defmodule DevIDE.Agents.PreviewTools.ObservePane do
         [:workspace_id, :pane_id]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_observe_pane")
 
   @impl Jido.Action

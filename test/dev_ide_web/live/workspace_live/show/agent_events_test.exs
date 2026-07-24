@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.AgentEventsTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.Show.AgentEventsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
+  alias CaseinWeb.WorkspaceLive.Show.AgentEvents
 
   setup do
     root = Path.join(System.tmp_dir!(), "agent-events-#{System.unique_integer([:positive])}")
@@ -12,8 +12,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEventsTest do
 
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       private: %{live_temp: %{}},
       assigns:
@@ -110,7 +110,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEventsTest do
     test "returns every allowlisted command with its capability availability", %{root: root} do
       socket = AgentEvents.load_review_commands(socket(%{host_path: {:ok, root}}))
 
-      assert [{%DevIDE.Agents.ReviewCommand{id: "opencode-version"}, available?}] =
+      assert [{%Casein.Agents.ReviewCommand{id: "opencode-version"}, available?}] =
                socket.assigns.review_commands
 
       refute available?

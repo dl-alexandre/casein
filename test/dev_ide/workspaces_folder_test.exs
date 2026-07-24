@@ -1,7 +1,7 @@
-defmodule DevIDE.WorkspacesFolderTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.WorkspacesFolderTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspaces
+  alias Casein.Workspaces
 
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)

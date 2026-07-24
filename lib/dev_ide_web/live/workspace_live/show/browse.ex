@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.Browse do
+defmodule CaseinWeb.WorkspaceLive.Show.Browse do
   @moduledoc false
 
   # Pure directory-browse helpers for the SESSIONS sidebar "Browse" tier.
   # Ported from the retired WorkspaceLive.Dashboard browse/2 so the SESSIONS
   # Browse tier shares PathSafety + forward-auth visibility rules.
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Workspaces.PathResolver
-  alias DevIdeWeb.Plugs.ForwardAuth
+  alias Casein.Files.PathSafety
+  alias Casein.Workspaces.PathResolver
+  alias CaseinWeb.Plugs.ForwardAuth
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   @type entry :: %{name: String.t(), path: String.t(), rel: String.t()}
 

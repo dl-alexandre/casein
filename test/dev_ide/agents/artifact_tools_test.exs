@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.ArtifactToolsTest do
+defmodule Casein.Agents.ArtifactToolsTest do
   @moduledoc """
   Unit tests for the Jido.Action-backed artifact tool surface.
 
@@ -8,12 +8,12 @@ defmodule DevIDE.Agents.ArtifactToolsTest do
   """
   use ExUnit.Case, async: false
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Agents.ArtifactTools
-  alias DevIDE.Runtimes
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.Activity
+  alias Casein.Agents.ArtifactTools
+  alias Casein.Runtimes
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   @workspace_id "ws-artifact-tools-unit"
   @other_workspace_id "ws-artifact-tools-other"
@@ -31,7 +31,7 @@ defmodule DevIDE.Agents.ArtifactToolsTest do
     artifact_root = Path.join(base, "artifacts")
 
     Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
     Application.put_env(:dev_ide, :agent_worktree_roots, [])
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
@@ -75,7 +75,7 @@ defmodule DevIDE.Agents.ArtifactToolsTest do
                    workspace_id: %{
                      type: "string",
                      description:
-                       "DevIDE workspace id. Pre-scoped Artifact MCP endpoints inject this automatically."
+                       "Casein workspace id. Pre-scoped Artifact MCP endpoints inject this automatically."
                    },
                    artifact_id: %{
                      type: "string",
@@ -289,7 +289,7 @@ defmodule DevIDE.Agents.ArtifactToolsTest do
   defp init_repo!(repo) do
     File.mkdir_p!(repo)
     git!(repo, ["init"])
-    git!(repo, ["config", "user.name", "DevIDE Test"])
+    git!(repo, ["config", "user.name", "Casein Test"])
     git!(repo, ["config", "user.email", "devide-test@localhost"])
     File.write!(Path.join(repo, "README.md"), "# Artifact Tools Test\n")
     git!(repo, ["add", "README.md"])

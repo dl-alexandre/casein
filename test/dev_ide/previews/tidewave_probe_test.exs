@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.TidewaveProbeTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Previews.TidewaveProbeTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Previews.TidewaveProbe
+  alias Casein.Previews.TidewaveProbe
 
   test "tidewave_response? accepts 2xx and 3xx status codes" do
     assert TidewaveProbe.tidewave_response?(200)

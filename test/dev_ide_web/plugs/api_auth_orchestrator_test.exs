@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.Plugs.ApiAuthOrchestratorTest do
+defmodule CaseinWeb.Plugs.ApiAuthOrchestratorTest do
   @moduledoc """
   DB-backed orchestrator token resolution in ApiAuth: a self-serve minted token
   resolves to a non-global `{:orchestrator, subject}` scope that traverses
   (leaves `:api_workspace_id` unassigned), and stops working once revoked.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
   import Plug.Test
   import Plug.Conn
 
-  alias DevIDE.Agents.OrchestratorTokens
-  alias DevIdeWeb.Plugs.ApiAuth
+  alias Casein.Agents.OrchestratorTokens
+  alias CaseinWeb.Plugs.ApiAuth
 
   setup do
     prev_api_token = Application.get_env(:dev_ide, :api_token)

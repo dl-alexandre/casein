@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.MCPToolSearchTest do
+defmodule CaseinWeb.API.MCPToolSearchTest do
   use ExUnit.Case, async: false
 
-  alias DevIdeWeb.API.MCPToolSearch
+  alias CaseinWeb.API.MCPToolSearch
 
   @specs [
     %{name: "terminal_context", description: "recommended terminal workflow", inputSchema: %{}},
@@ -81,7 +81,7 @@ defmodule DevIdeWeb.API.MCPToolSearchTest do
   end
 
   describe "cross-server catalog + routing" do
-    test "catalog spans every DevIDE server, each spec tagged with its server" do
+    test "catalog spans every Casein server, each spec tagged with its server" do
       cat = MCPToolSearch.catalog()
       servers = cat |> Enum.map(& &1.server) |> Enum.uniq() |> Enum.sort()
       names = Enum.map(cat, &to_string(&1.name))
@@ -102,9 +102,9 @@ defmodule DevIdeWeb.API.MCPToolSearchTest do
     end
 
     test "owning_module routes a tool name to the server that defines it" do
-      assert MCPToolSearch.owning_module("terminal_capture") == DevIdeWeb.API.TerminalMCP
-      assert MCPToolSearch.owning_module("preview_screenshot") == DevIdeWeb.API.PreviewMCP
-      assert MCPToolSearch.owning_module("artifact_create") == DevIdeWeb.API.ArtifactMCP
+      assert MCPToolSearch.owning_module("terminal_capture") == CaseinWeb.API.TerminalMCP
+      assert MCPToolSearch.owning_module("preview_screenshot") == CaseinWeb.API.PreviewMCP
+      assert MCPToolSearch.owning_module("artifact_create") == CaseinWeb.API.ArtifactMCP
       assert MCPToolSearch.owning_module("no_such_tool") == nil
     end
   end

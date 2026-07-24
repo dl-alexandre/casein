@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.ArtifactMCPController do
+defmodule CaseinWeb.API.ArtifactMCPController do
   @moduledoc """
   HTTP transport for the artifact-project MCP server.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIdeWeb.API.{ArtifactMCP, MCPTransport}
-  alias DevIdeWeb.Plugs.AgentCapabilityAuthz
+  alias CaseinWeb.API.{ArtifactMCP, MCPTransport}
+  alias CaseinWeb.Plugs.AgentCapabilityAuthz
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
@@ -21,7 +21,7 @@ defmodule DevIdeWeb.API.ArtifactMCPController do
         opts =
           [
             default_workspace_id: workspace_id,
-            actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+            actor: CaseinWeb.Plugs.ApiAuth.actor(conn)
           ] ++ AgentCapabilityAuthz.handler_opts(conn)
 
         case ArtifactMCP.handle(conn.body_params, opts) do

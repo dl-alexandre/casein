@@ -1,17 +1,17 @@
-defmodule DevIDE.Terminals.Boundary do
+defmodule Casein.Terminals.Boundary do
   @moduledoc """
   Admission boundary for raw terminal input.
 
-  Raw PTY attachment is gated by `DevIDE.Policy.can_use_raw_terminal?/1` and
-  audited via `DevIDE.Runs.Ledger.raw_session_attached/2`.
+  Raw PTY attachment is gated by `Casein.Policy.can_use_raw_terminal?/1` and
+  audited via `Casein.Runs.Ledger.raw_session_attached/2`.
   """
 
-  alias DevIDE.Commands
-  alias DevIDE.Policy
-  alias DevIDE.Policy.Decision
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Terminals.InspectionCommands
-  alias DevIDE.Workspaces.Scratch
+  alias Casein.Commands
+  alias Casein.Policy
+  alias Casein.Policy.Decision
+  alias Casein.Runs.Ledger
+  alias Casein.Terminals.InspectionCommands
+  alias Casein.Workspaces.Scratch
 
   @interactive_command_ids ~w(agent claude clauded codex grok opencode)
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.PollerTrigger do
+defmodule Casein.Deployment.PollerTrigger do
   @moduledoc """
   Starts the on-box auto-deploy poller (`devide-deploy.service`).
 

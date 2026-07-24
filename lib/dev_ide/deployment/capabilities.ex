@@ -1,4 +1,4 @@
-defmodule DevIDE.Deployment.Capabilities do
+defmodule Casein.Deployment.Capabilities do
   @moduledoc """
   Declares optional operator integrations available in this deployment.
 

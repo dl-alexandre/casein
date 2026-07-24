@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.VisualDiffWiringTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Previews.VisualDiffWiringTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.Control, as: PreviewControl
+  alias Casein.PreviewControl.Registry
+  alias Casein.Previews.Control, as: PreviewControl
 
   @workspace %{
     id: "ws-visual-diff",

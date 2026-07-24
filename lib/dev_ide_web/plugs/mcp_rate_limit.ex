@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Plugs.McpRateLimit do
+defmodule CaseinWeb.Plugs.McpRateLimit do
   @moduledoc """
   Per-token rate limiting for agent MCP endpoints.
 
@@ -8,7 +8,7 @@ defmodule DevIdeWeb.Plugs.McpRateLimit do
 
   import Plug.Conn
 
-  alias DevIDE.RateLimit
+  alias Casein.RateLimit
 
   @default_scale_ms 60_000
   @default_limit 120

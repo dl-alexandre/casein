@@ -1,13 +1,13 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.LogsEventsTest do
+defmodule CaseinWeb.WorkspaceLive.Show.LogsEventsTest do
   # Application env (:logs_adapter) is mutated in set_log_service coverage.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
+  alias CaseinWeb.WorkspaceLive.Show.LogsEvents
   alias Phoenix.LiveView.LiveStream
 
   defmodule FakeLogsAdapter do
     @moduledoc false
-    @behaviour DevIDE.Logs.Adapter
+    @behaviour Casein.Logs.Adapter
 
     @impl true
     def start_stream(workspace_id, service, pid) do
@@ -22,7 +22,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LogsEventsTest do
 
   defmodule FailingLogsAdapter do
     @moduledoc false
-    @behaviour DevIDE.Logs.Adapter
+    @behaviour Casein.Logs.Adapter
 
     @impl true
     def start_stream(_workspace_id, _service, _pid), do: {:error, :backend_down}

@@ -1,4 +1,4 @@
-defmodule DevIDE.UAT.SelfHeal do
+defmodule Casein.UAT.SelfHeal do
   @moduledoc """
   Handles Tier A `:drift` — an action target that no longer resolves. Drift is
   ambiguous: either the UI legitimately changed (re-author the trace) or it's a
@@ -6,13 +6,13 @@ defmodule DevIDE.UAT.SelfHeal do
 
     * `:regression` → returns `{:regression, run}`; the run stays failed/red.
     * `:ui_changed` → re-authors the trace and opens a **proposal PR**
-      (`DevIDE.UAT.Proposal`) — never an in-place mutation. Returns `{:proposed, ref}`.
+      (`Casein.UAT.Proposal`) — never an in-place mutation. Returns `{:proposed, ref}`.
 
   Both the classifier and the re-author step are injected, so the decision logic
   is testable without an LLM or a git remote.
   """
 
-  alias DevIDE.UAT.Proposal
+  alias Casein.UAT.Proposal
 
   @type classification :: :regression | :ui_changed
 
@@ -23,11 +23,11 @@ defmodule DevIDE.UAT.SelfHeal do
 
     * `:classifier` — `(run -> :regression | :ui_changed)` (required in practice)
     * `:reauthor` — `(-> {:ok, %{trace: Trace.t()}} | {:error, term})` producing the
-      re-authored trace (wraps `DevIDE.UAT.Author`)
-    * plus any `DevIDE.UAT.Proposal.propose/4` options (`:git`, `:trace_path`, ...)
+      re-authored trace (wraps `Casein.UAT.Author`)
+    * plus any `Casein.UAT.Proposal.propose/4` options (`:git`, `:trace_path`, ...)
   """
-  @spec handle_drift(String.t(), DevIDE.UAT.Trace.t(), DevIDE.UAT.Run.t(), keyword()) ::
-          {:regression, DevIDE.UAT.Run.t()} | {:proposed, term()} | {:error, term()}
+  @spec handle_drift(String.t(), Casein.UAT.Trace.t(), Casein.UAT.Run.t(), keyword()) ::
+          {:regression, Casein.UAT.Run.t()} | {:proposed, term()} | {:error, term()}
   def handle_drift(scenario_id, old_trace, run, opts \\ []) do
     classifier = Keyword.get(opts, :classifier, &default_classifier/1)
 
@@ -55,10 +55,10 @@ defmodule DevIDE.UAT.SelfHeal do
   defp run_id(_), do: "run"
 
   defp default_classifier(_run) do
-    raise "DevIDE.UAT.SelfHeal needs a :classifier (regression vs ui_changed) — inject one."
+    raise "Casein.UAT.SelfHeal needs a :classifier (regression vs ui_changed) — inject one."
   end
 
   defp default_reauthor do
-    raise "DevIDE.UAT.SelfHeal needs a :reauthor step (wraps Author) — inject one."
+    raise "Casein.UAT.SelfHeal needs a :reauthor step (wraps Author) — inject one."
   end
 end

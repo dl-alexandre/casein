@@ -1,6 +1,6 @@
-defmodule DevIDE.Proposals.UnifiedDiffTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Proposals.UnifiedDiff
+defmodule Casein.Proposals.UnifiedDiffTest do
+  use Casein.TestCase, async: true
+  alias Casein.Proposals.UnifiedDiff
 
   setup do
     root = Path.join(System.tmp_dir!(), "ud-#{System.unique_integer([:positive])}")

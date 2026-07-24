@@ -1,9 +1,9 @@
-defmodule DevIDE.Panes.FilePane do
+defmodule Casein.Panes.FilePane do
   @moduledoc """
-  `DevIDE.Panes.Pane` implementation for file-editor panes.
+  `Casein.Panes.Pane` implementation for file-editor panes.
 
   Named `FilePane` (not `File`) to avoid shadowing Elixir's `File` at alias sites.
-  A thin adapter over `DevIDE.FilePanes`: it gives the uniform pane pipeline a typed
+  A thin adapter over `Casein.FilePanes`: it gives the uniform pane pipeline a typed
   entry point into the file-pane registry, so a `:file` leaf in a session template
   is brought to life on execute/reconcile just like a `:preview` leaf.
 
@@ -14,12 +14,12 @@ defmodule DevIDE.Panes.FilePane do
   `:file`. Line numbers are runtime-only and never travel through templates.
   """
 
-  @behaviour DevIDE.Panes.Pane
+  @behaviour Casein.Panes.Pane
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.FilePanes
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.FileAccess
+  alias Casein.Files.PathSafety
+  alias Casein.FilePanes
+  alias Casein.Workspaces
+  alias Casein.Workspaces.FileAccess
 
   @impl true
   def attach(node, ctx) do

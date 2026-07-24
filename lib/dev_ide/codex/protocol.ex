@@ -1,12 +1,12 @@
-defmodule DevIDE.Codex.Protocol do
+defmodule Casein.Codex.Protocol do
   @moduledoc """
-  Normalizes Codex App Server messages into DevIDE-owned contracts.
+  Normalizes Codex App Server messages into Casein-owned contracts.
 
   No raw App Server message should cross this module into projections, PubSub,
   signals, audit, or UI code.
   """
 
-  alias DevIDE.Codex.{Approval, Event}
+  alias Casein.Codex.{Approval, Event}
 
   @thread_statuses %{
     "notLoaded" => :not_loaded,
@@ -43,7 +43,7 @@ defmodule DevIDE.Codex.Protocol do
           | {:unknown_thread_status, String.t()}
           | {:unknown_turn_status, String.t()}
 
-  @spec normalize(DevIDE.Codex.JsonRpc.decoded(), map()) ::
+  @spec normalize(Casein.Codex.JsonRpc.decoded(), map()) ::
           {:ok, Event.t()} | :ignore | {:error, normalize_error()}
   def normalize({:notification, "thread/started", params}, context) do
     with {:ok, thread} <- map_field(params, "thread", "params.thread"),
@@ -127,7 +127,7 @@ defmodule DevIDE.Codex.Protocol do
   def normalize(_message, _context), do: :ignore
 
   @doc false
-  @spec normalize_server_request(DevIDE.Codex.JsonRpc.decoded(), map()) ::
+  @spec normalize_server_request(Casein.Codex.JsonRpc.decoded(), map()) ::
           {:ok, Approval.t()} | :unsupported | {:error, normalize_error()}
   def normalize_server_request({:request, request_id, method, params}, context) do
     case Map.fetch(@approval_methods, method) do

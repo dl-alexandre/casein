@@ -1,8 +1,8 @@
-defmodule DevIDE.Push.Registry do
+defmodule Casein.Push.Registry do
   @moduledoc """
   Persistent device-token registry for push, keyed by workspace and by user.
 
-  Workspace registrations also ask `DevIDE.Signals.AlertsRouter` to watch the
+  Workspace registrations also ask `Casein.Signals.AlertsRouter` to watch the
   workspace (idempotent), so a token is enough to start receiving workspace-scoped
   alert pushes routed from the signal bus. User registrations feed mobile-card pushes.
   """
@@ -10,9 +10,9 @@ defmodule DevIDE.Push.Registry do
 
   import Ecto.Query
 
-  alias DevIDE.Push.Device
-  alias DevIDE.Signals.AlertsRouter
-  alias DevIDE.Repo
+  alias Casein.Push.Device
+  alias Casein.Signals.AlertsRouter
+  alias Casein.Repo
 
   @type entry :: %{token: String.t(), platform: String.t(), user_id: String.t() | nil}
 

@@ -1,10 +1,10 @@
-defmodule DevIDE.AgentsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.AgentsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents
+  alias Casein.Agents
 
   defmodule FakeAdapter do
-    @behaviour DevIDE.Agents
+    @behaviour Casein.Agents
 
     @impl true
     def detect(root, ws), do: [{:detected, root, ws}]

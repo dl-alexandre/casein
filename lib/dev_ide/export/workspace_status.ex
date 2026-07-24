@@ -1,4 +1,4 @@
-defmodule DevIDE.Export.WorkspaceStatus do
+defmodule Casein.Export.WorkspaceStatus do
   @moduledoc """
   Builds the API status payload for a single workspace from already-persisted
   state plus cheap live reads (git status, active run snapshot).
@@ -11,19 +11,19 @@ defmodule DevIDE.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
-  alias DevIDE.Previews
-  alias DevIDE.Audit
-  alias DevIDE.Deployment.{Health, Registry}
-  alias DevIDE.Export.Sanitizer
-  alias DevIDE.Git
-  alias DevIDE.PreviousSessions
-  alias DevIDE.Proposals
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.AgentPane
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.SessionSummary
+  alias Casein.Agents.{MCPUrls, TidewaveMCP}
+  alias Casein.Previews
+  alias Casein.Audit
+  alias Casein.Deployment.{Health, Registry}
+  alias Casein.Export.Sanitizer
+  alias Casein.Git
+  alias Casein.PreviousSessions
+  alias Casein.Proposals
+  alias Casein.Runs.Ledger
+  alias Casein.Runtimes
+  alias Casein.Terminals.AgentPane
+  alias Casein.Workspaces
+  alias Casein.Workspaces.SessionSummary
 
   @recent_runs 10
   @recent_audit 20
@@ -291,7 +291,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   defp agent_capabilities(record) do
     record
     |> workspace_map()
-    |> DevIDE.WorkspaceSource.detect_capabilities(record.host_path)
+    |> Casein.WorkspaceSource.detect_capabilities(record.host_path)
     |> Enum.map(&capability_payload(&1, record.external_id))
   end
 

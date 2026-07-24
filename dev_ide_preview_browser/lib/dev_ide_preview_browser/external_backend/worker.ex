@@ -1,9 +1,9 @@
-defmodule DevIDEPreviewBrowser.ExternalBackend.Worker do
+defmodule CaseinPreviewBrowser.ExternalBackend.Worker do
   @moduledoc false
 
   use GenServer
 
-  alias DevIDEPreviewBrowser.ExternalBackend.Protocol
+  alias CaseinPreviewBrowser.ExternalBackend.Protocol
 
   defstruct [
     :port,

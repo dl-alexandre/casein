@@ -1,9 +1,9 @@
-defmodule DevIDE.EctoTypes.MapList do
+defmodule Casein.EctoTypes.MapList do
   @moduledoc false
 
   use Ecto.Type
 
-  @sqlite DevIDE.Repo.Adapter.sqlite?()
+  @sqlite Casein.Repo.Adapter.sqlite?()
 
   def type, do: if(@sqlite, do: :string, else: {:array, :map})
 

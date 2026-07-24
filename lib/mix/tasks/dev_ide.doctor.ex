@@ -1,6 +1,6 @@
-defmodule Mix.Tasks.DevIde.Doctor do
+defmodule Mix.Tasks.Casein.Doctor do
   @moduledoc """
-  Checks the local DevIDE development setup and can fix safe local defaults.
+  Checks the local Casein development setup and can fix safe local defaults.
 
       mix dev_ide.doctor
       mix dev_ide.doctor --fix
@@ -18,9 +18,9 @@ defmodule Mix.Tasks.DevIde.Doctor do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
-  @shortdoc "Check and repair local DevIDE setup"
+  @shortdoc "Check and repair local Casein setup"
 
   @certfile "priv/cert/devide-lan.pem"
   @keyfile "priv/cert/devide-lan-key.pem"
@@ -66,20 +66,20 @@ defmodule Mix.Tasks.DevIde.Doctor do
     insecure_http_port =
       Keyword.get(opts, :insecure_http_port) || env_int("DEV_IDE_LAN_INSECURE_HTTP_PORT") || 80
 
-    local_domain = opts[:local_domain] || DevIDE.Setup.LocalDomain.default_domain()
+    local_domain = opts[:local_domain] || Casein.Setup.LocalDomain.default_domain()
 
     lan_host =
       opts[:lan_host] || System.get_env("DEV_IDE_LAN_HOST") ||
-        DevIDE.Setup.LocalDomain.mdns_hostname()
+        Casein.Setup.LocalDomain.mdns_hostname()
 
-    lan_ip = opts[:lan_ip] || DevIDE.Setup.LocalDomain.default_ip()
+    lan_ip = opts[:lan_ip] || Casein.Setup.LocalDomain.default_ip()
     hosts_file = opts[:hosts_file] || @default_hosts_file
     edge? = Keyword.get(opts, :edge, false) or truthy_env?("DEV_IDE_LAN_EDGE")
 
     insecure_http? =
       Keyword.get(opts, :insecure_http, false) or truthy_env?("DEV_IDE_LAN_INSECURE_HTTP")
 
-    Mix.shell().info("DevIDE doctor\n")
+    Mix.shell().info("Casein doctor\n")
 
     check_home_workspace(root, workspace, fix?)
     check_mkcert(opts, fix?)
@@ -194,7 +194,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
   end
 
   defp check_hosts_mapping(domain, ip, hosts_file, fix?) do
-    case DevIDE.Setup.LocalDomain.resolve_ipv4(domain) do
+    case Casein.Setup.LocalDomain.resolve_ipv4(domain) do
       {:ok, ^ip} ->
         ok("local domain", "#{domain} resolves to #{ip}")
 
@@ -211,7 +211,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
   defp maybe_fix_hosts_file(domain, ip, hosts_file, true) do
     case File.read(hosts_file) do
       {:ok, content} ->
-        updated = DevIDE.Setup.LocalDomain.put_hosts_entry(content, domain, ip)
+        updated = Casein.Setup.LocalDomain.put_hosts_entry(content, domain, ip)
         write_hosts_file(hosts_file, updated, domain, ip)
 
       {:error, reason} ->
@@ -351,8 +351,8 @@ defmodule Mix.Tasks.DevIde.Doctor do
   end
 
   defp check_lan_edge(edge?, edge_port, https_port, lan_host, fix?) do
-    edge_open? = DevIDE.Setup.LanEdge.listener_open?(edge_port)
-    backend_open? = DevIDE.Setup.LanEdge.listener_open?(https_port)
+    edge_open? = Casein.Setup.LanEdge.listener_open?(edge_port)
+    backend_open? = Casein.Setup.LanEdge.listener_open?(https_port)
 
     cond do
       edge_open? and backend_open? ->
@@ -364,7 +364,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
       edge_open? ->
         warn(
           "portless LAN edge",
-          "listening on :#{edge_port}, but DevIDE HTTPS backend is not listening on :#{https_port}; start with DEV_IDE_LAN=true mise exec -- mix phx.server or use http://#{lan_host}/"
+          "listening on :#{edge_port}, but Casein HTTPS backend is not listening on :#{https_port}; start with DEV_IDE_LAN=true mise exec -- mix phx.server or use http://#{lan_host}/"
         )
 
       edge? and fix? ->
@@ -399,8 +399,8 @@ defmodule Mix.Tasks.DevIde.Doctor do
   end
 
   defp check_insecure_http_edge(insecure_http?, insecure_http_port, backend_port, lan_host, fix?) do
-    edge_open? = DevIDE.Setup.InsecureHttpEdge.listener_open?(insecure_http_port)
-    backend_open? = DevIDE.Setup.InsecureHttpEdge.listener_open?(backend_port)
+    edge_open? = Casein.Setup.InsecureHttpEdge.listener_open?(insecure_http_port)
+    backend_open? = Casein.Setup.InsecureHttpEdge.listener_open?(backend_port)
 
     cond do
       edge_open? and backend_open? ->
@@ -412,7 +412,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
       edge_open? ->
         warn(
           "insecure LAN HTTP",
-          "listening on :#{insecure_http_port}, but DevIDE HTTP backend is not listening on :#{backend_port}; run `mise exec -- mix dev_ide.lan.up`"
+          "listening on :#{insecure_http_port}, but Casein HTTP backend is not listening on :#{backend_port}; run `mise exec -- mix dev_ide.lan.up`"
         )
 
       insecure_http? and fix? ->
@@ -462,7 +462,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
     end
   end
 
-  if DevIDE.Repo.Adapter.sqlite?() do
+  if Casein.Repo.Adapter.sqlite?() do
     defp check_database(fix?), do: check_sqlite(fix?)
 
     defp check_sqlite(fix?) do

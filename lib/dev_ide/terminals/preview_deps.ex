@@ -1,15 +1,15 @@
-defmodule DevIDE.Terminals.PreviewDeps do
+defmodule Casein.Terminals.PreviewDeps do
   @moduledoc """
-  Core-side impl of `DevIDE.Previews.Deps.Terminals`.
+  Core-side impl of `Casein.Previews.Deps.Terminals`.
 
   Owns the `:tmux_adapter` env read (with the production `Tmux` default) so
   preview modules never carry a compile-time core-module default.
   """
 
-  @behaviour DevIDE.Previews.Deps.Terminals
+  @behaviour Casein.Previews.Deps.Terminals
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxTopology
 
   @impl true
   def list_sessions, do: adapter().list_sessions()

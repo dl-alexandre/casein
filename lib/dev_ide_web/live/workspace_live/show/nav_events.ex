@@ -1,13 +1,13 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.NavEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.NavEvents do
   # Mobile navigation and tab-switch handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates "mobile_nav:*", "switch_tab", and "refresh" events here.
   @moduledoc false
 
   import Phoenix.Component
 
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.Sidebar
 
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     {:noreply, Show.select_tab(socket, tab)}

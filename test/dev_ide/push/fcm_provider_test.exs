@@ -1,12 +1,12 @@
-defmodule DevIDE.Push.FCMProviderTest do
+defmodule Casein.Push.FCMProviderTest do
   @moduledoc """
-  Exercises `DevIDE.Push.FCMProvider` against a stubbed HTTP transport — proving
+  Exercises `Casein.Push.FCMProvider` against a stubbed HTTP transport — proving
   the FCM v1 envelope, auth header, and deep-link without network or credentials.
   """
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Push.FCMProvider
-  alias DevIDE.Push.FCMToken
+  alias Casein.Push.FCMProvider
+  alias Casein.Push.FCMToken
 
   @notification %{
     workspace_id: "ws-7",
@@ -23,7 +23,7 @@ defmodule DevIDE.Push.FCMProviderTest do
     Application.put_env(:dev_ide, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
-      http_client: DevIDE.Push.FCM.StubHTTP
+      http_client: Casein.Push.FCM.StubHTTP
     )
 
     Application.put_env(:dev_ide, :fcm_test_pid, self())
@@ -132,7 +132,7 @@ defmodule DevIDE.Push.FCMProviderTest do
   test "infers project id from FCMToken service-account config" do
     Application.put_env(:dev_ide, FCMProvider,
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
-      http_client: DevIDE.Push.FCM.StubHTTP
+      http_client: Casein.Push.FCM.StubHTTP
     )
 
     Application.put_env(:dev_ide, FCMToken,
@@ -150,7 +150,7 @@ defmodule DevIDE.Push.FCMProviderTest do
   test "errors cleanly when no access-token source is configured" do
     Application.put_env(:dev_ide, FCMProvider,
       project_id: "demo-project",
-      http_client: DevIDE.Push.FCM.StubHTTP
+      http_client: Casein.Push.FCM.StubHTTP
     )
 
     assert {:error, :no_access_token_fun} = FCMProvider.push("t", "android", @notification)

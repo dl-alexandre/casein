@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.HostServerAnchor do
+defmodule Casein.Terminals.HostServerAnchor do
   @moduledoc """
   Claims the host tmux server (`-L <label>`) from a stable, always-valid working
   directory at boot, before any workspace `Session` can lazily spawn it.
@@ -22,8 +22,8 @@ defmodule DevIDE.Terminals.HostServerAnchor do
 
   require Logger
 
-  alias DevIDE.Terminals.TmuxRunner
-  alias DevIDE.Terminals.TmuxServer
+  alias Casein.Terminals.TmuxRunner
+  alias Casein.Terminals.TmuxServer
 
   @anchor "__devide_keepalive"
   @candidate_dirs ["/opt/devide", "/"]

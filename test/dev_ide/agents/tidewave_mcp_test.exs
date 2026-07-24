@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.TidewaveMCPTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.TidewaveMCPTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.TidewaveMCP
+  alias Casein.Agents.TidewaveMCP
 
   setup do
     prev_home = Application.get_env(:dev_ide, :preview_env_home)

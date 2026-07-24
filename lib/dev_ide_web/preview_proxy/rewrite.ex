@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.PreviewProxy.Rewrite do
+defmodule CaseinWeb.PreviewProxy.Rewrite do
   @moduledoc """
-  Pure header/body transforms for `DevIdeWeb.PreviewProxyController`.
+  Pure header/body transforms for `CaseinWeb.PreviewProxyController`.
 
   Kept separate from the controller so the security-relevant rules — which
   upstream headers are dropped, and how `<base>` is injected — are unit-testable
@@ -85,7 +85,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
 
   @doc """
   Rewrite root-relative HTML attributes so proxied pages fetch their own assets
-  and navigate within the proxied app instead of DevIDE's origin root.
+  and navigate within the proxied app instead of Casein's origin root.
   """
   @spec rewrite_root_relative_attrs(String.t(), String.t()) :: String.t()
   def rewrite_root_relative_attrs(html, proxy_prefix)
@@ -126,7 +126,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   Phoenix generators usually construct LiveView and LiveReload clients with
   absolute-root endpoints like `new LiveSocket("/live", ...)` or
   `new Socket("/socket", ...)`. Inside a preview proxy iframe those paths point
-  at DevIDE itself, not the proxied loopback app. Rewriting just these endpoint
+  at Casein itself, not the proxied loopback app. Rewriting just these endpoint
   literals keeps the initial websocket attempt and the long-poll fallback on the
   same proxied origin/path.
   """
@@ -153,8 +153,8 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
       graphs need this to load through the proxy; and
     * a **WebSocket shim** that reroutes same-origin sockets (Vite / webpack HMR,
       Phoenix LiveReload) under the proxy prefix, so the tunnel
-      (`DevIdeWeb.PreviewProxy.WebSocketBridge`) catches them instead of them
-      hitting DevIDE's own origin root.
+      (`CaseinWeb.PreviewProxy.WebSocketBridge`) catches them instead of them
+      hitting Casein's own origin root.
 
   No-ops without a `<head>`. The import map is skipped if the document already
   ships one (only one import map is allowed per document); the WebSocket shim is
@@ -184,7 +184,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   # Reroute HMR/LiveReload sockets under the proxy prefix so the tunnel catches
   # them. Two cases are rerouted, both at runtime so they're version-agnostic:
   #   * same-origin sockets (client derived its URL from the iframe origin, which
-  #     is DevIDE) not already under the prefix; and
+  #     is Casein) not already under the prefix; and
   #   * absolute loopback sockets (`ws://localhost:PORT/...`) — same-origin checks
   #     miss these, but the browser can't reach a server-side loopback either.
   # Cross-origin (non-loopback) sockets and already-prefixed paths are left alone.

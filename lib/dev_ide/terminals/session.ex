@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Session do
+defmodule Casein.Terminals.Session do
   @moduledoc """
   PTY-attached tmux session.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Terminals.Session do
   reconnect mechanism: Session processes can come and go, but the underlying
   tmux session persists until killed.
 
-  One Session per `(workspace, sid)` pair, keyed in `DevIDE.Terminals.Registry`.
+  One Session per `(workspace, sid)` pair, keyed in `Casein.Terminals.Registry`.
   Subscribers receive `{:term_data, ref, binary}` for live data and
   `{:term_data, ref, binary, :replay}` for initial replay on attach.
   """
@@ -15,14 +15,14 @@ defmodule DevIDE.Terminals.Session do
   use GenServer
   require Logger
 
-  alias DevIDE.Terminals.Backend
-  alias DevIDE.Terminals.Backend.SpawnSpec
-  alias DevIDE.Terminals.ScrollbackArchive
-  alias DevIDE.Terminals.SessionRecovery
-  alias DevIDE.Terminals.Shims
-  alias DevIDE.Terminals.Theme
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxRunner
+  alias Casein.Terminals.Backend
+  alias Casein.Terminals.Backend.SpawnSpec
+  alias Casein.Terminals.ScrollbackArchive
+  alias Casein.Terminals.SessionRecovery
+  alias Casein.Terminals.Shims
+  alias Casein.Terminals.Theme
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxRunner
 
   @default_rows 40
   @default_cols 120
@@ -50,10 +50,10 @@ defmodule DevIDE.Terminals.Session do
   end
 
   def via(workspace, sid),
-    do: {:via, Registry, {DevIDE.Terminals.Registry, {workspace, sid}}}
+    do: {:via, Registry, {Casein.Terminals.Registry, {workspace, sid}}}
 
   def whereis(workspace, sid) do
-    case Registry.lookup(DevIDE.Terminals.Registry, {workspace, sid}) do
+    case Registry.lookup(Casein.Terminals.Registry, {workspace, sid}) do
       [{pid, _}] -> {:ok, pid}
       [] -> :error
     end
@@ -69,7 +69,7 @@ defmodule DevIDE.Terminals.Session do
 
       :error ->
         DynamicSupervisor.start_child(
-          DevIDE.Terminals.Supervisor,
+          Casein.Terminals.Supervisor,
           {__MODULE__, {workspace, sid, loc}}
         )
     end
@@ -380,7 +380,7 @@ defmodule DevIDE.Terminals.Session do
   # ssh-allocated pty.
   @doc false
   def legacy_tmux_spawn_command({:local, cwd}, tmux_session) do
-    exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
+    exec_cwd = Casein.WorkspaceSource.local_exec_cwd(cwd)
     # Host tmux runs on the host, where the manager's container exec workdir
     # (`exec_cwd`, e.g. `/app`) does not exist. Creating a host session with
     # `-c` pointed at a nonexistent dir makes the pane silently fall back to the
@@ -437,7 +437,7 @@ defmodule DevIDE.Terminals.Session do
 
         Tmux.local_argv_wrapped?() and Tmux.container_has_tmux?(cwd) ->
           # Preferred: tmux server runs inside the manager-owned container.
-          DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(integrated_shell.()),
+          Casein.WorkspaceSource.prepare_local_argv(container_argv.(integrated_shell.()),
             tty: true,
             cwd: cwd,
             normal_cwd: exec_cwd
@@ -449,7 +449,7 @@ defmodule DevIDE.Terminals.Session do
           # shell as the pane command; otherwise use the host shell in `cwd`.
           # The latter is what keeps bespoke/devbox checkouts usable when the
           # manager Docker start flow does not apply.
-          case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
+          case Casein.WorkspaceSource.local_tmux_pane_shell(cwd) do
             nil -> host_argv.(integrated_shell.())
             shell -> host_argv.([shell])
           end
@@ -457,7 +457,7 @@ defmodule DevIDE.Terminals.Session do
 
     cmd =
       cmd_list
-      |> DevIDE.Terminals.CleanExec.wrap_argv()
+      |> Casein.Terminals.CleanExec.wrap_argv()
       |> resolve_executable()
       |> Enum.map(&to_charlist/1)
 
@@ -510,7 +510,7 @@ defmodule DevIDE.Terminals.Session do
         do: send(pid, {:term_data, state.ref, bin})
 
     state
-    |> Map.put(:buffer, DevIDE.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
+    |> Map.put(:buffer, Casein.BoundedBuffer.append(state.buffer, bin, @buffer_bytes))
     |> Map.put(:archive_dirty?, true)
     |> schedule_archive_spill()
   end

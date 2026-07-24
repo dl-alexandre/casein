@@ -1,6 +1,6 @@
-defmodule DevIDE.Proposals.LocalAdapterTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Proposals.LocalAdapter
+defmodule Casein.Proposals.LocalAdapterTest do
+  use Casein.TestCase, async: true
+  alias Casein.Proposals.LocalAdapter
 
   setup do
     root = Path.join(System.tmp_dir!(), "pa-#{System.unique_integer([:positive])}")

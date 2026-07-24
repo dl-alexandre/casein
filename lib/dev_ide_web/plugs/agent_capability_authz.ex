@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Plugs.AgentCapabilityAuthz do
+defmodule CaseinWeb.Plugs.AgentCapabilityAuthz do
   @moduledoc """
   Enforces workspace/session/surface confinement for managed agent bearers.
 
@@ -8,7 +8,7 @@ defmodule DevIdeWeb.Plugs.AgentCapabilityAuthz do
 
   import Plug.Conn
 
-  alias DevIDE.Agents.GrokCapabilityPolicy
+  alias Casein.Agents.GrokCapabilityPolicy
 
   @surface_paths %{
     "/api/terminals/mcp" => "terminal",

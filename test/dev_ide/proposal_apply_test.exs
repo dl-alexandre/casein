@@ -1,4 +1,4 @@
-defmodule DevIDE.ProposalApplyTest do
+defmodule Casein.ProposalApplyTest do
   # ProposalApply is the sanctioned write path for the (otherwise read-only)
   # Proposals subsystem — see test/dev_ide/proposals_no_apply_test.exs. These
   # tests exercise real git-repo fixtures (pattern:
@@ -6,7 +6,7 @@ defmodule DevIDE.ProposalApplyTest do
   # atomicity guarantee is a property of the real `git apply` shell-out.
   use ExUnit.Case, async: false
 
-  alias DevIDE.{Audit, ProposalApply}
+  alias Casein.{Audit, ProposalApply}
 
   @proposal_dir ".opencode/proposals"
 

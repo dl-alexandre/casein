@@ -1,10 +1,10 @@
-defmodule DevIDE.Push.TestProvider do
+defmodule Casein.Push.TestProvider do
   @moduledoc """
-  Test `DevIDE.Push.Provider` — forwards each push to the pid stored in
+  Test `Casein.Push.Provider` — forwards each push to the pid stored in
   `:dev_ide, :push_test_pid` as `{:pushed, token, platform, notification}` so
   tests can assert delivery without a real APNs/FCM backend.
   """
-  @behaviour DevIDE.Push.Provider
+  @behaviour Casein.Push.Provider
 
   @impl true
   def push(token, platform, notification) do

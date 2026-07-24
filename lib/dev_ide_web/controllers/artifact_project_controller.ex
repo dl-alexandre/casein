@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.ArtifactProjectController do
+defmodule CaseinWeb.ArtifactProjectController do
   @moduledoc """
   Serves an artifact project's static files directly from its git worktree, at a
   durable, login-gated URL:
@@ -6,7 +6,7 @@ defmodule DevIdeWeb.ArtifactProjectController do
       /artifact-projects/:workspace_id/:artifact_project_id/*path
 
   This is what makes an artifact PR-shareable. It runs under the devbox
-  oauth2-proxy (forward_auth) like the rest of the DevIDE host. Any
+  oauth2-proxy (forward_auth) like the rest of the Casein host. Any
   authenticated peer may open any artifact URL (flat peer model — no admin /
   owner privilege tier). Unlike the artifact's ephemeral loopback preview
   server (a `python3 -m http.server` on a churny 41050-41079 port), this reads
@@ -16,16 +16,16 @@ defmodule DevIdeWeb.ArtifactProjectController do
   Security: identity comes from `ForwardAuth` (oauth2-proxy). We still require
   the artifact to belong to the workspace id in the URL (404 when mismatched,
   so ids don't cross workspaces). Paths are resolved with
-  `DevIDE.Files.PathSafety` (traversal + symlink escape) plus a
+  `Casein.Files.PathSafety` (traversal + symlink escape) plus a
   dotfile/`.git` denylist (PathSafety does not block dotfiles on read), and
   served under a tight CSP since the content is workspace-authored.
   """
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.ArtifactProjects
-  alias DevIDE.Audit
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Workspaces
+  alias Casein.ArtifactProjects
+  alias Casein.Audit
+  alias Casein.Files.PathSafety
+  alias Casein.Workspaces
 
   # Workspace-authored (untrusted) content: allow it to render itself (inline
   # styles/scripts, same-origin + data/blob media) but not exfiltrate to third
@@ -167,7 +167,7 @@ defmodule DevIdeWeb.ArtifactProjectController do
     artifacts = Application.get_env(:dev_ide, :artifact_public_url)
 
     if is_binary(artifacts) and artifacts != "" and is_binary(cockpit) and cockpit != "" do
-      "'self' " <> DevIDE.Previews.origin_of(cockpit)
+      "'self' " <> Casein.Previews.origin_of(cockpit)
     else
       "'self'"
     end

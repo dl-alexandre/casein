@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.ArtifactMCPCapability do
+defmodule Casein.Agents.ArtifactMCPCapability do
   @moduledoc """
-  Detects the DevIDE-hosted artifact-project MCP endpoint.
+  Detects the Casein-hosted artifact-project MCP endpoint.
   """
 
-  alias DevIDE.Agents.{ArtifactTools, Capability, MCPUrls}
+  alias Casein.Agents.{ArtifactTools, Capability, MCPUrls}
 
   @spec detect() :: Capability.t()
   def detect do

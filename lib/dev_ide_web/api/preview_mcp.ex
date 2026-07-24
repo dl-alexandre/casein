@@ -1,31 +1,31 @@
-defmodule DevIdeWeb.API.PreviewMCP do
+defmodule CaseinWeb.API.PreviewMCP do
   @moduledoc """
   Minimal MCP (Model Context Protocol) JSON-RPC handler that exposes
-  `DevIDE.Agents.PreviewTools` to external coding agents (Grok, Claude,
+  `Casein.Agents.PreviewTools` to external coding agents (Grok, Claude,
   Codex, opencode).
 
   It speaks the same wire shape as Tidewave's MCP server — JSON-RPC 2.0 over
-  a single HTTP POST endpoint — but lives in this app on its own route. DevIDE
+  a single HTTP POST endpoint — but lives in this app on its own route. Casein
   runs its own MCP route rather than registering tools into Tidewave, giving
   agents a real, discoverable tool surface for preview control without coupling
   to Tidewave's tool registry.
 
   The JSON-RPC envelope (routing, `initialize`, `ping`, response helpers,
-  protocol-version negotiation) lives in `DevIdeWeb.API.MCPEnvelope`; this module
+  protocol-version negotiation) lives in `CaseinWeb.API.MCPEnvelope`; this module
   implements only the preview-specific behaviour callbacks. The handler is pure:
   it returns `{:reply, map}` (a 200 response), `:noreply` (a notification — 202,
   no body), or `{:error, map}` (a protocol-level JSON-RPC error). The thin
   `PreviewMCPController` owns the HTTP plumbing.
   """
 
-  @behaviour DevIdeWeb.API.MCPEnvelope
+  @behaviour CaseinWeb.API.MCPEnvelope
 
-  alias DevIDE.Agents.{MCPAudit, MCPError, PreviewTools}
-  alias DevIDE.MCP.Scope
-  alias DevIdeWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
+  alias Casein.Agents.{MCPAudit, MCPError, PreviewTools}
+  alias Casein.MCP.Scope
+  alias CaseinWeb.API.{MCPEnvelope, MCPToolSearch, MCPWorkspaceScope}
   alias McpCtl.Tool
 
-  @server_name "DevIDE Preview MCP Server"
+  @server_name "Casein Preview MCP Server"
 
   @type outcome :: MCPEnvelope.outcome()
 
@@ -45,7 +45,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
     MCPWorkspaceScope.scoped_instructions(
       "Preview control tools for the current workspace. Call preview_surfaces " <>
-        "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
+        "to list named surfaces (manager URLs, host loopback Casein, and " <>
         "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
         "preview_open_localhost to start a session. Loopback surfaces are liveness-probed " <>
         "at listing time: skip surfaces with server_active=false " <>
@@ -57,10 +57,10 @@ defmodule DevIdeWeb.API.PreviewMCP do
         "new_control_session only for a fresh browser runtime on that pane, " <>
         "and close an existing preview pane before opening if a truly fresh tmux pane " <>
         "is needed; open calls keep one pane per surface origin. preview_open_app on " <>
-        "loopback DevIDE auto-navigates to the workspace viewer and returns " <>
+        "loopback Casein auto-navigates to the workspace viewer and returns " <>
         "navigated_to on success or navigation_failed when open succeeded but " <>
         "viewer navigation was blocked. Opening a session also activates that preview in " <>
-        "connected DevIDE workspace viewers when the URL is embeddable. " <>
+        "connected Casein workspace viewers when the URL is embeddable. " <>
         "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
         "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
         "and operator_visible=false means the user cannot see it yet. " <>
@@ -97,7 +97,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
   @impl true
   # Meta-tools: cross-server discovery/routing lives in MCPToolSearch so an agent
-  # on this endpoint can find and run tools on any DevIDE server.
+  # on this endpoint can find and run tools on any Casein server.
   def call_tool(id, %{"name" => "search_tools"} = params, _opts),
     do: MCPToolSearch.search_result(id, Map.get(params, "arguments", %{}) || %{})
 
@@ -111,7 +111,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
     audit_opts = [actor: Keyword.get(opts, :actor)]
 
     result =
-      DevIDE.Signals.Context.with_new(fn ->
+      Casein.Signals.Context.with_new(fn ->
         case Scope.resolve_tool_call(name, args,
                surface: :preview,
                default_workspace_id: default_workspace_id,

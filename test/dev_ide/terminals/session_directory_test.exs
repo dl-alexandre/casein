@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.SessionDirectory.ComposeTest do
+  use Casein.TestCase, async: true
 
-  doctest DevIDE.Terminals.SessionDirectory.Compose
+  doctest Casein.Terminals.SessionDirectory.Compose
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.SessionDirectory.Compose
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.SessionDirectory.Compose
 
   defp scanned_shell(workspace_id, sid, tmux_session, metadata \\ %{}) do
     SessionInfo.new_shell(workspace_id, sid, metadata: metadata)
@@ -166,21 +166,21 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
   end
 end
 
-defmodule DevIDE.Terminals.SessionDirectoryTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.SessionDirectoryTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias Casein.Terminals.SessionDirectory
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
   setup do
     MemoryAdapter.clear()
-    DevIDE.Runtimes.clear()
+    Casein.Runtimes.clear()
     WorktreeReconciler.clear()
 
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -188,12 +188,12 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :session_directory_poll_ms, 25)
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      DevIDE.Runtimes.clear()
+      Casein.Runtimes.clear()
       WorktreeReconciler.clear()
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
@@ -301,8 +301,8 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     name = "alpha-#{System.unique_integer([:positive])}"
 
-    put_fake_session(DevIDE.Terminals.Tmux.session_name(name, "u-alice"))
-    put_fake_session(DevIDE.Terminals.Tmux.session_name(ws, "u-bob"))
+    put_fake_session(Casein.Terminals.Tmux.session_name(name, "u-alice"))
+    put_fake_session(Casein.Terminals.Tmux.session_name(ws, "u-bob"))
 
     sids =
       ws
@@ -374,7 +374,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
   test "read surfaces a reported agent state in stable window metadata" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     tmux_session = "devide_#{ws}_u-alice"
-    DevIDE.Terminals.AgentState.clear()
+    Casein.Terminals.AgentState.clear()
     put_fake_session(tmux_session, "/data/workspaces/alice/summary")
 
     [%{metadata: %{windows: [before_window]}} = before_tab] =
@@ -383,7 +383,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     refute Map.has_key?(before_window, :agent_state)
 
     # The fake session's window @1 has a single active pane %1.
-    :ok = DevIDE.Terminals.AgentState.report(ws, tmux_session, "%1", :blocked, "needs input")
+    :ok = Casein.Terminals.AgentState.report(ws, tmux_session, "%1", :blocked, "needs input")
 
     [%{metadata: %{windows: [after_window]} = metadata} = after_tab] =
       SessionDirectory.read(ws, workspace_name: ws)
@@ -393,7 +393,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
     # The state atom lives in the stable window map, so the tab list re-broadcasts
     # on the transition; the free-text message does not by itself.
-    alias DevIDE.Terminals.SessionDirectory.Compose
+    alias Casein.Terminals.SessionDirectory.Compose
     refute Compose.stable_hash([before_tab]) == Compose.stable_hash([after_tab])
   end
 
@@ -401,7 +401,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     name = "alpha-#{System.unique_integer([:positive])}"
     sid = "u-alice"
-    tmux_session = DevIDE.Terminals.Tmux.session_name(ws, sid)
+    tmux_session = Casein.Terminals.Tmux.session_name(ws, sid)
     put_fake_session(tmux_session)
 
     socket = %Phoenix.LiveView.Socket{
@@ -459,7 +459,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         host_id: "local",
         branch: "agent-feature",
         status: "provisioned",
-        tmux_session_id: DevIDE.Terminals.Tmux.session_name(name, "wt-agent"),
+        tmux_session_id: Casein.Terminals.Tmux.session_name(name, "wt-agent"),
         worktree_path: worktree,
         metadata: %{
           "kind" => "agent_worktree",
@@ -494,7 +494,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     # One operator tmux session multiplexes both agents as sibling windows,
     # each pane rooted in its own worktree. Both worktree runtimes report this
     # shared session as their tmux_session_id — the fan-out trigger.
-    operator = DevIDE.Terminals.Tmux.session_name(name, "wt-operator")
+    operator = Casein.Terminals.Tmux.session_name(name, "wt-operator")
 
     TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, operator, [
@@ -577,7 +577,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     root = git_repo!()
     worktree = root <> "-agent-worktree-switch"
     git!(root, ["worktree", "add", "-b", "agent-switch", worktree, "main"])
-    tmux_session = DevIDE.Terminals.Tmux.session_name(name, "wt-switch")
+    tmux_session = Casein.Terminals.Tmux.session_name(name, "wt-switch")
 
     _ =
       State.sync(%Workspace{
@@ -615,7 +615,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         host_loc: {:ok, {:local, root}},
         workspace_mode: :manual,
         terminal_mode: :raw,
-        tmux_session: DevIDE.Terminals.Tmux.session_name(name, "u-dev"),
+        tmux_session: Casein.Terminals.Tmux.session_name(name, "u-dev"),
         terminal_sid: "u-dev",
         default_terminal_sid: "u-dev",
         session_tabs: [],
@@ -637,7 +637,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
     assert socket.assigns.terminal_context.kind == :git_worktree
     assert socket.assigns.terminal_context.root_path == worktree
-    assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == worktree
+    assert CaseinWeb.WorkspaceLive.Show.workspace_cwd(socket) == worktree
 
     nested = Path.join(worktree, "apps/web")
 
@@ -647,7 +647,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         tmux_panes: [%{id: "%1", current_path: nested}]
       )
 
-    assert DevIdeWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == nested
+    assert CaseinWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == nested
 
     socket =
       Phoenix.Component.assign(socket,
@@ -655,7 +655,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         tmux_panes: [%{id: "%1", current_path: root}]
       )
 
-    assert DevIdeWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == worktree
+    assert CaseinWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == worktree
 
     home = SessionInfo.new_shell(ws, "u-dev")
 
@@ -670,7 +670,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
     assert socket.assigns.terminal_context.kind == :home
     assert socket.assigns.terminal_context.root_path == root
-    assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == root
+    assert CaseinWeb.WorkspaceLive.Show.workspace_cwd(socket) == root
   end
 
   test "broadcasts sessions_updated when the tab list changes while watched" do

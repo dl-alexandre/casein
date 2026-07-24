@@ -1,17 +1,17 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
+defmodule CaseinWeb.WorkspaceLive.Show.WorkspaceShell do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI
-  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  import DevIdeWeb.WorkspaceLive.Show.RunPanel
-  import DevIdeWeb.WorkspaceLive.Show.SidePanels
-  import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
-  import DevIdeWeb.WorkspaceLive.Show.LogsPanel
-  import DevIdeWeb.WorkspaceLive.Show.HistoryPanel
+  import CaseinWeb.WorkspaceLive.Show.UI
+  import CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  import CaseinWeb.WorkspaceLive.Show.RunPanel
+  import CaseinWeb.WorkspaceLive.Show.SidePanels
+  import CaseinWeb.WorkspaceLive.Show.TemplatePanels
+  import CaseinWeb.WorkspaceLive.Show.LogsPanel
+  import CaseinWeb.WorkspaceLive.Show.HistoryPanel
 
-  import DevIdeWeb.WorkspaceLive.Show.WorkspaceHeader,
+  import CaseinWeb.WorkspaceLive.Show.WorkspaceHeader,
     only: [
       header_overflow_menu: 1,
       workspace_start_blocked?: 1,
@@ -20,17 +20,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       header_status_action_label: 2
     ]
 
-  import DevIdeWeb.WorkspaceLive.Show.TerminalPanel, only: [terminal_tab: 1]
+  import CaseinWeb.WorkspaceLive.Show.TerminalPanel, only: [terminal_tab: 1]
 
-  import DevIdeWeb.WorkspaceLive.Show.SituationPanel,
+  import CaseinWeb.WorkspaceLive.Show.SituationPanel,
     only: [situation_badge: 1, situation_drawer: 1]
 
-  import DevIdeWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
-  import DevIdeWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
+  import CaseinWeb.WorkspaceLive.Show.PalettePanel, only: [palette_overlay: 1]
+  import CaseinWeb.WorkspaceLive.Show.LeaderHelp, only: [leader_help_overlay: 1]
 
-  alias DevIdeWeb.NotificationsDrawer
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBar
+  alias CaseinWeb.NotificationsDrawer
+  alias CaseinWeb.WorkspaceLive.Show.ContextMenu
+  alias CaseinWeb.WorkspaceLive.Show.SessionBar
 
   slot :header_back_nav, required: true, doc: "Frozen navigation back-link (stays owned by Show)."
 
@@ -463,7 +463,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
         />
         <.live_component
           :if={@tab == "proposals"}
-          module={DevIdeWeb.WorkspaceLive.ProposalPanelComponent}
+          module={CaseinWeb.WorkspaceLive.ProposalPanelComponent}
           id="proposal-panel"
           workspace={@workspace}
           current_user={@current_user}
@@ -496,7 +496,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
     </div>
 
     <.live_component
-      module={DevIdeWeb.WorkspaceLive.AuditDrawerComponent}
+      module={CaseinWeb.WorkspaceLive.AuditDrawerComponent}
       id="audit-drawer"
       open={@audit_drawer_open}
       workspace={@workspace}
@@ -622,12 +622,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WorkspaceShell do
       assigns.workspace.id,
       assigns.terminal_sid,
       assigns[:tmux_active_window_id],
-      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(assigns)
+      CaseinWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(assigns)
     )
   end
 
   defp active_tmux_window_name(assigns) do
-    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
+    CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
 
   defp mobile_active_session_label(assigns) do

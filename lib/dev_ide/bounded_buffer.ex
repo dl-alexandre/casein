@@ -1,4 +1,4 @@
-defmodule DevIDE.BoundedBuffer do
+defmodule Casein.BoundedBuffer do
   @moduledoc false
 
   @spec append(binary(), iodata(), pos_integer(), keyword()) :: binary()

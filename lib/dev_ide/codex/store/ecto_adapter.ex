@@ -1,13 +1,13 @@
-defmodule DevIDE.Codex.Store.EctoAdapter do
+defmodule Casein.Codex.Store.EctoAdapter do
   @moduledoc "Postgres-backed canonical Codex event and projection store."
 
-  @behaviour DevIDE.Codex.Store.Adapter
+  @behaviour Casein.Codex.Store.Adapter
 
   import Ecto.Query
 
-  alias DevIDE.Codex.Event
-  alias DevIDE.Codex.Store.{ApprovalRow, EventRow, Projection, ThreadRow}
-  alias DevIDE.Repo
+  alias Casein.Codex.Event
+  alias Casein.Codex.Store.{ApprovalRow, EventRow, Projection, ThreadRow}
+  alias Casein.Repo
 
   @impl true
   def record(%Event{} = event) do

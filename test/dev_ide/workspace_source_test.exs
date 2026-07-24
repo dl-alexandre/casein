@@ -1,7 +1,7 @@
-defmodule DevIDE.WorkspaceSourceTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.WorkspaceSourceTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.WorkspaceSource
+  alias Casein.WorkspaceSource
 
   # ---------------------------------------------------------------------------
   # Test stub sources used to exercise the "impl exports the optional callback"
@@ -60,7 +60,7 @@ defmodule DevIDE.WorkspaceSourceTest do
         if prev, do: Application.put_env(:dev_ide, :workspace_source, prev)
       end)
 
-      assert WorkspaceSource.impl() == DevIDE.WorkspaceSource.Local
+      assert WorkspaceSource.impl() == Casein.WorkspaceSource.Local
     end
 
     test "returns the configured source module" do
@@ -90,7 +90,7 @@ defmodule DevIDE.WorkspaceSourceTest do
     end
 
     test "default Local source is identity (exports neither arity)" do
-      put_source(DevIDE.WorkspaceSource.Local)
+      put_source(Casein.WorkspaceSource.Local)
       assert WorkspaceSource.prepare_local_argv(["ls", "-la"]) == ["ls", "-la"]
     end
   end
@@ -152,7 +152,7 @@ defmodule DevIDE.WorkspaceSourceTest do
     end
 
     test "default Local source returns cwd unchanged" do
-      put_source(DevIDE.WorkspaceSource.Local)
+      put_source(Casein.WorkspaceSource.Local)
       assert WorkspaceSource.local_exec_cwd("/some/path") == "/some/path"
     end
   end
@@ -174,8 +174,8 @@ defmodule DevIDE.WorkspaceSourceTest do
     end
 
     test "default Local source returns \"app\"" do
-      put_source(DevIDE.WorkspaceSource.Local)
-      assert WorkspaceSource.default_log_service(%DevIDE.Workspace{id: "w", name: "w"}) == "app"
+      put_source(Casein.WorkspaceSource.Local)
+      assert WorkspaceSource.default_log_service(%Casein.Workspace{id: "w", name: "w"}) == "app"
     end
   end
 
@@ -205,7 +205,7 @@ defmodule DevIDE.WorkspaceSourceTest do
     end
 
     test "default Local source returns [:name]" do
-      put_source(DevIDE.WorkspaceSource.Local)
+      put_source(Casein.WorkspaceSource.Local)
       assert WorkspaceSource.create_form_fields() == [:name]
     end
   end

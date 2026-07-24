@@ -1,7 +1,7 @@
-defmodule DevIDE.Workspaces.AliasesTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Workspaces.AliasesTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Workspaces.Aliases
+  alias Casein.Workspaces.Aliases
 
   test "folder_id_for_path/1 encodes absolute paths" do
     assert Aliases.folder_id_for_path("/data/workspaces/dalexandre/dev_ide") ==
@@ -35,9 +35,9 @@ defmodule DevIDE.Workspaces.AliasesTest do
     setup do
       test = self()
 
-      # Replace the default Manager stub (installed by DevIDE.TestCase) with one
+      # Replace the default Manager stub (installed by Casein.TestCase) with one
       # that reports every call, so we can prove whether HTTP was attempted.
-      Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+      Req.Test.stub(Casein.Integrations.Manager.Client, fn conn ->
         send(test, {:manager_called, conn.request_path})
 
         conn

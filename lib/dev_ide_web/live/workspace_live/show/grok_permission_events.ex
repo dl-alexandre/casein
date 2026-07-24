@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.GrokPermissionEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents do
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView, only: [connected?: 1, put_flash: 3]
 
-  alias DevIDE.AgentSessions.GrokACP.Attachments
-  alias DevIDE.Audit
-  alias DevIdeWeb.WorkspaceLive.Show.Context
+  alias Casein.AgentSessions.GrokACP.Attachments
+  alias Casein.Audit
+  alias CaseinWeb.WorkspaceLive.Show.Context
 
   @doc "Seeds and subscribes the workspace-global permission surface."
   def mount(socket) do

@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.ActivityTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.ActivityTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.{Activity, AgentEvents}
+  alias Casein.Agents.{Activity, AgentEvents}
 
   setup do
     Activity.clear()

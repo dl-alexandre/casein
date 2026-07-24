@@ -1,11 +1,11 @@
-defmodule DevIDE.Runtimes.MemoryAdapter do
+defmodule Casein.Runtimes.MemoryAdapter do
   @moduledoc "In-memory adapter for runtime orchestration records."
 
   use GenServer
 
-  @behaviour DevIDE.Runtimes
+  @behaviour Casein.Runtimes
 
-  alias DevIDE.Runtimes.{LifecycleEvent, Runtime}
+  alias Casein.Runtimes.{LifecycleEvent, Runtime}
 
   def start_link(_opts \\ []) do
     GenServer.start_link(__MODULE__, %{runtimes: %{}, events: %{}}, name: __MODULE__)

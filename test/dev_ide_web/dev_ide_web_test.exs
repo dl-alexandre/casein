@@ -1,8 +1,8 @@
-defmodule DevIdeWebMacrosTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWebMacrosTest do
+  use Casein.TestCase, async: true
 
   test "static_paths/0 lists application static assets" do
-    paths = DevIdeWeb.static_paths()
+    paths = CaseinWeb.static_paths()
 
     assert "assets" in paths
     assert "favicon.ico" in paths
@@ -14,18 +14,18 @@ defmodule DevIdeWebMacrosTest do
 
   test "__using__(:html) provides verified routes and CoreComponents" do
     defmodule HtmlMacroTest do
-      use DevIdeWeb, :html
+      use CaseinWeb, :html
 
       def home, do: ~p"/"
     end
 
     assert HtmlMacroTest.home() =~ "/"
-    assert function_exported?(DevIdeWeb.CoreComponents, :flash, 1)
+    assert function_exported?(CaseinWeb.CoreComponents, :flash, 1)
   end
 
   test "__using__(:controller) compiles a Phoenix controller" do
     defmodule ControllerMacroTest do
-      use DevIdeWeb, :controller
+      use CaseinWeb, :controller
 
       def hello(conn, _params), do: text(conn, "ok")
     end
@@ -35,7 +35,7 @@ defmodule DevIdeWebMacrosTest do
 
   test "__using__(:live_view) compiles a LiveView module" do
     defmodule LiveViewMacroTest do
-      use DevIdeWeb, :live_view
+      use CaseinWeb, :live_view
 
       def mount(_params, _session, socket), do: {:ok, socket}
     end
@@ -45,7 +45,7 @@ defmodule DevIdeWebMacrosTest do
 
   test "__using__(:live_component) compiles a LiveComponent module" do
     defmodule LiveComponentMacroTest do
-      use DevIdeWeb, :live_component
+      use CaseinWeb, :live_component
 
       def update(assigns, socket), do: {:ok, assign(socket, assigns)}
     end
@@ -55,7 +55,7 @@ defmodule DevIdeWebMacrosTest do
 
   test "__using__(:channel) compiles a Phoenix channel" do
     defmodule ChannelMacroTest do
-      use DevIdeWeb, :channel
+      use CaseinWeb, :channel
 
       def join("topic", _payload, socket), do: {:ok, socket}
     end
@@ -65,9 +65,9 @@ defmodule DevIdeWebMacrosTest do
 
   test "__using__(:router) compiles a Phoenix router" do
     defmodule RouterMacroTest do
-      use DevIdeWeb, :router
+      use CaseinWeb, :router
 
-      get "/macro-test", DevIdeWeb.PageController, :home
+      get "/macro-test", CaseinWeb.PageController, :home
     end
 
     assert function_exported?(RouterMacroTest, :__match_route__, 3)

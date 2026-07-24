@@ -1,8 +1,8 @@
-defmodule DevIDE.Runs.StatusTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runs.StatusTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runs.Status
-  alias DevIDE.Audit.Event
+  alias Casein.Runs.Status
+  alias Casein.Audit.Event
 
   describe "normalize/1" do
     test "converts atoms to strings" do
@@ -94,31 +94,31 @@ defmodule DevIDE.Runs.StatusTest do
   describe "retryable?/2" do
     test "retryable when terminal, not blocked, and policy allows" do
       summary = %{command_id: "test", status: "failed"}
-      decision_fun = fn _ -> DevIDE.Policy.Decision.allow(:run_command, :manual) end
+      decision_fun = fn _ -> Casein.Policy.Decision.allow(:run_command, :manual) end
       assert Status.retryable?(summary, decision_fun)
     end
 
     test "not retryable when blocked" do
       summary = %{command_id: "test", status: "denied"}
-      decision_fun = fn _ -> DevIDE.Policy.Decision.allow(:run_command, :manual) end
+      decision_fun = fn _ -> Casein.Policy.Decision.allow(:run_command, :manual) end
       refute Status.retryable?(summary, decision_fun)
     end
 
     test "not retryable when non-terminal" do
       summary = %{command_id: "test", status: "running"}
-      decision_fun = fn _ -> DevIDE.Policy.Decision.allow(:run_command, :manual) end
+      decision_fun = fn _ -> Casein.Policy.Decision.allow(:run_command, :manual) end
       refute Status.retryable?(summary, decision_fun)
     end
 
     test "not retryable when policy denies" do
       summary = %{command_id: "test", status: "failed"}
-      decision_fun = fn _ -> DevIDE.Policy.Decision.deny(:run_command, :manual, :not_allowed) end
+      decision_fun = fn _ -> Casein.Policy.Decision.deny(:run_command, :manual, :not_allowed) end
       refute Status.retryable?(summary, decision_fun)
     end
 
     test "not retryable without command_id" do
       summary = %{status: "failed"}
-      decision_fun = fn _ -> DevIDE.Policy.Decision.allow(:run_command, :manual) end
+      decision_fun = fn _ -> Casein.Policy.Decision.allow(:run_command, :manual) end
       refute Status.retryable?(summary, decision_fun)
     end
   end

@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.GhosttyTerminalComponent do
+defmodule CaseinWeb.GhosttyTerminalComponent do
   @moduledoc """
-  DevIDE wrapper for Ghostty's LiveTerminal component.
+  Casein wrapper for Ghostty's LiveTerminal component.
 
   It keeps the public event contract from `Ghostty.LiveTerminal.Component`, but
   pushes row-diff render payloads after the first full frame to reduce LiveView
@@ -303,7 +303,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     opts =
       Keyword.put_new(opts, :previous_cells, socket.assigns[:last_render_cells])
 
-    case DevIdeWeb.TerminalRender.frame_from_term(socket.assigns.term, socket.assigns.id, opts) do
+    case CaseinWeb.TerminalRender.frame_from_term(socket.assigns.term, socket.assigns.id, opts) do
       {payload, cells} ->
         socket
         |> assign(:last_render_cells, cells)

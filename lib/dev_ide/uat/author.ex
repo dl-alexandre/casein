@@ -1,17 +1,17 @@
-defmodule DevIDE.UAT.Author do
+defmodule Casein.UAT.Author do
   @moduledoc """
   The acceptance-agent harness. Given a natural-language criterion and a preview
   session, it runs the agent (which drives the `preview_*` MCP tools), validates
-  the returned verdict for grounding (`DevIDE.UAT.Verdict` — the guardrail), and,
+  the returned verdict for grounding (`Casein.UAT.Verdict` — the guardrail), and,
   only on a genuinely-grounded pass, freezes the session's audit trail into a
-  replayable `DevIDE.UAT.Trace` (`DevIDE.UAT.Freeze`).
+  replayable `Casein.UAT.Trace` (`Casein.UAT.Freeze`).
 
   The agent itself is injected (`:agent`) so the harness — validate-then-freeze —
   is testable without an LLM. The real agent driver is unverified scaffolding;
   callers in CI inject the live MCP driver.
   """
 
-  alias DevIDE.UAT.{Freeze, Verdict}
+  alias Casein.UAT.{Freeze, Verdict}
 
   @type agent_fn :: (String.t(), integer() -> map())
 
@@ -27,7 +27,7 @@ defmodule DevIDE.UAT.Author do
   {:invalid_verdict, errors}}` when the verdict is malformed.
   """
   @spec author(String.t(), integer(), map(), keyword()) ::
-          {:ok, %{trace: DevIDE.UAT.Trace.t(), verdict: map()}} | {:error, term()}
+          {:ok, %{trace: Casein.UAT.Trace.t(), verdict: map()}} | {:error, term()}
   def author(criterion, session_id, attrs, opts \\ []) do
     agent = Keyword.get(opts, :agent, &default_agent/2)
     verdict = agent.(criterion, session_id)
@@ -52,7 +52,7 @@ defmodule DevIDE.UAT.Author do
   end
 
   defp default_agent(_criterion, _session_id) do
-    raise "DevIDE.UAT.Author needs an :agent (the live MCP driver). " <>
+    raise "Casein.UAT.Author needs an :agent (the live MCP driver). " <>
             "The real driver is unverified scaffolding — inject one explicitly."
   end
 end

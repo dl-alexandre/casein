@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateCodexOperations do
+defmodule Casein.Repo.Migrations.CreateCodexOperations do
   use Ecto.Migration
 
   def change do

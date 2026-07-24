@@ -38,4 +38,4 @@ if ($LASTEXITCODE -ne 0) { throw "DevIDE database repair failed with exit code $
 if ($Launch) {
     & (Join-Path $InstallRoot 'DevIDE.Launcher.ps1')
 }
-Write-Host 'DevIDE installation repair completed.'
+Write-Host 'Casein installation repair completed.'

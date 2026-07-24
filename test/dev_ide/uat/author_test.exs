@@ -1,12 +1,12 @@
-defmodule DevIDE.UAT.AuthorTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.AuthorTest do
+  use Casein.DataCase, async: false
 
   import Ecto.Query
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.Control, as: PreviewControl
-  alias DevIDE.Previews.ControlObservation
-  alias DevIDE.UAT.{Author, Trace}
+  alias Casein.PreviewControl.Registry
+  alias Casein.Previews.Control, as: PreviewControl
+  alias Casein.Previews.ControlObservation
+  alias Casein.UAT.{Author, Trace}
 
   @workspace %{
     id: "ws-preview",

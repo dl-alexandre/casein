@@ -1,8 +1,8 @@
-defmodule DevIDE.Push.DeliveryIntegrationTest do
+defmodule Casein.Push.DeliveryIntegrationTest do
   @moduledoc """
   Full-stack offline proof that a push actually leaves the building.
 
-  Other suites test the halves in isolation: `DevIDE.PushTest` drives the
+  Other suites test the halves in isolation: `Casein.PushTest` drives the
   dispatcher into a fake provider, and the provider tests drive a provider into
   a stub HTTP client. This suite joins them — a real spine event flows through
   the app-supervised `Dispatcher`, the `NativeProvider` platform router, the
@@ -14,11 +14,11 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
   envelope for an audit alert; an Android user token gets the FCM envelope for a
   needs_review card.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.{Audit, Push}
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Push.{APNSProvider, FCMProvider}
+  alias Casein.{Audit, Push}
+  alias Casein.Mobile.UserObserver
+  alias Casein.Push.{APNSProvider, FCMProvider}
 
   setup do
     prev_provider = Application.get_env(:dev_ide, :push_provider)
@@ -32,7 +32,7 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
     Application.put_env(:dev_ide, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.integration-token"} end,
-      http_client: DevIDE.Push.FCM.StubHTTP
+      http_client: Casein.Push.FCM.StubHTTP
     )
 
     Application.put_env(:dev_ide, APNSProvider,
@@ -40,7 +40,7 @@ defmodule DevIDE.Push.DeliveryIntegrationTest do
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
       private_key: private_key_pem(),
-      http_client: DevIDE.Push.APNS.StubHTTP,
+      http_client: Casein.Push.APNS.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
     )
 

@@ -1,7 +1,7 @@
-defmodule DevIDE.CommandPalette.UsageTest do
-  use DevIDE.DataCase, async: true
+defmodule Casein.CommandPalette.UsageTest do
+  use Casein.DataCase, async: true
 
-  alias DevIDE.CommandPalette.Usage
+  alias Casein.CommandPalette.Usage
 
   test "record upserts and increments per workspace+item" do
     assert :ok = Usage.record("ws-usage", "tmux:zoom")

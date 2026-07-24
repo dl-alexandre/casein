@@ -1,6 +1,6 @@
-defmodule DevIDE.LogsTest.FakeLogsAdapter do
+defmodule Casein.LogsTest.FakeLogsAdapter do
   @moduledoc false
-  @behaviour DevIDE.Logs.Adapter
+  @behaviour Casein.Logs.Adapter
 
   @impl true
   def start_stream(workspace_id, service, pid) do
@@ -17,7 +17,7 @@ defmodule DevIDE.LogsTest.FakeLogsAdapter do
   end
 end
 
-defmodule DevIDE.LogsTest.FakeWorkspaceSource do
+defmodule Casein.LogsTest.FakeWorkspaceSource do
   @moduledoc false
 
   def stream_logs("ws-down", _service, _pid), do: {:error, :backend_down}
@@ -29,15 +29,15 @@ defmodule DevIDE.LogsTest.FakeWorkspaceSource do
   end
 end
 
-defmodule DevIDE.LogsTest do
+defmodule Casein.LogsTest do
   # async: false — these tests mutate global application env
   # (:logs_adapter / :workspace_source).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Logs.Adapter
-  alias DevIDE.Logs.SSE
-  alias DevIDE.LogsTest.FakeLogsAdapter
-  alias DevIDE.LogsTest.FakeWorkspaceSource
+  alias Casein.Logs.Adapter
+  alias Casein.Logs.SSE
+  alias Casein.LogsTest.FakeLogsAdapter
+  alias Casein.LogsTest.FakeWorkspaceSource
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :logs_adapter)
@@ -51,7 +51,7 @@ defmodule DevIDE.LogsTest do
     :ok
   end
 
-  describe "DevIDE.Logs.Adapter dispatch" do
+  describe "Casein.Logs.Adapter dispatch" do
     test "start_stream dispatches to the configured adapter with an explicit pid" do
       Application.put_env(:dev_ide, :logs_adapter, FakeLogsAdapter)
 
@@ -84,7 +84,7 @@ defmodule DevIDE.LogsTest do
     end
   end
 
-  describe "DevIDE.Logs.SSE" do
+  describe "Casein.Logs.SSE" do
     test "start_stream maps a source {:ok, ref, task} to {:ok, ref}" do
       Application.put_env(:dev_ide, :workspace_source, FakeWorkspaceSource)
 
@@ -99,7 +99,7 @@ defmodule DevIDE.LogsTest do
     end
 
     test "start_stream with the Local source is not supported" do
-      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
 
       assert {:error, :not_supported} = SSE.start_stream("ws-1", "web", self())
     end

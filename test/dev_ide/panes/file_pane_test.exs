@@ -1,10 +1,10 @@
-defmodule DevIDE.Panes.FilePaneTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Panes.FilePaneTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.FilePanes
-  alias DevIDE.Panes
-  alias DevIDE.Panes.FilePane
-  alias DevIDE.Panes.Pane
+  alias Casein.FilePanes
+  alias Casein.Panes
+  alias Casein.Panes.FilePane
+  alias Casein.Panes.Pane
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -33,7 +33,7 @@ defmodule DevIDE.Panes.FilePaneTest do
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     File.write!(Path.join(path, "main.ex"), "defmodule Main do\nend\n")
     {path, workspace}
   end

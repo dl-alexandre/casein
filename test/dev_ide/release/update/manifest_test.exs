@@ -1,9 +1,9 @@
-defmodule DevIDE.Release.Update.ManifestTest do
+defmodule Casein.Release.Update.ManifestTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Manifest
-  alias DevIDE.TestSupport.HTTPStub
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Manifest
+  alias Casein.TestSupport.HTTPStub
 
   @manifest_json """
   {

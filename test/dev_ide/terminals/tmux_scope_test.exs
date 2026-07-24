@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.TmuxScopeTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TmuxScopeTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxScope
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Terminals.Tmux
+  alias Casein.Terminals.TmuxScope
+  alias Casein.Workspace
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()
@@ -21,7 +21,7 @@ defmodule DevIDE.Terminals.TmuxScopeTest do
 
   test "resolves persisted workspace names for id-only REST checks" do
     {:ok, _record} =
-      DevIDE.Workspaces.State.sync(%Workspace{
+      Casein.Workspaces.State.sync(%Workspace{
         id: "ws-1",
         name: "alpha",
         path: "/workspace",

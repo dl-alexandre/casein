@@ -1,6 +1,6 @@
 if Code.ensure_loaded?(Graph) and Code.ensure_loaded?(Boxart) do
-  defmodule Mix.Tasks.Devide.Depgraph do
-    use Boundary, classify_to: DevIDEMix
+  defmodule Mix.Tasks.Casein.Depgraph do
+    use Boundary, classify_to: CaseinMix
 
     @moduledoc """
     Render a scoped module-dependency subgraph as terminal box-art.

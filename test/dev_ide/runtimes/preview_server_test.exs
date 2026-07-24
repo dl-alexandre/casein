@@ -1,8 +1,8 @@
-defmodule DevIDE.Runtimes.PreviewServerTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Runtimes.PreviewServerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Runtimes.PreviewServer
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Runtimes.PreviewServer
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   # These tests exercise PreviewServer derivation/construction. Port selection
   # briefly probes loopback availability even for explicit ports; no listener is

@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.AgentShims do
+defmodule Casein.Agents.AgentShims do
   @moduledoc """
-  Ensures DevIDE agent launcher shims exist under `~/.devide/agent-shims`.
+  Ensures Casein agent launcher shims exist under `~/.devide/agent-shims`.
 
-  Inside DevIDE contexts (pane env, shell integration, agent env files) the
+  Inside Casein contexts (pane env, shell integration, agent env files) the
   shim dir is injected at the front of PATH so bare names (`claude`, `grok`,
-  …) resolve to the DevIDE launcher and MCP injection runs. The dir is never
-  on PATH in plain terminals, so DevIDE leaves the host's commands untouched.
+  …) resolve to the Casein launcher and MCP injection runs. The dir is never
+  on PATH in plain terminals, so Casein leaves the host's commands untouched.
   npm package updates and partial installs have left individual shims missing
   while siblings remained — this module self-heals on session env setup and
   can be called from deploy/doctor scripts.
@@ -17,11 +17,11 @@ defmodule DevIDE.Agents.AgentShims do
   @default_bin_dir "~/.devide/agent-shims"
   @default_npm_prefix "~/.local/share/npm-global"
 
-  @doc "Agent runtime names that get a DevIDE launcher shim (not `clauded`)."
+  @doc "Agent runtime names that get a Casein launcher shim (not `clauded`)."
   @spec runtimes() :: [String.t()]
   def runtimes, do: @runtimes
 
-  @doc "Directory that holds DevIDE agent launcher shims."
+  @doc "Directory that holds Casein agent launcher shims."
   @spec bin_dir() :: String.t()
   def bin_dir do
     :dev_ide

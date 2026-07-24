@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools do
+defmodule Casein.Agents.PreviewTools do
   @moduledoc """
   Narrow agent-facing preview operations.
 
@@ -6,18 +6,18 @@ defmodule DevIDE.Agents.PreviewTools do
   previews, and capture evidence — without arbitrary browser or external URL
   access.
 
-  Each preview tool is a `Jido.Action` module under `DevIDE.Agents.PreviewTools.*`,
-  invoked through `DevIDE.Agents.ToolAction`: params are schema-validated at
+  Each preview tool is a `Jido.Action` module under `Casein.Agents.PreviewTools.*`,
+  invoked through `Casein.Agents.ToolAction`: params are schema-validated at
   runtime while the MCP wire shapes (tools/list JSON Schema, error
   structuredContent) stay exactly as before.
   """
 
-  alias DevIDE.Agents.PreviewTools.{
+  alias Casein.Agents.PreviewTools.{
     ClearStorage,
     Click,
     Close,
     CompareSnapshots,
-    DevideReloadPage,
+    CaseinReloadPage,
     Elements,
     EnsureServerHere,
     GetStorage,
@@ -44,7 +44,7 @@ defmodule DevIDE.Agents.PreviewTools do
     Type
   }
 
-  alias DevIDE.Agents.ToolAction
+  alias Casein.Agents.ToolAction
   alias McpCtl.Tool
 
   @type tool :: Tool.t()
@@ -77,7 +77,7 @@ defmodule DevIDE.Agents.PreviewTools do
     ClearStorage,
     ReportErrors,
     ReloadIframe,
-    DevideReloadPage
+    CaseinReloadPage
   ]
 
   @by_name Map.new(@actions, &{&1.name(), &1})

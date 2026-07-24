@@ -1,34 +1,34 @@
-defmodule DevIDE.Operator.SituationDigest do
+defmodule Casein.Operator.SituationDigest do
   @moduledoc """
   Cold operator situation digest for a single workspace.
 
   This is a composition layer, not a new source of truth: every section is
-  read from an existing read model — `DevIDE.Workspaces.SessionSummary` for
-  sessions and agent layout, `DevIDE.Terminals.AgentState` for semantic pane
-  states, `DevIDE.Runtimes.list_agent_worktrees/1` for agent worktrees,
-  `DevIDE.Deployment.Health` for deploy status, `DevIDE.Agents.Activity` and
-  `DevIDE.Audit` for recent activity. Nothing is re-derived here. The one
+  read from an existing read model — `Casein.Workspaces.SessionSummary` for
+  sessions and agent layout, `Casein.Terminals.AgentState` for semantic pane
+  states, `Casein.Runtimes.list_agent_worktrees/1` for agent worktrees,
+  `Casein.Deployment.Health` for deploy status, `Casein.Agents.Activity` and
+  `Casein.Audit` for recent activity. Nothing is re-derived here. The one
   filesystem read is `frozen_scopes`: freeze-skill sentinel files observed
   under the workspace and worktree roots (facts only, no enforcement).
 
   The digest is a summary payload: free text (task summaries, agent-state
   messages, handoffs, activity summaries) is redacted through
-  `DevIDE.Export.Sanitizer`, and no raw terminal scrollback is ever included.
-  `risks` is filled by `DevIDE.Operator.Risks.detect/1` over the finished
+  `Casein.Export.Sanitizer`, and no raw terminal scrollback is ever included.
+  `risks` is filled by `Casein.Operator.Risks.detect/1` over the finished
   digest.
   """
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Deployment.Health
-  alias DevIDE.Export.Sanitizer
-  alias DevIDE.Operator.Risks
-  alias DevIDE.Ops.PgProbe
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.SessionSummary
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Deployment.Health
+  alias Casein.Export.Sanitizer
+  alias Casein.Operator.Risks
+  alias Casein.Ops.PgProbe
+  alias Casein.Runtimes
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.TmuxTopology
+  alias Casein.Workspaces
+  alias Casein.Workspaces.SessionSummary
 
   @recent_activity 20
   @recent_audit 20
@@ -48,7 +48,7 @@ defmodule DevIDE.Operator.SituationDigest do
   missing workspace record, unreachable deploy poller file) empties its own
   section instead of failing the digest. Every section that degraded this way
   is listed in the digest's `degraded` key, so consumers — notably the
-  `DevIDE.Operator.SituationServer` risk differ — can tell "actually empty"
+  `Casein.Operator.SituationServer` risk differ — can tell "actually empty"
   from "unreadable right now" and avoid treating missing data as recovery.
   """
   @spec build(String.t()) :: {:ok, map()} | {:error, term()}
@@ -291,7 +291,7 @@ defmodule DevIDE.Operator.SituationDigest do
 
   @doc """
   The digest's deploy section on its own — used by
-  `DevIDE.Operator.SituationServer` to refresh just this section on
+  `Casein.Operator.SituationServer` to refresh just this section on
   `"deploy:updates"` events without a full rebuild.
   """
   @spec deploy_section() :: map()
@@ -329,7 +329,7 @@ defmodule DevIDE.Operator.SituationDigest do
   ## Ops
 
   # Box-level infrastructure health rides along only while its producer runs:
-  # with a live DevIDE.Ops.PgProbe the digest gains ops.pg (the latest
+  # with a live Casein.Ops.PgProbe the digest gains ops.pg (the latest
   # per-target saturation samples); without one the key is absent entirely so
   # consumers can tell "healthy" from "not measured".
   defp put_ops(digest) do
@@ -380,7 +380,7 @@ defmodule DevIDE.Operator.SituationDigest do
   Absolute per-section reference instants behind `freshness`: `generated_at`
   minus each section's staleness (`nil` where the section has no dated data).
 
-  `DevIDE.Operator.SituationServer` keeps these and re-stamps `freshness`
+  `Casein.Operator.SituationServer` keeps these and re-stamps `freshness`
   with `freshness_from/2` at read time, so live-served digests age instead of
   carrying stamps frozen at the last full rebuild.
   """
@@ -469,5 +469,5 @@ defmodule DevIDE.Operator.SituationDigest do
   defp present(value) when is_binary(value) and value != "", do: value
   defp present(_value), do: nil
 
-  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
+  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
 end

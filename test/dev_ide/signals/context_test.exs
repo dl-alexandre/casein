@@ -1,7 +1,7 @@
-defmodule DevIDE.Signals.ContextTest do
+defmodule Casein.Signals.ContextTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Signals.Context
+  alias Casein.Signals.Context
 
   test "with_new installs a fresh context and clears it after" do
     assert Context.current() == nil
@@ -48,7 +48,7 @@ defmodule DevIDE.Signals.ContextTest do
     result =
       Context.with_new(fn ->
         task =
-          Context.async(DevIDE.TaskSupervisor, fn ->
+          Context.async(Casein.TaskSupervisor, fn ->
             Context.current().trace_id
           end)
 

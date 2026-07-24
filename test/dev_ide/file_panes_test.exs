@@ -1,4 +1,4 @@
-defmodule DevIDE.FilePanesTest.CountingTmuxAdapter do
+defmodule Casein.FilePanesTest.CountingTmuxAdapter do
   @moduledoc false
 
   alias TmuxCtl.Test.FakeAdapter
@@ -11,15 +11,15 @@ defmodule DevIDE.FilePanesTest.CountingTmuxAdapter do
   end
 end
 
-defmodule DevIDE.FilePanesTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.FilePanesTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.FilePanes
-  alias DevIDE.FilePanes.FilePaneRegistration
-  alias DevIDE.FilePanesTest.CountingTmuxAdapter
-  alias DevIDE.Panes
-  alias DevIDE.Panes.Events, as: PaneEvents
-  alias DevIDE.Repo
+  alias Casein.FilePanes
+  alias Casein.FilePanes.FilePaneRegistration
+  alias Casein.FilePanesTest.CountingTmuxAdapter
+  alias Casein.Panes
+  alias Casein.Panes.Events, as: PaneEvents
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -52,7 +52,7 @@ defmodule DevIDE.FilePanesTest do
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
     Application.put_env(:dev_ide, :workspaces_root, root)
-    {:ok, workspace} = DevIDE.Workspaces.attach_folder(path)
+    {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
 

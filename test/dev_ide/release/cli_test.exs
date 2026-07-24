@@ -1,10 +1,10 @@
-defmodule DevIDE.Release.CLITest do
+defmodule Casein.Release.CLITest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
 
-  alias DevIDE.Release.CLI
-  alias DevIDE.Release.Metadata
+  alias Casein.Release.CLI
+  alias Casein.Release.Metadata
 
   setup do
     tmp = System.tmp_dir!() |> Path.join("devide-cli-#{System.unique_integer([:positive])}")

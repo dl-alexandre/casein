@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.TidewaveCapability do
+defmodule Casein.Agents.TidewaveCapability do
   @moduledoc """
   Detects the locally-hosted Tidewave MCP capability.
 
   Tidewave is served from the Phoenix endpoint, but contexts must not depend on
   the web layer. The endpoint base URL is resolved through a configured MFA
   (`:tidewave_url_provider`), which the application wires to
-  `DevIdeWeb.Endpoint.url/0`. This inverts the dependency (web -> context only),
+  `CaseinWeb.Endpoint.url/0`. This inverts the dependency (web -> context only),
   keeping the context out of the runtime dependency cycle while preserving
   accurate, port-aware URL resolution.
 
@@ -18,8 +18,8 @@ defmodule DevIDE.Agents.TidewaveCapability do
   port. Those instances tag `source: :preview_env` in the capability record.
   """
 
-  alias DevIDE.Agents.Capability
-  alias DevIDE.Previews.EnvPorts
+  alias Casein.Agents.Capability
+  alias Casein.Previews.EnvPorts
 
   @spec detect() :: Capability.t()
   def detect do

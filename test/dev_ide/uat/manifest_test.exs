@@ -1,7 +1,7 @@
-defmodule DevIDE.UAT.ManifestTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.UAT.ManifestTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.UAT.Manifest
+  alias Casein.UAT.Manifest
 
   defp base(overrides \\ %{}) do
     Map.merge(

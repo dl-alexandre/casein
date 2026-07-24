@@ -1,12 +1,12 @@
-defmodule DevIDE.Agents.AgentEvents.EctoAdapter do
+defmodule Casein.Agents.AgentEvents.EctoAdapter do
   @moduledoc false
 
-  @behaviour DevIDE.Agents.AgentEvents.Adapter
+  @behaviour Casein.Agents.AgentEvents.Adapter
 
   import Ecto.Query
 
-  alias DevIDE.Agents.AgentEvent
-  alias DevIDE.Repo
+  alias Casein.Agents.AgentEvent
+  alias Casein.Repo
 
   @impl true
   def record(attrs) do

@@ -1,23 +1,23 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.HistoryEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.HistoryEvents do
   # Previous-session History panel state + handle_event clauses, delegated from
-  # DevIdeWeb.WorkspaceLive.Show (mirrors FileEvents/LogsEvents). Absorbs the
+  # CaseinWeb.WorkspaceLive.Show (mirrors FileEvents/LogsEvents). Absorbs the
   # former WorkspaceLive.PreviousSessions full-page LiveView into the cockpit.
   #
   # Lazy by construction: mount only seeds empty defaults (`assign_defaults/1`);
-  # the bounded `DevIDE.Export.previous_sessions/2` search runs the first time
+  # the bounded `Casein.Export.previous_sessions/2` search runs the first time
   # the History tab opens (`open/2`), never during cockpit mount. Every search
   # is scoped to the mounted workspace id from the socket — the client-supplied
   # "workspace" form field is only a *filter within* that workspace's results
-  # (see `DevIDE.Export.WorkspaceStatus.previous_sessions/2`).
+  # (see `Casein.Export.WorkspaceStatus.previous_sessions/2`).
   @moduledoc false
 
   import Phoenix.Component
   import Phoenix.LiveView, only: [connected?: 1]
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Export
-  alias DevIdeWeb.Forms.PreviousSessionsSearch
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Export
+  alias CaseinWeb.Forms.PreviousSessionsSearch
 
   # Old /workspaces/:id/previous-sessions URLs carried these search params
   # (plus the aliases PreviousSessionsSearch accepts); the legacy redirect

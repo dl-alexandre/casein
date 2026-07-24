@@ -1,30 +1,30 @@
-defmodule DevIDE.RuntimesExtraTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.RuntimesExtraTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Workspace
-  alias DevIDE.Runtimes
-  alias DevIDE.Runtimes.LifecycleEvent
-  alias DevIDE.Runtimes.WorktreeReconciler
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Workspace
+  alias Casein.Runtimes
+  alias Casein.Runtimes.LifecycleEvent
+  alias Casein.Runtimes.WorktreeReconciler
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     MemoryAdapter.clear()
     Runtimes.clear()
     WorktreeReconciler.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
 
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
 
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
       WorktreeReconciler.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
       restore_env(:runtimes_adapter, prev_runtime)
     end)
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.PreviousSessions do
+defmodule Casein.PreviousSessions do
   @moduledoc """
   Read-only search over recent session context.
 
@@ -8,10 +8,10 @@ defmodule DevIDE.PreviousSessions do
   without putting search concerns into the terminal control plane.
   """
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Labels
-  alias DevIDE.Terminals.SessionDirectory
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Labels
+  alias Casein.Terminals.SessionDirectory
 
   @default_limit 20
   @max_limit 50

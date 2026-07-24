@@ -1,8 +1,8 @@
-defmodule DevIDE.AgentSessions.GrokACP.AttachmentsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.AgentSessions.GrokACP.Attachments
-  alias DevIDE.Test.GrokACPAttachmentFakeTransport
+  alias Casein.AgentSessions.GrokACP.Attachments
+  alias Casein.Test.GrokACPAttachmentFakeTransport
 
   setup do
     root =

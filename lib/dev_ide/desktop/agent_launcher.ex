@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.AgentLauncher do
+defmodule Casein.Desktop.AgentLauncher do
   @moduledoc """
   Strict command construction for agent runtimes launched in a native Windows shell.
 

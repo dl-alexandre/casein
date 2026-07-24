@@ -1,12 +1,12 @@
-defmodule DevIDE.Setup.InsecureHttpEdgeTest do
+defmodule Casein.Setup.InsecureHttpEdgeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Setup.InsecureHttpEdge
+  alias Casein.Setup.InsecureHttpEdge
 
   test "socket unit listens on the configured insecure HTTP port" do
     text = InsecureHttpEdge.socket_unit_text(80)
 
-    assert text =~ "Description=DevIDE INSECURE LAN HTTP edge socket"
+    assert text =~ "Description=Casein INSECURE LAN HTTP edge socket"
     assert text =~ "ListenStream=80"
     assert text =~ "WantedBy=sockets.target"
   end

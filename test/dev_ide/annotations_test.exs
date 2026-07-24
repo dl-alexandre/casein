@@ -1,9 +1,9 @@
-defmodule DevIDE.AnnotationsTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.AnnotationsTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Annotations
-  alias DevIDE.Annotations.Annotation
-  alias DevIDE.Audit
+  alias Casein.Annotations
+  alias Casein.Annotations.Annotation
+  alias Casein.Audit
 
   setup do
     Audit.clear()

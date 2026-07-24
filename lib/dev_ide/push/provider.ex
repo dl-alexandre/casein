@@ -1,8 +1,8 @@
-defmodule DevIDE.Push.Provider do
+defmodule Casein.Push.Provider do
   @moduledoc """
   Behaviour for an OS push transport. Implementations map a delivery-agnostic
   notification (from audit alerts or mobile cards) onto a concrete provider —
-  APNs, FCM, or the default `DevIDE.Push.LogProvider` stub.
+  APNs, FCM, or the default `Casein.Push.LogProvider` stub.
 
   `platform` is the device-reported string (e.g. `"ios"`, `"android"`) and must
   be treated as untrusted (never atomized). Implementations should be

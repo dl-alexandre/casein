@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.CommandsTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Previews.CommandsTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl.Registry, as: PreviewRegistry
-  alias DevIDE.Previews.Commands
+  alias Casein.PreviewControl.Registry, as: PreviewRegistry
+  alias Casein.Previews.Commands
 
   # A minimal workspace map. Only the pure / parse-error branches exercised
   # here ever touch it, and those branches short-circuit before any surface

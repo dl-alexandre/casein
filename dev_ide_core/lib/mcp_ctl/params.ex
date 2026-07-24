@@ -21,7 +21,7 @@ defmodule McpCtl.Params do
     %{
       type: "string",
       description:
-        "Pane id of the calling agent (e.g. \"%3\"). DevIDE-launched agents send it " <>
+        "Pane id of the calling agent (e.g. \"%3\"). Casein-launched agents send it " <>
           "automatically via the X-DevIDE-Caller-Pane header; pass it explicitly when " <>
           "calling from outside a pane. Anchors session and pane resolution to the " <>
           "caller instead of the operator-focused active pane."
@@ -176,7 +176,7 @@ defmodule McpCtl.Params do
       type: "string",
       description:
         "Optional source preview pane id to share exactly when share_session is true. " <>
-          "When omitted, DevIDE attaches to an active same-origin preview pane."
+          "When omitted, Casein attaches to an active same-origin preview pane."
     }
   end
 

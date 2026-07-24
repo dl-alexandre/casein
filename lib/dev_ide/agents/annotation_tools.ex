@@ -1,15 +1,15 @@
-defmodule DevIDE.Agents.AnnotationTools do
+defmodule Casein.Agents.AnnotationTools do
   @moduledoc """
   Workspace annotation tools for the Terminal MCP endpoint.
 
   Agents propose structured notes for human review; listing is read-only.
 
-  Each tool is a `Jido.Action` module under `DevIDE.Agents.AnnotationTools.*`,
-  invoked through `DevIDE.Agents.ToolAction`.
+  Each tool is a `Jido.Action` module under `Casein.Agents.AnnotationTools.*`,
+  invoked through `Casein.Agents.ToolAction`.
   """
 
-  alias DevIDE.Agents.AnnotationTools.{Impl, List, Propose}
-  alias DevIDE.Agents.ToolAction
+  alias Casein.Agents.AnnotationTools.{Impl, List, Propose}
+  alias Casein.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
 

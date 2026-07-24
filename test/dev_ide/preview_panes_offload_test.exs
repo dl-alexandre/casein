@@ -1,13 +1,13 @@
-defmodule DevIDE.PreviewPanesOffloadTest do
+defmodule Casein.PreviewPanesOffloadTest do
   @moduledoc """
   Slice 1 regression tests: I/O offload, $callers ownership, per-pane queues,
   and the get_by_session self-call guard.
   """
-  use DevIDE.DataCase, async: false
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewPanes
-  alias DevIDE.PreviewPanes.PreviewPaneRegistration
-  alias DevIDE.Repo
+  alias Casein.PreviewPanes
+  alias Casein.PreviewPanes.PreviewPaneRegistration
+  alias Casein.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -487,15 +487,15 @@ defmodule DevIDE.PreviewPanesOffloadTest do
   end
 end
 
-defmodule DevIDE.PreviewPanesOwnershipTest do
+defmodule Casein.PreviewPanesOwnershipTest do
   @moduledoc """
   Cascade-class death proof: register's manager HTTP must resolve a privately
   owned Req.Test stub via $callers with NO PreviewPanes singleton allowance.
   """
-  use DevIDE.DataCase, async: true
+  use Casein.DataCase, async: true
 
-  alias DevIDE.Integrations.Manager.Client
-  alias DevIDE.PreviewPanes
+  alias Casein.Integrations.Manager.Client
+  alias Casein.PreviewPanes
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
@@ -543,9 +543,9 @@ defmodule DevIDE.PreviewPanesOwnershipTest do
     })
 
     # Private stub owned by this test process. Intentionally no
-    # Req.Test.allow(..., Process.whereis(DevIDE.PreviewPanes)) — that is the
+    # Req.Test.allow(..., Process.whereis(Casein.PreviewPanes)) — that is the
     # cascade-class footgun Slice 1 deletes from manager_req_test.ex.
-    panes_pid = Process.whereis(DevIDE.PreviewPanes)
+    panes_pid = Process.whereis(Casein.PreviewPanes)
     assert is_pid(panes_pid)
 
     Req.Test.stub(Client, fn

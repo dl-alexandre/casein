@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AgentCapabilityTokens do
+defmodule Casein.Agents.AgentCapabilityTokens do
   @moduledoc """
   Persistence and lifecycle for short-lived, session-bound agent capabilities.
 
@@ -9,8 +9,8 @@ defmodule DevIDE.Agents.AgentCapabilityTokens do
 
   import Ecto.Query
 
-  alias DevIDE.Agents.AgentCapabilityToken
-  alias DevIDE.Repo
+  alias Casein.Agents.AgentCapabilityToken
+  alias Casein.Repo
 
   @default_ttl_seconds 60 * 60 * 12
   @touch_interval_seconds 60

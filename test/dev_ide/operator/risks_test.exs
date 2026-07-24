@@ -1,7 +1,7 @@
-defmodule DevIDE.Operator.RisksTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Operator.RisksTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Operator.Risks
+  alias Casein.Operator.Risks
 
   @generated_at ~U[2026-07-16 12:00:00Z]
 

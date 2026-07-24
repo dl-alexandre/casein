@@ -134,7 +134,7 @@ tar -C "${OUTPUT_DIR}" -czf "${TARBALL}" .
 
 log "writing dist/devide-${CHANNEL}.json"
 WRITE_CODE="$(cat <<EOF
-alias DevIDE.Release.Package
+alias Casein.Release.Package
 prev = System.get_env("DEVIDE_PACKAGE_PREVIOUS_REVISION")
 opts = [
   release_root: System.get_env("DEVIDE_PACKAGE_RELEASE_ROOT"),

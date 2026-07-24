@@ -1,7 +1,7 @@
-defmodule DevIDE.Labels.DerivationTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Labels.DerivationTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Labels.Derivation
+  alias Casein.Labels.Derivation
 
   test "derives mix command labels" do
     assert Derivation.from_mcp("terminal_send_agent_command", %{"command" => "mix test"}, :ok) ==

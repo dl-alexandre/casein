@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.ConnCase do
+defmodule CaseinWeb.ConnCase do
   @moduledoc """
   This module defines the test case to be used by
   tests that require setting up a connection.
@@ -11,7 +11,7 @@ defmodule DevIdeWeb.ConnCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use DevIdeWeb.ConnCase` with ExUnit async mode enabled, although
+  by setting `use CaseinWeb.ConnCase` with ExUnit async mode enabled, although
   this option is not recommended for other databases.
   """
 
@@ -20,21 +20,21 @@ defmodule DevIdeWeb.ConnCase do
   using do
     quote do
       # The default endpoint for testing
-      @endpoint DevIdeWeb.Endpoint
+      @endpoint CaseinWeb.Endpoint
 
-      use DevIdeWeb, :verified_routes
+      use CaseinWeb, :verified_routes
 
       # Import conveniences for testing with connections
       import Plug.Conn
       import Phoenix.ConnTest
-      import DevIdeWeb.ConnCase
-      import DevIDE.Factory
+      import CaseinWeb.ConnCase
+      import Casein.Factory
     end
   end
 
   setup tags do
-    DevIDE.Test.ManagerReqTest.setup(tags)
-    DevIDE.DataCase.setup_sandbox(tags)
+    Casein.Test.ManagerReqTest.setup(tags)
+    Casein.DataCase.setup_sandbox(tags)
     reset_rate_limit_table()
     # Async tests rely on config/test.exs defaults (lines 77-79); sync tests may
     # override forward_auth/admins/on_devbox and need a per-test reset.
@@ -43,9 +43,9 @@ defmodule DevIdeWeb.ConnCase do
   end
 
   defp reset_rate_limit_table do
-    case :ets.whereis(DevIDE.RateLimit) do
+    case :ets.whereis(Casein.RateLimit) do
       :undefined -> :ok
-      _table -> :ets.delete_all_objects(DevIDE.RateLimit)
+      _table -> :ets.delete_all_objects(Casein.RateLimit)
     end
   end
 

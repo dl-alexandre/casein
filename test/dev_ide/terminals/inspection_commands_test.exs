@@ -1,8 +1,8 @@
-defmodule DevIDE.Terminals.InspectionCommandsTest do
+defmodule Casein.Terminals.InspectionCommandsTest do
   # Serial: mutates process-global Application env (:preview_env_home).
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.InspectionCommands
+  alias Casein.Terminals.InspectionCommands
 
   setup do
     root =

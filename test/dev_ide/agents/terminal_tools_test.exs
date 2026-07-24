@@ -1,13 +1,13 @@
-defmodule DevIDE.Agents.TerminalToolsTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.TerminalToolsTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.TerminalTools
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.MemoryAdapter
+  alias Casein.Agents.TerminalTools
+  alias Casein.Runtimes
+  alias Casein.Terminals.Tmux
+  alias Casein.Workspace
+  alias Casein.Workspaces.DbIsolation
+  alias Casein.Workspaces.State
+  alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
     previous = %{
@@ -25,7 +25,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     MemoryAdapter.clear()
     Runtimes.clear()
-    DevIDE.Audit.MemoryAdapter.clear()
+    Casein.Audit.MemoryAdapter.clear()
 
     on_exit(fn ->
       TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
@@ -45,7 +45,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
       MemoryAdapter.clear()
       Runtimes.clear()
-      DevIDE.Audit.MemoryAdapter.clear()
+      Casein.Audit.MemoryAdapter.clear()
     end)
 
     :ok
@@ -85,7 +85,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   end
 
   test "unscoped list_sessions filters out synthetic scratch sessions" do
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     real_session = Tmux.session_name("alpha", "u-dev")
     scratch_session = Tmux.session_name("__scratch__", "u-dev")
@@ -134,7 +134,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     Application.put_env(:dev_ide, :api_token, "terminal-tools-token")
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -167,7 +167,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "agent pane shortcuts target only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -226,7 +226,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     assert {:ok, %{session: ^session, pane: "%2"}} =
@@ -244,7 +244,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "terminal_context returns safe agent-pane next step" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -259,7 +259,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     assert {:ok,
@@ -278,7 +278,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     stale = prefix <> "_stale"
     live = prefix <> "_live"
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -306,7 +306,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     older = prefix <> "_older"
     newer = prefix <> "_newer"
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -325,7 +325,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
   describe "caller-pane anchoring" do
     setup do
-      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
       :ok
     end
@@ -429,7 +429,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       })
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-        {session, "%2"} => "# DevIDE agent pane\n"
+        {session, "%2"} => "# Casein agent pane\n"
       })
 
       assert {:error, %{error: :caller_is_only_agent_pane, caller_pane: "%2"}} =
@@ -461,8 +461,8 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       })
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-        {session, "%2"} => "# DevIDE agent pane\n",
-        {session, "%4"} => "# DevIDE agent pane\n"
+        {session, "%2"} => "# Casein agent pane\n",
+        {session, "%4"} => "# Casein agent pane\n"
       })
 
       assert {:ok, %{pane: "%4"}} =
@@ -524,7 +524,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "terminal_paste_agent_text targets only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -539,7 +539,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     assert {:ok,
@@ -562,7 +562,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "capture strips ANSI escapes by default" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -581,7 +581,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "read-only agent pane discovery prefers marker over earlier agent process pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -610,7 +610,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     assert {:ok, %{pane: "%2", reason: "agent_pair_marker"}} =
@@ -623,7 +623,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "send_agent_command requires the agent_pair marker" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -655,7 +655,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session_a = prefix <> "_a"
     session_b = prefix <> "_b"
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -760,11 +760,11 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   describe "terminal_agent_transcript" do
     test "reads normalized entries from the pane's reported transcript_path" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
       path = write_claude_fixture!()
 
       :ok =
-        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :working, nil,
           transcript_path: path
         )
 
@@ -784,7 +784,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "returns no_transcript when the pane has no pointer" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:error, :no_transcript} =
                TerminalTools.invoke("terminal_agent_transcript", %{
@@ -797,7 +797,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   describe "terminal_report_agent_state" do
     test "records a report against the dedicated agent pane" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:ok, result} =
                TerminalTools.invoke("terminal_report_agent_state", %{
@@ -812,14 +812,14 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       assert result.state == "blocked"
       assert result.agent_session_id == "grok-session-123"
       assert result.status == "reported"
-      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      entry = Casein.Terminals.AgentState.get(session, "%2")
       assert entry.state == :blocked
       assert entry.agent_session_id == "grok-session-123"
     end
 
     test "send_agent_command reports a dispatch working state for the agent pane" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:ok, %{target: "%2", status: "sent"}} =
                TerminalTools.invoke("terminal_send_agent_command", %{
@@ -828,7 +828,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "command" => "mix test"
                })
 
-      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      entry = Casein.Terminals.AgentState.get(session, "%2")
       assert entry.state == :working
       assert entry.source == :dispatch
       assert entry.message == "mix test"
@@ -836,7 +836,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "paste_agent_text reports working only when submitting" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:ok, %{target: "%2"}} =
                TerminalTools.invoke("terminal_paste_agent_text", %{
@@ -845,7 +845,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "text" => "draft, not submitted"
                })
 
-      assert DevIDE.Terminals.AgentState.get(session, "%2") == nil
+      assert Casein.Terminals.AgentState.get(session, "%2") == nil
 
       assert {:ok, %{target: "%2"}} =
                TerminalTools.invoke("terminal_paste_agent_text", %{
@@ -855,7 +855,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "submit" => true
                })
 
-      entry = DevIDE.Terminals.AgentState.get(session, "%2")
+      entry = Casein.Terminals.AgentState.get(session, "%2")
       assert entry.state == :working
       assert entry.source == :dispatch
     end
@@ -873,7 +873,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "rejects invalid Grok attachment metadata before persisting agent state" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:error, {:invalid_grok_attachment, :invalid_grok_attachment_metadata}} =
                TerminalTools.invoke("terminal_report_agent_state", %{
@@ -885,18 +885,18 @@ defmodule DevIDE.Agents.TerminalToolsTest do
                  "agent_session_id" => "unverified-session"
                })
 
-      assert DevIDE.Terminals.AgentState.get(session, "%2") == nil
+      assert Casein.Terminals.AgentState.get(session, "%2") == nil
     end
   end
 
   describe "terminal_wait_agent_state" do
     test "include_answer returns the final assistant message when done" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
       path = write_claude_fixture!("Done.")
 
       :ok =
-        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :done, nil,
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :done, nil,
           transcript_path: path
         )
 
@@ -915,8 +915,8 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "returns immediately when the pane is already in a target state" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
-      :ok = DevIDE.Terminals.AgentState.report("alpha", session, "%2", :blocked, "perm")
+      Casein.Terminals.AgentState.clear()
+      :ok = Casein.Terminals.AgentState.report("alpha", session, "%2", :blocked, "perm")
 
       assert {:ok, result} =
                TerminalTools.invoke("terminal_wait_agent_state", %{
@@ -933,7 +933,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "times out (not an error) when the state is never reached" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
 
       assert {:ok, result} =
                TerminalTools.invoke("terminal_wait_agent_state", %{
@@ -949,12 +949,12 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     test "unblocks when a report arrives mid-wait" do
       session = agent_pair_session!()
-      DevIDE.Terminals.AgentState.clear()
+      Casein.Terminals.AgentState.clear()
       parent = self()
 
       spawn(fn ->
         Process.sleep(50)
-        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :done, nil)
+        Casein.Terminals.AgentState.report("alpha", session, "%2", :done, nil)
         send(parent, :reported)
       end)
 
@@ -1025,7 +1025,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   defp agent_pair_session! do
     session = Tmux.session_name("alpha", "wait")
 
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -1054,7 +1054,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
-      {session, "%2"} => "# DevIDE agent pane\n"
+      {session, "%2"} => "# Casein agent pane\n"
     })
 
     session

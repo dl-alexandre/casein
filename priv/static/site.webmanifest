@@ -1,7 +1,7 @@
 {
-  "name": "DevIDE",
-  "short_name": "DevIDE",
-  "description": "A mobile-friendly development cockpit for DevIDE workspaces.",
+  "name": "Casein",
+  "short_name": "Casein",
+  "description": "A mobile-friendly development cockpit for Casein workspaces.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

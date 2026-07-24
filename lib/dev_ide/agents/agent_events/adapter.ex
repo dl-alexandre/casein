@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.AgentEvents.Adapter do
+defmodule Casein.Agents.AgentEvents.Adapter do
   @moduledoc false
 
-  alias DevIDE.Agents.AgentEvent
+  alias Casein.Agents.AgentEvent
 
   @callback record(map()) ::
               {:ok, AgentEvent.t(), :inserted | :duplicate} | {:error, term()}

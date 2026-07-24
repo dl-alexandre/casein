@@ -1,7 +1,7 @@
-defmodule DevIDE.Integrations.Manager.ClientBaseUrlTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Integrations.Manager.ClientBaseUrlTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Client
 
   describe "base_url/0" do
     setup do

@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.TmuxWindowJanitorTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.TmuxWindowJanitor, as: Janitor
+  alias Casein.Terminals.TmuxWindowJanitor, as: Janitor
   alias TmuxCtl.Test.FakeState
 
   @now 1_000_000

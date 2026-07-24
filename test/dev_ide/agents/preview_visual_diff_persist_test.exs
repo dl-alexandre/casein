@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.PreviewVisualDiffPersistTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Agents.PreviewVisualDiffPersistTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Previews.Artifacts
+  alias Casein.Previews.Artifacts
 
   describe "persist_diff_artifact wiring" do
     setup do

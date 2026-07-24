@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.DrainController do
+defmodule CaseinWeb.API.DrainController do
   @moduledoc "Internal API endpoint for initiating a graceful deployment drain."
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
   def drain(conn, params) do
     commits_behind = params |> Map.get("commits_behind", 0) |> parse_int()
 
-    case DevIDE.Deployment.Drain.start_drain(commits_behind) do
+    case Casein.Deployment.Drain.start_drain(commits_behind) do
       :ok ->
         json(conn, %{ok: true})
 

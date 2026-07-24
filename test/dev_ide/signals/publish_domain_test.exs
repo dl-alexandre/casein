@@ -1,11 +1,11 @@
-defmodule DevIDE.Signals.PublishDomainTest do
+defmodule Casein.Signals.PublishDomainTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Runtimes
-  alias DevIDE.SignalBus
-  alias DevIDE.Signals
-  alias DevIDE.Signals.Publish
-  alias DevIDE.Test.RuntimeSeed
+  alias Casein.Runtimes
+  alias Casein.SignalBus
+  alias Casein.Signals
+  alias Casein.Signals.Publish
+  alias Casein.Test.RuntimeSeed
   alias Jido.Signal.Bus
 
   test "from_domain_event builds a devide.* CloudEvents envelope" do
@@ -47,7 +47,7 @@ defmodule DevIDE.Signals.PublishDomainTest do
 
   test "mark_preview_server failed also publishes a runtime domain signal" do
     prev = Application.get_env(:dev_ide, :runtimes_adapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     on_exit(fn -> restore_adapter(prev) end)
     Runtimes.clear()
 

@@ -1,18 +1,18 @@
-defmodule DevIDE.Panes.PaneBehaviourTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Panes.PaneBehaviourTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Panes.Pane, as: PaneBehaviour
-  alias DevIDE.Panes.Terminal, as: TerminalPane
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.SessionTemplate.Window
-  alias DevIDE.Terminals.Templates.Executor
-  alias DevIDE.Terminals.Templates.ReconcileExecutor
-  alias DevIDE.Terminals.Templates.Reconciler
+  alias Casein.Panes.Pane, as: PaneBehaviour
+  alias Casein.Panes.Terminal, as: TerminalPane
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.Templates.Executor
+  alias Casein.Terminals.Templates.ReconcileExecutor
+  alias Casein.Terminals.Templates.Reconciler
 
   # Stub preview implementation: records attach calls so we can assert the pipeline
   # brings a :preview node to life without standing up the real PreviewPanes stack.
   defmodule StubPreview do
-    @behaviour DevIDE.Panes.Pane
+    @behaviour Casein.Panes.Pane
 
     @impl true
     def attach(node, ctx) do
@@ -33,8 +33,8 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
 
   describe "pane type dispatch" do
     test "impl/1 resolves built-in implementations" do
-      assert PaneBehaviour.impl(:terminal) == DevIDE.Panes.Terminal
-      assert PaneBehaviour.impl(:preview) == DevIDE.Previews.Pane
+      assert PaneBehaviour.impl(:terminal) == Casein.Panes.Terminal
+      assert PaneBehaviour.impl(:preview) == Casein.Previews.Pane
     end
 
     test "impl/1 honors :pane_impls override" do
@@ -43,7 +43,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
 
       assert PaneBehaviour.impl(:preview) == StubPreview
       # Non-overridden types still resolve to defaults.
-      assert PaneBehaviour.impl(:terminal) == DevIDE.Panes.Terminal
+      assert PaneBehaviour.impl(:terminal) == Casein.Panes.Terminal
     end
 
     test "types/0 lists known pane types" do
@@ -117,7 +117,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
 
       assert {:ok, result} =
                ReconcileExecutor.execute("api-session", diff,
-                 tmux: DevIDE.Test.FakeTmuxAdapter,
+                 tmux: Casein.Test.FakeTmuxAdapter,
                  workspace_root: "/ws",
                  workspace_id: "ws-1"
                )
@@ -140,7 +140,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
 
       assert {:ok, result} =
                ReconcileExecutor.execute("api-session", diff,
-                 tmux: DevIDE.Test.FakeTmuxAdapter,
+                 tmux: Casein.Test.FakeTmuxAdapter,
                  workspace_root: "/ws",
                  workspace_id: "ws-1"
                )
@@ -170,7 +170,7 @@ defmodule DevIDE.Panes.PaneBehaviourTest do
   end
 
   describe "export preview tagging" do
-    alias DevIDE.Terminals.SessionTemplate.Export
+    alias Casein.Terminals.SessionTemplate.Export
 
     test "without a preview lookup, panes export as terminals (unchanged)" do
       {:ok, template} = Export.from_topology(single_pane_topology(), workspace_root: "/ws")

@@ -1,9 +1,9 @@
-defmodule DevIDE.UAT.FreezeTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.UAT.FreezeTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.Control, as: PreviewControl
-  alias DevIDE.UAT.{Freeze, Replay, Run, Step, Trace}
+  alias Casein.PreviewControl.Registry
+  alias Casein.Previews.Control, as: PreviewControl
+  alias Casein.UAT.{Freeze, Replay, Run, Step, Trace}
 
   @workspace %{
     id: "ws-preview",

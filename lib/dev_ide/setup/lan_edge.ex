@@ -1,10 +1,10 @@
-defmodule DevIDE.Setup.LanEdge do
+defmodule Casein.Setup.LanEdge do
   @moduledoc """
-  Helpers for DevIDE's optional LAN HTTPS edge.
+  Helpers for Casein's optional LAN HTTPS edge.
 
   The edge is a systemd socket plus `systemd-socket-proxyd` service that listens
-  on privileged port 443 and forwards raw TLS to DevIDE's unprivileged LAN HTTPS
-  listener. DevIDE still owns certificate termination on port 4443.
+  on privileged port 443 and forwards raw TLS to Casein's unprivileged LAN HTTPS
+  listener. Casein still owns certificate termination on port 4443.
   """
 
   @socket_unit "devide-lan-edge.socket"
@@ -26,7 +26,7 @@ defmodule DevIDE.Setup.LanEdge do
   def socket_unit_text(listen_port) do
     """
     [Unit]
-    Description=DevIDE LAN HTTPS edge socket
+    Description=Casein LAN HTTPS edge socket
     Documentation=https://github.com/dl-alexandre/dev_ide
 
     [Socket]
@@ -45,7 +45,7 @@ defmodule DevIDE.Setup.LanEdge do
 
     """
     [Unit]
-    Description=DevIDE LAN HTTPS edge proxy
+    Description=Casein LAN HTTPS edge proxy
     Requires=#{@socket_unit}
     After=network.target
 

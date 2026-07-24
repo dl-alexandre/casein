@@ -1,32 +1,32 @@
-defmodule DevIDE.Agents.TerminalTools do
+defmodule Casein.Agents.TerminalTools do
   @moduledoc """
   Narrow agent-facing tmux operations.
 
-  This is the terminal counterpart to `DevIDE.Agents.PreviewTools`: it lets
-  external coding agents (Grok, Claude, Codex, opencode) drive DevIDE's tmux
+  This is the terminal counterpart to `Casein.Agents.PreviewTools`: it lets
+  external coding agents (Grok, Claude, Codex, opencode) drive Casein's tmux
   sessions the way a human would from the CLI — discover live sessions, read a
   pane's scrollback to debug a server, and send keys/commands — without
   arbitrary shell access on the host.
 
   Every session-scoped tool is guarded to `devide_`-prefixed sessions
-  (`DevIDE.Terminals.Tmux.session_name/2`'s shape), so agents can only see and
-  touch DevIDE-managed sessions, never unrelated tmux sessions that happen to
+  (`Casein.Terminals.Tmux.session_name/2`'s shape), so agents can only see and
+  touch Casein-managed sessions, never unrelated tmux sessions that happen to
   share the host's tmux server.
 
   Pass `workspace_id` on every call to scope discovery and mutation to one
   workspace's sessions. After applying the built-in `agent_pair` template, use
   `terminal_topology` and target the `agent` pane explicitly.
 
-  Each terminal tool is a `Jido.Action` module under `DevIDE.Agents.TerminalTools.*`,
-  invoked through `DevIDE.Agents.ToolAction`: params are schema-validated at
+  Each terminal tool is a `Jido.Action` module under `Casein.Agents.TerminalTools.*`,
+  invoked through `Casein.Agents.ToolAction`: params are schema-validated at
   runtime while the MCP wire shapes (tools/list JSON Schema, error
   structuredContent) stay exactly as before.
   """
 
-  alias DevIDE.Agents.AnnotationTools
-  alias DevIDE.Agents.TerminalCommandPolicy
+  alias Casein.Agents.AnnotationTools
+  alias Casein.Agents.TerminalCommandPolicy
 
-  alias DevIDE.Agents.TerminalTools.{
+  alias Casein.Agents.TerminalTools.{
     AgentPane,
     AgentTranscript,
     Capture,
@@ -49,7 +49,7 @@ defmodule DevIDE.Agents.TerminalTools do
     WorkspaceDigest
   }
 
-  alias DevIDE.Agents.ToolAction
+  alias Casein.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
 

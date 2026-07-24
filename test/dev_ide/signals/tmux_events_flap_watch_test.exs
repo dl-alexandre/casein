@@ -1,9 +1,9 @@
-defmodule DevIDE.Signals.TmuxEventsFlapWatchTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Signals.TmuxEventsFlapWatchTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Audit
-  alias DevIDE.Audit.MemoryAdapter
-  alias DevIDE.Signals.TmuxEventsFlapWatch
+  alias Casein.Audit
+  alias Casein.Audit.MemoryAdapter
+  alias Casein.Signals.TmuxEventsFlapWatch
 
   @ops_ws "_ops"
 

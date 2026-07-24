@@ -1,8 +1,8 @@
-defmodule DevIDE.WorkspaceSource.ManagerTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.WorkspaceSource.ManagerTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
-  alias DevIDE.Workspace
+  alias Casein.WorkspaceSource.Manager, as: WorkspaceSource
+  alias Casein.Workspace
 
   setup do
     keys = [:on_devbox, :devbox_exec_service, :devbox_exec_workdir, :remote_ssh_host]

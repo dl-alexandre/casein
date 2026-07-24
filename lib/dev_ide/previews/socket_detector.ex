@@ -1,14 +1,14 @@
-defmodule DevIDE.Previews.SocketDetector do
+defmodule Casein.Previews.SocketDetector do
   @moduledoc """
   Detects dev-server ports by inspecting **listening TCP sockets** inside the
   workspace, instead of scraping them from printed terminal output.
 
-  This is the reliable counterpart to `DevIDE.Previews.Detector` (which regexes
+  This is the reliable counterpart to `Casein.Previews.Detector` (which regexes
   `localhost:PORT` out of scrollback): a server that never prints its URL, or
   whose banner has scrolled away, is still found here.
 
   The probe runs `ss` (falling back to `lsof`) through
-  `DevIDE.HostMode.prepare_local_argv/2`, so it executes **inside the workspace
+  `Casein.HostMode.prepare_local_argv/2`, so it executes **inside the workspace
   container** in on-host mode (where the dev server's ports live in the
   container's network namespace) and directly on the host for local workspaces.
 
@@ -19,8 +19,8 @@ defmodule DevIDE.Previews.SocketDetector do
 
   require Logger
 
-  alias DevIDE.HostMode
-  alias DevIDE.Previews.Deps
+  alias Casein.HostMode
+  alias Casein.Previews.Deps
 
   @max_ports 8
 

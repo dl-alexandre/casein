@@ -1,11 +1,11 @@
-defmodule DevIDE.Release.Update.Manifest do
+defmodule Casein.Release.Update.Manifest do
   @moduledoc """
   Parser for channel-scoped LAN update manifests.
 
   See `docs/lan-release-updates.md`.
   """
 
-  alias DevIDE.Release.Metadata
+  alias Casein.Release.Metadata
 
   @manifest_version 1
 

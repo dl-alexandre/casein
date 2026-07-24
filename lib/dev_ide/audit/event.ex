@@ -1,4 +1,4 @@
-defmodule DevIDE.Audit.Event do
+defmodule Casein.Audit.Event do
   @moduledoc """
   Single audit record structure that maps 1:1 to the `audit_events` database table.
   """
@@ -47,8 +47,8 @@ defmodule DevIDE.Audit.Event do
   @doc """
   Reconstruct an audit event from a bus-published CloudEvents signal.
 
-  Used by `DevIDE.Signals.AlertsRouter` so alert routing reuses
-  `DevIDE.Alerts` without a parallel payload shape.
+  Used by `Casein.Signals.AlertsRouter` so alert routing reuses
+  `Casein.Alerts` without a parallel payload shape.
   """
   @spec from_signal(Jido.Signal.t()) :: t()
   def from_signal(%Jido.Signal{} = signal) do

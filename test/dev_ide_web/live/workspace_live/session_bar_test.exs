@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.SessionBarTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBar
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias Casein.Terminals.Session.Info, as: SessionInfo
+  alias CaseinWeb.WorkspaceLive.Show.SessionBar
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
 
   defp agent_info(agent_id, tmux) do
     SessionInfo.new_agent(agent_id, workspace_id: "ws-1", loc: :local)

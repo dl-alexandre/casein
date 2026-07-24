@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.Plugs.ForwardAuthRouterSafetyTest do
+defmodule CaseinWeb.Plugs.ForwardAuthRouterSafetyTest do
   @moduledoc """
   Regression guard for the Caddy forward-auth bypass matchers (OPTIONS,
-  /site.webmanifest). See `DevIdeWeb.Plugs.ForwardAuth` moduledoc.
+  /site.webmanifest). See `CaseinWeb.Plugs.ForwardAuth` moduledoc.
   """
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIdeWeb.Plugs.ForwardAuth
+  alias CaseinWeb.Plugs.ForwardAuth
 
   setup %{conn: conn} = context do
     prev = Application.get_env(:dev_ide, :forward_auth)
@@ -33,7 +33,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthRouterSafetyTest do
 
   test "router declares no explicit :options routes outside preview-proxy catch-all" do
     explicit_options =
-      DevIdeWeb.Router.__routes__()
+      CaseinWeb.Router.__routes__()
       |> Enum.filter(&(&1.verb == :options))
 
     assert explicit_options == []
@@ -41,7 +41,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthRouterSafetyTest do
 
   test "preview-proxy catch-all is the only route that accepts arbitrary verbs" do
     catch_all =
-      DevIdeWeb.Router.__routes__()
+      CaseinWeb.Router.__routes__()
       |> Enum.filter(&(&1.verb == :*))
 
     assert length(catch_all) == 1

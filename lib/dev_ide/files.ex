@@ -1,18 +1,18 @@
-defmodule DevIDE.Files do
+defmodule Casein.Files do
   @moduledoc """
   Read/write file access for a workspace.
 
   All paths are user-supplied (file tree clicks, save events) and **must** be
-  resolved via `DevIDE.Files.PathSafety` against the workspace root that comes
+  resolved via `Casein.Files.PathSafety` against the workspace root that comes
   from the manager (`ws.path`). The root itself is also re-checked against the
   configured `:workspaces_roots` allowlist via
-  `DevIDE.Workspaces.safe_host_path/1`.
+  `Casein.Workspaces.safe_host_path/1`.
 
-  Writes are version-checked against `DevIDE.Files.Version` and atomic via
+  Writes are version-checked against `Casein.Files.Version` and atomic via
   temp-file + rename in the same directory.
   """
 
-  alias DevIDE.Files.{Entry, PathSafety, Version}
+  alias Casein.Files.{Entry, PathSafety, Version}
 
   @max_text_bytes 2 * 1024 * 1024
 

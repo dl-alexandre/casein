@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.API.CodexHookController do
+defmodule CaseinWeb.API.CodexHookController do
   @moduledoc "Receives workspace-scoped Codex CLI hook events."
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Codex.HookReceiver
+  alias Casein.Codex.HookReceiver
 
   def create(conn, %{"id" => workspace_id} = params) do
     payload = Map.get(params, "event", %{})

@@ -1,16 +1,16 @@
-defmodule DevIDE.Agents.LocalAdapter do
+defmodule Casein.Agents.LocalAdapter do
   @moduledoc """
   Filesystem-based detection of agent capabilities for a workspace. All path
-  access goes through `DevIDE.Files.PathSafety` so traversal/symlink-escape
+  access goes through `Casein.Files.PathSafety` so traversal/symlink-escape
   cannot reach the disk through this adapter.
 
   This module is intentionally read-only: it inspects, never starts.
   """
 
-  @behaviour DevIDE.Agents
+  @behaviour Casein.Agents
 
-  alias DevIDE.Agents.{Capability, Artifact, ReviewCommand}
-  alias DevIDE.Files.PathSafety
+  alias Casein.Agents.{Capability, Artifact, ReviewCommand}
+  alias Casein.Files.PathSafety
 
   @opencode_markers [".opencode", "opencode.json", "opencode.jsonc"]
   @fff_markers [".fff", "fff-mcp.json"]
@@ -60,7 +60,7 @@ defmodule DevIDE.Agents.LocalAdapter do
     enriched
   end
 
-  defp get_metadata(%DevIDE.Workspace{metadata: m}), do: m
+  defp get_metadata(%Casein.Workspace{metadata: m}), do: m
   defp get_metadata(%{metadata: m}), do: m
   defp get_metadata(_), do: %{}
 
@@ -162,10 +162,10 @@ defmodule DevIDE.Agents.LocalAdapter do
 
   defp tidewave_fingerprint_capability(_, _, _), do: nil
 
-  defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
-  defp artifact_mcp_capability, do: DevIDE.Agents.ArtifactMCPCapability.detect()
-  defp preview_mcp_capability, do: DevIDE.Agents.PreviewTools.MCPCapability.detect()
-  defp terminal_mcp_capability, do: DevIDE.Agents.TerminalMCPCapability.detect()
+  defp local_tidewave_capability, do: Casein.Agents.TidewaveCapability.detect()
+  defp artifact_mcp_capability, do: Casein.Agents.ArtifactMCPCapability.detect()
+  defp preview_mcp_capability, do: Casein.Agents.PreviewTools.MCPCapability.detect()
+  defp terminal_mcp_capability, do: Casein.Agents.TerminalMCPCapability.detect()
 
   defp detect_fff(root) do
     case first_existing(root, @fff_markers) do

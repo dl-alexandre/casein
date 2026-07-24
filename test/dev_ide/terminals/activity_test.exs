@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.ActivityTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.ActivityTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.Activity
+  alias Casein.Terminals.Activity
 
   @now 1_800_000_000
 

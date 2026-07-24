@@ -1,4 +1,4 @@
-defmodule DevIDE.CommandPalette do
+defmodule Casein.CommandPalette do
   @moduledoc """
   Public facade for the command palette: query → ranked items.
 
@@ -8,7 +8,7 @@ defmodule DevIDE.CommandPalette do
   — selecting a result dispatches one of the existing gated LiveView events.
   """
 
-  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item, Usage}
+  alias Casein.CommandPalette.{Actions, FileIndex, Fuzzy, Item, Usage}
 
   @max_results 50
 
@@ -127,14 +127,14 @@ defmodule DevIDE.CommandPalette do
   # Path-derived file ids skip Actions.allowed_events/0 — they are not
   # static allowlist entries. Safety is PathSafety.resolve/2 against root.
   def resolve(root, "file-pane:" <> rel) when is_binary(root) and is_binary(rel) do
-    case DevIDE.Files.PathSafety.resolve(root, rel) do
+    case Casein.Files.PathSafety.resolve(root, rel) do
       {:ok, _} -> {:ok, %{event: "tree:open_in_pane", params: %{"path" => rel}}}
       _ -> :error
     end
   end
 
   def resolve(root, "file:" <> rel) when is_binary(root) and is_binary(rel) do
-    case DevIDE.Files.PathSafety.resolve(root, rel) do
+    case Casein.Files.PathSafety.resolve(root, rel) do
       {:ok, _} -> {:ok, %{event: "annotation:open", params: %{"path" => rel}}}
       _ -> :error
     end

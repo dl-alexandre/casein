@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.TmuxPolicy do
+defmodule Casein.Terminals.TmuxPolicy do
   @moduledoc """
-  DevIDE-specific tmux session naming and sanitization rules.
+  Casein-specific tmux session naming and sanitization rules.
   """
 
   @session_prefix "devide"
@@ -14,7 +14,7 @@ defmodule DevIDE.Terminals.TmuxPolicy do
   end
 
   @doc """
-  Prefix shared by every DevIDE tmux session for a workspace name or id.
+  Prefix shared by every Casein tmux session for a workspace name or id.
 
   Used to scope agent terminal MCP tools to one workspace.
   """

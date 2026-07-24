@@ -1,4 +1,4 @@
-defmodule DevIDE.Workspaces.SessionSummary do
+defmodule Casein.Workspaces.SessionSummary do
   @moduledoc """
   Compact cross-workspace summary for switchers and pickers.
 
@@ -8,14 +8,14 @@ defmodule DevIDE.Workspaces.SessionSummary do
   in the workspace cockpit.
   """
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Agents.Transcripts
-  alias DevIDE.Git
-  alias DevIDE.PreviewPanes
-  alias DevIDE.Runtimes
-  alias DevIDE.Terminals.AgentPane
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.SessionDirectory
+  alias Casein.Agents.Activity
+  alias Casein.Agents.Transcripts
+  alias Casein.Git
+  alias Casein.PreviewPanes
+  alias Casein.Runtimes
+  alias Casein.Terminals.AgentPane
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.SessionDirectory
 
   @type summary :: %{
           id: String.t(),
@@ -40,7 +40,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
   end
 
   @doc "Build a summary using an already-loaded runtime slice."
-  @spec build(map(), [DevIDE.Runtimes.Runtime.t()], keyword()) :: summary()
+  @spec build(map(), [Casein.Runtimes.Runtime.t()], keyword()) :: summary()
   def build(ws, runtimes, opts) when is_map(ws) and is_list(runtimes) and is_list(opts) do
     do_build(ws, runtimes, opts)
   end

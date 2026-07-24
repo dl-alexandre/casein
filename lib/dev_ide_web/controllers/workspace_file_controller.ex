@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceFileController do
+defmodule CaseinWeb.WorkspaceFileController do
   @moduledoc """
   Serves verified workspace files for rendered Markdown and explicit browser
   fetches.
@@ -7,10 +7,10 @@ defmodule DevIdeWeb.WorkspaceFileController do
   viewer owns the workspace. It deliberately serves user-controlled workspace
   bytes with `no-store`, `nosniff`, and conservative inline content types.
   """
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.FileAccess
+  alias Casein.Workspaces
+  alias Casein.Workspaces.FileAccess
 
   @max_file_bytes 2 * 1024 * 1024
 

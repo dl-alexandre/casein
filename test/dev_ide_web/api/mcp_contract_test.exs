@@ -1,12 +1,12 @@
-defmodule DevIdeWeb.API.MCPContractTest do
+defmodule CaseinWeb.API.MCPContractTest do
   @moduledoc """
-  Cross-server HTTP contract tests for DevIDE MCP endpoints.
+  Cross-server HTTP contract tests for Casein MCP endpoints.
 
   These lock down transport/error shapes that external agents depend on without
   exercising the individual terminal/preview/artifact tool implementations.
   """
 
-  use DevIdeWeb.ConnCase, async: false
+  use CaseinWeb.ConnCase, async: false
 
   import ExUnit.CaptureLog
 

@@ -1,6 +1,6 @@
-defmodule DevIDE.FilesLifecycleTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Files
+defmodule Casein.FilesLifecycleTest do
+  use Casein.TestCase, async: true
+  alias Casein.Files
 
   setup do
     root = Path.join(System.tmp_dir!(), "fl-#{System.unique_integer([:positive])}")

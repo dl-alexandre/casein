@@ -1,11 +1,11 @@
-defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
+defmodule Mix.Tasks.Casein.InsecureHttp.Setup do
   @moduledoc """
-  Prepares or installs the optional insecure DevIDE LAN HTTP edge.
+  Prepares or installs the optional insecure Casein LAN HTTP edge.
 
       mix dev_ide.insecure_http.setup
       mix dev_ide.insecure_http.setup --fix
 
-  This intentionally exposes DevIDE over plain HTTP on the LAN:
+  This intentionally exposes Casein over plain HTTP on the LAN:
 
       http://<hostname>.local/
 
@@ -14,7 +14,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
   @shortdoc "Prepare or install the intentionally insecure LAN HTTP edge"
 
@@ -36,10 +36,10 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
       Mix.raise("invalid option(s): #{Enum.map_join(invalid, ", ", &elem(&1, 0))}")
     end
 
-    proxyd = DevIDE.Setup.InsecureHttpEdge.proxyd_path() || missing_proxyd!()
+    proxyd = Casein.Setup.InsecureHttpEdge.proxyd_path() || missing_proxyd!()
     fix? = Keyword.get(opts, :fix, false)
     enable? = not Keyword.get(opts, :no_enable, false)
-    unit_dir = opts[:unit_dir] || DevIDE.Setup.InsecureHttpEdge.unit_dir()
+    unit_dir = opts[:unit_dir] || Casein.Setup.InsecureHttpEdge.unit_dir()
     listen_port = opts[:listen_port] || env_int("DEV_IDE_LAN_INSECURE_HTTP_PORT") || 80
     backend_port = opts[:backend_port] || env_int("PORT") || 4000
     backend_host = opts[:backend_host] || "127.0.0.1"
@@ -48,7 +48,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
       Path.join(System.tmp_dir!(), "devide-lan-http-edge-#{System.unique_integer([:positive])}")
 
     paths =
-      DevIDE.Setup.InsecureHttpEdge.write_units!(prepared_dir,
+      Casein.Setup.InsecureHttpEdge.write_units!(prepared_dir,
         listen_port: listen_port,
         backend_host: backend_host,
         backend_port: backend_port,
@@ -56,7 +56,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
       )
 
     Mix.shell().info("""
-    DevIDE INSECURE LAN HTTP edge units are ready.
+    Casein INSECURE LAN HTTP edge units are ready.
 
     Files:
       socket:  #{paths.socket_path}
@@ -65,7 +65,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
     Proxy:
       :#{listen_port} -> #{backend_host}:#{backend_port}
 
-    WARNING: this exposes DevIDE over plain HTTP on the LAN.
+    WARNING: this exposes Casein over plain HTTP on the LAN.
     """)
 
     if fix? do
@@ -89,7 +89,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
 
     case run_commands_noninteractive(commands) do
       :ok ->
-        Mix.shell().info("Installed and activated DevIDE INSECURE LAN HTTP edge.")
+        Mix.shell().info("Installed and activated Casein INSECURE LAN HTTP edge.")
 
       {:error, failed_command, output} ->
         Mix.shell().info("Could not apply privileged HTTP edge setup non-interactively.")
@@ -116,7 +116,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
         "-m",
         "0644",
         paths.socket_path,
-        Path.join(unit_dir, DevIDE.Setup.InsecureHttpEdge.socket_unit())
+        Path.join(unit_dir, Casein.Setup.InsecureHttpEdge.socket_unit())
       ],
       [
         "sudo",
@@ -124,7 +124,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
         "-m",
         "0644",
         paths.service_path,
-        Path.join(unit_dir, DevIDE.Setup.InsecureHttpEdge.service_unit())
+        Path.join(unit_dir, Casein.Setup.InsecureHttpEdge.service_unit())
       ],
       ["sudo", "systemctl", "daemon-reload"]
     ]
@@ -132,7 +132,7 @@ defmodule Mix.Tasks.DevIde.InsecureHttp.Setup do
     commands =
       if enable? do
         commands ++
-          [["sudo", "systemctl", "enable", "--now", DevIDE.Setup.InsecureHttpEdge.socket_unit()]]
+          [["sudo", "systemctl", "enable", "--now", Casein.Setup.InsecureHttpEdge.socket_unit()]]
       else
         commands
       end

@@ -1,8 +1,8 @@
-defmodule DevIDE.Operator.SituationServer do
+defmodule Casein.Operator.SituationServer do
   @moduledoc """
   Live per-workspace situation model behind the operator digest.
 
-  Holds the latest `DevIDE.Operator.SituationDigest` and keeps it warm from
+  Holds the latest `Casein.Operator.SituationDigest` and keeps it warm from
   push signals instead of cold-rebuilding per request. Started on demand by
   the first `get_digest/1` when the `:situation_server` flag
   (`DEV_IDE_SITUATION_SERVER`) is on; with the flag off nothing starts and
@@ -10,18 +10,18 @@ defmodule DevIDE.Operator.SituationServer do
 
   Fan-in (first production consumer of the `SessionEvents` bus):
 
-    * `DevIDE.Terminals.SessionEvents` per workspace session — output
+    * `Casein.Terminals.SessionEvents` per workspace session — output
       generation/freshness per sid (feeds the `:working_no_output` detector)
     * `"agent_state:<ws>"` — semantic pane-state reports, applied to the
       digest in place and tracked with their `reported_at` (feeds
       `:blocked_too_long`)
     * `"agent_activity:<ws>"` — MCP tool-call tail, prepended in place
-    * `DevIDE.Audit.subscribe/1` — refreshes `activity.last_mutation`
+    * `Casein.Audit.subscribe/1` — refreshes `activity.last_mutation`
     * `"deploy:updates"` — recomputes the digest's deploy section
-    * `"ops:health"` (`DevIDE.Ops.PgProbe`) — box-global saturation risks
+    * `"ops:health"` (`Casein.Ops.PgProbe`) — box-global saturation risks
       fold into every workspace's risk set; full rebuilds re-seed them from
       `PgProbe.active_risks/0` so servers started after a raise still see it
-    * `DevIDE.Terminals.TmuxTopology` + `DevIDE.Terminals.SessionDirectory`
+    * `Casein.Terminals.TmuxTopology` + `Casein.Terminals.SessionDirectory`
       topics (passive) — topology-shaped changes debounce a full rebuild
 
   Cheap signals mutate the digest incrementally; structural ones debounce
@@ -34,8 +34,8 @@ defmodule DevIDE.Operator.SituationServer do
   rebuilds instead of staying frozen at the last build.
 
   Detector engine: on relevant changes (debounced) and on a periodic tick it
-  runs `DevIDE.Operator.Risks.detect/1` plus the stateful
-  `DevIDE.Operator.Detectors` rules, diffs against the active-risk map keyed
+  runs `Casein.Operator.Risks.detect/1` plus the stateful
+  `Casein.Operator.Detectors` rules, diffs against the active-risk map keyed
   `{id, subject}`, and on transitions broadcasts
   `{:situation_risk, :raised | :cleared, risk}` on `"situation:<ws>"` and
   emits `operator.risk_raised` / `operator.risk_cleared` audit rows.
@@ -44,22 +44,22 @@ defmodule DevIDE.Operator.SituationServer do
   use GenServer
   require Logger
 
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Audit
-  alias DevIDE.Export.Sanitizer
-  alias DevIDE.Operator.Detectors
-  alias DevIDE.Operator.Risks
-  alias DevIDE.Ops.PgProbe
-  alias DevIDE.Operator.SituationDigest
-  alias DevIDE.Runtimes.WorktreeAlarm
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Terminals.SessionEvents
-  alias DevIDE.Terminals.TmuxTopology
+  alias Casein.Agents.Activity
+  alias Casein.Audit
+  alias Casein.Export.Sanitizer
+  alias Casein.Operator.Detectors
+  alias Casein.Operator.Risks
+  alias Casein.Ops.PgProbe
+  alias Casein.Operator.SituationDigest
+  alias Casein.Runtimes.WorktreeAlarm
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.SessionDirectory
+  alias Casein.Terminals.SessionEvents
+  alias Casein.Terminals.TmuxTopology
 
-  @registry DevIDE.Operator.Registry
-  @supervisor DevIDE.Operator.SituationSupervisor
-  @pubsub DevIDE.PubSub
+  @registry Casein.Operator.Registry
+  @supervisor Casein.Operator.SituationSupervisor
+  @pubsub Casein.PubSub
   @topic_prefix "situation:"
 
   # Trailing-edge debounce for full rebuilds (topology-shaped changes) and

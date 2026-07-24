@@ -1,10 +1,10 @@
-defmodule DevIDE.Push.FCM.StubHTTP do
+defmodule Casein.Push.FCM.StubHTTP do
   @moduledoc """
-  Test double for `DevIDE.Push.FCM.HTTP`. Forwards each request to the pid in
+  Test double for `Casein.Push.FCM.HTTP`. Forwards each request to the pid in
   `:dev_ide, :fcm_test_pid` as `{:fcm_request, url, headers, body}` and returns
   the canned response in `:dev_ide, :fcm_stub_response` (default 200).
   """
-  @behaviour DevIDE.Push.FCM.HTTP
+  @behaviour Casein.Push.FCM.HTTP
 
   @impl true
   def post(url, headers, body) do

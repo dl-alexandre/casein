@@ -1,6 +1,6 @@
-defmodule DevIDE.Panes.Terminal do
+defmodule Casein.Panes.Terminal do
   @moduledoc """
-  `DevIDE.Panes.Pane` implementation for classic terminal panes.
+  `Casein.Panes.Pane` implementation for classic terminal panes.
 
   A thin adapter over the existing terminal machinery rather than a rewrite. Terminal
   panes are created by the standard tmux split + `send_command` steps in the
@@ -19,7 +19,7 @@ defmodule DevIDE.Panes.Terminal do
   session, so `terminate/1` accepts `{session, pane_id}`.
   """
 
-  @behaviour DevIDE.Panes.Pane
+  @behaviour Casein.Panes.Pane
 
   @impl true
   def attach(_node, ctx) do
@@ -55,7 +55,7 @@ defmodule DevIDE.Panes.Terminal do
   def set_active(_ref, active?) when is_boolean(active?), do: :ok
 
   # Terminal panes are served by `PaneWorker`, not a registry, so there is no
-  # list to fold into `DevIDE.Panes.snapshot/1`. Present for the facade's
+  # list to fold into `Casein.Panes.snapshot/1`. Present for the facade's
   # `function_exported?` probe; it never carries renderable terminal state.
   @impl true
   def list(_workspace_id), do: []
@@ -63,7 +63,7 @@ defmodule DevIDE.Panes.Terminal do
   # --- internals ---------------------------------------------------------------
 
   defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
+    Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
   end
 
   defp field(node, key), do: Map.get(node, key, Map.get(node, to_string(key)))

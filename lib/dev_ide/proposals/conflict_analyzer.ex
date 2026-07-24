@@ -1,7 +1,7 @@
-defmodule DevIDE.Proposals.ConflictAnalyzer do
+defmodule Casein.Proposals.ConflictAnalyzer do
   @moduledoc """
   Compare a parsed proposal against the current working-tree git diff and
-  produce a `DevIDE.Proposals.Analysis`.
+  produce a `Casein.Proposals.Analysis`.
 
   Risk rules (highest wins):
     * `:invalid`  — proposal isn't `:parsed` or its diff cannot be re-parsed
@@ -15,8 +15,8 @@ defmodule DevIDE.Proposals.ConflictAnalyzer do
     * `:clean`    — no path overlap with the workspace diff.
   """
 
-  alias DevIDE.Proposals.{Analysis, Hunk, Proposal, UnifiedDiff}
-  alias DevIDE.Git
+  alias Casein.Proposals.{Analysis, Hunk, Proposal, UnifiedDiff}
+  alias Casein.Git
 
   @spec analyze(String.t(), Proposal.t()) :: Analysis.t()
   def analyze(root, %Proposal{status: :parsed, diff: diff}) when is_binary(diff) do

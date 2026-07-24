@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.Osc133Test do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.Osc133Test do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.Osc133
+  alias Casein.Terminals.Osc133
 
   test "parses OSC 133 and OSC 7 events while preserving ordinary data" do
     {tokens, state} =

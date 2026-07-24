@@ -1,7 +1,7 @@
-defmodule DevIDE.PreviewActivityTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.PreviewActivityTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.PreviewActivity
+  alias Casein.PreviewActivity
 
   setup do
     PreviewActivity.clear()

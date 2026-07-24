@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
+defmodule Casein.Agents.TerminalTools.AgentTranscript do
   @moduledoc "terminal_agent_transcript."
 
   use Jido.Action,
@@ -18,12 +18,12 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
       full_text: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -37,7 +37,7 @@ defmodule DevIDE.Agents.TerminalTools.AgentTranscript do
         })
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_agent_transcript")
 
   @impl Jido.Action

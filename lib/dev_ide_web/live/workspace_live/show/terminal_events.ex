@@ -1,6 +1,6 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
   # Terminal/tmux handle_event clauses extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   # Show delegates the "tmux:*", "terminal:*" and "attach_terminal_session"
   # events listed here; template and paste events stay in Show and match
   # before the delegators. No catch-all on purpose: unknown tmux:/terminal:
@@ -10,20 +10,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Terminals
-  alias DevIDE.Attention.Policy, as: AttentionPolicy
-  alias DevIDE.Workspaces.Scratch
-  alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIDE.Previews
-  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
-  alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
-  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
-  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
-  alias DevIdeWeb.WorkspaceRoutes
+  alias Casein.Terminals
+  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Workspaces.Scratch
+  alias CaseinWeb.WorkspaceLive.PaneHistoryWorker
+  alias CaseinWeb.WorkspaceLive.Show
+  alias Casein.Previews
+  alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
+  alias CaseinWeb.WorkspaceLive.Show.ViewDeepLink
+  alias CaseinWeb.WorkspaceLive.Show.Sidebar
+  alias CaseinWeb.WorkspaceLive.Show.WindowTerminalMode
+  alias CaseinWeb.WorkspaceRoutes
 
   def handle_event("terminal:user_interaction", _params, socket) do
     {:noreply, ViewDeepLink.touch_terminal_interaction(socket)}
@@ -1027,6 +1027,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   # Config seam so tests can stub the (network-touching) embeddability probe.
   defp embeddability_checker do
-    Application.get_env(:dev_ide, :embeddability_checker, DevIDE.Previews)
+    Application.get_env(:dev_ide, :embeddability_checker, Casein.Previews)
   end
 end

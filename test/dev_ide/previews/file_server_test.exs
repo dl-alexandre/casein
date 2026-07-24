@@ -1,8 +1,8 @@
-defmodule DevIDE.Previews.FileServerTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.Previews.FileServerTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.Previews.FileServer
-  alias DevIDE.Workspaces
+  alias Casein.Previews.FileServer
+  alias Casein.Workspaces
 
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)

@@ -1,4 +1,4 @@
-defmodule DevIDE.Supervision.Commands do
+defmodule Casein.Supervision.Commands do
   @moduledoc false
 
   use Supervisor
@@ -10,8 +10,8 @@ defmodule DevIDE.Supervision.Commands do
   @impl true
   def init(_opts) do
     children = [
-      {Registry, keys: :unique, name: DevIDE.Commands.Registry},
-      {DynamicSupervisor, name: DevIDE.Commands.Supervisor, strategy: :one_for_one}
+      {Registry, keys: :unique, name: Casein.Commands.Registry},
+      {DynamicSupervisor, name: Casein.Commands.Supervisor, strategy: :one_for_one}
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

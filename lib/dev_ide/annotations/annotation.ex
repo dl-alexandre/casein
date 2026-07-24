@@ -1,4 +1,4 @@
-defmodule DevIDE.Annotations.Annotation do
+defmodule Casein.Annotations.Annotation do
   @moduledoc """
   Structured human/agent annotation attached to workspace context.
 
@@ -32,7 +32,7 @@ defmodule DevIDE.Annotations.Annotation do
     field :terminal_range, :map
     field :file_path, :string
     field :file_range, :map
-    field :linked_entities, DevIDE.EctoTypes.MapList, default: []
+    field :linked_entities, Casein.EctoTypes.MapList, default: []
     field :metadata, :map, default: %{}
 
     timestamps(type: :utc_datetime_usec)

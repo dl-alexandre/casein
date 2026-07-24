@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
+defmodule Casein.Agents.TerminalTools.SetAgentLabel do
   @moduledoc "terminal_set_agent_label."
 
   use Jido.Action,
     name: "terminal_set_agent_label",
     description:
-      "Set a short conversation label for a pane in DevIDE chrome (does not rename tmux windows). Defaults to the dedicated agent pane when pane is omitted. Pass freeze: true to keep the label until the pane closes.",
+      "Set a short conversation label for a pane in Casein chrome (does not rename tmux windows). Defaults to the dedicated agent pane when pane is omitted. Pass freeze: true to keep the label until the pane closes.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -17,12 +17,12 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
       freeze: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -36,7 +36,7 @@ defmodule DevIDE.Agents.TerminalTools.SetAgentLabel do
         ["workspace_id", "label"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_set_agent_label")
 
   @impl Jido.Action

@@ -1,22 +1,22 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
+defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   # Terminal/tmux socket-state helpers extracted verbatim from
-  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # CaseinWeb.WorkspaceLive.Show (pure code motion — no behavior change).
   @moduledoc false
 
-  use DevIdeWeb, :verified_routes
+  use CaseinWeb, :verified_routes
 
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Attention.Policy, as: AttentionPolicy
-  alias DevIDE.Terminals
-  alias DevIDE.Labels
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
-  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
+  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Terminals
+  alias Casein.Labels
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.Sidebar
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceLive.Show.ViewDeepLink
+  alias CaseinWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def tmux_adapter do
     Terminals.tmux_adapter()
@@ -409,7 +409,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" · ")
 
-    assign(socket, :page_title, if(title == "", do: "DevIde", else: title))
+    assign(socket, :page_title, if(title == "", do: "Casein", else: title))
   end
 
   @doc """

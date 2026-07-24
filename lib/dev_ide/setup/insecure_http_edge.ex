@@ -1,9 +1,9 @@
-defmodule DevIDE.Setup.InsecureHttpEdge do
+defmodule Casein.Setup.InsecureHttpEdge do
   @moduledoc """
-  Helpers for DevIDE's intentionally insecure LAN HTTP edge.
+  Helpers for Casein's intentionally insecure LAN HTTP edge.
 
   The edge is a systemd socket plus `systemd-socket-proxyd` service that listens
-  on privileged port 80 and forwards plain HTTP to DevIDE's loopback HTTP
+  on privileged port 80 and forwards plain HTTP to Casein's loopback HTTP
   listener. This is useful for trusted LAN dogfooding when client certificate
   trust is more friction than the test is worth.
   """
@@ -27,7 +27,7 @@ defmodule DevIDE.Setup.InsecureHttpEdge do
   def socket_unit_text(listen_port) do
     """
     [Unit]
-    Description=DevIDE INSECURE LAN HTTP edge socket
+    Description=Casein INSECURE LAN HTTP edge socket
     Documentation=https://github.com/dl-alexandre/dev_ide
 
     [Socket]
@@ -43,11 +43,11 @@ defmodule DevIDE.Setup.InsecureHttpEdge do
     proxyd = Keyword.fetch!(opts, :proxyd_path)
     backend_host = Keyword.get(opts, :backend_host, "127.0.0.1")
     backend_port = Keyword.fetch!(opts, :backend_port)
-    backend_unit = Keyword.get(opts, :backend_unit, DevIDE.Setup.LanService.service_unit())
+    backend_unit = Keyword.get(opts, :backend_unit, Casein.Setup.LanService.service_unit())
 
     """
     [Unit]
-    Description=DevIDE INSECURE LAN HTTP edge proxy
+    Description=Casein INSECURE LAN HTTP edge proxy
     Requires=#{@socket_unit}
     Requires=#{backend_unit}
     After=network.target #{backend_unit}
@@ -73,5 +73,5 @@ defmodule DevIDE.Setup.InsecureHttpEdge do
     %{socket_path: socket_path, service_path: service_path}
   end
 
-  def listener_open?(port), do: DevIDE.Setup.LanEdge.listener_open?(port)
+  def listener_open?(port), do: Casein.Setup.LanEdge.listener_open?(port)
 end

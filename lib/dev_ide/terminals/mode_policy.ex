@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.ModePolicy do
+defmodule Casein.Terminals.ModePolicy do
   @moduledoc """
   Single home for terminal mode policy.
 
@@ -13,7 +13,7 @@ defmodule DevIDE.Terminals.ModePolicy do
   consumer (LiveView, channel, components) derives the same answer.
   """
 
-  alias DevIDE.Terminals.Session.Info
+  alias Casein.Terminals.Session.Info
 
   @type mode :: :raw
 

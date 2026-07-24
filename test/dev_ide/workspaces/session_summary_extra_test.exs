@@ -1,11 +1,11 @@
-defmodule DevIDE.Workspaces.SessionSummaryExtraTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Workspaces.SessionSummaryExtraTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Runtimes
-  alias DevIDE.Test.RuntimeSeed
-  alias DevIDE.Workspace
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias Casein.Runtimes
+  alias Casein.Test.RuntimeSeed
+  alias Casein.Workspace
+  alias Casein.Workspaces.SessionSummary
+  alias Casein.Workspaces.State.WorkspaceRecord
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -14,7 +14,7 @@ defmodule DevIDE.Workspaces.SessionSummaryExtraTest do
     prev_git_adapter = Application.get_env(:dev_ide, :git_adapter)
 
     Runtimes.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     # No git_adapter is set by default here; individual tests that care about
     # branch/dirty_count override it. Without a configured workspace path the
     # git helpers short-circuit to nil before any adapter call.
@@ -428,7 +428,7 @@ defmodule DevIDE.Workspaces.SessionSummaryExtraTest do
   end
 
   defp git_stub(branch, dirty_count) do
-    name = :"DevIDE.Test.SessionSummaryExtraGit#{System.unique_integer([:positive])}"
+    name = :"Casein.Test.SessionSummaryExtraGit#{System.unique_integer([:positive])}"
 
     entries =
       if dirty_count == 0 do
@@ -441,7 +441,7 @@ defmodule DevIDE.Workspaces.SessionSummaryExtraTest do
 
     contents =
       quote do
-        @behaviour DevIDE.Git.Adapter
+        @behaviour Casein.Git.Adapter
         @impl true
         def branch(_root), do: {:ok, unquote(branch)}
         @impl true
@@ -457,11 +457,11 @@ defmodule DevIDE.Workspaces.SessionSummaryExtraTest do
   end
 
   defp git_error_stub do
-    name = :"DevIDE.Test.SessionSummaryExtraGitErr#{System.unique_integer([:positive])}"
+    name = :"Casein.Test.SessionSummaryExtraGitErr#{System.unique_integer([:positive])}"
 
     contents =
       quote do
-        @behaviour DevIDE.Git.Adapter
+        @behaviour Casein.Git.Adapter
         @impl true
         def branch(_root), do: {:error, :not_a_repo}
         @impl true

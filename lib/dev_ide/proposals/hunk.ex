@@ -1,4 +1,4 @@
-defmodule DevIDE.Proposals.Hunk do
+defmodule Casein.Proposals.Hunk do
   @moduledoc "Helpers for unified-diff hunk ranges."
 
   @type range :: {non_neg_integer(), non_neg_integer()}

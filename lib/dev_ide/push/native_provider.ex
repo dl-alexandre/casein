@@ -1,4 +1,4 @@
-defmodule DevIDE.Push.NativeProvider do
+defmodule Casein.Push.NativeProvider do
   @moduledoc """
   Platform router for native mobile push tokens.
 
@@ -6,15 +6,15 @@ defmodule DevIDE.Push.NativeProvider do
   server-side lets the mobile channel continue to register `{platform, token}`
   without exposing provider-specific transport details.
   """
-  @behaviour DevIDE.Push.Provider
+  @behaviour Casein.Push.Provider
 
   @impl true
   def push(token, platform, notification) when is_binary(token) do
     case normalize_platform(platform) do
-      "android" -> DevIDE.Push.FCMProvider.push(token, platform, notification)
-      "ios" -> DevIDE.Push.APNSProvider.push(token, platform, notification)
-      "apns" -> DevIDE.Push.APNSProvider.push(token, platform, notification)
-      "fcm" -> DevIDE.Push.FCMProvider.push(token, platform, notification)
+      "android" -> Casein.Push.FCMProvider.push(token, platform, notification)
+      "ios" -> Casein.Push.APNSProvider.push(token, platform, notification)
+      "apns" -> Casein.Push.APNSProvider.push(token, platform, notification)
+      "fcm" -> Casein.Push.FCMProvider.push(token, platform, notification)
       _other -> {:error, :unsupported_platform}
     end
   end
@@ -22,10 +22,10 @@ defmodule DevIDE.Push.NativeProvider do
   @impl true
   def configured_for?(platform) do
     case normalize_platform(platform) do
-      "android" -> DevIDE.Push.FCMProvider.configured?()
-      "fcm" -> DevIDE.Push.FCMProvider.configured?()
-      "ios" -> DevIDE.Push.APNSProvider.configured?()
-      "apns" -> DevIDE.Push.APNSProvider.configured?()
+      "android" -> Casein.Push.FCMProvider.configured?()
+      "fcm" -> Casein.Push.FCMProvider.configured?()
+      "ios" -> Casein.Push.APNSProvider.configured?()
+      "apns" -> Casein.Push.APNSProvider.configured?()
       _other -> {:error, :unsupported_platform}
     end
   end

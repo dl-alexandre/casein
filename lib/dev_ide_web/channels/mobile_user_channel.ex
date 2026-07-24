@@ -1,19 +1,19 @@
-defmodule DevIdeWeb.MobileUserChannel do
+defmodule CaseinWeb.MobileUserChannel do
   @moduledoc """
   User-scoped mobile card stream.
 
   Topic: `mobile:user:me` for normal clients, with `mobile:user:<user_id>`
   still accepted for explicit internal callers. The channel is a transport over
-  `DevIDE.Mobile.UserObserver`; it authorizes which user/workspaces may feed the
+  `Casein.Mobile.UserObserver`; it authorizes which user/workspaces may feed the
   observer, then forwards full card snapshots to connected mobile clients.
   """
 
   use Phoenix.Channel
 
-  alias DevIDE.Mobile.Actions
-  alias DevIDE.Mobile.UserObserver
-  alias DevIDE.Push
-  alias DevIDE.Workspaces
+  alias Casein.Mobile.Actions
+  alias Casein.Mobile.UserObserver
+  alias Casein.Push
+  alias Casein.Workspaces
 
   @impl true
   def join("mobile:user:me", _params, socket) do

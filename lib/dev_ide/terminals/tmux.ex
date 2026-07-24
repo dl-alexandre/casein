@@ -1,16 +1,16 @@
-defmodule DevIDE.Terminals.Tmux do
+defmodule Casein.Terminals.Tmux do
   @moduledoc """
-  DevIDE facade over `TmuxCtl.Client` for workspace tmux sessions.
+  Casein facade over `TmuxCtl.Client` for workspace tmux sessions.
 
-  Session naming lives in `DevIDE.Terminals.TmuxPolicy`. Subprocess argv
+  Session naming lives in `Casein.Terminals.TmuxPolicy`. Subprocess argv
   wrapping (host vs container tmux) is configured via `config :dev_ide, :tmux_ctl`.
   See `docs/tmux_control_plane.md`.
   """
 
   @behaviour TmuxCtl.Adapter
 
-  alias DevIDE.Terminals.TmuxPolicy
-  alias DevIDE.Terminals.TmuxRunner
+  alias Casein.Terminals.TmuxPolicy
+  alias Casein.Terminals.TmuxRunner
 
   defdelegate host_shell?(), to: TmuxRunner
   defdelegate local_argv_wrapped?(), to: TmuxRunner
@@ -67,7 +67,7 @@ defmodule DevIDE.Terminals.Tmux do
   """
   def kill(session) when is_binary(session) do
     result = TmuxCtl.Client.kill(session)
-    _ = DevIDE.Terminals.ScrollbackArchive.delete(session)
+    _ = Casein.Terminals.ScrollbackArchive.delete(session)
     result
   end
 

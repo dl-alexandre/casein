@@ -1,14 +1,14 @@
-defmodule DevIDE.Scope do
+defmodule Casein.Scope do
   @moduledoc """
-  A common authorization scope for DevIDE entry points and contexts.
+  A common authorization scope for Casein entry points and contexts.
 
   Authorization currently lives at several established boundaries. LiveView
-  actions pass through `DevIdeWeb.WorkspaceLive.Show`'s `authz_gate/3`, while
+  actions pass through `CaseinWeb.WorkspaceLive.Show`'s `authz_gate/3`, while
   MCP endpoints and terminal operations enforce their own workspace boundaries
-  through `DevIDE.MCP.Scope`, `DevIdeWeb.API.MCPWorkspaceScope`, and
-  `DevIDE.Terminals.TmuxScope`. Those checks remain authoritative.
+  through `Casein.MCP.Scope`, `CaseinWeb.API.MCPWorkspaceScope`, and
+  `Casein.Terminals.TmuxScope`. Those checks remain authoritative.
 
-  `DevIDE.Scope` is the unifying foundation for representing the identity,
+  `Casein.Scope` is the unifying foundation for representing the identity,
   workspace binding, request source, and capabilities that reach those
   boundaries. It gives web, MCP, channel, and trusted internal callers a common
   value to pass into future context APIs without replacing any existing policy
@@ -16,7 +16,7 @@ defmodule DevIDE.Scope do
 
   ## Incremental adoption
 
-  Threading `%DevIDE.Scope{}` through every context function is intentionally a
+  Threading `%Casein.Scope{}` through every context function is intentionally a
   follow-up. Existing callers continue to use their current authorization
   gates; this module is the seam future work builds on. The temporary deviation
   from a single scope-aware context API is therefore intentional, documented,
@@ -33,10 +33,10 @@ defmodule DevIDE.Scope do
 
   defstruct identity: nil, workspace_id: nil, source: nil, capabilities: []
 
-  # DevIDE's Boundary rules prohibit a compile-time domain -> web dependency.
+  # Casein's Boundary rules prohibit a compile-time domain -> web dependency.
   # Keep this adapter lookup dynamic while still delegating normalization to
   # the existing MCP endpoint seam.
-  @mcp_workspace_scope Module.concat(["DevIdeWeb", "API", "MCPWorkspaceScope"])
+  @mcp_workspace_scope Module.concat(["CaseinWeb", "API", "MCPWorkspaceScope"])
 
   @doc "Builds a web scope from the identity and scope data assigned to a connection."
   @spec from_conn(Plug.Conn.t()) :: t()

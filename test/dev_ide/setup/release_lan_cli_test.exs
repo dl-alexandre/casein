@@ -1,4 +1,4 @@
-defmodule DevIDE.Setup.ReleaseLanCliTest do
+defmodule Casein.Setup.ReleaseLanCliTest do
   use ExUnit.Case, async: true
 
   @script Path.expand("../../../rel/overlays/bin/devide", __DIR__)
@@ -31,7 +31,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     log = File.read!(fixture.app_bin_log)
     assert log =~ "DEV_IDE_RELEASE_CLI=1"
     assert log =~ "DEVIDE_RELEASE_ROOT=#{fixture.release_dir}"
-    assert log =~ "args:eval DevIDE.Release.CLI.main_base64("
+    assert log =~ "args:eval Casein.Release.CLI.main_base64("
   end
 
   test "release LAN CLI installs a managed backend and HTTP edge" do

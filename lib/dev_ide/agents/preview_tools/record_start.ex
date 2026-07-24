@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.RecordStart do
+defmodule Casein.Agents.PreviewTools.RecordStart do
   @moduledoc "preview_record_start."
 
   use Jido.Action,
@@ -11,14 +11,14 @@ defmodule DevIDE.Agents.PreviewTools.RecordStart do
       session_id: [type: {:or, [:integer, :string]}, required: true]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Helpers.session_only()
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_record_start")
 
   @impl Jido.Action

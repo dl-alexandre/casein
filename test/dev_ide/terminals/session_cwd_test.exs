@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.SessionCwdTest do
+defmodule Casein.Terminals.SessionCwdTest do
   # Not tagged :pty — these are pure and must run in CI (the main session_test is
   # :pty and excluded). Guards the fix for the 2026-07-09 devbox incident where
   # host tmux panes inherited a reaped worktree cwd → `getcwd failed` shells.
   use ExUnit.Case, async: false
 
-  alias DevIDE.Terminals.Session
+  alias Casein.Terminals.Session
 
   describe "safe_local_cwd/2" do
     test "honors the requested cwd when it exists" do

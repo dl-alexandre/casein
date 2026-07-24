@@ -1,6 +1,6 @@
-defmodule DevIDE.Files.PathSafetyTest do
-  use DevIDE.TestCase, async: true
-  alias DevIDE.Files.PathSafety
+defmodule Casein.Files.PathSafetyTest do
+  use Casein.TestCase, async: true
+  alias Casein.Files.PathSafety
 
   setup do
     root = Path.join(System.tmp_dir!(), "ps-#{System.unique_integer([:positive])}")

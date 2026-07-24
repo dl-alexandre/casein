@@ -1,4 +1,4 @@
-defmodule DevIDE.MCP.Scope do
+defmodule Casein.MCP.Scope do
   @moduledoc """
   Resolves MCP tool-call scope for workspace and tmux-session context.
 
@@ -12,9 +12,9 @@ defmodule DevIDE.MCP.Scope do
   preview surface identity handling here.
   """
 
-  alias DevIDE.PreviewControl
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias Casein.PreviewControl
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Aliases, as: WorkspaceAliases
 
   @preview_workspace_tools ~w(
     preview_resolve_workspace
@@ -320,7 +320,7 @@ defmodule DevIDE.MCP.Scope do
     %{
       error: :missing_workspace_id,
       message:
-        "Pass workspace_id or workspace_path. Generated DevIDE MCP URLs inject workspace_id automatically.",
+        "Pass workspace_id or workspace_path. Generated Casein MCP URLs inject workspace_id automatically.",
       folder_id_format: "folder:<base64url-absolute-path>"
     }
   end

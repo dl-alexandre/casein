@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.ContentSecurityPolicyTest do
-  use DevIdeWeb.ConnCase, async: true
+defmodule CaseinWeb.ContentSecurityPolicyTest do
+  use CaseinWeb.ConnCase, async: true
 
   @root_layout "lib/dev_ide_web/components/layouts/root.html.heex"
 

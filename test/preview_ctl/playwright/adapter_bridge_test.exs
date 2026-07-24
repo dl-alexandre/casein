@@ -3,7 +3,7 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
   # backed by a fake Node helper script that speaks the newline-delimited JSON
   # protocol. This exercises Adapter.playwright_command/decode paths plus the
   # Bridge port spawn/command/decode_line cycle without a real browser.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias PreviewCtl.Playwright.Adapter
   alias PreviewCtl.Playwright.Bridge
@@ -103,8 +103,8 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
   end
 
   defp restart_bridge do
-    _ = Supervisor.terminate_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
+    _ = Supervisor.terminate_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
+    {:ok, _} = Supervisor.restart_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
     :ok
   end
 

@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo do
+defmodule Casein.Repo do
   # Own top-level boundary so the domain and application infrastructure can
   # depend on the Repo without creating a boundary cycle.
   use Boundary, top_level?: true, deps: [], exports: [Adapter]

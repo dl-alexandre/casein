@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
+defmodule Casein.Agents.TerminalTools.PasteAgentText do
   @moduledoc "terminal_paste_agent_text."
 
   use Jido.Action,
@@ -16,12 +16,12 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
       submit: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -34,7 +34,7 @@ defmodule DevIDE.Agents.TerminalTools.PasteAgentText do
         ["text"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_paste_agent_text")
 
   @impl Jido.Action

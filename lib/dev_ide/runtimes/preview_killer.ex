@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.PreviewKiller do
+defmodule Casein.Runtimes.PreviewKiller do
   @moduledoc """
   Best-effort teardown for runtime-owned preview-server OS processes.
 
@@ -20,7 +20,7 @@ defmodule DevIDE.Runtimes.PreviewKiller do
   defmodule Default do
     @moduledoc false
 
-    @behaviour DevIDE.Runtimes.PreviewKiller.Behaviour
+    @behaviour Casein.Runtimes.PreviewKiller.Behaviour
 
     @impl true
     def kill(server) when is_map(server) do

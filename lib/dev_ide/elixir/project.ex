@@ -1,13 +1,13 @@
-defmodule DevIDE.Elixir.Project do
+defmodule Casein.Elixir.Project do
   @moduledoc """
   Lightweight project metadata detection.
 
-  All reads go through `DevIDE.Files.PathSafety` and respect
+  All reads go through `Casein.Files.PathSafety` and respect
   `PathSafety.ignored_dir?/1`. This module never starts processes, never
   invokes `mix`, and never reaches outside the workspace root.
   """
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
   @max_bytes 256 * 1024
 

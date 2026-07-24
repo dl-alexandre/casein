@@ -1,8 +1,8 @@
-defmodule DevIDE.CommandPaletteTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.CommandPaletteTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.CommandPalette
-  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
+  alias Casein.CommandPalette
+  alias Casein.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
 
   setup do
     root =
@@ -77,7 +77,7 @@ defmodule DevIDE.CommandPaletteTest do
     cmd_ids = Enum.map(cmds, & &1["id"])
 
     for id <- cmd_ids do
-      assert DevIDE.Commands.allowed?(id), "command id #{id} not in allowlist"
+      assert Casein.Commands.allowed?(id), "command id #{id} not in allowlist"
     end
   end
 
@@ -147,9 +147,9 @@ defmodule DevIDE.CommandPaletteTest do
     ids = Enum.map(items, & &1.id)
     theme_ids = Enum.filter(ids, &String.starts_with?(&1, "terminal:theme:"))
 
-    assert length(theme_ids) == length(DevIDE.Terminals.Theme.list_presets())
+    assert length(theme_ids) == length(Casein.Terminals.Theme.list_presets())
 
-    for %{id: preset_id} <- DevIDE.Terminals.Theme.list_presets() do
+    for %{id: preset_id} <- Casein.Terminals.Theme.list_presets() do
       assert "terminal:theme:#{preset_id}" in ids
     end
 

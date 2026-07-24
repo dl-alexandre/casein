@@ -1,7 +1,7 @@
-defmodule DevIDE.Links.ScannerTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Links.ScannerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Links.Scanner
+  alias Casein.Links.Scanner
 
   test "scans URLs and plausible paths in row order" do
     spans = Scanner.scan_row(~s|see (lib/foo.ex:3), then http://localhost:4000/app.|)

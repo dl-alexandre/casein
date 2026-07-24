@@ -1,19 +1,19 @@
-defmodule Mix.Tasks.DevIde.Edge.Setup do
+defmodule Mix.Tasks.Casein.Edge.Setup do
   @moduledoc """
-  Prepares or installs the optional DevIDE LAN HTTPS edge.
+  Prepares or installs the optional Casein LAN HTTPS edge.
 
       mix dev_ide.edge.setup
       mix dev_ide.edge.setup --fix
       mix dev_ide.edge.setup --listen-port 443 --backend-port 4443
 
   The edge uses systemd socket activation and `systemd-socket-proxyd` to forward
-  `https://<hostname>.local/` on port 443 to DevIDE's LAN HTTPS listener on
-  port 4443. TLS is not terminated by the edge; DevIDE still serves the mkcert
+  `https://<hostname>.local/` on port 443 to Casein's LAN HTTPS listener on
+  port 4443. TLS is not terminated by the edge; Casein still serves the mkcert
   certificate.
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
   @shortdoc "Prepare or install the optional portless LAN HTTPS edge"
 
@@ -35,10 +35,10 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
       Mix.raise("invalid option(s): #{Enum.map_join(invalid, ", ", &elem(&1, 0))}")
     end
 
-    proxyd = DevIDE.Setup.LanEdge.proxyd_path() || missing_proxyd!()
+    proxyd = Casein.Setup.LanEdge.proxyd_path() || missing_proxyd!()
     fix? = Keyword.get(opts, :fix, false)
     enable? = not Keyword.get(opts, :no_enable, false)
-    unit_dir = opts[:unit_dir] || DevIDE.Setup.LanEdge.unit_dir()
+    unit_dir = opts[:unit_dir] || Casein.Setup.LanEdge.unit_dir()
 
     listen_port =
       opts[:listen_port] || env_int("DEV_IDE_LAN_EDGE_PORT") || 443
@@ -53,7 +53,7 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
       Path.join(System.tmp_dir!(), "devide-lan-edge-#{System.unique_integer([:positive])}")
 
     paths =
-      DevIDE.Setup.LanEdge.write_units!(prepared_dir,
+      Casein.Setup.LanEdge.write_units!(prepared_dir,
         listen_port: listen_port,
         backend_host: backend_host,
         backend_port: backend_port,
@@ -61,7 +61,7 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
       )
 
     Mix.shell().info("""
-    DevIDE LAN edge units are ready.
+    Casein LAN edge units are ready.
 
     Files:
       socket:  #{paths.socket_path}
@@ -92,7 +92,7 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
 
     case run_commands_noninteractive(commands) do
       :ok ->
-        Mix.shell().info("Installed and activated DevIDE LAN edge.")
+        Mix.shell().info("Installed and activated Casein LAN edge.")
 
       {:error, failed_command, output} ->
         Mix.shell().info("Could not apply privileged edge setup non-interactively.")
@@ -119,7 +119,7 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
         "-m",
         "0644",
         paths.socket_path,
-        Path.join(unit_dir, DevIDE.Setup.LanEdge.socket_unit())
+        Path.join(unit_dir, Casein.Setup.LanEdge.socket_unit())
       ],
       [
         "sudo",
@@ -127,14 +127,14 @@ defmodule Mix.Tasks.DevIde.Edge.Setup do
         "-m",
         "0644",
         paths.service_path,
-        Path.join(unit_dir, DevIDE.Setup.LanEdge.service_unit())
+        Path.join(unit_dir, Casein.Setup.LanEdge.service_unit())
       ],
       ["sudo", "systemctl", "daemon-reload"]
     ]
 
     commands =
       if enable? do
-        commands ++ [["sudo", "systemctl", "enable", "--now", DevIDE.Setup.LanEdge.socket_unit()]]
+        commands ++ [["sudo", "systemctl", "enable", "--now", Casein.Setup.LanEdge.socket_unit()]]
       else
         commands
       end

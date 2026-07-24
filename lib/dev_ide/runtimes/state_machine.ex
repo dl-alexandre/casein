@@ -1,4 +1,4 @@
-defmodule DevIDE.Runtimes.StateMachine do
+defmodule Casein.Runtimes.StateMachine do
   @moduledoc """
   Runtime lifecycle state machine and event reducer.
 
@@ -6,7 +6,7 @@ defmodule DevIDE.Runtimes.StateMachine do
   commands, add safe-action kinds, or let runners create work.
   """
 
-  alias DevIDE.Runtimes.LifecycleEvent
+  alias Casein.Runtimes.LifecycleEvent
 
   @statuses ~w(requested provisioned expired cleaned)
   @terminal ~w(cleaned)

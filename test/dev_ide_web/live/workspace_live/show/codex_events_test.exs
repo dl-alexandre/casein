@@ -1,13 +1,13 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.CodexEventsTest do
+defmodule CaseinWeb.WorkspaceLive.Show.CodexEventsTest do
   # Codex.Store.MemoryAdapter is a process-global GenServer.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   import Phoenix.Component, only: [assign: 2]
 
-  alias DevIDE.Codex.Event
-  alias DevIDE.Codex.Store
-  alias DevIdeWeb.WorkspaceLive.Show
-  alias DevIdeWeb.WorkspaceLive.Show.CodexEvents
+  alias Casein.Codex.Event
+  alias Casein.Codex.Store
+  alias CaseinWeb.WorkspaceLive.Show
+  alias CaseinWeb.WorkspaceLive.Show.CodexEvents
 
   # Pure / memory-store: assign_defaults, disconnected open/subscribe,
   # select_thread, start_exec empty/unavailable, cancel_exec no-op,

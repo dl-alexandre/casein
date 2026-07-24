@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.SendCommand do
+defmodule Casein.Agents.TerminalTools.SendCommand do
   @moduledoc "terminal_send_command."
 
   use Jido.Action,
@@ -15,12 +15,12 @@ defmodule DevIDE.Agents.TerminalTools.SendCommand do
       pane: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -32,7 +32,7 @@ defmodule DevIDE.Agents.TerminalTools.SendCommand do
         ["session", "command"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_send_command")
 
   @impl Jido.Action

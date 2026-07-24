@@ -1,9 +1,9 @@
-defmodule DevIDE.Agents.TidewaveCapabilityTest do
+defmodule Casein.Agents.TidewaveCapabilityTest do
   # Serial: mutates process-global Application env (:preview_loopback_port),
   # which other suites read concurrently.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Agents.TidewaveCapability
+  alias Casein.Agents.TidewaveCapability
 
   setup do
     prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)

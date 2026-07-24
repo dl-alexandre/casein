@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.TerminalBackendTest do
+defmodule Casein.Desktop.TerminalBackendTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Desktop.TerminalBackend
+  alias Casein.Desktop.TerminalBackend
 
   test "selects PowerShell only for Windows" do
     assert TerminalBackend.default({:win32, :nt}) == :powershell

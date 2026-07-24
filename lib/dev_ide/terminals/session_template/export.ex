@@ -1,6 +1,6 @@
-defmodule DevIDE.Terminals.SessionTemplate.Export do
+defmodule Casein.Terminals.SessionTemplate.Export do
   @moduledoc """
-  Exports live tmux topology into DevIDE session template v2 maps.
+  Exports live tmux topology into Casein session template v2 maps.
 
   The exporter is intentionally conservative. It only infers nested
   horizontal/vertical splits when pane rectangles form a clean partition; for
@@ -44,7 +44,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Export do
   end
 
   # Live tmux topology can't tell a feature-overlaid pane (preview, file) from a
-  # plain terminal — the overlay is a DevIDE concept, not a tmux one. A caller that
+  # plain terminal — the overlay is a Casein concept, not a tmux one. A caller that
   # holds the pane registries passes a lookup so matching leaves are retagged with
   # the feature type + payload and round-trip back to a live feature pane on apply.
   #
@@ -52,7 +52,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Export do
   #
   #   * `:preview_panes` — legacy `%{pane_id => url}` (each becomes `{"preview", url}`).
   #   * `:feature_panes` — `%{pane_id => {type, command}}`, e.g. built from
-  #     `DevIDE.Panes.snapshot/1` (`{"file", active_path}` / `{"preview", url}`).
+  #     `Casein.Panes.snapshot/1` (`{"file", active_path}` / `{"preview", url}`).
   defp feature_pane_lookup(opts) do
     preview =
       opts

@@ -1,9 +1,9 @@
-defmodule DevIDE.Workspaces.Isolation.Patterns do
+defmodule Casein.Workspaces.Isolation.Patterns do
   @moduledoc """
   Host-pattern matching for shared/unsafe DB isolation labels.
 
   Extracted so isolation probes can classify hosts without referencing
-  `DevIDE.Workspaces.Isolation` (breaking the probe ↔ context cycle).
+  `Casein.Workspaces.Isolation` (breaking the probe ↔ context cycle).
   """
 
   @spec shared?(String.t()) :: boolean()

@@ -1,17 +1,17 @@
-defmodule DevIDE.Terminals.AgentPromptSender do
+defmodule Casein.Terminals.AgentPromptSender do
   @moduledoc """
   Sends agent prompts to a tmux pane in small, line-preserving chunks.
 
-  This is the terminal-layer bridge between `DevIDE.AgentPrompt` planning and
+  This is the terminal-layer bridge between `Casein.AgentPrompt` planning and
   tmux paste-buffer transport. MCP/LiveView callers can use it to avoid one
   opaque multiline paste while keeping pane targeting and submit semantics
   explicit.
   """
 
-  alias DevIDE.{AgentPrompt, Audit, Labels}
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Export.Sanitizer
-  alias DevIDE.Terminals.SessionTemplate
+  alias Casein.{AgentPrompt, Audit, Labels}
+  alias Casein.Agents.Activity
+  alias Casein.Export.Sanitizer
+  alias Casein.Terminals.SessionTemplate
 
   @prompt_excerpt_bytes 512
 
@@ -65,7 +65,7 @@ defmodule DevIDE.Terminals.AgentPromptSender do
           {:ok, result()} | {:error, map()}
   def send_prompt(session, pane, text, opts \\ [])
       when is_binary(session) and is_binary(pane) and is_binary(text) and is_list(opts) do
-    tmux = Keyword.get(opts, :tmux, DevIDE.Terminals.tmux_adapter())
+    tmux = Keyword.get(opts, :tmux, Casein.Terminals.tmux_adapter())
     plan = AgentPrompt.plan(text, opts)
     title = text |> AgentPrompt.title_from_first_prompt() |> redact_text()
     pane_label = maybe_set_pane_label(session, pane, title, plan, opts)
@@ -128,9 +128,9 @@ defmodule DevIDE.Terminals.AgentPromptSender do
   @spec send_to_agent_pane(String.t(), String.t(), keyword()) :: {:ok, result()} | {:error, map()}
   def send_to_agent_pane(session, text, opts \\ [])
       when is_binary(session) and is_binary(text) and is_list(opts) do
-    tmux = Keyword.get(opts, :tmux, DevIDE.Terminals.tmux_adapter())
+    tmux = Keyword.get(opts, :tmux, Casein.Terminals.tmux_adapter())
 
-    case DevIDE.Terminals.AgentPane.find(session, tmux: tmux) do
+    case Casein.Terminals.AgentPane.find(session, tmux: tmux) do
       {:ok, %{id: pane_id}} when is_binary(pane_id) ->
         send_prompt(session, pane_id, text, Keyword.put(opts, :tmux, tmux))
 

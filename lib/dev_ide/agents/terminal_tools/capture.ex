@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.Capture do
+defmodule Casein.Agents.TerminalTools.Capture do
   @moduledoc "terminal_capture."
 
   use Jido.Action,
@@ -16,12 +16,12 @@ defmodule DevIDE.Agents.TerminalTools.Capture do
       ansi: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -34,7 +34,7 @@ defmodule DevIDE.Agents.TerminalTools.Capture do
         ["session"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_capture")
 
   @impl Jido.Action

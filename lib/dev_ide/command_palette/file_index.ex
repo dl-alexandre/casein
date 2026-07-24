@@ -1,13 +1,13 @@
-defmodule DevIDE.CommandPalette.FileIndex do
+defmodule Casein.CommandPalette.FileIndex do
   @moduledoc """
   Workspace-rooted file walker for the command palette.
 
   Capped at 5_000 files. Ignored dirs come from
-  `DevIDE.Files.PathSafety.ignored_dir?/1` so the palette honours the same
+  `Casein.Files.PathSafety.ignored_dir?/1` so the palette honours the same
   allowlist as the file tree. Symlinks are not followed.
   """
 
-  alias DevIDE.Files.PathSafety
+  alias Casein.Files.PathSafety
 
   @file_cap 5_000
 

@@ -1,9 +1,9 @@
-defmodule DevIDE.PreviewActivity do
+defmodule Casein.PreviewActivity do
   @moduledoc """
   Recent per-preview-pane activity feed.
 
   This is intentionally short-lived and bounded. Durable audit remains in
-  `DevIDE.Audit` and `DevIDE.Previews.ControlAction`; this feed answers the
+  `Casein.Audit` and `Casein.Previews.ControlAction`; this feed answers the
   operator/agent question "what just happened in this preview pane?"
   """
 
@@ -34,7 +34,7 @@ defmodule DevIDE.PreviewActivity do
 
   @spec subscribe(String.t()) :: :ok
   def subscribe(workspace_id) when is_binary(workspace_id) do
-    PubSub.subscribe(DevIDE.PubSub, topic(workspace_id))
+    PubSub.subscribe(Casein.PubSub, topic(workspace_id))
   end
 
   @spec record(map()) :: entry()
@@ -104,7 +104,7 @@ defmodule DevIDE.PreviewActivity do
       end
 
     if is_binary(workspace_id) do
-      PubSub.broadcast(DevIDE.PubSub, topic(workspace_id), {:preview_activity, entry})
+      PubSub.broadcast(Casein.PubSub, topic(workspace_id), {:preview_activity, entry})
     end
 
     {:reply, entry, updated}

@@ -11,7 +11,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, DevIDE.Repo,
+  config :dev_ide, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
@@ -23,7 +23,7 @@ if sqlite_repo? do
     pool_size: 1,
     busy_timeout: 5_000
 else
-  config :dev_ide, DevIDE.Repo,
+  config :dev_ide, Casein.Repo,
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
@@ -57,7 +57,7 @@ end
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
-config :dev_ide, DevIdeWeb.Endpoint,
+config :dev_ide, CaseinWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM",
   server: false
@@ -66,7 +66,7 @@ config :dev_ide, DevIdeWeb.Endpoint,
 # so the live tmux integration tests can never see, create, kill, or reconcile
 # sessions on another server — on the devbox the prod release (`devide`) and the
 # :4000 dev server (`devide_dev`) also run here. Each env gets its own label so
-# the servers stay isolated; resolved by DevIDE.Terminals.TmuxServer.
+# the servers stay isolated; resolved by Casein.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :dev_ide, :tmux_host_anchor, false
@@ -84,7 +84,7 @@ config :dev_ide,
        Path.join(System.tmp_dir!(), "devide-test-instances-#{System.pid()}")
 
 # Never probe the Caddy admin API (http://localhost:2019) from tests.
-# DevIDE.Deployment.Health.status/1 is reached by /api/workspaces/:id/status,
+# Casein.Deployment.Health.status/1 is reached by /api/workspaces/:id/status,
 # pane mutations, and template export (all call Export.status first). On the
 # contended devbox that real HTTP GET times out and retries (~7s), making those
 # endpoint tests flaky. Health tests inject :caddy_config explicitly, so this
@@ -102,7 +102,7 @@ config :dev_ide,
        :deployment_current_socket,
        Path.join(System.tmp_dir!(), "devide-test-no-current-#{System.pid()}.sock")
 
-# Keep runtime-minted workspace tokens (DevIDE.Agents.WorkspaceTokens) out of
+# Keep runtime-minted workspace tokens (Casein.Agents.WorkspaceTokens) out of
 # the real ~/.devide store when tests exercise the materializer/pane env.
 config :dev_ide,
        :workspace_tokens_store,
@@ -112,7 +112,7 @@ config :dev_ide,
        )
 
 # In test we don't send emails
-config :dev_ide, DevIDE.Mailer, adapter: Swoosh.Adapters.Test
+config :dev_ide, Casein.Mailer, adapter: Swoosh.Adapters.Test
 
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
@@ -131,7 +131,7 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
+config :dev_ide, CaseinWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
@@ -142,16 +142,16 @@ config :dev_ide,
   git_inspector_cache_ttl_ms: 0,
   # Default audit adapter in tests is in-memory; the Ecto adapter is exercised
   # via DataCase tests that explicitly opt in.
-  audit_adapter: DevIDE.Audit.MemoryAdapter,
-  agent_events_adapter: DevIDE.Agents.AgentEvents.MemoryAdapter,
+  audit_adapter: Casein.Audit.MemoryAdapter,
+  agent_events_adapter: Casein.Agents.AgentEvents.MemoryAdapter,
   grok_acp_auto_attach: false,
-  codex_store_adapter: DevIDE.Codex.Store.MemoryAdapter,
-  workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
-  runtimes_adapter: DevIDE.Runtimes.MemoryAdapter,
+  codex_store_adapter: Casein.Codex.Store.MemoryAdapter,
+  workspace_state_adapter: Casein.Workspaces.State.MemoryAdapter,
+  runtimes_adapter: Casein.Runtimes.MemoryAdapter,
   forward_auth: false,
   admins: [],
   on_devbox: false,
-  manager_req_options: [plug: {Req.Test, DevIDE.Integrations.Manager.Client}],
+  manager_req_options: [plug: {Req.Test, Casein.Integrations.Manager.Client}],
   device_link_ttl_seconds: 3_600,
   device_link_reaper_enabled: false,
   runtime_reaper_enabled: false,
@@ -159,7 +159,7 @@ config :dev_ide,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via HTTPStub servers.
   # Tests that want the Local source override this.
-  workspace_source: DevIDE.WorkspaceSource.Manager,
+  workspace_source: Casein.WorkspaceSource.Manager,
   runtime_preview_launcher_enabled: false,
   preview_control_adapter: :memory,
   preview_proxy_enabled: false,
@@ -172,7 +172,7 @@ config :dev_ide,
   terminal_desktop_integration_enabled: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
-  # default server. See DevIDE.Terminals.TmuxServer.
+  # default server. See Casein.Terminals.TmuxServer.
   tmux_server_label: "devide_test",
   # Disable authoritative-size debouncing in the suite (leading_ms: 0 makes
   # every change apply immediately) so the many existing resize tests keep

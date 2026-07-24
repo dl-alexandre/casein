@@ -1,10 +1,10 @@
-defmodule DevIdeWeb.API.AgentCapabilityController do
+defmodule CaseinWeb.API.AgentCapabilityController do
   @moduledoc "HTTP lifecycle for managed Grok capability bearers."
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Agents.{AgentCapabilityTokens, GrokCapabilityPolicy}
-  alias DevIDE.Audit
+  alias Casein.Agents.{AgentCapabilityTokens, GrokCapabilityPolicy}
+  alias Casein.Audit
 
   @digest ~r/\A[0-9a-f]{64}\z/
   @leader_id ~r/\A[0-9a-f]{24}\z/

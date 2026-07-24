@@ -1,4 +1,4 @@
-defmodule DevIDE.Signals.ObanWorker do
+defmodule Casein.Signals.ObanWorker do
   @moduledoc """
   `use Oban.Worker` wrapper that restores signals context in `perform/1`.
 
@@ -12,15 +12,15 @@ defmodule DevIDE.Signals.ObanWorker do
     quote do
       use Oban.Worker, unquote(opts)
 
-      @behaviour DevIDE.Signals.ObanWorker
+      @behaviour Casein.Signals.ObanWorker
 
-      @before_compile DevIDE.Signals.ObanWorker
+      @before_compile Casein.Signals.ObanWorker
     end
   end
 
   defmacro __before_compile__(_env) do
     quote do
-      alias DevIDE.Signals.ObanMiddleware
+      alias Casein.Signals.ObanMiddleware
       alias Oban.Job
 
       @impl Oban.Worker

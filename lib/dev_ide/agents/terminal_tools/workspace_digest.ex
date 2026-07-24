@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.TerminalTools.WorkspaceDigest do
+defmodule Casein.Agents.TerminalTools.WorkspaceDigest do
   @moduledoc "workspace_digest."
 
   use Jido.Action,
@@ -12,15 +12,15 @@ defmodule DevIDE.Agents.TerminalTools.WorkspaceDigest do
       workspace_id: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters, do: Tool.object(Helpers.workspace_props())
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("workspace_digest")
 
   @impl Jido.Action

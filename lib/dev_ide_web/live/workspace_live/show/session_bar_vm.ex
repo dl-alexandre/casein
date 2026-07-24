@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
+defmodule CaseinWeb.WorkspaceLive.Show.SessionBarVM do
   @moduledoc """
   Pure view-model builder for the terminal session bar.
 
@@ -12,18 +12,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   so switching sessions re-styles tabs without rebuilding the list.
   """
 
-  alias DevIDE.Attention.Policy, as: AttentionPolicy
-  alias DevIDE.Labels
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.AgentState
-  alias DevIDE.Terminals.PaneState
-  alias DevIDE.Workspaces.Scratch
-  alias DevIDE.Terminals.SessionDirectory.Attention
-  alias DevIdeWeb.WorkspaceLive.Show.Browse
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  alias DevIdeWeb.WorkspaceRoutes
+  alias Casein.Attention.Policy, as: AttentionPolicy
+  alias Casein.Labels
+  alias Casein.Terminals
+  alias Casein.Terminals.AgentState
+  alias Casein.Terminals.PaneState
+  alias Casein.Workspaces.Scratch
+  alias Casein.Terminals.SessionDirectory.Attention
+  alias CaseinWeb.WorkspaceLive.Show.Browse
+  alias CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  alias CaseinWeb.WorkspaceRoutes
 
-  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
+  import CaseinWeb.WorkspaceLive.Show.TerminalChrome,
     only: [
       session_attach_id: 1,
       session_branch: 1,
@@ -48,7 +48,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       window_full_title: 2
     ]
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   @type session_window :: %{
           id: String.t() | nil,
@@ -1372,7 +1372,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     activity_state = effective_window_activity_state(window_activity_state(window), pane_state)
     preview_count = window_preview_count(window, preview_panes)
     panes = pane_tabs(window, preview_panes, highlight_pane_id, opts)
-    quiet? = DevIDE.Terminals.agent_window_quiet?(window)
+    quiet? = Casein.Terminals.agent_window_quiet?(window)
 
     unseen_quiet? =
       quiet? and unseen_quiet_window?(opts, Keyword.get(opts, :session_id), window.id)

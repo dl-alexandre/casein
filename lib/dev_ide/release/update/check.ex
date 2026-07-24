@@ -1,12 +1,12 @@
-defmodule DevIDE.Release.Update.Check do
+defmodule Casein.Release.Update.Check do
   @moduledoc """
   Compare installed release metadata against a remote update manifest.
 
   `revision` is the update key; `version` is display-only.
   """
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Manifest
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Manifest
 
   @type status :: :current | :update_available | :error
 

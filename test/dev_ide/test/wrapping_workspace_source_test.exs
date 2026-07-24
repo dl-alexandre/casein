@@ -1,8 +1,8 @@
-defmodule DevIDE.Test.WrappingWorkspaceSourceTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Test.WrappingWorkspaceSourceTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.WorkspaceSource
-  alias DevIDE.Test.WrappingWorkspaceSource
+  alias Casein.WorkspaceSource
+  alias Casein.Test.WrappingWorkspaceSource
 
   setup do
     prev = Application.get_env(:dev_ide, :workspace_source)

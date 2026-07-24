@@ -1,16 +1,16 @@
-defmodule DevIdeWeb.PreviewProxy.WebSocketBridge do
+defmodule CaseinWeb.PreviewProxy.WebSocketBridge do
   @moduledoc """
   A `WebSock` handler that tunnels a preview-pane WebSocket to a workspace's
   own loopback dev server, so HMR / LiveReload sockets (Vite, webpack, Phoenix
-  LiveReload) survive being proxied through DevIDE's origin.
+  LiveReload) survive being proxied through Casein's origin.
 
-  The browser ↔ DevIDE hop is terminated by Bandit/`WebSockAdapter`; this handler
-  is the DevIDE ↔ `127.0.0.1:PORT` hop, driven by `Mint.WebSocket`. Frames are
+  The browser ↔ Casein hop is terminated by Bandit/`WebSockAdapter`; this handler
+  is the Casein ↔ `127.0.0.1:PORT` hop, driven by `Mint.WebSocket`. Frames are
   forwarded verbatim in both directions; ping/pong/close are mirrored.
 
   ## Security
 
-  This handler is only reached after `DevIdeWeb.PreviewProxyController` has run
+  This handler is only reached after `CaseinWeb.PreviewProxyController` has run
   the same authorization gate as the HTTP proxy (owner check + `127.0.0.1` host
   pin + `Url.port_allowed?/2`). The upstream host is fixed to loopback by the
   caller; nothing in a browser frame can redirect the tunnel to another host.
@@ -20,9 +20,9 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketBridge do
 
   require Logger
 
-  alias DevIdeWeb.PreviewProxy.WebSocketBridge.State
+  alias CaseinWeb.PreviewProxy.WebSocketBridge.State
 
-  @registry DevIdeWeb.PreviewProxy.WebSocketRegistry
+  @registry CaseinWeb.PreviewProxy.WebSocketRegistry
 
   @doc "Number of live tunnels for a workspace (soft cap input for the controller)."
   @spec count(String.t()) :: non_neg_integer()

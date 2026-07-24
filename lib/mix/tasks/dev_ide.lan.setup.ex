@@ -1,6 +1,6 @@
-defmodule Mix.Tasks.DevIde.Lan.Setup do
+defmodule Mix.Tasks.Casein.Lan.Setup do
   @moduledoc """
-  Generates a trusted local development certificate for DevIDE LAN mode.
+  Generates a trusted local development certificate for Casein LAN mode.
 
       mix dev_ide.lan.setup
       mix dev_ide.lan.setup --hostname workstation --hosts workstation.home,devide.test
@@ -12,7 +12,7 @@ defmodule Mix.Tasks.DevIde.Lan.Setup do
   """
 
   use Mix.Task
-  use Boundary, classify_to: DevIDEMix
+  use Boundary, classify_to: CaseinMix
 
   @shortdoc "Generate mkcert certificates for LAN HTTPS development"
 
@@ -95,11 +95,11 @@ defmodule Mix.Tasks.DevIde.Lan.Setup do
   end
 
   defp short_hostname do
-    DevIDE.Setup.LocalDomain.short_hostname()
+    Casein.Setup.LocalDomain.short_hostname()
   end
 
   defp hosts_for(hostname, extra_hosts) do
-    local_hostname = DevIDE.Setup.LocalDomain.mdns_hostname()
+    local_hostname = Casein.Setup.LocalDomain.mdns_hostname()
 
     extra_hosts =
       case extra_hosts do
@@ -157,7 +157,7 @@ defmodule Mix.Tasks.DevIde.Lan.Setup do
   defp print_next_steps(hostname, hosts, certfile, keyfile) do
     lan_hostname =
       System.get_env("DEV_IDE_LAN_HOST") ||
-        Enum.find(hosts, &(&1 == DevIDE.Setup.LocalDomain.mdns_hostname())) ||
+        Enum.find(hosts, &(&1 == Casein.Setup.LocalDomain.mdns_hostname())) ||
         Enum.find(hosts, &String.ends_with?(&1, ".local")) ||
         "#{hostname}.local"
 
@@ -174,7 +174,7 @@ defmodule Mix.Tasks.DevIde.Lan.Setup do
       cert: #{certfile}
       key:  #{keyfile}
 
-    Start DevIDE in LAN mode:
+    Start Casein in LAN mode:
 
       DEV_IDE_LAN=true mise exec -- mix phx.server
 

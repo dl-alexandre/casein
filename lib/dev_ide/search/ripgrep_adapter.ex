@@ -1,4 +1,4 @@
-defmodule DevIDE.Search.RipgrepAdapter do
+defmodule Casein.Search.RipgrepAdapter do
   @moduledoc """
   Ripgrep-backed search. argv-only invocation:
 
@@ -13,10 +13,10 @@ defmodule DevIDE.Search.RipgrepAdapter do
   Results are PathSafety-filtered before being returned.
   """
 
-  @behaviour DevIDE.Search.Adapter
+  @behaviour Casein.Search.Adapter
 
-  alias DevIDE.Files.PathSafety
-  alias DevIDE.Search.Result
+  alias Casein.Files.PathSafety
+  alias Casein.Search.Result
 
   @ignore_globs ~w(.git _build deps node_modules priv/static/cache)
   @max_output_bytes 1 * 1024 * 1024

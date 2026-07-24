@@ -1,6 +1,6 @@
-defmodule DevIDE.UAT.Step do
+defmodule Casein.UAT.Step do
   @moduledoc """
-  One step of a frozen `DevIDE.UAT.Trace` — either an action to perform or an
+  One step of a frozen `Casein.UAT.Trace` — either an action to perform or an
   assertion to evaluate during replay.
 
   Kinds:
@@ -13,10 +13,10 @@ defmodule DevIDE.UAT.Step do
     * `:assert_url`       — `matches` (substring/pattern the current URL must satisfy)
     * `:assert_no_errors` — `console` / `network` (booleans, which error classes to check)
     * `:assert_screenshot` — `baseline` (path) + `threshold`; advisory visual tier
-      (`DevIDE.UAT.Visual`) — a mismatch is `:warn`, never `:fail`
+      (`Casein.UAT.Visual`) — a mismatch is `:warn`, never `:fail`
 
   `match` is a durable matcher map (`selector`, `role`, `name`, `nth`,
-  `near_text`) — see `DevIDE.UAT.Trace` for why selectors are frozen instead of
+  `near_text`) — see `Casein.UAT.Trace` for why selectors are frozen instead of
   `element_id`. `from` records authoring provenance (`action_id`,
   `observation_id`, `resolved_el`) and is audit-only — never used to resolve a
   target at replay.

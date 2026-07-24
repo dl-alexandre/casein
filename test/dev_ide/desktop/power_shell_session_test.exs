@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.PowerShellSessionTest do
+defmodule Casein.Desktop.PowerShellSessionTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Desktop.PowerShellSession
+  alias Casein.Desktop.PowerShellSession
 
   @moduletag :pty
 

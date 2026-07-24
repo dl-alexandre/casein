@@ -1,4 +1,4 @@
-defmodule DevIDE.AgentSessions.GrokACP.Protocol do
+defmodule Casein.AgentSessions.GrokACP.Protocol do
   @moduledoc false
 
   @max_line_bytes 8 * 1024 * 1024

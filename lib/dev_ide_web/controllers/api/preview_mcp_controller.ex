@@ -1,20 +1,20 @@
-defmodule DevIdeWeb.API.PreviewMCPController do
+defmodule CaseinWeb.API.PreviewMCPController do
   @moduledoc """
   HTTP transport for the preview-control MCP server.
 
   Agents connect here (`POST /api/preview/mcp`) to discover and call
-  `DevIDE.Agents.PreviewTools`. Authentication is the same bearer-token gate
-  as the rest of the read-only API (`DevIdeWeb.Plugs.ApiAuth`). The protocol
-  logic lives in `DevIdeWeb.API.PreviewMCP`; this controller only maps its
+  `Casein.Agents.PreviewTools`. Authentication is the same bearer-token gate
+  as the rest of the read-only API (`CaseinWeb.Plugs.ApiAuth`). The protocol
+  logic lives in `CaseinWeb.API.PreviewMCP`; this controller only maps its
   outcomes onto HTTP status codes.
   """
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Terminals
-  alias DevIDE.Workspaces
-  alias DevIdeWeb.API.{MCPTransport, PreviewMCP}
-  alias DevIdeWeb.Plugs.AgentCapabilityAuthz
+  alias Casein.Terminals
+  alias Casein.Workspaces
+  alias CaseinWeb.API.{MCPTransport, PreviewMCP}
+  alias CaseinWeb.Plugs.AgentCapabilityAuthz
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
@@ -28,7 +28,7 @@ defmodule DevIdeWeb.API.PreviewMCPController do
         [
           default_workspace_id: workspace_id,
           default_tmux_session: tmux_session,
-          actor: DevIdeWeb.Plugs.ApiAuth.actor(conn)
+          actor: CaseinWeb.Plugs.ApiAuth.actor(conn)
         ] ++
           AgentCapabilityAuthz.handler_opts(conn)
 

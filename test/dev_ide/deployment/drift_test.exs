@@ -1,9 +1,9 @@
-defmodule DevIDE.Deployment.DriftTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Deployment.DriftTest do
+  use Casein.TestCase, async: false
 
-  import DevIDE.Test.GitRepoCase
+  import Casein.Test.GitRepoCase
 
-  alias DevIDE.Deployment.Drift
+  alias Casein.Deployment.Drift
 
   test "assess returns current when a short deployed SHA matches the remote head" do
     assert Drift.assess("1fb643a", {:ok, "1fb643af2c58da2c9b10019cc3de1b06555e3732"}, "master") ==
@@ -129,14 +129,14 @@ defmodule DevIDE.Deployment.DriftTest do
       :persistent_term.erase(key)
     end)
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
 
     assert {:drift, _info} = Drift.check_and_broadcast(log: false, broadcast: false)
     refute_receive {:deploy_drift, _info}, 100
   end
 
   test "broadcast_drift fans out only a drifted status" do
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, "deploy:updates")
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "deploy:updates")
 
     assert :ok = Drift.broadcast_drift({:drift, %{reason: :revision_differs}})
     assert_receive {:deploy_drift, %{reason: :revision_differs}}

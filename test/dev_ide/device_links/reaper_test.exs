@@ -1,11 +1,11 @@
-defmodule DevIDE.DeviceLinks.ReaperTest do
-  use DevIDE.DataCase, async: false
+defmodule Casein.DeviceLinks.ReaperTest do
+  use Casein.DataCase, async: false
 
-  alias DevIDE.DeviceLinks
-  alias DevIDE.DeviceLinks.Reaper
-  alias DevIDE.DeviceLinks.Token
-  alias DevIDE.Workspace
-  alias DevIDE.Repo
+  alias Casein.DeviceLinks
+  alias Casein.DeviceLinks.Reaper
+  alias Casein.DeviceLinks.Token
+  alias Casein.Workspace
+  alias Casein.Repo
 
   defmodule OwnedSource do
     def get(id, _auth),
@@ -52,7 +52,7 @@ defmodule DevIDE.DeviceLinks.ReaperTest do
   defp insert_token(attrs) do
     defaults = %{
       origin_id: "dev_ide",
-      origin_name: "DevIDE",
+      origin_name: "Casein",
       subject_id: "owner",
       subject_role: "owner",
       token_hash: Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false),

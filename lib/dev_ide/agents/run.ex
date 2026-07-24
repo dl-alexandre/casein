@@ -1,19 +1,19 @@
-defmodule DevIDE.Agents.Run do
+defmodule Casein.Agents.Run do
   @moduledoc """
   One in-flight review-mode agent run, keyed by workspace id.
 
   Supervisor + linger + replace-on-terminal + hard timeout, keyed by a
   dedicated registry.
 
-  argv is fixed by `DevIDE.Agents.ReviewCommand` — there is no path through
+  argv is fixed by `Casein.Agents.ReviewCommand` — there is no path through
   this module to execute an arbitrary command, send a prompt, or apply a
   patch. It only spawns, observes, and cancels.
   """
 
   use GenServer
-  alias DevIDE.BoundedBuffer
-  alias DevIDE.Agents.{ReviewCommand, Capability}
-  alias DevIDE.Commands
+  alias Casein.BoundedBuffer
+  alias Casein.Agents.{ReviewCommand, Capability}
+  alias Casein.Commands
 
   @max_buffer_bytes 256 * 1024
   @default_timeout_ms 30 * 60 * 1000
@@ -29,10 +29,10 @@ defmodule DevIDE.Agents.Run do
   end
 
   def via(workspace_id),
-    do: {:via, Registry, {DevIDE.Agents.Registry, workspace_id}}
+    do: {:via, Registry, {Casein.Agents.Registry, workspace_id}}
 
   def whereis(workspace_id) do
-    case Registry.lookup(DevIDE.Agents.Registry, workspace_id) do
+    case Registry.lookup(Casein.Agents.Registry, workspace_id) do
       [{pid, _}] -> {:ok, pid}
       [] -> :error
     end
@@ -74,7 +74,7 @@ defmodule DevIDE.Agents.Run do
 
   defp spawn_run(workspace_id, root, %ReviewCommand{} = cmd, opts) do
     DynamicSupervisor.start_child(
-      DevIDE.Agents.Supervisor,
+      Casein.Agents.Supervisor,
       {__MODULE__, {workspace_id, root, cmd, opts}}
     )
   end

@@ -1,21 +1,21 @@
-defmodule DevIDE.Signals.AlertsRouter do
+defmodule Casein.Signals.AlertsRouter do
   @moduledoc """
-  Subscribes to audit-derived signals on `DevIDE.SignalBus` and routes
-  alert-worthy events to `DevIDE.Push.Dispatcher`.
+  Subscribes to audit-derived signals on `Casein.SignalBus` and routes
+  alert-worthy events to `Casein.Push.Dispatcher`.
 
-  In-app alert delivery (`DevIdeWeb.SessionChannel`) still listens to the
+  In-app alert delivery (`CaseinWeb.SessionChannel`) still listens to the
   audit PubSub spine directly; this router owns the OS-push path so the two
-  surfaces stay aligned via `DevIDE.Alerts` without duplicating filter logic
+  surfaces stay aligned via `Casein.Alerts` without duplicating filter logic
   on raw audit messages in the dispatcher.
   """
 
   use GenServer
 
-  alias DevIDE.Alerts
-  alias DevIDE.Audit.Event
-  alias DevIDE.Push.Dispatcher
-  alias DevIDE.SignalBus
-  alias DevIDE.Signals.Publish
+  alias Casein.Alerts
+  alias Casein.Audit.Event
+  alias Casein.Push.Dispatcher
+  alias Casein.SignalBus
+  alias Casein.Signals.Publish
   alias Jido.Signal
   alias Jido.Signal.Bus
 

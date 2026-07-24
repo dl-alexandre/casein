@@ -1,8 +1,8 @@
-defmodule DevIDE.Release.PackageTest do
+defmodule Casein.Release.PackageTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Package
+  alias Casein.Release.Metadata
+  alias Casein.Release.Package
 
   setup do
     tmp = System.tmp_dir!() |> Path.join("devide-package-#{System.unique_integer([:positive])}")

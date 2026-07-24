@@ -1,11 +1,11 @@
-defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
-  use DevIDE.TestCase, async: false
+defmodule CaseinWeb.WorkspaceLive.AuditDrawerComponentTest do
+  use Casein.TestCase, async: false
 
   import Phoenix.LiveViewTest
 
-  alias DevIDE.Audit
-  alias DevIDE.Signals.Context
-  alias DevIdeWeb.WorkspaceLive.AuditDrawerComponent
+  alias Casein.Audit
+  alias Casein.Signals.Context
+  alias CaseinWeb.WorkspaceLive.AuditDrawerComponent
 
   defp config(overrides) do
     # Unique per call: Audit.emit_decision persists across tests in this
@@ -41,8 +41,8 @@ defmodule DevIdeWeb.WorkspaceLive.AuditDrawerComponentTest do
       )
 
     %Phoenix.LiveView.Socket{
-      endpoint: DevIdeWeb.Endpoint,
-      view: DevIdeWeb.WorkspaceLive.Show,
+      endpoint: CaseinWeb.Endpoint,
+      view: CaseinWeb.WorkspaceLive.Show,
       root_pid: self(),
       private: %{live_temp: %{}, lifecycle: %Phoenix.LiveView.Lifecycle{}},
       assigns: assigns

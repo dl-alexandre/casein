@@ -1,7 +1,7 @@
-defmodule DevIDE.Desktop.AgentEnvironmentTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Desktop.AgentEnvironmentTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Desktop.AgentEnvironment
+  alias Casein.Desktop.AgentEnvironment
 
   setup do
     previous_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)

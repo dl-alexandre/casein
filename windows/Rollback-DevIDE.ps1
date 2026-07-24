@@ -37,4 +37,4 @@ Set-Content -LiteralPath $temporary -Value $next -Encoding UTF8
 Move-Item -LiteralPath $temporary -Destination $currentPath -Force
 
 if ($Launch) { & (Join-Path $InstallRoot 'DevIDE.Launcher.ps1') }
-Write-Host "Rolled DevIDE back to $($metadata.version)-$($metadata.revision.Substring(0, 7))."
+Write-Host "Rolled Casein back to $($metadata.version)-$($metadata.revision.Substring(0, 7))."

@@ -1,11 +1,11 @@
-defmodule DevIDE.Agents.AgentEvents.MemoryAdapter do
+defmodule Casein.Agents.AgentEvents.MemoryAdapter do
   @moduledoc false
 
   use GenServer
 
-  @behaviour DevIDE.Agents.AgentEvents.Adapter
+  @behaviour Casein.Agents.AgentEvents.Adapter
 
-  alias DevIDE.Agents.AgentEvent
+  alias Casein.Agents.AgentEvent
 
   @max_events 10_000
 

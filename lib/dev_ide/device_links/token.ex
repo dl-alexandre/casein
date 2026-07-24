@@ -1,4 +1,4 @@
-defmodule DevIDE.DeviceLinks.Token do
+defmodule Casein.DeviceLinks.Token do
   @moduledoc """
   Persistent bearer credential issued to a paired device.
 

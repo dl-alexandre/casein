@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.Theme.Builtins do
+defmodule Casein.Terminals.Theme.Builtins do
   @moduledoc false
 
   @detail "Dark by default; light/system can be selected from stored terminal preference"

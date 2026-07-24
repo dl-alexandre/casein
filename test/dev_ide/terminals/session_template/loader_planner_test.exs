@@ -1,12 +1,12 @@
-defmodule DevIDE.Terminals.SessionTemplate.LoaderPlannerTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Terminals.SessionTemplate.LoaderPlannerTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.SessionTemplate.Executor
-  alias DevIDE.Terminals.SessionTemplate.Loader
-  alias DevIDE.Terminals.SessionTemplate.Pane
-  alias DevIDE.Terminals.SessionTemplate.Planner
-  alias DevIDE.Terminals.SessionTemplate.Window
+  alias Casein.Terminals.SessionTemplate
+  alias Casein.Terminals.SessionTemplate.Executor
+  alias Casein.Terminals.SessionTemplate.Loader
+  alias Casein.Terminals.SessionTemplate.Pane
+  alias Casein.Terminals.SessionTemplate.Planner
+  alias Casein.Terminals.SessionTemplate.Window
 
   describe "Loader" do
     test "built_in/0 exposes the four hard-coded templates" do

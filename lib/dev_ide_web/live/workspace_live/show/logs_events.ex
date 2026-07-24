@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.LogsEvents do
-  # Logs-tab mutators for DevIdeWeb.WorkspaceLive.Show. Unlike the proposal
+defmodule CaseinWeb.WorkspaceLive.Show.LogsEvents do
+  # Logs-tab mutators for CaseinWeb.WorkspaceLive.Show. Unlike the proposal
   # panel / audit drawer, logs stay on the root LiveView: log lines arrive as
   # {:source_log, ref, line} handle_info messages, which LiveComponents cannot
   # receive, and forwarding per-line via send_update would churn on busy
@@ -10,7 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.LogsEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Logs
+  alias Casein.Logs
 
   @max_log_lines 500
 

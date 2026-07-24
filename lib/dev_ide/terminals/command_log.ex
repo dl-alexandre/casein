@@ -1,4 +1,4 @@
-defmodule DevIDE.Terminals.CommandLog do
+defmodule Casein.Terminals.CommandLog do
   @moduledoc """
   Bounded ETS command log for shell-integration records.
 
@@ -7,7 +7,7 @@ defmodule DevIDE.Terminals.CommandLog do
   root process that creates the table; only trusted app code runs in this BEAM.
   """
 
-  alias DevIDE.Terminals.PaneCommand
+  alias Casein.Terminals.PaneCommand
 
   @table :dev_ide_terminal_command_log
   @default_limit 200

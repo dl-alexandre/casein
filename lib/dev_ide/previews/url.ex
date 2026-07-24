@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.Url do
+defmodule Casein.Previews.Url do
   @moduledoc false
 
-  alias DevIDE.HostMode
+  alias Casein.HostMode
   alias PreviewCtl.Origin
 
   @doc "True when the URL targets loopback (browser-local only)."

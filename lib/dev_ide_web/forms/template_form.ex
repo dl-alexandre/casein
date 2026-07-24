@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.Forms.TemplateForm do
+defmodule CaseinWeb.Forms.TemplateForm do
   @moduledoc "Schemaless changeset for tmux template save/edit metadata forms."
 
   import Ecto.Changeset

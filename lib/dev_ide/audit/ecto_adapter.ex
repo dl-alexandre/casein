@@ -1,17 +1,17 @@
-defmodule DevIDE.Audit.EctoAdapter do
+defmodule Casein.Audit.EctoAdapter do
   @moduledoc """
-  Postgres-backed adapter for `DevIDE.Audit`.
+  Postgres-backed adapter for `Casein.Audit`.
 
-  Maps `DevIDE.Audit.Event` to/from a private Ecto schema, scoped to this
+  Maps `Casein.Audit.Event` to/from a private Ecto schema, scoped to this
   module so callers (LiveViews, Policy, Audit) only ever see the domain
   struct. Atoms in `decision`/`reason` are stored as strings; metadata is
   a JSON map.
   """
 
-  @behaviour DevIDE.Audit.Adapter
+  @behaviour Casein.Audit.Adapter
 
-  alias DevIDE.Audit.Event
-  alias DevIDE.Repo
+  alias Casein.Audit.Event
+  alias Casein.Repo
   import Ecto.Query
 
   defmodule Row do

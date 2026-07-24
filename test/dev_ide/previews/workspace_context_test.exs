@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.WorkspaceContextTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Previews.WorkspaceContextTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Previews.WorkspaceContext
+  alias Casein.Previews.WorkspaceContext
 
   @workspace %{
     id: "ws-ctx",

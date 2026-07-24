@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.Transcripts.Grok do
+defmodule Casein.Agents.Transcripts.Grok do
   @moduledoc false
 
   @summary_limit 200
@@ -73,7 +73,7 @@ defmodule DevIDE.Agents.Transcripts.Grok do
     end
   end
 
-  # Path is validated by DevIDE.Agents.Transcripts before read/1 is called.
+  # Path is validated by Casein.Agents.Transcripts before read/1 is called.
   # sobelow_skip ["Traversal.FileModule"]
   defp read_lines(path) do
     case File.read(path) do
@@ -257,7 +257,7 @@ defmodule DevIDE.Agents.Transcripts.Grok do
   end
 
   # Accept eventId as a compatibility cursor for callers that captured Grok's
-  # native ACP metadata before DevIDE introduced its line cursor.
+  # native ACP metadata before Casein introduced its line cursor.
   defp cursor_line(events, event_id) do
     case Enum.find(events, &(&1.event_id == event_id)) do
       nil -> nil

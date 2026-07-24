@@ -1,7 +1,7 @@
-defmodule DevIDE.Terminals.CommandLogTest do
-  use DevIDE.TestCase, async: false
+defmodule Casein.Terminals.CommandLogTest do
+  use Casein.TestCase, async: false
 
-  alias DevIDE.Terminals.{CommandLog, PaneCommand}
+  alias Casein.Terminals.{CommandLog, PaneCommand}
 
   setup do
     CommandLog.reset!()

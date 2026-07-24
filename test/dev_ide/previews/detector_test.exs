@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.DetectorTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Previews.DetectorTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Previews.Detector
+  alias Casein.Previews.Detector
 
   test "discovers full localhost URLs from terminal output" do
     assert [%{url: "http://localhost:5173/app", port: 5173, title: "localhost:5173"}] =

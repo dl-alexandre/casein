@@ -1,8 +1,8 @@
-defmodule DevIDE.Release.Update.CheckTest do
+defmodule Casein.Release.Update.CheckTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Release.Metadata
-  alias DevIDE.Release.Update.Check
+  alias Casein.Release.Metadata
+  alias Casein.Release.Update.Check
 
   @manifest_json """
   {
@@ -69,7 +69,7 @@ defmodule DevIDE.Release.Update.CheckTest do
       |> update_in(["artifacts", Access.at(0), "revision"], fn _ -> metadata.revision end)
       |> Jason.encode!()
 
-    fetcher = fn _url -> DevIDE.Release.Update.Manifest.decode(same) end
+    fetcher = fn _url -> Casein.Release.Update.Manifest.decode(same) end
     result = Check.run(fetch: fetcher)
     assert result.status == :current
   end
@@ -82,7 +82,7 @@ defmodule DevIDE.Release.Update.CheckTest do
   end
 
   defp decode_manifest do
-    {:ok, manifest} = DevIDE.Release.Update.Manifest.decode(@manifest_json)
+    {:ok, manifest} = Casein.Release.Update.Manifest.decode(@manifest_json)
     manifest
   end
 end

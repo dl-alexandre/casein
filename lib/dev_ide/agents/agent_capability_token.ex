@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.AgentCapabilityToken do
+defmodule Casein.Agents.AgentCapabilityToken do
   @moduledoc """
   A short-lived, session-bound bearer credential for a managed agent runtime.
 

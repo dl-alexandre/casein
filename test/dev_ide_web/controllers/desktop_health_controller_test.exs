@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.DesktopHealthControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.DesktopHealthControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Desktop.Status
+  alias Casein.Desktop.Status
 
   test "answers 404 outside the desktop profile", %{conn: conn} do
     conn = get(conn, ~p"/desktop/health")

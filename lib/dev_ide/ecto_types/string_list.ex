@@ -1,9 +1,9 @@
-defmodule DevIDE.EctoTypes.StringList do
+defmodule Casein.EctoTypes.StringList do
   @moduledoc false
 
   use Ecto.Type
 
-  @sqlite DevIDE.Repo.Adapter.sqlite?()
+  @sqlite Casein.Repo.Adapter.sqlite?()
 
   def type, do: if(@sqlite, do: :string, else: {:array, :string})
 

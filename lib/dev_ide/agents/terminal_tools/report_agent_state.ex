@@ -1,10 +1,10 @@
-defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
+defmodule Casein.Agents.TerminalTools.ReportAgentState do
   @moduledoc "terminal_report_agent_state."
 
   use Jido.Action,
     name: "terminal_report_agent_state",
     description:
-      "Report the agent's semantic state so DevIDE and orchestrating agents can react without polling. States: working, blocked (needs input/permission), done (turn complete), idle. Defaults to the dedicated agent pane. Pass an optional short message describing what is blocked or done.",
+      "Report the agent's semantic state so Casein and orchestrating agents can react without polling. States: working, blocked (needs input/permission), done (turn complete), idle. Defaults to the dedicated agent pane. Pass an optional short message describing what is blocked or done.",
     category: "terminal",
     tags: ["terminal"],
     vsn: "1.0.0",
@@ -24,12 +24,12 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
       source: [type: :string]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias Casein.Agents.TerminalTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do:
       Tool.object(
@@ -50,7 +50,7 @@ defmodule DevIDE.Agents.TerminalTools.ReportAgentState do
         ["workspace_id", "state"]
       )
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("terminal_report_agent_state")
 
   @impl Jido.Action

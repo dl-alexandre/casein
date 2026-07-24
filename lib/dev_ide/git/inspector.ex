@@ -1,6 +1,6 @@
-defmodule DevIDE.Git.Inspector do
+defmodule Casein.Git.Inspector do
   @moduledoc """
-  Git inspection for worktree detection and context in DevIDE.
+  Git inspection for worktree detection and context in Casein.
 
   Delegates subprocess parsing and ETS caching to `GitCtl.Inspector`.
   """
@@ -52,7 +52,7 @@ defmodule DevIDE.Git.Inspector do
   @doc """
   Infer the agent/runtime from common worktree path patterns.
 
-  This is DevIDE workspace policy, injected into `GitCtl` via the
+  This is Casein workspace policy, injected into `GitCtl` via the
   `:git_ctl :agent_inference` config so inspection results carry it.
   """
   @spec infer_agent(String.t() | term()) :: String.t() | nil
@@ -84,7 +84,7 @@ defmodule DevIDE.Git.Inspector do
     if facade_fields != git_ctl_fields do
       raise CompileError,
         description:
-          "DevIDE.Git.Inspector struct fields must mirror GitCtl.Inspector — update both structs",
+          "Casein.Git.Inspector struct fields must mirror GitCtl.Inspector — update both structs",
         file: file,
         line: line
     end

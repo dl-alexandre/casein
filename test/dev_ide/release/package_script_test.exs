@@ -1,4 +1,4 @@
-defmodule DevIDE.Release.PackageScriptTest do
+defmodule Casein.Release.PackageScriptTest do
   use ExUnit.Case, async: true
 
   @script Path.expand("../../../scripts/package-release.sh", __DIR__)

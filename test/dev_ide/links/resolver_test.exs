@@ -1,9 +1,9 @@
-defmodule DevIDE.Links.ResolverTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Links.ResolverTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Links.Resolver
-  alias DevIDE.Links.Resolver.Ctx
-  alias DevIDE.Links.Scanner
+  alias Casein.Links.Resolver
+  alias Casein.Links.Resolver.Ctx
+  alias Casein.Links.Scanner
 
   setup do
     root = Path.join(System.tmp_dir!(), "links-resolver-#{System.unique_integer([:positive])}")
@@ -16,7 +16,7 @@ defmodule DevIDE.Links.ResolverTest do
 
     on_exit(fn -> File.rm_rf(root) end)
 
-    workspace = %DevIDE.Workspace{
+    workspace = %Casein.Workspace{
       id: "links-resolver",
       name: "links-resolver",
       path: root,

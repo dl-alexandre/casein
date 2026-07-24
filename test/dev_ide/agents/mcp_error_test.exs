@@ -1,7 +1,7 @@
-defmodule DevIDE.Agents.MCPErrorTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Agents.MCPErrorTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Agents.MCPError
+  alias Casein.Agents.MCPError
 
   test "format/1 maps workspace_not_found maps with string keys" do
     reason = %{

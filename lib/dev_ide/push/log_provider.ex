@@ -1,10 +1,10 @@
-defmodule DevIDE.Push.LogProvider do
+defmodule Casein.Push.LogProvider do
   @moduledoc """
-  Default `DevIDE.Push.Provider` — logs instead of delivering. Lets the whole
+  Default `Casein.Push.Provider` — logs instead of delivering. Lets the whole
   registry → dispatcher → provider pipeline run and be tested before a real
   APNs/FCM adapter (and provider credentials) exist. Tokens are redacted.
   """
-  @behaviour DevIDE.Push.Provider
+  @behaviour Casein.Push.Provider
 
   require Logger
 

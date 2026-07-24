@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.AnnotationTools.Impl do
+defmodule Casein.Agents.AnnotationTools.Impl do
   @moduledoc false
 
-  alias DevIDE.Annotations
-  alias DevIDE.Annotations.Annotation
+  alias Casein.Annotations
+  alias Casein.Annotations.Annotation
 
   @default_limit 20
   @max_limit 100

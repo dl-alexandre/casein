@@ -1,5 +1,5 @@
-defmodule DevIdeWeb.HealthControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.HealthControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
   setup do
     previous = Application.get_env(:dev_ide, :readiness_opts)

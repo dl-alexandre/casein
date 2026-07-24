@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.OriginOptions do
+defmodule CaseinWeb.OriginOptions do
   @moduledoc false
 
   @localhost_hosts ["localhost", "127.0.0.1"]

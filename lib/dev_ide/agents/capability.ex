@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.Capability do
+defmodule Casein.Agents.Capability do
   @moduledoc """
   A single observed agent capability for a workspace. Always read-only in M7;
   the struct does not carry any actions.

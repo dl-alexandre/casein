@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.API.CodexHookControllerTest do
-  use DevIdeWeb.ConnCase, async: false
+defmodule CaseinWeb.API.CodexHookControllerTest do
+  use CaseinWeb.ConnCase, async: false
 
-  alias DevIDE.Codex.Store
+  alias Casein.Codex.Store
 
   @workspace_id "ws-codex-hook"
   @workspace_token "codex-hook-workspace-token"

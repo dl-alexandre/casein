@@ -1,18 +1,18 @@
-defmodule DevIDE.ProposalApply.GitAdapter do
+defmodule Casein.ProposalApply.GitAdapter do
   @moduledoc """
   Local-host `git apply` adapter. Shells out with **argv-style** invocation
-  (no shell interpolation), mirroring `DevIDE.Git.LocalAdapter`. This is the
+  (no shell interpolation), mirroring `Casein.Git.LocalAdapter`. This is the
   only module in the codebase permitted to invoke `git apply` — the read-only
-  `DevIDE.Proposals` subsystem must never gain a write path (see
+  `Casein.Proposals` subsystem must never gain a write path (see
   `test/dev_ide/proposals_no_apply_test.exs`).
 
   `git apply` (without `--reject`) validates every file in a multi-file patch
   before writing any of them, so a single mismatched hunk aborts the whole
-  operation with zero files touched — this is what gives `DevIDE.ProposalApply`
+  operation with zero files touched — this is what gives `Casein.ProposalApply`
   its atomic "all files or none" guarantee for free.
   """
 
-  @behaviour DevIDE.ProposalApply.Adapter
+  @behaviour Casein.ProposalApply.Adapter
 
   @impl true
   def check(root, patch_path), do: run(root, ["apply", "--check", patch_path])

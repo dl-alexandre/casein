@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
-  use DevIDE.TestCase, async: true
+defmodule CaseinWeb.WorkspaceLive.Show.FileEventsTest do
+  use Casein.TestCase, async: true
 
   import Phoenix.Component, only: [update: 3]
 
-  alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias CaseinWeb.WorkspaceLive.Show.FileEvents
 
   # These cover the pure handle_event clauses that only mutate socket assigns.
   # IO / policy-gated clauses (create, rename_submit, delete_confirm, save,
@@ -155,7 +155,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
   end
 
   defp tree_entry(name, rel, kind) do
-    %DevIDE.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
+    %Casein.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
   end
 
   test "apply_files_changed with path list refreshes only affected expanded dirs" do
@@ -328,7 +328,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     on_exit(fn -> File.rm_rf!(root) end)
 
     entry = fn name, rel, kind ->
-      %DevIDE.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
+      %Casein.Files.Entry{name: name, rel_path: rel, kind: kind, size: 1, mtime: nil}
     end
 
     s =

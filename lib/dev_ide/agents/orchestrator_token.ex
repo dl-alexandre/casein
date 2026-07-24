@@ -1,13 +1,13 @@
-defmodule DevIDE.Agents.OrchestratorToken do
+defmodule Casein.Agents.OrchestratorToken do
   @moduledoc """
   A self-serve, subject-attributed MCP bearer credential.
 
   Minted by an authenticated cockpit user for connecting an off-box agent. Only
   `token_hash` is stored — the raw token is returned once at mint time. Unlike a
-  per-workspace `DevIDE.Agents.WorkspaceTokens` token, this credential traverses
+  per-workspace `Casein.Agents.WorkspaceTokens` token, this credential traverses
   every workspace (like the global token) but is revocable, TTL'd, hashed at
   rest, and attributable to a subject — never the root env secret. See
-  `DevIDE.Agents.OrchestratorTokens`.
+  `Casein.Agents.OrchestratorTokens`.
   """
 
   use Ecto.Schema

@@ -1,10 +1,10 @@
-defmodule DevIDE.Codex.HookReceiver do
+defmodule Casein.Codex.HookReceiver do
   @moduledoc "Authenticated ingestion boundary for Codex CLI lifecycle hooks."
 
-  alias DevIDE.Codex.{EventHub, HookProtocol}
-  alias DevIDE.Terminals.AgentState
+  alias Casein.Codex.{EventHub, HookProtocol}
+  alias Casein.Terminals.AgentState
 
-  @spec ingest(String.t(), map(), keyword()) :: {:ok, [DevIDE.Codex.Event.t()]} | {:error, term()}
+  @spec ingest(String.t(), map(), keyword()) :: {:ok, [Casein.Codex.Event.t()]} | {:error, term()}
   def ingest(workspace_id, payload, opts \\ [])
       when is_binary(workspace_id) and is_map(payload) do
     transport = Keyword.get(opts, :transport, :hook)

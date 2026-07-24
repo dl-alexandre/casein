@@ -1,10 +1,10 @@
-defmodule DevIDE.Terminals.GhosttySnapshot do
+defmodule Casein.Terminals.GhosttySnapshot do
   @moduledoc """
   Captures `Ghostty.Terminal` cell grids in HTML / plain / VT formats and
   writes them to disk under a workspace- and timestamp-scoped basename.
 
-  Extracted from `DevIdeWeb.WorkspaceLive.Show` so the LiveView source stays
-  write-free for the `DevIDE.ProposalsNoApplyTest` boundary guard. Snapshot
+  Extracted from `CaseinWeb.WorkspaceLive.Show` so the LiveView source stays
+  write-free for the `Casein.ProposalsNoApplyTest` boundary guard. Snapshot
   writes are diagnostic artifacts (terminal state dumps), not workspace
   mutations, so they belong outside the LiveView.
   """

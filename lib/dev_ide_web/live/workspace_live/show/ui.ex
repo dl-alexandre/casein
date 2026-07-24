@@ -1,7 +1,7 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.UI do
+defmodule CaseinWeb.WorkspaceLive.Show.UI do
   @moduledoc false
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
   def tab_class(current, current),
     do: "px-2.5 py-1 rounded bg-primary text-primary-content text-sm font-medium"
@@ -80,7 +80,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
   the route has no parent directories.
   """
   def breadcrumb_trail(workspace_route) do
-    if is_binary(workspace_route) and DevIdeWeb.WorkspaceRoutes.path_routes_trusted?() do
+    if is_binary(workspace_route) and CaseinWeb.WorkspaceRoutes.path_routes_trusted?() do
       segments =
         workspace_route
         |> String.trim_leading("/")

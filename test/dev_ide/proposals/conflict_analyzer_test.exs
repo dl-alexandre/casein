@@ -1,10 +1,10 @@
-defmodule DevIDE.Proposals.ConflictAnalyzerTest do
+defmodule Casein.Proposals.ConflictAnalyzerTest do
   # async: true is safe because the git adapter is swapped per-process via
-  # DevIDE.ProcessEnv (see use_workspace_diff/1) instead of global Application
+  # Casein.ProcessEnv (see use_workspace_diff/1) instead of global Application
   # env, and each test works in its own unique temp root.
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Proposals.{ConflictAnalyzer, Proposal, UnifiedDiff, Hunk}
+  alias Casein.Proposals.{ConflictAnalyzer, Proposal, UnifiedDiff, Hunk}
 
   setup do
     root = Path.join(System.tmp_dir!(), "ca-#{System.unique_integer([:positive])}")
@@ -18,11 +18,11 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
   end
 
   defp mock_module(diff) do
-    name = :"DevIDE.Test.GitStub#{System.unique_integer([:positive])}"
+    name = :"Casein.Test.GitStub#{System.unique_integer([:positive])}"
 
     contents =
       quote do
-        @behaviour DevIDE.Git.Adapter
+        @behaviour Casein.Git.Adapter
         @impl true
         def branch(_), do: {:ok, "main"}
         @impl true
@@ -38,7 +38,7 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
   end
 
   defp use_workspace_diff(diff) do
-    DevIDE.ProcessEnv.put(:git_adapter, mock_module(diff))
+    Casein.ProcessEnv.put(:git_adapter, mock_module(diff))
   end
 
   defp proposal(diff) do

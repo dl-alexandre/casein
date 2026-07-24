@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
+defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
   @moduledoc """
   The terminal session bar (session tabs) and tmux window bar (window tabs).
 
@@ -12,12 +12,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   contract relied on by tests and the palette.
   """
 
-  use DevIdeWeb, :html
+  use CaseinWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1, dom_fragment: 1]
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [leader_key_button: 1, dom_fragment: 1]
 
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceRoutes
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceRoutes
 
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
@@ -1936,7 +1936,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def agent_mcp_url(workspace_id, tmux_session)
       when is_binary(workspace_id) and workspace_id != "" and
              is_binary(tmux_session) and tmux_session != "" do
-    DevIDE.Agents.MCPUrls.terminal_url(workspace_id, tmux_session: tmux_session)
+    Casein.Agents.MCPUrls.terminal_url(workspace_id, tmux_session: tmux_session)
   end
 
   def agent_mcp_url(_workspace_id, _tmux_session), do: nil
@@ -1948,12 +1948,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def share_url(workspace_id, session_id, window_id, opts)
       when is_binary(workspace_id) and is_binary(session_id) and session_id != "" and
              is_binary(window_id) and window_id != "" do
-    DevIdeWeb.Endpoint.url() <> session_window_href(workspace_id, session_id, window_id, opts)
+    CaseinWeb.Endpoint.url() <> session_window_href(workspace_id, session_id, window_id, opts)
   end
 
   def share_url(workspace_id, session_id, _window_id, opts)
       when is_binary(workspace_id) and is_binary(session_id) and session_id != "" do
-    DevIdeWeb.Endpoint.url() <> session_href(workspace_id, session_id, opts[:path_base])
+    CaseinWeb.Endpoint.url() <> session_href(workspace_id, session_id, opts[:path_base])
   end
 
   def share_url(_workspace_id, _session_id, _window_id, _opts), do: nil
@@ -1967,7 +1967,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     do: share_url(workspace_id, session_id, nil, path_base: path_base)
 
   defp session_share_url_from_href(href) when is_binary(href) and href != "" do
-    DevIdeWeb.Endpoint.url() <> href
+    CaseinWeb.Endpoint.url() <> href
   end
 
   defp window_href(workspace_id, window_id, opts) when is_list(opts),

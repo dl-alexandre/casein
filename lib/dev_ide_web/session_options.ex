@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.SessionOptions do
+defmodule CaseinWeb.SessionOptions do
   @moduledoc false
 
   @default_key "_dev_ide_key"

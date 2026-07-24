@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
+defmodule CaseinWeb.WorkspaceLive.Show.Sidebar do
   @moduledoc false
 
   import Phoenix.Component, only: [assign: 3]
@@ -6,14 +6,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Sidebar do
   import Phoenix.LiveView,
     only: [connected?: 1, push_event: 3, push_navigate: 2, put_flash: 3, start_async: 3]
 
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIdeWeb.WorkspaceLive.Show.Browse
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
-  alias DevIdeWeb.WorkspaceRoutes
+  alias Casein.Terminals
+  alias Casein.Terminals.SessionDirectory
+  alias Casein.Workspaces
+  alias Casein.Workspaces.SessionSummary
+  alias CaseinWeb.WorkspaceLive.Show.Browse
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.TerminalInfo
+  alias CaseinWeb.WorkspaceRoutes
 
   @type sidebar_mode :: :closed | :windows_only | :both
 

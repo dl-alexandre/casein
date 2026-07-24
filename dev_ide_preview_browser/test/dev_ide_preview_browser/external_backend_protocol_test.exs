@@ -1,8 +1,8 @@
-defmodule DevIDEPreviewBrowser.ExternalBackend.ProtocolTest do
+defmodule CaseinPreviewBrowser.ExternalBackend.ProtocolTest do
   use ExUnit.Case, async: true
 
-  alias DevIDEPreviewBrowser.Health
-  alias DevIDEPreviewBrowser.ExternalBackend.Protocol
+  alias CaseinPreviewBrowser.Health
+  alias CaseinPreviewBrowser.ExternalBackend.Protocol
 
   test "encodes requests for the sidecar" do
     assert {:ok, encoded} =

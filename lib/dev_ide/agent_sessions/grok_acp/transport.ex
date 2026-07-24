@@ -1,4 +1,4 @@
-defmodule DevIDE.AgentSessions.GrokACP.Transport do
+defmodule Casein.AgentSessions.GrokACP.Transport do
   @moduledoc false
 
   @type handle :: term()

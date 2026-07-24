@@ -1,8 +1,8 @@
-defmodule DevIDE.Agents.AuthProfile do
+defmodule Casein.Agents.AuthProfile do
   @moduledoc """
   Opt-in owner auth homes for external agent CLIs, with global-login fallback.
 
-  Once an owner signs in, DevIDE launches Claude and Codex with owner-scoped
+  Once an owner signs in, Casein launches Claude and Codex with owner-scoped
   provider homes:
 
       ~/.devide/agent-auth/profiles/<owner-key>/<runtime>
@@ -114,7 +114,7 @@ defmodule DevIDE.Agents.AuthProfile do
 
   @doc "Creates an owner profile directory and seeds a short README explaining isolation."
   @spec ensure_named_profile_dir!(String.t(), runtime()) :: String.t()
-  # Profile dirs are rooted under the configured DevIDE auth-profile root after slugging profile keys.
+  # Profile dirs are rooted under the configured Casein auth-profile root after slugging profile keys.
   # sobelow_skip ["Traversal.FileModule"]
   def ensure_named_profile_dir!(profile, runtime) when runtime in @runtimes do
     dir = named_profile_dir(profile, runtime) || raise ArgumentError, "invalid profile"
@@ -155,7 +155,7 @@ defmodule DevIDE.Agents.AuthProfile do
     end
   end
 
-  # Owners files are rooted under the configured DevIDE auth-profile root.
+  # Owners files are rooted under the configured Casein auth-profile root.
   # sobelow_skip ["Traversal.FileModule"]
   defp listed_owner?(owner) do
     file = Path.join(auth_root(), "owners")
@@ -208,7 +208,7 @@ defmodule DevIDE.Agents.AuthProfile do
     System.get_env("HOME") || "/home/devbox"
   end
 
-  # Profile dirs are rooted under the configured DevIDE auth-profile root after slugging owner keys.
+  # Profile dirs are rooted under the configured Casein auth-profile root after slugging owner keys.
   # sobelow_skip ["Traversal.FileModule"]
   defp seed_readme(dir, runtime) do
     path = Path.join(dir, "README.devide-profile")
@@ -225,10 +225,10 @@ defmodule DevIDE.Agents.AuthProfile do
 
   defp readme(runtime) do
     """
-    DevIDE #{runtime} owner auth profile
+    Casein #{runtime} owner auth profile
 
-    This directory is an opt-in DevIDE owner auth home. Once a #{runtime}
-    sign-in completes here, DevIDE launches #{runtime} for matching workspaces
+    This directory is an opt-in Casein owner auth home. Once a #{runtime}
+    sign-in completes here, Casein launches #{runtime} for matching workspaces
     with this directory as the provider auth/config root. Until then — and
     whenever the directory is deleted — that owner stays on the host global
     provider login.

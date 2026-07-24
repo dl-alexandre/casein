@@ -1,9 +1,9 @@
-defmodule DevIDE.Terminals.Backend do
+defmodule Casein.Terminals.Backend do
   @moduledoc """
   Product-level contract for durable terminal session engines.
 
   This describes sessions, windows, panes, input, output, and topology without
-  requiring tmux. `DevIDE.Terminals.Tmux` is the current Unix implementation;
+  requiring tmux. `Casein.Terminals.Tmux` is the current Unix implementation;
   a native Windows implementation can satisfy the same callbacks with ConPTY
   and its own session registry.
   """
@@ -24,7 +24,7 @@ defmodule DevIDE.Terminals.Backend do
   @spec module() :: module()
   def module do
     Application.get_env(:dev_ide, :terminal_backend) ||
-      DevIDE.Terminals.Backends.Tmux
+      Casein.Terminals.Backends.Tmux
   end
 
   @callback session_name(String.t(), String.t()) :: session_id()

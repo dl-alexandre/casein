@@ -48,7 +48,7 @@ encode_argv() {
 release_cli() {
   encoded="$(encode_argv "$@")"
   DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${RELEASE_DIR}" \
-    exec "${APP_BIN}" eval "DevIDE.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
+    exec "${APP_BIN}" eval "Casein.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
 }
 
 base64_value() {
@@ -270,7 +270,7 @@ release_install_plan() {
   requested_b64="$(base64_value "${requested_revision}")"
 
   release_eval_halt "${release_root}" \
-    "DevIDE.Release.Update.InstallPlan.print_shell_base64(\"${root_b64}\", \"${requested_b64}\") |> System.halt()"
+    "Casein.Release.Update.InstallPlan.print_shell_base64(\"${root_b64}\", \"${requested_b64}\") |> System.halt()"
 }
 
 release_metadata_shell() {
@@ -278,7 +278,7 @@ release_metadata_shell() {
   root_b64="$(base64_value "${release_root}")"
 
   release_eval_halt "${release_root}" \
-    "DevIDE.Release.Update.InstallPlan.print_metadata_shell_base64(\"${root_b64}\") |> System.halt()"
+    "Casein.Release.Update.InstallPlan.print_metadata_shell_base64(\"${root_b64}\") |> System.halt()"
 }
 
 load_install_plan() {

@@ -1,7 +1,7 @@
 defmodule Scripts.MergeAgentMcpTest do
   use ExUnit.Case, async: true
 
-  # The grok `[ui].theme` line is owned by DevIDE.Terminals.ToolThemes now, so
+  # The grok `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, so
   # this script only strips stale devide-* MCP blocks and must leave the theme
   # (and all other config) untouched.
   @script Path.expand("../../scripts/lib/merge-agent-mcp.py", __DIR__)
@@ -86,7 +86,7 @@ defmodule Scripts.MergeAgentMcpTest do
   end
 
   # HOME drives the script's home-relative paths; System.cmd merges env with the
-  # caller's, so DevIDE-managed shells' DEV_IDE_TERMINAL_SCHEME is cleared unless
+  # caller's, so Casein-managed shells' DEV_IDE_TERMINAL_SCHEME is cleared unless
   # a test sets it.
   defp base_env(config) do
     # config is <home>/.grok/config.toml, so HOME is two levels up.

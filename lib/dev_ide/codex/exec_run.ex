@@ -1,18 +1,18 @@
-defmodule DevIDE.Codex.ExecRun do
+defmodule Casein.Codex.ExecRun do
   @moduledoc """
   Observable, cancellable `codex exec --json` job.
 
   Arguments are always an argv list (never a shell command), the default
-  sandbox is read-only, approvals are non-interactive, and DevIDE bearer tokens
+  sandbox is read-only, approvals are non-interactive, and Casein bearer tokens
   are removed from the child environment. JSONL records flow through the same
   canonical event hub used by hooks and App Server runtimes.
   """
 
   use GenServer
 
-  alias DevIDE.{BoundedBuffer, Commands}
-  alias DevIDE.Codex.{EventHub, ExecProtocol}
-  alias DevIDE.Runs.Ledger
+  alias Casein.{BoundedBuffer, Commands}
+  alias Casein.Codex.{EventHub, ExecProtocol}
+  alias Casein.Runs.Ledger
 
   @max_buffer_bytes 512 * 1024
   @max_line_bytes 10 * 1024 * 1024
@@ -45,7 +45,7 @@ defmodule DevIDE.Codex.ExecRun do
     opts =
       Keyword.merge(opts, workspace_id: workspace_id, root: root, prompt: prompt, run_id: run_id)
 
-    case DynamicSupervisor.start_child(DevIDE.Agents.Supervisor, {__MODULE__, opts}) do
+    case DynamicSupervisor.start_child(Casein.Agents.Supervisor, {__MODULE__, opts}) do
       {:ok, pid} -> {:ok, pid, run_id}
       {:error, reason} -> {:error, reason}
     end
@@ -62,7 +62,7 @@ defmodule DevIDE.Codex.ExecRun do
   @spec cancel(pid() | String.t()) :: :ok
   def cancel(server), do: GenServer.cast(server_ref(server), :cancel)
 
-  def via(run_id), do: {:via, Registry, {DevIDE.Agents.Registry, {:codex_exec, run_id}}}
+  def via(run_id), do: {:via, Registry, {Casein.Agents.Registry, {:codex_exec, run_id}}}
 
   @impl true
   def init(opts) do

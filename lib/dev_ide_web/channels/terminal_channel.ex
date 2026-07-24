@@ -1,9 +1,9 @@
-defmodule DevIdeWeb.TerminalChannel do
+defmodule CaseinWeb.TerminalChannel do
   @moduledoc """
   Bidirectional terminal stream for any session — a workspace shell or an
   agent worktree session. Topic: `terminal:<workspace_id>:<sid>`.
 
-  The channel is now a thin transport over `DevIDE.Terminals`. It resolves the
+  The channel is now a thin transport over `Casein.Terminals`. It resolves the
   logical session and delegates attachment/input/resize behavior to the terminal
   facade.
 
@@ -15,9 +15,9 @@ defmodule DevIdeWeb.TerminalChannel do
 
   use Phoenix.Channel
 
-  alias DevIDE.Terminals
-  alias DevIdeWeb.ChannelAuth
-  alias DevIDE.Workspaces
+  alias Casein.Terminals
+  alias CaseinWeb.ChannelAuth
+  alias Casein.Workspaces
 
   require Logger
 

@@ -1,15 +1,15 @@
-defmodule DevIdeWeb.API.DeployWebhookController do
+defmodule CaseinWeb.API.DeployWebhookController do
   @moduledoc "GitHub push webhook that starts the on-box deploy poller."
 
-  use DevIdeWeb, :controller
+  use CaseinWeb, :controller
 
-  alias DevIDE.Deployment.WebhookTrigger
+  alias Casein.Deployment.WebhookTrigger
 
   def github(conn, _params) do
     event = github_event(conn)
     payload = conn.assigns[:deploy_webhook_payload]
 
-    case DevIDE.Signals.Context.with_new(fn -> WebhookTrigger.handle(event, payload) end) do
+    case Casein.Signals.Context.with_new(fn -> WebhookTrigger.handle(event, payload) end) do
       :ok ->
         json(conn, %{ok: true, triggered: true})
 

@@ -1,7 +1,7 @@
-defmodule DevIDE.Setup.LocalDomainTest do
+defmodule Casein.Setup.LocalDomainTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Setup.LocalDomain
+  alias Casein.Setup.LocalDomain
 
   test "put_hosts_entry adds a managed local-domain block" do
     content = "127.0.0.1 localhost\n"
@@ -9,9 +9,9 @@ defmodule DevIDE.Setup.LocalDomainTest do
     assert LocalDomain.put_hosts_entry(content, "devide.test", "192.168.1.240") == """
            127.0.0.1 localhost
 
-           # BEGIN DevIDE local domain
+           # BEGIN Casein local domain
            192.168.1.240 devide.test
-           # END DevIDE local domain
+           # END Casein local domain
            """
   end
 
@@ -19,9 +19,9 @@ defmodule DevIDE.Setup.LocalDomainTest do
     content = """
     127.0.0.1 localhost
 
-    # BEGIN DevIDE local domain
+    # BEGIN Casein local domain
     192.168.1.2 devide.test
-    # END DevIDE local domain
+    # END Casein local domain
     """
 
     assert LocalDomain.put_hosts_entry(content, "devide.test", "192.168.1.240") =~

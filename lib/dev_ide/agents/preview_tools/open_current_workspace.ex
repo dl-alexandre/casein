@@ -1,4 +1,4 @@
-defmodule DevIDE.Agents.PreviewTools.OpenCurrentWorkspace do
+defmodule Casein.Agents.PreviewTools.OpenCurrentWorkspace do
   @moduledoc "preview_open_current_workspace."
 
   use Jido.Action,
@@ -35,16 +35,16 @@ defmodule DevIDE.Agents.PreviewTools.OpenCurrentWorkspace do
       loop: [type: :boolean]
     ]
 
-  @behaviour DevIDE.Agents.ToolAction
+  @behaviour Casein.Agents.ToolAction
 
-  alias DevIDE.Agents.PreviewTools.{Helpers, Impl}
+  alias Casein.Agents.PreviewTools.{Helpers, Impl}
   alias McpCtl.Tool
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def parameters,
     do: Tool.object(Map.drop(Helpers.open_props(), [:workspace_id, :workspace_path]))
 
-  @impl DevIDE.Agents.ToolAction
+  @impl Casein.Agents.ToolAction
   def mcp_metadata, do: Helpers.metadata("preview_open_current_workspace")
 
   @impl Jido.Action

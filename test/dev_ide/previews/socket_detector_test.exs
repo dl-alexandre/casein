@@ -1,7 +1,7 @@
-defmodule DevIDE.Previews.SocketDetectorTest do
-  use DevIDE.TestCase, async: true
+defmodule Casein.Previews.SocketDetectorTest do
+  use Casein.TestCase, async: true
 
-  alias DevIDE.Previews.SocketDetector
+  alias Casein.Previews.SocketDetector
 
   describe "parse_ports/1" do
     test "parses headerless `ss -Htln` output" do

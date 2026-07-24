@@ -1,7 +1,7 @@
-defmodule DevIDE.Codex.HookProtocol do
+defmodule Casein.Codex.HookProtocol do
   @moduledoc "Normalizes Codex lifecycle-hook and legacy notify payloads."
 
-  alias DevIDE.Codex.Event
+  alias Casein.Codex.Event
 
   @spec normalize(map(), map()) :: {:ok, [Event.t()]} | :ignore | {:error, term()}
   def normalize(payload, context) when is_map(payload) do

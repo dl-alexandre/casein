@@ -1,4 +1,4 @@
-defmodule DevIDE.Desktop.LaunchReplayStore do
+defmodule Casein.Desktop.LaunchReplayStore do
   @moduledoc false
 
   use GenServer
@@ -66,8 +66,8 @@ defmodule DevIDE.Desktop.LaunchReplayStore do
 
   defp replay_path(opts) do
     Keyword.get_lazy(opts, :path, fn ->
-      if DevIDE.Desktop.Runtime.desktop_profile?() do
-        Path.join([DevIDE.Desktop.Runtime.data_dir(), "runtime", "launch-replays.dets"])
+      if Casein.Desktop.Runtime.desktop_profile?() do
+        Path.join([Casein.Desktop.Runtime.data_dir(), "runtime", "launch-replays.dets"])
       end
     end)
   end

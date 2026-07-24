@@ -1,6 +1,6 @@
-defmodule DevIDE.Agents.RunTest do
-  use DevIDE.TestCase, async: false
-  alias DevIDE.Agents.{Run, Capability, ReviewCommand}
+defmodule Casein.Agents.RunTest do
+  use Casein.TestCase, async: false
+  alias Casein.Agents.{Run, Capability, ReviewCommand}
 
   setup_all do
     # erlexec backs Commands.spawn, which Run calls in init/1. It ships as an

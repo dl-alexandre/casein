@@ -1,4 +1,4 @@
-defmodule DevIdeWeb.WorkspaceLive.Show do
+defmodule CaseinWeb.WorkspaceLive.Show do
   @moduledoc """
   The main workspace cockpit LiveView: the durable raw terminal (tmux +
   Ghostty), tmux topology/session bars, file tree/editor, search, diff, run
@@ -6,68 +6,68 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   Holds the socket state and orchestrates `PaneWorker`s; per-domain
   `handle_event`/`handle_info`/render logic is delegated to the
-  `DevIdeWeb.WorkspaceLive.Show.*` submodules. The browser is a viewer of a
+  `CaseinWeb.WorkspaceLive.Show.*` submodules. The browser is a viewer of a
   server-side PTY (FP-1); every event passes the `authz_gate/3` fail-closed hook.
   """
-  use DevIdeWeb, :live_view
+  use CaseinWeb, :live_view
   # Root every user event in a fresh correlation context so audit signals
   # emitted while handling it are traced (covers delegated sub-module events).
-  use DevIDE.Signals.EntryContext
+  use Casein.Signals.EntryContext
 
-  alias DevIDE.Agents.PaneEnv
-  alias DevIDE.Agents.PreviewTools.BrowserControl
-  alias DevIDE.Audit
-  alias DevIDE.Labels
-  alias DevIDE.Links.Open
-  alias DevIDE.Policy
-  alias DevIDE.Desktop.PowerShellSession
-  alias DevIDE.Terminals
-  alias DevIDE.Terminals.SessionRecovery
-  alias DevIDE.Terminals.TemplatePreference
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.Isolation
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIdeWeb.ChannelAuth
-  alias DevIdeWeb.Forms.TemplateForm
-  alias DevIdeWeb.NotificationsDrawerEvents
-  alias DevIdeWeb.Plugs.AssignCurrentUser
-  alias DevIdeWeb.TerminalTelemetry
-  alias DevIdeWeb.WorkspaceLive.PaneWorker
-  alias DevIDE.Panes
-  alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
-  alias DevIdeWeb.WorkspaceLive.Show.ArtifactEvents
-  alias DevIdeWeb.WorkspaceLive.Show.ConnectEvents
-  alias DevIdeWeb.WorkspaceLive.Show.CodexEvents
-  alias DevIdeWeb.WorkspaceLive.Show.CockpitData
-  alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
-  alias DevIdeWeb.WorkspaceLive.Show.FileEvents
-  alias DevIdeWeb.WorkspaceLive.Show.FileOperations
-  alias DevIdeWeb.WorkspaceLive.Show.FilePaneEvents
-  alias DevIdeWeb.WorkspaceLive.Show.HistoryEvents
-  alias DevIdeWeb.WorkspaceLive.Show.GrokPermissionEvents
-  alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
-  alias DevIdeWeb.WorkspaceLive.Show.NavEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PaneLayoutEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PanelGate
-  alias DevIdeWeb.WorkspaceLive.Show.PreviewPaneEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PalettePanel
-  alias DevIdeWeb.WorkspaceLive.Show.WorkspacePolicyEvents
-  alias DevIdeWeb.WorkspaceLive.Show.RunEvents
-  alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
-  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
-  alias DevIdeWeb.WorkspaceLive.Show.SituationEvents
-  alias DevIdeWeb.WorkspaceLive.Show.Sidebar
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
-  alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
-  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias Casein.Agents.PaneEnv
+  alias Casein.Agents.PreviewTools.BrowserControl
+  alias Casein.Audit
+  alias Casein.Labels
+  alias Casein.Links.Open
+  alias Casein.Policy
+  alias Casein.Desktop.PowerShellSession
+  alias Casein.Terminals
+  alias Casein.Terminals.SessionRecovery
+  alias Casein.Terminals.TemplatePreference
+  alias Casein.Workspaces
+  alias Casein.Workspaces.Isolation
+  alias Casein.Workspaces.SessionSummary
+  alias CaseinWeb.ChannelAuth
+  alias CaseinWeb.Forms.TemplateForm
+  alias CaseinWeb.NotificationsDrawerEvents
+  alias CaseinWeb.Plugs.AssignCurrentUser
+  alias CaseinWeb.TerminalTelemetry
+  alias CaseinWeb.WorkspaceLive.PaneWorker
+  alias Casein.Panes
+  alias CaseinWeb.WorkspaceLive.Show.AgentEvents
+  alias CaseinWeb.WorkspaceLive.Show.ArtifactEvents
+  alias CaseinWeb.WorkspaceLive.Show.ConnectEvents
+  alias CaseinWeb.WorkspaceLive.Show.CodexEvents
+  alias CaseinWeb.WorkspaceLive.Show.CockpitData
+  alias CaseinWeb.WorkspaceLive.Show.ContextMenuEvents
+  alias CaseinWeb.WorkspaceLive.Show.FileEvents
+  alias CaseinWeb.WorkspaceLive.Show.FileOperations
+  alias CaseinWeb.WorkspaceLive.Show.FilePaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.HistoryEvents
+  alias CaseinWeb.WorkspaceLive.Show.GrokPermissionEvents
+  alias CaseinWeb.WorkspaceLive.Show.LogsEvents
+  alias CaseinWeb.WorkspaceLive.Show.NavEvents
+  alias CaseinWeb.WorkspaceLive.Show.PaletteEvents
+  alias CaseinWeb.WorkspaceLive.Show.PaneLayoutEvents
+  alias CaseinWeb.WorkspaceLive.Show.PanelGate
+  alias CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents
+  alias CaseinWeb.WorkspaceLive.Show.PalettePanel
+  alias CaseinWeb.WorkspaceLive.Show.WorkspacePolicyEvents
+  alias CaseinWeb.WorkspaceLive.Show.RunEvents
+  alias CaseinWeb.WorkspaceLive.Show.PaletteItems
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
+  alias CaseinWeb.WorkspaceLive.Show.SituationEvents
+  alias CaseinWeb.WorkspaceLive.Show.Sidebar
+  alias CaseinWeb.WorkspaceLive.Show.TerminalEvents
+  alias CaseinWeb.WorkspaceLive.Show.TmuxTemplateEvents
+  alias CaseinWeb.WorkspaceLive.Show.TerminalInfo
+  alias CaseinWeb.WorkspaceLive.Show.TerminalState
 
-  import DevIdeWeb.WorkspaceLive.Show.Context
-  import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
-  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
-  import DevIdeWeb.WorkspaceLive.Show.UI, only: [workspace_breadcrumbs: 1]
-  import DevIdeWeb.WorkspaceLive.Show.WorkspaceShell, only: [workspace_shell: 1]
+  import CaseinWeb.WorkspaceLive.Show.Context
+  import CaseinWeb.WorkspaceLive.Show.TemplatePanels
+  import CaseinWeb.WorkspaceLive.Show.TerminalChrome
+  import CaseinWeb.WorkspaceLive.Show.UI, only: [workspace_breadcrumbs: 1]
+  import CaseinWeb.WorkspaceLive.Show.WorkspaceShell, only: [workspace_shell: 1]
 
   @ghostty_term_id "raw-term-ghostty"
   @preview_demo_port 5173
@@ -104,7 +104,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   #
   # Workspace *access* is enforced at mount (`ensure_workspace_access/2`) and again
   # in `authz_gate/3` so mutating events fail closed if ownership is missing.
-  # Fine-grained mode gates still funnel through `DevIDE.Policy` inside handlers
+  # Fine-grained mode gates still funnel through `Casein.Policy` inside handlers
   # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
   @known_events ~w(
     switch_tab refresh
@@ -283,7 +283,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # Generic feature-pane registry snapshot (%{pane_id => %{type, payload}})
         # for previews AND files. Hydrated async via Panes.snapshot/1 over the
         # viewer's alias id set (:load_preview_state); kept live via
-        # DevIDE.Panes.Events. The legacy-shaped :preview_panes assign is a
+        # Casein.Panes.Events. The legacy-shaped :preview_panes assign is a
         # derivation of it (plus later, preview-only observation updates).
         # Empty on both static and connected first paint — same as :tree.
         |> assign(:feature_panes, %{})
@@ -301,7 +301,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # chrome render first and the prompt arrive a frame later.
         |> assign(:socket_token, socket_token)
         |> assign(:tab, "terminal")
-        |> assign(:log_service, DevIDE.WorkspaceSource.default_log_service(ws))
+        |> assign(:log_service, Casein.WorkspaceSource.default_log_service(ws))
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
@@ -371,7 +371,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:pending_url_recovery, nil)
         |> assign(:patched_view_path, nil)
         |> assign(:terminal_last_interaction_ms, nil)
-        |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
+        |> assign(:db_isolation, %Casein.Workspaces.DbIsolation{})
         |> assign(:project_meta, nil)
         |> assign(:tooling, nil)
         |> assign(:search_query, "")
@@ -514,7 +514,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          do: ~p"/workspaces/#{id}?host=#{host_id}",
          else: path
 
-    DevIdeWeb.Endpoint.url() <> path
+    CaseinWeb.Endpoint.url() <> path
   end
 
   @impl true
@@ -528,7 +528,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) and
            not socket.assigns[:desktop_terminal?] do
         {socket, session_changed?} = maybe_select_requested_terminal_session(socket, params)
-        socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.stash_url_view(socket, params)
+        socket = CaseinWeb.WorkspaceLive.Show.ViewDeepLink.stash_url_view(socket, params)
 
         # Hydrate tmux topology before applying ?window= so a stale post-deploy
         # window id is rejected against real windows instead of mutating tmux state.
@@ -553,9 +553,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # (not just its window). No-op when topology isn't ready or nothing is
         # stashed.
         socket
-        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view()
-        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_recovery()
-        |> DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path()
+        |> CaseinWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view()
+        |> CaseinWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_recovery()
+        |> CaseinWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path()
       else
         socket
       end
@@ -765,7 +765,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("notification:open_conversation", %{"session" => session} = params, socket)
       when is_binary(session) and session != "" do
     path =
-      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.build_share_path(
+      CaseinWeb.WorkspaceLive.Show.ViewDeepLink.build_share_path(
         socket.assigns.workspace.id,
         session,
         params["window"]
@@ -930,7 +930,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket |> refresh_tree() |> refresh_git_status()}
   end
 
-  # Debounced filesystem watch fan-out from DevIDE.Files.Watcher (Files tab).
+  # Debounced filesystem watch fan-out from Casein.Files.Watcher (Files tab).
   def handle_info({:files_changed, ws_id, meta}, socket) do
     if socket.assigns.workspace.id == ws_id and socket.assigns.tab == "files" do
       {:noreply, FileEvents.apply_files_changed(socket, meta)}
@@ -1240,7 +1240,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # process so keystrokes are not queued behind tmux/git/DB scans.
   def handle_info({:patch_recovered_view_url, path}, socket) when is_binary(path) do
     if socket.assigns[:patched_view_path] == path do
-      {:noreply, DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.push_recovered_view_path(socket, path)}
+      {:noreply, CaseinWeb.WorkspaceLive.Show.ViewDeepLink.push_recovered_view_path(socket, path)}
     else
       {:noreply, socket}
     end
@@ -1324,7 +1324,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> start_async(:load_preview_state, fn ->
           %{
             workspace_id: ws.id,
-            preview_surfaces: DevIDE.Previews.discover_surfaces(ws),
+            preview_surfaces: Casein.Previews.discover_surfaces(ws),
             feature_panes: PreviewPaneEvents.load_feature_panes(ws, path_result)
           }
         end)
@@ -1414,7 +1414,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Generic feature-pane lifecycle (DevIDE.Panes.Events) for previews AND
+  # Generic feature-pane lifecycle (Casein.Panes.Events) for previews AND
   # files: FilePaneEvents maintains the :feature_panes assign, routes :preview
   # events to PreviewPaneEvents.apply_pane_event/2 (which derives the
   # legacy-shaped :preview_panes assign) and handles the :heartbeat reason
@@ -1899,9 +1899,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp deployment_panel do
     %{
-      revision: DevIDE.Deployment.Registry.version(),
-      draining?: safe_drain_call(&DevIDE.Deployment.Drain.draining?/0, false),
-      active_liveviews: safe_drain_call(&DevIDE.Deployment.Drain.connection_count/0, nil)
+      revision: Casein.Deployment.Registry.version(),
+      draining?: safe_drain_call(&Casein.Deployment.Drain.draining?/0, false),
+      active_liveviews: safe_drain_call(&Casein.Deployment.Drain.connection_count/0, nil)
     }
   end
 
@@ -1973,7 +1973,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       %{
         workspace_id: workspace_id,
         tmux_session: tmux_session,
-        previews: DevIDE.Previews.list_for_workspace(workspace_id),
+        previews: Casein.Previews.list_for_workspace(workspace_id),
         session_tabs: session_tabs,
         tmux_topology: Terminals.tmux_topology_snapshot(tmux_session),
         workspace_summaries: workspace_summaries_for(workspace),
@@ -2079,7 +2079,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
-  defp desktop_powershell?, do: DevIDE.Desktop.TerminalBackend.native_session?(desktop_mode?())
+  defp desktop_powershell?, do: Casein.Desktop.TerminalBackend.native_session?(desktop_mode?())
 
   defp maybe_assign_hydrated_tmux_topology(socket, data) do
     hydrated = data[:tmux_topology]
@@ -2150,7 +2150,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     iso =
       case home_host_path(socket) do
         {:ok, root} -> Isolation.detect(socket.assigns.workspace, root)
-        _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
+        _ -> %Casein.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
       end
 
     _ = Workspaces.persist_isolation(socket.assigns.workspace.id, iso)
@@ -2181,7 +2181,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # tmux:/terminal: delegation prefixes) is denied by default. A newly-added
   # handle_event clause therefore fails closed until it is registered in the
   # table above, and the denial is audited + surfaced as a flash. Known events
-  # continue to their handler, where fine-grained DevIDE.Policy gates (where
+  # continue to their handler, where fine-grained Casein.Policy gates (where
   # present) remain the real decision.
   defp authz_gate(event, params, socket) do
     cond do
@@ -2208,7 +2208,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp forward_audit_event(socket, %Audit.Event{} = event) do
     if connected?(socket) do
-      Phoenix.LiveView.send_update(DevIdeWeb.WorkspaceLive.AuditDrawerComponent,
+      Phoenix.LiveView.send_update(CaseinWeb.WorkspaceLive.AuditDrawerComponent,
         id: "audit-drawer",
         insert_audit_event: event
       )
@@ -2341,7 +2341,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </h1>
 
           <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/70">
-            DevIDE could not open this filesystem-addressed workspace:
+            Casein could not open this filesystem-addressed workspace:
             <code class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-xs text-base-content">
               {@lan_path_error.route_path}
             </code>
@@ -2399,7 +2399,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @doc false
   def palette_categories, do: PalettePanel.palette_categories()
 
-  # render_path/2 and tab_class/2 now live in DevIdeWeb.WorkspaceLive.Show.UI
+  # render_path/2 and tab_class/2 now live in CaseinWeb.WorkspaceLive.Show.UI
   # (imported above).
 
   defp subscribe_pane_labels(socket) do
@@ -2415,7 +2415,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
-          DevIDE.PubSub,
+          Casein.PubSub,
           "preview:" <> workspace_id
         )
       end
@@ -2431,7 +2431,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp subscribe_pane_events(socket) do
     if connected?(socket) do
       for workspace_id <- PreviewPaneEvents.preview_subscription_workspace_ids(socket) do
-        Phoenix.PubSub.subscribe(DevIDE.PubSub, Panes.Events.topic(workspace_id))
+        Phoenix.PubSub.subscribe(Casein.PubSub, Panes.Events.topic(workspace_id))
       end
     end
 
@@ -2684,7 +2684,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket
 
         _window_id ->
-          DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.patch_current_view(socket)
+          CaseinWeb.WorkspaceLive.Show.ViewDeepLink.patch_current_view(socket)
       end
 
     socket =
@@ -3139,7 +3139,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         :raw_ghostty -> "ghostty.raw_terminal_entered"
       end
 
-    DevIDE.Audit.emit!(%{
+    Casein.Audit.emit!(%{
       action: action,
       workspace_id: socket.assigns.workspace.id,
       actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
@@ -3153,7 +3153,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           "workspace_mode" => to_string(socket.assigns[:workspace_mode])
         }
         |> Map.merge(
-          DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_metadata(socket)
+          CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_metadata(socket)
         )
     })
 
@@ -3206,12 +3206,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp clipboard_path_format(socket) do
     socket
     |> focused_tmux_pane()
-    |> DevIDE.Terminals.PaneInteraction.path_format()
+    |> Casein.Terminals.PaneInteraction.path_format()
   end
 
   defp focused_tmux_pane(socket) do
     panes =
-      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.active_tmux_window_panes(
+      CaseinWeb.WorkspaceLive.Show.TerminalChrome.active_tmux_window_panes(
         socket.assigns[:tmux_windows] || []
       )
 
@@ -3309,7 +3309,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # in a terminal pane, not the Run tab's stdout-capture flow.
   # Public: called by Show.RunEvents (extracted run/workflow handlers).
   def interactive_agent?(id),
-    do: DevIDE.Desktop.AgentLauncher.supported?(id)
+    do: Casein.Desktop.AgentLauncher.supported?(id)
 
   # Interactive coding-agent launchers (agent / claude / grok / opencode /
   # codex / clauded) run in the raw terminal: we ensure the canonical raw
@@ -3326,7 +3326,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux_session = pane && pane.tmux_session
 
     cond do
-      not DevIDE.Policy.Decision.allow?(decision) ->
+      not Casein.Policy.Decision.allow?(decision) ->
         {:noreply, put_flash(socket, :error, "Launch not allowed.")}
 
       socket.assigns[:desktop_terminal?] ->
@@ -3353,7 +3353,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             socket =
               socket
               |> assign(:tab, "terminal")
-              |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.set_mode(:raw)
+              |> CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.set_mode(:raw)
               |> put_flash(:info, "Launched #{id} in terminal pane.")
 
             {:noreply, socket}
@@ -3370,8 +3370,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp launch_desktop_agent(socket, id) do
-    with {:ok, command} <- DevIDE.Desktop.AgentLauncher.command(id),
-         :ok <- DevIDE.Desktop.PowerShellSession.send_input(socket.assigns.workspace, command) do
+    with {:ok, command} <- Casein.Desktop.AgentLauncher.command(id),
+         :ok <- Casein.Desktop.PowerShellSession.send_input(socket.assigns.workspace, command) do
       {:noreply,
        socket
        |> assign(:tab, "terminal")
