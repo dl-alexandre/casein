@@ -313,7 +313,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     assert "preview_close" in names
     assert "preview_get_storage" in names
     assert "preview_reload_iframe" in names
-    assert "devide_reload_page" in names
+    assert "casein_reload_page" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
 
     open = Enum.find(tools, &(&1.name == "preview_open"))
@@ -344,7 +344,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     assert Map.has_key?(open_app.inputSchema.properties, :workspace_id)
     refute "workspace_id" in open_app.inputSchema.required
 
-    reload_page = Enum.find(tools, &(&1.name == "devide_reload_page"))
+    reload_page = Enum.find(tools, &(&1.name == "casein_reload_page"))
     assert Map.has_key?(reload_page.inputSchema.properties, :workspace_id)
     refute "workspace_id" in reload_page.inputSchema.required
   end

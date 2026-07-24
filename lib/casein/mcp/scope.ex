@@ -29,7 +29,7 @@ defmodule Casein.MCP.Scope do
     preview_compare_snapshots
     preview_reload_iframe
     preview_observe_pane
-    devide_reload_page
+    casein_reload_page
   )
 
   @doc """

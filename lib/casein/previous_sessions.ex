@@ -703,7 +703,7 @@ defmodule Casein.PreviousSessions do
   end
 
   defp preview_tool?(tool) when is_binary(tool) do
-    String.starts_with?(tool, "preview_") or tool == "devide_reload_page"
+    String.starts_with?(tool, "preview_") or tool == "casein_reload_page"
   end
 
   defp preview_tool?(_tool), do: false

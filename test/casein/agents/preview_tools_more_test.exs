@@ -408,7 +408,7 @@ defmodule Casein.Agents.PreviewToolsMoreTest do
 
     assert by_name["preview_navigate"].metadata.policy_tags == [:visible_preview_mutation]
     assert by_name["preview_navigate_pane"].metadata.policy_tags == [:visible_preview_mutation]
-    assert by_name["devide_reload_page"].metadata.mutation?
+    assert by_name["casein_reload_page"].metadata.mutation?
   end
 
   test "open-family tools carry the opens_preview_surface policy tag" do

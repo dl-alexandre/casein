@@ -44,7 +44,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
     assert Enum.any?(tools, &(&1["name"] == "preview_open_app"))
     assert Enum.any?(tools, &(&1["name"] == "preview_close"))
     assert Enum.any?(tools, &(&1["name"] == "preview_reload_iframe"))
-    assert Enum.any?(tools, &(&1["name"] == "devide_reload_page"))
+    assert Enum.any?(tools, &(&1["name"] == "casein_reload_page"))
   end
 
   test "workspace_id query scopes preview tool schema", %{conn: conn} do

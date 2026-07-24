@@ -246,7 +246,7 @@ defmodule Casein.Agents.PreviewTools.Helpers do
              "preview_type",
              "preview_press",
              "preview_reload_iframe",
-             "devide_reload_page"
+             "casein_reload_page"
            ] do
     %{
       mutation?: true,

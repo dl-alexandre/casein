@@ -86,7 +86,7 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    already embedded preview pane and update connected DevIDE viewers.
 9. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
-   `devide_reload_page` to ask them to reload the whole workspace page.
+   `casein_reload_page` to ask them to reload the whole workspace page.
 10. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 

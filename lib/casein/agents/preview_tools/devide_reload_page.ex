@@ -1,8 +1,8 @@
 defmodule Casein.Agents.PreviewTools.CaseinReloadPage do
-  @moduledoc "devide_reload_page."
+  @moduledoc "casein_reload_page."
 
   use Jido.Action,
-    name: "devide_reload_page",
+    name: "casein_reload_page",
     description: "Ask connected Casein viewers to reload the whole workspace page.",
     category: "preview",
     tags: ["preview"],
@@ -30,7 +30,7 @@ defmodule Casein.Agents.PreviewTools.CaseinReloadPage do
       )
 
   @impl Casein.Agents.ToolAction
-  def mcp_metadata, do: Helpers.metadata("devide_reload_page")
+  def mcp_metadata, do: Helpers.metadata("casein_reload_page")
 
   @impl Jido.Action
   def run(params, context) do

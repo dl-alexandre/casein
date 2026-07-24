@@ -85,11 +85,11 @@ This is almost exactly the mental model already described in `docs/product.md` �
 
 1. **Best: DevIDE as a high-trust MCP tool for Odysseus (or any agent)**
    - Implement a small MCP server (stdio or streamable HTTP) that exposes governed DevIDE actions as tools:
-     - `devide_list_workspaces`
-     - `devide_get_status(workspace_id)`
+     - `casein_list_workspaces`
+     - `casein_get_status(workspace_id)`
      - `devide_submit_governed_run(workspace_id, command_id, args?)`  (the safe action path)
      - `devide_read_recent_output(workspace_id, run_id?)`
-     - `devide_get_audit(workspace_id)`
+     - `casein_get_audit(workspace_id)`
      - `devide_attach_terminal(...)` (read buffer / stream events)
    - Odysseus's agent (via its opencode/MCP machinery) or a custom skill can then "use the DevIDE workspace" when it needs safe, auditable, durable execution.
    - The agent gets power without the host getting pwned.
@@ -121,13 +121,13 @@ The "fff" MCP tool visible in the current Grok session is a delightful coinciden
 
 ## Proposed immediate next steps
 
-- [x] Prototype a `devide_mcp` server (Python, using the `mcp_servers/` layout that Odysseus expects for stdio MCP servers). Expose list/get + the safe `devide_run_command` surface. → See `mcp_servers/devide_server.py` + `mcp_servers/README.md`.
+- [x] Prototype a `devide_mcp` server (Python, using the `mcp_servers/` layout that Odysseus expects for stdio MCP servers). Expose list/get + the safe `casein_run_command` surface. → See `mcp_servers/casein_server.py` + `mcp_servers/README.md`.
 - [ ] Stand up Odysseus (Docker or native) in a sibling directory and do a 1–2 day dogfood to feel the agent loop + UI.
-- [ ] Register the devide MCP server inside a running Odysseus (Settings) and verify the agent can discover + call `devide_list_workspaces`, `devide_get_status`, `devide_run_command` (e.g. `opencode` or `test`), then observe via audit/status.
+- [ ] Register the devide MCP server inside a running Odysseus (Settings) and verify the agent can discover + call `casein_list_workspaces`, `casein_get_status`, `casein_run_command` (e.g. `opencode` or `test`), then observe via audit/status.
 - [ ] Update `docs/product.md` / architecture if the integration changes any invariants or adds new capability gates.
 - [ ] Decide: "Odysseus (or equivalent) is the daily AI driver + memory/research surface; DevIDE is the execution backend it can choose to use for serious, governed, durable workspace work."
 
-## Current prototype status (mcp_servers/devide_server.py)
+## Current prototype status (mcp_servers/casein_server.py)
 
 A complete first-cut stdio MCP server exists and follows the exact patterns used by Odysseus's own built-in servers (`memory_server.py`, `rag_server.py`, etc.).
 
@@ -141,7 +141,7 @@ Next concrete engineering step is usually "get Odysseus running + wire the MCP s
 
 ## Prototype files (first integration cut)
 
-- `mcp_servers/devide_server.py` — the MCP stdio server. Self-contained, follows Odysseus's server patterns exactly.
+- `mcp_servers/casein_server.py` — the MCP stdio server. Self-contained, follows Odysseus's server patterns exactly.
 - `mcp_servers/README.md` — how to run it, required env vars, how to register it from Odysseus, and safety notes.
 
 These live at the root of the DevIDE checkout so they are easy to reference or copy into an Odysseus `mcp_servers/` directory (or run from anywhere via absolute path + PYTHONPATH if you want to import more context later).

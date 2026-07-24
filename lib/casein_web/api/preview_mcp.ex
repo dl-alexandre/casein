@@ -73,7 +73,7 @@ defmodule CaseinWeb.API.PreviewMCP do
         "Use the returned session_id with preview_observe, preview_observe_live, " <>
         "preview_click/type/press/screenshot, preview_get_storage, " <>
         "preview_report_errors, preview_record_start, preview_record_stop, " <>
-        "preview_reload_iframe, devide_reload_page, " <>
+        "preview_reload_iframe, casein_reload_page, " <>
         "and preview_playback_open for looping playback of a saved recording artifact, " <>
         "and call preview_close when finished.",
       workspace_id

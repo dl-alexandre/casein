@@ -538,7 +538,7 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok, %{status: "queued", action: "reload_page", workspace_id: "ws-tools"}} =
-             PreviewTools.invoke("devide_reload_page", @v3_workspace, %{})
+             PreviewTools.invoke("casein_reload_page", @v3_workspace, %{})
 
     assert_receive {:browser_control, %{"action" => "reload_page", "workspace_id" => "ws-tools"}}
   end

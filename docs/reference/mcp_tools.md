@@ -29,7 +29,7 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | `DevIdeWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for preview MCP |
 | `DevIdeWeb.API.ArtifactMCPController` | `lib/casein_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for artifact MCP |
 | `DevIDE.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | Tool definitions + `invoke/2` for all `terminal_*` tools |
-| `DevIDE.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `devide_reload_page` tools |
+| `DevIDE.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `casein_reload_page` tools |
 | `DevIDE.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | Tool definitions + `invoke/2` for all `artifact_*` tools |
 | `DevIDE.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | `annotation_*` tools (folded into the terminal surface) |
 | `DevIdeWeb.API.MCPWorkspaceScope` | `lib/casein_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection / mismatch enforcement / schema-`required` rewriting |
@@ -40,7 +40,7 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | `DevIDE.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
 | `DevIDE.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
 | `DevIDE.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
-| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `devide_reload_page` viewer broadcasts |
+| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `casein_reload_page` viewer broadcasts |
 | `McpCtl.Tool` / `McpCtl.Params` | (in-repo `mcp_ctl` boundary) | `Tool.define/3`, `Tool.object/1,2`, shared param schemas used by every definition |
 
 ## Endpoints
@@ -132,7 +132,7 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_clear_storage` | Clear cookies/localStorage/sessionStorage (updates saved profile) | `session_id`\* | `clear_storage/1` |
 | `preview_report_errors` | Return console + network errors from the latest observation | `session_id`\* | `report_errors/1` |
 | `preview_reload_iframe` | Best-effort: ask connected viewers to reload the active preview iframe | `workspace_id`\*, `actor_id`, `reason` | `reload_iframe/2` |
-| `devide_reload_page` | Best-effort: ask connected viewers to reload the whole workspace page | `workspace_id`\*, `actor_id`, `reason` | `reload_page/2` |
+| `casein_reload_page` | Best-effort: ask connected viewers to reload the whole workspace page | `workspace_id`\*, `actor_id`, `reason` | `reload_page/2` |
 
 Open tools also accept `new_control_session`, `isolation_key`, `storage_profile`
 (`ephemeral`/`workspace`/`profile`), `storage_profile_name`, `default_headers`,
@@ -242,7 +242,7 @@ are mapped to HTTP status by the controllers.
   (`parse_id/1`); the workspace is resolved from `PreviewControl.Registry`, so an
   empty workspace is fine for them.
 - **Browser refresh tools are best-effort broadcasts** (`preview_reload_iframe`,
-  `devide_reload_page`) — they return once queued for connected viewers, not when
+  `casein_reload_page`) — they return once queued for connected viewers, not when
   every tab has reloaded.
 - **MCP streams are session-scoped.** `GET` and `DELETE` require an
   `Mcp-Session-Id`; missing ids return `missing_mcp_session_id`, unknown ids

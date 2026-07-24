@@ -1,5 +1,5 @@
 """
-devide_server.py
+casein_server.py
 
 MCP server that exposes a DevIDE instance as safe, governed tools for
 autonomous agents (Odysseus, Claude Desktop, Cursor, opencode, etc.).
@@ -13,7 +13,7 @@ and (when in fleet mode) the runner lease/claim protocol.
 Quick start (with a running DevIDE at localhost:4000):
     CASEIN_BASE_URL=http://localhost:4000 \
     CASEIN_API_TOKEN=your-secure-token \
-    python mcp_servers/devide_server.py
+    python mcp_servers/casein_server.py
 
 Register in Odysseus (Settings → MCP Servers) by pointing at the
 absolute path to this file (or run it as a stdio server).
@@ -85,7 +85,7 @@ KNOWN_ALLOWLIST = {
     "opencode": "opencode (agent runtime, used by Odysseus etc.)",
 }
 
-server = Server("devide")
+server = Server("casein")
 
 
 # ---------------------------------------------------------------------------
@@ -138,37 +138,37 @@ def _truncate(text: str, limit: int = 8000) -> str:
 async def list_tools() -> list[Tool]:
     return [
         Tool(
-            name="devide_list_workspaces",
+            name="casein_list_workspaces",
             description="List all workspaces known to this DevIDE instance, with basic mode and capability info. Use this first to discover valid workspace_ids.",
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
-            name="devide_get_status",
+            name="casein_get_status",
             description="Get the full current status of a workspace: mode, git, active runs, recent history, proposals, detected agent capabilities (opencode, fff, tidewave, browser artifacts, etc.), and more. The best single snapshot for context.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "workspace_id": {
                         "type": "string",
-                        "description": "The workspace identifier (from devide_list_workspaces or the picker)",
+                        "description": "The workspace identifier (from casein_list_workspaces or the picker)",
                     }
                 },
                 "required": ["workspace_id"],
             },
         ),
         Tool(
-            name="devide_list_commands",
-            description="List the safe, allowlisted command_ids that can be passed to devide_run_command on this DevIDE. These are the only commands an agent is permitted to request.",
+            name="casein_list_commands",
+            description="List the safe, allowlisted command_ids that can be passed to casein_run_command on this DevIDE. These are the only commands an agent is permitted to request.",
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
-            name="devide_run_command",
+            name="casein_run_command",
             description=(
                 "Request execution of a safe allowlisted command in a workspace. "
                 "This is the primary way for an agent to *do work*. "
                 "The command is validated against DevIDE's allowlist and policy before anything runs. "
                 "Returns the immediate run record (or assignment info in fleet mode). "
-                "Use devide_get_status or devide_get_recent_runs afterwards to observe progress/output."
+                "Use casein_get_status or casein_get_recent_runs afterwards to observe progress/output."
             ),
             inputSchema={
                 "type": "object",
@@ -179,14 +179,14 @@ async def list_tools() -> list[Tool]:
                     },
                     "command_id": {
                         "type": "string",
-                        "description": "One of the ids from devide_list_commands (e.g. 'test', 'compile', 'opencode', 'format')",
+                        "description": "One of the ids from casein_list_commands (e.g. 'test', 'compile', 'opencode', 'format')",
                     },
                 },
                 "required": ["workspace_id", "command_id"],
             },
         ),
         Tool(
-            name="devide_get_recent_runs",
+            name="casein_get_recent_runs",
             description="Recent command run history for a workspace. Good for seeing what succeeded/failed recently and obtaining run_ids for deeper inspection.",
             inputSchema={
                 "type": "object",
@@ -198,8 +198,8 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="devide_get_run",
-            description="Fetch full details + replayable output for a specific run (by run_id from devide_get_recent_runs).",
+            name="casein_get_run",
+            description="Fetch full details + replayable output for a specific run (by run_id from casein_get_recent_runs).",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -210,7 +210,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="devide_get_audit",
+            name="casein_get_audit",
             description="Recent audit events for the workspace (policy decisions, allows, denies, mode changes, etc.). Excellent for understanding why something was or was not permitted.",
             inputSchema={
                 "type": "object",
@@ -227,7 +227,7 @@ async def list_tools() -> list[Tool]:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
-        if name == "devide_list_workspaces":
+        if name == "casein_list_workspaces":
             data = await _get("/api/workspaces")
             if not data:
                 return [TextContent(type="text", text="No workspaces found.")]
@@ -247,7 +247,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 lines.append(f"- {label}{suffix}")
             return [TextContent(type="text", text="\n".join(lines))]
 
-        if name == "devide_get_status":
+        if name == "casein_get_status":
             wid = arguments.get("workspace_id", "")
             if not wid:
                 return [TextContent(type="text", text="Error: workspace_id is required")]
@@ -268,7 +268,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 text += f"\n\nRecent audit entries: {len(data.get('audit', []))}"
             return [TextContent(type="text", text=text)]
 
-        if name == "devide_list_commands":
+        if name == "casein_list_commands":
             # Best effort: try to get from a status if a workspace is implied, else return known list.
             # For now the static list + note that server is authoritative.
             lines = ["**Safe allowlisted commands (command_id → argv):**"]
@@ -280,7 +280,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )
             return [TextContent(type="text", text="\n".join(lines))]
 
-        if name == "devide_run_command":
+        if name == "casein_run_command":
             wid = arguments.get("workspace_id", "")
             cid = arguments.get("command_id", "")
             if not wid or not cid:
@@ -296,11 +296,11 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 TextContent(
                     type="text",
                     text=f"Run requested for `{cid}` on `{wid}`.\n\nServer response:\n```json\n{_truncate(str(result), 4000)}\n```\n\n"
-                    "Poll status with devide_get_status or devide_get_recent_runs to observe output and completion.",
+                    "Poll status with casein_get_status or casein_get_recent_runs to observe output and completion.",
                 )
             ]
 
-        if name == "devide_get_recent_runs":
+        if name == "casein_get_recent_runs":
             wid = arguments.get("workspace_id", "")
             limit = arguments.get("limit", 20)
             if not wid:
@@ -317,7 +317,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 lines.append(f"- `{rid}`  {cmd}  status={status}  {ts}")
             return [TextContent(type="text", text="\n".join(lines))]
 
-        if name == "devide_get_run":
+        if name == "casein_get_run":
             wid = arguments.get("workspace_id", "")
             rid = arguments.get("run_id", "")
             if not wid or not rid:
@@ -325,7 +325,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             data = await _get(f"/api/workspaces/{wid}/runs/{rid}")
             return [TextContent(type="text", text=f"**Run {rid} on {wid}**\n\n```json\n{_truncate(str(data), 12000)}\n```")]
 
-        if name == "devide_get_audit":
+        if name == "casein_get_audit":
             wid = arguments.get("workspace_id", "")
             limit = arguments.get("limit", 50)
             if not wid:

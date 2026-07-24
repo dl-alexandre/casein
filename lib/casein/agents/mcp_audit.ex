@@ -170,7 +170,7 @@ defmodule Casein.Agents.MCPAudit do
         "preview_close",
         "preview_clear_storage",
         "preview_reload_iframe",
-        "devide_reload_page"
+        "casein_reload_page"
       ]
 
   defp mutating_artifact_tool?(tool),

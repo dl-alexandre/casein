@@ -244,7 +244,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     assert "preview_close" in names
     assert "preview_get_storage" in names
     assert "preview_reload_iframe" in names
-    assert "devide_reload_page" in names
+    assert "casein_reload_page" in names
   end
 
   test "exposes agent-driven recording tools requiring a session id" do
@@ -348,7 +348,7 @@ defmodule Casein.Agents.PreviewToolsTest do
               workspace_id: "ws-tools",
               request_id: page_request_id
             }} =
-             PreviewTools.invoke("devide_reload_page", @v3_workspace, %{"actor_id" => "agent-1"})
+             PreviewTools.invoke("casein_reload_page", @v3_workspace, %{"actor_id" => "agent-1"})
 
     assert_receive {:browser_control,
                     %{
