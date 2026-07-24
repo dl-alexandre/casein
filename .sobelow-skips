@@ -1,9 +1,9 @@
 
-Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/proposals/local_adapter.ex:41,2D0F542
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/proposals/local_adapter.ex:41,8958CC
 CI.System: Command Injection via `System` function,lib/casein/terminals/inspection_commands.ex:170,3935FF9
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:490,1F5A0E
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:507,3AA418C
-Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files/version.ex:28,3A9D16A
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files/version.ex:28,5E61B94
 CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:821,611E8BE
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/workspace_source/local.ex:71,F3B22E
 Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/workspaces/isolation_probe/local_adapter.ex:121,579B43D
@@ -16,8 +16,8 @@ Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/fleet/dossi
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:222,76C61B8
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:457,53E2B0
 CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:720,5F435CC
-Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/tooling.ex:49,77F0DB9
-Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/terminals/clipboard_paste.ex:50,3791171
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/tooling.ex:49,2511AE5
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/terminals/clipboard_paste.ex:50,57091B5
 Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/terminals/clipboard_paste.ex:182,57766EF
 Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/previews/artifacts.ex:15,72040B1
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:172,373FEAC
@@ -25,7 +25,7 @@ CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:
 Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:173,808B62
 Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/casein/files.ex:176,5E43C9F
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/files.ex:217,1CA8618
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/terminals/clipboard_paste.ex:49,506191D
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/terminals/clipboard_paste.ex:49,7DFC8C8
 Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files.ex:63,4BAAC2B
 Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/casein/terminals/ghostty_snapshot.ex:30,138E005
 CI.System: Command Injection via `System` function,lib/casein/terminals/clipboard_paste.ex:155,50DD920
@@ -34,14 +34,14 @@ Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/terminals/
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runtimes.ex:626,6C19054
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/fleet/dossier_export.ex:51,2C062C7
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:443,B59FFE
-Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/project.ex:65,5D56529
-CI.System: Command Injection via `System` function,lib/casein/search/ripgrep_adapter.ex:69,6A0E60D
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/project.ex:65,34D5B1C
+CI.System: Command Injection via `System` function,lib/casein/search/ripgrep_adapter.ex:69,680EA43
 
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:453,7A18182
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/terminals/clipboard_paste.ex:129,2B7AE57
 Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/files.ex:216,1AF607
 Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files.ex:196,2AE31B9
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files/janitor.ex:77,6A33CFC
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files/janitor.ex:77,5D3BC91
 CI.System: Command Injection via `System` function,lib/casein/git/local_adapter.ex:51,3F6C35A
 Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/workspaces/file_access.ex:59,36B63E8
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/files.ex:130,5095112
@@ -66,9 +66,9 @@ Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/deployment
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:21,66E8CD0
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/deployment/registry.ex:161,67BC4A2
 CI.System: Command Injection via `System` function,lib/tmux_ctl/client.ex:949,6E4F2F2
-Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/terminals/workflows.ex:305,74494A3
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/terminals/workflows.ex:305,6CF1B4
 CI.System: Command Injection via `System` function,lib/casein/git/local_adapter.ex:66,7805D49
 Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/previews/artifacts.ex:22,794888C
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/agents/mcp_materializer.ex:211,7DA8DBE
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/casein/terminals/theme.ex:306,7ED56AA
-Config.CSRF: Missing CSRF Protections,lib/casein_web/router.ex:76,6699B22
+Config.CSRF: Missing CSRF Protections,lib/casein_web/router.ex:76,7F7D0E5
