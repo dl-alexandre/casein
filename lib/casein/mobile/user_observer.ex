@@ -386,7 +386,17 @@ defmodule Casein.Mobile.UserObserver do
       agent_reasoning: first_meta(event, ["agent_reasoning", "reasoning", "summary"]),
       diff_preview: meta(event, "diff_preview"),
       files_changed: first_meta(event, ["files_changed", "changed_files"]),
-      previous_decisions: first_meta(event, ["previous_decisions", "decision_history"])
+      previous_decisions: first_meta(event, ["previous_decisions", "decision_history"]),
+      locator:
+        %{
+          tmux_session: first_meta(event, ["tmux_session", "terminal_session"]),
+          window: first_meta(event, ["window", "window_id"]),
+          pane: first_meta(event, ["pane", "pane_id"]),
+          tab: meta(event, "tab"),
+          artifact: first_meta(event, ["artifact", "artifact_id"])
+        }
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+        |> Map.new()
     }
   end
 

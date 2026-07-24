@@ -53,6 +53,8 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
       |> Mob.Socket.assign(:pending_origin_resume, nil)
+      |> Mob.Socket.assign(:pending_origin_switch_observation?, false)
+      |> Mob.Socket.assign(:pending_refresh_failure_reported?, false)
       |> Mob.Socket.assign(:filter, :needs_action)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
@@ -94,6 +96,7 @@ defmodule DevideMob.SessionDashboardScreen do
   def handle_info({:mobile_cards_status, status}, socket) do
     socket =
       socket
+      |> maybe_report_refresh_failure(status)
       |> maybe_clear_mobile_cards(status)
       |> Mob.Socket.assign(:mobile_cards_status, status)
       |> refresh_pairing_and_push()
@@ -1450,6 +1453,8 @@ defmodule DevideMob.SessionDashboardScreen do
         |> Mob.Socket.assign(:statuses, %{})
         |> clear_mobile_cards()
         |> Mob.Socket.assign(:mobile_cards_status, :connecting)
+        |> Mob.Socket.assign(:pending_origin_switch_observation?, true)
+        |> Mob.Socket.assign(:pending_refresh_failure_reported?, false)
         |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
         |> reset_push_state()
         |> Mob.Socket.assign(:notice, "Switched origin; refreshing authoritative state")
@@ -1538,7 +1543,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp handle_live_mobile_card_action(socket, card) do
-    if needs_review_card?(card) do
+    if needs_review_card?(card) or intervention_card?(card) do
       socket
       |> remember_card_context(card)
       |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
@@ -1567,7 +1572,8 @@ defmodule DevideMob.SessionDashboardScreen do
       card_id: get(card, "id"),
       locator: card |> get("resume", %{}) |> get("locator", %{}),
       workspace_id: get(card, "workspace_id"),
-      session_id: get(card, "session_id")
+      session_id: get(card, "session_id"),
+      cached_at: get(card, "_cached_at")
     }
 
     begin_origin_resume(socket, pending)
@@ -1600,9 +1606,12 @@ defmodule DevideMob.SessionDashboardScreen do
 
       case Map.get(socket.assigns.mobile_cards_by_id, pending.card_id) do
         card when is_map(card) ->
+          observe_resume("locator_fallback", "succeeded", pending, fallback_level: "exact")
+
           handle_live_mobile_card_action(socket, card)
 
         _ ->
+          observe_resume("locator_fallback", "failed", pending, fallback_level: "exact")
           open_locator_fallback(socket, pending)
       end
     else
@@ -1618,12 +1627,18 @@ defmodule DevideMob.SessionDashboardScreen do
     session_id = get(locator, "session_id") || pending[:session_id]
 
     if is_binary(workspace_id) do
+      fallback_level = if(is_binary(session_id), do: "task_session", else: "workspace")
+
+      observe_resume("locator_fallback", "succeeded", pending, fallback_level: fallback_level)
+
       open_resume_context(socket, %{
         workspace_id: workspace_id,
         session_id: session_id,
         source: :origin_resume
       })
     else
+      observe_resume("locator_fallback", "unavailable", pending, fallback_level: "action_center")
+
       Mob.Socket.assign(socket, :notice, "Origin refreshed; open its Action Center")
     end
   end
@@ -1744,6 +1759,7 @@ defmodule DevideMob.SessionDashboardScreen do
         |> Mob.Socket.assign(:mobile_cards_by_id, cards_by_id)
         |> refresh_pairing_and_push()
         |> maybe_register_push_for_known_workspaces()
+        |> observe_origin_switch_if_pending(origin_id)
         |> maybe_open_pending_notification()
         |> complete_pending_origin_resume()
 
@@ -1781,6 +1797,76 @@ defmodule DevideMob.SessionDashboardScreen do
   defp origin_rejection_notice(_reason), do: "Unknown origin; state was not accepted"
 
   defp needs_review_card?(card), do: get(card, "type") in ["needs_review", :needs_review]
+
+  defp intervention_card?(card), do: is_map(get(card, "intervention"))
+
+  defp observe_origin_switch_if_pending(
+         %{assigns: %{pending_origin_switch_observation?: true}} = socket,
+         _origin_id
+       ) do
+    SessionClient.mobile_observation(%{
+      "event" => "origin_switch",
+      "outcome" => "succeeded"
+    })
+
+    SessionClient.mobile_observation(%{
+      "event" => "authoritative_refresh",
+      "outcome" => "succeeded"
+    })
+
+    socket
+    |> Mob.Socket.assign(:pending_origin_switch_observation?, false)
+    |> Mob.Socket.assign(:pending_refresh_failure_reported?, false)
+  end
+
+  defp observe_origin_switch_if_pending(socket, _origin_id), do: socket
+
+  defp maybe_report_refresh_failure(
+         %{assigns: %{pending_origin_switch_observation?: true}} = socket,
+         status
+       ) do
+    if status_state(status) == :error and
+         socket.assigns.pending_refresh_failure_reported? != true do
+      SessionClient.mobile_observation(%{
+        "event" => "authoritative_refresh",
+        "outcome" => "failed"
+      })
+
+      Mob.Socket.assign(socket, :pending_refresh_failure_reported?, true)
+    else
+      socket
+    end
+  end
+
+  defp maybe_report_refresh_failure(socket, _status), do: socket
+
+  defp observe_resume(event, outcome, pending, opts) do
+    SessionClient.mobile_observation(%{
+      "event" => event,
+      "outcome" => outcome,
+      "fallback_level" => Keyword.get(opts, :fallback_level),
+      "stale_age_bucket" => stale_age_bucket(pending[:cached_at]),
+      "workspace_id" => pending[:workspace_id],
+      "card_id" => pending[:card_id]
+    })
+  end
+
+  defp stale_age_bucket(cached_at) when is_binary(cached_at) do
+    with {:ok, datetime, _offset} <- DateTime.from_iso8601(cached_at) do
+      age_seconds = max(DateTime.diff(DateTime.utc_now(), datetime, :second), 0)
+
+      cond do
+        age_seconds < 300 -> "under_5m"
+        age_seconds < 3_600 -> "under_1h"
+        age_seconds < 86_400 -> "under_24h"
+        true -> "over_24h"
+      end
+    else
+      _ -> "unknown"
+    end
+  end
+
+  defp stale_age_bucket(_cached_at), do: "unknown"
 
   defp maybe_clear_mobile_cards(socket, status) do
     if status_state(status) == :error, do: clear_mobile_cards(socket), else: socket

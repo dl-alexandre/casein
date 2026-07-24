@@ -91,6 +91,57 @@ defmodule DevideMob.ReviewDecisionScreenTest do
       )
 
     assert text(view) =~ "Action failed: card already resolved"
+    assert assigns(view).submitted_action == nil
+  end
+
+  test "renders bounded intervention output, short follow-up, and PWA escalation" do
+    view = mount_screen(ReviewDecisionScreen, %{card: intervention_card()})
+
+    assert_renderable(view)
+    assert text(view) =~ "Agent needs you"
+    assert text(view) =~ "Recent agent output"
+    assert text(view) =~ "The focused test failed in auth_test.exs"
+    assert text(view) =~ "Live excerpt · target role: agent"
+    assert text(view) =~ "Short follow-up"
+    assert find(view, :text_field).props.placeholder == "What should the agent do next?"
+    assert find(view, :button, text: "Send follow-up")
+    assert find(view, :button, text: "Open full terminal in PWA")
+  end
+
+  test "follow-up is required, bounded, and becomes retryable after stale failure" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: intervention_card()})
+      |> render_info({:tap, {:action, "follow_up"}})
+
+    assert text(view) =~ "Add a short note first"
+
+    view =
+      view
+      |> render_info({:change, :note, String.duplicate("x", 300)})
+      |> render_info({:tap, {:action, "follow_up"}})
+
+    assert String.length(assigns(view).note) == 280
+    assert assigns(view).submitted_action == "follow_up"
+    assert text(view) =~ "Send follow-up sent"
+
+    view =
+      render_info(
+        view,
+        {:card_action_result, "in_progress:ws-1:run-1", {:error, "intervention_target_stale"}}
+      )
+
+    assert assigns(view).submitted_action == nil
+    assert text(view) =~ "Action failed: intervention target stale"
+  end
+
+  test "PWA escalation opens the exact server-issued URL" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: intervention_card()})
+      |> render_info({:tap, :open_pwa})
+
+    assert navigated_to(view) == DevideMob.WebViewScreen
   end
 
   test "note entry is bounded to the mobile action limit" do
@@ -170,6 +221,42 @@ defmodule DevideMob.ReviewDecisionScreenTest do
           %{"action" => "request_changes", "note" => "Needs narrower scope"}
         ]
       }
+    }
+  end
+
+  defp intervention_card do
+    %{
+      "id" => "in_progress:ws-1:run-1",
+      "type" => "in_progress",
+      "priority" => "normal",
+      "origin" => %{"id" => "origin-local", "display_name" => "Local Mac"},
+      "workspace_id" => "ws-1",
+      "workspace_name" => "Mobile Workspace",
+      "session_id" => "run-1",
+      "title" => "Agent needs direction",
+      "body" => "Testing paused for input",
+      "intervention" => %{
+        "recent_output" => "The focused test failed in auth_test.exs",
+        "target" => %{"role" => "agent"},
+        "pwa_url" => "https://devide.test/workspaces/ws-1?session=run-1&pane=%252"
+      },
+      "actions" => [
+        %{
+          "id" => "follow_up",
+          "label" => "Send follow-up",
+          "style" => "primary",
+          "destructive?" => false,
+          "confirmation" => nil,
+          "input" => [
+            %{
+              "name" => "message",
+              "type" => "text",
+              "required" => true,
+              "max_length" => 280
+            }
+          ]
+        }
+      ]
     }
   end
 end

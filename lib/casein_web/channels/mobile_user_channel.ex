@@ -11,6 +11,8 @@ defmodule CaseinWeb.MobileUserChannel do
   use Phoenix.Channel
 
   alias Casein.Mobile.Actions
+  alias Casein.Mobile.Intervention
+  alias Casein.Mobile.Observability
   alias Casein.Mobile.ResumeCard
   alias Casein.Mobile.UserObserver
   alias Casein.Origin
@@ -74,6 +76,26 @@ defmodule CaseinWeb.MobileUserChannel do
 
   def handle_in("card_action", _params, socket) do
     {:reply, {:error, %{reason: "invalid_payload"}}, socket}
+  end
+
+  def handle_in("mobile_observation", params, socket) when is_map(params) do
+    workspace_id = Map.get(params, "workspace_id")
+    user = socket.assigns[:current_user] || %{}
+
+    with :ok <- authorize_observation_workspace(socket, user, workspace_id),
+         :ok <-
+           Observability.record(
+             Map.put(
+               action_context(socket, socket.assigns.mobile_user_id),
+               :workspace_id,
+               workspace_id
+             ),
+             params
+           ) do
+      {:reply, :ok, socket}
+    else
+      {:error, reason} -> {:reply, {:error, error_payload(reason)}, socket}
+    end
   end
 
   def handle_in(
@@ -155,6 +177,16 @@ defmodule CaseinWeb.MobileUserChannel do
     end
   end
 
+  defp authorize_observation_workspace(_socket, _user, nil), do: :ok
+
+  defp authorize_observation_workspace(socket, user, workspace_id)
+       when is_binary(workspace_id) do
+    authorize_workspace(socket, user, workspace_id)
+  end
+
+  defp authorize_observation_workspace(_socket, _user, _workspace_id),
+    do: {:error, :invalid_payload}
+
   defp scoped_to_workspace?(socket, workspace_id) do
     case socket.assigns[:pairing_workspace_id] do
       nil -> true
@@ -225,7 +257,8 @@ defmodule CaseinWeb.MobileUserChannel do
       user: socket.assigns[:current_user] || %{},
       pairing_workspace_id: socket.assigns[:pairing_workspace_id],
       device_link_id: socket.assigns[:device_link_id],
-      platform: socket.assigns[:mobile_platform]
+      platform: socket.assigns[:mobile_platform],
+      origin_id: socket.assigns[:mobile_origin_id] || Origin.id()
     }
   end
 
@@ -243,6 +276,8 @@ defmodule CaseinWeb.MobileUserChannel do
 
   defp render_card(card) do
     resume = ResumeCard.project(card)
+    intervention = Intervention.describe(card)
+    actions = intervention_actions(card, intervention)
 
     %{
       id: card.id,
@@ -255,7 +290,9 @@ defmodule CaseinWeb.MobileUserChannel do
       kind: Map.get(card, :kind, Atom.to_string(card.type)),
       status: Map.get(card, :status, "open"),
       resource: render_value(Map.get(card, :resource, %{})),
-      actions: Enum.map(Map.get(card, :actions, []), &render_action_spec/1),
+      actions: Enum.map(actions, &render_action_spec/1),
+      intervention: render_intervention(intervention),
+      pwa_url: CaseinWeb.Endpoint.url() <> Intervention.pwa_path(card),
       context: render_value(Map.get(card, :context, %{})),
       priority: Atom.to_string(card.priority),
       user_id: card.user_id,
@@ -271,6 +308,25 @@ defmodule CaseinWeb.MobileUserChannel do
       updated_at: render_value(card.updated_at),
       expires_at: render_value(card.expires_at)
     }
+  end
+
+  defp intervention_actions(card, nil), do: Map.get(card, :actions, [])
+
+  defp intervention_actions(card, %{action: action}) do
+    actions = Map.get(card, :actions, [])
+
+    if Enum.any?(actions, &(Map.get(&1, :id) == action.id)),
+      do: actions,
+      else: actions ++ [action]
+  end
+
+  defp render_intervention(nil), do: nil
+
+  defp render_intervention(intervention) do
+    intervention
+    |> Map.delete(:pwa_path)
+    |> Map.put(:pwa_url, CaseinWeb.Endpoint.url() <> intervention.pwa_path)
+    |> render_value()
   end
 
   # Action specs may carry a `:route` tuple (navigation actions); convert it to a

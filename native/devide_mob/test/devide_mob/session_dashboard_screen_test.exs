@@ -716,6 +716,41 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert navigated_to(view) == DevideMob.ReviewDecisionScreen
   end
 
+  test "live intervention card opens the bounded response surface" do
+    SessionConfig.put_pairing(%{
+      origin_id: "origin-local",
+      display_name: "Local Mac",
+      url: "https://devide.test",
+      token: "token"
+    })
+
+    card = %{
+      "id" => "in_progress:ws-1:run-1",
+      "type" => "in_progress",
+      "workspace_id" => "ws-1",
+      "title" => "Agent needs direction",
+      "intervention" => %{
+        "recent_output" => "Need a decision",
+        "pwa_url" => "https://devide.test/workspaces/ws-1"
+      },
+      "actions" => [%{"id" => "follow_up", "label" => "Send follow-up"}]
+    }
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "origin" => %{"id" => "origin-local", "display_name" => "Local Mac"},
+           "cards" => [card]
+         }}
+      )
+      |> render_info({:tap, {:mobile_card_action, card["id"]}})
+
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
   test "needs review push notification waits for the next matching snapshot" do
     SessionConfig.put_pairing("https://devide.test", "token")
 
