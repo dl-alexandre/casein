@@ -38,7 +38,7 @@ WT_DIR="$STATE/worktrees"
 WS_DIR="$STATE/workspaces"
 LOG_DIR="$STATE/logs"
 # Each preview's canonical front door is a unix socket (collision-free, derived
-# purely from the id), mirroring the live /run/devide/current.sock model. The
+# purely from the id), mirroring the live /run/casein/current.sock model. The
 # Caddy preview router dials this socket. The TCP port (below) is kept only as a
 # loopback convenience for local tooling + the Tidewave agent dial.
 SOCK_DIR="$STATE/sockets"
@@ -58,8 +58,8 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # --- DB helpers: reuse the release creds/host, swap the database name ----------
 base_db_url() {
   local url
-  url="$(grep -E '^DATABASE_URL=' /etc/devide/devide.env | cut -d= -f2- | tr -d '"')"
-  [ -n "$url" ] || die "no DATABASE_URL in /etc/devide/devide.env"
+  url="$(grep -E '^DATABASE_URL=' /etc/casein/devide.env | cut -d= -f2- | tr -d '"')"
+  [ -n "$url" ] || die "no DATABASE_URL in /etc/casein/devide.env"
   printf '%s' "$url"
 }
 db_url_for() { printf '%s/%s' "$(base_db_url | sed 's#/[^/]*$##')" "$1"; }
@@ -450,7 +450,7 @@ cmd_tidewave_latest() {
 }
 
 preview_api_token() {
-  awk -F= '/^CASEIN_API_TOKEN=/{print $2}' /etc/devide/devide.env 2>/dev/null | tail -n 1 | tr -d '"'
+  awk -F= '/^CASEIN_API_TOKEN=/{print $2}' /etc/casein/devide.env 2>/dev/null | tail -n 1 | tr -d '"'
 }
 
 preview_workspace_id() {
@@ -478,10 +478,10 @@ cmd_agent_env() {
   tw_mcp=$(json_get "$f" tidewave_mcp_url)
   [ -n "$tw_mcp" ] || tw_mcp=$(tidewave_mcp_url_for "$port")
   token=$(preview_api_token)
-  [ -n "$token" ] || die "CASEIN_API_TOKEN missing from /etc/devide/devide.env"
+  [ -n "$token" ] || die "CASEIN_API_TOKEN missing from /etc/casein/devide.env"
   ws_id=$(preview_workspace_id "$base_url" "$token" "$SANDBOX")
   [ -n "$ws_id" ] || die "workspace $SANDBOX not found on preview env — is it up"
-  mcp_home="\${HOME}/.devide/agent-mcp/${SANDBOX}"
+  mcp_home="\${HOME}/.casein/agent-mcp/${SANDBOX}"
 
   emit_export CASEIN_API_TOKEN "${token}"
   emit_export DEVIDE_URL "${base_url}"

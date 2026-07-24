@@ -120,7 +120,7 @@ defmodule CaseinWeb.API.DeployStatusControllerTest do
                           "handle" => [
                             %{
                               "handler" => "reverse_proxy",
-                              "upstreams" => [%{"dial" => "unix//run/devide/current.sock"}]
+                              "upstreams" => [%{"dial" => "unix//run/casein/current.sock"}]
                             }
                           ]
                         }

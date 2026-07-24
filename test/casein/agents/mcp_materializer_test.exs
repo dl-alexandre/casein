@@ -244,7 +244,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     prev_agent_home = System.get_env("DEVIDE_AGENT_MCP_HOME")
     System.put_env("HOME", home)
 
-    other_workspace_staging = Path.join([home, ".devide", "agent-mcp", "some-other-workspace"])
+    other_workspace_staging = Path.join([home, ".casein", "agent-mcp", "some-other-workspace"])
     System.put_env("DEVIDE_AGENT_MCP_HOME", other_workspace_staging)
 
     on_exit(fn ->
@@ -257,7 +257,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
         else: System.delete_env("DEVIDE_AGENT_MCP_HOME")
     end)
 
-    expected_staging = Path.join([home, ".devide", "agent-mcp", "test-ws"])
+    expected_staging = Path.join([home, ".casein", "agent-mcp", "test-ws"])
     assert {:ok, ^expected_staging} = MCPMaterializer.materialize(@workspace)
     refute File.exists?(Path.join(other_workspace_staging, ".mcp.json"))
 

@@ -17,7 +17,7 @@ defmodule PreviewCtl.RuntimeTest do
         "allowed_origins" => ["https://alice.devbox.example.com"],
         "storage_profile" => "workspace",
         "storage_profile_key" => "workspace",
-        "storage_state_path" => "/tmp/devide-storage.json"
+        "storage_state_path" => "/tmp/casein-storage.json"
       }
     }
 
@@ -26,7 +26,7 @@ defmodule PreviewCtl.RuntimeTest do
     assert {:ok, ^session} = Runtime.start(session.id, session, preview, adapter: :memory)
     assert %{adapter_module: FakeAdapter, adapter_state: adapter_state} = Registry.get(session.id)
     assert adapter_state.storage_profile == "workspace"
-    assert adapter_state.storage_state_path == "/tmp/devide-storage.json"
+    assert adapter_state.storage_state_path == "/tmp/casein-storage.json"
   end
 
   test "matches_reuse_opts? compares actor, assignment, isolation, headers, and storage profile" do

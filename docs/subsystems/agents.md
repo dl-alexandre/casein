@@ -61,7 +61,7 @@ compile-time-fixed argv.
 | `DevIDE.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/casein/agents/agent_capability_token.ex`, `lib/casein/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
 | `DevIDE.Agents.GrokCapabilityPolicy` | `lib/casein/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
 | `DevIDE.Agents.PaneEnv` | `lib/casein/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
-| `DevIDE.Agents.AuthProfile` | `lib/casein/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
+| `DevIDE.Agents.AuthProfile` | `lib/casein/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.casein/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
 | `DevIDE.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
 | `DevIDE.Agents.MCPAudit` | `lib/casein/agents/mcp_audit.ex` | Record every tool completion as a metadata-only `AgentEvent` and in `Activity`; emit an `Audit` event for successful mutating tools; propose labels from terminal calls. |
 | `DevIDE.Agents.MCPError` | `lib/casein/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
@@ -101,14 +101,14 @@ compile-time-fixed argv.
    `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
    `Tmux.set_environments/2`. Template apply calls this **before** creating
    panes so the first window is not racy. `PATH` always includes
-   `~/.devide/agent-shims` and the npm global bin dir (also embedded in
+   `~/.casein/agent-shims` and the npm global bin dir (also embedded in
    `Terminals.Shims.path_with_shims/1`; shell-integration force-fronts them
    after user rc files run, so session create is not bashrc-dependent and
    installer-prepended dirs cannot shadow the launchers). The shim dir is
    never on PATH outside DevIDE contexts — plain terminals resolve agent
    names to the real binaries. `PaneEnv` also injects
    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
-   `~/.devide/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
+   `~/.casein/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
    signed in (`.credentials.json` / `auth.json` present); otherwise the
    runtime keeps the host global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
@@ -259,7 +259,7 @@ available. The list is surfaced through agent UI and `GET
 - `DevIDE.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
   capability queries (delegate to the configured adapter).
 - `DevIDE.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
-  DevIDE launcher shims under `~/.devide/agent-shims`.
+  DevIDE launcher shims under `~/.casein/agent-shims`.
 - `DevIDE.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
   `launch_command/3` — build/install the agent env for a tmux session.
 - `DevIDE.Agents.MCPMaterializer.materialize/2` — write agent client config
@@ -329,7 +329,7 @@ available. The list is surfaced through agent UI and `GET
   sign-in. Use `devide agent auth status [workspace] [runtime]` or `devide agent
   auth list` to audit profile and sign-in state.
 - **Registered owners never fall back to the host global login.**
-  `~/.devide/agent-auth/owners` lists owner slugs (one per line, `#` comments)
+  `~/.casein/agent-auth/owners` lists owner slugs (one per line, `#` comments)
   managed with `devide agent auth register <owner>` / `unregister <owner>`.
   For a registered owner the profile dir applies even before sign-in, so
   Claude/Codex prompt for their own login inside the profile instead of using

@@ -3,7 +3,7 @@
 # Sourced by launch-devide-agent.sh — not executed directly.
 
 agent_worktree_root() {
-  printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/devide-agent-worktrees}"
+  printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 }
 
 agent_worktree_primary_repo() {

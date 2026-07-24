@@ -20,7 +20,7 @@
 # `DEVIDE_GROK_BUNDLE_ROOT` / `DEVIDE_GROK_LEADER_ROOT` are production operator
 # overrides that `GrokCapabilityBundle` honors ahead of the `:casein` app env.
 # A paired-agent shell (which launches Grok) exports them, so running the suite
-# from such a shell leaks the live `/home/devbox/.devide/grok-*` roots into
+# from such a shell leaks the live `/home/devbox/.casein/grok-*` roots into
 # GrokCapabilityBundle/GrokACP tests — overriding the tmp roots those tests set
 # via app env and failing them with `:unsafe_leader_directory` /
 # `:invalid_grok_attachment_metadata`. CI never sets these (hence green there);

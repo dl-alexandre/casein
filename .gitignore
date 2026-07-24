@@ -40,7 +40,7 @@ dev_ide-*.tar
 .env.local
 .devbox-agent.env
 .devide-preview/
-.devide/preview-demo/
+.casein/preview-demo/
 .mcp.json
 .opencode/opencode.json
 .cursor/mcp.json

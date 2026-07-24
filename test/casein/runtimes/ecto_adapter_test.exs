@@ -29,7 +29,7 @@ defmodule Casein.Runtimes.EctoAdapterTest do
         status: "provisioned",
         repo: "onebackend-v3",
         branch: "main",
-        worktree_path: "/tmp/ws-ecto-runtime/.devide/runtimes/rt-ecto"
+        worktree_path: "/tmp/ws-ecto-runtime/.casein/runtimes/rt-ecto"
       )
 
     assert runtime.status == "provisioned"

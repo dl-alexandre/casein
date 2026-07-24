@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="devide-worktree-cleanup.service"
 TIMER="devide-worktree-cleanup.timer"
-WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/devide-agent-worktrees}"
+WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 
 APPLY=0
 START=1

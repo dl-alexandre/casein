@@ -43,7 +43,7 @@ mkcert HTTPS, see
 [`docs/lan-access.md`](lan-access.md).
 
 For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
-milc devbox host) deployment, including the stable `/opt/devide/deploy/`
+milc devbox host) deployment, including the stable `/opt/casein/deploy/`
 layout and activation after the 7204683 reconciliation, see
 [`docs/integrations/manager.md`](integrations/manager.md) §5 and the
 self-contained runbook inside `lib/casein/integrations/manager/deploy/README.md`.

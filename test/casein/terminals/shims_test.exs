@@ -388,7 +388,7 @@ defmodule Casein.Terminals.ShimsTest do
     assert script =~ "trap '__devide_preexec' DEBUG"
     # Fresh panes that inherited a thin release PATH still find agent shims.
     assert script =~ "__devide_prepend_path"
-    assert script =~ ".devide/agent-shims"
+    assert script =~ ".casein/agent-shims"
     assert script =~ ".local/bin"
     assert script =~ "npm-global/bin"
 
@@ -399,7 +399,7 @@ defmodule Casein.Terminals.ShimsTest do
     Shims.materialize!()
     script = Shims.shell_integration_path()
     home = Path.join(tmp, "home")
-    agent_bin = Path.join(home, ".devide/agent-shims")
+    agent_bin = Path.join(home, ".casein/agent-shims")
     File.mkdir_p!(agent_bin)
     shim = Path.join(agent_bin, "claude")
     File.write!(shim, "#!/bin/sh\necho ok\n")
@@ -430,7 +430,7 @@ defmodule Casein.Terminals.ShimsTest do
     script = Shims.shell_integration_path()
     home = Path.join(tmp, "home")
 
-    local_bin = Path.join(home, ".devide/agent-shims")
+    local_bin = Path.join(home, ".casein/agent-shims")
     npm_bin = Path.join(home, ".local/share/npm-global/bin")
     File.mkdir_p!(local_bin)
     File.mkdir_p!(npm_bin)
@@ -472,7 +472,7 @@ defmodule Casein.Terminals.ShimsTest do
     script = Shims.shell_integration_path()
     home = Path.join(tmp, "home")
 
-    agent_shims = Path.join(home, ".devide/agent-shims")
+    agent_shims = Path.join(home, ".casein/agent-shims")
     installer_bin = Path.join(home, ".grok/bin")
     File.mkdir_p!(agent_shims)
     File.mkdir_p!(installer_bin)
@@ -652,7 +652,7 @@ defmodule Casein.Terminals.ShimsTest do
       Shims.materialize!()
       home = Path.join(tmp, "home")
 
-      local_bin = Path.join(home, ".devide/agent-shims")
+      local_bin = Path.join(home, ".casein/agent-shims")
       npm_bin = Path.join(home, ".local/share/npm-global/bin")
       File.mkdir_p!(local_bin)
       File.mkdir_p!(npm_bin)

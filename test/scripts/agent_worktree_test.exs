@@ -199,7 +199,7 @@ defmodule Scripts.AgentWorktreeTest do
     npm_prefix = Path.join(home, ".local/share/npm-global")
     user_codex = Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex.js")
     stale_codex = Path.join(tmp, "usr/lib/node_modules/@openai/codex/bin/codex.js")
-    real_bins = Path.join(home, ".devide/real-bins")
+    real_bins = Path.join(home, ".casein/real-bins")
 
     File.mkdir_p!(Path.dirname(user_codex))
     File.mkdir_p!(Path.dirname(stale_codex))
@@ -281,9 +281,9 @@ defmodule Scripts.AgentWorktreeTest do
 
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
-    assert File.read_link!(Path.join(home, ".devide/real-bins/codex")) == user_codex
+    assert File.read_link!(Path.join(home, ".casein/real-bins/codex")) == user_codex
 
-    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~
+    assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
              "devide\" agent launch codex"
   end
 
@@ -350,7 +350,7 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
 
-    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~
+    assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
              "devide\" agent launch codex"
   end
 
@@ -462,7 +462,7 @@ defmodule Scripts.AgentWorktreeTest do
     scripts = Path.join(root, "scripts")
     lib = Path.join(scripts, "lib")
     home = Path.join(tmp, "home")
-    real_bins = Path.join(home, ".devide/real-bins")
+    real_bins = Path.join(home, ".casein/real-bins")
 
     File.mkdir_p!(lib)
     File.mkdir_p!(real_bins)

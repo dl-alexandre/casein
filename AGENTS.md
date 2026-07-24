@@ -15,7 +15,7 @@ This is a web application written using the Phoenix web framework.
 
 ## Devbox agent pairing (human + external agent)
 
-On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/devide/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/devide/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `devide-loopback` socat proxy (`scripts/ensure-devide-loopback-proxy.sh`).
+On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `devide-loopback` socat proxy (`scripts/ensure-devide-loopback-proxy.sh`).
 
 ### Required pre-push gate
 
@@ -82,15 +82,15 @@ before packaging the release, so a `--no-verify` push that lands on `master` sti
 cannot activate until that worktree gate passes. `bash scripts/deploy-local.sh`
 remains the manual override for an immediate deploy of the current checkout.
 
-The running release also performs a deploy-drift check at boot. If `/etc/devide/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
+The running release also performs a deploy-drift check at boot. If `/etc/casein/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)
 
-**Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`devide-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/devide/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
+**Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`devide-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
 
 | Do | Don't |
 |----|-------|
-| Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/devide/release` |
+| Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/casein/release` |
 | Use `bash scripts/setup-devbox-agent-pairing.sh` only to **validate** an uncommitted build locally | Treat a manual local deploy as durable without pushing |
 | Keep scripts, templates, MCP behavior, and deploy assets in the checkout (`lib/`, `scripts/`, `rel/overlays/deploy/`, etc.) | Add one-off binaries or config only on the running release tree |
 
@@ -101,7 +101,7 @@ The running release also performs a deploy-drift check at boot. If `/etc/devide/
 3. The on-box poller (`devide-deploy.timer`) auto-deploys `origin/master` within ~2 min — no GitHub Actions. Force it now with `sudo systemctl start devide-deploy.service`, or `bash scripts/deploy-local.sh` for an immediate manual deploy.
 4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
 
-A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/devide/release` is the ephemeral runtime artifact.
+A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
 
 ### Coordinating concurrent agents on master (required)
 
@@ -171,7 +171,7 @@ WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 `deploy-local.sh` builds from the checkout, packages `release-out`, and runs the same activation script used by CI without redoing workspace SQL, `.devbox-agent.env`, MCP materialization, or pairing verification. It is the preferred fast path after a successful push; CI will still perform the later canonical deploy from `master` unless that workflow is changed.
 
 Do **not** commit `.devbox-agent.env` (contains workspace-scoped `CASEIN_API_TOKEN`;
-global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/devide.env`.
+global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/devide.env`.
 `setup-devbox-agent-pairing.sh` registers scoped tokens under
 `CASEIN_WORKSPACE_API_TOKENS` and writes the scoped bearer as the default agent
 `CASEIN_API_TOKEN`.
@@ -219,7 +219,7 @@ client. Do not rely on repo `.grok/config.toml` alone — discovery walks up fro
 
 ```bash
 source .devbox-agent.env
-bash scripts/materialize-agent-mcp.sh    # writes ~/.devide/agent-mcp/<workspace>/
+bash scripts/materialize-agent-mcp.sh    # writes ~/.casein/agent-mcp/<workspace>/
 bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
 ```
 
@@ -232,7 +232,7 @@ bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
-`.devbox-agent.env`. Staging lives under `~/.devide/agent-mcp/<workspace_name>/`
+`.devbox-agent.env`. Staging lives under `~/.casein/agent-mcp/<workspace_name>/`
 (one tree per DevIDE workspace, not one global agent config).
 
 **Why two strategies.** Claude takes its MCP from the per-workspace staging
@@ -253,7 +253,7 @@ servers without `CASEIN_API_TOKEN`.
 Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`DevIDE.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
 
 ```bash
-# DATABASE_URL from /etc/devide/devide.env — port 15432, not 5432
+# DATABASE_URL from /etc/casein/devide.env — port 15432, not 5432
 PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
   -c "UPDATE workspace_records SET mode='review' WHERE name='dalexandre-devide';"
 ```
@@ -269,8 +269,8 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | Poller not deploying after a push | `systemctl status devide-deploy.timer`; `journalctl -u devide-deploy.service`; ensure the timer is installed (`bash scripts/ensure-devide-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
-| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.devide/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.devide/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside DevIDE contexts — in a plain terminal, agent names run the real binaries (unpaired). |
-| Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
+| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside DevIDE contexts — in a plain terminal, agent names run the real binaries (unpaired). |
+| Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-devide-tmux.sh`. Pin binary: `bash scripts/ensure-devide-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
@@ -279,7 +279,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `mix: command not found` in agent shell | Use `mise exec -- mix ...` from inside the checkout — `.tool-versions` pins the toolchain; mise shims may not be on `PATH` |
 | `mix test` binds :4000 / wrong DB | Shell inherited `PHX_SERVER`/`PORT` from the live release env. `config/runtime.exs` now ignores both under `MIX_ENV=test`; if you still see it, the checkout predates that guard — unset them |
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
-| `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the DevIDE `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.devide/agent-shims` launchers |
+| `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the DevIDE `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 
 ### Key files
@@ -291,7 +291,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/deploy-local.sh` — fast local build+deploy wrapper / manual override
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
-- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from DevIDE shims in `~/.devide/agent-shims`
+- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from DevIDE shims in `~/.casein/agent-shims`
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected

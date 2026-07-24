@@ -12,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
 WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
@@ -93,7 +93,7 @@ else
 fi
 
 scripts_dir="$(
-  find /opt/devide/release/lib -maxdepth 4 -type d -path '*/priv/scripts' -print -quit 2>/dev/null
+  find /opt/casein/release/lib -maxdepth 4 -type d -path '*/priv/scripts' -print -quit 2>/dev/null
 )"
 
 if [[ -n "$scripts_dir" ]] && [[ -f "${scripts_dir}/node_modules/playwright/cli.js" ]]; then
@@ -123,7 +123,7 @@ cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
 # CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
-# /etc/devide/devide.env; never copy it into an agent-readable checkout.
+# /etc/casein/devide.env; never copy it into an agent-readable checkout.
 
 export CASEIN_API_TOKEN='${AGENT_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
@@ -137,9 +137,9 @@ export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WO
 $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
-export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+export DEVIDE_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
+export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
 case ":\${PATH:-}:" in *":\${CASEIN_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${CASEIN_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 # Launcher shims last so they land frontmost: bare agent names in this shell

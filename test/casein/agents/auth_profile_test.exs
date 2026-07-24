@@ -186,7 +186,7 @@ defmodule Casein.Agents.AuthProfileTest do
   test "devide signin detects owner from current workspace", %{root: root} do
     devide = Path.expand("../../../scripts/devide", __DIR__)
     home = Path.join(root, "home")
-    codex = Path.join([home, ".devide", "real-bins", "codex"])
+    codex = Path.join([home, ".casein", "real-bins", "codex"])
     codex_dir = Path.join([root, "profiles", "sconde", "codex"])
 
     File.mkdir_p!(Path.dirname(codex))

@@ -8,11 +8,11 @@
 #
 set -euo pipefail
 
-CURRENT_SOCK="/run/devide/current.sock"
+CURRENT_SOCK="/run/casein/current.sock"
 LOOPBACK_PORT="${DEVIDE_LOOPBACK_PORT:-4000}"
 LOOPBACK_URL="http://127.0.0.1:${LOOPBACK_PORT}"
 SERVICE="devide-loopback"
-DEPLOY_DST="${CASEIN_DEPLOY_ROOT:-/opt/devide}/deploy"
+DEPLOY_DST="${CASEIN_DEPLOY_ROOT:-/opt/casein}/deploy"
 
 log() { printf '>>> %s\n' "$*"; }
 

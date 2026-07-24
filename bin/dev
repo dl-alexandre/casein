@@ -21,7 +21,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DB_URL="ecto://postgres:postgres@localhost:5433/dev_ide_dev"
-WORKSPACE_DIR="/tmp/dev_ide_workspaces/alpha"
+WORKSPACE_DIR="/tmp/casein_workspaces/alpha"
 
 # Colors
 GREEN='\033[0;32m'

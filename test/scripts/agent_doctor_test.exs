@@ -35,7 +35,7 @@ defmodule Scripts.AgentDoctorTest do
       printf 'COUNTS pass=%s warn=%s fail=%s\n' "$PASS" "$WARN" "$FAIL"
       """)
 
-    assert output =~ "plain-shell PATH intentionally excludes #{home}/.devide/agent-shims"
+    assert output =~ "plain-shell PATH intentionally excludes #{home}/.casein/agent-shims"
     assert output =~ "COUNTS pass="
     assert output =~ "fail=0"
     refute output =~ "FAIL "
@@ -61,7 +61,7 @@ defmodule Scripts.AgentDoctorTest do
       )
 
     assert output =~ "FAIL shim shadowed: grok resolves to"
-    assert output =~ "FAIL paired-context PATH missing #{home}/.devide/agent-shims"
+    assert output =~ "FAIL paired-context PATH missing #{home}/.casein/agent-shims"
     refute output =~ "fail=0"
   end
 
@@ -247,7 +247,7 @@ defmodule Scripts.AgentDoctorTest do
 
   defp build_bundle!(home) do
     fixture_dir = Path.join(home, "bundle-fixtures")
-    bundle_root = Path.join(home, ".devide/grok-bundles")
+    bundle_root = Path.join(home, ".casein/grok-bundles")
     mcp_file = Path.join(fixture_dir, "mcp.json")
     File.mkdir_p!(fixture_dir)
     File.write!(mcp_file, ~s({"mcpServers":{}}\n))
@@ -272,7 +272,7 @@ defmodule Scripts.AgentDoctorTest do
   end
 
   defp listen_unix_socket!(home) do
-    base = Path.join(home, ".devide/grok-leaders")
+    base = Path.join(home, ".casein/grok-leaders")
     root = Path.join(base, String.duplicate("a", 24))
     socket = Path.join(root, "leader.sock")
     metadata = Path.join(root, ".devide-launcher")
@@ -332,7 +332,7 @@ defmodule Scripts.AgentDoctorTest do
   end
 
   defp install_mock_shims(home) do
-    shim_dir = Path.join(home, ".devide/agent-shims")
+    shim_dir = Path.join(home, ".casein/agent-shims")
     File.mkdir_p!(shim_dir)
 
     for runtime <- @runtimes do
@@ -356,7 +356,7 @@ defmodule Scripts.AgentDoctorTest do
   end
 
   defp install_mock_grok(home, inspect_json) do
-    real_bin_dir = Path.join(home, ".devide/real-bins")
+    real_bin_dir = Path.join(home, ".casein/real-bins")
     File.mkdir_p!(real_bin_dir)
     grok = Path.join(real_bin_dir, "grok")
 

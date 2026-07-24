@@ -1,11 +1,11 @@
 # DevIDE loopback HTTP bridge for canary (Unix socket) deploys.
 #
-# Canary releases listen on /run/devide/instances/<uuid>.sock; Caddy uses
-# /run/devide/current.sock. On-box agents and scripts still expect
+# Canary releases listen on /run/casein/instances/<uuid>.sock; Caddy uses
+# /run/casein/current.sock. On-box agents and scripts still expect
 # http://127.0.0.1:4000 — this unit forwards loopback TCP to the current socket.
 #
 # Install (via activate_devbox_deploy or ensure-devide-loopback-proxy.sh):
-#   sudo cp /opt/devide/deploy/devide-loopback.service /etc/systemd/system/
+#   sudo cp /opt/casein/deploy/devide-loopback.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now devide-loopback
 #
@@ -20,7 +20,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/socat TCP-LISTEN:4000,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/devide/current.sock
+ExecStart=/usr/bin/socat TCP-LISTEN:4000,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/casein/current.sock
 Restart=always
 RestartSec=2
 

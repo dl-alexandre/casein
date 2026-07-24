@@ -145,7 +145,7 @@ defmodule Casein.Agents.WorkspaceTokens do
   @spec store_path() :: Path.t()
   def store_path do
     Application.get_env(:casein, :workspace_tokens_store) ||
-      Path.join(home_dir(), ".devide/workspace-api-tokens.json")
+      Path.join(home_dir(), ".casein/workspace-api-tokens.json")
   end
 
   defp registry do

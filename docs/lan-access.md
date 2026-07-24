@@ -59,11 +59,11 @@ or `cache_manifest.json` are missing, because a release without those files
 boots but renders an unstyled page.
 
 `lan up` is idempotent. It first copies the release into a durable install path
-(`/opt/devide/lan-release` by default), then creates or refreshes
-`/etc/devide/lan.env`, installs the backend and port-80 edge units, starts them,
+(`/opt/casein/lan-release` by default), then creates or refreshes
+`/etc/casein/lan.env`, installs the backend and port-80 edge units, starts them,
 and probes both the real URL and `/assets/css/app.css` before printing `READY`.
 
-Existing values in `/etc/devide/lan.env` are preserved. Upgrades refresh the
+Existing values in `/etc/casein/lan.env` are preserved. Upgrades refresh the
 systemd unit files so they point at the durable release copy, while local env
 overrides such as `DATABASE_PATH`, `DATABASE_URL`, `PORT`, `CASEIN_LAN_HOST`, and
 `CASEIN_WORKSPACES_ROOT` remain intact. By default, `lan up` also writes
@@ -72,7 +72,7 @@ initial `home` workspace opens at the actual home directory rather than an empty
 seed folder.
 
 If the source release lives under `/tmp`, the installed systemd units still point
-at `/opt/devide/lan-release`, so a reboot or tmp cleanup does not break the
+at `/opt/casein/lan-release`, so a reboot or tmp cleanup does not break the
 managed backend. Set `DEVIDE_LAN_RELEASE_DIR=/some/durable/path` to choose a
 different install location.
 
@@ -80,8 +80,8 @@ Useful release commands:
 
 ```bash
 sudo ./bin/devide lan install
-/opt/devide/lan-release/bin/devide lan status
-sudo /opt/devide/lan-release/bin/devide lan down
+/opt/casein/lan-release/bin/devide lan status
+sudo /opt/casein/lan-release/bin/devide lan down
 ```
 
 `lan down` stops only the managed systemd units. It does not scan for or kill
@@ -90,15 +90,15 @@ unrelated manual `mix phx.server` or release processes.
 The release service runs:
 
 ```text
-/opt/devide/lan-release/bin/casein start
+/opt/casein/lan-release/bin/casein start
 ```
 
-with the LAN service profile from `/etc/devide/lan.env`. If your database is
+with the LAN service profile from `/etc/casein/lan.env`. If your database is
 not the local SQLite default, set `DATABASE_PATH` before `lan up` or edit the
 env file and run `lan up` again:
 
 ```bash
-sudo DATABASE_PATH=/var/lib/devide/lan/devide.sqlite3 \
+sudo DATABASE_PATH=/var/lib/casein/lan/devide.sqlite3 \
   ./bin/devide lan up
 ```
 
@@ -146,7 +146,7 @@ DevIDE LAN expects:
 - `mise` available only for the checkout/Mix workflow. A built release does
   not need Mix or mise at runtime.
 - A writable SQLite database path for LAN-local releases. The default is
-  `/var/lib/devide/lan/devide.sqlite3`, and `lan up` creates its parent
+  `/var/lib/casein/lan/devide.sqlite3`, and `lan up` creates its parent
   directory.
 - Postgres reachable by `DATABASE_URL` only for Postgres-compiled releases or
   the default checkout/Mix workflow.
@@ -308,12 +308,12 @@ CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
 | `CASEIN_LAN_FRIENDLY_PATHS` | enabled by LAN profiles | Lets `/` and `/<dir>` open filesystem-addressed workspaces under `CASEIN_LAN_PATH_ROOT`. |
 | `CASEIN_LAN_PATH_ROOT` | `CASEIN_HOME_WORKSPACE_PATH` | Root for LAN-friendly URL paths. `/aws` resolves to `$CASEIN_LAN_PATH_ROOT/aws`. |
 | `CASEIN_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
-| `CASEIN_WORKSPACES_ROOT` | `/tmp/dev_ide_workspaces` in dev | Parent directory for local filesystem workspaces. |
-| `DATABASE_PATH` | `/var/lib/devide/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |
+| `CASEIN_WORKSPACES_ROOT` | `/tmp/casein_workspaces` in dev | Parent directory for local filesystem workspaces. |
+| `DATABASE_PATH` | `/var/lib/casein/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |
 | `DATABASE_URL` | Postgres fallback | Used by Postgres-compiled releases, ignored by SQLite-compiled releases. |
-| `DEVIDE_LAN_ENV_FILE` | `/etc/devide/lan.env` in release | Private env file owned by the release `devide lan` helper. |
-| `DEVIDE_LAN_PUBLIC_ENV_FILE` | `/etc/devide/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
-| `DEVIDE_LAN_RELEASE_DIR` | `/opt/devide/lan-release` in release | Durable release copy used by managed systemd units. |
+| `DEVIDE_LAN_ENV_FILE` | `/etc/casein/lan.env` in release | Private env file owned by the release `devide lan` helper. |
+| `DEVIDE_LAN_PUBLIC_ENV_FILE` | `/etc/casein/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
+| `DEVIDE_LAN_RELEASE_DIR` | `/opt/casein/lan-release` in release | Durable release copy used by managed systemd units. |
 | `CASEIN_LAN` | unset | Enables manual HTTPS LAN mode. |
 | `CASEIN_LAN_HTTPS_PORT` | `4443` | Manual HTTPS backend port. |
 | `CASEIN_LAN_CERTFILE` | `priv/cert/devide-lan.pem` | Manual HTTPS certificate path. |
@@ -348,7 +348,7 @@ check `DATABASE_URL` and the database service.
 
 If a manual backend is already using `:4000`, `lan up` cannot start the managed
 backend on the same port. Either stop the manual process or set a different
-`PORT` in `/etc/devide/lan.env` and run `lan up` again.
+`PORT` in `/etc/casein/lan.env` and run `lan up` again.
 
 If the browser rapidly reloads after switching between HTTPS and HTTP modes,
 clear site data for the LAN host. The managed HTTP service uses a separate

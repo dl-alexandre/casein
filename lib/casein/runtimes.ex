@@ -1007,7 +1007,7 @@ defmodule Casein.Runtimes do
 
   defp default_agent_worktree_roots do
     [
-      Path.join(System.tmp_dir!(), "devide-agent-worktrees"),
+      Path.join(System.tmp_dir!(), "casein-agent-worktrees"),
       Path.expand("~/.local/share/opencode"),
       Path.expand("~/.local/share/codex"),
       Path.expand("~/.cache/codex"),

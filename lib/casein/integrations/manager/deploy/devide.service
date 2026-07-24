@@ -1,5 +1,5 @@
 # DevIDE-on-devbox systemd unit (stable layout + activation documented in
-# /opt/devide/deploy/README.md — the authoritative runbook after the 7204683
+# /opt/casein/deploy/README.md — the authoritative runbook after the 7204683
 # reconciliation).
 #
 # Mirrors the milc-devbox manager's deployment shape: a host process in the
@@ -8,7 +8,7 @@
 # (the docker-socket mount would be root-equivalent anyway).
 #
 # Install / update (after activation step that populates the stable layout):
-#   sudo cp /opt/devide/deploy/devide.service /etc/systemd/system/devide.service
+#   sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now devide
 #
@@ -19,16 +19,16 @@
 # can't be used because docker cp, which scripts/build-release.sh relies on
 # to extract the release tree, does not dereference them). An explicit
 # activation step (documented in the README) then copies them into the
-# *stable* /opt/devide/deploy/ location.
+# *stable* /opt/casein/deploy/ location.
 # This makes the paths in this unit file (and in ExecStartPre) independent of
 # any particular release tree or git checkout, so `git pull` + release swaps
 # (cd0aed5, 4c308b8 Ghostty, etc.) never break the unit.
 #
 # The ExecStartPre for the compose file always points at the stable location
 # after activation. The release binaries (migrate, dev_ide) remain under
-# /opt/devide/release/ and can be swapped/rolled back independently.
+# /opt/casein/release/ and can be swapped/rolled back independently.
 #
-# See /opt/devide/deploy/README.md (or the canonical copy in the repo) for the
+# See /opt/casein/deploy/README.md (or the canonical copy in the repo) for the
 # full host layout, activation commands, and reconciliation history.
 
 [Unit]
@@ -49,17 +49,17 @@ StartLimitBurst=5
 Type=exec
 User=devbox
 Group=docker
-EnvironmentFile=/etc/devide/devide.env
-WorkingDirectory=/opt/devide
+EnvironmentFile=/etc/casein/devide.env
+WorkingDirectory=/opt/casein
 
 # Bring up (and wait for healthy) the dedicated Postgres container (from the
 # *stable* deploy artifacts), then run pending migrations against it — before
 # the release boots.
-ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
-ExecStartPre=/opt/devide/release/bin/clean_devide_socket
-ExecStartPre=/opt/devide/release/bin/migrate
-ExecStart=/opt/devide/release/bin/casein start
-ExecStop=/opt/devide/release/bin/casein stop
+ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file /etc/casein/devide.env up -d --wait
+ExecStartPre=/opt/casein/release/bin/clean_devide_socket
+ExecStartPre=/opt/casein/release/bin/migrate
+ExecStart=/opt/casein/release/bin/casein start
+ExecStop=/opt/casein/release/bin/casein stop
 
 # Keep daemonized tmux servers alive across release restarts. In host-tmux
 # mode the `devide_*` tmux server is spawned by the BEAM and stays in this
@@ -85,7 +85,7 @@ RestartSec=3
 # else writable outside its own tree.
 NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/data/workspaces /opt/devide
+ReadWritePaths=/data/workspaces /opt/casein
 
 [Install]
 WantedBy=multi-user.target

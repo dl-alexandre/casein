@@ -53,7 +53,7 @@ echo package-claude"
   # overwritten shim path as the "real" binary.
   PATH="${bin_dir}/:${PATH:-/usr/bin:/bin}" bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
-  target="$(readlink -f "${HOME}/.devide/real-bins/claude")"
+  target="$(readlink -f "${HOME}/.casein/real-bins/claude")"
   assert_eq "recorded claude target" "$package_claude" "$target"
   assert_not_under "recorded claude target" "$target" "$bin_dir"
 )
@@ -70,7 +70,7 @@ run_resolver_rejects_recorded_devide_shim() (
   real_dir="${home}/real-bin-dir"
   real_codex="${real_dir}/codex"
 
-  write_executable "${HOME}/.devide/real-bins/codex" "#!/usr/bin/env bash
+  write_executable "${HOME}/.casein/real-bins/codex" "#!/usr/bin/env bash
 exec \"${ROOT}/scripts/devide\" agent launch codex \"\$@\""
   write_executable "$real_codex" "#!/usr/bin/env bash
 echo real-codex"
@@ -101,7 +101,7 @@ run_installer_generated_shims_carry_marker() (
   # The shim template (installer) and the marker grep (real-agent-bin.sh)
   # live in different files; this pins their coupling.
   for name in grok claude codex opencode agent; do
-    if ! is_devide_shim "${HOME}/.devide/agent-shims/${name}"; then
+    if ! is_devide_shim "${HOME}/.casein/agent-shims/${name}"; then
       echo "FAIL: installed shim not detected as a DevIDE shim: ${name}" >&2
       exit 1
     fi
@@ -110,7 +110,7 @@ run_installer_generated_shims_carry_marker() (
   # agent-doctor.sh extracts the embedded devide CLI path with this sed
   # pattern; pin it against the installer's shim template.
   local embedded
-  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.devide/agent-shims/claude" | head -n 1)"
+  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.casein/agent-shims/claude" | head -n 1)"
   assert_eq "embedded devide CLI path" "${ROOT}/scripts/devide" "$embedded"
 )
 
@@ -141,8 +141,8 @@ echo mine"
     echo "FAIL: user file in ~/.local/bin must be untouched" >&2
     exit 1
   fi
-  if [[ ! -x "${HOME}/.devide/agent-shims/grok" ]]; then
-    echo "FAIL: grok shim missing from ~/.devide/agent-shims" >&2
+  if [[ ! -x "${HOME}/.casein/agent-shims/grok" ]]; then
+    echo "FAIL: grok shim missing from ~/.casein/agent-shims" >&2
     exit 1
   fi
 )
@@ -189,8 +189,8 @@ echo \"real-claude \$*\""
 
   write_executable "${HOME}/real-bin-dir/opencode" "#!/usr/bin/env bash
 echo \"real-opencode \$*\""
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.devide/real-bins/opencode"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.casein/real-bins/opencode"
 
   # Version/help probes must not resolve env, create a worktree, or inject
   # MCP — with no DevIDE env in this HOME, anything but a clean passthrough
@@ -217,8 +217,8 @@ run_launch_falls_back_unpaired_without_env() (
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
 echo \"real-grok \$*\""
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
   # A plain terminal outside DevIDE: no pane env, no .devbox-agent.env in
   # cwd ancestry. The shimmed name must launch the real binary with ZERO
@@ -271,8 +271,8 @@ run_launch_stamps_pane_pairing_state() (
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
 echo real-grok"
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
   # Fake tmux: answers env probes with nothing (so resolution still fails)
   # and records set-option calls — pairing state must reach the pane option
@@ -315,7 +315,7 @@ run_check_and_ensure_modes() (
   assert_eq "check after full install" "0" "$status"
 
   # Simulate the production failure mode: one runtime shim deleted, siblings ok.
-  rm -f "${HOME}/.devide/agent-shims/claude"
+  rm -f "${HOME}/.casein/agent-shims/claude"
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null 2>&1 || status=$?
   if [[ "$status" -eq 0 ]]; then
@@ -326,7 +326,7 @@ run_check_and_ensure_modes() (
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
   assert_eq "ensure heals missing claude" "0" "$status"
-  if [[ ! -x "${HOME}/.devide/agent-shims/claude" ]]; then
+  if [[ ! -x "${HOME}/.casein/agent-shims/claude" ]]; then
     echo "FAIL: --ensure did not restore claude shim" >&2
     exit 1
   fi

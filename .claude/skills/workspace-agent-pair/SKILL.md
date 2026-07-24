@@ -33,7 +33,7 @@ Prefer already-paired session env (tmux session for that workspace):
 ```bash
 echo "$DEVIDE_WORKSPACE_NAME" "$DEVIDE_WORKSPACE_ID" "$DEVIDE_CHECKOUT"
 # or:
-source ~/.devide/agent-mcp/<workspace-name>/env.sh
+source ~/.casein/agent-mcp/<workspace-name>/env.sh
 ```
 
 | Var | Meaning |
@@ -41,11 +41,11 @@ source ~/.devide/agent-mcp/<workspace-name>/env.sh
 | `DEVIDE_WORKSPACE_NAME` | e.g. `dalexandre-devbox`, `dalexandre-reports` |
 | `DEVIDE_WORKSPACE_ID` | UUID used in MCP query strings |
 | `DEVIDE_CHECKOUT` | Product tree the agent should `cd` into |
-| `DEVIDE_AGENT_MCP_HOME` | `~/.devide/agent-mcp/<name>/` staging |
+| `DEVIDE_AGENT_MCP_HOME` | `~/.casein/agent-mcp/<name>/` staging |
 | `DEVIDE_TERMINAL_MCP_URL` / `PREVIEW` / `ARTIFACT` | Pre-scoped MCP URLs |
 | `CASEIN_API_TOKEN` | Workspace-scoped bearer (never echo) |
 
-If `~/.devide/agent-mcp/<name>/env.sh` is **missing**, this is first-time pairing —
+If `~/.casein/agent-mcp/<name>/env.sh` is **missing**, this is first-time pairing —
 run `scripts/refresh-devbox-agent-pairing.sh` / `setup-devbox-agent-pairing.sh` for
 that workspace (needs host admin token). This skill only **reinstalls** MCP
 configs + skills from existing staging.
@@ -69,7 +69,7 @@ bash /data/workspaces/dalexandre/dev_ide/scripts/ensure-workspace-agent-pair.sh 
 
 What it does:
 
-1. Sources `~/.devide/agent-mcp/<name>/env.sh`
+1. Sources `~/.casein/agent-mcp/<name>/env.sh`
 2. Stages host skills (`DEVIDE_GLOBAL_AGENT_SKILLS`) into the runtime’s skill home
 3. Writes project MCP config where that runtime discovers it
 4. Optionally verifies terminal MCP `tools/list` + OpenCode skill/config
@@ -90,7 +90,7 @@ Default host skill allowlist: `delegate-to-grok`, `preview-ui-walk`,
 
 ```bash
 set -a
-source ~/.devide/agent-mcp/<name>/env.sh
+source ~/.casein/agent-mcp/<name>/env.sh
 set +a
 
 SKILL_SRC=/data/workspaces/dalexandre/dev_ide/.claude/skills
@@ -131,7 +131,7 @@ Wrong-workspace check: MCP server names / URLs must include **this**
 
 | Goal | Next skill / action |
 |------|---------------------|
-| App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.devide/preview-walk.json` and/or `.devide/preview-walks/<id>.json` |
+| App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.casein/preview-walk.json` and/or `.casein/preview-walks/<id>.json` |
 | Author/improve a walk | Edit/add product manifests; do not fork the skill |
 | Parallel Grok implementation | `delegate-to-grok` |
 | DevIDE-itself UI check | `verify` (only inside dev_ide checkout) |

@@ -56,7 +56,7 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
 
 ### Deploy handoff & drain
 1. On boot `Registry.init/1` writes `<instance-id>.json` into
-   `/run/devide/instances` (falling back to `/tmp/...`), best-effort creates
+   `/run/casein/instances` (falling back to `/tmp/...`), best-effort creates
    `current.sock → this instance`, and fires `Drift.check_async/0`.
 2. Each connected LiveView calls `Drain.track/1` (via the
    `DeploymentUpdateHook` on_mount) so the drain controller monitors its pid.
@@ -125,7 +125,7 @@ application tree (see `lib/casein/application.ex`).
   slow GitHub never hangs `/api/deploy_status`.
 - **Drift kinds matter for durability.** A running SHA that differs from remote
   → `:revision_differs`; a non-SHA manual label → `:manual_revision`. Both are
-  drift: the next canonical deploy will replace `/opt/devide/release`. (See the
+  drift: the next canonical deploy will replace `/opt/casein/release`. (See the
   deploy-local drift gate notes; do not hand-edit the release.)
 - **Export emits summaries, not artifacts.** `WorkspaceStatus` deliberately
   excludes `manager_payload`, env, `DATABASE_URL`, file contents, terminal

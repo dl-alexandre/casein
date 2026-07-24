@@ -241,7 +241,7 @@ config :casein, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 # The prod block in runtime.exs reads the same env var.
 config :casein,
        :workspaces_root,
-       System.get_env("CASEIN_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
+       System.get_env("CASEIN_WORKSPACES_ROOT") || "/tmp/casein_workspaces"
 
 case System.get_env("CASEIN_HOME_WORKSPACE_PATH") do
   home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->

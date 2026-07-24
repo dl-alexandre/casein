@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
 
@@ -92,7 +92,7 @@ relaunch_current_release_if_needed() {
     return 0
   fi
 
-  local active_release="${CASEIN_DEPLOY_ROOT:-/opt/devide}/release"
+  local active_release="${CASEIN_DEPLOY_ROOT:-/opt/casein}/release"
   local tarball revision
 
   if [[ ! -x "${active_release}/bin/casein" ]]; then
@@ -104,7 +104,7 @@ relaunch_current_release_if_needed() {
   revision="${revision:-manual-token-refresh}"
 
   log "relaunching current release so it sees updated workspace-scoped tokens"
-  tarball="$(sudo mktemp "${CASEIN_DEPLOY_ROOT:-/opt/devide}/dev_ide-token-refresh-XXXXXX.tgz")"
+  tarball="$(sudo mktemp "${CASEIN_DEPLOY_ROOT:-/opt/casein}/dev_ide-token-refresh-XXXXXX.tgz")"
   sudo tar -C "$active_release" -czf "$tarball" .
   sudo chown "$(id -un):$(id -gn)" "$tarball"
 
@@ -220,7 +220,7 @@ cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
 # CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
-# /etc/devide/devide.env; never copy it into an agent-readable checkout.
+# /etc/casein/devide.env; never copy it into an agent-readable checkout.
 
 export CASEIN_API_TOKEN='${AGENT_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
@@ -233,9 +233,9 @@ export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WO
 $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
-export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+export DEVIDE_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
+export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
 case ":\${PATH:-}:" in *":\${CASEIN_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${CASEIN_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 # Launcher shims last so they land frontmost: bare agent names in this shell

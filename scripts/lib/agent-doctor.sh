@@ -43,7 +43,7 @@ devide_shims_expected() {
 }
 
 check_shims() {
-  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
   local shims_expected=0
   if devide_shims_expected; then
@@ -133,7 +133,7 @@ check_shims() {
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
 check_shim_targets() {
-  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
   local runtime shim cli target_missing=0 checked=0
   for runtime in grok claude codex opencode agent; do
     shim="${shim_dir}/${runtime}"
@@ -155,7 +155,7 @@ check_shim_targets() {
 # Self-updating agents (grok records a versioned binary path) can strand the
 # recorded symlink; launch falls back to a PATH search, so this is a warning.
 check_real_bins() {
-  local real_dir="${HOME}/.devide/real-bins"
+  local real_dir="${HOME}/.casein/real-bins"
   [[ -d "$real_dir" ]] || return 0
 
   local link dangling=0
@@ -404,7 +404,7 @@ grok_bundle_contract() {
 
   local bundle_real bundle_root bundle_root_real
   bundle_real="$(realpath -m "$bundle")"
-  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.devide/grok-bundles}"
+  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.casein/grok-bundles}"
   bundle_root_real="$(realpath -m "$bundle_root")"
 
   if [[ "$(dirname "$bundle_real")" != "$bundle_root_real" ]] ||
@@ -468,7 +468,7 @@ grok_leader_contract() {
   local managed="$1"
   local _grok_bin="$2"
   local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
-  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.devide/grok-leaders}"
+  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.casein/grok-leaders}"
 
   if [[ -z "$socket" ]]; then
     if [[ "$managed" == "1" ]]; then

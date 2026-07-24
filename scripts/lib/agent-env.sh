@@ -5,8 +5,8 @@
 #   2. DEVIDE_AGENT_ENV_FILE (explicit env.sh path)
 #   3. Walk up from cwd for .devbox-agent.env
 #   4. tmux show-environment (DevIDE pane injection)
-#   5. tmux session name → ~/.devide/agent-mcp/<workspace>/env.sh
-#   6. Host /etc/devide/devide.env + workspace API lookup from tmux session name
+#   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
+#   6. Host /etc/casein/devide.env + workspace API lookup from tmux session name
 
 agent_env_load_file() {
   local file="$1"
@@ -115,7 +115,7 @@ agent_env_parse_workspace_name() {
 
 agent_env_staging_env_file() {
   local workspace_name="$1"
-  printf '%s\n' "${HOME}/.devide/agent-mcp/${workspace_name}/env.sh"
+  printf '%s\n' "${HOME}/.casein/agent-mcp/${workspace_name}/env.sh"
 }
 
 agent_env_load_tmux_session_env() {
@@ -151,7 +151,7 @@ agent_env_load_staged_env() {
 }
 
 agent_env_load_host_devide_env() {
-  local host_env="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+  local host_env="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
   if [[ ! -r "$host_env" ]]; then
     return 1
   fi
@@ -287,5 +287,5 @@ agent_env_export_runtime_paths() {
   # agent binaries on PATH. The npm prefix rides along so `codex update`
   # installs stay reachable; ~/.local/bin covers user-installed real bins.
   export CASEIN_NPM_PREFIX="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-  export PATH="${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${CASEIN_NPM_PREFIX}/bin:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
+  export PATH="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}:${CASEIN_NPM_PREFIX}/bin:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
 }

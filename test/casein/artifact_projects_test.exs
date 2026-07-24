@@ -84,7 +84,7 @@ defmodule Casein.ArtifactProjectsTest do
 
     manifest =
       project.worktree_path
-      |> Path.join(".devide/artifact.json")
+      |> Path.join(".casein/artifact.json")
       |> File.read!()
       |> Jason.decode!()
 

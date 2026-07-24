@@ -1,7 +1,7 @@
 defmodule Casein.Deployment.Registry do
   @moduledoc """
   Tracks this running process instance by writing a JSON heartbeat file into a
-  well-known directory (`/run/devide/instances` or `/tmp/devide/instances`).
+  well-known directory (`/run/casein/instances` or `/tmp/devide/instances`).
   Other processes (drain controller, health checks) can call `list_instances/0`
   to discover every live instance on the same host.  The file is removed
   best-effort on `terminate/2`.
@@ -180,22 +180,22 @@ defmodule Casein.Deployment.Registry do
 
   # True when /proc/<pid>/cmdline belongs to a Casein beam. cmdline is
   # NUL-separated; match the same markers the deploy script keys on (a release
-  # under /opt/devide/release, or a dev_ide_*@host node name).
+  # under /opt/casein/release, or a dev_ide_*@host node name).
   # sobelow_skip ["Traversal.FileModule"]
   defp dev_ide_process?(pid) do
     case File.read("/proc/#{pid}/cmdline") do
       {:ok, raw} ->
         cmdline = String.replace(raw, <<0>>, " ")
-        String.contains?(cmdline, "/opt/devide/release/") or cmdline =~ ~r/dev_ide_\w+@/
+        String.contains?(cmdline, "/opt/casein/release/") or cmdline =~ ~r/dev_ide_\w+@/
 
       _ ->
         false
     end
   end
 
-  @current_symlink "/run/devide/current.sock"
+  @current_symlink "/run/casein/current.sock"
 
-  # Creates /run/devide/current.sock → socket_path only when the symlink is
+  # Creates /run/casein/current.sock → socket_path only when the symlink is
   # absent or points to a socket that no longer exists (handles reboots where
   # /run is tmpfs and the old symlink is gone).
   # sobelow_skip ["Traversal.FileModule"]
@@ -207,7 +207,7 @@ defmodule Casein.Deployment.Registry do
     _ -> :ok
   end
 
-  defp managed_socket_path?("/run/devide/instances/" <> rest),
+  defp managed_socket_path?("/run/casein/instances/" <> rest),
     do: String.ends_with?(rest, ".sock")
 
   defp managed_socket_path?("/tmp/devide/instances/" <> rest),
@@ -236,7 +236,7 @@ defmodule Casein.Deployment.Registry do
 
   # sobelow_skip ["Traversal.FileModule"]
   defp instance_dir_default do
-    candidates = ["/run/devide/instances", "/tmp/devide/instances"]
+    candidates = ["/run/casein/instances", "/tmp/devide/instances"]
 
     Enum.find_value(candidates, fn dir ->
       case File.mkdir_p(dir) do

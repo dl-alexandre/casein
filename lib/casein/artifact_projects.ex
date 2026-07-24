@@ -709,7 +709,7 @@ defmodule Casein.ArtifactProjects do
   defp artifact_root_base do
     root =
       Application.get_env(:casein, :artifact_projects_root) ||
-        Path.join([System.tmp_dir!(), "devide-agent-worktrees", "artifacts"])
+        Path.join([System.tmp_dir!(), "casein-agent-worktrees", "artifacts"])
 
     Path.expand(root)
   end
@@ -800,7 +800,7 @@ defmodule Casein.ArtifactProjects do
   end
 
   defp write_manifest(worktree_path, metadata) do
-    write_file(worktree_path, ".devide/artifact.json", Jason.encode!(metadata, pretty: true))
+    write_file(worktree_path, ".casein/artifact.json", Jason.encode!(metadata, pretty: true))
   end
 
   # rel_path is normalized, resolved through PathSafety, and checked against worktree_path.

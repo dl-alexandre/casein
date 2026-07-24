@@ -5,7 +5,7 @@ defmodule Casein.Agents.AuthProfile do
   Once an owner signs in, Casein launches Claude and Codex with owner-scoped
   provider homes:
 
-      ~/.devide/agent-auth/profiles/<owner-key>/<runtime>
+      ~/.casein/agent-auth/profiles/<owner-key>/<runtime>
 
   A workspace named `sconde-test` reuses `profiles/sconde/<runtime>` without one
   login per workspace.
@@ -201,7 +201,7 @@ defmodule Casein.Agents.AuthProfile do
   defp auth_root do
     Application.get_env(:casein, :agent_auth_profile_root) ||
       System.get_env("DEVIDE_AGENT_AUTH_ROOT") ||
-      Path.join([home_dir(), ".devide", "agent-auth"])
+      Path.join([home_dir(), ".casein", "agent-auth"])
   end
 
   defp home_dir do

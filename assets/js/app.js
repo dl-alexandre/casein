@@ -53,7 +53,7 @@ import {initTerminalThemes} from "./terminal_themes"
 
 // Move the session onto the freshly-deployed instance. Prefer a background
 // LiveView reconnect over a full page reload: the reconnect re-dials
-// /run/devide/current.sock, which the atomic symlink swap now points at the new
+// /run/casein/current.sock, which the atomic symlink swap now points at the new
 // instance. For a code-only deploy the session resumes in place with no reload
 // (tmux-backed terminals survive; mount rebuilds from params/session/tmux). If
 // the new instance's static asset digest changed, its mount detects that via

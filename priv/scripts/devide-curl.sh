@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # curl wrapper for the on-devbox DevIDE API.
-# Prefers http://127.0.0.1:4000; falls back to /run/devide/current.sock.
+# Prefers http://127.0.0.1:4000; falls back to /run/casein/current.sock.
 #
 # Usage:
 #   source scripts/devide-curl.sh
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 DEVIDE_LOOPBACK_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-CURRENT_SOCK="/run/devide/current.sock"
+CURRENT_SOCK="/run/casein/current.sock"
 
 _loopback_ok() {
   local code

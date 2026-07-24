@@ -15,7 +15,7 @@ TMUX_WORKSPACE_ID="tmux-supplied-workspace-id"
 
 TEST_HOME="$(mktemp -d)"
 export HOME="$TEST_HOME"
-STAGED_ENV="${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}/env.sh"
+STAGED_ENV="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}/env.sh"
 
 MOCK_BIN="$(mktemp -d)"
 cat >"${MOCK_BIN}/tmux" <<'MOCKTMUX'
@@ -50,7 +50,7 @@ export DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}"
 export DEVIDE_TERMINAL_MCP_URL="http://127.0.0.1:4000/api/terminals/mcp?workspace_id=${WORKSPACE_ID}"
 export DEVIDE_PREVIEW_MCP_URL="http://127.0.0.1:4000/api/preview/mcp?workspace_id=${WORKSPACE_ID}"
 export DEVIDE_ARTIFACT_MCP_URL="http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}"
-export DEVIDE_AGENT_MCP_HOME="${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+export DEVIDE_AGENT_MCP_HOME="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 export DEVIDE_CHECKOUT="${TEST_HOME}/checkout"
 EOF
   mkdir -p "${TEST_HOME}/checkout"
@@ -100,7 +100,7 @@ run_test_a_inherited_token_falls_through_to_staged_env() (
 
 run_test_b_complete_tmux_env_succeeds_at_step_4() (
   echo "== Test B: complete tmux session env succeeds at step 4 =="
-  rm -rf "${HOME}/.devide"
+  rm -rf "${HOME}/.casein"
   cd "$TEST_HOME"
 
   export TMUX="/tmp/fake-tmux-socket-b"

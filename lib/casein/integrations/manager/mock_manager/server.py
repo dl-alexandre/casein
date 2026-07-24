@@ -33,8 +33,8 @@ WORKSPACES = [
         "status": "running",
         # Path chosen so that pure-local `mix phx.server` dev (with the
         # :workspaces_root override in config/dev.exs) accepts it without sudo.
-        # `mkdir -p /tmp/dev_ide_workspaces/alpha` is all that is needed.
-        "path": "/tmp/dev_ide_workspaces/alpha",
+        # `mkdir -p /tmp/casein_workspaces/alpha` is all that is needed.
+        "path": "/tmp/casein_workspaces/alpha",
         # domain_base triggers Tidewave detection in LocalAdapter (v3 workspaces)
         "domain_base": "alice.devbox.example.com",
     }

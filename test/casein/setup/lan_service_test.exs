@@ -5,7 +5,7 @@ defmodule Casein.Setup.LanServiceTest do
 
   @opts [
     backend_port: 4000,
-    build_path: "/tmp/devide-lan-build-milc",
+    build_path: "/tmp/casein-lan-build-milc",
     group: "milc",
     home: "/home/milc",
     home_workspace_path: "/home/milc",
@@ -13,9 +13,9 @@ defmodule Casein.Setup.LanServiceTest do
     listen_port: 80,
     mise_path: "/usr/bin/mise",
     user: "milc",
-    workdir: "/tmp/devide-agent-worktrees/lan-mode-20260624",
+    workdir: "/tmp/casein-agent-worktrees/lan-mode-20260624",
     workspace: "home",
-    workspaces_root: "/tmp/dev_ide_workspaces"
+    workspaces_root: "/tmp/casein_workspaces"
   ]
 
   test "service unit runs the LAN backend as the developer user" do
@@ -24,7 +24,7 @@ defmodule Casein.Setup.LanServiceTest do
     assert text =~ "Description=Casein LAN backend"
     assert text =~ "User=milc"
     assert text =~ "Group=milc"
-    assert text =~ "WorkingDirectory=/tmp/devide-agent-worktrees/lan-mode-20260624"
+    assert text =~ "WorkingDirectory=/tmp/casein-agent-worktrees/lan-mode-20260624"
     assert text =~ ~s(Environment="CASEIN_LAN_INSECURE_HTTP=true")
     assert text =~ ~s(Environment="CASEIN_LAN_HOST=r630.local")
     assert text =~ ~s(Environment="CASEIN_DEFAULT_WORKSPACE=home")
@@ -45,7 +45,7 @@ defmodule Casein.Setup.LanServiceTest do
 
     paths = LanService.write_unit!(dir, @opts)
 
-    assert File.read!(paths.service_path) =~ "devide-lan-build-milc"
+    assert File.read!(paths.service_path) =~ "casein-lan-build-milc"
     assert Path.basename(paths.service_path) == "devide-lan.service"
   end
 end

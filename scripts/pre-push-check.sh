@@ -125,16 +125,16 @@ else
 fi
 
 log "boundary: agent launcher shims must never target ~/.local/bin again"
-# The shims moved to ~/.devide/agent-shims so plain terminals stay untouched
+# The shims moved to ~/.casein/agent-shims so plain terminals stay untouched
 # by DevIDE (operator call, 2026-07-13). Pin the installer's target dir and
 # the Elixir default; a regression here silently re-hijacks agent names
 # machine-wide.
-if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' scripts/install-agent-shims.sh; then
-  echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.devide/agent-shims" >&2
+if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"' scripts/install-agent-shims.sh; then
+  echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.casein/agent-shims" >&2
   exit 1
 fi
-if ! grep -q '@default_bin_dir "~/.devide/agent-shims"' lib/casein/agents/agent_shims.ex; then
-  echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.devide/agent-shims" >&2
+if ! grep -q '@default_bin_dir "~/.casein/agent-shims"' lib/casein/agents/agent_shims.ex; then
+  echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.casein/agent-shims" >&2
   exit 1
 fi
 

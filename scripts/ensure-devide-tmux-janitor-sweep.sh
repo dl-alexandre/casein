@@ -14,7 +14,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="devide-tmux-janitor-sweep.service"
 TIMER="devide-tmux-janitor-sweep.timer"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 
 START=1
 DISABLE=0

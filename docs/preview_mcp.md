@@ -131,7 +131,7 @@ screen activity.
 Production DevIDE traffic and ephemeral preview traffic use separate socket
 lanes:
 
-- Main app: `/run/devide/current.sock`
+- Main app: `/run/casein/current.sock`
 - Preview envs: `.devide-preview/sockets/*.sock`
 
 The preview router must never become the upstream for
@@ -151,7 +151,7 @@ scripts/verify-preview-socket-boundaries.sh --cleanup
 
 The script verifies the main socket responds, preview registry socket paths stay
 under `.devide-preview/sockets/`, and `scripts/preview-router.sh status` does
-not reference `/run/devide/current.sock`.
+not reference `/run/casein/current.sock`.
 
 ## Control-plane layers
 
@@ -458,7 +458,7 @@ Production can opt into browser automation with:
 CASEIN_PREVIEW_CONTROL_ADAPTER=playwright
 # Optional; relative paths resolve from the release app priv directory.
 CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
-CASEIN_PREVIEW_ARTIFACTS_ROOT=/opt/devide/preview_artifacts
+CASEIN_PREVIEW_ARTIFACTS_ROOT=/opt/casein/preview_artifacts
 ```
 
 For the systemd devbox deployment, the release build installs the locked
@@ -466,7 +466,7 @@ For the systemd devbox deployment, the release build installs the locked
 installed once for the service user:
 
 ```bash
-cd /opt/devide/release/lib/casein-*/priv/scripts
+cd /opt/casein/release/lib/casein-*/priv/scripts
 sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
 ```
 

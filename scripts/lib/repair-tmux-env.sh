@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 LOCAL_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 CANONICAL_SCRIPTS="${DEVIDE_SCRIPTS_ROOT:-${ROOT}/scripts}"
 # shellcheck source=agent-auth-profile.sh
@@ -191,7 +191,7 @@ repair_session() {
 
   checkout="$(default_checkout "$workspace_name")"
   scripts="$(scripts_for_checkout "$checkout")"
-  staging="${HOME}/.devide/agent-mcp/${workspace_name}"
+  staging="${HOME}/.casein/agent-mcp/${workspace_name}"
   env_sh="${staging}/env.sh"
 
   local tidewave_url
@@ -230,11 +230,11 @@ repair_session() {
   tmux set-environment -t "$session" DEVIDE_AGENT_ENV_FILE "$env_sh"
   local npm_prefix terminal_shims tools_bin repaired_path
   npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-  terminal_shims="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.devide/terminal-shims}"
-  tools_bin="${CASEIN_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}/bin"
+  terminal_shims="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.casein/terminal-shims}"
+  tools_bin="${CASEIN_TERMINAL_TOOLS_DIR:-${HOME}/.casein/tools}/bin"
   # Match PaneEnv / Shims.path_with_shims order: terminal shims → tools →
   # agent launchers → npm package bins → existing PATH (deduped below).
-  repaired_path="${terminal_shims}:${tools_bin}:${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${npm_prefix}/bin:${PATH}"
+  repaired_path="${terminal_shims}:${tools_bin}:${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}:${npm_prefix}/bin:${PATH}"
   repaired_path="$(
     PATH="$repaired_path" python3 - <<'PY'
 import os

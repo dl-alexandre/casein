@@ -136,7 +136,7 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
        when is_binary(path) and is_binary(leader_id) do
     if Regex.match?(~r/\A[0-9a-f]{24}\z/, leader_id) do
       home = Path.expand(System.get_env("HOME") || "/home/devbox")
-      root = Path.join([home, ".devide", "grok-homes", leader_id, "sessions"])
+      root = Path.join([home, ".casein", "grok-homes", leader_id, "sessions"])
       expanded = Path.expand(path)
 
       Path.basename(expanded) == "updates.jsonl" and

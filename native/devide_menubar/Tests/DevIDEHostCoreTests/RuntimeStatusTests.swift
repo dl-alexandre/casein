@@ -397,21 +397,21 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         let paths = try #require(
             HostPaths.detect(
                 environment: [
-                    "DEVIDE_RELEASE_ROOT": "/opt/devide/release",
-                    "CASEIN_DESKTOP_DATA_DIR": "/tmp/devide-data",
+                    "DEVIDE_RELEASE_ROOT": "/opt/casein/release",
+                    "CASEIN_DESKTOP_DATA_DIR": "/tmp/casein-data",
                 ],
                 defaults: try freshDefaults(), bundleResources: nil))
 
-        #expect(paths.statusFile.path == "/tmp/devide-data/runtime.json")
-        #expect(paths.devIdeBinary.path == "/opt/devide/release/bin/casein")
-        #expect(paths.migrateBinary.path == "/opt/devide/release/bin/migrate")
-        #expect(paths.logsDir.path == "/tmp/devide-data/runtime/log")
+        #expect(paths.statusFile.path == "/tmp/casein-data/runtime.json")
+        #expect(paths.devIdeBinary.path == "/opt/casein/release/bin/casein")
+        #expect(paths.migrateBinary.path == "/opt/casein/release/bin/migrate")
+        #expect(paths.logsDir.path == "/tmp/casein-data/runtime/log")
     }
 
     @Test func defaultsDataDirToApplicationSupport() throws {
         let paths = try #require(
             HostPaths.detect(
-                environment: ["DEVIDE_RELEASE_ROOT": "/opt/devide/release"],
+                environment: ["DEVIDE_RELEASE_ROOT": "/opt/casein/release"],
                 defaults: try freshDefaults(), bundleResources: nil))
 
         #expect(paths.dataDir.path.hasSuffix("Library/Application Support/DevIDE"))

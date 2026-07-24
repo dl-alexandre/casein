@@ -8,7 +8,7 @@ defmodule Casein.Agents.PaneEnvTest do
   @workspace %{
     id: "ws-123",
     name: "dalexandre-devide",
-    path: "/tmp/devide-checkout"
+    path: "/tmp/casein-checkout"
   }
 
   setup do

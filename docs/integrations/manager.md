@@ -160,8 +160,8 @@ Canonical artifacts live in
 see its README for the install runbook. `mix release` ships them at
 `<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
 activation step (documented in the deploy/README) then copies them into the
-stable `/opt/devide/deploy/` so the running devbox references stable paths
-independent of any release tree or git checkout. This is the reconciliation after commit 7204683 (stable `/opt/devide/deploy/`
+stable `/opt/casein/deploy/` so the running devbox references stable paths
+independent of any release tree or git checkout. This is the reconciliation after commit 7204683 (stable `/opt/casein/deploy/`
 sibling layout chosen so the installed unit survives `mv release` / `git pull`).
 See the deploy artifact README "Why the stable sibling directory?" section for
 the concrete failure mode that motivated the design. Decisions (from the open
@@ -173,13 +173,13 @@ questions, now resolved):
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
 - **Supervision: systemd unit**
   (`lib/casein/integrations/manager/deploy/devide.service`, activated into
-  the stable `/opt/devide/deploy/devide.service`). Host process in the `docker`
+  the stable `/opt/casein/deploy/devide.service`). Host process in the `docker`
   group — native `/data/workspaces` + docker-socket access, matches the
   `devbox-manager` service. A container buys no isolation here since the
   docker-socket mount is root-equivalent regardless.
 - **Database: dedicated Postgres container**
   (`lib/casein/integrations/manager/deploy/docker-compose.postgres.yml`,
-  activated into the stable `/opt/devide/deploy/docker-compose.postgres.yml`) on
+  activated into the stable `/opt/casein/deploy/docker-compose.postgres.yml`) on
   `127.0.0.1:15432` (a port
   clear of the devbox host's known occupants). The systemd unit brings it up
   `--wait`, then runs `bin/migrate`, then boots the release.
@@ -215,7 +215,7 @@ questions, now resolved):
    "all workspaces" view in `WorkspaceLive.Index`,
    `lib/casein/integrations/manager/deploy/` artifacts (release-bundled at
    `<release>/deploy/` via `rel/overlays/deploy/`, then activated into stable
-   `/opt/devide/deploy/`): systemd unit, dedicated-Postgres compose, env
+   `/opt/casein/deploy/`): systemd unit, dedicated-Postgres compose, env
    template, runbook). The post-7204683 path reconciliation ensures release
    swaps never break the unit.
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is

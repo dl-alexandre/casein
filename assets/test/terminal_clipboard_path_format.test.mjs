@@ -4,8 +4,8 @@ import test from "node:test"
 import {formatPath, formatPaths, pathModeFor} from "../js/terminal_clipboard_format.mjs"
 
 const image = {
-  path: "/data/workspaces/dalexandre/dev_ide/.devide/clipboard/20260709T115407Z-I6B-clipboard-image.png",
-  relative_path: ".devide/clipboard/20260709T115407Z-I6B-clipboard-image.png",
+  path: "/data/workspaces/dalexandre/dev_ide/.casein/clipboard/20260709T115407Z-I6B-clipboard-image.png",
+  relative_path: ".casein/clipboard/20260709T115407Z-I6B-clipboard-image.png",
   content_type: "image/png"
 }
 

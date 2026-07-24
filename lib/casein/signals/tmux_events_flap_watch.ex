@@ -56,7 +56,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
       # Enable on a host (canary / prod soak) — no restart required if already
       # compiled with the flag; restart the release so the listener child starts.
-      # /etc/devide/devide.env:
+      # /etc/casein/devide.env:
       DEVIDE_TMUX_EVENTS=1
 
       # Kill switch (immediate poll path on next watcher tick / resubscribe):

@@ -1,12 +1,12 @@
 # Dedicated Postgres for DevIDE-on-devbox (stable layout + activation in
-# /opt/devide/deploy/README.md and devide.service).
+# /opt/casein/deploy/README.md and devide.service).
 #
 # DevIDE itself runs as a systemd unit on the host (see devide.service); only
 # its database is containerized. Published on 127.0.0.1:15432 — a port chosen
 # to avoid the devbox host's known occupants: 5432 (host Postgres), 5433
 # (traintrac-db socat), 25432 (milc-db socat), 6381 (redis socat).
 #
-#   docker compose -f docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
+#   docker compose -f docker-compose.postgres.yml --env-file /etc/casein/devide.env up -d --wait
 #
 # The systemd unit runs exactly this as an ExecStartPre step.
 

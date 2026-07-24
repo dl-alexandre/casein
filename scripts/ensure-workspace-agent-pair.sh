@@ -4,7 +4,7 @@
 #
 # This is the mechanical half of the workspace-agent-pair skill: safe to run
 # from any cwd on the milc devbox when the target workspace is already paired
-# (staging under ~/.devide/agent-mcp/<name>/). Does not mint tokens — use
+# (staging under ~/.casein/agent-mcp/<name>/). Does not mint tokens — use
 # scripts/refresh-devbox-agent-pairing.sh for first-time pairing.
 #
 # Usage:
@@ -44,7 +44,7 @@ Options:
   --quiet            Less chatter
   -h, --help         Show this help
 
-Environment (usually from ~/.devide/agent-mcp/<name>/env.sh or tmux session):
+Environment (usually from ~/.casein/agent-mcp/<name>/env.sh or tmux session):
   DEVIDE_WORKSPACE_NAME, DEVIDE_WORKSPACE_ID, DEVIDE_CHECKOUT,
   DEVIDE_AGENT_MCP_HOME, CASEIN_API_TOKEN, DEVIDE_*_MCP_URL
 
@@ -102,7 +102,7 @@ esac
 # Always key staging by workspace *name*. Prefer ambient DEVIDE_AGENT_MCP_HOME
 # only when it already points at that name (session env). Never let a foreign
 # shell's DEVIDE_AGENT_MCP_HOME override an explicit --workspace.
-CANONICAL_STAGING="${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+CANONICAL_STAGING="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
   STAGING="$CANONICAL_STAGING"
 elif [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" && "${DEVIDE_AGENT_MCP_HOME}" == *"/agent-mcp/${WORKSPACE_NAME}" ]]; then
@@ -158,8 +158,8 @@ skill_source_dir() {
   for candidate in \
     "${ROOT}/.claude/skills" \
     "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
-    "/opt/devide/deploy-build/.claude/skills" \
-    "/opt/devide/release/lib/casein-0.1.0/priv/claude/skills"
+    "/opt/casein/deploy-build/.claude/skills" \
+    "/opt/casein/release/lib/casein-0.1.0/priv/claude/skills"
   do
     if [[ -d "${candidate}/preview-ui-walk" || -d "${candidate}/workspace-agent-pair" ]]; then
       printf '%s\n' "$candidate"
@@ -205,7 +205,7 @@ install_for_claude() {
   # Owner profile if present, else global (already done above).
   local profile="${CLAUDE_CONFIG_DIR:-}"
   if [[ -z "$profile" && -n "${DEVIDE_WORKSPACE_NAME:-}" ]]; then
-    local guess="${HOME}/.devide/agent-auth/profiles/${DEVIDE_WORKSPACE_NAME%%-*}/claude"
+    local guess="${HOME}/.casein/agent-auth/profiles/${DEVIDE_WORKSPACE_NAME%%-*}/claude"
     # profiles are per-owner (dalexandre), not per-workspace — leave global.
     :
   fi
@@ -314,8 +314,8 @@ verify_opencode() {
   # Prefer the real binary over the DevIDE shim (shim re-enters launch + worktree).
   if [[ -x "${HOME}/.opencode/bin/opencode" ]]; then
     real_bin="${HOME}/.opencode/bin/opencode"
-  elif [[ -L "${HOME}/.devide/real-bins/opencode" ]]; then
-    real_bin="$(readlink -f "${HOME}/.devide/real-bins/opencode")"
+  elif [[ -L "${HOME}/.casein/real-bins/opencode" ]]; then
+    real_bin="$(readlink -f "${HOME}/.casein/real-bins/opencode")"
   fi
   if [[ ! -x "$real_bin" ]]; then
     echo "verify: opencode binary not found — skip skill/config probe" >&2

@@ -202,7 +202,7 @@ against the **code** (docs win).
 10. **policy-deploy-export** — `docs/deploy.md` documents the Docker/compose
     path and defers the systemd path to `integrations/manager.md`, but does not
     describe the on-box deploy machinery this code implements (heartbeat
-    `Registry`, `/run/devide/current.sock` symlink, graceful `Drain` via POST
+    `Registry`, `/run/casein/current.sock` symlink, graceful `Drain` via POST
     `/api/drain`, `Drift` vs `origin/master`, `/api/deploy_status` `Health`
     probe). The new companion doc covers these; `deploy.md` intentionally
     unmodified.

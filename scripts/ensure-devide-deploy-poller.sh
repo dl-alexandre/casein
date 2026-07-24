@@ -39,15 +39,15 @@ install_poller_trigger_sudoers() {
   log "installing sudoers drop-in for webhook poller trigger (${SUDOERS_FILE})"
   printf '%s\n' \
     'devbox ALL=(root) NOPASSWD: /bin/systemctl start devide-deploy.service' \
-    'devbox ALL=(root) NOPASSWD: /usr/bin/install -o devbox -g devbox -m 664 /tmp/last-deploy-*.json /run/devide/last-deploy.json' |
+    'devbox ALL=(root) NOPASSWD: /usr/bin/install -o devbox -g devbox -m 664 /tmp/last-deploy-*.json /run/casein/last-deploy.json' |
     sudo tee "${SUDOERS_FILE}" >/dev/null
   sudo chmod 440 "${SUDOERS_FILE}"
   sudo visudo -cf "${SUDOERS_FILE}" >/dev/null
 }
 
 ensure_last_deploy_status_file() {
-  local status_file="/run/devide/last-deploy.json"
-  sudo mkdir -p /run/devide
+  local status_file="/run/casein/last-deploy.json"
+  sudo mkdir -p /run/casein
   if [ ! -f "${status_file}" ]; then
     sudo touch "${status_file}"
   fi

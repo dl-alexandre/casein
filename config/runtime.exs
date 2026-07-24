@@ -277,7 +277,7 @@ if config_env() == :prod and not release_cli? do
             Casein.Desktop.Runtime.database_path()
 
           lan_mode? ->
-            "/var/lib/devide/lan/devide.sqlite3"
+            "/var/lib/casein/lan/devide.sqlite3"
 
           true ->
             raise """
@@ -507,7 +507,7 @@ if config_env() == :prod and not release_cli? do
   # to this store so they survive restarts; the path must match
   # WorkspaceTokens.store_path/0. Env-provided tokens win on conflict.
   workspace_tokens_store =
-    Path.join(System.get_env("HOME") || "/home/devbox", ".devide/workspace-api-tokens.json")
+    Path.join(System.get_env("HOME") || "/home/devbox", ".casein/workspace-api-tokens.json")
 
   stored_workspace_tokens =
     with true <- File.regular?(workspace_tokens_store),

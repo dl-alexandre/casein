@@ -56,7 +56,7 @@ print(t)
 # workspace's scoped token, and fail closed when none exists.
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
-CASEIN_ENV_FILE_REF="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+CASEIN_ENV_FILE_REF="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 if ! workspace_scoped_token_is_registered_for \
     "$CASEIN_ENV_FILE_REF" "$DEVIDE_WORKSPACE_ID" "$CASEIN_API_TOKEN"; then
   SCOPED_TOKEN="$(
@@ -109,7 +109,7 @@ if [[ -z "${DEVIDE_CHECKOUT:-}" ]]; then
   esac
 fi
 HOME_DIR="${HOME:?HOME is required}"
-DEFAULT_STAGING="${HOME_DIR}/.devide/agent-mcp/${DEVIDE_WORKSPACE_NAME}"
+DEFAULT_STAGING="${HOME_DIR}/.casein/agent-mcp/${DEVIDE_WORKSPACE_NAME}"
 if [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" ]] && [[ "${DEVIDE_AGENT_MCP_HOME}" != "${DEFAULT_STAGING}" ]]; then
   unset DEVIDE_AGENT_MCP_HOME
 fi
@@ -330,7 +330,7 @@ chmod 600 "${SIDECHAT_SETTINGS}"
 # bundle contains no bearer token: .mcp.json references CASEIN_API_TOKEN from
 # this launch environment. A digest directory is never overwritten, so the
 # path supplied through ACP `_meta.pluginDirs` is reproducible and immutable.
-GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.devide/grok-bundles}"
+GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.casein/grok-bundles}"
 GROK_BUNDLE_ARGS=(
   build
   --bundle-root "${GROK_BUNDLE_ROOT}"
@@ -371,7 +371,7 @@ export DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
 # One private leader per workspace/worktree lets the human TUI and DevIDE ACP
 # attachment converge on the same Grok session without touching the global
 # ~/.grok/leader.sock. Keep the path short enough for Unix sockaddr_un.
-GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.devide/grok-leaders}"
+GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.casein/grok-leaders}"
 GROK_LEADER_KEY="$(printf '%s\0%s' "${DEVIDE_WORKSPACE_ID}" "$(realpath -m "${DEVIDE_CHECKOUT}")" | sha256sum | cut -c1-24)"
 DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
 DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
@@ -412,7 +412,7 @@ export DEVIDE_GROK_LEADER_SOCKET='${DEVIDE_GROK_LEADER_SOCKET}'
 export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'
 export DEVIDE_AGENT_ENV_FILE='${ENV_SH}'
 export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export PATH="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}:\${CASEIN_NPM_PREFIX}/bin:\${PATH}"
+export PATH="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}:\${CASEIN_NPM_PREFIX}/bin:\${PATH}"
 EOF
 chmod 600 "${ENV_SH_TMP}"
 mv -f "${ENV_SH_TMP}" "${ENV_SH}"

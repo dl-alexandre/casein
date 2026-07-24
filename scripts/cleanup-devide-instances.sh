@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Remove stale /run/devide/instances/*.json records (and orphan sockets).
+# Remove stale /run/casein/instances/*.json records (and orphan sockets).
 # Safe to run anytime; uses the same PID/cmdline checks as deploy-devbox-release.sh.
 #
 set -euo pipefail
 
-INST_DIR="/run/devide/instances"
+INST_DIR="/run/casein/instances"
 
 log() { printf '>>> %s\n' "$*"; }
 
@@ -15,7 +15,7 @@ dev_ide_release_pid_alive() {
   kill -0 "${pid}" 2>/dev/null || return 1
   cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
   case "${cmdline}" in
-    */opt/devide/release/*) return 0 ;;
+    */opt/casein/release/*) return 0 ;;
     *dev_ide_*@*) return 0 ;;
     *) return 1 ;;
   esac

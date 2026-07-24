@@ -1,7 +1,7 @@
 defmodule Casein.UAT.TierB do
   @moduledoc """
   Tier B — the post-deploy acceptance smoke. Drives the **live release node** over
-  its real MCP surface (`POST /api/preview/mcp` on `/run/devide/current.sock`) as
+  its real MCP surface (`POST /api/preview/mcp` on `/run/casein/current.sock`) as
   the workspace owner's forward-auth identity, runs a small set of read-mostly
   criteria agent-driven, and persists each as a `tier_b` `Casein.UAT.Run`.
 
@@ -21,7 +21,7 @@ defmodule Casein.UAT.TierB do
 
   Posting to the release socket sets `X-Auth-Request-Email` directly, bypassing
   the Caddy proxy that normally sets/strips it — so reaching
-  `/run/devide/current.sock` is equivalent to being any user. The socket's
+  `/run/casein/current.sock` is equivalent to being any user. The socket's
   filesystem permissions are the only auth boundary, and the app MUST ignore
   this header on any path not behind the trusted proxy. `:endpoint` must stay
   config-only — never derived from agent/verdict data.
@@ -29,7 +29,7 @@ defmodule Casein.UAT.TierB do
 
   alias Casein.UAT.{Run, TierB.SocketTransport, Verdict}
 
-  @default_socket "/run/devide/current.sock"
+  @default_socket "/run/casein/current.sock"
   @forward_auth_header "X-Auth-Request-Email"
 
   @doc "Build a JSON-RPC 2.0 request envelope for an MCP method."

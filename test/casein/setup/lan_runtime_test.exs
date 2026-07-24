@@ -7,7 +7,7 @@ defmodule Casein.Setup.LanRuntimeTest do
     config =
       LanRuntime.config(
         backend_port: 4999,
-        build_path: "/tmp/devide-lan-build-test",
+        build_path: "/tmp/casein-lan-build-test",
         group: "dev",
         home: "/tmp",
         home_workspace_path: "/tmp",
@@ -20,7 +20,7 @@ defmodule Casein.Setup.LanRuntimeTest do
         user: "dev",
         workdir: File.cwd!(),
         workspace: "home",
-        workspaces_root: "/tmp/devide-workspaces"
+        workspaces_root: "/tmp/casein-workspaces"
       )
 
     paths = LanRuntime.prepare_units!(config)

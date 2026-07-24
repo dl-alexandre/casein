@@ -589,7 +589,7 @@ defmodule Casein.Agents.Transcripts.Grok do
 
   defp managed_sessions_root(path) do
     home = Path.expand(System.get_env("HOME") || "/home/devbox")
-    base = Path.join([home, ".devide", "grok-homes"])
+    base = Path.join([home, ".casein", "grok-homes"])
     relative = Path.relative_to(path, base)
 
     case Path.split(relative) do

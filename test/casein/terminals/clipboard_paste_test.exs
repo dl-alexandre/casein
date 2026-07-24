@@ -15,7 +15,7 @@ defmodule Casein.Terminals.ClipboardPasteTest do
     %{root: root}
   end
 
-  test "saves a base64 image under .devide clipboard directory", %{root: root} do
+  test "saves a base64 image under .casein clipboard directory", %{root: root} do
     data = Base.encode64("png bytes")
 
     assert {:ok, result} =
@@ -27,7 +27,7 @@ defmodule Casein.Terminals.ClipboardPasteTest do
 
     assert result.bytes == byte_size("png bytes")
     assert result.content_type == "image/png"
-    assert result.relative_path =~ ~r|^\.devide/clipboard/|
+    assert result.relative_path =~ ~r|^\.casein/clipboard/|
     assert result.path == Path.join(root, result.relative_path)
     assert File.read!(result.path) == "png bytes"
     assert Path.extname(result.path) == ".png"
@@ -65,10 +65,10 @@ defmodule Casein.Terminals.ClipboardPasteTest do
              })
 
     assert result.content_type == "text/plain"
-    assert result.relative_path =~ ~r|^\.devide/clipboard/|
+    assert result.relative_path =~ ~r|^\.casein/clipboard/|
     assert result.relative_path =~ "notes-from-drag.txt"
     assert File.read!(result.path) == "hello"
-    assert Path.dirname(result.path) == Path.join(root, ".devide/clipboard")
+    assert Path.dirname(result.path) == Path.join(root, ".casein/clipboard")
   end
 
   test "excludes clipboard handoff files from local git status", %{root: root} do
@@ -89,7 +89,7 @@ defmodule Casein.Terminals.ClipboardPasteTest do
 
     assert exclude
            |> String.split("\n")
-           |> Enum.count(&(String.trim(&1) == ".devide/clipboard/")) == 1
+           |> Enum.count(&(String.trim(&1) == ".casein/clipboard/")) == 1
   end
 
   test "excludes clipboard handoff files from a git subdirectory workspace", %{root: root} do
@@ -108,7 +108,7 @@ defmodule Casein.Terminals.ClipboardPasteTest do
     assert git_status!(repo_root) == ""
 
     exclude = File.read!(git_path!(workspace_root, "info/exclude"))
-    assert exclude =~ "nested/.devide/clipboard/"
+    assert exclude =~ "nested/.casein/clipboard/"
   end
 
   test "adds an image extension when clipboard image name has none", %{root: root} do

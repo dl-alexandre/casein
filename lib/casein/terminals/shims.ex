@@ -7,8 +7,8 @@ defmodule Casein.Terminals.Shims do
   invoked directly by absolute path when debugging.
   """
 
-  @default_dir "~/.devide/terminal-shims"
-  @default_tool_root "~/.devide/tools"
+  @default_dir "~/.casein/terminal-shims"
+  @default_tool_root "~/.casein/tools"
   @default_path "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
   @shell_integration_name "shell-integration.bash"
   @zsh_integration_name "shell-integration.zsh"
@@ -42,7 +42,7 @@ defmodule Casein.Terminals.Shims do
         template: "tool_themes/elio/theme.toml"
       }
     },
-    # grok is an agent launcher shimmed into ~/.devide/agent-shims by
+    # grok is an agent launcher shimmed into ~/.casein/agent-shims by
     # install-agent-shims.sh. The terminal-shims dir is FIRST on
     # path_with_shims/1, so a materialized grok shim here would shadow that
     # launcher — this entry must stay `shim: false` and exists only so
@@ -608,7 +608,7 @@ defmodule Casein.Terminals.Shims do
     # Casein dirs must be at the FRONT of PATH, not merely present: the user
     # rc files sourced above prepend agent-installer dirs (~/.grok/bin,
     # ~/.opencode/bin, …) over the pane env, and an agent name resolving past
-    # ~/.devide/agent-shims silently skips MCP injection. So strip existing
+    # ~/.casein/agent-shims silently skips MCP injection. So strip existing
     # occurrences and re-prepend, instead of skipping dirs already on PATH.
     # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
     # then npm package bins (so Casein shims win over bare package symlinks);
@@ -632,9 +632,9 @@ defmodule Casein.Terminals.Shims do
       export PATH
     }
     __devide_prepend_path \\
-      "${HOME:-}/.devide/terminal-shims" \\
-      "${HOME:-}/.devide/tools/bin" \\
-      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${HOME:-}/.casein/terminal-shims" \\
+      "${HOME:-}/.casein/tools/bin" \\
+      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.casein/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path
@@ -791,9 +791,9 @@ defmodule Casein.Terminals.Shims do
       export PATH
     }
     __devide_prepend_path \\
-      "${HOME:-}/.devide/terminal-shims" \\
-      "${HOME:-}/.devide/tools/bin" \\
-      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.devide/agent-shims}" \\
+      "${HOME:-}/.casein/terminal-shims" \\
+      "${HOME:-}/.casein/tools/bin" \\
+      "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.casein/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
     unset -f __devide_prepend_path

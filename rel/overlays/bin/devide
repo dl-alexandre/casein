@@ -11,8 +11,8 @@ RELEASE_DIR="$(cd -P -- "${BIN_DIR}/.." && pwd)"
 APP_BIN="${BIN_DIR}/casein"
 MIGRATE_BIN="${BIN_DIR}/migrate"
 
-ENV_FILE="${DEVIDE_LAN_ENV_FILE:-/etc/devide/lan.env}"
-PUBLIC_ENV_FILE="${DEVIDE_LAN_PUBLIC_ENV_FILE:-/etc/devide/lan.public.env}"
+ENV_FILE="${DEVIDE_LAN_ENV_FILE:-/etc/casein/lan.env}"
+PUBLIC_ENV_FILE="${DEVIDE_LAN_PUBLIC_ENV_FILE:-/etc/casein/lan.public.env}"
 UNIT_DIR="${DEVIDE_LAN_UNIT_DIR:-/etc/systemd/system}"
 BACKEND_SERVICE="devide-lan.service"
 EDGE_SOCKET="devide-lan-http-edge.socket"
@@ -22,8 +22,8 @@ CURL="${DEVIDE_LAN_CURL:-curl}"
 JOURNALCTL="${DEVIDE_LAN_JOURNALCTL:-journalctl}"
 UFW="${DEVIDE_LAN_UFW:-ufw}"
 REQUIRE_ROOT="${DEVIDE_LAN_REQUIRE_ROOT:-true}"
-INSTALL_RELEASE_DIR="${DEVIDE_LAN_RELEASE_DIR:-/opt/devide/lan-release}"
-UPDATE_ROOT="${DEVIDE_LAN_UPDATE_ROOT:-/opt/devide/lan}"
+INSTALL_RELEASE_DIR="${DEVIDE_LAN_RELEASE_DIR:-/opt/casein/lan-release}"
+UPDATE_ROOT="${DEVIDE_LAN_UPDATE_ROOT:-/opt/casein/lan}"
 RELEASES_DIR="${UPDATE_ROOT}/releases"
 DOWNLOADS_DIR="${UPDATE_ROOT}/downloads"
 CURRENT_LINK="${UPDATE_ROOT}/current"
@@ -87,14 +87,14 @@ Commands:
   update rollback Swap current and previous LAN release symlinks, restart, and probe.
 
 Environment:
-  DEVIDE_LAN_ENV_FILE       Default: /etc/devide/lan.env
-  DEVIDE_LAN_PUBLIC_ENV_FILE Default: /etc/devide/lan.public.env
-  DEVIDE_LAN_RELEASE_DIR     Default: /opt/devide/lan-release
-  DEVIDE_LAN_UPDATE_ROOT     Default: /opt/devide/lan
+  DEVIDE_LAN_ENV_FILE       Default: /etc/casein/lan.env
+  DEVIDE_LAN_PUBLIC_ENV_FILE Default: /etc/casein/lan.public.env
+  DEVIDE_LAN_RELEASE_DIR     Default: /opt/casein/lan-release
+  DEVIDE_LAN_UPDATE_ROOT     Default: /opt/casein/lan
   DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
-  DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/dev_ide_workspaces
+  DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/casein_workspaces
   CASEIN_HOME_WORKSPACE_PATH Default: service user's home directory
-  DATABASE_PATH              SQLite DB path. Default: /var/lib/devide/lan/devide.sqlite3
+  DATABASE_PATH              SQLite DB path. Default: /var/lib/casein/lan/devide.sqlite3
   CASEIN_LAN_HOST          Default: <hostname>.local
   PORT                      Backend loopback port. Default: 4000
   CASEIN_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
@@ -819,13 +819,13 @@ ensure_env_file() {
   append_env_if_missing PHX_HOST "${PHX_HOST:-$(default_lan_host)}"
   append_env_if_missing HOME "${DEVIDE_LAN_HOME:-${lan_home}}"
   append_env_if_missing LANG "${LANG:-C.UTF-8}"
-  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/devide/lan/devide.sqlite3}"
+  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/casein/lan/devide.sqlite3}"
   append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev}"
   append_env_if_missing SECRET_KEY_BASE "${SECRET_KEY_BASE:-$(random_hex)}"
   append_env_if_missing CASEIN_API_TOKEN "${CASEIN_API_TOKEN:-$(random_hex)}"
   append_env_if_missing RELEASE_COOKIE "${RELEASE_COOKIE:-$(random_hex)}"
   append_env_if_missing CASEIN_WORKSPACE_SOURCE local
-  append_env_if_missing CASEIN_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/dev_ide_workspaces}"
+  append_env_if_missing CASEIN_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/casein_workspaces}"
   append_env_if_missing CASEIN_DEFAULT_WORKSPACE "${CASEIN_DEFAULT_WORKSPACE:-home}"
   append_env_if_missing CASEIN_HOME_WORKSPACE_PATH "${CASEIN_HOME_WORKSPACE_PATH:-${lan_home}}"
   append_env_if_missing CASEIN_LAN_FRIENDLY_PATHS true

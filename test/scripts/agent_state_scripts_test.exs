@@ -85,13 +85,13 @@ defmodule Scripts.AgentStateScriptsTest do
       run_state_script(%{
         "GROK_HOOK_EVENT" => "session_start",
         "DEVIDE_AGENT_LAUNCH_CONTEXT" => "grok",
-        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/devide-grok-leaders-test/abc.sock",
+        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/casein-grok-leaders-test/abc.sock",
         "DEVIDE_GROK_BUNDLE_DIR" => "/tmp/grok-bundles/sha256-#{digest}",
         "DEVIDE_GROK_BUNDLE_DIGEST" => digest
       })
 
     assert body =~ ~s("agent_runtime": "grok")
-    assert body =~ ~s("grok_leader_socket": "/tmp/devide-grok-leaders-test/abc.sock")
+    assert body =~ ~s("grok_leader_socket": "/tmp/casein-grok-leaders-test/abc.sock")
     assert body =~ ~s("grok_bundle_digest": "#{digest}")
   end
 

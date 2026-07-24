@@ -6,7 +6,7 @@ devide_npm_prefix() {
 }
 
 devide_agent_shim_dir() {
-  printf '%s\n' "${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  printf '%s\n' "${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
 }
 
 real_agent_bin_path_without_shims() {
@@ -67,7 +67,7 @@ real_agent_npm_candidate() {
 
 real_agent_bin() {
   local name="$1"
-  local recorded="${HOME}/.devide/real-bins/${name}"
+  local recorded="${HOME}/.casein/real-bins/${name}"
   local candidate=""
 
   case "$name" in

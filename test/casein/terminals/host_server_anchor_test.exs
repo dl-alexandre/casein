@@ -6,13 +6,13 @@ defmodule Casein.Terminals.HostServerAnchorTest do
 
   describe "stable_dir/2" do
     test "returns the first candidate directory that exists" do
-      exists? = fn d -> d == "/opt/devide" end
-      assert HostServerAnchor.stable_dir(["/opt/devide", "/"], exists?) == "/opt/devide"
+      exists? = fn d -> d == "/opt/casein" end
+      assert HostServerAnchor.stable_dir(["/opt/casein", "/"], exists?) == "/opt/casein"
     end
 
     test "skips missing candidates and picks the next existing one" do
       exists? = fn d -> d == "/" end
-      assert HostServerAnchor.stable_dir(["/opt/devide", "/"], exists?) == "/"
+      assert HostServerAnchor.stable_dir(["/opt/casein", "/"], exists?) == "/"
     end
 
     test "falls back to $HOME when no candidate exists" do
@@ -24,11 +24,11 @@ defmodule Casein.Terminals.HostServerAnchorTest do
       end)
 
       exists? = fn d -> d == "/home/tester" end
-      assert HostServerAnchor.stable_dir(["/opt/devide"], exists?) == "/home/tester"
+      assert HostServerAnchor.stable_dir(["/opt/casein"], exists?) == "/home/tester"
     end
 
     test "falls back to / when nothing (not even $HOME) exists" do
-      assert HostServerAnchor.stable_dir(["/opt/devide"], fn _ -> false end) == "/"
+      assert HostServerAnchor.stable_dir(["/opt/casein"], fn _ -> false end) == "/"
     end
   end
 

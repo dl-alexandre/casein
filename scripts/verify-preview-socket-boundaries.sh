@@ -4,7 +4,7 @@
 # separate ownership lanes.
 #
 # Main app:
-#   /run/devide/current.sock
+#   /run/casein/current.sock
 #
 # Preview envs:
 #   <repo-parent>/.devide-preview/sockets/*.sock
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MAIN_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
+MAIN_SOCK="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
 PREVIEW_HOME="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.devide-preview}"
 PREVIEW_INSTANCES="${PREVIEW_HOME}/instances"
 PREVIEW_SOCKETS="${PREVIEW_HOME}/sockets"
@@ -58,8 +58,8 @@ json_get() {
 }
 
 main_socket_check() {
-  [[ "$MAIN_SOCK" = /run/devide/current.sock ]] ||
-    fail "main socket path is ${MAIN_SOCK}; expected /run/devide/current.sock"
+  [[ "$MAIN_SOCK" = /run/casein/current.sock ]] ||
+    fail "main socket path is ${MAIN_SOCK}; expected /run/casein/current.sock"
 
   [[ -S "$MAIN_SOCK" ]] ||
     fail "main socket missing: ${MAIN_SOCK}"

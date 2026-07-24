@@ -101,6 +101,6 @@ defmodule Casein.Agents.Transcripts do
   defp auth_root do
     Application.get_env(:casein, :agent_auth_profile_root) ||
       System.get_env("DEVIDE_AGENT_AUTH_ROOT") ||
-      Path.join([System.get_env("HOME") || "/home/devbox", ".devide", "agent-auth"])
+      Path.join([System.get_env("HOME") || "/home/devbox", ".casein", "agent-auth"])
   end
 end

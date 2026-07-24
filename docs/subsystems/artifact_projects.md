@@ -13,7 +13,7 @@ is `POST /api/artifacts/mcp`.
 - Keep generated source files in the artifact worktree, not in the main checkout.
 - Build runtime preview server metadata so the existing preview launcher can
   serve static artifacts with live DevIDE preview surfaces.
-- Preserve prompt history and write `.devide/artifact.json` alongside the
+- Preserve prompt history and write `.casein/artifact.json` alongside the
   generated files.
 
 This subsystem deliberately avoids the existing `DevIDE.Previews.Artifacts`
@@ -32,7 +32,7 @@ preview server metadata, preview URL shape, and runtime surface export that
 agent-created worktrees already use.
 
 `DevIDE.ArtifactProjects.update/2` writes new files, appends prompt feedback to
-the stored history, refreshes `.devide/artifact.json`, commits the edit, and
+the stored history, refreshes `.casein/artifact.json`, commits the edit, and
 re-observes the runtime so the preview metadata stays current.
 
 `DevIDE.ArtifactProjects.snapshot/2` creates an explicit Git commit, using
@@ -79,13 +79,13 @@ Artifact worktrees live under `:dev_ide, :artifact_projects_root`. Releases can
 set it with:
 
 ```bash
-CASEIN_ARTIFACT_PROJECTS_ROOT=/opt/devide/artifact_projects
+CASEIN_ARTIFACT_PROJECTS_ROOT=/opt/casein/artifact_projects
 ```
 
 When this root is configured, `DevIDE.Runtimes` automatically accepts worktrees
 under it as agent/runtime worktrees. Without this coupling, artifact creation
 would succeed on disk but fail runtime preview registration when the root lives
-outside the default `/tmp/devide-agent-worktrees` tree.
+outside the default `/tmp/casein-agent-worktrees` tree.
 
 For a local smoke test against an already-known workspace:
 
@@ -104,7 +104,7 @@ The task prints the same JSON-ready project payload returned by
   "name": "Artifact Smoke",
   "kind": "static",
   "status": "draft",
-  "worktree_path": "/opt/devide/artifact_projects/workspace/artifact-smoke",
+  "worktree_path": "/opt/casein/artifact_projects/workspace/artifact-smoke",
   "preview_url": "http://localhost:4100",
   "preview_open_arguments": {
     "workspace_id": "workspace-id",

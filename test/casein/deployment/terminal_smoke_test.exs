@@ -13,7 +13,7 @@ defmodule Casein.Deployment.TerminalSmokeTest do
       # A held-open deleted dir still passes File.stat/File.dir?; only the
       # readlink suffix reveals it. This is the case the File.stat detector missed.
       read_link = fn "/proc/1234/cwd" ->
-        {:ok, "/tmp/devide-agent-worktrees/agent-grok-phase-a-arbiter-20260708012302 (deleted)"}
+        {:ok, "/tmp/casein-agent-worktrees/agent-grok-phase-a-arbiter-20260708012302 (deleted)"}
       end
 
       refute TerminalSmoke.proc_cwd_alive?(1234, read_link)
@@ -31,7 +31,7 @@ defmodule Casein.Deployment.TerminalSmokeTest do
     end
 
     test "false when the pane path does not exist" do
-      refute TerminalSmoke.pane_cwd_alive?("/tmp/devide-agent-worktrees/reaped", fn _ -> false end)
+      refute TerminalSmoke.pane_cwd_alive?("/tmp/casein-agent-worktrees/reaped", fn _ -> false end)
     end
 
     test "false for a nil or empty pane path" do

@@ -71,7 +71,7 @@ config :casein, :tmux_server_label, "devide_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
 config :casein, :tmux_host_anchor, false
 
-# Keep test-boot deployment heartbeats out of the real /run/devide/instances.
+# Keep test-boot deployment heartbeats out of the real /run/casein/instances.
 # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
 # them, so an unsandboxed `mix test` boot would overwrite that live canary's
 # heartbeat with the test VM's pid — the deploy then reads a dead pid, drops
@@ -92,7 +92,7 @@ config :casein,
 config :casein, :caddy_admin_probe, false
 
 # Neutralize SessionOwner.superseded?/0 in tests. It compares the inherited
-# DEVIDE_HTTP_SOCKET against whatever /run/devide/current.sock resolves to;
+# DEVIDE_HTTP_SOCKET against whatever /run/casein/current.sock resolves to;
 # devbox test VMs inherit a real DEVIDE_HTTP_SOCKET from the spawning canary, so
 # without this every test owner would read as "superseded" and stop asserting
 # tmux sizes. Point the seam at a path that isn't a symlink → read_link fails →
@@ -103,7 +103,7 @@ config :casein,
        Path.join(System.tmp_dir!(), "devide-test-no-current-#{System.pid()}.sock")
 
 # Keep runtime-minted workspace tokens (Casein.Agents.WorkspaceTokens) out of
-# the real ~/.devide store when tests exercise the materializer/pane env.
+# the real ~/.casein store when tests exercise the materializer/pane env.
 config :casein,
        :workspace_tokens_store,
        Path.join(

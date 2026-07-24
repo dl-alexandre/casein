@@ -10,7 +10,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
   its in-memory buffer from the archive when present so reconnect replay can
   show recent history even though the new pane is empty.
 
-  Default on-disk location is durable under `~/.devide/tmux-scrollback` (not
+  Default on-disk location is durable under `~/.casein/tmux-scrollback` (not
   `/tmp`). Override with `:tmux_scrollback_archive_dir` or
   `CASEIN_TMUX_SCROLLBACK_DIR`. Call `delete/1` on intentional session kill
   so reopening a sid does not false-positive as a crash recovery.
@@ -36,7 +36,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
   Directory for durable on-disk spill.
 
   Precedence: app config → `CASEIN_TMUX_SCROLLBACK_DIR` →
-  `$HOME/.devide/tmux-scrollback` → tmp fallback.
+  `$HOME/.casein/tmux-scrollback` → tmp fallback.
   """
   def archive_dir do
     Application.get_env(:casein, :tmux_scrollback_archive_dir) ||
@@ -46,7 +46,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
 
   defp default_archive_dir do
     home = System.get_env("HOME") || System.tmp_dir!()
-    Path.join([home, ".devide", "tmux-scrollback"])
+    Path.join([home, ".casein", "tmux-scrollback"])
   end
 
   @doc "Max bytes retained per session (default 256 KiB)."

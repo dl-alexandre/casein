@@ -59,7 +59,7 @@ defmodule Casein.Deployment.HealthTest do
                           "handle" => [
                             %{
                               "handler" => "reverse_proxy",
-                              "upstreams" => [%{"dial" => "unix//run/devide/current.sock"}]
+                              "upstreams" => [%{"dial" => "unix//run/casein/current.sock"}]
                             }
                           ]
                         }
@@ -88,7 +88,7 @@ defmodule Casein.Deployment.HealthTest do
 
   test "caddy_app_dial returns the Casein app upstream, not oauth2-proxy" do
     assert Health.caddy_app_dial(caddy_config(), @host) ==
-             "unix//run/devide/current.sock"
+             "unix//run/casein/current.sock"
   end
 
   test "status reports ok when injected checks pass" do

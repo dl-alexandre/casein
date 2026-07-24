@@ -19,7 +19,7 @@
 //   node playwright_walk.mjs --manifest m.json --base http://127.0.0.1:<port> --out ./run \
 //     [--settle-ms 1500] [--tidewave-url http://127.0.0.1:<port>/tidewave/mcp]
 //
-// Manifest login (app-owned .devide/preview-walk.json):
+// Manifest login (app-owned .casein/preview-walk.json):
 //   "login": { "kind": "redirect_cookie", "path": "/dev/login", "lands_on": "/admin" }
 //   // legacy: "type": "cookie"
 // Optional runtime evidence:

@@ -5,7 +5,7 @@ defmodule Casein.Terminals.HostServerAnchor do
 
   A tmux server daemon permanently inherits the cwd of the process that first
   starts it, and this daemon outlives BEAM restarts (`KillMode=process`). If a
-  `Session` running in a `/tmp/devide-agent-worktrees/...` worktree wins the race
+  `Session` running in a `/tmp/casein-agent-worktrees/...` worktree wins the race
   to be the first tmux call, the daemon's cwd becomes that worktree — which the
   worktree sweep later reaps. After that, every new pane starts in a deleted cwd
   and shells fail with `getcwd: ... No such file or directory` (the 2026-07-09
@@ -26,7 +26,7 @@ defmodule Casein.Terminals.HostServerAnchor do
   alias Casein.Terminals.TmuxServer
 
   @anchor "__devide_keepalive"
-  @candidate_dirs ["/opt/devide", "/"]
+  @candidate_dirs ["/opt/casein", "/"]
 
   @doc """
   Idempotently ensure the host tmux server is running and rooted at a stable

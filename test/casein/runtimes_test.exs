@@ -68,7 +68,7 @@ defmodule Casein.RuntimesTest do
         branch: "feature/runtime",
         status: "provisioned",
         tmux_session_id: "devide_ws-runtime_rt",
-        worktree_path: "/tmp/ws-runtime/.devide/runtimes/manual"
+        worktree_path: "/tmp/ws-runtime/.casein/runtimes/manual"
       )
 
     assert runtime.status == "provisioned"
@@ -86,7 +86,7 @@ defmodule Casein.RuntimesTest do
         runtime_id: "rt-preview",
         host_id: "host-a",
         status: "provisioned",
-        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-preview",
+        worktree_path: "/tmp/ws-runtime/.casein/runtimes/rt-preview",
         runtime_profile: %{
           "name" => "phoenix",
           "env" => %{"PORT" => "4101"},
@@ -491,7 +491,7 @@ defmodule Casein.RuntimesTest do
         status: "provisioned",
         tools: ["mix"],
         tmux_session_id: "devide_ws_rt_decorate",
-        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-decorate"
+        worktree_path: "/tmp/ws-runtime/.casein/runtimes/rt-decorate"
       )
 
     decorated =

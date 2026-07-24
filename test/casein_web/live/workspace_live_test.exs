@@ -1476,7 +1476,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
       Path.wildcard(
         Path.join([
           workspace_path,
-          ".devide",
+          ".casein",
           "clipboard",
           "*-dropped-image.png"
         ])

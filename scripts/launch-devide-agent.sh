@@ -67,7 +67,7 @@ agent_worktree_ensure "$RUNTIME" "${DEVIDE_AGENT_TASK:-adhoc}"
 # Token-bearing launcher scratch files live under a path every managed Grok
 # sandbox denies wholesale. Same-UID mode bits alone do not isolate concurrent
 # agent processes from secrets staged in the system temp directory.
-DEVIDE_LAUNCHER_SECRET_DIR="${HOME}/.devide/agent-mcp/.launcher-tmp"
+DEVIDE_LAUNCHER_SECRET_DIR="${HOME}/.casein/agent-mcp/.launcher-tmp"
 mkdir -p "$DEVIDE_LAUNCHER_SECRET_DIR"
 chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
 
@@ -164,7 +164,7 @@ run_repair_tmux_env
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
-# owner auth profiles under ~/.devide/agent-auth: signed-in profiles, plus
+# owner auth profiles under ~/.casein/agent-auth: signed-in profiles, plus
 # empty profiles of registered owners (those fail closed — the provider CLI
 # runs its own sign-in inside the profile instead of using the host global
 # login). Anything else falls back to the host global provider auth.
@@ -361,7 +361,7 @@ grok_install_state_hook() {
   local hooks_dir="${GROK_HOME:-${HOME}/.grok}/hooks"
   local dst="${hooks_dir}/devide-agent-state.json"
   local script_src="${ROOT}/scripts/devide-agent-state.sh"
-  local trusted_dir="${HOME}/.devide/grok-bootstrap-hooks"
+  local trusted_dir="${HOME}/.casein/grok-bootstrap-hooks"
   local script_dst="${trusted_dir}/devide-agent-state.sh"
   local tmp
   [[ -f "$src" ]] || return 0
@@ -381,7 +381,7 @@ grok_install_state_hook() {
 }
 
 grok_bind_state_hook_path() {
-  local trusted_dir="${HOME}/.devide/grok-bootstrap-hooks"
+  local trusted_dir="${HOME}/.casein/grok-bootstrap-hooks"
   mkdir -p "$trusted_dir"
   chmod 700 "$trusted_dir"
   export DEVIDE_GROK_BOOTSTRAP_HOOK="${trusted_dir}/devide-agent-state.sh"
@@ -535,7 +535,7 @@ grok_prepare_managed_home() {
   local socket="$1" grok_bin="$2" reuse="${3:-false}"
   local leader_id managed_root managed_home provider_auth home_action
   leader_id="$(basename "$(dirname "$socket")")"
-  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.devide/grok-homes}"
+  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
   home_action="prepare"
   [[ "$reuse" == "true" ]] && home_action="resolve"
 
@@ -583,7 +583,7 @@ grok_prepare_managed_home() {
 grok_reset_managed_home() {
   local socket="$1" leader_id managed_root reset_home
   leader_id="$(basename "$(dirname "$socket")")"
-  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.devide/grok-homes}"
+  managed_root="${DEVIDE_GROK_HOME_ROOT:-${HOME}/.casein/grok-homes}"
   reset_home="$(python3 "${ROOT}/scripts/lib/grok-managed-home.py" prepare \
     "$managed_root" "$leader_id")" || return 1
   [[ "$(realpath -m "$reset_home")" == "$(realpath -m "$GROK_HOME")" ]]
@@ -621,11 +621,11 @@ grok_install_sandbox_profile() {
     "${DEVIDE_GROK_LEADER_ROOT}/.devide-runtime" \
     "${DEVIDE_GROK_LEADER_LOG}" \
     "$bootstrap_file" \
-    "${HOME}/.devide/agent-mcp" \
-    "${HOME}/.devide/grok-launcher-secrets" \
-    "${HOME}/.devide/grok-leaders/*/capability" \
-    "${HOME}/.devide/workspace-api-tokens.json" \
-    "${HOME}/.devide/agent-auth" \
+    "${HOME}/.casein/agent-mcp" \
+    "${HOME}/.casein/grok-launcher-secrets" \
+    "${HOME}/.casein/grok-leaders/*/capability" \
+    "${HOME}/.casein/workspace-api-tokens.json" \
+    "${HOME}/.casein/agent-auth" \
     "${HOME}/.ssh" \
     "${HOME}/.gnupg" \
     "${HOME}/.aws" \
@@ -647,7 +647,7 @@ grok_install_sandbox_profile() {
     "${HOME}/.grok/auth.json" \
     "${GROK_HOME}/auth.json" \
     "${HOME}/.grok/mcp_credentials.json" \
-    "/etc/devide/devide.env" \
+    "/etc/casein/devide.env" \
     "$tmux_dir" \
     "/proc" \
     "${sensitive_agent_envs[@]}" >/dev/null

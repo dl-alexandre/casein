@@ -4,18 +4,18 @@
 # Shipped inside every release at <release>/bin/activate_devbox_deploy
 # (via rel/overlays/bin/).
 #
-# Usage (after placing the new release tree at /opt/devide/release):
-#   sudo /opt/devide/release/bin/activate_devbox_deploy
+# Usage (after placing the new release tree at /opt/casein/release):
+#   sudo /opt/casein/release/bin/activate_devbox_deploy
 #
-# This performs the idempotent population of the stable /opt/devide/deploy/
+# This performs the idempotent population of the stable /opt/casein/deploy/
 # directory from the release-bundled artifacts and refreshes the systemd unit.
 # It prints the remaining (sudo systemctl) commands the operator must run.
 
 set -eu
 
-RELEASE_DIR="${RELEASE_DIR:-/opt/devide/release}"
+RELEASE_DIR="${RELEASE_DIR:-/opt/casein/release}"
 DEPLOY_SRC="${RELEASE_DIR}/deploy"
-DEPLOY_DST="/opt/devide/deploy"
+DEPLOY_DST="/opt/casein/deploy"
 
 if [ ! -d "${DEPLOY_SRC}" ]; then
   echo "ERROR: ${DEPLOY_SRC} not found." >&2
@@ -24,8 +24,8 @@ if [ ! -d "${DEPLOY_SRC}" ]; then
 fi
 
 echo ">>> DevIDE devbox activation from ${DEPLOY_SRC}"
-sudo mkdir -p /opt/devide
-sudo chown devbox:devbox /opt/devide
+sudo mkdir -p /opt/casein
+sudo chown devbox:devbox /opt/casein
 sudo mkdir -p "${DEPLOY_DST}"
 sudo cp -a "${DEPLOY_SRC}/." "${DEPLOY_DST}/"
 sudo chown -R devbox:devbox "${DEPLOY_DST}"
@@ -41,5 +41,5 @@ echo ">>> Next steps (copy-paste):"
 echo "    sudo systemctl restart devide     # or enable --now for first boot"
 echo "    sudo journalctl -u devide -f"
 echo
-echo "    (Also ensure /etc/devide/devide.env exists — see ${DEPLOY_DST}/README.md)"
+echo "    (Also ensure /etc/casein/devide.env exists — see ${DEPLOY_DST}/README.md)"
 echo "Activation helper complete."

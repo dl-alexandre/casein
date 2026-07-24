@@ -89,11 +89,11 @@ defmodule CaseinWeb.ArtifactProjectControllerTest do
     assert text_response(conn, 404) == "not found"
   end
 
-  test "404 for dotfiles (.git / .devide never served)", ctx do
+  test "404 for dotfiles (.git / .casein never served)", ctx do
     conn =
       ctx.conn
       |> as("owner@example.com")
-      |> get(artifact_path(ctx.project_id, ".devide/artifact.json"))
+      |> get(artifact_path(ctx.project_id, ".casein/artifact.json"))
 
     assert text_response(conn, 404) == "not found"
   end

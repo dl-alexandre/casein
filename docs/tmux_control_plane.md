@@ -145,8 +145,8 @@ DevIDE configures `:tmux_ctl, :terminal_env` at boot from
 `new-session`, `new-window`, `split-window`, and `set-environment` defaults so
 new shells inherit the DevIDE terminal capability contract. The generic
 contract is `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; app-specific
-behavior stays lazy in command shims such as `~/.devide/terminal-shims/elio`.
-The pane `PATH` also includes `~/.devide/tools/bin/`, where known missing tools
+behavior stays lazy in command shims such as `~/.casein/terminal-shims/elio`.
+The pane `PATH` also includes `~/.casein/tools/bin/`, where known missing tools
 can be installed on first invocation. For example, typing `elio` in a DevIDE
 terminal resolves the real binary if present; otherwise the shim runs
 `devide ensure-installed elio` or its materialized fallback installer, then

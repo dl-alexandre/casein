@@ -16,9 +16,9 @@ set -euo pipefail
 TARBALL="${1:?usage: deploy-devbox-release.sh /path/to/release.tgz [revision]}"
 REVISION="${2:-manual}"
 
-APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
+APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/casein}"
 SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 USER_NAME="${CASEIN_DEPLOY_USER:-devbox}"
 GROUP_NAME="${CASEIN_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -29,8 +29,8 @@ ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
 RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
-INST_DIR="/run/devide/instances"
-CURRENT_SYMLINK="/run/devide/current.sock"
+INST_DIR="/run/casein/instances"
+CURRENT_SYMLINK="/run/casein/current.sock"
 OLD_CURRENT_TARGET=""
 CURRENT_SYMLINK_SWAPPED=0
 CADDY_UPSTREAM_PATCHED=0
@@ -97,7 +97,7 @@ neutralize_legacy_service() {
   sudo mkdir -p "${dropin_dir}"
   sudo tee "${dropin_dir}/90-devide-canary-noop.conf" >/dev/null <<EOF
 # Managed by DevIDE deploy-devbox-release.sh.
-# Traffic is served by transient devide-<uuid> units via /run/devide/current.sock.
+# Traffic is served by transient devide-<uuid> units via /run/casein/current.sock.
 # Keep the legacy enabled unit harmless on boot instead of binding the active socket.
 [Service]
 Type=oneshot
@@ -397,7 +397,7 @@ sudo systemd-run \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
-  --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
+  --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
   "${ACTIVE_RELEASE}/bin/casein" start
@@ -557,18 +557,18 @@ for i, route in enumerate(routes):
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
   case "${CADDY_PREVIOUS_DIAL}" in
-    unix//run/devide/current.sock)
+    unix//run/casein/current.sock)
       log "Caddy upstream for ${CADDY_HOST} already points at current.sock — skipping migration"
       ;;
     127.0.0.1:4000)
       log "Caddy upstream for ${CADDY_HOST} uses loopback proxy — skipping unix migration"
       ;;
     *)
-      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
+      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/casein/current.sock"
       if sudo curl -fsS -X PATCH \
         "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
         -H "content-type: application/json" \
-        -d '"unix//run/devide/current.sock"' >/dev/null; then
+        -d '"unix//run/casein/current.sock"' >/dev/null; then
         CADDY_UPSTREAM_PATCHED=1
         log "Caddy upstream patched (persists across Caddy restarts via autosave)"
       else

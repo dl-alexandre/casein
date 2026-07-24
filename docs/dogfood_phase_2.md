@@ -277,7 +277,7 @@ Reachability check:
 Attempted flow:
 
 1. Created a temporary checkout on `milcmini`:
-   `/tmp/devide-remote-runner-phase2.D3HHUq`.
+   `/tmp/casein-remote-runner-phase2.D3HHUq`.
 2. Ran `mix deps.get` successfully on the remote host.
 3. Started a local controller on port `4192`.
 4. Exposed it to `milcmini` with an SSH reverse tunnel:
@@ -326,7 +326,7 @@ Fix:
 Validation:
 
 1. Rsynced the working tree to `milcmini` at
-   `/tmp/devide-remote-runner-phase2.fixed`.
+   `/tmp/casein-remote-runner-phase2.fixed`.
 2. Ran `mix deps.get` on `milcmini`.
 3. Started a local controller on port `4193`.
 4. Exposed the local controller to `milcmini` with
@@ -335,7 +335,7 @@ Validation:
 6. Started the remote runner:
    `mix runner.start --endpoint http://localhost:4193 --runner-id 5c78f2a5-5fcf-45dc-9127-e1d42693d65c --hostname milcmini`.
 7. Delegated `compile` to workspace path
-   `/tmp/devide-remote-runner-phase2.fixed`.
+   `/tmp/casein-remote-runner-phase2.fixed`.
 
 Evidence:
 
@@ -347,7 +347,7 @@ Evidence:
 | Execution | `52789799-a6df-4e16-9c03-8adbf51dae07` |
 | Command | `compile` |
 | State | `completed` |
-| Workspace path | `/tmp/devide-remote-runner-phase2.fixed` |
+| Workspace path | `/tmp/casein-remote-runner-phase2.fixed` |
 
 Operational result:
 
@@ -418,7 +418,7 @@ Evidence:
 | Execution | `b9562988-257e-4a7a-a987-dc95f0024e92` |
 | Command | `compile` |
 | State | `completed` |
-| Workspace path | `/tmp/devide-remote-runner-smoke.32137` |
+| Workspace path | `/tmp/casein-remote-runner-smoke.32137` |
 
 Operational result:
 
@@ -442,7 +442,7 @@ share tmux adapters, so `mix precommit` protects both.
 
 | Step | Check |
 |------|-------|
-| Deploy | Pairing changes are on `master` and CI deployed `/opt/devide/release` |
+| Deploy | Pairing changes are on `master` and CI deployed `/opt/casein/release` |
 | Smoke | `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
 | Layout | **Agents → Apply Agent Pair layout** |
 | Mode | Workspace is `:manual` (raw terminal) |

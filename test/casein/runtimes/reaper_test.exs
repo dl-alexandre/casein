@@ -50,13 +50,13 @@ defmodule Casein.Runtimes.ReaperTest do
       RuntimeSeed.seed_runtime("ws-reaper",
         runtime_id: "rt-reaper-dry-log",
         status: "provisioned",
-        worktree_path: "/tmp/devide-reaper-dry-log",
+        worktree_path: "/tmp/casein-reaper-dry-log",
         created_at: old,
         heartbeat_at: old,
         metadata: %{
           "kind" => "agent_worktree",
           "worktree_status" => "clean",
-          "worktree_path" => "/tmp/devide-reaper-dry-log"
+          "worktree_path" => "/tmp/casein-reaper-dry-log"
         }
       )
 
@@ -85,7 +85,7 @@ defmodule Casein.Runtimes.ReaperTest do
              "[runtime-reaper] invoking Runtimes.expire_stale/2 ttl_seconds=3600 dry_run=true"
 
     assert log =~
-             "[runtime-reaper] dry-run: would reap runtime rt-reaper-dry-log worktree=/tmp/devide-reaper-dry-log"
+             "[runtime-reaper] dry-run: would reap runtime rt-reaper-dry-log worktree=/tmp/casein-reaper-dry-log"
 
     assert log =~ "[runtime-reaper] dry-run: skipping Runtimes.cleanup_expired/2"
   end
@@ -103,7 +103,7 @@ defmodule Casein.Runtimes.ReaperTest do
         metadata: %{
           "kind" => "agent_worktree",
           "worktree_status" => "clean",
-          "worktree_path" => "/tmp/devide-reaper-clean"
+          "worktree_path" => "/tmp/casein-reaper-clean"
         }
       )
 
@@ -132,7 +132,7 @@ defmodule Casein.Runtimes.ReaperTest do
         metadata: %{
           "kind" => "agent_worktree",
           "worktree_status" => "dirty",
-          "worktree_path" => "/tmp/devide-reaper-dirty"
+          "worktree_path" => "/tmp/casein-reaper-dirty"
         }
       )
 

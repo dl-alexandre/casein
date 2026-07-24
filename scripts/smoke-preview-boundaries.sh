@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-MAIN_SOCKET="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
+MAIN_SOCKET="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
 DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-}}"

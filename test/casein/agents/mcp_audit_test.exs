@@ -324,7 +324,7 @@ defmodule Casein.Agents.MCPAuditTest do
                     recording_id: "rec-2",
                     artifact_path: "/preview-artifacts/ws-preview/rec-2.webm",
                     url: "/preview-artifacts/ws-preview/rec-2.webm",
-                    video_path: "/tmp/devide-recordings/secret.webm"
+                    video_path: "/tmp/casein-recordings/secret.webm"
                   }}
                )
 
@@ -339,7 +339,7 @@ defmodule Casein.Agents.MCPAuditTest do
       refute Map.has_key?(metadata, :video_path)
       refute Map.has_key?(metadata, :recording_path)
       refute Map.has_key?(metadata, :screenshot_url)
-      refute inspect(metadata) =~ "/tmp/devide-recordings"
+      refute inspect(metadata) =~ "/tmp/casein-recordings"
 
       assert %{results: [%{preview: preview}]} =
                PreviousSessions.search("ws-preview",

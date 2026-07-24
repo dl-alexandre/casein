@@ -84,7 +84,7 @@ config :casein,
     deploy_service: "devide-deploy.service",
     remote_head_cache_ttl_ms: 60_000,
     ls_remote_timeout_ms: 5_000,
-    last_deploy_path: "/run/devide/last-deploy.json",
+    last_deploy_path: "/run/casein/last-deploy.json",
     poller_watch_interval_ms: 30_000,
     stale_in_progress_ms: 2_700_000,
     phase_stale_in_progress_ms: %{"activate" => 600_000}

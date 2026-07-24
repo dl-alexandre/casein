@@ -12,10 +12,10 @@ defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
       )
 
     home = Path.join(root, "home")
-    leader_root = Path.join(home, ".devide/grok-leaders")
+    leader_root = Path.join(home, ".casein/grok-leaders")
     transcript_dir = Path.join(home, ".grok/sessions/2026/07/session")
     digest = String.duplicate("a", 64)
-    bundle_dir = Path.join(home, ".devide/grok-bundles/sha256-#{digest}")
+    bundle_dir = Path.join(home, ".casein/grok-bundles/sha256-#{digest}")
 
     File.mkdir_p!(leader_root)
     File.chmod!(leader_root, 0o700)

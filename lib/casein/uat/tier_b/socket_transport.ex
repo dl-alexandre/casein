@@ -1,7 +1,7 @@
 defmodule Casein.UAT.TierB.SocketTransport do
   @moduledoc """
   Default `Casein.UAT.TierB.Transport` — POSTs a JSON-RPC request to the live
-  release node over its Unix domain socket (`/run/devide/current.sock`, the canary
+  release node over its Unix domain socket (`/run/casein/current.sock`, the canary
   units, NOT the `:4000` dev server — the two-instance split).
 
   > **Not exercised by the unit suite.** It dials a real release socket, so Tier B

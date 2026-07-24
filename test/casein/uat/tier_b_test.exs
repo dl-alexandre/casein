@@ -38,11 +38,11 @@ defmodule Casein.UAT.TierBTest do
              TierB.rpc("preview_navigate", %{"path" => "/cart"},
                transport: FakeTransport,
                identity: "owner@example.com",
-               endpoint: "/run/devide/current.sock"
+               endpoint: "/run/casein/current.sock"
              )
 
     call = FakeTransport.last()
-    assert call.endpoint == "/run/devide/current.sock"
+    assert call.endpoint == "/run/casein/current.sock"
     assert call.headers["X-Auth-Request-Email"] == "owner@example.com"
     assert call.request["method"] == "preview_navigate"
     assert call.request["params"] == %{"path" => "/cart"}
@@ -101,7 +101,7 @@ defmodule Casein.UAT.TierBTest do
                TierB.run_criterion("c", session.id, %{scenario_id: "smoke"}, agent: agent)
 
       assert run.scenario_id == "smoke"
-      assert run.target_instance == "/run/devide/current.sock"
+      assert run.target_instance == "/run/casein/current.sock"
       assert Repo.get(Run, run.id)
     end
 

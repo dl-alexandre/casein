@@ -213,13 +213,13 @@ defmodule TmuxCtl.ClientTest do
   test "new_window includes configured terminal env" do
     Application.put_env(:tmux_ctl, :terminal_env, %{
       "CASEIN_CLIPBOARD" => "osc52",
-      "PATH" => "/tmp/devide-shims:/usr/bin"
+      "PATH" => "/tmp/casein-shims:/usr/bin"
     })
 
     assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
     assert_receive {:tmux_runner, argv}
     assert contains_sequence?(argv, ["-e", "CASEIN_CLIPBOARD=osc52"])
-    assert contains_sequence?(argv, ["-e", "PATH=/tmp/devide-shims:/usr/bin"])
+    assert contains_sequence?(argv, ["-e", "PATH=/tmp/casein-shims:/usr/bin"])
   end
 
   test "new_window ignores malformed terminal env config" do

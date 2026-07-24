@@ -10,7 +10,7 @@
 
 1. **Primary checkout is deploy infrastructure, not the default edit surface.**
    `/data/workspaces/dalexandre/dev_ide` (and equivalents) exists to fetch remotes,
-   run the deploy poller (`/opt/devide/deploy-build`), and materialize MCP configs.
+   run the deploy poller (`/opt/casein/deploy-build`), and materialize MCP configs.
    **Rule**: no uncommitted edits; no agent or human should use it as `$PWD` during
    active work.
 
@@ -49,7 +49,7 @@
 | Location | Role | Allowed edits? | Agent default `$PWD`? |
 |----------|------|----------------|----------------------|
 | `/data/workspaces/.../dev_ide` | Fetch, poller base, MCP materialization | No | Never |
-| `$TMPDIR/devide-agent-worktrees/` | All development, tests, commits | Yes | Always |
+| `$TMPDIR/casein-agent-worktrees/` | All development, tests, commits | Yes | Always |
 
 ### Enforcement at launch
 
@@ -66,7 +66,7 @@ Environment knobs:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DEVIDE_AGENT_WORKTREE_ROOT` | `$TMPDIR/devide-agent-worktrees` | Worktree parent directory |
+| `DEVIDE_AGENT_WORKTREE_ROOT` | `$TMPDIR/casein-agent-worktrees` | Worktree parent directory |
 | `DEVIDE_AGENT_WORKTREE_BASE` | `origin/master` | Base ref for new worktrees |
 | `DEVIDE_AGENT_TASK` | `adhoc` | Task slug in branch name |
 | `DEVIDE_AGENT_SKIP_WORKTREE` | `0` | Set `1` to opt out (escape hatch) |
@@ -133,7 +133,7 @@ master (protected; green pre-push gate)
 
 1. `git fetch origin`
 2. `git rebase origin/master` on `merge-agent-worktree-sessions`
-3. `git worktree add /tmp/devide-rebase-$(date +%s) merge-agent-worktree-sessions`
+3. `git worktree add /tmp/casein-rebase-$(date +%s) merge-agent-worktree-sessions`
 4. Split WIP: worktree-session core in one PR; preview recordings in a follow-up
 5. Mark frozen paths in [`in-progress.md`](in-progress.md) until merge
 6. Delete the long-lived branch and its worktree after merge
@@ -152,7 +152,7 @@ master (protected; green pre-push gate)
 
 **Today**
 
-- Poller already builds from `/opt/devide/deploy-build` at the target SHA and runs
+- Poller already builds from `/opt/casein/deploy-build` at the target SHA and runs
   the full pre-push gate before packaging — a `--no-verify` push cannot activate
   until that worktree gate passes.
 - `deploy-local.sh` deploys the **current checkout** immediately; the poller

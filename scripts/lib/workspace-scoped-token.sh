@@ -29,7 +29,7 @@ workspace_scoped_token_read_json() {
 
 # Print the scoped token for a workspace, or nothing when none exists.
 # Merges the env file registry with the runtime-minted token store written by
-# DevIDE.Agents.WorkspaceTokens (~/.devide/workspace-api-tokens.json).
+# DevIDE.Agents.WorkspaceTokens (~/.casein/workspace-api-tokens.json).
 # Args: env_file workspace_id
 workspace_scoped_token_lookup() {
   local env_file="$1"
@@ -37,7 +37,7 @@ workspace_scoped_token_lookup() {
 
   workspace_scoped_token_read_json "$env_file" |
     WORKSPACE_ID="$workspace_id" \
-      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.devide/workspace-api-tokens.json}" \
+      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
       python3 -c "
 import json, os, sys
 
@@ -77,7 +77,7 @@ workspace_scoped_token_is_registered_for() {
 
   workspace_scoped_token_read_json "$env_file" |
     WORKSPACE_ID="$workspace_id" TOKEN="$token" \
-      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.devide/workspace-api-tokens.json}" \
+      TOKEN_STORE="${DEVIDE_WORKSPACE_TOKENS_STORE:-${HOME}/.casein/workspace-api-tokens.json}" \
       python3 -c "
 import json, os, sys
 

@@ -208,7 +208,7 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
   defp managed_transcript_path(leader_id) do
     Path.join([
       System.get_env("HOME") || "/home/devbox",
-      ".devide",
+      ".casein",
       "grok-homes",
       leader_id,
       "sessions",

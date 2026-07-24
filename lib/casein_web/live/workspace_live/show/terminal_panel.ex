@@ -975,7 +975,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
   end
 
   # Prefer a readable tail for long worktree/agent labels
-  # ("devide-agent-worktrees/foo" → "…/foo", "agent/grok/adhoc-…" → last segment).
+  # ("casein-agent-worktrees/foo" → "…/foo", "agent/grok/adhoc-…" → last segment).
   defp mobile_short_session_label(label) when is_binary(label) do
     trimmed = String.trim(label)
 

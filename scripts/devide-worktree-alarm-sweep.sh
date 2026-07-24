@@ -15,8 +15,8 @@ set -euo pipefail
 
 MODE="sweep"
 TTL_SECONDS="${DEVIDE_WORKTREE_ALARM_TTL_SECONDS:-86400}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
-RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/devide/release/bin/casein}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+RELEASE_BIN="${DEVIDE_RELEASE_BIN:-/opt/casein/release/bin/casein}"
 
 usage() {
   sed -n '2,13p' "$0"

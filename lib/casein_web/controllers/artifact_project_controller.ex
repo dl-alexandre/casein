@@ -121,7 +121,7 @@ defmodule CaseinWeb.ArtifactProjectController do
     cond do
       not is_binary(root) -> :error
       # PathSafety guards traversal + symlink escape but NOT dotfiles; refuse them
-      # so `.git/` (full history) and `.devide/artifact.json` are never served.
+      # so `.git/` (full history) and `.casein/artifact.json` are never served.
       Enum.any?(segments, &dotfile?/1) -> :error
       true -> do_resolve(root, relative_path(segments))
     end

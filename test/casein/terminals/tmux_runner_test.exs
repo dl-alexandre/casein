@@ -291,7 +291,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
   end
 
   defp unique_cwd do
-    cwd = "/tmp/devide-tmuxrunner-probe-#{System.unique_integer([:positive])}"
+    cwd = "/tmp/casein-tmuxrunner-probe-#{System.unique_integer([:positive])}"
     key = {TmuxRunner, :container_tmux, cwd}
     on_exit(fn -> :persistent_term.erase(key) end)
     cwd

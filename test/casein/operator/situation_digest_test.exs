@@ -193,7 +193,7 @@ defmodule Casein.Operator.SituationDigestTest do
 
   test "build honors configured freeze sentinel globs" do
     prev = Application.get_env(:casein, :freeze_sentinel_globs)
-    Application.put_env(:casein, :freeze_sentinel_globs, [".devide/freeze-*"])
+    Application.put_env(:casein, :freeze_sentinel_globs, [".casein/freeze-*"])
 
     on_exit(fn ->
       if prev,
@@ -202,8 +202,8 @@ defmodule Casein.Operator.SituationDigestTest do
     end)
 
     root = tmp_dir!("frozen-globs")
-    File.mkdir_p!(Path.join(root, ".devide"))
-    File.write!(Path.join(root, ".devide/freeze-review"), "lib/only\n")
+    File.mkdir_p!(Path.join(root, ".casein"))
+    File.write!(Path.join(root, ".casein/freeze-review"), "lib/only\n")
     # The default convention is not scanned once globs are configured.
     File.mkdir_p!(Path.join(root, ".claude"))
     File.write!(Path.join(root, ".claude/.freeze"), "")
@@ -213,7 +213,7 @@ defmodule Casein.Operator.SituationDigestTest do
     assert {:ok, digest} = SituationDigest.build("ws-frozen-globs")
 
     assert [scope] = digest.frozen_scopes
-    assert scope.sentinel == Path.join(root, ".devide/freeze-review")
+    assert scope.sentinel == Path.join(root, ".casein/freeze-review")
     assert scope.raw == "lib/only"
   end
 

@@ -5,7 +5,7 @@
 # .github/workflows/deploy-devbox.yml, push trigger commented out).
 #
 # Driven by devide-deploy.timer (every ~2 min). Each tick:
-#   1. Reads the deployed revision (DEVIDE_GIT_REVISION in /etc/devide/devide.env).
+#   1. Reads the deployed revision (DEVIDE_GIT_REVISION in /etc/casein/devide.env).
 #   2. Fetches origin/master.
 #   3. If origin/master advanced past the deployed revision, builds a release
 #      from a CLEAN DETACHED WORKTREE pinned to that exact SHA — never the
@@ -27,20 +27,20 @@ set -euo pipefail
 # copy from a /tmp path — without it, ROOT would be derived from the temp $0 and
 # point outside the repo, breaking every git call.
 ROOT="${DEVIDE_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
-DEPLOY_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+DEPLOY_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/casein}"
 WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
 BRANCH="${DEVIDE_DEPLOY_BRANCH:-master}"
-LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/devide-deploy-poller.lock}"
+LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/casein-deploy-poller.lock}"
 ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
-CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
+CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
 CACHE_ROOT="${DEVIDE_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
-LAST_DEPLOY_FILE="${DEVIDE_LAST_DEPLOY_FILE:-/run/devide/last-deploy.json}"
+LAST_DEPLOY_FILE="${DEVIDE_LAST_DEPLOY_FILE:-/run/casein/last-deploy.json}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
 
 # Atomically records deploy-poller outcomes for the running release to read via
-# DevIDE.Deployment.LastDeploy (/run/devide/last-deploy.json by default).
+# DevIDE.Deployment.LastDeploy (/run/casein/last-deploy.json by default).
 write_deploy_status() {
   local outcome="$1"
   local target_sha="${2:-}"
@@ -102,7 +102,7 @@ with open(path, "w", encoding="utf-8") as handle:
     return 0
   }
 
-  # /run/devide is root-owned on the devbox; stage in /tmp then install atomically.
+  # /run/casein is root-owned on the devbox; stage in /tmp then install atomically.
   if sudo install -o devbox -g devbox -m 664 "$tmp" "$LAST_DEPLOY_FILE" 2>/dev/null; then
     :
   elif install -o "$(id -un)" -g "$(id -gn)" -m 664 "$tmp" "$LAST_DEPLOY_FILE" 2>/dev/null; then
@@ -237,7 +237,7 @@ ensure_agent_shims() {
   if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh --check >/dev/null 2>&1); then
     missing=""
     for name in grok claude codex opencode agent devide; do
-      if [ ! -x "${CASEIN_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}/${name}" ]; then
+      if [ ! -x "${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}/${name}" ]; then
         missing="${missing} ${name}"
       fi
     done

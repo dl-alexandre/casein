@@ -26,7 +26,7 @@
 
 ```bash
 CODE_SHA=$(git log -1 --format=%H -- docs/crucial_improvements.md)^
-VERIFY=/tmp/devide-verify-$$
+VERIFY=/tmp/casein-verify-$$
 git worktree add --detach "$VERIFY" "$CODE_SHA"
 cd "$VERIFY"
 mise exec -- mix deps.get    # first run only
@@ -162,7 +162,7 @@ Items where sessions, scrollback, or workspace attachment fail the user promise 
 | **Source** | `docs/state_machines.md` terminal lifecycle rule 3, `lib/casein/terminals/tmux_janitor.ex`, `config/runtime.exs` (`:tmux_idle_seconds`, prod default 600s) |
 | **Gap** | After `:tmux_idle_seconds` with **no LiveView subscriber**, `TmuxJanitor` kills `devide_`-prefixed tmux sessions. Operator closes tab → work may be destroyed despite FP-2 "sessions durable by default." |
 | **Invariant** | **FP-2**, **FP-8**, **FP-9**, product §8 promises 1–2 |
-| **Verify** | `test/casein/terminals/tmux_janitor_test.exs`; check prod `CASEIN_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` |
+| **Verify** | `test/casein/terminals/tmux_janitor_test.exs`; check prod `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` |
 | **Rationale** | The persistence story (tmux survives) conflicts with idle GC policy; prod needs either disabled GC, much longer TTL, or explicit operator opt-in to kill idle sessions. |
 | **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `CASEIN_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `devide_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
 
@@ -314,7 +314,7 @@ Items that block repeatable push→deploy→dogfood loops or hide regressions.
 | Field | Detail |
 |-------|--------|
 | **Source** | `AGENTS.md` friction table, `lib/casein/deployment/drift.ex`, `test/casein/deployment/drift_test.exs` |
-| **Gap** | `bash scripts/deploy-local.sh` activates checkout builds immediately, but the on-box poller redeploys `origin/master` within ~2 min and overwrites manual releases. Drift banner appears only when `/etc/devide/devide.env` SHA/label differs from `origin/master`. |
+| **Gap** | `bash scripts/deploy-local.sh` activates checkout builds immediately, but the on-box poller redeploys `origin/master` within ~2 min and overwrites manual releases. Drift banner appears only when `/etc/casein/devide.env` SHA/label differs from `origin/master`. |
 | **Invariant** | AGENTS.md "everything that must stay deployed must land in git first" |
 | **Verify** | `mise exec -- mix test test/casein/deployment/drift_test.exs` |
 | **Rationale** | Operators dogfooding from dirty checkouts lose work silently; banner helps but prevention (push-first workflow) remains procedural. |

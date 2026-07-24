@@ -44,7 +44,7 @@ defmodule Casein.Agents.TranscriptsTest do
       managed =
         Path.join([
           home,
-          ".devide",
+          ".casein",
           "grok-homes",
           leader_id,
           "sessions",
@@ -93,7 +93,7 @@ defmodule Casein.Agents.TranscriptsTest do
       managed_pending =
         Path.join([
           home,
-          ".devide/grok-homes",
+          ".casein/grok-homes",
           "0123456789abcdef01234567",
           "sessions",
           "project",
@@ -106,7 +106,7 @@ defmodule Casein.Agents.TranscriptsTest do
     end
 
     test "accepts jsonl under Casein auth profiles", %{home: home} do
-      auth_root = Path.join([home, ".devide", "agent-auth"])
+      auth_root = Path.join([home, ".casein", "agent-auth"])
       Application.put_env(:casein, :agent_auth_profile_root, auth_root)
 
       path =

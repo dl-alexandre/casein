@@ -9,7 +9,7 @@ defmodule Casein.Terminals.ClipboardPaste do
   """
 
   @max_file_bytes 25 * 1024 * 1024
-  @clipboard_exclude ".devide/clipboard/"
+  @clipboard_exclude ".casein/clipboard/"
   @image_extensions %{
     "image/png" => ".png",
     "image/jpeg" => ".jpg",
@@ -123,7 +123,7 @@ defmodule Casein.Terminals.ClipboardPaste do
     safe_name = safe_filename(name, type)
     stamp = DateTime.utc_now() |> Calendar.strftime("%Y%m%dT%H%M%SZ")
     suffix = System.unique_integer([:positive]) |> Integer.to_string(36)
-    rel = Path.join([".devide", "clipboard", "#{stamp}-#{suffix}-#{safe_name}"])
+    rel = Path.join([".casein", "clipboard", "#{stamp}-#{suffix}-#{safe_name}"])
     path = Path.expand(Path.join(root, rel))
 
     if String.starts_with?(path, root <> "/") do

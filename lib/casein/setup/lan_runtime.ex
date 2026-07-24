@@ -8,7 +8,7 @@ defmodule Casein.Setup.LanRuntime do
   alias Casein.Setup.LanService
   alias Casein.Setup.LocalDomain
 
-  @default_workspaces_root "/tmp/dev_ide_workspaces"
+  @default_workspaces_root "/tmp/casein_workspaces"
   @status_timeout 4_000
 
   def config(opts \\ []) when is_list(opts) do

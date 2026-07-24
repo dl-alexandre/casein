@@ -302,7 +302,7 @@ On the milc devbox, MCP is also reachable at
 Same-host agents may use `http://127.0.0.1:4000/api/terminals/mcp`.
 
 Deploy durability: commit and push to `master` before relying on devbox
-behavior — `deploy-devbox.yml` replaces `/opt/devide/release` from git. See
+behavior — `deploy-devbox.yml` replaces `/opt/casein/release` from git. See
 `AGENTS.md` (Devbox agent pairing).
 
 ## Tool Flow

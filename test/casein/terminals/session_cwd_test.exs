@@ -18,8 +18,8 @@ defmodule Casein.Terminals.SessionCwdTest do
       # /data/workspaces — i.e. the scratch home PTY and /tmp agent worktrees.
       assert Session.safe_local_cwd("/home/devbox", fn _ -> true end) == "/home/devbox"
 
-      assert Session.safe_local_cwd("/tmp/devide-agent-worktrees/w", fn _ -> true end) ==
-               "/tmp/devide-agent-worktrees/w"
+      assert Session.safe_local_cwd("/tmp/casein-agent-worktrees/w", fn _ -> true end) ==
+               "/tmp/casein-agent-worktrees/w"
     end
 
     test "falls back to $HOME when the requested cwd was reaped" do
@@ -34,7 +34,7 @@ defmodule Casein.Terminals.SessionCwdTest do
       exists? = fn path -> path == "/home/tester" end
 
       assert Session.safe_local_cwd(
-               "/tmp/devide-agent-worktrees/agent-grok-phase-a-arbiter-20260708012302",
+               "/tmp/casein-agent-worktrees/agent-grok-phase-a-arbiter-20260708012302",
                exists?
              ) == "/home/tester"
     end

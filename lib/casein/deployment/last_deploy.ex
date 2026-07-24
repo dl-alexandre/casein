@@ -1,6 +1,6 @@
 defmodule Casein.Deployment.LastDeploy do
   @moduledoc """
-  Reads the on-box deploy poller status file (`/run/devide/last-deploy.json`).
+  Reads the on-box deploy poller status file (`/run/casein/last-deploy.json`).
 
   The poller writes this file on every deploy attempt so the running release can
   distinguish "origin/master advanced, deploy in flight" from "deploy of SHA X
@@ -11,7 +11,7 @@ defmodule Casein.Deployment.LastDeploy do
 
   alias Casein.Deployment.{Drift, Version}
 
-  @default_path "/run/devide/last-deploy.json"
+  @default_path "/run/casein/last-deploy.json"
   @stale_in_progress_ms 2_700_000
   @phase_stale_in_progress_ms %{"activate" => 600_000}
 

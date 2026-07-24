@@ -119,7 +119,7 @@ Processes: only `MemoryAdapter` is a long-lived process (test-only GenServer). T
 - **Agent-worktree admission is a security boundary.** Paths must be under the
   workspace root or a configured agent-worktree root (`:agent_worktree_roots` config,
   `CASEIN_AGENT_WORKTREE_ROOTS` env, plus defaults like
-  `$TMPDIR/devide-agent-worktrees`, `~/.claude`, `~/.local/share/{opencode,codex}`).
+  `$TMPDIR/casein-agent-worktrees`, `~/.claude`, `~/.local/share/{opencode,codex}`).
   The main checkout is explicitly refused.
 - **`isolation_mode`** for observed worktrees is always `"worktree"`; `host_id`
   defaults to `"local"`.

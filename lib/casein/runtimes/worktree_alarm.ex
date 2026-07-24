@@ -346,7 +346,7 @@ defmodule Casein.Runtimes.WorktreeAlarm do
   end
 
   defp default_agent_worktree_roots do
-    [Path.join(System.tmp_dir!(), "devide-agent-worktrees")]
+    [Path.join(System.tmp_dir!(), "casein-agent-worktrees")]
   end
 
   defp env_agent_worktree_roots do

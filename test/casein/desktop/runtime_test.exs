@@ -24,11 +24,11 @@ defmodule Casein.Desktop.RuntimeTest do
   end
 
   test "uses the explicit desktop data directory for local state" do
-    System.put_env("CASEIN_DESKTOP_DATA_DIR", "/tmp/devide-desktop")
+    System.put_env("CASEIN_DESKTOP_DATA_DIR", "/tmp/casein-desktop")
 
-    assert Runtime.data_dir() == "/tmp/devide-desktop"
-    assert Runtime.database_path() == "/tmp/devide-desktop/devide.sqlite3"
-    assert Runtime.status_path() == "/tmp/devide-desktop/runtime.json"
+    assert Runtime.data_dir() == "/tmp/casein-desktop"
+    assert Runtime.database_path() == "/tmp/casein-desktop/devide.sqlite3"
+    assert Runtime.status_path() == "/tmp/casein-desktop/runtime.json"
   end
 
   test "requires an explicit non-privileged port for the desktop listener" do

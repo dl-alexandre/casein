@@ -57,7 +57,7 @@ defmodule Mix.Tasks.Casein.Doctor do
 
     root =
       opts[:workspaces_root] || System.get_env("CASEIN_WORKSPACES_ROOT") ||
-        "/tmp/dev_ide_workspaces"
+        "/tmp/casein_workspaces"
 
     http_port = env_int("PORT") || 4000
     https_port = env_int("CASEIN_LAN_HTTPS_PORT") || 4443

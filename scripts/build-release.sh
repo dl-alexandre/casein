@@ -115,7 +115,7 @@ fi
 
 # Verify deploy artifacts for devbox activation (rel/overlays/deploy/ + new
 # bin/activate_devbox_deploy helper). These are copied into the stable
-# /opt/devide/deploy/ by the activation step.
+# /opt/casein/deploy/ by the activation step.
 if [ ! -f "${OUTPUT_DIR}/deploy/devide.service" ] || \
    [ ! -f "${OUTPUT_DIR}/deploy/docker-compose.postgres.yml" ]; then
   echo "error: extracted tree missing deploy/ artifacts (devide.service + compose)" >&2
@@ -136,8 +136,8 @@ echo "  deploy/       present (devide.service, compose, env.example, README.md)"
 echo "  bin/activate_devbox_deploy  (optional one-command helper for devbox)"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"
 echo
-echo "Devbox activation (after scp + place under /opt/devide/release):"
-echo "  sudo /opt/devide/release/bin/activate_devbox_deploy"
+echo "Devbox activation (after scp + place under /opt/casein/release):"
+echo "  sudo /opt/casein/release/bin/activate_devbox_deploy"
 echo "  # or the explicit commands in the release's deploy/README.md"
 echo
 echo "LAN activation from this release:"

@@ -15,11 +15,11 @@
 #   bash scripts/cleanup-agent-worktrees.sh --apply    # delete clean+idle ones
 #
 # Env:
-#   DEVIDE_AGENT_WORKTREE_ROOT  worktree root (default $TMPDIR/devide-agent-worktrees)
+#   DEVIDE_AGENT_WORKTREE_ROOT  worktree root (default $TMPDIR/casein-agent-worktrees)
 #   DEVIDE_TMUX_LABEL           tmux server label to probe for live panes (default devide)
 set -euo pipefail
 
-WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/devide-agent-worktrees}"
+WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 TMUX_LABEL="${DEVIDE_TMUX_LABEL:-devide}"
 
 APPLY=0

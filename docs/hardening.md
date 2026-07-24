@@ -37,7 +37,7 @@ onto the same DevIDE deployment.
 
 ## Deploy Safety
 
-- Use the release deploy path; do not hand-edit `/opt/devide/release`.
+- Use the release deploy path; do not hand-edit `/opt/casein/release`.
 - Keep deploy scripts and release overlays in git before activation.
 - Graceful drain should warn connected LiveViews before shutdown and leave
   tmux sessions outside the release artifact.
@@ -63,7 +63,7 @@ Only set a positive value when you explicitly want idle tmux reclamation.
 
 ## Workspace-Scoped Tokens
 
-Keep the global admin bearer in `/etc/devide/devide.env` as `CASEIN_API_TOKEN`.
+Keep the global admin bearer in `/etc/casein/devide.env` as `CASEIN_API_TOKEN`.
 `setup-devbox-agent-pairing.sh` registers per-workspace tokens and writes the
 scoped bearer into `.devbox-agent.env` as `CASEIN_API_TOKEN` (admin preserved as
 `CASEIN_ADMIN_API_TOKEN`). Manual addition also works with:

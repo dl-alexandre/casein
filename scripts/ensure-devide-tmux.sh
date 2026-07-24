@@ -40,8 +40,8 @@ install_unit() {
   fi
 
   conf="${ROOT}/priv/tmux/devide.conf"
-  if [[ -f /opt/devide/release/lib/casein-0.1.0/priv/tmux/devide.conf ]]; then
-    conf=/opt/devide/release/lib/casein-0.1.0/priv/tmux/devide.conf
+  if [[ -f /opt/casein/release/lib/casein-0.1.0/priv/tmux/devide.conf ]]; then
+    conf=/opt/casein/release/lib/casein-0.1.0/priv/tmux/devide.conf
   fi
 
   tmp="$(mktemp)"

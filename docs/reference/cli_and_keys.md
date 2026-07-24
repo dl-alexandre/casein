@@ -74,14 +74,14 @@ Functions and entrypoints other code (or operators) call:
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
 - **`scripts/devide tools ensure <tool>` / `ensure-installed <tool>`** —
   non-interactively ensure a supported DevIDE terminal tool is installed.
-  Current tool: `elio`, installed into `~/.devide/tools/` via Cargo when no real
+  Current tool: `elio`, installed into `~/.casein/tools/` via Cargo when no real
   binary is already available. `scripts/ensure-terminal-tool.sh --check <tool>`
   reports availability without installing, and `--yes` is accepted as a no-op
   compatibility flag for agent callers because installs are already
   non-interactive.
 - **`scripts/devide agent auth signin <claude|codex>`** — detect the current
   workspace owner, create or use its provider auth home under
-  `~/.devide/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
+  `~/.casein/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
   flow there. Profiles without a completed sign-in keep workspaces on the host
   global provider login; after sign-in, workspaces named `<owner>-...`
   automatically use this profile. Outside a DevIDE workspace, use

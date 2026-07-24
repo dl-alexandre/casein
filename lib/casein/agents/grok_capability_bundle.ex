@@ -57,14 +57,14 @@ defmodule Casein.Agents.GrokCapabilityBundle do
   def root do
     System.get_env("DEVIDE_GROK_BUNDLE_ROOT") ||
       Application.get_env(:casein, :grok_capability_bundle_root) ||
-      Path.join([home_dir(), ".devide", "grok-bundles"])
+      Path.join([home_dir(), ".casein", "grok-bundles"])
   end
 
   @spec leader_root() :: String.t()
   def leader_root do
     System.get_env("DEVIDE_GROK_LEADER_ROOT") ||
       Application.get_env(:casein, :grok_leader_root) ||
-      Path.join([home_dir(), ".devide", "grok-leaders"])
+      Path.join([home_dir(), ".casein", "grok-leaders"])
   end
 
   @spec leader_socket(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}

@@ -3,7 +3,7 @@ defmodule Casein.Deployment.Drift do
   Detects when the running devbox release is not the revision on `origin/master`.
 
   Manual local deploys are useful for hotfix validation, but GitHub's canonical
-  deploy replaces `/opt/devide/release` from `master`. If the running revision is
+  deploy replaces `/opt/casein/release` from `master`. If the running revision is
   a manual label or a SHA that differs from the remote branch head, surface that
   fact immediately so the operator knows the fix is not durable yet.
   """

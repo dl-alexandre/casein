@@ -76,7 +76,7 @@ defmodule Casein.Application do
 
   # Ephemeral preview environments boot the endpoint on a unix socket
   # (DEVIDE_HTTP_SOCKET, wired in runtime.exs) so the Caddy preview router can
-  # dial them collision-free, mirroring the live /run/devide/current.sock model.
+  # dial them collision-free, mirroring the live /run/casein/current.sock model.
   # But the Tidewave agent integration dials Tidewave over a *loopback TCP* URL
   # (http://127.0.0.1:<port>/tidewave/mcp — see Casein.Agents.TidewaveMCP), which
   # a unix socket can't serve. So when DEVIDE_PREVIEW_TIDEWAVE_PORT is set we run

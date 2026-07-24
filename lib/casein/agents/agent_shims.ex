@@ -1,6 +1,6 @@
 defmodule Casein.Agents.AgentShims do
   @moduledoc """
-  Ensures Casein agent launcher shims exist under `~/.devide/agent-shims`.
+  Ensures Casein agent launcher shims exist under `~/.casein/agent-shims`.
 
   Inside Casein contexts (pane env, shell integration, agent env files) the
   shim dir is injected at the front of PATH so bare names (`claude`, `grok`,
@@ -14,7 +14,7 @@ defmodule Casein.Agents.AgentShims do
   require Logger
 
   @runtimes ~w(grok claude codex opencode agent)
-  @default_bin_dir "~/.devide/agent-shims"
+  @default_bin_dir "~/.casein/agent-shims"
   @default_npm_prefix "~/.local/share/npm-global"
 
   @doc "Agent runtime names that get a Casein launcher shim (not `clauded`)."
@@ -161,7 +161,7 @@ defmodule Casein.Agents.AgentShims do
       join_scripts_env("DEVIDE_SCRIPTS"),
       join_agent_scripts_path(),
       Path.expand("scripts/install-agent-shims.sh"),
-      "/opt/devide/deploy-build/scripts/install-agent-shims.sh"
+      "/opt/casein/deploy-build/scripts/install-agent-shims.sh"
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()

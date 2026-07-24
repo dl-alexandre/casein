@@ -71,7 +71,7 @@ defmodule Casein.Agents.MCPMaterializer do
 
   defp staging_home(workspace, opts) do
     default_staging =
-      Path.join([home_dir(), ".devide", "agent-mcp", workspace_name(workspace)])
+      Path.join([home_dir(), ".casein", "agent-mcp", workspace_name(workspace)])
 
     staging =
       Keyword.get(opts, :staging_home) ||
@@ -98,7 +98,7 @@ defmodule Casein.Agents.MCPMaterializer do
 
   defp home_dir do
     # Tests may set `:agent_home_dir` to a writable tmp path when the host
-    # `~/.devide/agent-mcp` tree is locked (mode 000 / RO). Production leaves
+    # `~/.casein/agent-mcp` tree is locked (mode 000 / RO). Production leaves
     # this unset and uses $HOME.
     Application.get_env(:casein, :agent_home_dir) ||
       System.get_env("HOME") ||

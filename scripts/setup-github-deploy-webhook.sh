@@ -4,7 +4,7 @@
 # poller via POST /api/deploy_webhook.
 #
 # Prerequisites:
-#   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/devide/devide.env (or exported)
+#   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/casein/devide.env (or exported)
 #   - Caddy serves /api/deploy_webhook WITHOUT forward_auth (GitHub has no session)
 #   - bash scripts/ensure-devide-deploy-poller.sh (sudoers for systemctl start)
 #
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 DEVIDE_URL="${DEVIDE_URL:-https://devide.devbox.milcgroup.com}"
 GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/dev_ide}"
 DRY_RUN=0

@@ -3,15 +3,15 @@ defmodule Casein.Deployment.Health do
   Runtime health checks for the devbox release handoff.
 
   This is intentionally focused on deploy wiring, not application domain health:
-  the checks verify the active Unix socket, the `/run/devide/current.sock` symlink,
+  the checks verify the active Unix socket, the `/run/casein/current.sock` symlink,
   the Caddy app upstream for `PHX_HOST`, and deploy drift status.
   """
 
   alias Casein.Deployment.{Capabilities, Drift, LastDeploy, Registry}
 
-  @current_symlink "/run/devide/current.sock"
+  @current_symlink "/run/casein/current.sock"
   @expected_caddy_dials [
-    "unix//run/devide/current.sock",
+    "unix//run/casein/current.sock",
     "127.0.0.1:4000"
   ]
 
