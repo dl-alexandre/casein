@@ -270,16 +270,25 @@ export async function mountTerminal({
   return { hook, el, mod }
 }
 
-export function openKeyboard(hook, el, { width = 390, height = 280 } = {}) {
-  document.documentElement.classList.add("devide-keyboard-open")
+// Mirror what MobileKeyBar actually does when the soft keyboard opens: toggle
+// the class, publish the shortened viewport, fire a window resize, THEN announce
+// the transition. Tests that need to prove one of those signals is sufficient on
+// its own drive the pieces directly instead.
+function toggleKeyboard(hook, el, open, { width, height }) {
+  document.documentElement.classList.toggle("devide-keyboard-open", open)
   setViewport(el, { width, height })
   hook.onWindowResize()
+  window.dispatchEvent(
+    new window.CustomEvent("devide:keyboard-open-changed", { detail: { open } })
+  )
+}
+
+export function openKeyboard(hook, el, { width = 390, height = 280 } = {}) {
+  toggleKeyboard(hook, el, true, { width, height })
 }
 
 export function closeKeyboard(hook, el, { width = 390, height = 800 } = {}) {
-  document.documentElement.classList.remove("devide-keyboard-open")
-  setViewport(el, { width, height })
-  hook.onWindowResize()
+  toggleKeyboard(hook, el, false, { width, height })
 }
 
 // Cols/rows that actually fit inside the <pre>'s text box for a container.

@@ -2208,7 +2208,46 @@ function applyLayoutResult(hook, result) {
     pushResizeEvent(hook, result.requestedGrid.cols, result.requestedGrid.rows)
   }
 
+  reportLayoutChange(hook, result)
   syncDisplayZoomBadge(hook)
+}
+
+/**
+ * The client half of the size-negotiation breadcrumb.
+ *
+ * SessionOwner already logs `terminal owner size -> WxH (reason)` at info,
+ * explicitly because every recurrence of the "my terminal is a narrow column"
+ * class had to be reconstructed from a screenshot. But that only records what
+ * the SERVER decided; what each viewer asked for, and why, was invisible — the
+ * existing client instrumentation goes to console.debug behind `?termdebug`,
+ * which is never on when the bug happens.
+ *
+ * So push it. Only on an actual change of mode or proposed grid, which is rare
+ * (a resize, a keyboard toggle, an authority flip) — steady state and the
+ * row-pin follow are silent, so this cannot become per-frame chatter.
+ */
+function reportLayoutChange(hook, result) {
+  const grid = result.requestedGrid ?? result.fitAnchor
+  const signature = `${result.mode}:${grid?.cols ?? "?"}x${grid?.rows ?? "?"}`
+  if (signature === hook.__lastLayoutSignature) return
+  hook.__lastLayoutSignature = signature
+
+  const detail = {
+    mode: result.mode,
+    cols: grid?.cols ?? null,
+    rows: grid?.rows ?? null,
+    reason: hook.__layoutReason || result.reason,
+    authority: isSizeAuthoritative(hook),
+    requested: !!result.requestedGrid
+  }
+
+  terminalFrameEvent(hook, "layout_change", detail)
+
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "layout_change", detail)
+  } else if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("layout_change", detail)
+  }
 }
 
 function applyTerminalLayout(hook, trigger = "event") {

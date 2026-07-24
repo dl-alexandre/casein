@@ -440,3 +440,53 @@ test("triggers: a burst of resizes collapses into one layout pass", async (t) =>
     `a resize burst pushed ${sizeReports(hook).length - before} sizes`
   )
 })
+
+// ---------------------------------------------------------------------------
+// Breadcrumb — the client half of the size negotiation reaches the journal
+// ---------------------------------------------------------------------------
+
+const layoutChanges = (hook) => hook.pushes.filter((p) => p.event === "layout_change")
+
+test("breadcrumb: a layout change is reported with its trigger", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+
+  const first = layoutChanges(hook).at(-1)
+  assert.ok(first, "the initial fit is reported")
+  assert.deepEqual(
+    { cols: first.payload.cols, rows: first.payload.rows },
+    expectedFit(390, 800)
+  )
+  assert.equal(first.payload.authority, true)
+
+  const before = layoutChanges(hook).length
+  openKeyboard(hook, el)
+  await wait(150)
+
+  const latest = layoutChanges(hook).at(-1)
+  assert.ok(layoutChanges(hook).length > before, "the keyboard toggle is reported")
+  assert.equal(latest.payload.mode, DisplayMode.ROWPIN)
+  assert.equal(latest.payload.reason, "keyboard_toggle", "the trigger is named, not inferred")
+})
+
+test("breadcrumb: steady state and the row-pin follow stay silent", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+  const { cols, rows } = expectedFit(390, 800)
+
+  render(hook, gridPayload({ cols, rows, painted: 16, cursorRow: 15 }))
+  await wait(150)
+  openKeyboard(hook, el)
+  await wait(150)
+
+  const settled = layoutChanges(hook).length
+
+  // Output arriving while row-pinned scrolls the window but never changes the
+  // mode or the proposed grid — this must not become per-frame chatter.
+  for (let row = 16; row < 40; row += 1) {
+    render(hook, gridPayload({ cols, rows, painted: row + 1, cursorRow: row }))
+    await wait(20)
+  }
+  hook.onWindowResize()
+  await wait(200)
+
+  assert.equal(layoutChanges(hook).length, settled, "unchanged layouts were reported")
+})
