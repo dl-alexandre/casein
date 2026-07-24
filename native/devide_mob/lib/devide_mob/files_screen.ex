@@ -149,7 +149,7 @@ defmodule DevideMob.FilesScreen do
       children: [
         %{
           type: :text,
-          props: %{text: "DevIDE Files", text_size: 18.0, text_color: @text},
+          props: %{text: "Casein Files", text_size: 18.0, text_color: @text},
           children: []
         },
         %{

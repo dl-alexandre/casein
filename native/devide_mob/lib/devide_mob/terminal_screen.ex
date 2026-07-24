@@ -2,7 +2,7 @@ defmodule DevideMob.TerminalScreen do
   @moduledoc """
   On-device terminal — a real VT engine rendered as a monospace `Canvas` grid.
 
-  The Mob equivalent of dev_ide's web Ghostty terminal: **Model B** — the VT
+  The Mob equivalent of Casein's web Ghostty terminal: **Model B** — the VT
   engine owns the state machine + grid; this screen renders `cells/1`. The
   terminal backend is abstracted by `DevideMob.Terminal`: `ghostty_ex` on the
   host (dev), the static `DevideMob.Nifs.GhosttyVt` NIF on-device. Both yield the

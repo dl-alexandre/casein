@@ -51,7 +51,7 @@
         <integer>2</integer>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>DevideMob connects to DevIDE hosts you explicitly pair on your trusted local network.</string>
+    <string>DevideMob connects to Casein hosts you explicitly pair on your trusted local network.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

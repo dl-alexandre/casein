@@ -356,7 +356,7 @@ class MainActivity : ComponentActivity() {
 
         return org.json.JSONObject().apply {
             put("id", "pairing-deep-link")
-            put("title", "Pair DevIDE")
+            put("title", "Pair Casein")
             put("source", "deep_link")
             put("data", org.json.JSONObject().apply {
                 put("action", "mobile.pair")

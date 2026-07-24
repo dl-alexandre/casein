@@ -2,7 +2,7 @@ defmodule DevideMob.SessionClient do
   @moduledoc """
   Phoenix Channel client for the mobile session companion.
 
-  Runs on the device, holds a single WSS connection to the dev_ide host's
+  Runs on the device, holds a single WSS connection to the Casein host's
   `/socket` (`CaseinWeb.UserSocket`), joins one `session:<workspace_id>` topic
   per watched workspace (`CaseinWeb.SessionChannel`), and can also join the
   authenticated user's `mobile:user:me` card stream.
