@@ -4,11 +4,11 @@ defmodule Casein.Setup.LocalDomain do
 
   `.local` is intentionally not the default here. On Linux desktops with
   `nss-mdns`, `.local` is mDNS-owned and may short-circuit before `/etc/hosts`.
-  `devide.test` uses the RFC-reserved testing TLD and works predictably with a
+  `casein.test` uses the RFC-reserved testing TLD and works predictably with a
   hosts-file entry.
   """
 
-  @default_domain "devide.test"
+  @default_domain "casein.test"
   @begin_marker "# BEGIN Casein local domain"
   @end_marker "# END Casein local domain"
 

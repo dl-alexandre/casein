@@ -9,7 +9,7 @@ defmodule Casein.Terminals.TmuxServer do
   `tmux` (which uses the host's *default* server). Each `-L <label>` is a fully
   independent server: its own socket, session list, option state, and — for
   host sessions — its own config file (`TmuxRunner` appends `-f`, defaulting to
-  `priv/tmux/devide.conf`). One server = one config.
+  `priv/tmux/casein.conf`). One server = one config.
 
   | Env  | Label (`-L`)  | Set in            |
   |------|---------------|-------------------|

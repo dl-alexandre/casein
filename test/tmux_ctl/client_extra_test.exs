@@ -406,7 +406,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # @directory_window_fmt: session|id|index|active|activity|current_command|automatic-rename|name
   # @directory_pane_fmt:   session|window_id|pane_id|active|current_command|pane_activity|
-  #                        window_activity|current_path|@devide_pane_role|pane_title
+  #                        window_activity|current_path|@casein_pane_role|pane_title
   test "directory_inventory groups windows and panes by session" do
     out =
       Enum.join(
@@ -498,7 +498,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- list_sessions/0 --------------------------------------------------------
 
-  # @list_sessions_fmt: session|attached|activity|@devide_session_alias
+  # @list_sessions_fmt: session|attached|activity|@casein_session_alias
   test "list_sessions parses 4-field and 3-field lines" do
     out =
       Enum.join(

@@ -133,21 +133,21 @@ defmodule TmuxCtl.ClientTest do
     assert :ok = Client.set_session_alias(@session, "billing")
 
     assert_receive {:tmux_runner,
-                    ["set-option", "-t", @session, "@devide_session_alias", "billing"]}
+                    ["set-option", "-t", @session, "@casein_session_alias", "billing"]}
   end
 
   test "set_session_alias unsets the option for a blank name" do
     assert :ok = Client.set_session_alias(@session, "   ")
-    assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
+    assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@casein_session_alias"]}
   end
 
   test "set_pane_role stores and clears a managed pane user option" do
     assert :ok = Client.set_pane_role(@session, "%1", "agent")
 
-    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", "agent"]}
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "@casein_pane_role", "agent"]}
 
     assert :ok = Client.set_pane_role(@session, "%1", nil)
-    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "-u", "@devide_pane_role"]}
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "-u", "@casein_pane_role"]}
   end
 
   test "set_pane_role refuses unsafe roles and unmanaged sessions" do
@@ -156,7 +156,7 @@ defmodule TmuxCtl.ClientTest do
     assert {:error, :refused_non_devide_session} =
              Client.set_pane_role("other_session", "%1", "agent")
 
-    refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", _]}
+    refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@casein_pane_role", _]}
   end
 
   test "consolidate_sessions appends source windows into target session" do

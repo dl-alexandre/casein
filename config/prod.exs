@@ -18,10 +18,10 @@ config :swoosh, api_client: Swoosh.ApiClient.Req
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false
 
-# Run Casein's tmux sessions on a dedicated server (`tmux -L devide`) instead of
+# Run Casein's tmux sessions on a dedicated server (`tmux -L casein`) instead of
 # the host's default server. This isolates dev_ide-managed sessions from any
 # plain SSH user's `tmux` (which uses the default socket), and lets the two
-# carry different configs: dev_ide host sessions load priv/tmux/devide.conf via
+# carry different configs: dev_ide host sessions load priv/tmux/casein.conf via
 # `-f`, while an SSH user keeps their own ~/.tmux.conf on the default server.
 # Resolved by Casein.Terminals.TmuxServer. Must differ from the dev label
 # (config/dev.exs) so the :4000 dev server and the release don't share a socket.

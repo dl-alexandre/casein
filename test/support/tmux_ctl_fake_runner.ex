@@ -143,7 +143,7 @@ defmodule TmuxCtl.Test.FakeRunner do
     end)
   end
 
-  # Mirrors the @devide_paired pane option: "1"/"0" once stamped, "" otherwise.
+  # Mirrors the @casein_paired pane option: "1"/"0" once stamped, "" otherwise.
   defp paired(true), do: "1"
   defp paired(false), do: "0"
   defp paired(_), do: ""

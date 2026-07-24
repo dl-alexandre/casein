@@ -1186,7 +1186,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
   end
 
   @doc """
-  Set a session's display alias (stored as the `@devide_session_alias` tmux user
+  Set a session's display alias (stored as the `@casein_session_alias` tmux user
   option). Blank names are rejected. On success, clears rename mode and re-scans
   so the new alias is read back as the session label.
   """

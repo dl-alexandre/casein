@@ -2,7 +2,7 @@ defmodule Casein.Terminals.AgentPane do
   @moduledoc """
   Resolves the role-marked agent pane in a Casein tmux session.
 
-  The `agent_pair` template persists `@devide_pane_role=agent`; this module is
+  The `agent_pair` template persists `@casein_pane_role=agent`; this module is
   the terminal-layer lookup that callers can use before sending agent-only
   input. It deliberately avoids process-name guessing so a missing layout
   produces a clear operator-facing failure instead of targeting the wrong pane.

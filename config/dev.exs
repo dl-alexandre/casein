@@ -40,7 +40,7 @@ else
   end
 end
 
-# Run the dev server's tmux sessions on their own server (`tmux -L devide_dev`),
+# Run the dev server's tmux sessions on their own server (`tmux -L casein_dev`),
 # distinct from prod's `devide` (config/prod.exs) and test's `devide_test`
 # (config/test.exs). On the devbox the :4000 mix dev server and the release run
 # as the same user, so a shared label would collide on one socket. Resolved by

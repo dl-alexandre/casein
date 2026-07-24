@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
   Generates a trusted local development certificate for Casein LAN mode.
 
       mix casein.lan.setup
-      mix casein.lan.setup --hostname workstation --hosts workstation.home,devide.test
+      mix casein.lan.setup --hostname workstation --hosts workstation.home,casein.test
       mix casein.lan.setup --no-install-ca
 
   The task requires `mkcert` on PATH. By default it runs `mkcert -install`
@@ -112,7 +112,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
           []
       end
 
-    local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "devide.test"
+    local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "casein.test"
 
     [
       "localhost",
@@ -161,7 +161,7 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
         Enum.find(hosts, &String.ends_with?(&1, ".local")) ||
         "#{hostname}.local"
 
-    host_local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "devide.test"
+    host_local_domain = System.get_env("CASEIN_LOCAL_DOMAIN") || "casein.test"
 
     Mix.shell().info("""
 

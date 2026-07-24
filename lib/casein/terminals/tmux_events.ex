@@ -95,7 +95,7 @@ defmodule Casein.Terminals.TmuxEvents do
               Application.get_env(
                 :casein,
                 :tmux_events_anchor_session,
-                "__devide_keepalive"
+                "__casein_keepalive"
               ),
             name: @listener_name
           ],

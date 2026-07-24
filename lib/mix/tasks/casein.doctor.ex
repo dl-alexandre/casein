@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Casein.Doctor do
       mix casein.doctor --fix --edge
       mix casein.doctor --fix --insecure-http
       mix casein.doctor --fix --hosts 192.168.1.240
-      mix casein.doctor --fix --local-domain devide.test
+      mix casein.doctor --fix --local-domain casein.test
 
   With `--fix`, the task creates the configured default workspace directory,
   generates missing LAN certificates with `mkcert`, and imports the mkcert root
@@ -183,7 +183,7 @@ defmodule Mix.Tasks.Casein.Doctor do
       String.ends_with?(domain, ".local") ->
         warn(
           "local domain",
-          "#{domain} uses .local; prefer devide.test because .local is mDNS-owned"
+          "#{domain} uses .local; prefer casein.test because .local is mDNS-owned"
         )
 
         check_hosts_mapping(domain, ip, hosts_file, fix?)

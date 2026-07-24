@@ -14,7 +14,7 @@ defmodule Casein.Terminals.HostServerAnchor do
   Creating a detached keepalive session from a fixed cwd during supervisor
   startup (synchronously, before the `Session` DynamicSupervisor and the
   Endpoint) claims the daemon first, pinning its cwd for the process lifetime.
-  The session is named `__devide_keepalive` — deliberately NOT the `devide_`
+  The session is named `__casein_keepalive` — deliberately NOT the `devide_`
   prefix — so the janitor, MCP `terminal_list_sessions`, and workspace scoping
   all ignore it (they filter on `devide_`). A matching `scripts/devide-tmux.service`
   systemd unit is belt-and-suspenders; same session name keeps them idempotent.
@@ -25,7 +25,7 @@ defmodule Casein.Terminals.HostServerAnchor do
   alias Casein.Terminals.TmuxRunner
   alias Casein.Terminals.TmuxServer
 
-  @anchor "__devide_keepalive"
+  @anchor "__casein_keepalive"
   @candidate_dirs ["/opt/casein", "/"]
 
   @doc """

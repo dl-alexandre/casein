@@ -11,7 +11,7 @@ defmodule Casein.Setup.LanRuntimeTest do
         group: "dev",
         home: "/tmp",
         home_workspace_path: "/tmp",
-        lan_host: "devide.test",
+        lan_host: "casein.test",
         lan_ip: "127.0.0.1",
         listen_port: 8080,
         mise_path: "/usr/bin/mise",

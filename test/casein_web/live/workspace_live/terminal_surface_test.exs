@@ -317,7 +317,7 @@ defmodule CaseinWeb.WorkspaceLive.TerminalSurfaceTest do
   end
 
   describe "tmux_pane_geometry/1 pairing badge" do
-    test "renders unpaired badge only for panes stamped @devide_paired=0" do
+    test "renders unpaired badge only for panes stamped @casein_paired=0" do
       unpaired = Map.merge(pane("%1"), %{paired: false, paired_reason: "no agent env"})
 
       html =

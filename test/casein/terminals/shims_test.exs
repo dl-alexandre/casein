@@ -93,7 +93,7 @@ defmodule Casein.Terminals.ShimsTest do
         cd: workdir,
         env: [
           {"PATH", Enum.join([real_dir, clean_bin], ":")},
-          {"DEVIDE_API_BASE_URL", "http://devide.test"},
+          {"DEVIDE_API_BASE_URL", "http://casein.test"},
           {"DEVIDE_WORKSPACE_ID", "ws-open"},
           {"CASEIN_API_TOKEN", "open-token"},
           {"CASEIN_FAKE_CURL_CAPTURE", capture}
@@ -105,7 +105,7 @@ defmodule Casein.Terminals.ShimsTest do
     {canonical_workdir, 0} = System.cmd("pwd", [], cd: workdir)
 
     assert File.read!(capture) ==
-             "http://devide.test/api/workspaces/ws-open/open\n5\n" <>
+             "http://casein.test/api/workspaces/ws-open/open\n5\n" <>
                ~s({"target":"docs/readme.md","base_dir":"#{String.trim(canonical_workdir)}"}) <>
                "\n"
   end
@@ -125,7 +125,7 @@ defmodule Casein.Terminals.ShimsTest do
         cd: workdir,
         env: [
           {"PATH", clean_bin},
-          {"DEVIDE_API_BASE_URL", "http://devide.test"},
+          {"DEVIDE_API_BASE_URL", "http://casein.test"},
           {"DEVIDE_WORKSPACE_ID", "ws-open"},
           {"CASEIN_API_TOKEN", "open-token"},
           {"CASEIN_FAKE_CURL_CAPTURE", capture}
@@ -384,10 +384,10 @@ defmodule Casein.Terminals.ShimsTest do
     assert script =~ "133;D;"
     assert script =~ "133;B"
     assert script =~ "tmux;"
-    assert script =~ "PROMPT_COMMAND=__devide_prompt_command"
-    assert script =~ "trap '__devide_preexec' DEBUG"
+    assert script =~ "PROMPT_COMMAND=__casein_prompt_command"
+    assert script =~ "trap '__casein_preexec' DEBUG"
     # Fresh panes that inherited a thin release PATH still find agent shims.
-    assert script =~ "__devide_prepend_path"
+    assert script =~ "__casein_prepend_path"
     assert script =~ ".casein/agent-shims"
     assert script =~ ".local/bin"
     assert script =~ "npm-global/bin"
@@ -550,7 +550,7 @@ defmodule Casein.Terminals.ShimsTest do
     # the original integrated-bash chain (the devbox default).
     assert command =~ "CASEIN_SHELL_INTEGRATION_ZDOTDIR"
     assert command =~ ~s(${SHELL:-})
-    assert command =~ ~s(exec "$__devide_shell" -il)
+    assert command =~ ~s(exec "$__casein_shell" -il)
     assert command =~ "CASEIN_SHELL_INTEGRATION_BASH"
     assert command =~ "bash --init-file"
     assert command =~ "bash -l"
@@ -567,7 +567,7 @@ defmodule Casein.Terminals.ShimsTest do
       print -r -- "zdotdir=${ZDOTDIR:-unset}"
       print -r -- "precmd=${precmd_functions}"
       print -r -- "preexec=${preexec_functions}"
-      __devide_precmd
+      __casein_precmd
       """
 
       {out, 0} =
@@ -587,8 +587,8 @@ defmodule Casein.Terminals.ShimsTest do
 
       assert out =~ "loaded=1"
       assert out =~ "zdotdir=unset"
-      assert out =~ ~r/precmd=.*__devide_precmd/
-      assert out =~ ~r/preexec=.*__devide_preexec/
+      assert out =~ ~r/precmd=.*__casein_precmd/
+      assert out =~ ~r/preexec=.*__casein_preexec/
       refute out =~ "read-only variable"
     end
 

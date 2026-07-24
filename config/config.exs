@@ -40,7 +40,7 @@ config :casein,
   # old 2s poll, but keeps quiet-agent / needs_you attention flips tighter than
   # the design doc's 10s option — open question §8.1).
   session_directory_reconcile_ms: 5_000,
-  tmux_events_anchor_session: "__devide_keepalive",
+  tmux_events_anchor_session: "__casein_keepalive",
   # Listener-flap degradation thresholds (Slice 3).
   tmux_events_flap_watch: [
     threshold: 3,

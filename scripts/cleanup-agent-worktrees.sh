@@ -20,7 +20,7 @@
 set -euo pipefail
 
 WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
-TMUX_LABEL="${DEVIDE_TMUX_LABEL:-devide}"
+TMUX_LABEL="${DEVIDE_TMUX_LABEL:-casein}"
 
 APPLY=0
 case "${1:-}" in

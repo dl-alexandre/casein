@@ -67,8 +67,8 @@ cat <<EOF
 Caddy must expose ${WEBHOOK_URL} without oauth2-proxy forward_auth.
 Add a handle block on the DevIDE site BEFORE the forward_auth import, e.g.:
 
-  @devide_deploy_webhook path /api/deploy_webhook
-  handle @devide_deploy_webhook {
+  @casein_deploy_webhook path /api/deploy_webhook
+  handle @casein_deploy_webhook {
     reverse_proxy 127.0.0.1:4000
   }
 

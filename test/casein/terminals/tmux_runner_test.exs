@@ -70,14 +70,14 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       assert [^tmux | rest] = argv
       assert Enum.take(rest, length(TmuxServer.args())) == TmuxServer.args()
       assert List.last(argv) == "list-sessions"
-      # The bundled priv/tmux/devide.conf resolves as the default config file.
+      # The bundled priv/tmux/casein.conf resolves as the default config file.
       assert "-f" in argv
-      assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
+      assert Enum.any?(argv, &String.ends_with?(&1, "casein.conf"))
     end
 
     test "host_argv/1 is the shared foreground attach argv and includes config" do
       dir = make_tmp_dir()
-      config = Path.join(dir, "devide.conf")
+      config = Path.join(dir, "casein.conf")
       File.write!(config, "set-option -g status off\n")
 
       Application.put_env(:tmux_ctl, :config_file, config)
@@ -90,7 +90,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
     test "inserts -f <config> when a tmux config file is configured" do
       dir = make_tmp_dir()
-      config = Path.join(dir, "devide.conf")
+      config = Path.join(dir, "casein.conf")
       File.write!(config, "set-option -g status off\n")
 
       Application.put_env(:tmux_ctl, :config_file, config)
@@ -113,13 +113,13 @@ defmodule Casein.Terminals.TmuxRunnerTest do
     end
 
     test "skips a configured path that is not a regular file, falling back to the default" do
-      Application.put_env(:tmux_ctl, :config_file, "/no/such/devide.conf")
+      Application.put_env(:tmux_ctl, :config_file, "/no/such/casein.conf")
 
       argv = TmuxRunner.argv(["list-windows"])
       # The bad configured path is skipped...
-      refute "/no/such/devide.conf" in argv
+      refute "/no/such/casein.conf" in argv
       # ...and resolution falls back to the bundled default config.
-      assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
+      assert Enum.any?(argv, &String.ends_with?(&1, "casein.conf"))
     end
   end
 
@@ -156,7 +156,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
     test "uses host tmux argv with Casein config when the workspace source is identity" do
       dir = make_tmp_dir()
-      config = Path.join(dir, "devide.conf")
+      config = Path.join(dir, "casein.conf")
       File.write!(config, "set-option -g status off\n")
       Application.put_env(:tmux_ctl, :config_file, config)
 

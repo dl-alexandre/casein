@@ -62,7 +62,7 @@ config :casein, CaseinWeb.Endpoint,
   secret_key_base: "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM",
   server: false
 
-# Sandbox every tmux invocation onto a dedicated server (`tmux -L devide_test`)
+# Sandbox every tmux invocation onto a dedicated server (`tmux -L casein_test`)
 # so the live tmux integration tests can never see, create, kill, or reconcile
 # sessions on another server — on the devbox the prod release (`devide`) and the
 # :4000 dev server (`devide_dev`) also run here. Each env gets its own label so
@@ -170,7 +170,7 @@ config :casein,
   preview_prefer_scoped_local_server: false,
   preview_pane_persistence_enabled: false,
   terminal_desktop_integration_enabled: false,
-  # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
+  # Sandbox the suite onto a dedicated tmux server (`-L casein_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See Casein.Terminals.TmuxServer.
   tmux_server_label: "devide_test",

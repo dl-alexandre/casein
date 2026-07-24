@@ -383,13 +383,13 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
           reason == :listener_down ->
             "Host tmux control listener is down / never connected. Check the anchor " <>
-              "session (`__devide_keepalive`), tmux server health " <>
+              "session (`__casein_keepalive`), tmux server health " <>
               "(`tmux -L <label> list-sessions`), and DEVIDE_TMUX_EVENTS. Topology " <>
               "falls back to polling automatically."
 
           true ->
             "Host tmux control listener is flapping. Check the anchor session " <>
-              "(`__devide_keepalive`), tmux server health (`tmux -L <label> list-sessions`), " <>
+              "(`__casein_keepalive`), tmux server health (`tmux -L <label> list-sessions`), " <>
               "and DEVIDE_TMUX_EVENTS. Topology falls back to polling automatically."
         end
     }

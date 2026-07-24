@@ -1,6 +1,6 @@
 defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   @moduledoc """
-  Real-tmux integration for ControlListener on the sandboxed `-L devide_test`
+  Real-tmux integration for ControlListener on the sandboxed `-L casein_test`
   server. Excluded by default (`@moduletag :tmux`); run with `mix test --include tmux`.
   """
 
@@ -11,7 +11,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   alias TmuxCtl.Events.ControlListener
 
   @label "devide_test"
-  @anchor "__devide_keepalive"
+  @anchor "__casein_keepalive"
   @topic "tmux_events:" <> @label
 
   setup do

@@ -269,7 +269,7 @@ agent_env_resolve() {
   return 1
 }
 
-# Record pairing state on the tmux pane (@devide_paired / @devide_paired_reason)
+# Record pairing state on the tmux pane (@casein_paired / @casein_paired_reason)
 # so the viewer can badge unpaired agent panes without any terminal output.
 # Best-effort: plain terminals (no $TMUX / $TMUX_PANE) skip silently, and a
 # failing tmux never blocks the launch.
@@ -277,8 +277,8 @@ agent_env_stamp_pane_pairing() {
   local paired="$1" reason="${2:-}"
   [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
-  tmux set-option -p -t "$TMUX_PANE" @devide_paired "$paired" 2>/dev/null || true
-  tmux set-option -p -t "$TMUX_PANE" @devide_paired_reason "$reason" 2>/dev/null || true
+  tmux set-option -p -t "$TMUX_PANE" @casein_paired "$paired" 2>/dev/null || true
+  tmux set-option -p -t "$TMUX_PANE" @casein_paired_reason "$reason" 2>/dev/null || true
 }
 
 agent_env_export_runtime_paths() {

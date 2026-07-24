@@ -39,9 +39,9 @@ install_unit() {
     tmux_bin="$(command -v tmux)"
   fi
 
-  conf="${ROOT}/priv/tmux/devide.conf"
-  if [[ -f /opt/casein/release/lib/casein-0.1.0/priv/tmux/devide.conf ]]; then
-    conf=/opt/casein/release/lib/casein-0.1.0/priv/tmux/devide.conf
+  conf="${ROOT}/priv/tmux/casein.conf"
+  if [[ -f /opt/casein/release/lib/casein-0.1.0/priv/tmux/casein.conf ]]; then
+    conf=/opt/casein/release/lib/casein-0.1.0/priv/tmux/casein.conf
   fi
 
   tmp="$(mktemp)"
@@ -55,8 +55,8 @@ install_unit() {
   sudo systemctl enable --now devide-tmux.service
   echo "devide-tmux.service enabled (tmux=$(${tmux_bin} -V))"
   # Soft apply exit-empty off on a live server if one is already running.
-  "${tmux_bin}" -L devide set-option -s exit-empty off 2>/dev/null || true
-  "${tmux_bin}" -L devide display-message -p 'server=#{socket_path} version=#{version}' 2>/dev/null || true
+  "${tmux_bin}" -L casein set-option -s exit-empty off 2>/dev/null || true
+  "${tmux_bin}" -L casein display-message -p 'server=#{socket_path} version=#{version}' 2>/dev/null || true
 }
 
 case "${1:-}" in

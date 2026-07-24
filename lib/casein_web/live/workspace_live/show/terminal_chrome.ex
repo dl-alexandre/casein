@@ -358,7 +358,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
 
   def pane_bell?(pane), do: Map.get(pane, :bell, false) == true
 
-  # Agent-launch pairing stamp (@devide_paired pane option): true/false once a
+  # Agent-launch pairing stamp (@casein_paired pane option): true/false once a
   # launcher ran in the pane, nil (attr omitted) when no agent ever launched.
   def pane_paired_attr(pane) do
     case Map.get(pane, :paired) do
@@ -1712,7 +1712,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
     session_alias(info) || session_context_label(info) || session_kind_label(Map.get(info, :kind))
   end
 
-  # User-set display name, stored on the tmux session as `@devide_session_alias`
+  # User-set display name, stored on the tmux session as `@casein_session_alias`
   # and surfaced via session metadata. Takes priority over the derived label.
   defp session_alias(%{metadata: metadata}) when is_map(metadata) do
     (Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias"))

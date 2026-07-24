@@ -259,7 +259,7 @@ echo \"real-grok \$*\""
 )
 
 run_launch_stamps_pane_pairing_state() (
-  echo "== agent launch stamps @devide_paired on the tmux pane =="
+  echo "== agent launch stamps @casein_paired on the tmux pane =="
 
   local home tmux_log out
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -286,13 +286,13 @@ exit 0"
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>&1)"
   assert_eq "stamped fallback still execs real grok" "real-grok" "$out"
 
-  if ! grep -q '^set-option -p -t %7 @devide_paired 0$' "$tmux_log"; then
-    echo "FAIL: expected @devide_paired 0 stamp on pane %7, tmux calls were:" >&2
+  if ! grep -q '^set-option -p -t %7 @casein_paired 0$' "$tmux_log"; then
+    echo "FAIL: expected @casein_paired 0 stamp on pane %7, tmux calls were:" >&2
     cat "$tmux_log" >&2
     exit 1
   fi
-  if ! grep -q '^set-option -p -t %7 @devide_paired_reason no agent env$' "$tmux_log"; then
-    echo "FAIL: expected @devide_paired_reason stamp, tmux calls were:" >&2
+  if ! grep -q '^set-option -p -t %7 @casein_paired_reason no agent env$' "$tmux_log"; then
+    echo "FAIL: expected @casein_paired_reason stamp, tmux calls were:" >&2
     cat "$tmux_log" >&2
     exit 1
   fi

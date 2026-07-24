@@ -48,7 +48,7 @@ unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
   {:ok, _} = Application.ensure_all_started(:casein)
 end
 
-# Reap the dedicated tmux server the suite runs on (`-L devide_test`, see
+# Reap the dedicated tmux server the suite runs on (`-L casein_test`, see
 # config/test.exs) when the run finishes, so leaked test sessions don't pile up.
 # Best-effort and scoped to the sandbox server — it can never touch the default
 # server's live workspace sessions.

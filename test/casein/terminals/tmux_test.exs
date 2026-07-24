@@ -81,10 +81,10 @@ defmodule Casein.Terminals.TmuxTest do
 
     File.mkdir_p!(bin_dir)
     tmux_bin = Path.join(bin_dir, "tmux")
-    config_file = Path.join(bin_dir, "devide.conf")
+    config_file = Path.join(bin_dir, "casein.conf")
     File.write!(config_file, "set-option -g status off\n")
 
-    # has-session may be preceded by the sandbox server label (`-L devide_test`),
+    # has-session may be preceded by the sandbox server label (`-L casein_test`),
     # so match the subcommand wherever it lands in argv.
     File.write!(tmux_bin, """
     #!/bin/sh
@@ -101,7 +101,7 @@ defmodule Casein.Terminals.TmuxTest do
     Application.put_env(:tmux_ctl, :config_file, config_file)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
-    # Host invocations carry the configured server label (`-L devide_test` in :test).
+    # Host invocations carry the configured server label (`-L casein_test` in :test).
     expected =
       [tmux_bin] ++
         Casein.Terminals.TmuxServer.args() ++

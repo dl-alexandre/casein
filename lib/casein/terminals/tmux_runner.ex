@@ -31,7 +31,7 @@ defmodule Casein.Terminals.TmuxRunner do
   """
   @spec local_argv_wrapped?() :: boolean()
   def local_argv_wrapped? do
-    probe = ["__devide_workspace_source_probe__"]
+    probe = ["__casein_workspace_source_probe__"]
     WorkspaceSource.prepare_local_argv(probe) != probe
   end
 
@@ -128,7 +128,7 @@ defmodule Casein.Terminals.TmuxRunner do
 
   defp default_host_tmux_config_file do
     case :code.priv_dir(:casein) do
-      priv when is_list(priv) -> Path.join(to_string(priv), "tmux/devide.conf")
+      priv when is_list(priv) -> Path.join(to_string(priv), "tmux/casein.conf")
       _ -> nil
     end
   end

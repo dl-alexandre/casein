@@ -17,7 +17,7 @@ defmodule Casein.Terminals.Shims do
   # and the staged ZDOTDIR bootstrap is materialized, enter integrated zsh;
   # otherwise fall through to the original integrated-bash chain (the devbox
   # default, where $SHELL is bash or unset under systemd).
-  @shell_command_body ~s(__devide_shell="${SHELL:-}"; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ] && [ "${__devide_shell##*/}" = zsh ] && [ -r "${CASEIN_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then CASEIN_USER_ZDOTDIR="${ZDOTDIR:-${HOME:-}}" ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR}" unset CASEIN_SHELL_INTEGRATION_LOADED; export CASEIN_USER_ZDOTDIR ZDOTDIR; exec "$__devide_shell" -il; fi; if [ -r "${CASEIN_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$CASEIN_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "$__devide_shell" ] && [ -x "$__devide_shell" ]; then exec "$__devide_shell"; fi; exec sh)
+  @shell_command_body ~s(__casein_shell="${SHELL:-}"; if [ -n "$__casein_shell" ] && [ -x "$__casein_shell" ] && [ "${__casein_shell##*/}" = zsh ] && [ -r "${CASEIN_SHELL_INTEGRATION_ZDOTDIR:-}/.zshrc" ]; then CASEIN_USER_ZDOTDIR="${ZDOTDIR:-${HOME:-}}" ZDOTDIR="${CASEIN_SHELL_INTEGRATION_ZDOTDIR}" unset CASEIN_SHELL_INTEGRATION_LOADED; export CASEIN_USER_ZDOTDIR ZDOTDIR; exec "$__casein_shell" -il; fi; if [ -r "${CASEIN_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$CASEIN_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "$__casein_shell" ] && [ -x "$__casein_shell" ]; then exec "$__casein_shell"; fi; exec sh)
   @capability_env %{
     "CASEIN_TERMINAL" => "1",
     "CASEIN_CLIPBOARD" => "osc52",
@@ -613,7 +613,7 @@ defmodule Casein.Terminals.Shims do
     # Order matches path_with_shims/1 — terminal shims, tools, agent launchers,
     # then npm package bins (so Casein shims win over bare package symlinks);
     # ~/.local/bin rides along for user tools on thin release PATHs.
-    __devide_prepend_path() {
+    __casein_prepend_path() {
       # Build the new prefix in ARGUMENT order so the first arg ends up at
       # the FRONT of PATH. Kept POSIX-ish (no indirect expansion) for
       # bash + zsh.
@@ -631,13 +631,13 @@ defmodule Casein.Terminals.Shims do
       [[ -n "${prefix}" ]] && PATH="${prefix}${rest:+:${rest}}"
       export PATH
     }
-    __devide_prepend_path \\
+    __casein_prepend_path \\
       "${HOME:-}/.casein/terminal-shims" \\
       "${HOME:-}/.casein/tools/bin" \\
       "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.casein/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
-    unset -f __devide_prepend_path
+    unset -f __casein_prepend_path
 
     case "$-" in
       *i*) ;;
@@ -649,7 +649,7 @@ defmodule Casein.Terminals.Shims do
     fi
     export CASEIN_SHELL_INTEGRATION_LOADED=1
 
-    __devide_urlencode() {
+    __casein_urlencode() {
       local value="${1:-}"
       local encoded=""
       local i char hex
@@ -667,7 +667,7 @@ defmodule Casein.Terminals.Shims do
       printf '%s' "$encoded"
     }
 
-    __devide_emit_osc() {
+    __casein_emit_osc() {
       local payload="$1"
       printf '\\033]%s\\a' "$payload"
 
@@ -678,85 +678,85 @@ defmodule Casein.Terminals.Shims do
       fi
     }
 
-    __devide_prompt_end_sequence() {
-      __devide_emit_osc "133;B"
+    __casein_prompt_end_sequence() {
+      __casein_emit_osc "133;B"
     }
 
-    __devide_emit_cwd() {
+    __casein_emit_cwd() {
       local host="${HOSTNAME:-}"
       if [[ -z "$host" ]] && command -v hostname >/dev/null 2>&1; then
         host="$(hostname 2>/dev/null || true)"
       fi
       host="${host:-localhost}"
 
-      __devide_emit_osc "7;file://${host}$(__devide_urlencode "${PWD:-/}")"
+      __casein_emit_osc "7;file://${host}$(__casein_urlencode "${PWD:-/}")"
     }
 
-    __devide_original_prompt_command="${PROMPT_COMMAND:-}"
-    __devide_command_active=0
-    __devide_in_prompt_command=0
-    __devide_in_preexec=0
+    __casein_original_prompt_command="${PROMPT_COMMAND:-}"
+    __casein_command_active=0
+    __casein_in_prompt_command=0
+    __casein_in_preexec=0
 
-    __devide_run_original_prompt_command() {
-      if [[ -n "${__devide_original_prompt_command:-}" ]]; then
-        eval "$__devide_original_prompt_command"
+    __casein_run_original_prompt_command() {
+      if [[ -n "${__casein_original_prompt_command:-}" ]]; then
+        eval "$__casein_original_prompt_command"
       fi
     }
 
-    __devide_prompt_command() {
+    __casein_prompt_command() {
       local status=$?
-      __devide_in_prompt_command=1
+      __casein_in_prompt_command=1
 
-      __devide_run_original_prompt_command
+      __casein_run_original_prompt_command
 
-      if [[ "${__devide_command_active:-0}" == "1" ]]; then
-        __devide_emit_osc "133;D;${status}"
-        __devide_command_active=0
+      if [[ "${__casein_command_active:-0}" == "1" ]]; then
+        __casein_emit_osc "133;D;${status}"
+        __casein_command_active=0
       fi
 
-      __devide_emit_osc "133;A"
-      __devide_emit_cwd
-      __devide_in_prompt_command=0
+      __casein_emit_osc "133;A"
+      __casein_emit_cwd
+      __casein_in_prompt_command=0
 
       return "$status"
     }
 
-    __devide_preexec() {
+    __casein_preexec() {
       local status=$?
 
-      if [[ "${__devide_in_prompt_command:-0}" == "1" || "${__devide_in_preexec:-0}" == "1" || "${__devide_command_active:-0}" == "1" ]]; then
+      if [[ "${__casein_in_prompt_command:-0}" == "1" || "${__casein_in_preexec:-0}" == "1" || "${__casein_command_active:-0}" == "1" ]]; then
         return "$status"
       fi
 
       local command="${BASH_COMMAND:-}"
-      if [[ -z "$command" || "$command" == __devide_* ]]; then
+      if [[ -z "$command" || "$command" == __casein_* ]]; then
         return "$status"
       fi
 
-      __devide_in_preexec=1
-      __devide_command_active=1
-      __devide_emit_osc "133;C;cmd=$(__devide_urlencode "$command")"
-      __devide_in_preexec=0
+      __casein_in_preexec=1
+      __casein_command_active=1
+      __casein_emit_osc "133;C;cmd=$(__casein_urlencode "$command")"
+      __casein_in_preexec=0
 
       return "$status"
     }
 
-    PROMPT_COMMAND=__devide_prompt_command
+    PROMPT_COMMAND=__casein_prompt_command
 
     if [[ -n "${PS1:-}" ]]; then
-      __devide_prompt_end="$(__devide_prompt_end_sequence)"
+      __casein_prompt_end="$(__casein_prompt_end_sequence)"
       # The tmux passthrough ends with ST (ESC backslash). Prompt expansion
       # would merge that raw backslash with the closing \] into \\ + a literal
       # "]" printed after every prompt, so double every backslash and let
       # expansion collapse them back.
-      PS1="${PS1}\\[${__devide_prompt_end//\\\\/\\\\\\\\}\\]"
-      unset __devide_prompt_end
+      PS1="${PS1}\\[${__casein_prompt_end//\\\\/\\\\\\\\}\\]"
+      unset __casein_prompt_end
     fi
 
     # The DEBUG trap must be the LAST thing this file installs: it fires for
     # every remaining top-level command in the file, and anything traced here
     # would be recorded as a junk command in every new shell.
-    trap '__devide_preexec' DEBUG
+    trap '__casein_preexec' DEBUG
     """
   end
 
@@ -770,14 +770,14 @@ defmodule Casein.Terminals.Shims do
 
     [[ -o interactive ]] || return 0
 
-    if (( ${+functions[__devide_precmd]} )); then
+    if (( ${+functions[__casein_precmd]} )); then
       return 0
     fi
     typeset -g CASEIN_SHELL_INTEGRATION_LOADED=1
 
     # Belt-and-suspenders PATH repair, mirroring the bash integration: keep
     # Casein shims findable even when the pane inherited a thin release PATH.
-    __devide_prepend_path() {
+    __casein_prepend_path() {
       local d
       local -a prefix rest
       rest=("${(@s/:/)PATH}")
@@ -790,15 +790,15 @@ defmodule Casein.Terminals.Shims do
       PATH="${(j/:/)prefix}${rest:+:${(j/:/)rest}}"
       export PATH
     }
-    __devide_prepend_path \\
+    __casein_prepend_path \\
       "${HOME:-}/.casein/terminal-shims" \\
       "${HOME:-}/.casein/tools/bin" \\
       "${CASEIN_AGENT_BIN_DIR:-${HOME:-}/.casein/agent-shims}" \\
       "${HOME:-}/.local/share/npm-global/bin" \\
       "${HOME:-}/.local/bin"
-    unset -f __devide_prepend_path
+    unset -f __casein_prepend_path
 
-    __devide_urlencode() {
+    __casein_urlencode() {
       local value="${1:-}"
       local encoded=""
       local i char hex
@@ -816,7 +816,7 @@ defmodule Casein.Terminals.Shims do
       printf '%s' "$encoded"
     }
 
-    __devide_emit_osc() {
+    __casein_emit_osc() {
       local payload="$1"
       printf '\\033]%s\\a' "$payload"
 
@@ -827,50 +827,50 @@ defmodule Casein.Terminals.Shims do
       fi
     }
 
-    __devide_emit_cwd() {
+    __casein_emit_cwd() {
       local host="${HOST:-}"
       if [[ -z "$host" ]] && command -v hostname >/dev/null 2>&1; then
         host="$(hostname 2>/dev/null || true)"
       fi
       host="${host:-localhost}"
 
-      __devide_emit_osc "7;file://${host}$(__devide_urlencode "${PWD:-/}")"
+      __casein_emit_osc "7;file://${host}$(__casein_urlencode "${PWD:-/}")"
     }
 
-    __devide_command_active=0
+    __casein_command_active=0
 
-    __devide_precmd() {
+    __casein_precmd() {
       local exit_status=$?
 
-      if [[ "${__devide_command_active:-0}" == "1" ]]; then
-        __devide_emit_osc "133;D;${exit_status}"
-        __devide_command_active=0
+      if [[ "${__casein_command_active:-0}" == "1" ]]; then
+        __casein_emit_osc "133;D;${exit_status}"
+        __casein_command_active=0
       fi
 
-      __devide_emit_osc "133;A"
-      __devide_emit_cwd
+      __casein_emit_osc "133;A"
+      __casein_emit_cwd
     }
 
-    __devide_preexec() {
+    __casein_preexec() {
       local command="${1:-}"
 
-      if [[ -z "$command" || "$command" == __devide_* ]]; then
+      if [[ -z "$command" || "$command" == __casein_* ]]; then
         return 0
       fi
 
-      __devide_command_active=1
-      __devide_emit_osc "133;C;cmd=$(__devide_urlencode "$command")"
+      __casein_command_active=1
+      __casein_emit_osc "133;C;cmd=$(__casein_urlencode "$command")"
     }
 
     autoload -Uz add-zsh-hook
-    add-zsh-hook precmd __devide_precmd
-    add-zsh-hook preexec __devide_preexec
+    add-zsh-hook precmd __casein_precmd
+    add-zsh-hook preexec __casein_preexec
 
     # %{...%} marks the sequence zero-width; the payload contains no % or $
     # characters, so neither prompt expansion nor PROMPT_SUBST can mangle it.
-    __devide_prompt_end="$(__devide_emit_osc "133;B")"
-    PS1="${PS1}%{${__devide_prompt_end}%}"
-    unset __devide_prompt_end
+    __casein_prompt_end="$(__casein_emit_osc "133;B")"
+    PS1="${PS1}%{${__casein_prompt_end}%}"
+    unset __casein_prompt_end
     """
   end
 
@@ -903,28 +903,28 @@ defmodule Casein.Terminals.Shims do
        """
        # Staged by Casein (ZDOTDIR bootstrap) — restore the user's ZDOTDIR,
        # chain to their real ~/.zshrc, then load Casein shell integration.
-       __devide_user_zdotdir="${CASEIN_USER_ZDOTDIR:-${HOME}}"
-       if [[ "${__devide_user_zdotdir}" != "${HOME}" ]]; then
-         export ZDOTDIR="${__devide_user_zdotdir}"
+       __casein_user_zdotdir="${CASEIN_USER_ZDOTDIR:-${HOME}}"
+       if [[ "${__casein_user_zdotdir}" != "${HOME}" ]]; then
+         export ZDOTDIR="${__casein_user_zdotdir}"
        else
          unset ZDOTDIR
        fi
 
-       if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${__devide_user_zdotdir}/.zshrc" ]]; then
-         source "${__devide_user_zdotdir}/.zshrc"
+       if [[ -z "${CASEIN_SHELL_INTEGRATION_SKIP_RC:-}" && -r "${__casein_user_zdotdir}/.zshrc" ]]; then
+         source "${__casein_user_zdotdir}/.zshrc"
        fi
 
        if [[ -r "${CASEIN_SHELL_INTEGRATION_ZSH:-}" ]]; then
          source "${CASEIN_SHELL_INTEGRATION_ZSH}"
        else
          # Fall back to the integration file next to this staged directory.
-         __devide_zdotdir="${${(%):-%x}:A:h}"
-         if [[ -r "${__devide_zdotdir}/../shell-integration.zsh" ]]; then
-           source "${__devide_zdotdir}/../shell-integration.zsh"
+         __casein_zdotdir="${${(%):-%x}:A:h}"
+         if [[ -r "${__casein_zdotdir}/../shell-integration.zsh" ]]; then
+           source "${__casein_zdotdir}/../shell-integration.zsh"
          fi
-         unset __devide_zdotdir
+         unset __casein_zdotdir
        fi
-       unset CASEIN_USER_ZDOTDIR __devide_user_zdotdir
+       unset CASEIN_USER_ZDOTDIR __casein_user_zdotdir
        """}
     ]
   end
