@@ -99,5 +99,4 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.Navigation do
       {:ok, %{navigated_to: nil, navigation_failed: nil}}
     end
   end
-
 end

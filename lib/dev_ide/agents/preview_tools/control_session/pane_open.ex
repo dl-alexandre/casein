@@ -60,7 +60,10 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
         |> put_shared_registration(result.registration)
         |> Map.put(:health, health)
         |> Map.put(:visibility, operator_visibility.visibility)
-        |> Map.put(:operator_visibility, Visibility.operator_visibility_payload(operator_visibility))
+        |> Map.put(
+          :operator_visibility,
+          Visibility.operator_visibility_payload(operator_visibility)
+        )
         |> Visibility.put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
@@ -100,7 +103,12 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
         health = Visibility.verify_preview_ready(result.session, navigation)
 
         operator_visibility =
-          Visibility.ensure_operator_preview_visible(workspace, result.registration, params, health)
+          Visibility.ensure_operator_preview_visible(
+            workspace,
+            result.registration,
+            params,
+            health
+          )
 
         payload =
           Shared.session_payload(result.session, navigation)
@@ -109,7 +117,10 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
           |> put_shared_registration(result.registration)
           |> Map.put(:health, health)
           |> Map.put(:visibility, operator_visibility.visibility)
-          |> Map.put(:operator_visibility, Visibility.operator_visibility_payload(operator_visibility))
+          |> Map.put(
+            :operator_visibility,
+            Visibility.operator_visibility_payload(operator_visibility)
+          )
           |> Map.put(:placement, PreviewTmuxTopology.placement_payload(result.registration))
           |> Visibility.put_user_visibility(operator_visibility)
           |> maybe_put_reused(result)
@@ -142,7 +153,10 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
         |> put_shared_registration(result.registration)
         |> Map.put(:health, health)
         |> Map.put(:visibility, operator_visibility.visibility)
-        |> Map.put(:operator_visibility, Visibility.operator_visibility_payload(operator_visibility))
+        |> Map.put(
+          :operator_visibility,
+          Visibility.operator_visibility_payload(operator_visibility)
+        )
         |> Visibility.put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
@@ -372,7 +386,8 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
   defp stale_preview_pane_for_url(workspace, url, opts) do
     with origin when is_binary(origin) <- Url.origin_of(url),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
-           Keyword.get(opts, :tmux_session) || SessionResolve.resolve_tmux_session(workspace, opts) do
+           Keyword.get(opts, :tmux_session) ||
+             SessionResolve.resolve_tmux_session(workspace, opts) do
       panes = Shared.terminals().list_session_panes(tmux_session)
 
       find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) ||
@@ -629,7 +644,8 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
         {:ok, registration}
 
       {:error, :registration_timeout} ->
-        tmux_session = Keyword.get(opts, :tmux_session) || SessionResolve.workspace_tmux_session(workspace)
+        tmux_session =
+          Keyword.get(opts, :tmux_session) || SessionResolve.workspace_tmux_session(workspace)
 
         with :ok <- Shared.ensure_tmux_pane_exists(tmux_session, pane_id) do
           PreviewPanes.register(%{
@@ -737,7 +753,9 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
 
   defp maybe_add_preview_env(parts, _key, nil), do: parts
   defp maybe_add_preview_env(parts, _key, ""), do: parts
-  defp maybe_add_preview_env(parts, key, value), do: parts ++ ["#{key}=#{Shared.shell_quote(value)}"]
+
+  defp maybe_add_preview_env(parts, key, value),
+    do: parts ++ ["#{key}=#{Shared.shell_quote(value)}"]
 
   defp maybe_add_viewport_arg(parts, nil), do: parts
   defp maybe_add_viewport_arg(parts, ""), do: parts
@@ -772,5 +790,4 @@ defmodule DevIDE.Agents.PreviewTools.ControlSession.PaneOpen do
         end
     end
   end
-
 end
