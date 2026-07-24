@@ -294,6 +294,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, Terminals.terminal_theme_client_bundle())
+        |> assign(:palette_theme_preview_id, nil)
         |> assign(:terminal_color_scheme, :dark)
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
