@@ -33,7 +33,6 @@ defmodule DevIDE.Agents.TerminalTools do
     CaptureAgent,
     Context,
     GateReport,
-    Impl,
     ListSessions,
     OpenFileInPane,
     PasteAgentText,
@@ -49,6 +48,7 @@ defmodule DevIDE.Agents.TerminalTools do
     WorkspaceDigest
   }
 
+  alias DevIDE.Agents.TerminalTools.Impl.{Agent, Command, Report, Session}
   alias DevIDE.Agents.ToolAction
 
   @type tool :: McpCtl.Tool.t()
@@ -111,41 +111,41 @@ defmodule DevIDE.Agents.TerminalTools do
   end
 
   @doc false
-  defdelegate list_sessions(params \\ %{}), to: Impl
+  defdelegate list_sessions(params \\ %{}), to: Session
   @doc false
-  defdelegate context(params \\ %{}), to: Impl
+  defdelegate context(params \\ %{}), to: Session
   @doc false
-  defdelegate topology(params), to: Impl
+  defdelegate topology(params), to: Session
   @doc false
-  defdelegate capture(params), to: Impl
+  defdelegate capture(params), to: Session
   @doc false
-  defdelegate agent_pane(params), to: Impl
+  defdelegate agent_pane(params), to: Agent
   @doc false
-  defdelegate agent_transcript(params), to: Impl
+  defdelegate agent_transcript(params), to: Agent
   @doc false
-  defdelegate capture_agent(params), to: Impl
+  defdelegate capture_agent(params), to: Agent
   @doc false
-  defdelegate send_agent_keys(params), to: Impl
+  defdelegate send_agent_keys(params), to: Agent
   @doc false
-  defdelegate send_agent_command(params), to: Impl
+  defdelegate send_agent_command(params), to: Agent
   @doc false
-  defdelegate paste_agent_text(params), to: Impl
+  defdelegate paste_agent_text(params), to: Agent
   @doc false
-  defdelegate send_keys(params), to: Impl
+  defdelegate send_keys(params), to: Command
   @doc false
-  defdelegate send_command(params), to: Impl
+  defdelegate send_command(params), to: Command
   @doc false
-  defdelegate open_file_in_pane(params), to: Impl
+  defdelegate open_file_in_pane(params), to: Command
   @doc false
-  defdelegate set_agent_label(params), to: Impl
+  defdelegate set_agent_label(params), to: Agent
   @doc false
-  defdelegate report_agent_state(params), to: Impl
+  defdelegate report_agent_state(params), to: Agent
   @doc false
-  defdelegate wait_agent_state(params), to: Impl
+  defdelegate wait_agent_state(params), to: Agent
   @doc false
-  defdelegate report_worktree(params), to: Impl
+  defdelegate report_worktree(params), to: Report
   @doc false
-  defdelegate workspace_digest(params), to: Impl
+  defdelegate workspace_digest(params), to: Session
   @doc false
-  defdelegate gate_report(params), to: Impl
+  defdelegate gate_report(params), to: Report
 end

@@ -22,7 +22,7 @@ defmodule DevIDE.Agents.TerminalTools.ReportWorktree do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Report}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -47,6 +47,6 @@ defmodule DevIDE.Agents.TerminalTools.ReportWorktree do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.report_worktree(Helpers.to_impl_args(params))
+    Report.report_worktree(Helpers.to_impl_args(params))
   end
 end

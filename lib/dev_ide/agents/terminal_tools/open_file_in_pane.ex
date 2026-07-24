@@ -22,7 +22,7 @@ defmodule DevIDE.Agents.TerminalTools.OpenFileInPane do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Command}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -42,6 +42,6 @@ defmodule DevIDE.Agents.TerminalTools.OpenFileInPane do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.open_file_in_pane(Helpers.to_impl_args(params))
+    Command.open_file_in_pane(Helpers.to_impl_args(params))
   end
 end

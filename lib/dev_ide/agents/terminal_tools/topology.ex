@@ -16,7 +16,7 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Session}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -35,6 +35,6 @@ defmodule DevIDE.Agents.TerminalTools.Topology do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.topology(Helpers.to_impl_args(params))
+    Session.topology(Helpers.to_impl_args(params))
   end
 end

@@ -19,7 +19,7 @@ defmodule DevIDE.Agents.TerminalTools.GateReport do
 
   @behaviour DevIDE.Agents.ToolAction
 
-  alias DevIDE.Agents.TerminalTools.{Helpers, Impl}
+  alias DevIDE.Agents.TerminalTools.{Helpers, Impl.Report}
   alias McpCtl.Tool
 
   @impl DevIDE.Agents.ToolAction
@@ -41,6 +41,6 @@ defmodule DevIDE.Agents.TerminalTools.GateReport do
 
   @impl Jido.Action
   def run(params, _context) do
-    Impl.gate_report(Helpers.to_impl_args(params))
+    Report.gate_report(Helpers.to_impl_args(params))
   end
 end

@@ -3,6 +3,7 @@
  * Minimal newline-delimited JSON daemon for PreviewCtl.Playwright.Bridge tests.
  */
 const readline = require("readline");
+const fs = require("fs");
 
 const rl = readline.createInterface({ input: process.stdin });
 
@@ -18,6 +19,23 @@ rl.on("line", (line) => {
 
   const action = payload.action;
   const url = payload.url || "about:blank";
+
+  // Deterministic in-flight hold for the concurrency test: park the request
+  // until a sentinel file appears, so the Bridge's `pending` slot stays set
+  // long enough for a second command to observe it. No other action blocks.
+  if (action === "block") {
+    const releasePath = payload.release_path;
+    const poll = () => {
+      if (releasePath && fs.existsSync(releasePath)) {
+        process.stdout.write(JSON.stringify({ ok: true, url }) + "\n");
+      } else {
+        setTimeout(poll, 10);
+      }
+    };
+    poll();
+    return;
+  }
+
   const result = { ok: true, url };
 
   if (
