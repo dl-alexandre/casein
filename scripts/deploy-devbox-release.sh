@@ -29,8 +29,12 @@ ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
 RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
-INST_DIR="/run/casein/instances"
-CURRENT_SYMLINK="/run/casein/current.sock"
+# Run-dir + active socket are env-overridable (frozen DEVIDE_* namespace, matching
+# deploy-poller.sh) so a Casein release can serve the existing /run/devide socket
+# during cutover without a milc-devbox Caddy change. Defaults are the renamed paths.
+RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}"
+INST_DIR="${RUN_ROOT}/instances"
+CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}"
 OLD_CURRENT_TARGET=""
 CURRENT_SYMLINK_SWAPPED=0
 CADDY_UPSTREAM_PATCHED=0
