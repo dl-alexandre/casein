@@ -78,11 +78,17 @@ defmodule TmuxCtl.Test.FakeAdapter do
     target = Keyword.get(opts, :target, session)
     send_to_test({:fake_tmux_paste_text, session, target, text, opts})
 
-    if Keyword.get(opts, :submit, false) do
-      send_to_test({:fake_tmux_keys, session, target, "Enter", [target: target]})
-    end
+    case FakeState.get(:fake_tmux_paste_error) do
+      nil ->
+        if Keyword.get(opts, :submit, false) do
+          send_to_test({:fake_tmux_keys, session, target, "Enter", [target: target]})
+        end
 
-    :ok
+        :ok
+
+      reason ->
+        {:error, reason}
+    end
   end
 
   def attach(_session), do: {:ok, :fake}

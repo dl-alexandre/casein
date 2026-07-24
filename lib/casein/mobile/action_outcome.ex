@@ -7,8 +7,9 @@ defmodule Casein.Mobile.ActionOutcome do
 
     * a retried submission (same `request_id`) replays the recorded outcome
       instead of re-applying the side effect, and
-    * a second device racing on the same card cannot both mutate the run
-      (enforced by a partial unique index on `card_id` where status = "accepted").
+    * a second device racing on the same card cannot apply the same class of
+      mutation twice (review resolution and follow-up have separate partial
+      unique indexes).
 
   See `Casein.Mobile.Actions` for the dispatch flow that writes these rows.
   """
@@ -18,10 +19,11 @@ defmodule Casein.Mobile.ActionOutcome do
 
   @primary_key {:id, :binary_id, autogenerate: true}
 
-  # "accepted" — a mutating action was applied (locks the card via the partial
-  #   unique index). "navigated" — a route-only action recorded for audit (no
-  #   lock, so it can recur). "rejected" — validation/authorization failure.
-  @statuses ~w(accepted navigated rejected)
+  # "processing" — an irreversible intervention is claimed before delivery.
+  # "accepted" — a mutating action was applied. "navigated" — a route-only
+  # action recorded for audit. "failed" — claimed delivery failed.
+  # "rejected" — validation/authorization failure.
+  @statuses ~w(processing accepted navigated failed rejected)
 
   schema "mobile_action_outcomes" do
     field :request_id, :string
@@ -62,5 +64,6 @@ defmodule Casein.Mobile.ActionOutcome do
     |> validate_length(:action_id, max: 80)
     |> unique_constraint(:request_id, name: :mobile_action_outcomes_user_request_active_index)
     |> unique_constraint(:card_id, name: :mobile_action_outcomes_accepted_card_id_index)
+    |> unique_constraint(:card_id, name: :mobile_action_outcomes_follow_up_card_id_index)
   end
 end

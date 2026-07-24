@@ -95,6 +95,7 @@ defmodule Casein.Mobile.Card do
           context: %{
             session_id: session_id,
             command_id: attrs[:command_id] || attrs["command_id"],
+            locator: attr(attrs, [:locator, "locator"]),
             files_changed:
               attr(attrs, [:files_changed, "files_changed", :changed_files, "changed_files"]),
             diff_preview: attr(attrs, [:diff_preview, "diff_preview"])
@@ -159,7 +160,10 @@ defmodule Casein.Mobile.Card do
         session_id: session_id,
         priority: :normal,
         status: "running",
-        context: %{session_id: session_id},
+        context: %{
+          session_id: session_id,
+          locator: attr(attrs, [:locator, "locator"])
+        },
         actions: [
           navigation_action_spec("open", "View", {:session_detail, workspace_id, session_id})
         ],

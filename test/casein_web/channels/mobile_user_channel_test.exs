@@ -13,6 +13,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   alias Casein.Workspaces.State.MemoryAdapter
   alias Casein.Repo
   alias CaseinWeb.ChannelAuth
+  alias TmuxCtl.Test.FakeState
 
   @endpoint CaseinWeb.Endpoint
 
@@ -27,9 +28,19 @@ defmodule CaseinWeb.MobileUserChannelTest do
     prev_workspace_source = Application.get_env(:casein, :workspace_source)
     prev_push_provider = Application.get_env(:casein, :push_provider)
     prev_apns_config = Application.get_env(:casein, Casein.Push.APNSProvider)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+    prev_tmux_panes = FakeState.get(:fake_tmux_panes)
+    prev_tmux_scrollback = FakeState.get(:fake_tmux_scrollback)
+    prev_tmux_paste_error = FakeState.get(:fake_tmux_paste_error)
+    prev_tmux_test_pid = FakeState.get(:fake_tmux_test_pid)
     File.mkdir_p!(workspace_root)
     Application.put_env(:casein, :workspaces_root, workspace_root)
     Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    FakeState.put(:fake_tmux_panes, %{})
+    FakeState.put(:fake_tmux_scrollback, %{})
+    FakeState.delete(:fake_tmux_paste_error)
+    FakeState.put(:fake_tmux_test_pid, self())
 
     Audit.clear()
     MemoryAdapter.clear()
@@ -44,6 +55,11 @@ defmodule CaseinWeb.MobileUserChannelTest do
       restore_env(:workspace_source, prev_workspace_source)
       restore_env(:push_provider, prev_push_provider)
       restore_module_env(Casein.Push.APNSProvider, prev_apns_config)
+      restore_env(:tmux_adapter, prev_tmux_adapter)
+      restore_fake_state(:fake_tmux_panes, prev_tmux_panes)
+      restore_fake_state(:fake_tmux_scrollback, prev_tmux_scrollback)
+      restore_fake_state(:fake_tmux_paste_error, prev_tmux_paste_error)
+      restore_fake_state(:fake_tmux_test_pid, prev_tmux_test_pid)
     end)
 
     {:ok, workspace_root: workspace_root}
@@ -216,6 +232,312 @@ defmodule CaseinWeb.MobileUserChannelTest do
     assert card.workspace_id == "other-workspace"
     assert card.priority == "high"
     assert card.meta["reason"] == "token_revoked"
+  end
+
+  test "authoritative card exposes a sanitized bounded intervention and exact PWA link", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {tmux_session, pane_id} => "starting\nTOKEN=super-secret\n\e[31mNeeds your answer\e[0m\n"
+    })
+
+    assert {:ok, _reply, _socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: pane_id, window: "@1"}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+    assert card.intervention["version"] == 1
+    assert card.intervention["target"] == %{"role" => "agent"}
+    assert card.intervention["recent_output"] =~ "TOKEN=[REDACTED]"
+    refute card.intervention["recent_output"] =~ "super-secret"
+    assert card.intervention["pwa_url"] =~ "/workspaces/#{workspace_id}?"
+    assert card.intervention["pwa_url"] =~ "session=#{run_id}"
+    assert card.intervention["pwa_url"] =~ "tmux_session=#{tmux_session}"
+    assert card.intervention["pwa_url"] =~ "pane=%252"
+    assert Enum.any?(card.actions, &(&1["id"] == "follow_up"))
+  end
+
+  test "follow-up revalidates the exact agent pane and duplicate request ids paste once", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Waiting for guidance"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "ios"}
+             )
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: pane_id}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+
+    payload = %{
+      "card_id" => card.id,
+      "action" => "follow_up",
+      "origin_id" => "origin-local",
+      "request_id" => "follow-up-once",
+      "payload" => %{"message" => "Please run the focused test."}
+    }
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id,
+                    "Please run the focused test.", [target: ^pane_id, submit: true]}
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", payload)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        payload
+        | "request_id" => "follow-up-twice",
+          "payload" => %{"message" => "This second message must not be sent."}
+      })
+
+    assert_reply ref, :error, %{reason: "card_already_intervened"}, 1_000
+    refute_receive {:fake_tmux_paste_text, ^tmux_session, ^pane_id, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card.id,
+        "action" => "approve",
+        "origin_id" => "origin-local",
+        "request_id" => "approve-after-follow-up",
+        "payload" => %{}
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    assert %{status: "accepted", result: result} =
+             Repo.get_by!(ActionOutcome, user_id: user_id, request_id: "follow-up-once")
+
+    refute Map.has_key?(result, "message")
+    refute Map.has_key?(result, "output")
+
+    audit =
+      workspace_id
+      |> Audit.recent_for(20)
+      |> Enum.find(&(&1.action == "mobile.intervention"))
+
+    assert audit.metadata["outcome"] == "succeeded"
+    refute Map.has_key?(audit.metadata, "message")
+    refute Map.has_key?(audit.metadata, "output")
+  end
+
+  test "tampered origin and replaced or non-agent pane cannot mutate", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Need input"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "trusted-origin"}
+             )
+
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: pane_id}
+    })
+
+    assert_push "cards_snapshot", %{cards: [card]}, 1_000
+
+    tampered = %{
+      "card_id" => card.id,
+      "action" => "follow_up",
+      "origin_id" => "unknown-origin",
+      "request_id" => "tampered-origin",
+      "payload" => %{"message" => "Do not send"}
+    }
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", tampered)
+    assert_reply ref, :error, %{reason: "origin_mismatch"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{id: pane_id, window_id: "@1", active: true, role: "operator"},
+        %{id: "%3", window_id: "@1", active: false, role: "agent"}
+      ]
+    })
+
+    replaced = %{tampered | "origin_id" => "trusted-origin", "request_id" => "replaced-pane"}
+    ref = Phoenix.ChannelTest.push(socket, "card_action", replaced)
+    assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{id: "%3", window_id: "@1", active: true, role: "agent"}
+      ]
+    })
+
+    stale = %{replaced | "request_id" => "stale-pane"}
+    ref = Phoenix.ChannelTest.push(socket, "card_action", stale)
+    assert_reply ref, :error, %{reason: "intervention_unavailable"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+  end
+
+  test "failed delivery is fail-closed and a new request can retry after reconnect", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Need input"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local"}
+             )
+
+    card_id = seed_intervention_card(user_id, workspace_id, tmux_session, pane_id)
+    assert_push "cards_snapshot", %{cards: [_card]}, 1_000
+    FakeState.put(:fake_tmux_paste_error, :disconnected)
+
+    failed = %{
+      "card_id" => card_id,
+      "action" => "follow_up",
+      "origin_id" => "origin-local",
+      "request_id" => "failed-delivery",
+      "payload" => %{"message" => "Please continue."}
+    }
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", failed)
+    assert_reply ref, :error, %{reason: "intervention_delivery_failed"}, 1_000
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", failed)
+    assert_reply ref, :error, %{reason: "intervention_failed"}, 1_000
+
+    FakeState.delete(:fake_tmux_paste_error)
+    retry = %{failed | "request_id" => "retry-after-reconnect"}
+    ref = Phoenix.ChannelTest.push(socket, "card_action", retry)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+  end
+
+  test "follow-up rejects oversized input before terminal mutation", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+    {tmux_session, pane_id} = seed_intervention_target(workspace_id)
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => "Need input"})
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id, role: :admin, assigns: %{mobile_origin_id: "origin-local"})
+
+    card_id = seed_intervention_card(user_id, workspace_id, tmux_session, pane_id)
+    assert_push "cards_snapshot", %{cards: [_card]}, 1_000
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "too-long",
+        "payload" => %{"message" => String.duplicate("x", 281)}
+      })
+
+    assert_reply ref, :error, %{reason: "message_too_long"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "follow_up",
+        "origin_id" => "origin-local",
+        "request_id" => "terminal-control",
+        "payload" => %{"message" => "continue\e[31m"}
+      })
+
+    assert_reply ref, :error, %{reason: "message_invalid_characters"}, 1_000
+    refute_receive {:fake_tmux_paste_text, _, _, _, _}, 100
+  end
+
+  test "mobile observation accepts only bounded metadata and trusted workspace", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{mobile_origin_id: "origin-local", mobile_platform: "android"}
+             )
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "mobile_observation", %{
+        "event" => "locator_fallback",
+        "outcome" => "succeeded",
+        "fallback_level" => "workspace",
+        "stale_age_bucket" => "under_1h",
+        "workspace_id" => workspace_id,
+        "card_id" => "card-1",
+        "message" => "must be discarded",
+        "output" => "must be discarded"
+      })
+
+    assert_reply ref, :ok, %{}, 1_000
+
+    event =
+      workspace_id
+      |> Audit.recent_for(10)
+      |> Enum.find(&(&1.action == "mobile.locator_fallback"))
+
+    assert event.metadata["origin_id"] == "origin-local"
+    assert event.metadata["fallback_level"] == "workspace"
+    refute Map.has_key?(event.metadata, "message")
+    refute Map.has_key?(event.metadata, "output")
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "mobile_observation", %{
+        "event" => "raw_terminal_output",
+        "outcome" => "succeeded"
+      })
+
+    assert_reply ref, :error, %{reason: "invalid_observation"}, 1_000
   end
 
   test "card_action approves a needs_review card through the run ledger", %{
@@ -809,6 +1131,32 @@ defmodule CaseinWeb.MobileUserChannelTest do
     "needs_review:#{workspace_id}:#{run_id}"
   end
 
+  defp seed_intervention_card(user_id, workspace_id, tmux_session, pane_id) do
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: "run-intervene",
+      review_count: 1,
+      locator: %{tmux_session: tmux_session, pane: pane_id}
+    })
+
+    "needs_review:#{workspace_id}:run-intervene"
+  end
+
+  defp seed_intervention_target(workspace_id) do
+    tmux_session = Casein.Terminals.tmux_session_name(workspace_id, "agent")
+    pane_id = "%2"
+
+    FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{id: "%1", window_id: "@1", active: true, role: "operator"},
+        %{id: pane_id, window_id: "@1", active: false, role: "agent"},
+        %{id: "%3", window_id: "@1", active: false, role: "verify"}
+      ]
+    })
+
+    {tmux_session, pane_id}
+  end
+
   defp create_workspace(workspace_root, workspace_id, user_id) do
     path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(path)
@@ -832,4 +1180,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
 
   defp restore_module_env(module, nil), do: Application.delete_env(:casein, module)
   defp restore_module_env(module, value), do: Application.put_env(:casein, module, value)
+
+  defp restore_fake_state(key, nil), do: FakeState.delete(key)
+  defp restore_fake_state(key, value), do: FakeState.put(key, value)
 end

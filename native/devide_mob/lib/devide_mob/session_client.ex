@@ -119,7 +119,22 @@ defmodule DevideMob.SessionClient do
   @spec card_action(String.t(), String.t(), map() | nil) :: :ok
   def card_action(card_id, action, payload \\ nil)
       when is_binary(card_id) and is_binary(action) and (is_map(payload) or is_nil(payload)) do
-    cast({:card_action, card_id, action, payload})
+    card_action(card_id, action, payload, nil)
+  end
+
+  @doc "Send a card action qualified by the card's server-issued origin id."
+  @spec card_action(String.t(), String.t(), map() | nil, String.t() | nil) :: :ok
+  def card_action(card_id, action, payload, origin_id)
+      when is_binary(card_id) and is_binary(action) and
+             (is_map(payload) or is_nil(payload)) and
+             (is_binary(origin_id) or is_nil(origin_id)) do
+    cast({:card_action, card_id, action, payload, origin_id})
+  end
+
+  @doc "Report one allowlisted, privacy-bounded resume lifecycle observation."
+  @spec mobile_observation(map()) :: :ok
+  def mobile_observation(params) when is_map(params) do
+    cast({:mobile_observation, params})
   end
 
   @doc """
@@ -324,16 +339,20 @@ defmodule DevideMob.SessionClient do
     {:noreply, drop_subscriber(socket, @mobile_cards_topic, subscriber)}
   end
 
-  def handle_cast({:card_action, card_id, action, payload}, socket) do
+  def handle_cast({:card_action, card_id, action, payload, origin_id}, socket) do
     if connected?(socket) and joined?(socket, @mobile_cards_topic) do
       request_id = new_request_id()
 
-      case push(socket, @mobile_cards_topic, "card_action", %{
-             card_id: card_id,
-             action: action,
-             payload: payload,
-             request_id: request_id
-           }) do
+      action_payload =
+        %{
+          card_id: card_id,
+          action: action,
+          payload: payload,
+          request_id: request_id
+        }
+        |> maybe_put_origin_id(origin_id)
+
+      case push(socket, @mobile_cards_topic, "card_action", action_payload) do
         {:ok, ref} ->
           {:noreply, track_card_action(socket, ref, card_id)}
 
@@ -345,6 +364,14 @@ defmodule DevideMob.SessionClient do
       notify_card_action_result(socket, card_id, {:error, :not_connected})
       {:noreply, socket}
     end
+  end
+
+  def handle_cast({:mobile_observation, params}, socket) do
+    if connected?(socket) and joined?(socket, @mobile_cards_topic) do
+      _ = push(socket, @mobile_cards_topic, "mobile_observation", params)
+    end
+
+    {:noreply, socket}
   end
 
   def handle_cast({:register_push, workspace_id, token, platform}, socket) do
@@ -391,6 +418,12 @@ defmodule DevideMob.SessionClient do
     if Process.whereis(@name), do: GenServer.cast(@name, message)
     :ok
   end
+
+  defp maybe_put_origin_id(payload, origin_id)
+       when is_binary(origin_id) and origin_id != "",
+       do: Map.put(payload, :origin_id, origin_id)
+
+  defp maybe_put_origin_id(payload, _origin_id), do: payload
 
   defp watch_topic(socket, topic, subscriber) do
     Process.monitor(subscriber)

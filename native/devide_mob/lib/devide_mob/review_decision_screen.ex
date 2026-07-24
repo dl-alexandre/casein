@@ -39,9 +39,26 @@ defmodule DevideMob.ReviewDecisionScreen do
 
   def handle_info({:card_action_result, card_id, result}, socket) do
     if card_id == get(socket.assigns.card, "id") do
-      {:noreply, Mob.Socket.assign(socket, :message, result_message(result))}
+      observe_intervention(socket, result)
+
+      socket =
+        socket
+        |> Mob.Socket.assign(:message, result_message(result))
+        |> maybe_allow_retry(result)
+
+      {:noreply, socket}
     else
       {:noreply, socket}
+    end
+  end
+
+  def handle_info({:tap, :open_pwa}, socket) do
+    case pwa_url(socket.assigns.card) do
+      url when is_binary(url) and url != "" ->
+        {:noreply, Mob.Socket.push_screen(socket, DevideMob.WebViewScreen, %{url: url})}
+
+      _ ->
+        {:noreply, Mob.Socket.assign(socket, :message, "Full terminal link unavailable")}
     end
   end
 
@@ -56,7 +73,7 @@ defmodule DevideMob.ReviewDecisionScreen do
       type: :column,
       props: %{background: :background, fill_width: true, fill_height: true},
       children: [
-        header(),
+        header(assigns.card),
         %{
           type: :scroll,
           props: %{fill_width: true, weight: 1},
@@ -68,10 +85,12 @@ defmodule DevideMob.ReviewDecisionScreen do
                 [
                   summary_card(assigns.card),
                   context_card(assigns.card),
+                  recent_output_card(assigns.card),
                   decision_context_card(assigns.card),
                   note_card(assigns),
                   message(assigns.message),
-                  action_bar(assigns)
+                  action_bar(assigns),
+                  escalation_button(assigns.card)
                 ]
                 |> Enum.reject(&is_nil/1)
             }
@@ -81,7 +100,7 @@ defmodule DevideMob.ReviewDecisionScreen do
     }
   end
 
-  defp header do
+  defp header(card) do
     %{
       type: :row,
       props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
@@ -101,7 +120,7 @@ defmodule DevideMob.ReviewDecisionScreen do
         %{
           type: :text,
           props: %{
-            text: "Review request",
+            text: if(intervention?(card), do: "Agent needs you", else: "Review request"),
             text_size: :lg,
             text_color: :on_primary,
             font_weight: "bold",
@@ -212,6 +231,44 @@ defmodule DevideMob.ReviewDecisionScreen do
     end
   end
 
+  defp recent_output_card(card) do
+    case card |> get("intervention", %{}) |> get("recent_output") do
+      output when is_binary(output) and output != "" ->
+        %{
+          type: :column,
+          props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
+          children: [
+            %{
+              type: :text,
+              props: %{
+                text: "Recent agent output",
+                text_color: :on_surface,
+                font_weight: "bold"
+              },
+              children: []
+            },
+            %{
+              type: :text,
+              props: %{text: output, text_color: :on_surface, text_size: :sm},
+              children: []
+            },
+            %{
+              type: :text,
+              props: %{
+                text: "Live excerpt · target role: agent",
+                text_color: :muted,
+                text_size: :xs
+              },
+              children: []
+            }
+          ]
+        }
+
+      _ ->
+        nil
+    end
+  end
+
   defp decision_context_section(label, value) do
     text = review_context_text(value)
 
@@ -246,7 +303,8 @@ defmodule DevideMob.ReviewDecisionScreen do
   end
 
   defp note_field(assigns) do
-    remaining = @max_note_length - String.length(assigns.note)
+    follow_up? = follow_up_action?(assigns.card)
+    remaining = max_input_length(assigns.card) - String.length(assigns.note)
 
     %{
       type: :column,
@@ -254,14 +312,22 @@ defmodule DevideMob.ReviewDecisionScreen do
       children: [
         %{
           type: :text,
-          props: %{text: "Note", text_color: :on_surface, font_weight: "bold"},
+          props: %{
+            text: if(follow_up?, do: "Short follow-up", else: "Note"),
+            text_color: :on_surface,
+            font_weight: "bold"
+          },
           children: []
         },
         %{
           type: :text_field,
           props: %{
             value: assigns.note,
-            placeholder: "Add a short note for request changes",
+            placeholder:
+              if(follow_up?,
+                do: "What should the agent do next?",
+                else: "Add a short note for request changes"
+              ),
             keyboard: :default,
             return_key: :done,
             on_change: {self(), :note}
@@ -339,7 +405,14 @@ defmodule DevideMob.ReviewDecisionScreen do
     action_id = get(spec, "id")
 
     if is_binary(card_id) and card_id != "" and is_binary(action_id) do
-      SessionClient.card_action(card_id, action_id, action_payload(spec, socket.assigns.note))
+      origin_id = socket.assigns.card |> get("origin", %{}) |> get("id")
+
+      SessionClient.card_action(
+        card_id,
+        action_id,
+        action_payload(spec, socket.assigns.note),
+        origin_id
+      )
 
       socket
       |> Mob.Socket.assign(:submitted_action, action_id)
@@ -350,11 +423,15 @@ defmodule DevideMob.ReviewDecisionScreen do
   end
 
   defp action_payload(spec, note) do
-    if input_fields(spec) != [] and String.trim(note) != "" do
-      %{"note" => String.trim(note)}
-    else
-      %{}
-    end
+    value = String.trim(note)
+
+    input_fields(spec)
+    |> Enum.reduce(%{}, fn field, acc ->
+      case get(field, "name") do
+        name when name in ["note", "message"] and value != "" -> Map.put(acc, name, value)
+        _ -> acc
+      end
+    end)
   end
 
   defp card_actions(card) do
@@ -381,6 +458,57 @@ defmodule DevideMob.ReviewDecisionScreen do
     case get(spec, "label") do
       label when is_binary(label) and label != "" -> label
       _ -> String.capitalize(to_string(get(spec, "id") || "action"))
+    end
+  end
+
+  defp follow_up_action?(card) do
+    Enum.any?(card_actions(card), &(get(&1, "id") == "follow_up"))
+  end
+
+  defp max_input_length(card) do
+    card
+    |> card_actions()
+    |> Enum.flat_map(&input_fields/1)
+    |> Enum.map(&get(&1, "max_length"))
+    |> Enum.filter(&is_integer/1)
+    |> Enum.min(fn -> @max_note_length end)
+  end
+
+  defp intervention?(card), do: is_map(get(card, "intervention"))
+
+  defp escalation_button(card) do
+    if pwa_url(card) do
+      %{
+        type: :button,
+        props: %{
+          text: "Open full terminal in PWA",
+          background: :surface_raised,
+          text_color: :on_surface,
+          height: 44.0,
+          on_tap: {self(), :open_pwa}
+        },
+        children: []
+      }
+    end
+  end
+
+  defp pwa_url(card) do
+    get(get(card, "intervention", %{}), "pwa_url") || get(card, "pwa_url")
+  end
+
+  defp maybe_allow_retry(socket, {:error, _reason}),
+    do: Mob.Socket.assign(socket, :submitted_action, nil)
+
+  defp maybe_allow_retry(socket, _result), do: socket
+
+  defp observe_intervention(socket, result) do
+    if socket.assigns.submitted_action == "follow_up" do
+      SessionClient.mobile_observation(%{
+        "event" => "intervention",
+        "outcome" => if(match?({:ok, _}, result), do: "succeeded", else: "failed"),
+        "workspace_id" => get(socket.assigns.card, "workspace_id"),
+        "card_id" => get(socket.assigns.card, "id")
+      })
     end
   end
 

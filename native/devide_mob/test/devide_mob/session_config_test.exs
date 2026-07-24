@@ -239,6 +239,10 @@ defmodule DevideMob.SessionConfigTest do
           "workspace_id" => "mac-ws",
           "title" => "Card #{index}",
           "actions" => [%{"id" => "approve"}],
+          "intervention" => %{
+            "recent_output" => "must-not-cache",
+            "action" => %{"id" => "follow_up"}
+          },
           "token" => "must-not-cache",
           "resume" => %{
             "state" => "working",
@@ -267,6 +271,7 @@ defmodule DevideMob.SessionConfigTest do
     assert Enum.all?(cached, &(&1["_cached"] == true))
     assert Enum.all?(cached, &(&1["origin"]["id"] == "origin-mac"))
     refute Enum.any?(cached, &Map.has_key?(&1, "actions"))
+    refute Enum.any?(cached, &Map.has_key?(&1, "intervention"))
     refute Enum.any?(cached, &Map.has_key?(&1, "token"))
     assert hd(cached)["resume"]["freshness"]["kind"] == "cached"
     refute Map.has_key?(hd(cached)["resume"], "actions")

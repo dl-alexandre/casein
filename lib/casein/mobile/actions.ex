@@ -23,7 +23,8 @@ defmodule Casein.Mobile.Actions do
 
   import Ecto.Query, only: [from: 2]
 
-  alias Casein.Mobile.{ActionOutcome, Card, UserObserver}
+  alias Casein.Audit
+  alias Casein.Mobile.{ActionOutcome, Card, Intervention, UserObserver}
   alias Casein.Repo
   alias Casein.Runs.Ledger
   alias Casein.Workspaces
@@ -57,7 +58,7 @@ defmodule Casein.Mobile.Actions do
     # have been cleared from the transient observer. Scoped to the authenticated
     # user, and only successes replay — a recorded rejection is audit-only and
     # must never block (or be readable by) another attempt.
-    case fetch_success_outcome(context.user_id, request_id) do
+    case fetch_active_outcome(context.user_id, request_id) do
       %ActionOutcome{} = existing -> replay_existing(existing)
       nil -> dispatch_new(context, params, card_id, action_id, request_id)
     end
@@ -69,7 +70,8 @@ defmodule Casein.Mobile.Actions do
     action_params = Map.get(params, "payload") || Map.get(params, "params") || %{}
 
     with {:ok, card} <- reload_card(context.user_id, card_id),
-         {:ok, spec} <- Card.fetch_action(card, action_id),
+         {:ok, spec} <- fetch_declared_action(card, action_id),
+         :ok <- ensure_origin(context, params, spec),
          :ok <- ensure_dispatchable(card),
          {:ok, validated} <- validate_params(spec, action_params),
          :ok <- authorize(context, card) do
@@ -94,6 +96,32 @@ defmodule Casein.Mobile.Actions do
     end
   end
 
+  defp fetch_declared_action(card, action_id) do
+    case Card.fetch_action(card, action_id) do
+      {:ok, spec} -> {:ok, spec}
+      {:error, :unsupported_action} -> Intervention.available_action(card, action_id)
+    end
+  end
+
+  defp ensure_origin(context, params, %{id: "follow_up"}) do
+    trusted_origin_id = Map.get(context, :origin_id)
+
+    case Map.get(params, "origin_id") do
+      ^trusted_origin_id when is_binary(trusted_origin_id) and trusted_origin_id != "" -> :ok
+      _ -> {:error, :origin_mismatch}
+    end
+  end
+
+  defp ensure_origin(context, params, _spec) do
+    case Map.get(params, "origin_id") do
+      nil ->
+        :ok
+
+      origin_id ->
+        if(origin_id == Map.get(context, :origin_id), do: :ok, else: {:error, :origin_mismatch})
+    end
+  end
+
   # All v1 actions mutate a run and therefore require a session.
   defp ensure_dispatchable(%{session_id: session_id})
        when is_binary(session_id) and session_id != "",
@@ -105,12 +133,35 @@ defmodule Casein.Mobile.Actions do
 
   defp validate_params(spec, params) do
     case Card.validate_action_params(spec, params) do
-      {:ok, validated} -> {:ok, validated}
-      {:error, {:required, :note}} -> {:error, :note_required}
-      {:error, {:too_long, :note}} -> {:error, :note_too_long}
-      {:error, {:required, _field}} -> {:error, :missing_required_input}
-      {:error, {:too_long, _field}} -> {:error, :input_too_long}
-      {:error, _other} -> {:error, :invalid_payload}
+      {:ok, %{message: message} = validated} when spec.id == "follow_up" ->
+        case Intervention.validate_message(message) do
+          {:ok, message} -> {:ok, %{validated | message: message}}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:ok, validated} ->
+        {:ok, validated}
+
+      {:error, {:required, :note}} ->
+        {:error, :note_required}
+
+      {:error, {:too_long, :note}} ->
+        {:error, :note_too_long}
+
+      {:error, {:required, :message}} ->
+        {:error, :message_required}
+
+      {:error, {:too_long, :message}} ->
+        {:error, :message_too_long}
+
+      {:error, {:required, _field}} ->
+        {:error, :missing_required_input}
+
+      {:error, {:too_long, _field}} ->
+        {:error, :input_too_long}
+
+      {:error, _other} ->
+        {:error, :invalid_payload}
     end
   end
 
@@ -152,11 +203,95 @@ defmodule Casein.Mobile.Actions do
   # --- Steps 4 + 5: persist, apply, audit (atomic on the outcome) ---------
 
   defp commit(context, card, spec, validated, request_id) do
-    if Card.navigation_action?(spec) do
-      commit_navigation(context, card, spec, request_id)
-    else
-      commit_mutation(context, card, spec, validated, request_id)
+    cond do
+      spec.id == "follow_up" ->
+        commit_intervention(context, card, spec, validated, request_id)
+
+      Card.navigation_action?(spec) ->
+        commit_navigation(context, card, spec, request_id)
+
+      true ->
+        commit_mutation(context, card, spec, validated, request_id)
     end
+  end
+
+  # An irreversible tmux paste cannot live inside a database transaction. Claim
+  # the request first, then deliver at most once. A crash after delivery leaves a
+  # processing claim, which fails closed instead of risking a duplicate paste.
+  defp commit_intervention(context, card, spec, validated, request_id) do
+    outcome_attrs = %{
+      request_id: request_id,
+      user_id: context.user_id,
+      card_id: card.id,
+      action_id: spec.id,
+      resource_type: resource_field(card, :type),
+      resource_id: resource_field(card, :id),
+      device_link_id: Map.get(context, :device_link_id),
+      platform: Map.get(context, :platform),
+      status: "processing",
+      result: %{}
+    }
+
+    case %ActionOutcome{} |> ActionOutcome.changeset(outcome_attrs) |> Repo.insert() do
+      {:ok, outcome} ->
+        deliver_intervention(context, card, outcome, Map.fetch!(validated, :message))
+
+      {:error, changeset} ->
+        handle_conflict(changeset, context.user_id, request_id)
+    end
+  end
+
+  defp deliver_intervention(context, card, outcome, message) do
+    case Intervention.send_follow_up(card, message) do
+      {:ok, result} ->
+        {:ok, outcome} =
+          outcome
+          |> ActionOutcome.changeset(%{status: "accepted", result: result})
+          |> Repo.update()
+
+        record_intervention_audit(context, card, "succeeded", nil)
+
+        {:ok,
+         %{
+           status: "accepted",
+           action_id: outcome.action_id,
+           card_id: outcome.card_id,
+           result: outcome.result,
+           idempotent: false
+         }}
+
+      {:error, reason} ->
+        _ =
+          outcome
+          |> ActionOutcome.changeset(%{status: "failed", reason: to_string(reason)})
+          |> Repo.update()
+
+        record_intervention_audit(context, card, "failed", reason)
+        {:error, reason}
+    end
+  end
+
+  defp record_intervention_audit(context, card, outcome, reason) do
+    Audit.emit!(%{
+      action: "mobile.intervention",
+      workspace_id: card.workspace_id,
+      actor_id: context.user_id,
+      target_type: "mobile_card",
+      target_ref: card.id,
+      metadata:
+        %{
+          "source" => "mobile",
+          "action_id" => "follow_up",
+          "card_id" => card.id,
+          "outcome" => outcome,
+          "reason" => reason && to_string(reason),
+          "target_role" => "agent",
+          "device_link_id" => Map.get(context, :device_link_id),
+          "platform" => Map.get(context, :platform),
+          "origin_id" => Map.get(context, :origin_id)
+        }
+        |> drop_nil_values()
+    })
   end
 
   # Route-only action: record the intent for audit, no runtime mutation and no
@@ -290,15 +425,20 @@ defmodule Casein.Mobile.Actions do
   # --- Idempotency conflict handling --------------------------------------
 
   defp handle_conflict(changeset, user_id, request_id) do
-    if constraint_violation?(changeset, :mobile_action_outcomes_accepted_card_id_index) do
-      {:error, :card_already_resolved}
-    else
-      replay(user_id, request_id)
+    cond do
+      constraint_violation?(changeset, :mobile_action_outcomes_follow_up_card_id_index) ->
+        {:error, :card_already_intervened}
+
+      constraint_violation?(changeset, :mobile_action_outcomes_accepted_card_id_index) ->
+        {:error, :card_already_resolved}
+
+      true ->
+        replay(user_id, request_id)
     end
   end
 
   defp replay(user_id, request_id) do
-    case fetch_success_outcome(user_id, request_id) do
+    case fetch_active_outcome(user_id, request_id) do
       %ActionOutcome{} = outcome -> replay_existing(outcome)
       nil -> {:error, :conflict}
     end
@@ -307,7 +447,7 @@ defmodule Casein.Mobile.Actions do
   # Only terminal SUCCESS outcomes (accepted/navigated) for this user replay.
   # Rejections are excluded here (and by the partial index) so they can neither
   # block nor be read by a later attempt.
-  defp fetch_success_outcome(user_id, request_id) do
+  defp fetch_active_outcome(user_id, request_id) do
     Repo.one(
       from(o in ActionOutcome,
         where: o.user_id == ^user_id and o.request_id == ^request_id and o.status != "rejected"
@@ -326,6 +466,12 @@ defmodule Casein.Mobile.Actions do
        idempotent: true
      }}
   end
+
+  defp replay_existing(%ActionOutcome{status: "processing"}),
+    do: {:error, :intervention_in_progress}
+
+  defp replay_existing(%ActionOutcome{status: "failed"}),
+    do: {:error, :intervention_failed}
 
   # Best-effort durable record of a rejected attempt, for audit only. Not keyed
   # for dedupe: rejections never replay and never block a later corrected
