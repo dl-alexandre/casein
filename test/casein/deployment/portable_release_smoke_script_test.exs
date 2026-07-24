@@ -4,6 +4,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
   @script Path.expand("../../../scripts/portable-release-smoke.sh", __DIR__)
   @compose Path.expand("../../../docker-compose.yml", __DIR__)
   @dockerfile Path.expand("../../../Dockerfile", __DIR__)
+  @deploy_script Path.expand("../../../scripts/deploy-devbox-release.sh", __DIR__)
 
   test "portable smoke script has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -32,5 +33,16 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
 
     assert text =~ "HOME=/home/casein"
     refute text =~ "HOME=/app"
+  end
+
+  test "devbox activation uses the renamed release entrypoint and socket cleaner" do
+    text = File.read!(@deploy_script)
+
+    assert text =~ ~s("${STAGING}/bin/casein")
+    assert text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket)
+    assert text =~ ~s("${ACTIVE_RELEASE}/bin/casein" start)
+    refute text =~ ~s("${STAGING}/bin/dev_ide")
+    refute text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket)
+    refute text =~ ~s("${ACTIVE_RELEASE}/bin/dev_ide" start)
   end
 end
