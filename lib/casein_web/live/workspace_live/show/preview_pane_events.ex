@@ -136,7 +136,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
               :preview_panes,
               Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
             )
-            |> push_event("devide:reload_preview_iframes", %{
+            |> push_event("casein:reload_preview_iframes", %{
               "action" => "reload_preview_iframe",
               "force" => true,
               "pane_id" => pane_id,
@@ -195,7 +195,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
         socket =
           Enum.reduce(reload_pane_ids, socket, fn pane_id, acc ->
-            push_event(acc, "devide:reload_preview_iframes", %{"pane_id" => pane_id})
+            push_event(acc, "casein:reload_preview_iframes", %{"pane_id" => pane_id})
           end)
 
         {:noreply, socket}
@@ -212,11 +212,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
     # An explicit agent reload tool: force the frame to reload even when the URL
     # is unchanged (the soft path only re-points src on a real URL change).
     {:noreply,
-     push_event(socket, "devide:reload_preview_iframes", Map.put(payload, "force", true))}
+     push_event(socket, "casein:reload_preview_iframes", Map.put(payload, "force", true))}
   end
 
   def handle_info({:browser_control, %{"action" => "reload_page"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:reload_page", payload)}
+    {:noreply, push_event(socket, "casein:reload_page", payload)}
   end
 
   def handle_info({:browser_control, %{"action" => "focus_preview_pane"} = payload}, socket) do
@@ -229,7 +229,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
   end
 
   def handle_info({:browser_control, %{"action" => "preview_pane_action"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
+    {:noreply, push_event(socket, "casein:preview_pane_action", payload)}
   end
 
   @doc false
@@ -274,7 +274,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
 
     socket =
       if is_map(existing) and preview_pane_url_changed?(existing, pane) do
-        push_event(socket, "devide:reload_preview_iframes", %{"pane_id" => pane.pane_id})
+        push_event(socket, "casein:reload_preview_iframes", %{"pane_id" => pane.pane_id})
       else
         socket
       end
@@ -742,7 +742,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.PreviewPaneEvents do
         {:noreply,
          socket
          |> assign(:entered_preview_pane_id, pane_id)
-         |> push_event("devide:reload_preview_iframes", %{
+         |> push_event("casein:reload_preview_iframes", %{
            "pane_id" => pane_id,
            "force" => true
          })}

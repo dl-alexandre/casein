@@ -242,7 +242,7 @@ defmodule Casein.NotificationsTest do
     assert attrs.dedupe_window_seconds == 300
     assert attrs.source_type == "audit_event"
     assert attrs.source_id == event.id
-    assert attrs.deep_link == "devide://session/ws-1"
+    assert attrs.deep_link == "casein://session/ws-1"
     assert attrs.dedupe_key == "dev:policy_blocked:ws-1:lib/auth.ex"
     assert attrs.metadata["action"] == "policy.blocked"
     assert attrs.metadata["audit_metadata"] == %{session_id: "run-1"}

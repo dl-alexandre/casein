@@ -468,7 +468,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenuTest do
 
       assert html =~ ~s(href="/w/1")
       assert html =~ ~s(target="_blank")
-      assert html =~ "devide:ctx-action"
+      assert html =~ "casein:ctx-action"
       assert html =~ ~s(data-confirm="Kill this window?")
     end
   end

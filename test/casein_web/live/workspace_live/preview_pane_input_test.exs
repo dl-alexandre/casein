@@ -170,7 +170,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
     assert assigns(view).entered_preview_pane_id == @pane_id
     pane_id = @pane_id
 
-    assert_push_event(view, "devide:reload_preview_iframes", %{
+    assert_push_event(view, "casein:reload_preview_iframes", %{
       "pane_id" => ^pane_id,
       "force" => true
     })

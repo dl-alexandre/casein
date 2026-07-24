@@ -11,7 +11,7 @@ defmodule Casein.Push.APNSProviderTest do
     card_id: "needs_review:ws-7:run-1",
     card_type: "needs_review",
     session_id: "run-1",
-    deep_link: "devide://review/needs_review%3Aws-7%3Arun-1"
+    deep_link: "casein://review/needs_review%3Aws-7%3Arun-1"
   }
 
   setup do
@@ -67,7 +67,7 @@ defmodule Casein.Push.APNSProviderTest do
     assert body["id"] == "needs_review:ws-7:run-1"
     assert body["workspace_id"] == "ws-7"
     assert body["action"] == "mobile.needs_review"
-    assert body["deep_link"] == "devide://review/needs_review%3Aws-7%3Arun-1"
+    assert body["deep_link"] == "casein://review/needs_review%3Aws-7%3Arun-1"
     assert body["card_id"] == "needs_review:ws-7:run-1"
     assert body["card_type"] == "needs_review"
     assert body["session_id"] == "run-1"

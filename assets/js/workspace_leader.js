@@ -183,7 +183,7 @@ export const WorkspaceLeader = {
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
-    window.addEventListener("devide:leader-second-key", this._onLeaderSecondKey)
+    window.addEventListener("casein:leader-second-key", this._onLeaderSecondKey)
     this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
@@ -222,7 +222,7 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter(null)
 
     window.removeEventListener("keydown", this._onKeydown, true)
-    window.removeEventListener("devide:leader-second-key", this._onLeaderSecondKey)
+    window.removeEventListener("casein:leader-second-key", this._onLeaderSecondKey)
     this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
@@ -396,7 +396,7 @@ export const WorkspaceLeader = {
 
           if (sidebarEl && sidebarEl.offsetParent !== null) {
             sidebarEl.dispatchEvent(
-              new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
+              new CustomEvent("casein:window-sidebar:focus", {bubbles: true})
             )
             this._startSidebarHoldWatch(key, sidebarEl)
             return
@@ -408,7 +408,7 @@ export const WorkspaceLeader = {
             requestAnimationFrame(() => {
               const el = document.querySelector("[data-window-picker-sidebar]")
               if (!el) return
-              el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+              el.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
               this._startSidebarHoldWatch(key, el)
             })
           })
@@ -421,7 +421,7 @@ export const WorkspaceLeader = {
 
           if (sessionsEl && sessionsEl.offsetParent !== null) {
             sessionsEl.dispatchEvent(
-              new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
+              new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true})
             )
             this._startSessionsSidebarHoldWatch(key, sessionsEl)
             return
@@ -433,7 +433,7 @@ export const WorkspaceLeader = {
             requestAnimationFrame(() => {
               const el = document.querySelector("[data-sessions-picker-sidebar]")
               if (!el) return
-              el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+              el.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
               this._startSessionsSidebarHoldWatch(key, el)
             })
           })
@@ -611,7 +611,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("casein:window-sidebar:focus", {bubbles: true}))
         return
       }
 
@@ -674,7 +674,7 @@ export const WorkspaceLeader = {
       window.removeEventListener("keydown", onKeydown, true)
 
       if (!inHoldMode) {
-        sidebarEl.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+        sidebarEl.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus", {bubbles: true}))
         return
       }
 

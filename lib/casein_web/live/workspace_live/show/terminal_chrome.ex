@@ -113,11 +113,11 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
       )
 
     [
-      "--devide-mobile-pane-left: #{left}%",
-      "--devide-mobile-pane-top: #{top}%",
-      "--devide-mobile-pane-width: #{width}%",
-      "--devide-mobile-pane-height: #{height}%",
-      "--devide-mobile-pane-scale: #{scale}"
+      "--casein-mobile-pane-left: #{left}%",
+      "--casein-mobile-pane-top: #{top}%",
+      "--casein-mobile-pane-width: #{width}%",
+      "--casein-mobile-pane-height: #{height}%",
+      "--casein-mobile-pane-scale: #{scale}"
     ]
     |> Enum.join("; ")
     |> Kernel.<>(";")
@@ -145,19 +145,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
   def mobile_pane_rails(_panes, _active_pane_id), do: []
 
   def mobile_pane_rail_style(%{direction: :left, start: start, size: size}) do
-    "left: 0; top: #{start}%; height: #{size}%; width: var(--devide-mobile-pane-rail-hit);"
+    "left: 0; top: #{start}%; height: #{size}%; width: var(--casein-mobile-pane-rail-hit);"
   end
 
   def mobile_pane_rail_style(%{direction: :right, start: start, size: size}) do
-    "right: 0; top: #{start}%; height: #{size}%; width: var(--devide-mobile-pane-rail-hit);"
+    "right: 0; top: #{start}%; height: #{size}%; width: var(--casein-mobile-pane-rail-hit);"
   end
 
   def mobile_pane_rail_style(%{direction: :top, start: start, size: size}) do
-    "top: 0; left: #{start}%; width: #{size}%; height: var(--devide-mobile-pane-rail-hit);"
+    "top: 0; left: #{start}%; width: #{size}%; height: var(--casein-mobile-pane-rail-hit);"
   end
 
   def mobile_pane_rail_style(%{direction: :bottom, start: start, size: size}) do
-    "bottom: 0; left: #{start}%; width: #{size}%; height: var(--devide-mobile-pane-rail-hit);"
+    "bottom: 0; left: #{start}%; width: #{size}%; height: var(--casein-mobile-pane-rail-hit);"
   end
 
   def tmux_dimension(value) when is_integer(value), do: max(value, 0)
@@ -1258,7 +1258,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChrome do
         <button
           type="button"
           phx-click={
-            JS.dispatch("devide:file-pane:close-tab",
+            JS.dispatch("casein:file-pane:close-tab",
               to: "[id='file-pane-" <> dom_fragment(@strip.pane_id) <> "']",
               detail: %{path: tab.path}
             )

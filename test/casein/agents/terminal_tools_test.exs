@@ -715,7 +715,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   defp tmp_dir!(name) do
     root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
-    path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
+    path = Path.join(root, "casein-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
     make_tree_writable(path)
     File.rm_rf!(path)
     File.mkdir_p!(path)

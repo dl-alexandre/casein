@@ -11,7 +11,7 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
     unique = System.unique_integer([:positive])
     workspace_id = "ws-#{unique}"
     workspace_name = "alpha-#{unique}"
-    workspace_root = Path.join(System.tmp_dir!(), "devide-terminal-live-#{unique}")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-terminal-live-#{unique}")
 
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)

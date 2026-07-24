@@ -255,7 +255,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assert html =~ "Source"
       assert html =~ "Rendered"
-      assert html =~ "devide:file-mode"
+      assert html =~ "casein:file-mode"
     end
 
     test "does not render markdown mode buttons for non-markdown files" do
@@ -265,7 +265,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanelsTest do
       html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       refute html =~ "Rendered"
-      refute html =~ "devide:file-mode"
+      refute html =~ "casein:file-mode"
     end
 
     test "renders rename input form when rename_input present" do

@@ -90,7 +90,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
       |> TerminalState.assign_session_tabs([tab(working_window)])
       |> TerminalState.assign_session_tabs([tab(ready_window)])
 
-    assert [["devide:agent_quiet", payload]] = socket.private.live_temp.push_events
+    assert [["casein:agent_quiet", payload]] = socket.private.live_temp.push_events
     assert payload.session_id == "u-agent"
     assert payload.window_id == "@1"
     assert payload.workspace == "workspace"
@@ -178,7 +178,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
       |> TerminalState.assign_session_tabs([tab(working_window)])
       |> TerminalState.assign_session_tabs([tab(ready_window)])
 
-    assert [["devide:agent_quiet", payload]] = socket.private.live_temp.push_events
+    assert [["casein:agent_quiet", payload]] = socket.private.live_temp.push_events
     assert payload.reaction == "notify"
 
     assert_receive {:quiet_transition, [:casein, :attention, :quiet_agent, :transition],

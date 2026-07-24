@@ -198,7 +198,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FileOperations do
 
     case Markdown.render_html(file.content, ctx) do
       {:ok, html} -> html
-      {:error, _reason} -> ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
+      {:error, _reason} -> ~s(<p class="casein-markdown-error">Markdown render failed.</p>)
     end
   end
 

@@ -209,13 +209,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
           %{width: 100, height: 40}
         )
 
-      assert style =~ "--devide-mobile-pane-left: 50.0%"
-      assert style =~ "--devide-mobile-pane-top: 0.0%"
-      assert style =~ "--devide-mobile-pane-width: 50.0%"
-      assert style =~ "--devide-mobile-pane-height: 50.0%"
+      assert style =~ "--casein-mobile-pane-left: 50.0%"
+      assert style =~ "--casein-mobile-pane-top: 0.0%"
+      assert style =~ "--casein-mobile-pane-width: 50.0%"
+      assert style =~ "--casein-mobile-pane-height: 50.0%"
       # Equal x/y fit factors here (100/50 == 40/20) -> uniform scale 2.0.
-      assert style =~ "--devide-mobile-pane-scale: 2.0"
-      refute style =~ "--devide-mobile-pane-scale-x"
+      assert style =~ "--casein-mobile-pane-scale: 2.0"
+      refute style =~ "--casein-mobile-pane-scale-x"
     end
 
     test "uses the smaller fit factor so an off-aspect pane never stretches" do
@@ -227,7 +227,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
           %{width: 100, height: 40}
         )
 
-      assert style =~ "--devide-mobile-pane-scale: 1.0"
+      assert style =~ "--casein-mobile-pane-scale: 1.0"
     end
   end
 

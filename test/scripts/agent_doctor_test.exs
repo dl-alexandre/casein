@@ -71,7 +71,7 @@ defmodule Scripts.AgentDoctorTest do
     leader = listen_unix_socket!(home)
 
     server_names = [
-      "devide-terminal-demo-workspace",
+      "casein-terminal-demo-workspace",
       "casein-preview-demo-workspace",
       "devide-artifact-demo-workspace"
     ]

@@ -18,7 +18,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
     * `%{id:, label:, copy: text}` — client-side clipboard copy (CopyText hook)
     * `%{id:, label:, href: path}` — open a same-origin path in a new tab
     * `%{id:, label:, action: name, target: selector}` — dispatch a
-      `devide:ctx-action` CustomEvent to `target` (client-side actions owned
+      `casein:ctx-action` CustomEvent to `target` (client-side actions owned
       by another hook, e.g. terminal copy/paste)
     * `%{divider: true}` — separator
     * plus optional `danger: true` / `disabled: true` on any button shape
@@ -641,7 +641,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
         role="menu"
         aria-label="Context menu"
         phx-click-away="ctx:close"
-        phx-mounted={JS.dispatch("devide:ctx-menu-mounted")}
+        phx-mounted={JS.dispatch("casein:ctx-menu-mounted")}
         style={"left: #{@context_menu.x}px; top: #{@context_menu.y}px;"}
         class="fixed z-[70] min-w-44 max-w-72 overflow-hidden rounded border border-base-300 bg-base-100 py-1 text-sm text-base-content shadow-2xl"
       >
@@ -680,7 +680,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ContextMenu do
                 id={"ctx-item-" <> item.id}
                 disabled={item[:disabled]}
                 phx-click={
-                  JS.dispatch("devide:ctx-action",
+                  JS.dispatch("casein:ctx-action",
                     to: item.target,
                     detail: Map.merge(%{action: item.action}, item[:detail] || %{})
                   )

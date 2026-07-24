@@ -20,7 +20,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
     workspace_root =
       Path.join(
         System.tmp_dir!(),
-        "devide-mobile-user-channel-#{System.unique_integer([:positive])}"
+        "casein-mobile-user-channel-#{System.unique_integer([:positive])}"
       )
 
     prev_workspace_root = Application.get_env(:casein, :workspaces_root)

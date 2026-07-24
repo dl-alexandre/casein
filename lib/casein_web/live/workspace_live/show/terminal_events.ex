@@ -192,7 +192,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
           socket =
             socket
             |> TerminalState.refresh_tmux_topology()
-            |> push_event("devide:open_tab", %{url: url})
+            |> push_event("casein:open_tab", %{url: url})
 
           {:noreply, socket}
 
@@ -700,7 +700,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
            :info,
            "That site blocks embedding — opened it in a new browser tab instead."
          )
-         |> push_event("devide:open_tab", %{url: url})}
+         |> push_event("casein:open_tab", %{url: url})}
 
       true ->
         PreviewPaneEvents.handle_event("preview:open", %{"url" => url}, socket)

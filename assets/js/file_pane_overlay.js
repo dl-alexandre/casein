@@ -84,7 +84,7 @@ export const FilePaneOverlay = {
     // Close-tab is client-first: only the client knows whether the buffer is
     // dirty, so the tab strip dispatches here and we confirm before pushing.
     this._onCloseTab = (event) => this.closeTab(event.detail?.path)
-    this.el.addEventListener("devide:file-pane:close-tab", this._onCloseTab)
+    this.el.addEventListener("casein:file-pane:close-tab", this._onCloseTab)
 
     // Right-click menus (shared ContextMenu hook). The editor body carries
     // data-ctx-menu="file_pane_editor"; refresh its dynamic ctx (selection,
@@ -99,7 +99,7 @@ export const FilePaneOverlay = {
       this.editorEl.dataset.ctxHasSelection = this._ctxSelection ? "true" : "false"
       this.editorEl.dataset.ctxPath = this.activePath || ""
     }
-    this.editorEl.addEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
+    this.editorEl.addEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
 
     this._onCtxAction = (e) => {
       const { action, path } = e.detail || {}
@@ -122,7 +122,7 @@ export const FilePaneOverlay = {
         onSave: () => this.save()
       })
     }
-    this.el.addEventListener("devide:ctx-action", this._onCtxAction)
+    this.el.addEventListener("casein:ctx-action", this._onCtxAction)
   },
 
   updated() {
@@ -145,9 +145,9 @@ export const FilePaneOverlay = {
     this._sectionGeometryObserver?.disconnect()
     this._sectionGeometryObserver = null
     this.el.removeEventListener("focusin", this._onFocusIn)
-    this.el.removeEventListener("devide:file-pane:close-tab", this._onCloseTab)
-    this.editorEl.removeEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
-    this.el.removeEventListener("devide:ctx-action", this._onCtxAction)
+    this.el.removeEventListener("casein:file-pane:close-tab", this._onCloseTab)
+    this.editorEl.removeEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
+    this.el.removeEventListener("casein:ctx-action", this._onCtxAction)
     this.placeholderEl?.remove()
     this.placeholderEl = null
     this.view?.destroy()

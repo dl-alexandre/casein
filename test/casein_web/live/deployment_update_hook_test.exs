@@ -222,7 +222,7 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     Phoenix.PubSub.broadcast(Casein.PubSub, "deploy:updates", {:deploy_reconnect})
 
-    assert_push_event(view, "devide:deploy_reconnect", %{})
+    assert_push_event(view, "casein:deploy_reconnect", %{})
   end
 
   test "a stale client_version connect param does NOT flag update state (string check retired)",

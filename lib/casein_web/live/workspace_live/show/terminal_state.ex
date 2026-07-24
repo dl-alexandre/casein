@@ -1158,7 +1158,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
       |> Map.put(:workspace, workspace_name)
       |> Map.put(:reaction, AttentionPolicy.reaction_label(:notify))
 
-    push_event(socket, "devide:agent_quiet", payload)
+    push_event(socket, "casein:agent_quiet", payload)
   end
 
   defp maybe_push_quiet_agent_event(socket, _entry, _workspace_name, _reaction), do: socket

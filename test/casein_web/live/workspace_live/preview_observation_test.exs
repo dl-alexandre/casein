@@ -334,7 +334,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
     assert :sys.get_state(view.pid).socket.assigns.preview_panes[pane_id].display_url ==
              "https://example.com/two"
 
-    assert_push_event(view, "devide:reload_preview_iframes", %{"pane_id" => ^pane_id})
+    assert_push_event(view, "casein:reload_preview_iframes", %{"pane_id" => ^pane_id})
 
     # Removal drops the pane from both the derived and the generic assigns.
     broadcast_pane_event(workspace_id, :removed, pane_id, %{})

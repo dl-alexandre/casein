@@ -124,7 +124,7 @@ defmodule Casein.PushTest do
     assert notification.user_id == user_id
     assert notification.session_id == "run-1"
     assert notification.card_id == "needs_review:pw-1:run-1"
-    assert notification.deep_link == "devide://review/needs_review%3Apw-1%3Arun-1"
+    assert notification.deep_link == "casein://review/needs_review%3Apw-1%3Arun-1"
     refute_receive {:pushed, "tok-other", "ios", _notification}, 300
 
     assert eventually(fn ->

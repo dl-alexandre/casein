@@ -66,7 +66,7 @@ defmodule CaseinWeb.LayoutsTest do
       )
 
     assert html =~ ~s(id="browser-alert-opt-in")
-    assert html =~ "data-devide-notification-permission"
+    assert html =~ "data-casein-notification-permission"
     assert html =~ "Enable alerts"
     assert html =~ "Body"
   end

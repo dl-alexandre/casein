@@ -71,7 +71,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEventsTest do
     mcp = Jason.decode!(s2.assigns.connect_mcp_json)
     assert %{"mcpServers" => servers} = mcp
 
-    for name <- ["devide-terminal", "casein-preview", "devide-artifact"] do
+    for name <- ["casein-terminal", "casein-preview", "devide-artifact"] do
       assert %{"headers" => %{"Authorization" => auth}} = servers[name]
       assert auth == "Bearer " <> raw
     end

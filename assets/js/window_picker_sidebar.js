@@ -18,7 +18,7 @@ export const WindowPickerSidebar = {
     this._onSidebarFocus = () => this.focusInitial()
     this.el.addEventListener("keydown", this._onKeydown)
     this.el.addEventListener("click", this._onClick, true)
-    this.el.addEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
+    this.el.addEventListener("casein:window-sidebar:focus", this._onSidebarFocus)
     this.handleEvent("sidebar:focus_windows", () => this.focusInitial())
     this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
     restoreSidebarSort(this, "windows")
@@ -27,7 +27,7 @@ export const WindowPickerSidebar = {
   destroyed() {
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("click", this._onClick, true)
-    this.el.removeEventListener("devide:window-sidebar:focus", this._onSidebarFocus)
+    this.el.removeEventListener("casein:window-sidebar:focus", this._onSidebarFocus)
   },
 
   // See SessionsPickerSidebar: keep keyboard focus inside the rail across a
@@ -237,7 +237,7 @@ export const WindowPickerSidebar = {
   _focusSessionsRail() {
     const rail = document.querySelector("[data-sessions-picker-sidebar]")
     if (rail) {
-      rail.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus"))
+      rail.dispatchEvent(new CustomEvent("casein:sessions-sidebar:focus"))
       const items = Array.from(rail.querySelectorAll("[data-picker-item]")).filter(
         (el) => el.offsetParent !== null && el.style.display !== "none"
       )

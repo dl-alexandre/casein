@@ -66,7 +66,7 @@ defmodule CaseinWeb.DeploymentUpdateHook do
           # The draining instance we're attached to has waited out its grace and
           # wants us gone. Do a background LiveSocket reconnect (silent for
           # code-only deploys) so the old node can drain and stop.
-          {:halt, push_event(socket, "devide:deploy_reconnect", %{})}
+          {:halt, push_event(socket, "casein:deploy_reconnect", %{})}
 
         _msg, socket ->
           {:cont, socket}

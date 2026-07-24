@@ -1,15 +1,15 @@
 const SOURCE = "casein-preview"
 const VERSION = 1
-const REQUEST_ID_KEY = "devide:preview:request_id"
+const REQUEST_ID_KEY = "casein:preview:request_id"
 const LIVE_CONNECTED_CLASS = "phx-connected"
 const LIVE_DISCONNECTED_CLASS = "phx-disconnected"
 
 export function installPreviewBridge({liveSocket} = {}) {
   if (!previewBridgeEnabled()) return null
-  if (window.__devidePreviewBridge) return window.__devidePreviewBridge
+  if (window.__caseinPreviewBridge) return window.__caseinPreviewBridge
 
   const bridge = new PreviewBridge(liveSocket)
-  window.__devidePreviewBridge = bridge
+  window.__caseinPreviewBridge = bridge
   bridge.start()
   return bridge
 }
@@ -21,11 +21,11 @@ class PreviewBridge {
     this.lastLiveConnected = null
     this.started = false
     this.onPageLoadingStart = (event) =>
-      this.emit("devide:preview:page_loading_start", {kind: event.detail?.kind || null})
+      this.emit("casein:preview:page_loading_start", {kind: event.detail?.kind || null})
     this.onPageLoadingStop = (event) =>
-      this.emit("devide:preview:page_loading_stop", {kind: event.detail?.kind || null})
+      this.emit("casein:preview:page_loading_stop", {kind: event.detail?.kind || null})
     this.onError = (event) => {
-      this.emit("devide:preview:client_error", {
+      this.emit("casein:preview:client_error", {
         message: event.message || "client_error",
         filename: event.filename || null,
         lineno: event.lineno || null,
@@ -33,7 +33,7 @@ class PreviewBridge {
       })
     }
     this.onUnhandledRejection = (event) => {
-      this.emit("devide:preview:client_error", {
+      this.emit("casein:preview:client_error", {
         message: "unhandled_rejection",
         reason: safeReason(event.reason)
       })
@@ -44,7 +44,7 @@ class PreviewBridge {
     if (this.started) return
     this.started = true
 
-    this.emit("devide:preview:bridge_ready")
+    this.emit("casein:preview:bridge_ready")
     this.bindDomReady()
     this.bindPageLoading()
     this.bindClientErrors()
@@ -65,7 +65,7 @@ class PreviewBridge {
       }
     }
 
-    window.dispatchEvent(new CustomEvent("devide:preview:signal", {detail: message}))
+    window.dispatchEvent(new CustomEvent("casein:preview:signal", {detail: message}))
 
     if (window.parent && window.parent !== window) {
       window.parent.postMessage(message, "*")
@@ -74,13 +74,13 @@ class PreviewBridge {
 
   bindDomReady() {
     if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", () => this.emit("devide:preview:dom_loaded"), {
+      document.addEventListener("DOMContentLoaded", () => this.emit("casein:preview:dom_loaded"), {
         once: true
       })
       return
     }
 
-    window.queueMicrotask(() => this.emit("devide:preview:dom_loaded"))
+    window.queueMicrotask(() => this.emit("casein:preview:dom_loaded"))
   }
 
   bindPageLoading() {
@@ -112,9 +112,9 @@ class PreviewBridge {
     this.lastLiveConnected = connected
 
     if (connected === true) {
-      this.emit("devide:preview:live_socket_connected", {connected: true})
+      this.emit("casein:preview:live_socket_connected", {connected: true})
     } else if (connected === false) {
-      this.emit("devide:preview:live_socket_disconnected", {connected: false})
+      this.emit("casein:preview:live_socket_disconnected", {connected: false})
     }
   }
 }

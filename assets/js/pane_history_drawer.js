@@ -1,7 +1,7 @@
 const BOTTOM_EPSILON_PX = 6
 
 function storageKey(key) {
-  return `devide:pane-history:${key || "unknown"}`
+  return `casein:pane-history:${key || "unknown"}`
 }
 
 function atBottom(el) {

@@ -170,7 +170,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                   <button
                     type="button"
                     phx-click={
-                      Phoenix.LiveView.JS.dispatch("devide:file-mode",
+                      Phoenix.LiveView.JS.dispatch("casein:file-mode",
                         to: "#file-viewer",
                         detail: %{mode: "source"}
                       )
@@ -186,7 +186,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
                   <button
                     type="button"
                     phx-click={
-                      Phoenix.LiveView.JS.dispatch("devide:file-mode",
+                      Phoenix.LiveView.JS.dispatch("casein:file-mode",
                         to: "#file-viewer",
                         detail: %{mode: "rendered"}
                       )
@@ -206,7 +206,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.SidePanels do
               <span>{@open_file.size}b</span>
               <button
                 type="button"
-                phx-click={Phoenix.LiveView.JS.dispatch("devide:save", to: "#file-viewer")}
+                phx-click={Phoenix.LiveView.JS.dispatch("casein:save", to: "#file-viewer")}
                 class="rounded bg-zinc-900 text-white px-2 py-0.5"
               >
                 Save

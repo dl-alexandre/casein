@@ -2566,7 +2566,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
                actor_id: "agent-1"
              )
 
-    assert_push_event(view, "devide:reload_preview_iframes", %{
+    assert_push_event(view, "casein:reload_preview_iframes", %{
       "action" => "reload_preview_iframe",
       "actor_id" => "agent-1",
       "request_id" => ^iframe_request_id,
@@ -2578,7 +2578,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
                actor_id: "agent-1"
              )
 
-    assert_push_event(view, "devide:reload_page", %{
+    assert_push_event(view, "casein:reload_page", %{
       "action" => "reload_page",
       "actor_id" => "agent-1",
       "request_id" => ^page_request_id,
@@ -2657,7 +2657,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
 
     # Focus is a UI highlight only — reloading the iframe here blanks the live
     # preview on every agent focus event (the "preview flashes" bug).
-    refute_push_event(view, "devide:reload_preview_iframes", %{
+    refute_push_event(view, "casein:reload_preview_iframes", %{
       "pane_id" => "%2",
       "reason" => "agent_activity:focus"
     })

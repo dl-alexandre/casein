@@ -59,13 +59,13 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
-    assert grok =~ "devide-terminal"
+    assert grok =~ "casein-terminal"
     assert grok =~ "devide-artifact"
     assert grok =~ "workspace_id=ws-abc"
     assert grok =~ "${CASEIN_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
-    assert mcp_json =~ "devide-terminal-test-ws"
+    assert mcp_json =~ "casein-terminal-test-ws"
     assert mcp_json =~ "devide-artifact-test-ws"
     assert mcp_json =~ "/api/artifacts/mcp?workspace_id=ws-abc"
     assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
@@ -74,12 +74,12 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
 
     grok_mcp_json = File.read!(Path.join(staging, "grok/.mcp.json"))
-    assert grok_mcp_json =~ "devide-terminal-test-ws"
+    assert grok_mcp_json =~ "casein-terminal-test-ws"
     assert grok_mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute grok_mcp_json =~ "secret-token"
 
     codex = File.read!(Path.join(staging, "codex/config.toml"))
-    refute codex =~ "devide-terminal"
+    refute codex =~ "casein-terminal"
     refute codex =~ "casein-preview"
     refute codex =~ "devide-artifact"
     refute codex =~ "CASEIN_API_TOKEN"
@@ -262,7 +262,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute File.exists?(Path.join(other_workspace_staging, ".mcp.json"))
 
     mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
-    assert mcp_json =~ "devide-terminal-test-ws"
+    assert mcp_json =~ "casein-terminal-test-ws"
     assert mcp_json =~ "devide-artifact-test-ws"
   end
 
@@ -290,7 +290,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     merged = Jason.decode!(File.read!(Path.join(checkout, ".mcp.json")))
     assert merged["projectSetting"]
     assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
-    refute merged["mcpServers"]["devide-terminal-test-ws"]
+    refute merged["mcpServers"]["casein-terminal-test-ws"]
     refute merged["mcpServers"]["casein-preview-test-ws"]
     refute merged["mcpServers"]["devide-artifact-test-ws"]
 

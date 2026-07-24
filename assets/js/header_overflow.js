@@ -11,14 +11,14 @@
 function dispatchKeybarSpec(spec) {
   if (spec === "FontDown" || spec === "FontUp") {
     window.dispatchEvent(
-      new CustomEvent("devide:font-size", {detail: {delta: spec === "FontUp" ? 1 : -1}})
+      new CustomEvent("casein:font-size", {detail: {delta: spec === "FontUp" ? 1 : -1}})
     )
     return true
   }
 
   if (spec === "ZoomDown" || spec === "ZoomUp" || spec === "ZoomReset") {
     window.dispatchEvent(
-      new CustomEvent("devide:terminal-display-zoom", {
+      new CustomEvent("casein:terminal-display-zoom", {
         detail: {
           delta: spec === "ZoomUp" ? 0.1 : spec === "ZoomDown" ? -0.1 : 0,
           reset: spec === "ZoomReset",

@@ -91,13 +91,13 @@ export const MobileKeyBar = {
       }
 
       if (spec === "FontDown" || spec === "FontUp") {
-        window.dispatchEvent(new CustomEvent("devide:font-size", { detail: { delta: spec === "FontUp" ? 1 : -1 } }))
+        window.dispatchEvent(new CustomEvent("casein:font-size", { detail: { delta: spec === "FontUp" ? 1 : -1 } }))
         return
       }
 
       if (spec === "ZoomDown" || spec === "ZoomUp" || spec === "ZoomReset") {
         window.dispatchEvent(
-          new CustomEvent("devide:terminal-display-zoom", {
+          new CustomEvent("casein:terminal-display-zoom", {
             detail: {
               delta: spec === "ZoomUp" ? 0.1 : spec === "ZoomDown" ? -0.1 : 0,
               reset: spec === "ZoomReset"
@@ -145,10 +145,10 @@ export const MobileKeyBar = {
       this.__barResizeObserver = null
     }
     if (this.__viewportFrame) cancelAnimationFrame(this.__viewportFrame)
-    document.documentElement.classList.remove("devide-keyboard-open")
+    document.documentElement.classList.remove("casein-keyboard-open")
     this.el.classList.remove("devide-keybar-app-mode")
-    document.documentElement.style.removeProperty("--devide-mobile-keybar-bottom")
-    document.documentElement.style.removeProperty("--devide-mobile-terminal-inset")
+    document.documentElement.style.removeProperty("--casein-mobile-keybar-bottom")
+    document.documentElement.style.removeProperty("--casein-mobile-terminal-inset")
   },
 
   _interceptKeydown(e) {
@@ -238,14 +238,14 @@ export const MobileKeyBar = {
       }
       const keyboardWasOpen = this.__keyboardOpen
       this.__keyboardOpen = keyboardOpen
-      document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
+      document.documentElement.classList.toggle("casein-keyboard-open", keyboardOpen)
       this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
-      document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${gap}px`)
+      document.documentElement.style.setProperty("--casein-mobile-keybar-bottom", `${gap}px`)
 
       // Measure the bar AFTER toggling app-mode, not before. The class collapses
       // the bar from its tall closed-keyboard height (~70px with safe-area
       // padding) to its compact open-keyboard height (~28px); reading the rect
-      // first reserved the tall height in --devide-mobile-terminal-inset and
+      // first reserved the tall height in --casein-mobile-terminal-inset and
       // never re-measured, leaving ~40px of dead terminal padding above the bar
       // whenever the keyboard was up. getBoundingClientRect forces the reflow,
       // so this read reflects the just-applied class.
@@ -269,13 +269,13 @@ export const MobileKeyBar = {
 
       this.__lastViewportGap = gap
       this.__lastViewportInset = inset
-      document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
+      document.documentElement.style.setProperty("--casein-mobile-terminal-inset", `${inset}px`)
       window.dispatchEvent(new Event("resize"))
       // Notify terminals so they can re-claim size authority on iOS (hasFocus is
       // unreliable while the soft keyboard is up) and leave scale-to-fit mode.
       if (keyboardWasOpen !== keyboardOpen) {
         window.dispatchEvent(
-          new CustomEvent("devide:keyboard-open-changed", {detail: {open: keyboardOpen}})
+          new CustomEvent("casein:keyboard-open-changed", {detail: {open: keyboardOpen}})
         )
       }
     }
@@ -531,7 +531,7 @@ export const MobileKeyBar = {
     if (!document.body.hasAttribute("data-leader-active")) return false
 
     window.dispatchEvent(
-      new CustomEvent("devide:leader-second-key", {
+      new CustomEvent("casein:leader-second-key", {
         detail: {key}
       })
     )

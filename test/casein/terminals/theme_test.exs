@@ -134,8 +134,8 @@ defmodule Casein.Terminals.ThemeTest do
 
         theme = Theme.load_for_scheme(:dark, "system")
 
-        assert theme.chrome["--devide-term-bg"] == "#101010"
-        assert theme.chrome["--devide-term-fg"] == "#eeeeee"
+        assert theme.chrome["--casein-term-bg"] == "#101010"
+        assert theme.chrome["--casein-term-fg"] == "#eeeeee"
         assert Enum.at(theme.palette, 2) == {0, 255, 0}
       after
         case prev do

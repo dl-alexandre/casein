@@ -1,6 +1,6 @@
 /**
  * Terminal themes follow the app appearance by default. Users can pin a
- * dark or light terminal with localStorage["devide:terminal-scheme"].
+ * dark or light terminal with localStorage["casein:terminal-scheme"].
  * Sets CSS chrome variables and supplies ANSI palette LUT for raw Ghostty.
  */
 
@@ -106,44 +106,44 @@ export const TERMINAL_PRESETS = {
   catppuccin_mocha: {
     id: "catppuccin_mocha",
     chrome: {
-      "--devide-term-bg": "#1e1e2e",
-      "--devide-term-fg": "#cdd6f4",
-      "--devide-term-border": "#313244",
-      "--devide-term-selection": "rgba(137, 180, 250, 0.35)",
-      "--devide-term-cursor": "#f5e0dc",
-      "--devide-term-prompt": "#94e2d5",
-      "--devide-term-muted": "#6c7086",
-      "--devide-term-success": "#a6e3a1",
-      "--devide-term-warning": "#f9e2af",
-      "--devide-term-error": "#f38ba8",
-      "--devide-term-info": "#89b4fa",
-      "--devide-term-scrollbar-track": "rgba(30, 30, 46, 0.55)",
-      "--devide-term-scrollbar-thumb": "rgba(108, 112, 134, 0.55)",
-      "--devide-term-scrollbar-active": "rgba(137, 180, 250, 0.9)",
-      "--devide-term-focus-ring": "#89b4fa",
-      "--devide-term-prompt-border": "#313244"
+      "--casein-term-bg": "#1e1e2e",
+      "--casein-term-fg": "#cdd6f4",
+      "--casein-term-border": "#313244",
+      "--casein-term-selection": "rgba(137, 180, 250, 0.35)",
+      "--casein-term-cursor": "#f5e0dc",
+      "--casein-term-prompt": "#94e2d5",
+      "--casein-term-muted": "#6c7086",
+      "--casein-term-success": "#a6e3a1",
+      "--casein-term-warning": "#f9e2af",
+      "--casein-term-error": "#f38ba8",
+      "--casein-term-info": "#89b4fa",
+      "--casein-term-scrollbar-track": "rgba(30, 30, 46, 0.55)",
+      "--casein-term-scrollbar-thumb": "rgba(108, 112, 134, 0.55)",
+      "--casein-term-scrollbar-active": "rgba(137, 180, 250, 0.9)",
+      "--casein-term-focus-ring": "#89b4fa",
+      "--casein-term-prompt-border": "#313244"
     },
     palette: buildCatppuccin256(MOCHA_ANSI, MOCHA_GRAYS, hexToRgb("#89b4fa"))
   },
   catppuccin_latte: {
     id: "catppuccin_latte",
     chrome: {
-      "--devide-term-bg": "#eff1f5",
-      "--devide-term-fg": "#4c4f69",
-      "--devide-term-border": "#ccd0da",
-      "--devide-term-selection": "rgba(30, 102, 245, 0.28)",
-      "--devide-term-cursor": "#dc8a78",
-      "--devide-term-prompt": "#179299",
-      "--devide-term-muted": "#8c8fa1",
-      "--devide-term-success": "#40a02b",
-      "--devide-term-warning": "#df8e1d",
-      "--devide-term-error": "#d20f39",
-      "--devide-term-info": "#1e66f5",
-      "--devide-term-scrollbar-track": "rgba(220, 224, 232, 0.75)",
-      "--devide-term-scrollbar-thumb": "rgba(140, 143, 161, 0.55)",
-      "--devide-term-scrollbar-active": "rgba(30, 102, 245, 0.75)",
-      "--devide-term-focus-ring": "#1e66f5",
-      "--devide-term-prompt-border": "#dce0e8"
+      "--casein-term-bg": "#eff1f5",
+      "--casein-term-fg": "#4c4f69",
+      "--casein-term-border": "#ccd0da",
+      "--casein-term-selection": "rgba(30, 102, 245, 0.28)",
+      "--casein-term-cursor": "#dc8a78",
+      "--casein-term-prompt": "#179299",
+      "--casein-term-muted": "#8c8fa1",
+      "--casein-term-success": "#40a02b",
+      "--casein-term-warning": "#df8e1d",
+      "--casein-term-error": "#d20f39",
+      "--casein-term-info": "#1e66f5",
+      "--casein-term-scrollbar-track": "rgba(220, 224, 232, 0.75)",
+      "--casein-term-scrollbar-thumb": "rgba(140, 143, 161, 0.55)",
+      "--casein-term-scrollbar-active": "rgba(30, 102, 245, 0.75)",
+      "--casein-term-focus-ring": "#1e66f5",
+      "--casein-term-prompt-border": "#dce0e8"
     },
     palette: buildCatppuccin256(LATTE_ANSI, LATTE_GRAYS, hexToRgb("#1e66f5"))
   }
@@ -151,22 +151,22 @@ export const TERMINAL_PRESETS = {
 
 /** Zinc-dark fallbacks for first paint before JS applies a preset. */
 export const ZINC_CHROME = {
-  "--devide-term-bg": "#0a0a0a",
-  "--devide-term-fg": "#e4e4e7",
-  "--devide-term-border": "#27272a",
-  "--devide-term-selection": "rgba(137, 180, 250, 0.35)",
-  "--devide-term-cursor": "#e4e4e7",
-  "--devide-term-prompt": "#67e8f9",
-  "--devide-term-muted": "#64748b",
-  "--devide-term-success": "#4ade80",
-  "--devide-term-warning": "#fbbf24",
-  "--devide-term-error": "#f87171",
-  "--devide-term-info": "#67e8f9",
-  "--devide-term-scrollbar-track": "rgba(24, 24, 27, 0.55)",
-  "--devide-term-scrollbar-thumb": "rgba(113, 113, 122, 0.55)",
-  "--devide-term-scrollbar-active": "rgba(137, 180, 250, 0.9)",
-  "--devide-term-focus-ring": "#3b82f6",
-  "--devide-term-prompt-border": "#18181b"
+  "--casein-term-bg": "#0a0a0a",
+  "--casein-term-fg": "#e4e4e7",
+  "--casein-term-border": "#27272a",
+  "--casein-term-selection": "rgba(137, 180, 250, 0.35)",
+  "--casein-term-cursor": "#e4e4e7",
+  "--casein-term-prompt": "#67e8f9",
+  "--casein-term-muted": "#64748b",
+  "--casein-term-success": "#4ade80",
+  "--casein-term-warning": "#fbbf24",
+  "--casein-term-error": "#f87171",
+  "--casein-term-info": "#67e8f9",
+  "--casein-term-scrollbar-track": "rgba(24, 24, 27, 0.55)",
+  "--casein-term-scrollbar-thumb": "rgba(113, 113, 122, 0.55)",
+  "--casein-term-scrollbar-active": "rgba(137, 180, 250, 0.9)",
+  "--casein-term-focus-ring": "#3b82f6",
+  "--casein-term-prompt-border": "#18181b"
 }
 
 export const BASELINE_PALETTE = buildXterm256Palette()
@@ -178,8 +178,8 @@ let serverThemeBundle = null
 let schemeReporter = null
 let presetReporter = null
 
-const PRESET_STORAGE_KEY = "devide:terminal-preset"
-const SCHEME_STORAGE_KEY = "devide:terminal-scheme"
+const PRESET_STORAGE_KEY = "casein:terminal-preset"
+const SCHEME_STORAGE_KEY = "casein:terminal-scheme"
 const APP_THEME_STORAGE_KEY = "phx:theme"
 const DEFAULT_PRESET_ID = "catppuccin"
 const DEFAULT_SCHEME = "system"
@@ -242,11 +242,11 @@ function parseRgb(value) {
 }
 
 export function terminalBackgroundRgb() {
-  return parseRgb(termVar("--devide-term-bg")) || hexToRgb("#0a0a0a")
+  return parseRgb(termVar("--casein-term-bg")) || hexToRgb("#0a0a0a")
 }
 
 export function terminalForegroundRgb() {
-  return parseRgb(termVar("--devide-term-fg")) || hexToRgb("#e4e4e7")
+  return parseRgb(termVar("--casein-term-fg")) || hexToRgb("#e4e4e7")
 }
 
 export function readableTerminalColor(fg, bg) {
@@ -434,7 +434,7 @@ export function applyTerminalTheme(preset) {
   }
 
   window.dispatchEvent(
-    new CustomEvent("devide:terminal-theme", { detail: { presetId: preset.id } })
+    new CustomEvent("casein:terminal-theme", { detail: { presetId: preset.id } })
   )
 }
 

@@ -262,11 +262,11 @@ export const PreviewPaneOverlay = {
 
   bindPreviewActions() {
     this.onPreviewPaneAction = (event) => this.handlePreviewPaneAction(event.detail || {})
-    this.el.addEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
+    this.el.addEventListener("casein:preview-pane-action", this.onPreviewPaneAction)
   },
 
   teardownPreviewActions() {
-    this.el.removeEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
+    this.el.removeEventListener("casein:preview-pane-action", this.onPreviewPaneAction)
   },
 
   bindStatusActions() {

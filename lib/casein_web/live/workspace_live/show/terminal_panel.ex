@@ -183,7 +183,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700/90 bg-zinc-950/95 px-1.5 py-1 text-zinc-200 backdrop-blur-md supports-[backdrop-filter]:bg-zinc-950/88"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), var(--devide-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
+      style="bottom: var(--casein-mobile-keybar-bottom, 0px); padding-bottom: max(var(--casein-mobile-keybar-padding-bottom, 0.25rem), var(--casein-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
       role="toolbar"
       aria-label="Terminal keys"
     >
@@ -500,7 +500,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
       ></button>
       <div
         class="absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border border-zinc-700 bg-zinc-950 px-3 pb-3 pt-3 text-zinc-100 shadow-2xl"
-        style="margin-bottom: var(--devide-mobile-terminal-inset, 0px);"
+        style="margin-bottom: var(--casein-mobile-terminal-inset, 0px);"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
           <div class="flex min-w-0 items-center gap-1.5">

@@ -603,7 +603,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.FileEvents do
   defp root_from_loc({:remote, _host, root}), do: root
 
   defp markdown_error_html do
-    ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
+    ~s(<p class="casein-markdown-error">Markdown render failed.</p>)
   end
 
   # After a tree-node rename, follow the open file to its new path — whether

@@ -306,7 +306,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
       assert Phoenix.Flash.get(socket.assigns.flash, :info) =~ "new browser tab"
 
       assert Enum.any?(socket.private.live_temp[:push_events] || [], fn
-               ["devide:open_tab", %{url: url}] -> url == "https://blocks-framing.example/x"
+               ["casein:open_tab", %{url: url}] -> url == "https://blocks-framing.example/x"
                _ -> false
              end)
     end

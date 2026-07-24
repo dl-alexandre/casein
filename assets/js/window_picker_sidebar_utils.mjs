@@ -5,7 +5,7 @@
 // a chosen order survives page reloads. The server holds the mode in-session;
 // these bridge it to localStorage. Guarded so a disabled/again-throwing Storage
 // (private mode, quota) never breaks the picker.
-const SORT_KEY = (col) => `devide:sidebar-sort:${col}`
+const SORT_KEY = (col) => `casein:sidebar-sort:${col}`
 
 export function persistSidebarSort(col, mode) {
   try {
