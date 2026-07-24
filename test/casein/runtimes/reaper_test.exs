@@ -261,7 +261,7 @@ defmodule Casein.Runtimes.ReaperTest do
     orphan_pid = Integer.to_string(os_pid)
     assert os_pid_alive?(orphan_pid)
 
-    registry_dir = Path.join([worktree, ".devide-preview", "instances"])
+    registry_dir = Path.join([worktree, ".casein-preview", "instances"])
     File.mkdir_p!(registry_dir)
 
     registry = Path.join(registry_dir, "rt-reaper-kill.json")

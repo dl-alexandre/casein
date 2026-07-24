@@ -50,7 +50,7 @@ defmodule Mix.Tasks.Casein.Edge.Setup do
       opts[:backend_host] || System.get_env("CASEIN_LAN_EDGE_BACKEND") || "127.0.0.1"
 
     prepared_dir =
-      Path.join(System.tmp_dir!(), "devide-lan-edge-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-lan-edge-#{System.unique_integer([:positive])}")
 
     paths =
       Casein.Setup.LanEdge.write_units!(prepared_dir,

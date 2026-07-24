@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# devide-agent-state.sh — agent-runtime hook that reports the agent's semantic
+# casein-agent-state.sh — agent-runtime hook that reports the agent's semantic
 # state to DevIDE's terminal MCP endpoint.
 #
 # Two runtimes wire it in:
@@ -71,7 +71,7 @@ esac
 # Debounce: skip a repeated `working` report within 30s (PreToolUse fires
 # constantly). blocked/done/idle are low-frequency and always sent.
 CACHE_DIR="${DEVIDE_AGENT_MCP_HOME:-${TMPDIR:-/tmp}}"
-CACHE_FILE="${CACHE_DIR}/.devide-agent-state.${PANE//[^A-Za-z0-9_]/_}"
+CACHE_FILE="${CACHE_DIR}/.casein-agent-state.${PANE//[^A-Za-z0-9_]/_}"
 NOW="$(date +%s 2>/dev/null || echo 0)"
 
 if [[ "$STATE" == "working" && -r "$CACHE_FILE" ]]; then

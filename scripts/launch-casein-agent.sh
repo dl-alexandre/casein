@@ -21,7 +21,7 @@ source "${ROOT}/scripts/lib/agent-skills.sh"
 
 usage() {
   cat <<'EOF'
-Usage: launch-devide-agent.sh <runtime> [runtime args...]
+Usage: launch-casein-agent.sh <runtime> [runtime args...]
 
 Creates a dedicated git worktree when launched from the primary checkout (see
 docs/development-workflow.md). Set DEVIDE_AGENT_SKIP_WORKTREE=1 to opt out.
@@ -306,7 +306,7 @@ codex_mcp_config_args() {
   local slug terminal_key preview_key artifact_key tidewave_key
   slug="$(workspace_slug)"
   terminal_key="devide-terminal-${slug}"
-  preview_key="devide-preview-${slug}"
+  preview_key="casein-preview-${slug}"
   artifact_key="devide-artifact-${slug}"
   tidewave_key="devide-tidewave-${slug}"
 
@@ -357,12 +357,12 @@ codex_arg_sets_execution_policy() {
 
 grok_install_state_hook() {
   [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" ]] || return 0
-  local src="${ROOT}/scripts/agent-hooks/grok-devide-agent-bootstrap.json"
+  local src="${ROOT}/scripts/agent-hooks/grok-casein-agent-bootstrap.json"
   local hooks_dir="${GROK_HOME:-${HOME}/.grok}/hooks"
-  local dst="${hooks_dir}/devide-agent-state.json"
-  local script_src="${ROOT}/scripts/devide-agent-state.sh"
+  local dst="${hooks_dir}/casein-agent-state.json"
+  local script_src="${ROOT}/scripts/casein-agent-state.sh"
   local trusted_dir="${HOME}/.casein/grok-bootstrap-hooks"
-  local script_dst="${trusted_dir}/devide-agent-state.sh"
+  local script_dst="${trusted_dir}/casein-agent-state.sh"
   local tmp
   [[ -f "$src" ]] || return 0
   mkdir -p "$trusted_dir" 2>/dev/null || return 0
@@ -372,7 +372,7 @@ grok_install_state_hook() {
     cp "$src" "$dst" 2>/dev/null || true
   fi
   if [[ -f "$script_src" ]] && ! cmp -s "$script_src" "$script_dst" 2>/dev/null; then
-    tmp="$(mktemp "${trusted_dir}/.devide-agent-state.XXXXXX")"
+    tmp="$(mktemp "${trusted_dir}/.casein-agent-state.XXXXXX")"
     cp "$script_src" "$tmp"
     chmod 500 "$tmp"
     mv -f "$tmp" "$script_dst"
@@ -384,7 +384,7 @@ grok_bind_state_hook_path() {
   local trusted_dir="${HOME}/.casein/grok-bootstrap-hooks"
   mkdir -p "$trusted_dir"
   chmod 700 "$trusted_dir"
-  export DEVIDE_GROK_BOOTSTRAP_HOOK="${trusted_dir}/devide-agent-state.sh"
+  export DEVIDE_GROK_BOOTSTRAP_HOOK="${trusted_dir}/casein-agent-state.sh"
 }
 
 grok_validate_managed_context() {
@@ -951,7 +951,7 @@ codex_state_notify_args() {
     return 0
   fi
 
-  local script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  local script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   [[ -x "$script" ]] || return 0
 
   printf '%s\0' -c "notify=[\"${script}\"]"
@@ -974,7 +974,7 @@ codex_state_hook_args() {
   codex_arg_sets_hooks "$@" && return 0
 
   local script quoted event config
-  script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   [[ -x "$script" ]] || return 0
   quoted="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$script")"
 

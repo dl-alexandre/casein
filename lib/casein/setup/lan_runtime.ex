@@ -65,7 +65,7 @@ defmodule Casein.Setup.LanRuntime do
   end
 
   def prepare_units!(%{} = config) do
-    dir = Path.join(System.tmp_dir!(), "devide-lan-#{System.unique_integer([:positive])}")
+    dir = Path.join(System.tmp_dir!(), "casein-lan-#{System.unique_integer([:positive])}")
 
     service_paths =
       LanService.write_unit!(dir,
@@ -230,7 +230,7 @@ defmodule Casein.Setup.LanRuntime do
   end
 
   defp manual_backend_line(%{manual_backend?: true}) do
-    "  INFO      manual backend detected; URL works but devide-lan.service is inactive"
+    "  INFO      manual backend detected; URL works but casein-lan.service is inactive"
   end
 
   defp manual_backend_line(_status), do: nil
@@ -432,7 +432,7 @@ defmodule Casein.Setup.LanRuntime do
   end
 
   defp default_build_path(user) do
-    Path.join(System.tmp_dir!(), "devide-lan-build-#{user}")
+    Path.join(System.tmp_dir!(), "casein-lan-build-#{user}")
   end
 
   defp env_int(name) do

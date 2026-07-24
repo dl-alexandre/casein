@@ -6,8 +6,8 @@
 #   ./scripts/package-release.sh --profile lan --target linux-x86_64
 #
 # Produces (under dist/):
-#   devide-lan-linux-x86_64-<shortsha>.tar.gz
-#   devide-lan-linux-x86_64-<shortsha>.tar.gz.sha256
+#   casein-lan-linux-x86_64-<shortsha>.tar.gz
+#   casein-lan-linux-x86_64-<shortsha>.tar.gz.sha256
 #   devide-canary.json
 #
 # Does not publish to GitHub Releases — generate locally, verify, then publish

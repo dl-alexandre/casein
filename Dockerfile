@@ -9,7 +9,7 @@
 #             compiler, no node.
 #
 # Build:
-#   docker build -t dev_ide:latest .
+#   docker build -t casein:latest .
 #
 # Run (operator provides env — see docs/deploy.md):
 #   docker run --rm -p 4000:4000 \
@@ -21,7 +21,7 @@
 #     -e CASEIN_API_TOKEN=<bearer> \
 #     -e CASEIN_WORKSPACES_ROOT=/workspaces \
 #     -v /path/to/workspaces:/workspaces \
-#     dev_ide:latest
+#     casein:latest
 #
 # By default DevIDE discovers workspaces as directories under
 # CASEIN_WORKSPACES_ROOT. Optional integrations (see
@@ -151,7 +151,7 @@ USER dev_ide
 EXPOSE 4000
 
 # Migrations are explicit, not at server boot — operator runs:
-#   docker run dev_ide:latest /app/bin/casein eval "DevIDE.Release.migrate()"
+#   docker run casein:latest /app/bin/casein eval "DevIDE.Release.migrate()"
 # (or use the rel/overlays/bin/migrate helper) before bringing up the
 # server pool. This keeps zero-downtime upgrades sane: one task pod
 # migrates; the server pool then rolls.

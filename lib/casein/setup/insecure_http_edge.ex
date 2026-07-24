@@ -8,8 +8,8 @@ defmodule Casein.Setup.InsecureHttpEdge do
   trust is more friction than the test is worth.
   """
 
-  @socket_unit "devide-lan-http-edge.socket"
-  @service_unit "devide-lan-http-edge.service"
+  @socket_unit "casein-lan-http-edge.socket"
+  @service_unit "casein-lan-http-edge.service"
   @unit_dir "/etc/systemd/system"
 
   def socket_unit, do: @socket_unit

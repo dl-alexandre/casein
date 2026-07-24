@@ -164,10 +164,10 @@ defmodule Casein.RuntimesTest do
     assert server["env"]["DEVIDE_RUNTIME_ID"] == runtime.id
     assert server["env"]["DEVIDE_WORKSPACE_ID"] == "ws-preview-worktree"
     assert server["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
-    assert server["env"]["DEVIDE_PREVIEW_HOME"] == Path.join(root, ".devide-preview")
+    assert server["env"]["DEVIDE_PREVIEW_HOME"] == Path.join(root, ".casein-preview")
 
     socket = server["env"]["DEVIDE_RUNTIME_PREVIEW_SOCKET"]
-    assert String.starts_with?(socket, Path.join([root, ".devide-preview", "sockets"]))
+    assert String.starts_with?(socket, Path.join([root, ".casein-preview", "sockets"]))
     assert Path.basename(socket) =~ ~r/^rt-[0-9a-z]+\.sock$/
     assert byte_size(socket) < 100
 

@@ -44,7 +44,7 @@ defmodule Casein.Terminals.InspectionCommandsTest do
     home =
       Path.join(
         System.tmp_dir!(),
-        "devide-preview-inspection-#{System.unique_integer([:positive])}"
+        "casein-preview-inspection-#{System.unique_integer([:positive])}"
       )
 
     inst_dir = Path.join(home, "instances")

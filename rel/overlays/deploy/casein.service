@@ -8,7 +8,7 @@
 # (the docker-socket mount would be root-equivalent anyway).
 #
 # Install / update (after activation step that populates the stable layout):
-#   sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
+#   sudo cp /opt/casein/deploy/casein.service /etc/systemd/system/casein.service
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now devide
 #
@@ -32,7 +32,7 @@
 # full host layout, activation commands, and reconciliation history.
 
 [Unit]
-Description=DevIDE — shared on-devbox IDE
+Description=Casein — shared on-devbox IDE
 Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/casein/integrations/manager/deploy/README.md
 After=network-online.target docker.service
 Wants=network-online.target
@@ -56,7 +56,7 @@ WorkingDirectory=/opt/casein
 # *stable* deploy artifacts), then run pending migrations against it — before
 # the release boots.
 ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file /etc/casein/devide.env up -d --wait
-ExecStartPre=/opt/casein/release/bin/clean_devide_socket
+ExecStartPre=/opt/casein/release/bin/clean_casein_socket
 ExecStartPre=/opt/casein/release/bin/migrate
 ExecStart=/opt/casein/release/bin/casein start
 ExecStop=/opt/casein/release/bin/casein stop

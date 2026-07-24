@@ -78,7 +78,7 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
       "url": "http://127.0.0.1:4000/api/terminals/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "http://127.0.0.1:4000/api/preview/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
@@ -164,7 +164,7 @@ Save as `devide-remote.mcp.json`, replace the token placeholder, keep it gitigno
       "url": "http://127.0.0.1:4000/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "http://127.0.0.1:4000/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
@@ -221,7 +221,7 @@ Save as `devide-remote-door2.mcp.json`, replace the token placeholder, keep it g
       "url": "https://devide.devbox.milcgroup.com/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "https://devide.devbox.milcgroup.com/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
@@ -252,7 +252,7 @@ You are connected to a remote DevIDE dev box over MCP with a workspace-agnostic 
 config — no workspace is pinned. Three JSON-RPC 2.0 servers are wired as MCP clients:
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 How to work here:
@@ -292,7 +292,7 @@ Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandr
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 Ground rules:
@@ -320,7 +320,7 @@ Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandr
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 Ground rules:

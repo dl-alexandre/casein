@@ -2,7 +2,7 @@ defmodule Casein.PreviewPanes do
   @moduledoc """
   Registry of preview panes bound to tmux pane ids.
 
-  Registers via the `devide-preview` CLI or direct API calls, creates
+  Registers via the `casein-preview` CLI or direct API calls, creates
   `Preview` + `ControlSession` records through `PreviewControl`, persists the
   pane binding for refresh/restart recovery, subscribes to tmux topology
   updates to expire vanished panes, and broadcasts pane lifecycle on both the

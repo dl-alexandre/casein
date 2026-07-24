@@ -19,9 +19,9 @@ defmodule Casein.Setup.InsecureHttpEdgeTest do
         backend_port: 4000
       )
 
-    assert text =~ "Requires=devide-lan-http-edge.socket"
-    assert text =~ "Requires=devide-lan.service"
-    assert text =~ "After=network.target devide-lan.service"
+    assert text =~ "Requires=casein-lan-http-edge.socket"
+    assert text =~ "Requires=casein-lan.service"
+    assert text =~ "After=network.target casein-lan.service"
     assert text =~ "ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:4000"
     assert text =~ "NoNewPrivileges=true"
   end
@@ -30,7 +30,7 @@ defmodule Casein.Setup.InsecureHttpEdgeTest do
     dir =
       Path.join(
         System.tmp_dir!(),
-        "devide-lan-http-edge-test-#{System.unique_integer([:positive])}"
+        "casein-lan-http-edge-test-#{System.unique_integer([:positive])}"
       )
 
     on_exit(fn -> File.rm_rf(dir) end)
@@ -45,6 +45,6 @@ defmodule Casein.Setup.InsecureHttpEdgeTest do
 
     assert File.read!(paths.socket_path) =~ "ListenStream=8080"
     assert File.read!(paths.service_path) =~ "127.0.0.1:4000"
-    assert File.read!(paths.service_path) =~ "Requires=devide-lan.service"
+    assert File.read!(paths.service_path) =~ "Requires=casein-lan.service"
   end
 end

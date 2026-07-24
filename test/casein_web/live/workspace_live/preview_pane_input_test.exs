@@ -20,7 +20,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
     workspace_root =
       Path.join(
         System.tmp_dir!(),
-        "devide-preview-input-#{System.unique_integer([:positive])}"
+        "casein-preview-input-#{System.unique_integer([:positive])}"
       )
 
     workspace_path = Path.join(workspace_root, @workspace_id)
@@ -62,7 +62,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
           top: 0,
           width: 120,
           height: 40,
-          current_command: "devide-preview",
+          current_command: "casein-preview",
           current_path: workspace_path
         }
       ]

@@ -12,10 +12,10 @@ if [[ -d /var/crash ]]; then
   ls -lt /var/crash/*tmux* 2>/dev/null | head -5 || echo "(no prior tmux crash reports)"
 fi
 
-# Ensure systemd services (including devide-tmux) can dump cores.
-if [[ -f /etc/systemd/system/devide-tmux.service ]]; then
-  if ! grep -q 'LimitCORE=infinity' /etc/systemd/system/devide-tmux.service; then
-    echo "warn: devide-tmux.service missing LimitCORE=infinity; re-run ensure-devide-tmux.sh"
+# Ensure systemd services (including casein-tmux) can dump cores.
+if [[ -f /etc/systemd/system/casein-tmux.service ]]; then
+  if ! grep -q 'LimitCORE=infinity' /etc/systemd/system/casein-tmux.service; then
+    echo "warn: casein-tmux.service missing LimitCORE=infinity; re-run ensure-casein-tmux.sh"
   fi
 fi
 

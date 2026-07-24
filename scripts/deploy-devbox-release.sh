@@ -248,7 +248,7 @@ sudo tar -xzf "${TARBALL}" -C "${STAGING}"
 
 sudo test -x "${STAGING}/bin/casein"
 sudo test -x "${STAGING}/bin/migrate"
-sudo test -f "${STAGING}/deploy/devide.service"
+sudo test -f "${STAGING}/deploy/casein.service"
 sudo test -f "${STAGING}/deploy/docker-compose.postgres.yml"
 
 log "placing release under ${ACTIVE_RELEASE}"
@@ -398,7 +398,7 @@ sudo systemd-run \
   --property="KillMode=process" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/casein/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
-  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket" \
+  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
   "${ACTIVE_RELEASE}/bin/casein" start
 
@@ -442,29 +442,29 @@ printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -qE '"preview_close"|"invoke_tool"'
 
 preview_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-preview' -print -quit 2>/dev/null
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-preview' -print -quit 2>/dev/null
 )"
 if [ -z "${preview_script_dir}" ]; then
-  echo "error: devide-preview script missing from release priv/scripts" >&2
+  echo "error: casein-preview script missing from release priv/scripts" >&2
   exit 1
 fi
 if [ ! -x "${preview_script_dir}" ]; then
-  echo "error: devide-preview is not executable in release priv/scripts" >&2
+  echo "error: casein-preview is not executable in release priv/scripts" >&2
   exit 1
 fi
 
 devide_curl_script_dir="$(
-  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-curl.sh' -print -quit 2>/dev/null
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/casein-curl.sh' -print -quit 2>/dev/null
 )"
 if [ -z "${devide_curl_script_dir}" ]; then
-  echo "error: devide-curl.sh missing from release priv/scripts" >&2
+  echo "error: casein-curl.sh missing from release priv/scripts" >&2
   exit 1
 fi
 
 # Agent hook scripts staged per-workspace by the materializer (copied out of the
 # release's priv/scripts). Missing here means non-dev_ide workspaces get no live
 # agent-state / codex notify hook.
-for hook_script in devide-agent-state.sh devide-codex-notify.sh; do
+for hook_script in casein-agent-state.sh casein-codex-notify.sh; do
   hook_script_path="$(
     sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path "*/priv/scripts/${hook_script}" -print -quit 2>/dev/null
   )"
@@ -604,7 +604,7 @@ else
   exit 1
 fi
 
-# The historical enabled devide.service is no longer the process that should
+# The historical enabled casein.service is no longer the process that should
 # serve traffic. Leaving it enabled with DEVIDE_HTTP_SOCKET set lets boot or a
 # manual restart race the active canary and fail with Bandit :eaddrinuse.
 # sudo policy on the devbox intentionally forbids stop/disable/mask, so make
@@ -619,7 +619,7 @@ cleanup_stale_instance_records
 
 # ── Signal all old instances to drain ───────────────────────────────────────
 # Candidates come from running devide-<uuid> units (authoritative) UNIONed with
-# instance records (covers non-unit instances, e.g. the legacy devide.service).
+# instance records (covers non-unit instances, e.g. the legacy casein.service).
 # Records alone were not enough: a poisoned heartbeat pid made the live old
 # instance look stale, cleanup deleted its record, and this loop never saw it —
 # the zombie then ran for days, its SessionOwners fighting the new instance
@@ -677,7 +677,7 @@ fi
 reap_orphaned_dev_servers $(pgrep -x beam.smp 2>/dev/null || true)
 
 # Old instances call System.stop(0) when their connection count hits zero;
-# the systemd unit (devide.service) will then show as inactive until next boot.
+# the systemd unit (casein.service) will then show as inactive until next boot.
 
 log "recent ${SERVICE} and canary unit warnings/errors, if any"
 { sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager 2>/dev/null; \
@@ -689,8 +689,8 @@ DEPLOY_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEVIDE_CHECKOUT="${DEVIDE_CHECKOUT:-/data/workspaces/dalexandre/dev_ide}"
 ensure_ran=0
 for ensure_script in \
-  "${DEPLOY_SCRIPT_DIR}/ensure-devide-loopback-proxy.sh" \
-  "${DEVIDE_CHECKOUT}/scripts/ensure-devide-loopback-proxy.sh"; do
+  "${DEPLOY_SCRIPT_DIR}/ensure-casein-loopback-proxy.sh" \
+  "${DEVIDE_CHECKOUT}/scripts/ensure-casein-loopback-proxy.sh"; do
   if [ -x "${ensure_script}" ]; then
     bash "${ensure_script}"
     ensure_ran=1
@@ -698,7 +698,7 @@ for ensure_script in \
   fi
 done
 if [ "${ensure_ran}" != "1" ]; then
-  log "warning: ensure-devide-loopback-proxy.sh not found — on-box :4000 may be down"
+  log "warning: ensure-casein-loopback-proxy.sh not found — on-box :4000 may be down"
 fi
 
 SUCCESS=1

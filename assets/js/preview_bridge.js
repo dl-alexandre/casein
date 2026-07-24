@@ -1,4 +1,4 @@
-const SOURCE = "devide-preview"
+const SOURCE = "casein-preview"
 const VERSION = 1
 const REQUEST_ID_KEY = "devide:preview:request_id"
 const LIVE_CONNECTED_CLASS = "phx-connected"

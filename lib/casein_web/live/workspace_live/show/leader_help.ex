@@ -138,7 +138,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.tip_row term="Open one">
               Palette → search <em>Preview: Open …</em>
               for a discovered surface (manager app, Tidewave, or a localhost port),
-              or run <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000</code>
+              or run <code class="rounded bg-base-200 px-1 py-0.5">casein-preview :4000</code>
               in a terminal.
             </.tip_row>
             <.tip_row term="Localhost only">
@@ -159,7 +159,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
               plus <code class="rounded bg-base-200 px-1 py-0.5">DEVIDE_PREVIEW_STORAGE_PROFILE_NAME</code>).
             </.tip_row>
             <.tip_row term="Responsive">
-              <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000 --viewport 375x812</code>
+              <code class="rounded bg-base-200 px-1 py-0.5">casein-preview :4000 --viewport 375x812</code>
               locks a device size.
             </.tip_row>
             <.tip_row term="Share">
@@ -204,7 +204,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.tip_row term="Grok">
               A bare <code class="rounded bg-base-200 px-1 py-0.5">grok</code>
               (or <code class="rounded bg-base-200 px-1 py-0.5">
-                bash scripts/launch-devide-agent.sh grok
+                bash scripts/launch-casein-agent.sh grok
               </code>)
               picks up the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
               Casein materializes. If tools are missing, refresh pairing and relaunch from the
@@ -214,7 +214,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
               Codex gets Casein MCP through launch-time flags, not a project file — start
               <code class="rounded bg-base-200 px-1 py-0.5">codex</code>
               from the paired pane (or <code class="rounded bg-base-200 px-1 py-0.5">
-                bash scripts/launch-devide-agent.sh codex
+                bash scripts/launch-casein-agent.sh codex
               </code>)
               so the args apply, then confirm it lists the
               <code class="rounded bg-base-200 px-1 py-0.5">terminal</code>
@@ -224,7 +224,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LeaderHelp do
             <.tip_row term="OpenCode">
               Launch with
               <code class="rounded bg-base-200 px-1 py-0.5">
-                bash scripts/launch-devide-agent.sh opencode
+                bash scripts/launch-casein-agent.sh opencode
               </code>
               so Casein injects project <code class="rounded bg-base-200 px-1 py-0.5">.opencode/opencode.json</code>.
               A bare start outside that path may miss workspace MCP.

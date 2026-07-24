@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
-# devide-preview — bind a tmux pane as a DevIDE preview surface.
+# casein-preview — bind a tmux pane as a DevIDE preview surface.
 #
 # Usage:
-#   devide-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
+#   casein-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
 #
 # URL shorthand :PORT expands to http://localhost:PORT/
 #
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/devide-curl.sh
-source "${SCRIPT_DIR}/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${SCRIPT_DIR}/casein-curl.sh"
 
 API_BASE="${DEVIDE_URL:-http://127.0.0.1:4000}"
 TOKEN="${CASEIN_API_TOKEN:-}"
@@ -33,7 +33,7 @@ ANCHOR_WINDOW_ID="${DEVIDE_PREVIEW_ANCHOR_WINDOW_ID:-}"
 
 usage() {
   cat <<'EOF'
-Usage: devide-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
+Usage: casein-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
 
   url          Preview URL or :PORT shorthand (e.g. :4000)
   --viewport   Locked viewport size, e.g. 375x812

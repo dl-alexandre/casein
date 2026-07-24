@@ -350,9 +350,9 @@ launch_agent() {
   # so preferring DEVIDE_SCRIPTS here can silently route a freshly-installed
   # shim back through stale launch policy. Only fall back to the paired scripts
   # tree when this CLI is itself a standalone copy without a sibling launcher.
-  local launcher="${DEVIDE_ROOT}/scripts/launch-devide-agent.sh"
+  local launcher="${DEVIDE_ROOT}/scripts/launch-casein-agent.sh"
   if [[ ! -f "$launcher" ]]; then
-    launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
+    launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-casein-agent.sh"
   fi
 
   case "$runtime" in

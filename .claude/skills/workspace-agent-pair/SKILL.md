@@ -79,9 +79,9 @@ What it does:
 | Runtime | Skills land in | MCP lands in | Launch |
 |---------|----------------|--------------|--------|
 | **OpenCode** | `~/.config/opencode/skills`, project `.opencode/skills` (+ auto-loads `~/.claude/skills`) | project `.opencode/opencode.json` from staging | `cd $DEVIDE_CHECKOUT && opencode` (restart to reload) |
-| **Claude** | `~/.claude/skills` (or owner `CLAUDE_CONFIG_DIR`) | staging `.mcp.json` via `launch-devide-agent.sh claude --mcp-config` | `bash …/launch-devide-agent.sh claude` |
-| **Grok** | (n/a skill loader; host skills still staged for siblings) | project `.mcp.json` (worktree preferred; ensure script can write primary) | `bash …/launch-devide-agent.sh grok` |
-| **Codex** | n/a | per-launch `-c mcp_servers…` from launcher | `bash …/launch-devide-agent.sh codex` |
+| **Claude** | `~/.claude/skills` (or owner `CLAUDE_CONFIG_DIR`) | staging `.mcp.json` via `launch-casein-agent.sh claude --mcp-config` | `bash …/launch-casein-agent.sh claude` |
+| **Grok** | (n/a skill loader; host skills still staged for siblings) | project `.mcp.json` (worktree preferred; ensure script can write primary) | `bash …/launch-casein-agent.sh grok` |
+| **Codex** | n/a | per-launch `-c mcp_servers…` from launcher | `bash …/launch-casein-agent.sh codex` |
 
 Default host skill allowlist: `delegate-to-grok`, `preview-ui-walk`,
 `workspace-agent-pair`. Override with `DEVIDE_GLOBAL_AGENT_SKILLS="…"`.

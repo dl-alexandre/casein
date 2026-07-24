@@ -39,7 +39,7 @@ fi
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 log "ensuring loopback API on 127.0.0.1:4000"
-bash scripts/ensure-devide-loopback-proxy.sh
+bash scripts/ensure-casein-loopback-proxy.sh
 
 LOCAL_URL="http://127.0.0.1:4000"
 
@@ -75,7 +75,7 @@ log "registered scoped token in CASEIN_WORKSPACE_API_TOKENS (global admin token 
 bash scripts/deploy-local.sh
 
 log "ensuring loopback API on 127.0.0.1:4000"
-bash scripts/ensure-devide-loopback-proxy.sh
+bash scripts/ensure-casein-loopback-proxy.sh
 
 log "setting workspace mode to manual for raw terminal (${WORKSPACE_ID})"
 DB_URL="$(sudo awk -F= '/^DATABASE_URL=/{print $2}' "$ENV_FILE" | tail -n 1)"

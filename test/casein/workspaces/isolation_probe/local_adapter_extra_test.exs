@@ -267,7 +267,7 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
 
       dev_ide:
         build: .
-        image: dev_ide:latest
+        image: casein:latest
         environment:
           PHX_SERVER: "true"
           PHX_HOST: ${PHX_HOST:-localhost}

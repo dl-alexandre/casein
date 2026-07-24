@@ -235,7 +235,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
       base =
         Path.join(
           System.tmp_dir!(),
-          "devide-preview-owner-#{System.unique_integer([:positive])}"
+          "casein-preview-owner-#{System.unique_integer([:positive])}"
         )
 
       cwd = Path.join(base, "worktree")
@@ -384,10 +384,10 @@ defmodule Casein.Runtimes.PreviewServerTest do
       assert env["DEVIDE_RUNTIME_ID"] == "rt-env"
       assert env["DEVIDE_WORKSPACE_ID"] == "ws-env"
       assert env["DEVIDE_TMUX_SESSION"] == "tmux-env"
-      assert env["DEVIDE_PREVIEW_HOME"] == "/host/root/.devide-preview"
+      assert env["DEVIDE_PREVIEW_HOME"] == "/host/root/.casein-preview"
 
       assert env["DEVIDE_RUNTIME_PREVIEW_SOCKET"] ==
-               Path.join(["/host/root", ".devide-preview", "sockets", socket_name("rt-env")])
+               Path.join(["/host/root", ".casein-preview", "sockets", socket_name("rt-env")])
     end
 
     test "non-string/int env entries are dropped; nil host_path uses worktree_path" do
@@ -406,7 +406,7 @@ defmodule Casein.Runtimes.PreviewServerTest do
       env = server["env"]
       refute Map.has_key?(env, "BAD")
       assert env["OK"] == "5"
-      assert env["DEVIDE_PREVIEW_HOME"] == "/wt/only/.devide-preview"
+      assert env["DEVIDE_PREVIEW_HOME"] == "/wt/only/.casein-preview"
     end
   end
 

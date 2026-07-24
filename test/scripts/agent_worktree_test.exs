@@ -369,12 +369,12 @@ defmodule Scripts.AgentWorktreeTest do
       File.ln_s!(Path.join(@root, "scripts/lib/#{file}"), Path.join(lib, file))
     end
 
-    File.write!(Path.join(scripts, "launch-devide-agent.sh"), """
+    File.write!(Path.join(scripts, "launch-casein-agent.sh"), """
     #!/usr/bin/env bash
     printf 'installed launcher <%s>\n' "$1"
     """)
 
-    File.write!(Path.join(stale_scripts, "launch-devide-agent.sh"), """
+    File.write!(Path.join(stale_scripts, "launch-casein-agent.sh"), """
     #!/usr/bin/env bash
     printf 'stale launcher <%s>\n' "$1"
     """)
@@ -468,8 +468,8 @@ defmodule Scripts.AgentWorktreeTest do
     File.mkdir_p!(real_bins)
 
     File.ln_s!(
-      Path.join(@root, "scripts/launch-devide-agent.sh"),
-      Path.join(scripts, "launch-devide-agent.sh")
+      Path.join(@root, "scripts/launch-casein-agent.sh"),
+      Path.join(scripts, "launch-casein-agent.sh")
     )
 
     for file <- [
@@ -509,7 +509,7 @@ defmodule Scripts.AgentWorktreeTest do
     File.chmod!(fake_agent, 0o755)
     on_exit(fn -> File.rm_rf(tmp) end)
 
-    %{launcher: Path.join(scripts, "launch-devide-agent.sh"), home: home}
+    %{launcher: Path.join(scripts, "launch-casein-agent.sh"), home: home}
   end
 
   defp tmp_dir!(prefix) do

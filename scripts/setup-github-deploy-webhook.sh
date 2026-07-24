@@ -6,7 +6,7 @@
 # Prerequisites:
 #   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/casein/devide.env (or exported)
 #   - Caddy serves /api/deploy_webhook WITHOUT forward_auth (GitHub has no session)
-#   - bash scripts/ensure-devide-deploy-poller.sh (sudoers for systemctl start)
+#   - bash scripts/ensure-casein-deploy-poller.sh (sudoers for systemctl start)
 #
 # Usage:
 #   DEVIDE_URL=https://devide.devbox.milcgroup.com bash scripts/setup-github-deploy-webhook.sh
@@ -116,5 +116,5 @@ else
     -f 'config[insecure_ssl]=0' >/dev/null
 fi
 
-log "webhook registered — push to master should trigger devide-deploy.service within seconds"
-log "timer fallback remains active via devide-deploy.timer"
+log "webhook registered — push to master should trigger casein-deploy.service within seconds"
+log "timer fallback remains active via casein-deploy.timer"

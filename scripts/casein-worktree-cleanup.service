@@ -1,7 +1,7 @@
 [Unit]
-Description=DevIDE agent-worktree cleanup (remove idle+clean+pushed worktrees)
-Wants=devide-loopback.service
-After=devide-loopback.service
+Description=Casein agent-worktree cleanup (remove idle+clean+pushed worktrees)
+Wants=casein-loopback.service
+After=casein-loopback.service
 
 [Service]
 Type=oneshot

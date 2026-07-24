@@ -62,14 +62,14 @@ if [[ -z "$TOKEN" ]]; then
 fi
 
 if ! bash -c 'code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "'"${DEVIDE_URL}"'/" 2>/dev/null || echo 000)"; [[ "${code}" != "000" && -n "${code}" ]]'; then
-  if [[ -x "${ROOT}/scripts/ensure-devide-loopback-proxy.sh" ]]; then
-    echo "==> loopback ${DEVIDE_URL} down — starting devide-loopback proxy"
-    bash "${ROOT}/scripts/ensure-devide-loopback-proxy.sh"
+  if [[ -x "${ROOT}/scripts/ensure-casein-loopback-proxy.sh" ]]; then
+    echo "==> loopback ${DEVIDE_URL} down — starting casein-loopback proxy"
+    bash "${ROOT}/scripts/ensure-casein-loopback-proxy.sh"
   fi
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 auth_header=( -H "authorization: Bearer $TOKEN" -H "content-type: application/json" )
 

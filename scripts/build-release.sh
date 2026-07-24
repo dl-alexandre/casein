@@ -13,7 +13,7 @@
 #   OUTPUT_DIR=/some/path ./scripts/build-release.sh # extract elsewhere
 #
 # The final builder image is also tagged with CASEIN_BUILDER_CACHE_TAG
-# (default: dev_ide:builder) and kept as a cache anchor for future builds.
+# (default: casein:builder) and kept as a cache anchor for future builds.
 # Extraction still uses a per-run tag so concurrent builds cannot retag the
 # image out from under a running extraction.
 
@@ -29,8 +29,8 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
-BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-dev_ide:builder}"
+BUILDER_TAG="casein:builder-$(date +%s)-$$"
+BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-casein:builder}"
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
 
@@ -93,11 +93,11 @@ if [ ! -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ]; then
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
-  echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by devide.service ExecStartPre" >&2
+  echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by casein.service ExecStartPre" >&2
   exit 1
 fi
-if [ ! -x "${OUTPUT_DIR}/bin/clean_devide_socket" ]; then
-  echo "error: extracted tree missing bin/clean_devide_socket — required by devide.service ExecStartPre" >&2
+if [ ! -x "${OUTPUT_DIR}/bin/clean_casein_socket" ]; then
+  echo "error: extracted tree missing bin/clean_casein_socket — required by casein.service ExecStartPre" >&2
   exit 1
 fi
 STATIC_DIR="$(find "${OUTPUT_DIR}/lib" -path '*/priv/static' -type d | grep '/dev_ide-' | head -n 1 || true)"
@@ -116,9 +116,9 @@ fi
 # Verify deploy artifacts for devbox activation (rel/overlays/deploy/ + new
 # bin/activate_devbox_deploy helper). These are copied into the stable
 # /opt/casein/deploy/ by the activation step.
-if [ ! -f "${OUTPUT_DIR}/deploy/devide.service" ] || \
+if [ ! -f "${OUTPUT_DIR}/deploy/casein.service" ] || \
    [ ! -f "${OUTPUT_DIR}/deploy/docker-compose.postgres.yml" ]; then
-  echo "error: extracted tree missing deploy/ artifacts (devide.service + compose)" >&2
+  echo "error: extracted tree missing deploy/ artifacts (casein.service + compose)" >&2
   echo "       required for on-devbox stable layout activation" >&2
   exit 1
 fi
@@ -131,8 +131,8 @@ echo "release ready at: ${OUTPUT_DIR}"
 echo "  bin/casein   $(file -b "${OUTPUT_DIR}/bin/casein" 2>/dev/null || echo 'script')"
 echo "  bin/devide    present (release operator helper)"
 echo "  bin/migrate   present"
-echo "  bin/clean_devide_socket  present"
-echo "  deploy/       present (devide.service, compose, env.example, README.md)"
+echo "  bin/clean_casein_socket  present"
+echo "  deploy/       present (casein.service, compose, env.example, README.md)"
 echo "  bin/activate_devbox_deploy  (optional one-command helper for devbox)"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"
 echo

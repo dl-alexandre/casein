@@ -7,7 +7,7 @@ defmodule Casein.Setup.LanService do
   the LAN.
   """
 
-  @service_unit "devide-lan.service"
+  @service_unit "casein-lan.service"
   @unit_dir "/etc/systemd/system"
 
   def service_unit, do: @service_unit

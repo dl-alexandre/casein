@@ -110,9 +110,9 @@ default `CASEIN_REPO_ADAPTER=postgres` profile and setting `DATABASE_URL`.
 `lan up` installs and starts three systemd units:
 
 ```text
-devide-lan.service            -> runs the Phoenix backend as your user
-devide-lan-http-edge.socket   -> listens on LAN port 80
-devide-lan-http-edge.service  -> proxies :80 to the loopback backend
+casein-lan.service            -> runs the Phoenix backend as your user
+casein-lan-http-edge.socket   -> listens on LAN port 80
+casein-lan-http-edge.service  -> proxies :80 to the loopback backend
 ```
 
 The edge service requires the backend service, so port-80 traffic is not
@@ -227,8 +227,8 @@ mise exec -- mix casein.doctor --fix
 The doctor creates/checks the default workspace, generates:
 
 ```text
-priv/cert/devide-lan.pem
-priv/cert/devide-lan-key.pem
+priv/cert/casein-lan.pem
+priv/cert/casein-lan-key.pem
 ```
 
 and imports the mkcert CA into the host user's trust stores when possible.
@@ -302,7 +302,7 @@ CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
 |---|---|---|
 | `CASEIN_LAN_INSECURE_HTTP` | set by `lan up` | Enables the no-cert LAN HTTP service profile. |
 | `CASEIN_LAN_INSECURE_HTTP_PORT` | `80` | Port exposed by the LAN HTTP edge. |
-| `PORT` | `4000` | Loopback backend port used by `devide-lan.service`. |
+| `PORT` | `4000` | Loopback backend port used by `casein-lan.service`. |
 | `CASEIN_LAN_HOST` | `<hostname>.local` | Endpoint URL host used for generated URLs. |
 | `CASEIN_LAN_DIRECT_MODE` | enabled by LAN profiles | Set to `false` only for manual runs that should keep `/` on the workspace picker. |
 | `CASEIN_LAN_FRIENDLY_PATHS` | enabled by LAN profiles | Lets `/` and `/<dir>` open filesystem-addressed workspaces under `CASEIN_LAN_PATH_ROOT`. |
@@ -316,20 +316,20 @@ CASEIN_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix casein.doctor --fix
 | `DEVIDE_LAN_RELEASE_DIR` | `/opt/casein/lan-release` in release | Durable release copy used by managed systemd units. |
 | `CASEIN_LAN` | unset | Enables manual HTTPS LAN mode. |
 | `CASEIN_LAN_HTTPS_PORT` | `4443` | Manual HTTPS backend port. |
-| `CASEIN_LAN_CERTFILE` | `priv/cert/devide-lan.pem` | Manual HTTPS certificate path. |
-| `CASEIN_LAN_KEYFILE` | `priv/cert/devide-lan-key.pem` | Manual HTTPS private key path. |
+| `CASEIN_LAN_CERTFILE` | `priv/cert/casein-lan.pem` | Manual HTTPS certificate path. |
+| `CASEIN_LAN_KEYFILE` | `priv/cert/casein-lan-key.pem` | Manual HTTPS private key path. |
 
 ## Troubleshooting
 
 If `lan status` reports that the backend service is inactive:
 
 ```bash
-journalctl -u devide-lan.service -n 100 --no-pager
+journalctl -u casein-lan.service -n 100 --no-pager
 ```
 
 If `lan status` says `NOT READY` but also reports `manual backend
 detected`, the URL works through a manually started `mix phx.server`, not
-through `devide-lan.service`. Run `mise exec -- mix casein.lan.up` to move that
+through `casein-lan.service`. Run `mise exec -- mix casein.lan.up` to move that
 working state under systemd.
 
 If `http://<hostname>.local/` times out but the IP fallback works, fix mDNS or
@@ -342,7 +342,7 @@ conflicting service or choose another `CASEIN_LAN_INSECURE_HTTP_PORT`.
 
 If the database is unavailable, the backend service will fail during
 `bin/migrate` or boot; `lan up` reports `NOT READY` and includes recent
-`devide-lan.service` logs. For LAN-local SQLite releases, check that
+`casein-lan.service` logs. For LAN-local SQLite releases, check that
 `DATABASE_PATH` points at a writable location. For Postgres-compiled releases,
 check `DATABASE_URL` and the database service.
 

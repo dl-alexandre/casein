@@ -102,7 +102,7 @@ defmodule Casein.FilePanesOffloadTest do
       top: 0,
       width: 120,
       height: 40,
-      current_command: "devide-file-pane",
+      current_command: "casein-file-pane",
       current_path: "/tmp"
     }
 

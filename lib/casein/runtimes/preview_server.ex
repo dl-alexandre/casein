@@ -55,11 +55,11 @@ defmodule Casein.Runtimes.PreviewServer do
           "DEVIDE_WORKSPACE_ID" => record.external_id,
           "DEVIDE_TMUX_SESSION" => tmux_session_id,
           "DEVIDE_PREVIEW_HOME" =>
-            Path.join(record.host_path || worktree_path, ".devide-preview"),
+            Path.join(record.host_path || worktree_path, ".casein-preview"),
           "DEVIDE_RUNTIME_PREVIEW_SOCKET" =>
             Path.join([
               record.host_path || worktree_path,
-              ".devide-preview",
+              ".casein-preview",
               "sockets",
               runtime_socket_name(runtime_id)
             ])
@@ -188,7 +188,7 @@ defmodule Casein.Runtimes.PreviewServer do
 
     preview_home =
       non_empty_string(value(env, "DEVIDE_PREVIEW_HOME")) ||
-        (cwd && Path.join(cwd, ".devide-preview"))
+        (cwd && Path.join(cwd, ".casein-preview"))
 
     with true <- is_binary(runtime_id) and Regex.match?(@safe_runtime_id, runtime_id),
          true <- is_binary(cwd) and Path.type(cwd) == :absolute,

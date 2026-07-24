@@ -72,7 +72,7 @@ defmodule Scripts.AgentDoctorTest do
 
     server_names = [
       "devide-terminal-demo-workspace",
-      "devide-preview-demo-workspace",
+      "casein-preview-demo-workspace",
       "devide-artifact-demo-workspace"
     ]
 

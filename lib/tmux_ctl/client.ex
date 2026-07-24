@@ -2002,6 +2002,6 @@ defmodule TmuxCtl.Client do
 
   defp tmux_input_path do
     suffix = :crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false)
-    Path.join(System.tmp_dir!(), "devide-tmux-input-#{suffix}")
+    Path.join(System.tmp_dir!(), "casein-tmux-input-#{suffix}")
   end
 end

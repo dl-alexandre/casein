@@ -38,7 +38,7 @@ services:
         # The generic Compose stack is the portable product profile. The
         # devbox release builder keeps its separate Dockerfile default.
         DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}
-    image: ${CASEIN_IMAGE:-dev_ide:latest}
+    image: ${CASEIN_IMAGE:-casein:latest}
     depends_on:
       postgres:
         condition: service_healthy

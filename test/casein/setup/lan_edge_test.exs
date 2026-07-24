@@ -19,14 +19,14 @@ defmodule Casein.Setup.LanEdgeTest do
         backend_port: 4443
       )
 
-    assert text =~ "Requires=devide-lan-edge.socket"
+    assert text =~ "Requires=casein-lan-edge.socket"
     assert text =~ "ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:4443"
     assert text =~ "NoNewPrivileges=true"
   end
 
   test "write_units creates both systemd units" do
     dir =
-      Path.join(System.tmp_dir!(), "devide-lan-edge-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-lan-edge-test-#{System.unique_integer([:positive])}")
 
     on_exit(fn -> File.rm_rf(dir) end)
 

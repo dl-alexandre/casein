@@ -104,7 +104,7 @@ defmodule Casein.Agents.PaneEnv do
 
   `clauded` is a host bash alias (`claude --dangerously-skip-permissions`).
   Palette/MCP launches must not rely on that alias: the Casein `claude` shim
-  already defaults to skip-permissions via `launch-devide-agent.sh`.
+  already defaults to skip-permissions via `launch-casein-agent.sh`.
   """
   @spec launch_command(String.t(), map(), keyword()) :: String.t()
   def launch_command(runtime_id, _workspace, _opts \\ [])

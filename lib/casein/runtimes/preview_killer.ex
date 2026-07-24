@@ -2,7 +2,7 @@ defmodule Casein.Runtimes.PreviewKiller do
   @moduledoc """
   Best-effort teardown for runtime-owned preview-server OS processes.
 
-  Reads the launcher registry under `.devide-preview/instances/` and signals
+  Reads the launcher registry under `.casein-preview/instances/` and signals
   recorded pids, then falls back to killing any process still listening on the
   preview port.
   """
@@ -37,7 +37,7 @@ defmodule Casein.Runtimes.PreviewKiller do
 
       preview_home =
         Map.get(env, "DEVIDE_PREVIEW_HOME") || Map.get(env, :DEVIDE_PREVIEW_HOME) ||
-          (is_binary(cwd) && Path.join(cwd, ".devide-preview"))
+          (is_binary(cwd) && Path.join(cwd, ".casein-preview"))
 
       if is_binary(runtime_id) and
            Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]{0,255}\z/, runtime_id) and

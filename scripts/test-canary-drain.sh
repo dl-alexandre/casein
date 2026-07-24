@@ -95,8 +95,8 @@ systemctl() {
   cat <<'UNITS'
 devide-aaaaaaaaaaaaaaaa.service loaded active running DevIDE canary a
 devide-bbbbbbbbbbbbbbbb.service loaded active running DevIDE canary b
-devide-loopback.service         loaded active running DevIDE loopback
-devide-preview-router.service   loaded active running DevIDE preview
+casein-loopback.service         loaded active running DevIDE loopback
+casein-preview-router.service   loaded active running DevIDE preview
 UNITS
 }
 mapfile -t uuids < <(running_canary_uuids)

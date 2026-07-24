@@ -4,14 +4,14 @@
 # session wipes.
 #
 # Usage:
-#   bash scripts/ensure-devide-tmux.sh           # install + enable + start
-#   bash scripts/ensure-devide-tmux.sh --disable # stop + disable unit
-#   TMUX_VERSION=3.6b bash scripts/ensure-devide-tmux.sh --reinstall-binary
+#   bash scripts/ensure-casein-tmux.sh           # install + enable + start
+#   bash scripts/ensure-casein-tmux.sh --disable # stop + disable unit
+#   TMUX_VERSION=3.6b bash scripts/ensure-casein-tmux.sh --reinstall-binary
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UNIT_SRC="${ROOT}/scripts/devide-tmux.service"
-UNIT_DST="/etc/systemd/system/devide-tmux.service"
+UNIT_SRC="${ROOT}/scripts/casein-tmux.service"
+UNIT_DST="/etc/systemd/system/casein-tmux.service"
 TMUX_VERSION="${TMUX_VERSION:-3.6b}"
 TMUX_PREFIX="${TMUX_PREFIX:-/usr/local}"
 
@@ -20,8 +20,8 @@ usage() {
 }
 
 disable_unit() {
-  sudo systemctl disable --now devide-tmux.service 2>/dev/null || true
-  echo "devide-tmux.service disabled"
+  sudo systemctl disable --now casein-tmux.service 2>/dev/null || true
+  echo "casein-tmux.service disabled"
   exit 0
 }
 
@@ -52,8 +52,8 @@ install_unit() {
   sudo install -m 0644 "${tmp}" "${UNIT_DST}"
   rm -f "${tmp}"
   sudo systemctl daemon-reload
-  sudo systemctl enable --now devide-tmux.service
-  echo "devide-tmux.service enabled (tmux=$(${tmux_bin} -V))"
+  sudo systemctl enable --now casein-tmux.service
+  echo "casein-tmux.service enabled (tmux=$(${tmux_bin} -V))"
   # Soft apply exit-empty off on a live server if one is already running.
   "${tmux_bin}" -L casein set-option -s exit-empty off 2>/dev/null || true
   "${tmux_bin}" -L casein display-message -p 'server=#{socket_path} version=#{version}' 2>/dev/null || true

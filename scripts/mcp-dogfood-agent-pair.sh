@@ -29,8 +29,8 @@ if [[ -z "$TOKEN" || -z "$WS_ID" ]]; then
   exit 1
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 auth_header=( -H "authorization: Bearer $TOKEN" -H "content-type: application/json" )
 admin_header=( -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" )

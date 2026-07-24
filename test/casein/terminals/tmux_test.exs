@@ -46,7 +46,7 @@ defmodule Casein.Terminals.TmuxTest do
 
   test "host shell mode runs topology commands against host tmux" do
     bin_dir =
-      Path.join(System.tmp_dir!(), "devide-tmux-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-tmux-test-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(bin_dir)
     tmux_bin = Path.join(bin_dir, "tmux")
@@ -77,7 +77,7 @@ defmodule Casein.Terminals.TmuxTest do
 
   test "targeted commands stay on host and use config when the tmux session already lives there" do
     bin_dir =
-      Path.join(System.tmp_dir!(), "devide-tmux-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-tmux-test-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(bin_dir)
     tmux_bin = Path.join(bin_dir, "tmux")
@@ -116,7 +116,7 @@ defmodule Casein.Terminals.TmuxTest do
 
   test "directory_inventory parses tagged window/pane lines grouped by session" do
     bin_dir =
-      Path.join(System.tmp_dir!(), "devide-tmux-test-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-tmux-test-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(bin_dir)
     tmux_bin = Path.join(bin_dir, "tmux")

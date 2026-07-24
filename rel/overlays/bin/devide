@@ -14,9 +14,9 @@ MIGRATE_BIN="${BIN_DIR}/migrate"
 ENV_FILE="${DEVIDE_LAN_ENV_FILE:-/etc/casein/lan.env}"
 PUBLIC_ENV_FILE="${DEVIDE_LAN_PUBLIC_ENV_FILE:-/etc/casein/lan.public.env}"
 UNIT_DIR="${DEVIDE_LAN_UNIT_DIR:-/etc/systemd/system}"
-BACKEND_SERVICE="devide-lan.service"
-EDGE_SOCKET="devide-lan-http-edge.socket"
-EDGE_SERVICE="devide-lan-http-edge.service"
+BACKEND_SERVICE="casein-lan.service"
+EDGE_SOCKET="casein-lan-http-edge.socket"
+EDGE_SERVICE="casein-lan-http-edge.service"
 SYSTEMCTL="${DEVIDE_LAN_SYSTEMCTL:-systemctl}"
 CURL="${DEVIDE_LAN_CURL:-curl}"
 JOURNALCTL="${DEVIDE_LAN_JOURNALCTL:-journalctl}"
@@ -367,7 +367,7 @@ ensure_update_layout() {
 
 download_update_artifact() {
   short="$(short_revision "${ARTIFACT_REVISION}")"
-  filename="devide-${ARTIFACT_PROFILE}-${ARTIFACT_TARGET}-${short}.tar.gz"
+  filename="casein-${ARTIFACT_PROFILE}-${ARTIFACT_TARGET}-${short}.tar.gz"
   target="${DOWNLOADS_DIR}/${filename}"
   tmp="${target}.tmp.$$"
 
@@ -860,7 +860,7 @@ write_units() {
 
   cat >"${UNIT_DIR}/${BACKEND_SERVICE}" <<EOF
 [Unit]
-Description=DevIDE managed LAN backend
+Description=Casein managed LAN backend
 Documentation=https://github.com/dl-alexandre/dev_ide
 After=network-online.target
 Wants=network-online.target
@@ -886,7 +886,7 @@ EOF
 
   cat >"${UNIT_DIR}/${EDGE_SOCKET}" <<EOF
 [Unit]
-Description=DevIDE managed LAN HTTP edge socket
+Description=Casein managed LAN HTTP edge socket
 Documentation=https://github.com/dl-alexandre/dev_ide
 
 [Socket]
@@ -899,7 +899,7 @@ EOF
 
   cat >"${UNIT_DIR}/${EDGE_SERVICE}" <<EOF
 [Unit]
-Description=DevIDE managed LAN HTTP edge proxy
+Description=Casein managed LAN HTTP edge proxy
 Requires=${EDGE_SOCKET}
 Requires=${BACKEND_SERVICE}
 After=network.target ${BACKEND_SERVICE}

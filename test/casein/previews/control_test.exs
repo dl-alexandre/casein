@@ -215,7 +215,7 @@ defmodule Casein.Previews.ControlTest do
   end
 
   test "workspace storage profile records a durable storage state path" do
-    root = Path.join(System.tmp_dir!(), "devide-preview-storage-test")
+    root = Path.join(System.tmp_dir!(), "casein-preview-storage-test")
     prev_root = Application.get_env(:casein, :preview_storage_root)
     Application.put_env(:casein, :preview_storage_root, root)
 

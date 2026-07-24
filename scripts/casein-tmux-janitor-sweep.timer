@@ -5,7 +5,7 @@ Description=Weekly DevIDE tmux blank session/window janitor sweep
 OnCalendar=Sun *-*-* 03:30:00
 Persistent=true
 RandomizedDelaySec=30m
-Unit=devide-tmux-janitor-sweep.service
+Unit=casein-tmux-janitor-sweep.service
 
 [Install]
 WantedBy=timers.target

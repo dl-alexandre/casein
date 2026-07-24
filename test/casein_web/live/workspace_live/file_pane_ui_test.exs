@@ -32,7 +32,7 @@ defmodule CaseinWeb.WorkspaceLive.FilePaneUiTest do
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    workspace_root = Path.join(System.tmp_dir!(), "devide-file-pane-ui")
+    workspace_root = Path.join(System.tmp_dir!(), "casein-file-pane-ui")
     workspace_path = Path.join(workspace_root, @workspace_id)
     File.rm_rf(workspace_path)
     File.mkdir_p!(Path.join(workspace_path, "lib"))

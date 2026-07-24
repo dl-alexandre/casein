@@ -6,9 +6,9 @@ defmodule Mix.Tasks.Casein.Lan.Up do
 
   This installs or updates:
 
-    * `devide-lan.service` - the loopback Phoenix backend
-    * `devide-lan-http-edge.socket` - privileged port 80
-    * `devide-lan-http-edge.service` - socket proxy to the backend
+    * `casein-lan.service` - the loopback Phoenix backend
+    * `casein-lan-http-edge.socket` - privileged port 80
+    * `casein-lan-http-edge.service` - socket proxy to the backend
 
   Administrator access is required for systemd unit installation and port 80.
   The Mix task itself should still be run as the normal developer user.
@@ -47,7 +47,7 @@ defmodule Mix.Tasks.Casein.Lan.Up do
 
           Inspect the backend with:
 
-            journalctl -u devide-lan.service -n 100 --no-pager
+            journalctl -u casein-lan.service -n 100 --no-pager
           """)
         end
 

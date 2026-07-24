@@ -21,7 +21,7 @@ warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
 devide_shims_expected() {
-  # Agent processes launched through launch-devide-agent.sh carry one of these
+  # Agent processes launched through launch-casein-agent.sh carry one of these
   # markers. The worktree marker covers the normal path; the explicit launch
   # marker covers deliberate DEVIDE_AGENT_SKIP_WORKTREE launches.
   if [[ -n "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" || "${DEVIDE_WORKTREE:-0}" == "1" ]]; then
@@ -449,7 +449,7 @@ PY
     return 1
   fi
 
-  if [[ "$hooks_mode" == "enabled" && ! -x "${bundle_real}/hooks/devide-agent-state.sh" ]]; then
+  if [[ "$hooks_mode" == "enabled" && ! -x "${bundle_real}/hooks/casein-agent-state.sh" ]]; then
     fail "Grok capability bundle enables hooks without its executable state reporter"
     return 1
   fi
@@ -579,7 +579,7 @@ print(slug or 'workspace')
     )"
     expected_servers=(
       "devide-terminal-${slug}"
-      "devide-preview-${slug}"
+      "casein-preview-${slug}"
       "devide-artifact-${slug}"
     )
   else
@@ -719,7 +719,7 @@ check_codex_capabilities() {
     warn "Codex plugin commands unavailable"
   fi
 
-  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ -x "$hook_script" ]]; then
     pass "DevIDE Codex hook receiver staged"
   else

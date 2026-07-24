@@ -9,10 +9,10 @@ defmodule Scripts.AgentStateScriptsTest do
   """
   use ExUnit.Case, async: true
 
-  @state_script Path.expand("../../scripts/devide-agent-state.sh", __DIR__)
-  @codex_script Path.expand("../../scripts/devide-codex-notify.sh", __DIR__)
+  @state_script Path.expand("../../scripts/casein-agent-state.sh", __DIR__)
+  @codex_script Path.expand("../../scripts/casein-codex-notify.sh", __DIR__)
   @grok_hook Path.expand(
-               "../../scripts/agent-hooks/grok-devide-agent-state.json",
+               "../../scripts/agent-hooks/grok-casein-agent-state.json",
                __DIR__
              )
 
@@ -30,7 +30,7 @@ defmodule Scripts.AgentStateScriptsTest do
       assert [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}] =
                Map.fetch!(hooks, event)
 
-      assert command =~ "devide-agent-state.sh"
+      assert command =~ "casein-agent-state.sh"
       assert command =~ "GROK_PLUGIN_ROOT"
       assert command =~ ~s([ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0)
     end

@@ -1,5 +1,5 @@
 ---
-name: devide-preview-verify
+name: casein-preview-verify
 description: Verify web UI behavior through DevIDE's operator-visible Preview MCP surface. Use after changing Phoenix LiveView, HTML, CSS, JavaScript, navigation, forms, responsive layout, or other browser-visible behavior.
 ---
 

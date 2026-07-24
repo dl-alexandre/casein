@@ -7,7 +7,7 @@
 #   /run/casein/current.sock
 #
 # Preview envs:
-#   <repo-parent>/.devide-preview/sockets/*.sock
+#   <repo-parent>/.casein-preview/sockets/*.sock
 #
 # This script intentionally does not edit Caddy. With --cleanup it only runs the
 # preview registry GC and preview router reload, which are scoped to preview
@@ -16,7 +16,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MAIN_SOCK="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
-PREVIEW_HOME="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.devide-preview}"
+PREVIEW_HOME="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
 PREVIEW_INSTANCES="${PREVIEW_HOME}/instances"
 PREVIEW_SOCKETS="${PREVIEW_HOME}/sockets"
 PREVIEW_ROUTER="${ROOT}/scripts/preview-router.sh"

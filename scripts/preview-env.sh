@@ -32,7 +32,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-STATE="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.devide-preview}"
+STATE="${DEVIDE_PREVIEW_HOME:-$(dirname "$ROOT")/.casein-preview}"
 INST_DIR="$STATE/instances"
 WT_DIR="$STATE/worktrees"
 WS_DIR="$STATE/workspaces"

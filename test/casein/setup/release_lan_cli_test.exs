@@ -37,8 +37,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
   test "release LAN CLI installs a managed backend and HTTP edge" do
     text = File.read!(@script)
 
-    assert text =~ "BACKEND_SERVICE=\"devide-lan.service\""
-    assert text =~ "EDGE_SOCKET=\"devide-lan-http-edge.socket\""
+    assert text =~ "BACKEND_SERVICE=\"casein-lan.service\""
+    assert text =~ "EDGE_SOCKET=\"casein-lan-http-edge.socket\""
     assert text =~ "append_env_if_missing CASEIN_LAN_INSECURE_HTTP true"
     assert text =~ "append_env_if_missing CASEIN_HOME_WORKSPACE_PATH"
     assert text =~ "INSTALL_RELEASE_DIR"
@@ -78,9 +78,9 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert env =~ "CASEIN_LAN_IP='192.168.1.240'"
     assert env =~ "CASEIN_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
 
-    backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
-    socket = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.socket"))
-    edge = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.service"))
+    backend = File.read!(Path.join(fixture.unit_dir, "casein-lan.service"))
+    socket = File.read!(Path.join(fixture.unit_dir, "casein-lan-http-edge.socket"))
+    edge = File.read!(Path.join(fixture.unit_dir, "casein-lan-http-edge.service"))
 
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/devide"))
     assert File.exists?(Path.join(fixture.install_release_dir, "bin/casein"))
@@ -150,24 +150,24 @@ defmodule Casein.Setup.ReleaseLanCliTest do
   test "up is idempotent across a partial install and reports ready after probes" do
     fixture = release_fixture()
     File.mkdir_p!(fixture.unit_dir)
-    File.write!(Path.join(fixture.unit_dir, "devide-lan.service"), "stale unit\n")
+    File.write!(Path.join(fixture.unit_dir, "casein-lan.service"), "stale unit\n")
 
     assert {out, 0} = run_cli(fixture, ["lan", "up"])
 
     assert out =~ "DevIDE Managed LAN status"
     assert out =~ "READY     http://r630.local/"
-    assert out =~ "OK        devide-lan.service is active"
+    assert out =~ "OK        casein-lan.service is active"
     assert out =~ "OK        http://r630.local/assets/css/app.css returned HTTP 200"
     assert out =~ "OK        http://192.168.1.240/ returned HTTP 302"
 
-    backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
+    backend = File.read!(Path.join(fixture.unit_dir, "casein-lan.service"))
     refute backend =~ "stale unit"
 
     log = File.read!(fixture.systemctl_log)
-    assert log =~ "enable devide-lan.service"
-    assert log =~ "restart devide-lan.service"
-    assert log =~ "enable devide-lan-http-edge.socket"
-    assert log =~ "restart devide-lan-http-edge.socket"
+    assert log =~ "enable casein-lan.service"
+    assert log =~ "restart casein-lan.service"
+    assert log =~ "enable casein-lan-http-edge.socket"
+    assert log =~ "restart casein-lan-http-edge.socket"
 
     env = File.read!(fixture.env_file)
     assert env =~ "CASEIN_DEFAULT_WORKSPACE='home'"
@@ -181,14 +181,14 @@ defmodule Casein.Setup.ReleaseLanCliTest do
              run_cli(fixture, ["lan", "up"],
                env: %{
                  "DEVIDE_FAKE_EDGE_ACTIVE" => "0",
-                 "DEVIDE_FAKE_FAIL_RESTART" => "devide-lan-http-edge.socket"
+                 "DEVIDE_FAKE_FAIL_RESTART" => "casein-lan-http-edge.socket"
                }
              )
 
-    assert out =~ "error: failed to start devide-lan-http-edge.socket"
+    assert out =~ "error: failed to start casein-lan-http-edge.socket"
     assert out =~ "DevIDE Managed LAN status"
     assert out =~ "NOT READY http://r630.local/"
-    assert out =~ "WARN      devide-lan-http-edge.socket is inactive"
+    assert out =~ "WARN      casein-lan-http-edge.socket is inactive"
     assert out =~ "Recent backend logs:"
   end
 
@@ -202,7 +202,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert out =~ "OK        backend returned HTTP 302"
 
     assert out =~
-             "INFO      manual backend detected; URL works but devide-lan.service is inactive"
+             "INFO      manual backend detected; URL works but casein-lan.service is inactive"
   end
 
   test "status keeps the IP fallback visible when the local hostname fails" do
@@ -247,9 +247,9 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     log = File.read!(fixture.systemctl_log)
 
-    assert log =~ "disable --now devide-lan-http-edge.socket"
-    assert log =~ "stop devide-lan-http-edge.service"
-    assert log =~ "disable --now devide-lan.service"
+    assert log =~ "disable --now casein-lan-http-edge.socket"
+    assert log =~ "stop casein-lan-http-edge.service"
+    assert log =~ "disable --now casein-lan.service"
     refute log =~ "kill"
     refute log =~ "pkill"
   end
@@ -275,7 +275,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     assert File.exists?(Path.join(fixture.downloads_dir, Path.basename(fixture.update_tarball)))
 
     systemctl_log = File.read!(fixture.systemctl_log)
-    assert systemctl_log =~ "restart devide-lan.service"
+    assert systemctl_log =~ "restart casein-lan.service"
 
     curl_log = File.read!(fixture.curl_log)
     assert curl_log =~ fixture.artifact_url
@@ -337,7 +337,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     ufw_log = Path.join(root, "ufw.log")
     app_bin_log = Path.join(root, "app-bin.log")
     plan_file = Path.join(root, "install-plan.env")
-    artifact_url = "https://example.com/devide-lan-linux-x86_64-67f393a.tar.gz"
+    artifact_url = "https://example.com/casein-lan-linux-x86_64-67f393a.tar.gz"
     current_revision = "504670cdeadbeef"
     update_revision = "67f393adeadbeef"
 
@@ -409,7 +409,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
       update_metadata
     )
 
-    update_tarball = Path.join(root, "devide-lan-linux-x86_64-67f393a.tar.gz")
+    update_tarball = Path.join(root, "casein-lan-linux-x86_64-67f393a.tar.gz")
     assert {_, 0} = System.cmd("tar", ["-czf", update_tarball, "-C", update_release_dir, "."])
     update_sha = sha256_hex(update_tarball)
 
@@ -488,11 +488,11 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     echo "$*" >> "$DEVIDE_FAKE_SYSTEMCTL_LOG"
     if [ "$1" = "is-active" ]; then
       case "$3" in
-        devide-lan.service)
+        casein-lan.service)
           [ "${DEVIDE_FAKE_BACKEND_ACTIVE:-1}" = "1" ]
           exit $?
           ;;
-        devide-lan-http-edge.socket)
+        casein-lan-http-edge.socket)
           [ "${DEVIDE_FAKE_EDGE_ACTIVE:-1}" = "1" ]
           exit $?
           ;;

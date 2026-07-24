@@ -81,7 +81,7 @@ config :casein,
     github_repo: "dl-alexandre/dev_ide",
     git_credential_helper:
       "!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential",
-    deploy_service: "devide-deploy.service",
+    deploy_service: "casein-deploy.service",
     remote_head_cache_ttl_ms: 60_000,
     ls_remote_timeout_ms: 5_000,
     last_deploy_path: "/run/casein/last-deploy.json",

@@ -1,0 +1,9 @@
+[Unit]
+Description=Casein stale agent worktree alarm sweep
+Wants=casein-loopback.service
+After=casein-loopback.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/casein/devide.env
+ExecStart=__CHECKOUT__/scripts/casein-worktree-alarm-sweep.sh --sweep

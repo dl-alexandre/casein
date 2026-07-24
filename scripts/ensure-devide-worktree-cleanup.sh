@@ -6,21 +6,21 @@
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Rollout is dry-run-first: by default the installed service is LOG-ONLY. Watch
-# a cycle (journalctl -u devide-worktree-cleanup.service), then re-run with
+# a cycle (journalctl -u casein-worktree-cleanup.service), then re-run with
 # --apply to arm real deletion.
 #
 # Usage:
-#   bash scripts/ensure-devide-worktree-cleanup.sh                 # dry-run (log only)
-#   bash scripts/ensure-devide-worktree-cleanup.sh --apply         # arm deletion
-#   bash scripts/ensure-devide-worktree-cleanup.sh --user devbox   # run-as user
-#   bash scripts/ensure-devide-worktree-cleanup.sh --no-start
-#   bash scripts/ensure-devide-worktree-cleanup.sh --disable
+#   bash scripts/ensure-casein-worktree-cleanup.sh                 # dry-run (log only)
+#   bash scripts/ensure-casein-worktree-cleanup.sh --apply         # arm deletion
+#   bash scripts/ensure-casein-worktree-cleanup.sh --user devbox   # run-as user
+#   bash scripts/ensure-casein-worktree-cleanup.sh --no-start
+#   bash scripts/ensure-casein-worktree-cleanup.sh --disable
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
-SERVICE="devide-worktree-cleanup.service"
-TIMER="devide-worktree-cleanup.timer"
+SERVICE="casein-worktree-cleanup.service"
+TIMER="casein-worktree-cleanup.timer"
 WT_ROOT="${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 
 APPLY=0

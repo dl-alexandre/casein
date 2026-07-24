@@ -31,9 +31,9 @@ defmodule Casein.Setup.LanRuntimeTest do
       |> File.rm_rf()
     end)
 
-    assert Path.basename(paths.backend_service_path) == "devide-lan.service"
-    assert Path.basename(paths.edge_service_path) == "devide-lan-http-edge.service"
-    assert Path.basename(paths.socket_path) == "devide-lan-http-edge.socket"
+    assert Path.basename(paths.backend_service_path) == "casein-lan.service"
+    assert Path.basename(paths.edge_service_path) == "casein-lan-http-edge.service"
+    assert Path.basename(paths.socket_path) == "casein-lan-http-edge.socket"
 
     commands = LanRuntime.install_commands(paths, config)
 
@@ -77,7 +77,7 @@ defmodule Casein.Setup.LanRuntimeTest do
         backend_url: "http://127.0.0.1:4000/",
         canonical_url: "http://r630.local/",
         checks: [
-          {:backend_service, false, "devide-lan.service is inactive"},
+          {:backend_service, false, "casein-lan.service is inactive"},
           {:backend_listener, true, "127.0.0.1:4000 accepts TCP"}
         ],
         config: %{lan_ip: "192.168.1.240"},
@@ -90,6 +90,6 @@ defmodule Casein.Setup.LanRuntimeTest do
     assert "DevIDE Managed LAN status" in lines
     assert "  MANAGED NOT READY http://r630.local/" in lines
 
-    assert "  INFO      manual backend detected; URL works but devide-lan.service is inactive" in lines
+    assert "  INFO      manual backend detected; URL works but casein-lan.service is inactive" in lines
   end
 end

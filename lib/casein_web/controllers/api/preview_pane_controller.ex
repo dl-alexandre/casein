@@ -1,6 +1,6 @@
 defmodule CaseinWeb.API.PreviewPaneController do
   @moduledoc """
-  Register and deregister preview panes opened by the `devide-preview` CLI.
+  Register and deregister preview panes opened by the `casein-preview` CLI.
   """
 
   use CaseinWeb, :controller

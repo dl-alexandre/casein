@@ -22,7 +22,7 @@ defmodule Casein.Release.PackageTest do
 
     :ok = Metadata.write!(release_root, metadata)
 
-    tarball = Path.join(dist_dir, "devide-lan-linux-x86_64-67f393a.tar.gz")
+    tarball = Path.join(dist_dir, "casein-lan-linux-x86_64-67f393a.tar.gz")
     File.write!(tarball, "fake tarball bytes for hashing")
 
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -51,7 +51,7 @@ defmodule Casein.Release.PackageTest do
     assert art["target"] == "linux-x86_64"
     assert is_binary(art["sha256"])
     assert art["size"] == byte_size("fake tarball bytes for hashing")
-    assert art["url"] =~ "devide-lan-linux-x86_64-67f393a.tar.gz"
+    assert art["url"] =~ "casein-lan-linux-x86_64-67f393a.tar.gz"
 
     {:ok, body} = File.read(path)
     {:ok, decoded} = Jason.decode(body)

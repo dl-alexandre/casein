@@ -4,16 +4,16 @@
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Usage:
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh --no-start
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh --disable
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh --no-start
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh --disable
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
-SERVICE="devide-tmux-janitor-sweep.service"
-TIMER="devide-tmux-janitor-sweep.timer"
+SERVICE="casein-tmux-janitor-sweep.service"
+TIMER="casein-tmux-janitor-sweep.timer"
 ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 
 START=1
@@ -80,7 +80,7 @@ if [[ "$DISABLE" -eq 1 ]]; then
 fi
 
 ensure_env_policy
-chmod 0755 "${ROOT}/scripts/devide-tmux-janitor-sweep.sh"
+chmod 0755 "${ROOT}/scripts/casein-tmux-janitor-sweep.sh"
 
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"
@@ -101,5 +101,5 @@ else
   log "installed + enabled (not started) — start with: sudo systemctl start ${TIMER}"
 fi
 
-log "dry-run: scripts/devide-tmux-janitor-sweep.sh --dry-run"
+log "dry-run: scripts/casein-tmux-janitor-sweep.sh --dry-run"
 log "run once now: sudo systemctl start ${SERVICE}"

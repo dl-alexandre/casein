@@ -49,7 +49,7 @@ without answering the broker is not a valid approval.
 ## CLI and batch transports
 
 Paired Codex launches receive eight lifecycle hooks plus legacy `notify`. The
-staged `devide-codex-notify.sh` posts JSON to:
+staged `casein-codex-notify.sh` posts JSON to:
 
 ```text
 POST /api/workspaces/:workspace_id/codex/hooks

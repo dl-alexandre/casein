@@ -38,7 +38,7 @@ defmodule Casein.Setup.LanServiceTest do
     dir =
       Path.join(
         System.tmp_dir!(),
-        "devide-lan-service-test-#{System.unique_integer([:positive])}"
+        "casein-lan-service-test-#{System.unique_integer([:positive])}"
       )
 
     on_exit(fn -> File.rm_rf(dir) end)
@@ -46,6 +46,6 @@ defmodule Casein.Setup.LanServiceTest do
     paths = LanService.write_unit!(dir, @opts)
 
     assert File.read!(paths.service_path) =~ "casein-lan-build-milc"
-    assert Path.basename(paths.service_path) == "devide-lan.service"
+    assert Path.basename(paths.service_path) == "casein-lan.service"
   end
 end

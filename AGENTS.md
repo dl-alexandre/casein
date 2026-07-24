@@ -15,7 +15,7 @@ This is a web application written using the Phoenix web framework.
 
 ## Devbox agent pairing (human + external agent)
 
-On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `devide-loopback` socat proxy (`scripts/ensure-devide-loopback-proxy.sh`).
+On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `casein-loopback` socat proxy (`scripts/ensure-casein-loopback-proxy.sh`).
 
 ### Required pre-push gate
 
@@ -68,13 +68,13 @@ env -u GH_TOKEN gh api -X PUT repos/dl-alexandre/dev_ide/branches/master/protect
 
 **Why `enforce_admins=false` / `strict=false`.** The branch protection *must* let admins bypass: the canonical deploy path is a direct push to `master` (through the local pre-push gate), which carries no PR check — `enforce_admins=true` would reject it and break deploys. So the `gate` check hard-blocks red *non-admin* PR merges and is an advisory red/green signal for the owner's own merges. `strict=false` avoids forcing every PR up-to-date amid the concurrent-agent FF-race churn.
 
-**Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`devide-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
+**Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`casein-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
 
 ```bash
-bash scripts/ensure-devide-deploy-poller.sh      # install + enable + start the timer
-journalctl -u devide-deploy.service -f           # watch deploys
-sudo systemctl start devide-deploy.service       # force a poll now
-bash scripts/ensure-devide-deploy-poller.sh --disable   # tear it down
+bash scripts/ensure-casein-deploy-poller.sh      # install + enable + start the timer
+journalctl -u casein-deploy.service -f           # watch deploys
+sudo systemctl start casein-deploy.service       # force a poll now
+bash scripts/ensure-casein-deploy-poller.sh --disable   # tear it down
 ```
 
 The poller re-runs `scripts/pre-push-check.sh` inside the clean detached worktree
@@ -86,7 +86,7 @@ The running release also performs a deploy-drift check at boot. If `/etc/casein/
 
 ### Source control before deploy (required)
 
-**Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`devide-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
+**Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`casein-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
 
 | Do | Don't |
 |----|-------|
@@ -98,7 +98,7 @@ The running release also performs a deploy-drift check at boot. If `/etc/casein/
 
 1. Implement and run `mix precommit` in the checkout.
 2. Commit and push to `master` (or open a PR that merges there). The pre-push gate runs the suite.
-3. The on-box poller (`devide-deploy.timer`) auto-deploys `origin/master` within ~2 min — no GitHub Actions. Force it now with `sudo systemctl start devide-deploy.service`, or `bash scripts/deploy-local.sh` for an immediate manual deploy.
+3. The on-box poller (`casein-deploy.timer`) auto-deploys `origin/master` within ~2 min — no GitHub Actions. Force it now with `sudo systemctl start casein-deploy.service`, or `bash scripts/deploy-local.sh` for an immediate manual deploy.
 4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
 
 A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/casein/release` is the ephemeral runtime artifact.
@@ -106,7 +106,7 @@ A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before pus
 ### Coordinating concurrent agents on master (required)
 
 Read **`docs/development-workflow.md`** first (primary checkout is deploy-only;
-agents launch in reported worktrees via `scripts/launch-devide-agent.sh`). Active
+agents launch in reported worktrees via `scripts/launch-casein-agent.sh`). Active
 subsystem freezes live in **`docs/in-progress.md`**.
 
 Multiple agents/humans push to `master` at once, and the on-box poller
@@ -145,8 +145,8 @@ work in archaeology. Pick exactly one:
    the worktree should stay discoverable.
 
 **Never** leave a dirty worktree with no report, no process, and no handoff. The
-daily `devide-worktree-alarm-sweep` timer (install:
-`bash scripts/ensure-devide-worktree-alarm-sweep.sh`) emits
+daily `casein-worktree-alarm-sweep` timer (install:
+`bash scripts/ensure-casein-worktree-alarm-sweep.sh`) emits
 `workspace.agent_worktree_stale` audit events for worktrees older than 24h that
 fail this protocol. Clean, reported worktrees are reaped separately by
 `DevIDE.Runtimes.Reaper`; dirty ones are alarm-only until a human resolves them.
@@ -220,15 +220,15 @@ client. Do not rely on repo `.grok/config.toml` alone — discovery walks up fro
 ```bash
 source .devbox-agent.env
 bash scripts/materialize-agent-mcp.sh    # writes ~/.casein/agent-mcp/<workspace>/
-bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
+bash scripts/launch-casein-agent.sh grok # or codex | claude | opencode
 ```
 
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
 | **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
-| **Grok** | injected by `scripts/launch-devide-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
-| **Codex** | injected by `scripts/launch-devide-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
-| **OpenCode** | injected by `scripts/launch-devide-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
+| **Grok** | injected by `scripts/launch-casein-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
+| **Codex** | injected by `scripts/launch-casein-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
+| **OpenCode** | injected by `scripts/launch-casein-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
@@ -266,12 +266,12 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 |-------|-----|
 | Checkout edits invisible in UI | Push to `master` — the on-box poller auto-deploys within ~2 min; or run `bash scripts/deploy-local.sh` for immediate activation |
 | Local deploy vanished after a while | The on-box poller redeployed `origin/master` — uncommitted or unpushed work was overwritten. Commit + push it |
-| Poller not deploying after a push | `systemctl status devide-deploy.timer`; `journalctl -u devide-deploy.service`; ensure the timer is installed (`bash scripts/ensure-devide-deploy-poller.sh`) |
+| Poller not deploying after a push | `systemctl status casein-deploy.timer`; `journalctl -u casein-deploy.service`; ensure the timer is installed (`bash scripts/ensure-casein-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
 | `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside DevIDE contexts — in a plain terminal, agent names run the real binaries (unpaired). |
 | Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
-| All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-devide-tmux.sh`. Pin binary: `bash scripts/ensure-devide-tmux.sh --reinstall-binary` (3.6b) |
+| All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-casein-tmux.sh`. Pin binary: `bash scripts/ensure-casein-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
 | Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |
@@ -284,9 +284,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 
 ### Key files
 
-- `scripts/deploy-poller.sh` — on-box auto-deploy poller (self-hosted CI deploy; fires from `devide-deploy.timer`)
-- `scripts/ensure-devide-deploy-poller.sh` — install/enable/disable the deploy poller systemd timer+service
-- `scripts/devide-deploy.{service,timer}` — systemd units for the poller (`__CHECKOUT__` substituted at install)
+- `scripts/deploy-poller.sh` — on-box auto-deploy poller (self-hosted CI deploy; fires from `casein-deploy.timer`)
+- `scripts/ensure-casein-deploy-poller.sh` — install/enable/disable the deploy poller systemd timer+service
+- `scripts/casein-deploy.{service,timer}` — systemd units for the poller (`__CHECKOUT__` substituted at install)
 - `.github/workflows/deploy-devbox.yml` — dormant GitHub-Actions deploy (workflow_dispatch fallback for when billing returns)
 - `scripts/deploy-local.sh` — fast local build+deploy wrapper / manual override
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
@@ -294,9 +294,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from DevIDE shims in `~/.casein/agent-shims`
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
-- `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
-- `scripts/devide-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
-- `scripts/ensure-devide-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
+- `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
+- `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
+- `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
 - `lib/casein/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
 - `scripts/verify_agent_pairing.sh` — MCP smoke test
 - `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)

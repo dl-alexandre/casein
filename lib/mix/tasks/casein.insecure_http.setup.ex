@@ -45,7 +45,7 @@ defmodule Mix.Tasks.Casein.InsecureHttp.Setup do
     backend_host = opts[:backend_host] || "127.0.0.1"
 
     prepared_dir =
-      Path.join(System.tmp_dir!(), "devide-lan-http-edge-#{System.unique_integer([:positive])}")
+      Path.join(System.tmp_dir!(), "casein-lan-http-edge-#{System.unique_integer([:positive])}")
 
     paths =
       Casein.Setup.InsecureHttpEdge.write_units!(prepared_dir,

@@ -4,11 +4,11 @@
 # Prefers http://127.0.0.1:4000; falls back to /run/casein/current.sock.
 #
 # Usage:
-#   source scripts/devide-curl.sh
+#   source scripts/casein-curl.sh
 #   devide_curl -fsS http://127.0.0.1:4000/api/workspaces
 #
 # Or:
-#   bash scripts/devide-curl.sh -fsS http://127.0.0.1:4000/api/workspaces
+#   bash scripts/casein-curl.sh -fsS http://127.0.0.1:4000/api/workspaces
 #
 set -euo pipefail
 

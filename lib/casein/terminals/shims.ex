@@ -1053,15 +1053,15 @@ defmodule Casein.Terminals.Shims do
   # sobelow_skip ["Traversal.FileModule"]
   defp write_desktop_integration! do
     applications_dir = desktop_entries_dir()
-    desktop_path = Path.join(applications_dir, "devide-preview.desktop")
+    desktop_path = Path.join(applications_dir, "casein-preview.desktop")
 
     File.mkdir_p!(applications_dir)
     File.write!(desktop_path, desktop_entry())
     File.chmod!(desktop_path, 0o644)
 
     write_mimeapps_defaults!(mimeapps_path(), %{
-      "text/markdown" => "devide-preview.desktop",
-      "text/x-markdown" => "devide-preview.desktop"
+      "text/markdown" => "casein-preview.desktop",
+      "text/x-markdown" => "casein-preview.desktop"
     })
   end
 

@@ -1,5 +1,5 @@
 ---
-name: devide-deploy-durability
+name: casein-deploy-durability
 description: Make DevIDE changes durable through source control and the release gate. Use before deploying, after a manual dogfood deploy, when a drift banner appears, or whenever work must survive the next origin/master poller release.
 ---
 

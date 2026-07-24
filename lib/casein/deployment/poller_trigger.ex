@@ -1,12 +1,12 @@
 defmodule Casein.Deployment.PollerTrigger do
   @moduledoc """
-  Starts the on-box auto-deploy poller (`devide-deploy.service`).
+  Starts the on-box auto-deploy poller (`casein-deploy.service`).
 
   Production expects passwordless sudo for this unit only — see
-  `scripts/ensure-devide-deploy-poller.sh`.
+  `scripts/ensure-casein-deploy-poller.sh`.
   """
 
-  @default_service "devide-deploy.service"
+  @default_service "casein-deploy.service"
   @default_timeout_ms 10_000
 
   @spec trigger(keyword()) :: :ok | {:error, term()}

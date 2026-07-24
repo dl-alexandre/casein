@@ -239,7 +239,7 @@ install_for_codex() {
   if [[ ! -d "${STAGING}/codex" ]]; then
     mkdir -p "${STAGING}/codex"
   fi
-  log "Codex: use launch-devide-agent.sh codex (per-launch MCP flags); skills N/A"
+  log "Codex: use launch-casein-agent.sh codex (per-launch MCP flags); skills N/A"
 }
 
 case "$RUNTIME" in
@@ -388,7 +388,7 @@ Next:
   # OpenCode (restart existing sessions so config reloads):
   opencode
   # or Claude / Grok / Codex via:
-  #   bash ${ROOT}/scripts/launch-devide-agent.sh <runtime>
+  #   bash ${ROOT}/scripts/launch-casein-agent.sh <runtime>
 
 Host skills now available: preview-ui-walk, delegate-to-grok, workspace-agent-pair
 EOF

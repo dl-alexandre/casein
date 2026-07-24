@@ -28,7 +28,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
     root =
       Path.join(
         System.tmp_dir!(),
-        "devide-lan-friendly-live-#{System.unique_integer([:positive])}"
+        "casein-lan-friendly-live-#{System.unique_integer([:positive])}"
       )
 
     workspaces_root = Path.join(root, ".devide-workspaces")

@@ -16,7 +16,7 @@ SRC="${REPO_ROOT}/lib/casein/integrations/manager/deploy"
 DST="${REPO_ROOT}/rel/overlays/deploy"
 
 failed=0
-for f in devide.service devide.env.example docker-compose.postgres.yml README.md; do
+for f in casein.service devide.env.example docker-compose.postgres.yml README.md; do
   if ! diff -q "${SRC}/${f}" "${DST}/${f}" >/dev/null 2>&1; then
     echo "deploy-sync: ${f} differs between source and overlay" >&2
     echo "  source:  ${SRC}/${f}" >&2

@@ -227,7 +227,7 @@ defmodule CaseinPreviewBrowserTest do
           const emit = (type, extra = {}) => {
             window.dispatchEvent(new CustomEvent("devide:preview:signal", {
               detail: {
-                source: "devide-preview",
+                source: "casein-preview",
                 version: 1,
                 type,
                 payload: {
@@ -380,7 +380,7 @@ defmodule CaseinPreviewBrowserTest do
   defp write_preview_bridge_contract_page! do
     path =
       System.tmp_dir!()
-      |> Path.join("devide-preview-bridge-contract-#{System.unique_integer([:positive])}.html")
+      |> Path.join("casein-preview-bridge-contract-#{System.unique_integer([:positive])}.html")
 
     File.write!(path, preview_bridge_contract_html())
     path

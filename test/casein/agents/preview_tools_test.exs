@@ -472,7 +472,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     script =
       :code.priv_dir(:casein)
       |> List.to_string()
-      |> Path.join("scripts/devide-preview")
+      |> Path.join("scripts/casein-preview")
 
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])

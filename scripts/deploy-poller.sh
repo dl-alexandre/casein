@@ -4,7 +4,7 @@
 # Actions deploy job while Actions is billing-blocked (see
 # .github/workflows/deploy-devbox.yml, push trigger commented out).
 #
-# Driven by devide-deploy.timer (every ~2 min). Each tick:
+# Driven by casein-deploy.timer (every ~2 min). Each tick:
 #   1. Reads the deployed revision (DEVIDE_GIT_REVISION in /etc/casein/devide.env).
 #   2. Fetches origin/master.
 #   3. If origin/master advanced past the deployed revision, builds a release
@@ -127,7 +127,7 @@ setup_build_cache() {
 }
 
 # --- self-update -------------------------------------------------------------
-# devide-deploy.service execs this file straight out of the shared agent
+# casein-deploy.service execs this file straight out of the shared agent
 # checkout (ROOT), which sits on arbitrary feature branches and carries stray
 # uncommitted edits — so the deploy logic that runs would otherwise be hostage
 # to whatever state the working tree happens to be in. Re-exec the canonical

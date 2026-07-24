@@ -176,7 +176,7 @@ function entryFor(browserRef) {
 }
 
 function handlePreviewSignal(entry, message) {
-  if (!message || message.source !== "devide-preview" || typeof message.type !== "string") {
+  if (!message || message.source !== "casein-preview" || typeof message.type !== "string") {
     return;
   }
 

@@ -7,8 +7,8 @@ defmodule Casein.Setup.LanEdge do
   listener. Casein still owns certificate termination on port 4443.
   """
 
-  @socket_unit "devide-lan-edge.socket"
-  @service_unit "devide-lan-edge.service"
+  @socket_unit "casein-lan-edge.socket"
+  @service_unit "casein-lan-edge.service"
   @unit_dir "/etc/systemd/system"
 
   def socket_unit, do: @socket_unit

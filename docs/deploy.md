@@ -135,7 +135,7 @@ two built images for debugging.
 ## Building the image (without compose)
 
 ```bash
-docker build -t dev_ide:latest .
+docker build -t casein:latest .
 ```
 
 The build is a two-stage Dockerfile:
@@ -161,7 +161,7 @@ docker run --rm \
   -e PHX_HOST="$PHX_HOST" \
   -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
-  dev_ide:latest /app/bin/migrate
+  casein:latest /app/bin/migrate
 
 # 2. Start the server.
 docker run -d --name dev_ide \
@@ -173,7 +173,7 @@ docker run -d --name dev_ide \
   -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
   -e CASEIN_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
-  dev_ide:latest
+  casein:latest
 ```
 
 The migrate step is intentionally explicit — it lets a CI/CD pipeline

@@ -114,7 +114,7 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning -x \
     scripts/devide \
     scripts/install-agent-shims.sh \
-    scripts/launch-devide-agent.sh \
+    scripts/launch-casein-agent.sh \
     scripts/lib/real-agent-bin.sh \
     scripts/lib/agent-doctor.sh \
     scripts/lib/canary-drain.sh \

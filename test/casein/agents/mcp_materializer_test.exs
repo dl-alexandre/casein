@@ -80,7 +80,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "devide-terminal"
-    refute codex =~ "devide-preview"
+    refute codex =~ "casein-preview"
     refute codex =~ "devide-artifact"
     refute codex =~ "CASEIN_API_TOKEN"
 
@@ -92,13 +92,13 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert hooks["hooks"]["PreToolUse"] |> hd() |> Map.get("matcher") == "*"
 
     stop_command = hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"])
-    assert stop_command =~ "devide-agent-state.sh"
+    assert stop_command =~ "casein-agent-state.sh"
 
     # The hook must resolve from the workspace staging home (checkout-independent),
     # and the script must actually be staged there — not left in <checkout>/scripts.
     assert stop_command =~ "DEVIDE_AGENT_MCP_HOME"
-    assert File.regular?(Path.join(staging, "devide-agent-state.sh"))
-    assert File.regular?(Path.join(staging, "devide-codex-notify.sh"))
+    assert File.regular?(Path.join(staging, "casein-agent-state.sh"))
+    assert File.regular?(Path.join(staging, "casein-codex-notify.sh"))
 
     sidechat = Jason.decode!(File.read!(Path.join(staging, "claude-sidechat-settings.json")))
     assert sidechat["permissions"]["deny"] == ["Edit", "Write", "Bash"]
@@ -154,7 +154,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     home =
       Path.join(
         System.tmp_dir!(),
-        "devide-preview-materializer-#{System.unique_integer([:positive])}"
+        "casein-preview-materializer-#{System.unique_integer([:positive])}"
       )
 
     inst_dir = Path.join(home, "instances")
@@ -291,7 +291,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert merged["projectSetting"]
     assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
     refute merged["mcpServers"]["devide-terminal-test-ws"]
-    refute merged["mcpServers"]["devide-preview-test-ws"]
+    refute merged["mcpServers"]["casein-preview-test-ws"]
     refute merged["mcpServers"]["devide-artifact-test-ws"]
 
     contents = File.read!(Path.join(checkout, ".mcp.json"))

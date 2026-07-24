@@ -172,8 +172,8 @@ questions, now resolved):
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
 - **Supervision: systemd unit**
-  (`lib/casein/integrations/manager/deploy/devide.service`, activated into
-  the stable `/opt/casein/deploy/devide.service`). Host process in the `docker`
+  (`lib/casein/integrations/manager/deploy/casein.service`, activated into
+  the stable `/opt/casein/deploy/casein.service`). Host process in the `docker`
   group — native `/data/workspaces` + docker-socket access, matches the
   `devbox-manager` service. A container buys no isolation here since the
   docker-socket mount is root-equivalent regardless.

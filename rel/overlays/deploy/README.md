@@ -1,4 +1,4 @@
-# DevIDE on devbox — deployment (§5)
+# Casein on devbox — deployment (§5)
 
 Deploys one shared DevIDE instance on the devbox EC2 host, served behind the
 existing Caddy + oauth2-proxy front door and scoped per-user. This is the
@@ -28,7 +28,7 @@ through Caddy. Never publish `PORT` outside the host.
 ```
 /opt/casein/
   deploy/                # STABLE, release-independent. Contains the 4 artifacts:
-                         #   devide.service, docker-compose.postgres.yml,
+                         #   casein.service, docker-compose.postgres.yml,
                          #   devide.env.example, README.md
                          # Populated by the activation step from the release's
                          # bundled <release>/deploy/ copy. The installed unit
@@ -71,7 +71,7 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    # → ./release-out/   (host-visible, owned by root after docker cp)
    ```
 
-   The output tree includes `release-out/deploy/{devide.service,
+   The output tree includes `release-out/deploy/{casein.service,
    docker-compose.postgres.yml, devide.env.example, README.md}` — bundled
    from `rel/overlays/deploy/`.
 
@@ -94,7 +94,7 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    sudo chown devbox:devbox /opt/casein/deploy
    sudo cp -a /opt/casein/release/deploy/. /opt/casein/deploy/
    sudo chown -R devbox:devbox /opt/casein/deploy
-   sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
+   sudo cp /opt/casein/deploy/casein.service /etc/systemd/system/casein.service
    sudo systemctl daemon-reload
    ```
 
@@ -207,14 +207,14 @@ sudo mkdir -p /opt/casein/deploy
 sudo chown devbox:devbox /opt/casein/deploy
 sudo cp -a /opt/casein/release/deploy/. /opt/casein/deploy/
 sudo chown -R devbox:devbox /opt/casein/deploy
-sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
+sudo cp /opt/casein/deploy/casein.service /etc/systemd/system/casein.service
 sudo systemctl daemon-reload
 
 sudo systemctl restart devide              # re-runs migrate, reboots the release
 ```
 
 The activation step is what makes the paths future-proof. The unit file on disk
-(now at `/etc/systemd/system/devide.service`) and the stable deploy/ dir are
+(now at `/etc/systemd/system/casein.service`) and the stable deploy/ dir are
 always refreshed from the release being activated.
 
 ## GitHub Actions deployment
@@ -246,7 +246,7 @@ Terminal MCP `tools/list` calls. Only after the canary is healthy does it point
 `/run/casein/current.sock` at the new socket and ask old instances to drain. If
 activation or smoke checks fail after the release swap starts, it restores both
 `release.prev` and the pre-canary `/etc/casein/devide.env` so the stable
-`devide.service` can still boot the prior release.
+`casein.service` can still boot the prior release.
 
 ## Rollback
 
@@ -265,13 +265,13 @@ sudo mkdir -p /opt/casein/deploy
 sudo chown devbox:devbox /opt/casein/deploy
 sudo cp -a /opt/casein/release/deploy/. /opt/casein/deploy/
 sudo chown -R devbox:devbox /opt/casein/deploy
-sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
+sudo cp /opt/casein/deploy/casein.service /etc/systemd/system/casein.service
 sudo systemctl daemon-reload
 sudo systemctl start devide
 
 # Full teardown — if the deployment must be undone entirely.
 sudo systemctl disable --now devide
-sudo rm /etc/systemd/system/devide.service && sudo systemctl daemon-reload
+sudo rm /etc/systemd/system/casein.service && sudo systemctl daemon-reload
 docker compose -f /opt/casein/deploy/docker-compose.postgres.yml down
 # The DB volume SURVIVES `down`. To discard data too: add `-v`.
 ```
@@ -282,7 +282,7 @@ If an update includes a destructive migration, snapshot the DB first (below).
 ## Backups
 
 DevIDE's state — including the audit log, a security record — lives in the
-`devide_pgdata` Docker volume. Snapshot it before risky updates:
+`casein_pgdata` Docker volume. Snapshot it before risky updates:
 
 ```sh
 docker exec devide-postgres-1 pg_dump -U dev_ide dev_ide_prod \
@@ -295,7 +295,7 @@ devide-postgres-1 psql -U dev_ide dev_ide_prod`.
 ## Reconcile current broken DevBox (post-7204683, 4c308b8 / cd0aed5 era)
 
 The real DevBox is currently running release `4c308b8` (Ghostty inline snapshot
-work) but its installed `/etc/systemd/system/devide.service` (and possibly the
+work) but its installed `/etc/systemd/system/casein.service` (and possibly the
 runbook in use) still contains the **pre-7204683** `ExecStartPre` that hard-coded
 the old `repo/deploy/devbox/` layout that disappeared after the rename.
 
@@ -328,12 +328,12 @@ sudo chown -R devbox:devbox /opt/casein/deploy
 #    We write it fresh so it is guaranteed to have the post-reconciliation paths
 #    even if the bundled service inside 4c308b8 still had the intermediate
 #    /release/deploy/ references.
-sudo tee /opt/casein/deploy/devide.service > /dev/null << 'UNITEOF'
+sudo tee /opt/casein/deploy/casein.service > /dev/null << 'UNITEOF'
 # DevIDE-on-devbox systemd unit (reconciled after 7204683).
 # (full header comments elided for the here-doc; see the file in the next
 # release or in the repo for the complete documented version)
 [Unit]
-Description=DevIDE — shared on-devbox IDE
+Description=Casein — shared on-devbox IDE
 Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/casein/integrations/manager/deploy/README.md
 After=network-online.target docker.service
 Wants=network-online.target
@@ -365,7 +365,7 @@ ReadWritePaths=/data/workspaces /opt/casein
 WantedBy=multi-user.target
 UNITEOF
 
-sudo cp /opt/casein/deploy/devide.service /etc/systemd/system/devide.service
+sudo cp /opt/casein/deploy/casein.service /etc/systemd/system/casein.service
 sudo systemctl daemon-reload
 
 # 4. (Re)start. The first start will exercise the new stable ExecStartPre.
@@ -379,7 +379,7 @@ automatically pick up new deploy artifacts (including any evolution of the
 unit template itself) because activation always re-copies the service file.
 
 Once a *new* release (built after this change lands) is activated, its
-`release/deploy/devide.service` will contain the full up-to-date header
+`release/deploy/casein.service` will contain the full up-to-date header
 comments (including the rich post-7204683 history and stable-layout contract
 that the one-time `tee` above deliberately kept terse for the broken box).
 You can then `cp` it again (or just re-run activation) to refresh the comments
@@ -390,7 +390,7 @@ will automatically restore the complete documented header.
 
 | File | Purpose |
 |------|---------|
-| `devide.service` | systemd unit — Postgres-up + migrate + release boot |
+| `casein.service` | systemd unit — Postgres-up + migrate + release boot |
 | `docker-compose.postgres.yml` | Dedicated Postgres, loopback `127.0.0.1:15432` |
 | `devide.env.example` | Environment template → `/etc/casein/devide.env` |
 | `README.md` | This file (self-documenting runbook) |
@@ -402,7 +402,7 @@ helper `bin/activate_devbox_deploy` is shipped under `<release-root>/bin/`
 (via `rel/overlays/bin/`) and documented in the Activation step above.
 
 **After activation** they live at the stable `/opt/casein/deploy/` on the host.
-The installed unit (`/etc/systemd/system/devide.service`) is a copy of the one
+The installed unit (`/etc/systemd/system/casein.service`) is a copy of the one
 from stable deploy/. All references in the unit use `/opt/casein/deploy/` for
 the compose file so that future release swaps never invalidate `ExecStartPre`.
 

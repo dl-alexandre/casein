@@ -92,7 +92,7 @@ defmodule Casein.Previews.EnvRegistry do
       Application.get_env(:casein, :preview_env_checkout_root) ||
         File.cwd!()
 
-    Path.join(Path.expand(Path.join(checkout, "..")), ".devide-preview")
+    Path.join(Path.expand(Path.join(checkout, "..")), ".casein-preview")
   end
 
   defp list_json_files(dir) do

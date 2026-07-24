@@ -195,7 +195,7 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   process safety".)
 - **Calendar cleanup is outside the app timer.** The in-app
   `:tmux_window_sweep_ms` interval resets on release restarts. The systemd
-  timer installed by `scripts/ensure-devide-tmux-janitor-sweep.sh` is the
+  timer installed by `scripts/ensure-casein-tmux-janitor-sweep.sh` is the
   durable weekly cadence; it still calls the in-app policy, so there is only
   one kill-policy implementation.
 - **Server isolation & config (`-L` / `-f`).** Each env runs its tmux sessions

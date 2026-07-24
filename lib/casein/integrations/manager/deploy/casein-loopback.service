@@ -4,16 +4,16 @@
 # /run/casein/current.sock. On-box agents and scripts still expect
 # http://127.0.0.1:4000 — this unit forwards loopback TCP to the current socket.
 #
-# Install (via activate_devbox_deploy or ensure-devide-loopback-proxy.sh):
-#   sudo cp /opt/casein/deploy/devide-loopback.service /etc/systemd/system/
+# Install (via activate_devbox_deploy or ensure-casein-loopback-proxy.sh):
+#   sudo cp /opt/casein/deploy/casein-loopback.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now devide-loopback
+#   sudo systemctl enable --now casein-loopback
 #
-# When devide.service binds :4000 directly (legacy rollback), leave this unit
-# stopped — ensure-devide-loopback-proxy.sh detects an existing listener.
+# When casein.service binds :4000 directly (legacy rollback), leave this unit
+# stopped — ensure-casein-loopback-proxy.sh detects an existing listener.
 
 [Unit]
-Description=DevIDE loopback HTTP proxy (127.0.0.1:4000 → current Unix socket)
+Description=Casein loopback HTTP proxy (127.0.0.1:4000 → current Unix socket)
 Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/casein/integrations/manager/deploy/README.md
 After=network-online.target
 Wants=network-online.target

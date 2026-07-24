@@ -7,7 +7,7 @@
 > the corruption modes we have actually hit.
 >
 > **Canonical workflow**: [`development-workflow.md`](development-workflow.md) —
-> `launch-devide-agent.sh` now enforces worktree creation at agent start.
+> `launch-casein-agent.sh` now enforces worktree creation at agent start.
 
 ## The hazard, concretely
 

@@ -157,7 +157,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
       with {:ok, config} <- required_file(opts, :hook_config),
            {:ok, script} <- required_file(opts, :hook_script) do
         :ok = File.cp!(config, destination)
-        script_destination = Path.join([temp, "hooks", "devide-agent-state.sh"])
+        script_destination = Path.join([temp, "hooks", "casein-agent-state.sh"])
         :ok = File.cp!(script, script_destination)
         File.chmod(script_destination, 0o755)
       end

@@ -275,7 +275,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
   ## helpers
 
   defp make_tmp_dir do
-    dir = Path.join(System.tmp_dir!(), "devide-tmuxrunner-#{System.unique_integer([:positive])}")
+    dir = Path.join(System.tmp_dir!(), "casein-tmuxrunner-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     on_exit(fn -> File.rm_rf(dir) end)
     dir

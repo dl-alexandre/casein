@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# devide-tmux-janitor-sweep.sh — tmux janitor entrypoints.
+# casein-tmux-janitor-sweep.sh — tmux janitor entrypoints.
 #
 # Test runs (WorkspacePaneSplitTest's `alpha-<N>`, the `*-ws-<N>` preview/header
 # fixtures, PaneWorker's `pw-test`) create real tmux sessions and reap them in
@@ -21,10 +21,10 @@
 # the test-leak mode bare to audit leaked test sessions.
 #
 # Usage:
-#   scripts/devide-tmux-janitor-sweep.sh            # dry run (plan only)
-#   scripts/devide-tmux-janitor-sweep.sh --apply    # actually reap
-#   scripts/devide-tmux-janitor-sweep.sh --release-sweep
-#   scripts/devide-tmux-janitor-sweep.sh --dry-run  # release policy dry-run
+#   scripts/casein-tmux-janitor-sweep.sh            # dry run (plan only)
+#   scripts/casein-tmux-janitor-sweep.sh --apply    # actually reap
+#   scripts/casein-tmux-janitor-sweep.sh --release-sweep
+#   scripts/casein-tmux-janitor-sweep.sh --dry-run  # release policy dry-run
 #   DEVIDE_TMUX_REAP_AGE_MIN=60 scripts/...         # override 30-min threshold
 set -euo pipefail
 

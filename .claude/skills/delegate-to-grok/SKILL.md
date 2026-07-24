@@ -211,10 +211,10 @@ the materialized MCP, and the agent-state hook:
 
 ```bash
 tmux respawn-pane -k -t <worker_pane> -c <worker-worktree-path> \
-  "bash -lc 'cd \"<worker-worktree-path>\" && DEVIDE_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" DEVIDE_AGENT_TASK=<task-slug> exec bash scripts/launch-devide-agent.sh grok'"
+  "bash -lc 'cd \"<worker-worktree-path>\" && DEVIDE_AGENT_WORKTREE_PATH=\"<worker-worktree-path>\" DEVIDE_AGENT_TASK=<task-slug> exec bash scripts/launch-casein-agent.sh grok'"
 ```
 
-Use **`launch-devide-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher
+Use **`launch-casein-agent.sh`**, not `spawn-agent-worker.sh` (§2): the launcher
 *reuses* the worktree when `DEVIDE_AGENT_WORKTREE_PATH` points at it, whereas the
 spawn helper unsets that var to force a fresh worktree — which would strand the
 already-committed slices. Wait for the prompt as in §2 (`pane_state: "unknown"` +

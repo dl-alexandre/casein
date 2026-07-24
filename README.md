@@ -121,7 +121,7 @@ is the first screen; click a workspace to attach a terminal.
 
 For local-network dogfooding, run `mise exec -- mix casein.lan.up` and open
 `http://<hostname>.local/`. That creates/checks the default `home` workspace,
-installs the managed `devide-lan.service` backend plus the port-80 LAN edge,
+installs the managed `casein-lan.service` backend plus the port-80 LAN edge,
 and `/` opens the workspace directly. Use
 `mise exec -- mix casein.lan.status` and `mise exec -- mix casein.lan.down`
 to inspect or stop it. Trusted mkcert HTTPS remains available as an optional
@@ -134,9 +134,9 @@ See [`docs/deploy.md`](docs/deploy.md) for the full runbook. Short
 version:
 
 ```bash
-docker build -t dev_ide:latest .
-docker run --rm <env...> dev_ide:latest /app/bin/migrate
-docker run -d --name dev_ide -p 4000:4000 <env...> dev_ide:latest
+docker build -t casein:latest .
+docker run --rm <env...> casein:latest /app/bin/migrate
+docker run -d --name dev_ide -p 4000:4000 <env...> casein:latest
 ```
 
 Required env for the default Postgres profile: `SECRET_KEY_BASE`,

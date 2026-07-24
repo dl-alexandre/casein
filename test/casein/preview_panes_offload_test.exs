@@ -84,7 +84,7 @@ defmodule Casein.PreviewPanesOffloadTest do
           top: 0,
           width: 120,
           height: 40,
-          current_command: "devide-preview",
+          current_command: "casein-preview",
           current_path: "/tmp"
         }
       ]
@@ -536,7 +536,7 @@ defmodule Casein.PreviewPanesOwnershipTest do
           top: 0,
           width: 120,
           height: 40,
-          current_command: "devide-preview",
+          current_command: "casein-preview",
           current_path: workspace_path
         }
       ]

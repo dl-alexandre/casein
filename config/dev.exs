@@ -88,11 +88,11 @@ devide_lan_insecure_http_port =
 
 devide_lan_certfile =
   System.get_env("CASEIN_LAN_CERTFILE") ||
-    Path.expand("../priv/cert/devide-lan.pem", __DIR__)
+    Path.expand("../priv/cert/casein-lan.pem", __DIR__)
 
 devide_lan_keyfile =
   System.get_env("CASEIN_LAN_KEYFILE") ||
-    Path.expand("../priv/cert/devide-lan-key.pem", __DIR__)
+    Path.expand("../priv/cert/casein-lan-key.pem", __DIR__)
 
 devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("CASEIN_LAN_HTTPS"))
 

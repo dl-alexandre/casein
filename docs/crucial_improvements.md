@@ -239,7 +239,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | **Source** | `AGENTS.md` §MCP client injection (project-local and launch-time injection) |
 | **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject DevIDE MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
 | **Invariant** | Operational safety on multi-user host |
-| **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-devide-agent.sh` |
+| **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-casein-agent.sh` |
 | **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `CASEIN_API_TOKEN`. |
 
 ### P4 — Preview MCP cannot drive LiveView WebSocket interactions
@@ -273,7 +273,7 @@ Items that block repeatable push→deploy→dogfood loops or hide regressions.
 | Field | Detail |
 |-------|--------|
 | **Source** | `AGENTS.md` §Auto-deploy, `scripts/deploy-poller.sh` |
-| **Gap** | `devide-deploy.timer` builds and activates `origin/master` without running the suite; `git push --no-verify` still auto-deploys broken code. |
+| **Gap** | `casein-deploy.timer` builds and activates `origin/master` without running the suite; `git push --no-verify` still auto-deploys broken code. |
 | **Invariant** | Product §12 "demo truth table" durability |
 | **Verify** | Read `scripts/deploy-poller.sh`; compare to `.githooks/pre-push` |
 | **Rationale** | Relies entirely on operator discipline; consider poller running `mix precommit.ci` in build worktree. |

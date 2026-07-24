@@ -32,7 +32,7 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 | `DevIdeWeb.API.WorkspaceTemplateController` | `lib/casein_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
 | `DevIdeWeb.API.ArtifactProjectController` | `lib/casein_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
 | `DevIdeWeb.API.WorkspaceAPI` | `lib/casein_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
-| `DevIdeWeb.API.PreviewPaneController` | `lib/casein_web/controllers/api/preview_pane_controller.ex` | Register/deregister `devide-preview` CLI panes |
+| `DevIdeWeb.API.PreviewPaneController` | `lib/casein_web/controllers/api/preview_pane_controller.ex` | Register/deregister `casein-preview` CLI panes |
 | `DevIdeWeb.API.DeployStatusController` | `lib/casein_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
 | `DevIdeWeb.API.DrainController` | `lib/casein_web/api/drain_controller.ex` | Start a graceful deployment drain |
 | `DevIdeWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for the preview MCP server |
@@ -172,7 +172,7 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| POST | `/api/preview/panes` | `PreviewPaneController` · `:create` | Register a `devide-preview` CLI pane (201); 422 on `workspace_not_found` / `untrusted_url` |
+| POST | `/api/preview/panes` | `PreviewPaneController` · `:create` | Register a `casein-preview` CLI pane (201); 422 on `workspace_not_found` / `untrusted_url` |
 | DELETE | `/api/preview/panes/:id` | `PreviewPaneController` · `:delete` | Deregister a pane; 404 if unknown |
 
 ### Deploy control — pipeline `:api`
@@ -181,7 +181,7 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 |---|---|---|---|
 | GET | `/api/deploy_status` | `DeployStatusController` · `:show` | `DevIDE.Deployment.Health.status/1`; 200 when `ok`, else **503** |
 | POST | `/api/drain` | `DrainController` · `:drain` | `DevIDE.Deployment.Drain.start_drain/1` (`commits_behind` arg); 409 `already_draining` if already draining |
-| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `devide-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
+| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `casein-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
 
 ### Agent MCP — pipeline `:mcp_api`
 

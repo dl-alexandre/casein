@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# devide-worktree-alarm-sweep.sh — detect stale agent worktrees needing attention.
+# casein-worktree-alarm-sweep.sh — detect stale agent worktrees needing attention.
 #
 # Alarms (log + audit) on worktrees that are dirty or unreported, have no live
 # agent process, are older than the TTL (default 24h), and lack an exit handoff
 # (push/PR, wip: commit, or terminal_report_worktree exit_status). Never deletes.
 #
 # Usage:
-#   scripts/devide-worktree-alarm-sweep.sh              # release RPC sweep
-#   scripts/devide-worktree-alarm-sweep.sh --dry-run    # same, explicit
+#   scripts/casein-worktree-alarm-sweep.sh              # release RPC sweep
+#   scripts/casein-worktree-alarm-sweep.sh --dry-run    # same, explicit
 #   DEVIDE_WORKTREE_ALARM_TTL_SECONDS=86400 scripts/...
 #
 set -euo pipefail

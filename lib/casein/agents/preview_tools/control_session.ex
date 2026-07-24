@@ -419,7 +419,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
     active = Map.get(pane, :active) || Map.get(pane, "active")
 
     (command in ["bash", "sh", "zsh"] ||
-       (is_binary(command) and String.contains?(command, "devide-preview"))) and
+       (is_binary(command) and String.contains?(command, "casein-preview"))) and
       active in [false, "0", 0, nil]
   end
 
@@ -956,7 +956,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
   end
 
   @doc """
-  Split the active tmux window and run `devide-preview` in the new pane.
+  Split the active tmux window and run `casein-preview` in the new pane.
 
   Options:
     * `:tmux_session` — required workspace tmux session name
@@ -985,7 +985,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
            ),
          :ok <- ensure_tmux_pane_exists(tmux_session, pane_id),
          # tmux focuses the new preview holder; restore the operator pane so
-         # Ghostty keeps streaming shell output instead of devide-preview text.
+         # Ghostty keeps streaming shell output instead of casein-preview text.
          :ok <- terminals().select_pane(tmux_session, split_target_pane_id),
          {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts),
          :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
@@ -1830,11 +1830,11 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
           dir when is_list(dir) ->
             dir
             |> List.to_string()
-            |> Path.join("scripts/devide-preview")
+            |> Path.join("scripts/casein-preview")
             |> shell_quote()
 
           _ ->
-            "devide-preview"
+            "casein-preview"
         end
     end
   end

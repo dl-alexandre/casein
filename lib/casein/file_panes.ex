@@ -1661,7 +1661,7 @@ defmodule Casein.FilePanes do
   defp loc_root({:remote, _host, root}), do: root
 
   defp holder_command do
-    Application.app_dir(:casein, "priv/scripts/devide-file-pane")
+    Application.app_dir(:casein, "priv/scripts/casein-file-pane")
   end
 
   defp kill_pane(%{tmux_session: session, pane_id: pane_id})

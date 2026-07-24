@@ -1,7 +1,7 @@
 defmodule Scripts.LaunchDevideAgentTest do
   use ExUnit.Case, async: true
 
-  @script Path.expand("../../scripts/launch-devide-agent.sh", __DIR__)
+  @script Path.expand("../../scripts/launch-casein-agent.sh", __DIR__)
 
   test "script has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -89,7 +89,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ "PermissionRequest"
     assert text =~ "SubagentStart"
     assert text =~ "DEVIDE_AGENT_STATE_HOOKS"
-    assert text =~ "agent-hooks/grok-devide-agent-bootstrap.json"
+    assert text =~ "agent-hooks/grok-casein-agent-bootstrap.json"
     assert text =~ "grok_prepare_private_leader"
     assert text =~ "grok-leader-runtime.py"
     assert text =~ ~S(metadata="${root_real}/.devide-launcher")

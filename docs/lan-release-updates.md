@@ -103,7 +103,7 @@ Channel-scoped, evolvable JSON published to GitHub Releases (or any HTTPS host):
       "profile": "lan",
       "repo_adapter": "sqlite",
       "target": "linux-x86_64",
-      "url": "https://github.com/dl-alexandre/dev_ide/releases/download/canary/devide-lan-linux-x86_64-67f393a.tar.gz",
+      "url": "https://github.com/dl-alexandre/dev_ide/releases/download/canary/casein-lan-linux-x86_64-67f393a.tar.gz",
       "sha256": "...",
       "size": 123456789,
       "min_installer_metadata_version": 1,
@@ -180,7 +180,7 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 9. Move staging → `/opt/casein/lan/releases/<revision>`.
 10. Point `previous` at old `current`.
 11. Point `current` at new release.
-12. `systemctl restart devide-lan.service`.
+12. `systemctl restart casein-lan.service`.
 13. Probe:
     - `http://127.0.0.1:$PORT/`
     - `http://$CASEIN_LAN_HOST/`

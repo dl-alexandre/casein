@@ -23,7 +23,7 @@ fi
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
-bash scripts/ensure-devide-loopback-proxy.sh
+bash scripts/ensure-casein-loopback-proxy.sh
 
 LOCAL_URL="http://127.0.0.1:4000"
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
@@ -116,7 +116,7 @@ relaunch_current_release_if_needed() {
   fi
 
   sudo rm -f "$tarball"
-  bash scripts/ensure-devide-loopback-proxy.sh
+  bash scripts/ensure-casein-loopback-proxy.sh
 }
 
 WORKSPACES_JSON="$(

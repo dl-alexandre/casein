@@ -22,7 +22,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
 
     mcp = Path.join(inputs, ".mcp.json")
     hook_config = Path.join(inputs, "hooks.json")
-    hook_script = Path.join(inputs, "devide-agent-state.sh")
+    hook_script = Path.join(inputs, "casein-agent-state.sh")
 
     File.write!(
       mcp,
@@ -68,7 +68,7 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     assert :ok = GrokCapabilityBundle.verify(first.dir, first.digest)
 
     assert File.read!(Path.join(first.dir, ".mcp.json")) =~ "${CASEIN_API_TOKEN}"
-    assert File.regular?(Path.join([first.dir, "hooks", "devide-agent-state.sh"]))
+    assert File.regular?(Path.join([first.dir, "hooks", "casein-agent-state.sh"]))
     assert File.regular?(Path.join([first.dir, "skills", "verify", "SKILL.md"]))
 
     for path <- [first.dir | descendants(first.dir)] do

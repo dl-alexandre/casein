@@ -57,7 +57,7 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    - `mode: "here"` opens the app surface beside the calling agent (needs
      `tmux_session`, injected automatically by a session-scoped MCP URL).
 
-   `preview_open` splits the active tmux window and runs `devide-preview <url>`
+   `preview_open` splits the active tmux window and runs `casein-preview <url>`
    in the new pane. The response includes `pane_id` plus the usual `session_id`.
    The older `preview_open_app`, `preview_open_localhost`, `preview_open_here`,
    and `preview_open_current_workspace` tools remain as deprecated aliases.
@@ -90,8 +90,8 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
 10. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
-`devide-preview` is shipped in release `priv/scripts/`. Humans can also run
-`devide-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
+`casein-preview` is shipped in release `priv/scripts/`. Humans can also run
+`casein-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
 registers the pane via `POST /api/preview/panes` and DevIDE paints an
 iframe overlay at the pane rectangle.
 
@@ -132,7 +132,7 @@ Production DevIDE traffic and ephemeral preview traffic use separate socket
 lanes:
 
 - Main app: `/run/casein/current.sock`
-- Preview envs: `.devide-preview/sockets/*.sock`
+- Preview envs: `.casein-preview/sockets/*.sock`
 
 The preview router must never become the upstream for
 `devide.devbox.milcgroup.com`, and a worktree preview launch must not touch the
@@ -150,7 +150,7 @@ scripts/verify-preview-socket-boundaries.sh --cleanup
 ```
 
 The script verifies the main socket responds, preview registry socket paths stay
-under `.devide-preview/sockets/`, and `scripts/preview-router.sh status` does
+under `.casein-preview/sockets/`, and `scripts/preview-router.sh status` does
 not reference `/run/casein/current.sock`.
 
 ## Control-plane layers

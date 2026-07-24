@@ -193,21 +193,21 @@ report; `blocked`/`done` are never inferred from the title):
 - **Explicit reports** via the MCP tool below. Launched agents report
   automatically (opt out of all of it with `DEVIDE_AGENT_STATE_HOOKS=0`):
   - **Claude Code**: hooks in a materialized `--settings` file run
-    `devide-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
+    `casein-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
     Notification (blocked), Stop (done), SessionStart/End (idle). The
     materializer stages the script into the workspace MCP home and the hook
     resolves it via `$DEVIDE_AGENT_MCP_HOME`, so it works for any paired
     project, not only the dev_ide checkout itself.
   - **Grok**: the launcher installs a global hook file
-    (`~/.grok/hooks/devide-agent-state.json`, from
-    `scripts/agent-hooks/grok-devide-agent-state.json`) that runs the same
+    (`~/.grok/hooks/casein-agent-state.json`, from
+    `scripts/agent-hooks/grok-casein-agent-state.json`) that runs the same
     script on the equivalent Grok events; `stop_failure` (turn died on an API
     error) also maps to blocked. Grok's camelCase `sessionId` and
     `transcriptPath` hook fields are retained as pane metadata. The hook command
     is env-guarded, so grok sessions outside DevIDE pairing no-op silently.
   - **Codex**: the launcher injects lifecycle hooks for SessionStart,
     UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, and
-    SubagentStart/Stop. `devide-codex-notify.sh` sends their JSON to the
+    SubagentStart/Stop. `casein-codex-notify.sh` sends their JSON to the
     workspace-scoped Codex hook receiver; the completion-only `notify` program
     remains enabled as a transition fallback. Hooks report working, blocked,
     done, and parent/child agent state without parsing terminal scrollback.

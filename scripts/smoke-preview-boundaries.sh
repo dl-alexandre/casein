@@ -55,8 +55,8 @@ if [[ -z "$TOKEN" || -z "$WORKSPACE_ID" ]]; then
   exit 0
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 preview_rpc() {
   local id="$1"

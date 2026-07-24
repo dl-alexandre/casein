@@ -135,7 +135,7 @@ defmodule Casein.Release.Package do
   end
 
   defp artifact_url(metadata, short_revision) do
-    "https://github.com/#{@github_repo}/releases/download/#{metadata.channel}/devide-#{metadata.profile}-#{metadata.target}-#{short_revision}.tar.gz"
+    "https://github.com/#{@github_repo}/releases/download/#{metadata.channel}/casein-#{metadata.profile}-#{metadata.target}-#{short_revision}.tar.gz"
   end
 
   defp changelog_url(nil, _current), do: nil

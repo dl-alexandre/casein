@@ -61,7 +61,7 @@ defmodule Casein.Terminals.ShimsTest do
     assert script =~ "/api/workspaces/${workspace_id}/open"
     assert script =~ "--max-time 5"
 
-    desktop_entry = Path.join(desktop_dir, "devide-preview.desktop")
+    desktop_entry = Path.join(desktop_dir, "casein-preview.desktop")
     assert File.regular?(desktop_entry)
 
     desktop = File.read!(desktop_entry)
@@ -72,8 +72,8 @@ defmodule Casein.Terminals.ShimsTest do
 
     mimeapps = File.read!(mimeapps_path)
     assert mimeapps =~ "[Default Applications]"
-    assert mimeapps =~ "text/markdown=devide-preview.desktop"
-    assert mimeapps =~ "text/x-markdown=devide-preview.desktop"
+    assert mimeapps =~ "text/markdown=casein-preview.desktop"
+    assert mimeapps =~ "text/x-markdown=casein-preview.desktop"
   end
 
   test "devide-open posts the target and current directory to the open API", %{

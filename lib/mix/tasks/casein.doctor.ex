@@ -22,8 +22,8 @@ defmodule Mix.Tasks.Casein.Doctor do
 
   @shortdoc "Check and repair local Casein setup"
 
-  @certfile "priv/cert/devide-lan.pem"
-  @keyfile "priv/cert/devide-lan-key.pem"
+  @certfile "priv/cert/casein-lan.pem"
+  @keyfile "priv/cert/casein-lan-key.pem"
   @default_hosts_file "/etc/hosts"
 
   @impl Mix.Task

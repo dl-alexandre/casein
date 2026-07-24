@@ -16,7 +16,7 @@ defmodule Casein.Terminals.HostServerAnchor do
   Endpoint) claims the daemon first, pinning its cwd for the process lifetime.
   The session is named `__casein_keepalive` — deliberately NOT the `devide_`
   prefix — so the janitor, MCP `terminal_list_sessions`, and workspace scoping
-  all ignore it (they filter on `devide_`). A matching `scripts/devide-tmux.service`
+  all ignore it (they filter on `devide_`). A matching `scripts/casein-tmux.service`
   systemd unit is belt-and-suspenders; same session name keeps them idempotent.
   """
 

@@ -16,12 +16,12 @@
 
 2. **Every agent session lives in a dedicated, reported git worktree.**
    One worktree per task/agent/session. The path is recorded via
-   `terminal_report_worktree` at launch (wired in `scripts/launch-devide-agent.sh`).
+   `terminal_report_worktree` at launch (wired in `scripts/launch-casein-agent.sh`).
    Worktrees are short-lived: created from `origin/master` (or a named base ref) and
    pruned within 24h of merge or explicit close.
 
 3. **Isolation is enforced at launch, not opt-in discipline.**
-   `launch-devide-agent.sh` creates a worktree when the agent would otherwise start
+   `launch-casein-agent.sh` creates a worktree when the agent would otherwise start
    in the primary checkout. Set `DEVIDE_AGENT_SKIP_WORKTREE=1` only for deliberate
    exceptions. `Runtimes.observe_worktree/2` rejects the main checkout
    (`:main_checkout_not_allowed`).
@@ -53,7 +53,7 @@
 
 ### Enforcement at launch
 
-`scripts/launch-devide-agent.sh` calls `scripts/lib/agent-worktree.sh` after
+`scripts/launch-casein-agent.sh` calls `scripts/lib/agent-worktree.sh` after
 resolving agent env:
 
 1. Skip when `DEVIDE_AGENT_SKIP_WORKTREE=1`.
@@ -173,7 +173,7 @@ master (protected; green pre-push gate)
 
 ```mermaid
 flowchart TD
-    A[launch-devide-agent.sh] --> B[agent_worktree_ensure]
+    A[launch-casein-agent.sh] --> B[agent_worktree_ensure]
     B --> C[cd worktree path]
     C --> D[terminal_report_worktree via MCP]
     D --> E[Session-scoped MCP URLs materialized]
@@ -189,8 +189,8 @@ flowchart TD
 
 Before ending a session, every agent must leave an explicit handoff — see
 `AGENTS.md` § "Agent session exit protocol". The daily worktree-alarm sweep
-(`scripts/devide-worktree-alarm-sweep.sh`, timer via
-`scripts/ensure-devide-worktree-alarm-sweep.sh`) turns "dirty worktree, no
+(`scripts/casein-worktree-alarm-sweep.sh`, timer via
+`scripts/ensure-casein-worktree-alarm-sweep.sh`) turns "dirty worktree, no
 report, no process, >24h" into `workspace.agent_worktree_stale` audit events
 instead of silent archaeology.
 
@@ -226,9 +226,9 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 |---|------|--------|--------|--------|
 | 1 | Rebase + land worktree sessions (split recordings) | High | Medium | In progress |
 | 2 | SEC-1 workspace-scoped MCP tokens | Critical | Medium | **Done** |
-| 3 | Auto-worktree in `launch-devide-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
+| 3 | Auto-worktree in `launch-casein-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
 | 4 | Worktree janitor script | Medium | Low | **Done** (cron wiring TBD) |
-| 4b | Stale worktree alarm sweep + exit protocol | High | Low | **Done** (timer via `ensure-devide-worktree-alarm-sweep.sh`) |
+| 4b | Stale worktree alarm sweep + exit protocol | High | Low | **Done** (timer via `ensure-casein-worktree-alarm-sweep.sh`) |
 | 5 | Canary vs stable deploy tiers | Medium | Medium | Partial (poller gate exists) |
 | 6 | Converge Elixir versions | Low | Low | Not started |
 | 7 | `in-progress.md` subsystem freeze | Medium | Very low | **Done** |
@@ -237,7 +237,7 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 
 ## How to use this document
 
-- **Humans**: read before starting work; launch agents via `launch-devide-agent.sh`,
+- **Humans**: read before starting work; launch agents via `launch-casein-agent.sh`,
   not by `cd`ing into the primary checkout.
 - **Agents**: treat every **Rule** and **MUST** as executable specification. Refuse
   actions that violate them and surface the violation.

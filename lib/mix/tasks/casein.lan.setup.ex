@@ -7,8 +7,8 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
       mix casein.lan.setup --no-install-ca
 
   The task requires `mkcert` on PATH. By default it runs `mkcert -install`
-  before generating `priv/cert/devide-lan.pem` and
-  `priv/cert/devide-lan-key.pem`.
+  before generating `priv/cert/casein-lan.pem` and
+  `priv/cert/casein-lan-key.pem`.
   """
 
   use Mix.Task
@@ -17,8 +17,8 @@ defmodule Mix.Tasks.Casein.Lan.Setup do
   @shortdoc "Generate mkcert certificates for LAN HTTPS development"
 
   @default_cert_dir "priv/cert"
-  @cert_filename "devide-lan.pem"
-  @key_filename "devide-lan-key.pem"
+  @cert_filename "casein-lan.pem"
+  @key_filename "casein-lan-key.pem"
 
   @impl Mix.Task
   def run(args) do

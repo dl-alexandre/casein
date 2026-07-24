@@ -43,8 +43,8 @@ if [[ -z "${TOKEN}" ]]; then
   exit 1
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 safe_ws="$(printf '%s' "${WORKSPACE_ID}" | tr -c 'A-Za-z0-9_.-' '_')"

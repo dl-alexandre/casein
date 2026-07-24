@@ -1,7 +1,7 @@
 # Dedicated Postgres for DevIDE-on-devbox (stable layout + activation in
-# /opt/casein/deploy/README.md and devide.service).
+# /opt/casein/deploy/README.md and casein.service).
 #
-# DevIDE itself runs as a systemd unit on the host (see devide.service); only
+# DevIDE itself runs as a systemd unit on the host (see casein.service); only
 # its database is containerized. Published on 127.0.0.1:15432 — a port chosen
 # to avoid the devbox host's known occupants: 5432 (host Postgres), 5433
 # (traintrac-db socat), 25432 (milc-db socat), 6381 (redis socat).
@@ -21,7 +21,7 @@ services:
       POSTGRES_PASSWORD: ${DEVIDE_PG_PASSWORD:?DEVIDE_PG_PASSWORD is required}
       POSTGRES_DB: ${DEVIDE_PG_DB:-dev_ide_prod}
     volumes:
-      - devide_pgdata:/var/lib/postgresql/data
+      - casein_pgdata:/var/lib/postgresql/data
     ports:
       # Loopback only — DevIDE connects over 127.0.0.1, nothing else should.
       - "127.0.0.1:15432:5432"
@@ -35,4 +35,4 @@ services:
       start_period: 10s
 
 volumes:
-  devide_pgdata:
+  casein_pgdata:

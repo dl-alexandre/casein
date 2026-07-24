@@ -1,8 +1,8 @@
-# Fires devide-deploy.service ~every 2 minutes to poll origin/master and
+# Fires casein-deploy.service ~every 2 minutes to poll origin/master and
 # auto-deploy when it advances. Self-hosted stand-in for the GitHub Actions
 # push-triggered deploy while Actions is billing-blocked.
 #
-# Install / enable via: bash scripts/ensure-devide-deploy-poller.sh
+# Install / enable via: bash scripts/ensure-casein-deploy-poller.sh
 
 [Unit]
 Description=Poll origin/master and auto-deploy DevIDE (self-hosted CI deploy)

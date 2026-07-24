@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared git worktree helpers for DevIDE agent launch.
-# Sourced by launch-devide-agent.sh — not executed directly.
+# Sourced by launch-casein-agent.sh — not executed directly.
 
 agent_worktree_root() {
   printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
@@ -128,8 +128,8 @@ print(json.dumps({
 '
   )"
 
-  # shellcheck source=scripts/devide-curl.sh
-  source "${ROOT}/scripts/devide-curl.sh"
+  # shellcheck source=scripts/casein-curl.sh
+  source "${ROOT}/scripts/casein-curl.sh"
 
   local rpc_body response
   rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"terminal_report_worktree\",\"arguments\":${params}}}"

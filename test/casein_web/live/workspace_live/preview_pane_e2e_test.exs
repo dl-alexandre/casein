@@ -242,7 +242,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
           top: 0,
           width: 120,
           height: 40,
-          current_command: "devide-preview",
+          current_command: "casein-preview",
           current_path: "/tmp"
         }
       ]

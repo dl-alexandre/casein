@@ -56,7 +56,7 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | Artifact MCP | `POST /api/artifacts/mcp` | bearer | `ArtifactMCP` → `ArtifactTools` |
 | Artifact MCP stream | `GET /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Artifact MCP session end | `DELETE /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
-| Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `devide-preview` CLI, not an MCP tool |
+| Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `casein-preview` CLI, not an MCP tool |
 | Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by DevIDE; URL resolved by `TidewaveMCP` |
 
 Routes defined in `lib/casein_web/router.ex` (`scope "/api", DevIdeWeb.API`).
