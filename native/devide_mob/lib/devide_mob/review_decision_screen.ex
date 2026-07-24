@@ -106,6 +106,17 @@ defmodule DevideMob.ReviewDecisionScreen do
       props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
       children: [
         %{
+          type: :text,
+          props: %{
+            text: if(intervention?(card), do: "Agent needs you", else: "Review request"),
+            text_size: :lg,
+            text_color: :on_primary,
+            font_weight: "bold",
+            weight: 1
+          },
+          children: []
+        },
+        %{
           type: :button,
           props: %{
             text: "Back",
@@ -114,17 +125,6 @@ defmodule DevideMob.ReviewDecisionScreen do
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :back}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: if(intervention?(card), do: "Agent needs you", else: "Review request"),
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
           },
           children: []
         }
@@ -376,7 +376,7 @@ defmodule DevideMob.ReviewDecisionScreen do
         text: action_label(spec),
         background: style_background(get(spec, "style")),
         text_color: style_text_color(get(spec, "style")),
-        weight: 1,
+        fill_width: true,
         padding: :space_sm,
         height: 44.0,
         disabled: disabled?,

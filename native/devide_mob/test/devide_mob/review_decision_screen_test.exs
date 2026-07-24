@@ -104,7 +104,9 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert text(view) =~ "Live excerpt · target role: agent"
     assert text(view) =~ "Short follow-up"
     assert find(view, :text_field).props.placeholder == "What should the agent do next?"
-    assert find(view, :button, text: "Send follow-up")
+    follow_up = find(view, :button, text: "Send follow-up")
+    assert follow_up.props.fill_width == true
+    refute Map.has_key?(follow_up.props, :weight)
     assert find(view, :button, text: "Open full terminal in PWA")
   end
 
