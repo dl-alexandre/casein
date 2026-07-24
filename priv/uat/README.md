@@ -4,12 +4,12 @@ Each subdirectory is one UAT scenario:
 
 ```
 priv/uat/<scenario>/
-  manifest.json   # DevIDE.UAT.Manifest — identity, seed_cmd, tier eligibility, baselines
-  trace.json      # DevIDE.UAT.Trace — the frozen, replayable steps + assertions
-  fixtures/       # copied into the ephemeral DEV_IDE_WORKSPACES_ROOT (Tier A)
+  manifest.json   # Casein.UAT.Manifest — identity, seed_cmd, tier eligibility, baselines
+  trace.json      # Casein.UAT.Trace — the frozen, replayable steps + assertions
+  fixtures/       # copied into the ephemeral CASEIN_WORKSPACES_ROOT (Tier A)
   baselines/      # optional screenshot baselines (visual tier-3, default-off)
 priv/uat/seeds/   # deterministic app-state seed scripts referenced by seed_cmd
-priv/uat/verdict_schema.json  # the agent verdict contract (DevIDE.UAT.Verdict)
+priv/uat/verdict_schema.json  # the agent verdict contract (Casein.UAT.Verdict)
 ```
 
 `checkout/` is a **format reference**, authored against a real app surface — it

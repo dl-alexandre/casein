@@ -100,7 +100,7 @@ execute(scope, action, input)
 ```
 
 Dependencies remain acyclic. Policy, effect, and evidence orchestration must
-not be duplicated inside Phoenix or MCP handlers. `DevIDE.Terminals.Boundary`
+not be duplicated inside Phoenix or MCP handlers. `Casein.Terminals.Boundary`
 (policy + ledger recording behind one domain boundary) is the reference shape.
 
 ## Reconnect semantics
@@ -137,8 +137,8 @@ execution paths that exist are deliberately narrow:
 
 - **Raw terminal** — an operator (or an MCP agent) types into a server-side
   PTY backed by tmux. Admission is a `Policy.can_use_raw_terminal?/1` decision.
-- **Review-agent runs** — `DevIDE.Agents.Run` spawns a fixed, allowlisted
-  `DevIDE.Agents.ReviewCommand` argv as a local subprocess. There is no path
+- **Review-agent runs** — `Casein.Agents.Run` spawns a fixed, allowlisted
+  `Casein.Agents.ReviewCommand` argv as a local subprocess. There is no path
   through it to run an arbitrary command or apply a patch.
 
 ```text
@@ -151,7 +151,7 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              DevIDE.BEAM                                       │
+│                              Casein.BEAM                                       │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
 │  │   Web Tier   │  │  Terminals   │  │    Agents    │  │  Workspaces  │       │
 │  │  (Phoenix +  │  │ (tmux +      │  │ (MCP terminal│  │   (State,    │       │
@@ -187,12 +187,12 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 │      the host beyond what they type into a guarded session               │
 │                                                                          │
 │  Boundary 2: Browser → terminal channel / LiveView                       │
-│    • DevIdeWeb.ChannelAuth signs/verifies a user-socket token            │
+│    • CaseinWeb.ChannelAuth signs/verifies a user-socket token            │
 │    • Raw input/resize write into the server-side PTY                     │
 │    • Raw-terminal admission is gated by Policy.can_use_raw_terminal?/1   │
 │                                                                          │
 │  Boundary 3: DevIDE → Workspace source                                   │
-│    • Pluggable via `DevIDE.WorkspaceSource` behaviour                    │
+│    • Pluggable via `Casein.WorkspaceSource` behaviour                    │
 │    • Source is the truth for workspace existence and lifecycle           │
 │    • DevIDE persists only redacted summaries                             │
 │                                                                          │
@@ -209,7 +209,7 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 
 ## Workspace metadata contract
 
-Sources return `%DevIDE.Workspace{}`. Source-specific data lives under `metadata`.
+Sources return `%Casein.Workspace{}`. Source-specific data lives under `metadata`.
 Generic code may read these well-known keys:
 
 - `ports` — map of service name → port number
@@ -229,8 +229,8 @@ New sources should document any additional keys they populate.
 | Start review-agent run | DevIDE | `Policy.can_start_review_agent?/1` + allowlisted `ReviewCommand` | `run.started` / terminal run event |
 | MCP terminal tool call | DevIDE | Bearer auth + `devide_`-prefixed session guard | `Audit.Event` + activity feed |
 | MCP preview tool call | DevIDE | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
-| Apply proposal | DevIDE | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `DevIDE.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
-| Enable agent write (auto-apply) | DevIDE | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `DevIDE.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
+| Apply proposal | DevIDE | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `Casein.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
+| Enable agent write (auto-apply) | DevIDE | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
 | Grant/revoke agent write unlock | DevIDE | `Policy.can_grant_agent_write_unlock?/1` (operator + `:manual` mode) / `Policy.can_revoke_agent_write_unlock?/1` (operator only, no mode gate — the kill switch) | `Audit.Event` (`workspace.agent_write_unlock_granted`/`_revoked`/`_expired`) |
 | Set workspace mode | DevIDE | `Policy.can_set_workspace_mode?/1` (operator/owner; not config-pinned) | `Audit.Event` |
 | Read workspace status | DevIDE | Auth | `WorkspaceRecord` snapshot |
@@ -242,39 +242,39 @@ Persistence and detection boundaries use adapters configurable at runtime:
 
 ```elixir
 # Workspace state
-Application.get_env(:dev_ide, :workspace_state_adapter, DevIDE.Workspaces.State.MemoryAdapter)
+Application.get_env(:casein, :workspace_state_adapter, Casein.Workspaces.State.MemoryAdapter)
 
 # Audit log
-Application.get_env(:dev_ide, :audit_adapter, DevIDE.Audit.MemoryAdapter)
+Application.get_env(:casein, :audit_adapter, Casein.Audit.MemoryAdapter)
 
 # Agent detection
-Application.get_env(:dev_ide, :agents_adapter, DevIDE.Agents.LocalAdapter)
+Application.get_env(:casein, :agents_adapter, Casein.Agents.LocalAdapter)
 
 # DB isolation probe
-Application.get_env(:dev_ide, :isolation_probe, DevIDE.Workspaces.IsolationProbe.LocalAdapter)
+Application.get_env(:casein, :isolation_probe, Casein.Workspaces.IsolationProbe.LocalAdapter)
 ```
 
 ## Configuration keys
 
 | Key | Purpose | Default |
 |---|---|---|
-| `:api_token` / `DEV_IDE_API_TOKEN` | Bearer auth for API + MCP routes | nil (refuses all requests) |
-| `:workspace_source` | Module implementing `DevIDE.WorkspaceSource` | `DevIDE.WorkspaceSource.Local` |
+| `:api_token` / `CASEIN_API_TOKEN` | Bearer auth for API + MCP routes | nil (refuses all requests) |
+| `:workspace_source` | Module implementing `Casein.WorkspaceSource` | `Casein.WorkspaceSource.Local` |
 | `:workspaces_root` | Allowed filesystem root for workspace paths | `/workspaces` |
 | `:workspace_modes` | Per-workid mode overrides | `%{}` |
 | `:default_workspace_mode` | Fallback mode | `:manual` |
 | `:raw_terminal_everywhere` | Allow raw shell in any workspace/mode/host; otherwise raw requires local host + manual mode | `false` |
-| `:mcp_max_body_bytes` / `DEV_IDE_MCP_MAX_BODY_BYTES` | Max POST body size for terminal/preview/artifact MCP requests before JSON-RPC handling | `1_000_000` |
+| `:mcp_max_body_bytes` / `CASEIN_MCP_MAX_BODY_BYTES` | Max POST body size for terminal/preview/artifact MCP requests before JSON-RPC handling | `1_000_000` |
 | `:tmux_idle_seconds` | Idle GC delay before killing an unsubscribed tmux session | disabled in dev, `600` in prod |
 | `:shared_db_patterns` | Substrings/regexes for shared-stage DB detection | `[]` |
 | `:unsafe_db_patterns` | Substrings/regexes for prod DB detection | `[]` |
-| `DevIDE.Proposals.AutoApply` `enabled:` / `DEV_IDE_AGENT_AUTO_APPLY_ENABLED` | Deployment-wide kill switch for a review-agent run self-applying its own proposal; independent of any per-workspace unlock | `false` |
+| `Casein.Proposals.AutoApply` `enabled:` / `CASEIN_AGENT_AUTO_APPLY_ENABLED` | Deployment-wide kill switch for a review-agent run self-applying its own proposal; independent of any per-workspace unlock | `false` |
 
 ## Key design invariants
 
 1. **No arbitrary argv from a remote client.** The browser and MCP agents type
    into a guarded PTY; they do not submit argv to an executor. The one local
-   executor (`DevIDE.Commands`) only runs fixed `ReviewCommand` argv.
+   executor (`Casein.Commands`) only runs fixed `ReviewCommand` argv.
 2. **Raw-terminal admission is a server decision.** Every raw attach passes
    through `Policy.can_use_raw_terminal?/1`; the verdict (allow or deny) is
    recorded in the run ledger.

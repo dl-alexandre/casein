@@ -16,7 +16,7 @@ export const SessionsPickerSidebar = {
     this._onSidebarFocus = () => this.focusInitial()
     this.el.addEventListener("keydown", this._onKeydown)
     this.el.addEventListener("click", this._onClick, true)
-    this.el.addEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
+    this.el.addEventListener("casein:sessions-sidebar:focus", this._onSidebarFocus)
 
     this.handleEvent("sidebar:focus_sessions", () => this.focusInitial())
     this.handleEvent("sidebar:persist_sort", ({col, mode}) => persistSidebarSort(col, mode))
@@ -26,7 +26,7 @@ export const SessionsPickerSidebar = {
   destroyed() {
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("click", this._onClick, true)
-    this.el.removeEventListener("devide:sessions-sidebar:focus", this._onSidebarFocus)
+    this.el.removeEventListener("casein:sessions-sidebar:focus", this._onSidebarFocus)
   },
 
   // A LiveView patch (expand/collapse, sort, or a background activity update)
@@ -283,7 +283,7 @@ export const SessionsPickerSidebar = {
     if (rail) {
       // Prefer the LiveView hook path; also focus immediately so hop is snappy
       // even if the custom event is lost across a patch boundary.
-      rail.dispatchEvent(new CustomEvent("devide:window-sidebar:focus"))
+      rail.dispatchEvent(new CustomEvent("casein:window-sidebar:focus"))
       const items = Array.from(rail.querySelectorAll("[data-picker-item]")).filter(
         (el) => el.offsetParent !== null && el.style.display !== "none"
       )

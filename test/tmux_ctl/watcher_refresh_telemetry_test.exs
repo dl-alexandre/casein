@@ -3,7 +3,7 @@ defmodule TmuxCtl.Topology.WatcherRefreshTelemetryTest do
   Slice 3: watcher emits refresh-source + events_absorbed telemetry.
   """
 
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Test.FakeEventSource
   alias TmuxCtl.Test.FakeState
@@ -118,7 +118,7 @@ defmodule TmuxCtl.Topology.WatcherRefreshTelemetryTest do
     opts = [
       registry: @registry,
       supervisor: @supervisor,
-      pubsub: DevIDE.PubSub,
+      pubsub: Casein.PubSub,
       tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
       broadcast_tag: @tag,
       refresh_ms: 50,
@@ -186,7 +186,7 @@ defmodule TmuxCtl.Topology.WatcherRefreshTelemetryTest do
     [
       registry: @registry,
       supervisor: @supervisor,
-      pubsub: DevIDE.PubSub,
+      pubsub: Casein.PubSub,
       broadcast_tag: @tag,
       topic_prefix: "terminal_topology:",
       tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,

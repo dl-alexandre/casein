@@ -21,7 +21,7 @@ this note addresses.
 
 ## Why old instances linger
 
-The drain path (`DevIDE.Deployment.Drain`, see
+The drain path (`Casein.Deployment.Drain`, see
 `docs/subsystems/policy_deploy_export.md` §"Deploy handoff & drain"):
 
 1. `POST /api/drain` marks the instance draining, broadcasts

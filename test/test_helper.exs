@@ -18,9 +18,9 @@
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
 # `DEVIDE_GROK_BUNDLE_ROOT` / `DEVIDE_GROK_LEADER_ROOT` are production operator
-# overrides that `GrokCapabilityBundle` honors ahead of the `:dev_ide` app env.
+# overrides that `GrokCapabilityBundle` honors ahead of the `:casein` app env.
 # A paired-agent shell (which launches Grok) exports them, so running the suite
-# from such a shell leaks the live `/home/devbox/.devide/grok-*` roots into
+# from such a shell leaks the live `/home/devbox/.casein/grok-*` roots into
 # GrokCapabilityBundle/GrokACP tests — overriding the tmp roots those tests set
 # via app env and failing them with `:unsafe_leader_directory` /
 # `:invalid_grok_attachment_metadata`. CI never sets these (hence green there);
@@ -39,20 +39,20 @@ ExUnit.start(
 # without this seam the timer fires ~3s later and System.stop(0) gracefully
 # shuts down the VM MID-SUITE — silently truncated runs that still exit 0.
 # (Root-caused 2026-06-12 after a day of "tests truncate under load".)
-Application.put_env(:dev_ide, :drain_stop_system, fn _status ->
+Application.put_env(:casein, :drain_stop_system, fn _status ->
   IO.puts(:stderr, "[test] Drain stop_system intercepted (would have stopped the VM)")
   :ok
 end)
 
 unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
-  {:ok, _} = Application.ensure_all_started(:dev_ide)
+  {:ok, _} = Application.ensure_all_started(:casein)
 end
 
-# Reap the dedicated tmux server the suite runs on (`-L devide_test`, see
+# Reap the dedicated tmux server the suite runs on (`-L casein_test`, see
 # config/test.exs) when the run finishes, so leaked test sessions don't pile up.
 # Best-effort and scoped to the sandbox server — it can never touch the default
 # server's live workspace sessions.
-case {:os.type(), DevIDE.Terminals.TmuxServer.label()} do
+case {:os.type(), Casein.Terminals.TmuxServer.label()} do
   {{:win32, _}, _label} ->
     :ok
 
@@ -67,8 +67,8 @@ end
 
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
-if Process.whereis(DevIDE.Repo) do
-  Ecto.Adapters.SQL.Sandbox.mode(DevIDE.Repo, :manual)
+if Process.whereis(Casein.Repo) do
+  Ecto.Adapters.SQL.Sandbox.mode(Casein.Repo, :manual)
 end
 
 ExUnit.after_suite(fn _result ->

@@ -8,11 +8,14 @@
 //     every active-tab change/load; each instance filters on its own paneId.
 //     On mount the hook hydrates itself via a `pane:input` type:"hydrate"
 //     reply so a reconnect doesn't wait for the next registry broadcast.
-//   * The server owns the tab list + active path (tab strip is LV-rendered in
-//     the hook root, OUTSIDE the phx-update="ignore" editor div); the client
-//     owns dirty buffers — a per-tab EditorState cache preserves undo history
-//     and unsaved edits across tab switches. Content reaches the server only
-//     on save (`pane:input` type:"save" with {path, content, version}).
+//   * The server owns the tab list + active path (the tab strip is LV-rendered
+//     OUTSIDE this hook — in the header on desktop, in-pane on mobile — and
+//     found via [data-file-pane-strip]). The client owns dirty buffers: a
+//     per-tab EditorState cache preserves undo history and unsaved edits across
+//     tab switches. Dirty is viewer-local state, so on each clean↔dirty
+//     transition the hook pushes "file-pane:dirty" {pane-id, path, dirty} and
+//     the server re-renders the dot in the strip (no client DOM toggling).
+//     Content reaches the server only on save (`pane:input` type:"save").
 //   * Focus model is direct (no click shield): CodeMirror is same-DOM, so the
 //     capture-phase leader/palette keys still win. Focusing the editor when
 //     the pane isn't tmux-active pushes the existing UI-only tmux:select_pane
@@ -81,7 +84,7 @@ export const FilePaneOverlay = {
     // Close-tab is client-first: only the client knows whether the buffer is
     // dirty, so the tab strip dispatches here and we confirm before pushing.
     this._onCloseTab = (event) => this.closeTab(event.detail?.path)
-    this.el.addEventListener("devide:file-pane:close-tab", this._onCloseTab)
+    this.el.addEventListener("casein:file-pane:close-tab", this._onCloseTab)
 
     // Right-click menus (shared ContextMenu hook). The editor body carries
     // data-ctx-menu="file_pane_editor"; refresh its dynamic ctx (selection,
@@ -96,7 +99,7 @@ export const FilePaneOverlay = {
       this.editorEl.dataset.ctxHasSelection = this._ctxSelection ? "true" : "false"
       this.editorEl.dataset.ctxPath = this.activePath || ""
     }
-    this.editorEl.addEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
+    this.editorEl.addEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
 
     this._onCtxAction = (e) => {
       const { action, path } = e.detail || {}
@@ -119,24 +122,32 @@ export const FilePaneOverlay = {
         onSave: () => this.save()
       })
     }
-    this.el.addEventListener("devide:ctx-action", this._onCtxAction)
+    this.el.addEventListener("casein:ctx-action", this._onCtxAction)
   },
 
   updated() {
-    // Tab-strip re-renders reach the root (the editor div is ignored):
-    // re-apply geometry, re-mark dirty dots the diff wiped, re-measure.
+    // Root re-renders reach here (the editor div is ignored): re-apply geometry
+    // and re-measure. Dirty dots are server-rendered now, so nothing to restore.
     this.applyRect()
-    this.reapplyDirtyMarkers()
     this.view.requestMeasure()
+  },
+
+  reconnected() {
+    // The server's viewer-local :file_pane_dirty resets on reconnect while this
+    // hook (and its tabCache) survive — re-push every dirty buffer so the strip
+    // dots come back.
+    for (const [path, entry] of this.tabCache) {
+      if (entry.dirty) this.pushDirty(path, true)
+    }
   },
 
   destroyed() {
     this._sectionGeometryObserver?.disconnect()
     this._sectionGeometryObserver = null
     this.el.removeEventListener("focusin", this._onFocusIn)
-    this.el.removeEventListener("devide:file-pane:close-tab", this._onCloseTab)
-    this.editorEl.removeEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
-    this.el.removeEventListener("devide:ctx-action", this._onCtxAction)
+    this.el.removeEventListener("casein:file-pane:close-tab", this._onCloseTab)
+    this.editorEl.removeEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
+    this.el.removeEventListener("casein:ctx-action", this._onCtxAction)
     this.placeholderEl?.remove()
     this.placeholderEl = null
     this.view?.destroy()
@@ -261,11 +272,19 @@ export const FilePaneOverlay = {
 
   // Close every tab except `keepPath`. Tab paths come from the DOM (the
   // authoritative LV-rendered strip), not tabCache — a tab never visited has
-  // no cache entry. One combined confirm if any of them is dirty.
+  // no cache entry. The strip now lives OUTSIDE this hook (header on desktop,
+  // in-pane on mobile), so gather tabs from every strip bound to this pane and
+  // dedupe. One combined confirm if any of them is dirty.
   closeOthers(keepPath) {
-    const others = Array.from(this.el.querySelectorAll("[data-file-pane-tab]"))
-      .map((t) => t.dataset.path)
-      .filter((p) => p && p !== keepPath)
+    const paths = new Set()
+    for (const strip of document.querySelectorAll("[data-file-pane-strip]")) {
+      if (strip.dataset.filePaneStrip !== this.paneId) continue
+      for (const tab of strip.querySelectorAll("[data-file-pane-tab]")) {
+        if (tab.dataset.path) paths.add(tab.dataset.path)
+      }
+    }
+
+    const others = Array.from(paths).filter((p) => p !== keepPath)
     if (!others.length) return
 
     if (
@@ -294,43 +313,37 @@ export const FilePaneOverlay = {
   },
 
   syncDirty() {
-    const entry = this.activePath && this.tabCache.get(this.activePath)
+    const path = this.activePath
+    const entry = path && this.tabCache.get(path)
     if (!entry) return
 
     const dirty = this.view.state.doc.toString() !== entry.savedDoc
     if (dirty !== entry.dirty) {
       entry.dirty = dirty
-      this.setTabDot(this.activePath, dirty)
+      // Viewer-local: tell the server so it re-renders the dot in the strip
+      // (which lives outside this hook). Only fires on transitions, not per
+      // keystroke.
+      this.pushDirty(path, dirty)
     }
   },
 
-  setTabDot(path, dirty) {
-    for (const tab of this.el.querySelectorAll("[data-file-pane-tab]")) {
-      if (tab.dataset.path !== path) continue
-      tab.querySelector("[data-dirty-dot]")?.classList.toggle("hidden", !dirty)
-    }
-  },
-
-  // LV re-renders rebuild the tab strip with every dot hidden; restore the
-  // client-owned dirty markers from the cache.
-  reapplyDirtyMarkers() {
-    for (const [path, entry] of this.tabCache) {
-      if (entry.dirty) this.setTabDot(path, true)
-    }
+  pushDirty(path, dirty) {
+    this.pushEvent("file-pane:dirty", { "pane-id": this.paneId, path, dirty })
   },
 
   // --- unopenable-file placeholder ----------------------------------------------
 
-  // Lazily create an opaque panel covering the editor region (below the 7-unit
-  // tab strip). Client-owned — appended to the hook root, not LV-rendered — so
-  // LV tab-strip diffs never clobber it.
+  // Lazily create an opaque panel covering the editor region. Client-owned —
+  // appended to the hook root, not LV-rendered — so LV strip diffs never
+  // clobber it. Fills the pane (chromeless); the mobile media query insets its
+  // top below the in-pane strip, mirroring the editor.
   ensurePlaceholder() {
     if (this.placeholderEl?.isConnected) return this.placeholderEl
 
     const el = document.createElement("div")
     el.dataset.filePanePlaceholder = ""
     el.className =
-      "absolute inset-x-0 bottom-0 top-7 z-20 flex flex-col items-center justify-center " +
+      "absolute inset-0 z-20 flex flex-col items-center justify-center " +
       "gap-1 bg-zinc-950 px-6 text-center text-zinc-400"
     el.hidden = true
 

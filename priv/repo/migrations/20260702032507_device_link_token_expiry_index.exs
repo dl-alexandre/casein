@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.DeviceLinkTokenExpiryIndex do
+defmodule Casein.Repo.Migrations.DeviceLinkTokenExpiryIndex do
   use Ecto.Migration
 
   def up do

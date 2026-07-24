@@ -1,4 +1,4 @@
-defmodule DevIDE.TestCase do
+defmodule Casein.TestCase do
   @moduledoc false
   use ExUnit.CaseTemplate
 
@@ -9,7 +9,7 @@ defmodule DevIDE.TestCase do
   end
 
   setup tags do
-    DevIDE.Test.ManagerReqTest.setup(tags)
+    Casein.Test.ManagerReqTest.setup(tags)
     :ok
   end
 end

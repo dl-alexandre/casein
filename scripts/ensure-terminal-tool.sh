@@ -13,12 +13,12 @@ usage() {
 Usage: ensure-terminal-tool.sh [--check] [--yes] <tool>
 
 Supported tools:
-  elio    Install the crates.io package with cargo into ~/.devide/tools
+  elio    Install the crates.io package with cargo into ~/.casein/tools
 
 Environment:
-  DEV_IDE_TERMINAL_TOOLS_DIR   Override the DevIDE tool root
-  DEV_IDE_TERMINAL_SHIMS_DIR   Override the DevIDE terminal shim dir
-  DEV_IDE_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS
+  CASEIN_TERMINAL_TOOLS_DIR   Override the DevIDE tool root
+  CASEIN_TERMINAL_SHIMS_DIR   Override the DevIDE terminal shim dir
+  CASEIN_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS
                                Seconds to wait for another install; default 600
 EOF
 }
@@ -60,10 +60,10 @@ if [[ -z "$TOOL" ]]; then
   exit 64
 fi
 
-TOOL_ROOT="${DEV_IDE_TERMINAL_TOOLS_DIR:-${HOME}/.devide/tools}"
+TOOL_ROOT="${CASEIN_TERMINAL_TOOLS_DIR:-${HOME}/.casein/tools}"
 TOOL_BIN="${TOOL_ROOT}/bin"
-SHIM_DIR="${DEV_IDE_TERMINAL_SHIMS_DIR:-${HOME}/.devide/terminal-shims}"
-LOCK_TIMEOUT_SECONDS="${DEV_IDE_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS:-600}"
+SHIM_DIR="${CASEIN_TERMINAL_SHIMS_DIR:-${HOME}/.casein/terminal-shims}"
+LOCK_TIMEOUT_SECONDS="${CASEIN_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS:-600}"
 INSTALL_LOCK_DIR=""
 
 path_without_terminal_shims() {

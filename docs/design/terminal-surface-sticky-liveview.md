@@ -7,7 +7,7 @@ Date: 2026-07-03
 ## Problem
 
 Everything in the workspace cockpit runs in one LiveView process
-(`DevIdeWeb.WorkspaceLive.Show`). The per-pane `PaneWorker`s (which own the
+(`CaseinWeb.WorkspaceLive.Show`). The per-pane `PaneWorker`s (which own the
 `Ghostty.Terminal` emulators and PTY backends) are **linked** to that
 process. A crash anywhere in chrome/panel logic therefore:
 

@@ -21,9 +21,9 @@ describes the mitigations that keep the cockpit usable.
 2. **SessionOwner backend recover** — shell owners with live subscribers
    re-open the Session attachment on `term_exit` instead of stopping; up to
    5 attempts with backoff.
-3. **Scrollback archive** — `DevIDE.Terminals.ScrollbackArchive` spills a
+3. **Scrollback archive** — `Casein.Terminals.ScrollbackArchive` spills a
    bounded tail (default 256 KiB) to ETS + disk under
-   `~/.devide/tmux-scrollback` (override via `DEV_IDE_TMUX_SCROLLBACK_DIR`);
+   `~/.casein/tmux-scrollback` (override via `CASEIN_TMUX_SCROLLBACK_DIR`);
    fresh creates reseed when archive has data. Intentional `Tmux.kill/1`
    deletes the archive so the next open is not a false recovery.
 4. **Recovery banner + audit** — SessionOwner notifies (manager UUID) after
@@ -38,17 +38,17 @@ describes the mitigations that keep the cockpit usable.
    is rate-limited (150 ms) in SessionOwner.
 7. **`exit-empty off`** — `priv/tmux/devide.conf` keeps the server process
    alive after the last session is destroyed.
-8. **Keepalive unit** — `scripts/ensure-devide-tmux.sh` installs
-   `devide-tmux.service` so the `-L devide` server is forked at boot.
+8. **Keepalive unit** — `scripts/ensure-casein-tmux.sh` installs
+   `casein-tmux.service` so the `-L devide` server is forked at boot.
 9. **Version pin** — cutover target remains **tmux 3.6b**
    (`scripts/install-tmux.sh`); reinstall with
-   `bash scripts/ensure-devide-tmux.sh --reinstall-binary`.
+   `bash scripts/ensure-casein-tmux.sh --reinstall-binary`.
 
 ## Ops
 
 ```bash
 # Pin binary + start keepalive
-bash scripts/ensure-devide-tmux.sh --reinstall-binary
+bash scripts/ensure-casein-tmux.sh --reinstall-binary
 
 # Core dump notes for /usr/local/bin/tmux
 bash scripts/ensure-tmux-coredumps.sh

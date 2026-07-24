@@ -8,9 +8,9 @@
 # per the canary-liveview-trace lesson).
 #
 # Tier B drives the LIVE release node over its real MCP surface
-# (POST /api/preview/mcp on /run/devide/current.sock) as the workspace owner's
+# (POST /api/preview/mcp on /run/casein/current.sock) as the workspace owner's
 # forward-auth identity, runs a small read-mostly acceptance set, and persists
-# each run as a tier_b DevIDE.UAT.Run. See DevIDE.UAT.TierB.
+# each run as a tier_b Casein.UAT.Run. See Casein.UAT.TierB.
 #
 # NOTE: This is a scaffold. A real run needs the live MCP agent driver and a
 # disposable UAT workspace; both are live-only and not exercised in CI-of-this-
@@ -21,7 +21,7 @@
 #   bash scripts/uat-tier-b.sh            # live run (requires the wiring above)
 set -euo pipefail
 
-SOCKET="${DEVIDE_SOCKET:-/run/devide/current.sock}"
+SOCKET="${DEVIDE_SOCKET:-/run/casein/current.sock}"
 DRY_RUN=0
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=1
 

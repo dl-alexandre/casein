@@ -67,13 +67,13 @@ terminal channel.
 - TLS config in [`config/runtime.exs`](../config/runtime.exs) is
   commented-out scaffolding; `keyfile` / `certfile` must be wired by the
   operator. Runtime HTTP-to-HTTPS redirect is owned by
-  `DevIdeWeb.RuntimeSSLPlug` and defaults on for prod unless a service profile
+  `CaseinWeb.RuntimeSSLPlug` and defaults on for prod unless a service profile
   disables it.
 - Postgres dependency: the prod default adapters
   ([`config/config.exs`](../config/config.exs)) require a reachable
   Repo. No "lite" mode for remote-without-DB.
-- The workspace source is pluggable via `DevIDE.WorkspaceSource`
-  (default: local directories under `DEV_IDE_WORKSPACES_ROOT`). A
+- The workspace source is pluggable via `Casein.WorkspaceSource`
+  (default: local directories under `CASEIN_WORKSPACES_ROOT`). A
   managed-workspace integration lives behind that behaviour — see
   `docs/integrations/`.
 
@@ -103,7 +103,7 @@ the Session GenServer's `:DOWN` handler clears the subscriber but the
 tmux session itself is untouched. This survives a network drop the same
 way a local run does.
 
-- [`lib/dev_ide/terminals/session.ex`](../lib/dev_ide/terminals/session.ex) (`:DOWN` handler)
+- [`lib/casein/terminals/session.ex`](../lib/casein/terminals/session.ex) (`:DOWN` handler)
 
 ### 5. resume — *works* (browser drop AND server restart)
 
@@ -120,14 +120,14 @@ Two cases, both covered:
   replay-on-subscribe path carries it to the client unchanged. Closed in
   this commit.
 
-- [`lib/dev_ide/terminals/session.ex`](../lib/dev_ide/terminals/session.ex) (`init/1`, `trim_to/2`)
+- [`lib/casein/terminals/session.ex`](../lib/casein/terminals/session.ex) (`init/1`, `trim_to/2`)
 - [`lib/tmux_ctl/client.ex`](../lib/tmux_ctl/client.ex) (`session_exists?/1`, `capture_scrollback/1`)
-- Test: [`test/dev_ide/terminals/session_test.exs`](../test/dev_ide/terminals/session_test.exs) ("recovers tmux scrollback when the Session GenServer is rebuilt")
+- Test: [`test/casein/terminals/session_test.exs`](../test/casein/terminals/session_test.exs) ("recovers tmux scrollback when the Session GenServer is rebuilt")
 
 ### 6. audit inspect — *works*
 
 The Ecto audit adapter
-([`lib/dev_ide/audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex),
+([`lib/casein/audit/ecto_adapter.ex`](../lib/casein/audit/ecto_adapter.ex),
 the prod default) writes every gate decision to the `audit_events`
 table. Survives restart. The Run ledger and Agents MCP activity render
 contextual audit from the same storage — no remote-specific code needed.
@@ -138,7 +138,7 @@ Two replays, both durable:
 
 - **Audit replay** — reconstruct the decision event stream after a
   client returns. Durable via the Ecto audit adapter
-  ([`audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex)).
+  ([`audit/ecto_adapter.ex`](../lib/casein/audit/ecto_adapter.ex)).
   Survives restart.
 - **PTY replay** — reconstruct what the terminal showed. In-state buffer
   for the live-process case; tmux scrollback capture for the
@@ -162,15 +162,15 @@ Shipped:
 - [`.dockerignore`](../.dockerignore) — excludes `_build`, `deps`,
   `ui-iterations*`, `docs`, `.git`, etc. for a tight build context.
 - [`mix.exs`](../mix.exs) — `:releases` config added.
-- [`lib/dev_ide/release.ex`](../lib/dev_ide/release.ex) — provides
+- [`lib/casein/release.ex`](../lib/casein/release.ex) — provides
   `migrate/0` / `rollback/2` for invocation via release `eval`.
 - [`rel/overlays/bin/migrate`](../rel/overlays/bin/migrate) — shell
-  wrapper that runs `bin/dev_ide eval "DevIDE.Release.migrate()"`.
+  wrapper that runs `bin/casein eval "Casein.Release.migrate()"`.
   Migrations are explicit, not at server boot, so a CD pipeline can run
   one migrate pod before rolling the server pool.
 - [`config/runtime.exs`](../config/runtime.exs) — hardened. Fails loudly
-  at boot if `DEV_IDE_API_TOKEN` is unset. `DEV_IDE_WORKSPACES_ROOT`
-  flows into `:dev_ide, :workspaces_root` when set.
+  at boot if `CASEIN_API_TOKEN` is unset. `CASEIN_WORKSPACES_ROOT`
+  flows into `:casein, :workspaces_root` when set.
 - [`docs/deploy.md`](deploy.md) — operator runbook with required env,
   build/run commands, smoke check, and upgrade procedure.
 
@@ -181,7 +181,7 @@ operator action) is the canonical validation.
 
 ### CC-2. Turnkey HTTPS
 
-Runtime HTTP-to-HTTPS redirect is installed by `DevIdeWeb.RuntimeSSLPlug`,
+Runtime HTTP-to-HTTPS redirect is installed by `CaseinWeb.RuntimeSSLPlug`,
 but `runtime.exs` TLS config is commented out. An operator deploying DevIDE
 must hand-roll `:keyfile` / `:certfile` paths or front the release with a TLS
 proxy. Acceptable for a custom deploy; insufficient for a one-line public
@@ -201,8 +201,8 @@ real (laptop sleep can pause the BEAM in ways that look like a restart).
 ### CC-4. Workspace source pluggability — ✅ decided
 
 **DevIDE ships as its own image** and discovers workspaces through the
-`DevIDE.WorkspaceSource` behaviour. The default source reads directories
-under `DEV_IDE_WORKSPACES_ROOT`; integrations supply alternatives. The
+`Casein.WorkspaceSource` behaviour. The default source reads directories
+under `CASEIN_WORKSPACES_ROOT`; integrations supply alternatives. The
 Dockerfile stays single-responsibility.
 
 See [`docs/deploy.md`](deploy.md) "Architectural decision" for the full
@@ -211,8 +211,8 @@ rationale.
 ### CC-5. Workspace path safety on arbitrary roots
 
 `Workspaces.safe_host_path/1` and `PathSafety` already check against a
-configurable workspace root (`:dev_ide, :workspaces_root` or
-`DEV_IDE_WORKSPACES_ROOT`, default `/workspaces`). This should work
+configurable workspace root (`:casein, :workspaces_root` or
+`CASEIN_WORKSPACES_ROOT`, default `/workspaces`). This should work
 transparently on any Linux server as long as the env points at the right
 directory and the BEAM has read access. Verify in the deployment
 runbook; not a code change.

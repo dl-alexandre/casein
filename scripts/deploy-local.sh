@@ -35,7 +35,7 @@ done
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 
 log() { printf '>>> %s\n' "$*"; }
 
@@ -73,4 +73,4 @@ if [ "${DEVIDE_SKIP_HARDENING_AUDIT:-0}" != "1" ]; then
   scripts/hardening-audit.sh --live-only
 fi
 
-log "deployed ${REVISION} to /opt/devide/release"
+log "deployed ${REVISION} to /opt/casein/release"

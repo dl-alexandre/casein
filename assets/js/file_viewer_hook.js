@@ -33,7 +33,7 @@ export const FileViewerHook = {
     this.sourceEl = document.createElement("div")
     this.sourceEl.className = "file-viewer-source"
     this.renderedEl = document.createElement("div")
-    this.renderedEl.className = "devide-markdown hidden"
+    this.renderedEl.className = "casein-markdown hidden"
     this.el.append(this.sourceEl, this.renderedEl)
 
     this._onSave = () => {
@@ -159,9 +159,9 @@ export const FileViewerHook = {
       }
     }
 
-    this.el.addEventListener("devide:save", this._onSave)
-    this.el.addEventListener("devide:refresh", this._onRefresh)
-    this.el.addEventListener("devide:file-mode", this._onFileMode)
+    this.el.addEventListener("casein:save", this._onSave)
+    this.el.addEventListener("casein:refresh", this._onRefresh)
+    this.el.addEventListener("casein:file-mode", this._onFileMode)
     this.renderedEl.addEventListener("click", this._onRenderedClick)
 
     // Right-click menu integration (shared ContextMenu hook): declare the
@@ -199,8 +199,8 @@ export const FileViewerHook = {
       }
     }
 
-    this.el.addEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
-    this.el.addEventListener("devide:ctx-action", this._onCtxAction)
+    this.el.addEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
+    this.el.addEventListener("casein:ctx-action", this._onCtxAction)
   },
 
   sendSelectionToAgent(intent) {
@@ -232,14 +232,14 @@ export const FileViewerHook = {
   },
 
   destroyed() {
-    if (this._onSave) this.el.removeEventListener("devide:save", this._onSave)
-    if (this._onRefresh) this.el.removeEventListener("devide:refresh", this._onRefresh)
-    if (this._onFileMode) this.el.removeEventListener("devide:file-mode", this._onFileMode)
+    if (this._onSave) this.el.removeEventListener("casein:save", this._onSave)
+    if (this._onRefresh) this.el.removeEventListener("casein:refresh", this._onRefresh)
+    if (this._onFileMode) this.el.removeEventListener("casein:file-mode", this._onFileMode)
     if (this._onRenderedClick) this.renderedEl.removeEventListener("click", this._onRenderedClick)
     if (this._onCtxBeforeOpen) {
-      this.el.removeEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
+      this.el.removeEventListener("casein:ctx-before-open", this._onCtxBeforeOpen)
     }
-    if (this._onCtxAction) this.el.removeEventListener("devide:ctx-action", this._onCtxAction)
+    if (this._onCtxAction) this.el.removeEventListener("casein:ctx-action", this._onCtxAction)
     this.view?.destroy()
   }
 }

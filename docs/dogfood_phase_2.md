@@ -2,7 +2,7 @@
 
 > **Historical ledger.** The fleet-runner / delegated-execution stack referenced
 > here (`scripts/dogfood_remote_fleet.sh`, `scripts/dogfood_remote_runner_smoke.sh`,
-> `DevIDE.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
+> `Casein.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
 > in the repo. The MCP side-by-side section (lower half) remains current.
 
 Purpose: validate whether DevIDE can be trusted for daily delegated engineering
@@ -124,8 +124,8 @@ COMMAND_ID=precommit \
 bash scripts/dogfood_remote_fleet.sh
 ```
 
-During the success leg, an operator process called `DevIDE.Fleet.prepare_takeover/2`
-and `DevIDE.Fleet.attach_packet/2` against the live execution.
+During the success leg, an operator process called `Casein.Fleet.prepare_takeover/2`
+and `Casein.Fleet.attach_packet/2` against the live execution.
 
 Evidence:
 
@@ -277,7 +277,7 @@ Reachability check:
 Attempted flow:
 
 1. Created a temporary checkout on `milcmini`:
-   `/tmp/devide-remote-runner-phase2.D3HHUq`.
+   `/tmp/casein-remote-runner-phase2.D3HHUq`.
 2. Ran `mix deps.get` successfully on the remote host.
 3. Started a local controller on port `4192`.
 4. Exposed it to `milcmini` with an SSH reverse tunnel:
@@ -293,7 +293,7 @@ Operational result:
   controller through a reverse SSH tunnel.
 - The runner process starts and receives work, but it also starts the full
   application supervision tree on the runner host.
-- Because the full app starts `DevIDE.Repo`, the remote runner tried to connect
+- Because the full app starts `Casein.Repo`, the remote runner tried to connect
   to a local `dev_ide_dev` database on `milcmini`. That database did not exist,
   causing repeated Postgrex connection failures and preventing a clean remote
   execution.
@@ -304,7 +304,7 @@ Remaining blocker:
 
 - Standalone runner startup is not boring on a fresh remote machine because it
   currently depends on local controller-app infrastructure, especially
-  `DevIDE.Repo`.
+  `Casein.Repo`.
 - The runner path needs a remote-safe runtime profile or release entrypoint that
   starts only the runner dependencies needed for HTTP transport and command
   execution.
@@ -326,7 +326,7 @@ Fix:
 Validation:
 
 1. Rsynced the working tree to `milcmini` at
-   `/tmp/devide-remote-runner-phase2.fixed`.
+   `/tmp/casein-remote-runner-phase2.fixed`.
 2. Ran `mix deps.get` on `milcmini`.
 3. Started a local controller on port `4193`.
 4. Exposed the local controller to `milcmini` with
@@ -335,7 +335,7 @@ Validation:
 6. Started the remote runner:
    `mix runner.start --endpoint http://localhost:4193 --runner-id 5c78f2a5-5fcf-45dc-9127-e1d42693d65c --hostname milcmini`.
 7. Delegated `compile` to workspace path
-   `/tmp/devide-remote-runner-phase2.fixed`.
+   `/tmp/casein-remote-runner-phase2.fixed`.
 
 Evidence:
 
@@ -347,7 +347,7 @@ Evidence:
 | Execution | `52789799-a6df-4e16-9c03-8adbf51dae07` |
 | Command | `compile` |
 | State | `completed` |
-| Workspace path | `/tmp/devide-remote-runner-phase2.fixed` |
+| Workspace path | `/tmp/casein-remote-runner-phase2.fixed` |
 
 Operational result:
 
@@ -418,7 +418,7 @@ Evidence:
 | Execution | `b9562988-257e-4a7a-a987-dc95f0024e92` |
 | Command | `compile` |
 | State | `completed` |
-| Workspace path | `/tmp/devide-remote-runner-smoke.32137` |
+| Workspace path | `/tmp/casein-remote-runner-smoke.32137` |
 
 Operational result:
 
@@ -442,7 +442,7 @@ share tmux adapters, so `mix precommit` protects both.
 
 | Step | Check |
 |------|-------|
-| Deploy | Pairing changes are on `master` and CI deployed `/opt/devide/release` |
+| Deploy | Pairing changes are on `master` and CI deployed `/opt/casein/release` |
 | Smoke | `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
 | Layout | **Agents → Apply Agent Pair layout** |
 | Mode | Workspace is `:manual` (raw terminal) |
@@ -485,7 +485,7 @@ Fixes filed:
 
 ### First dogfood targets
 
-1. Agent runs `mix test test/dev_ide/agents/` in the **agent** pane; human watches
+1. Agent runs `mix test test/casein/agents/` in the **agent** pane; human watches
    terminal + Live MCP activity.
 2. Small code change → `mix precommit` in agent pane → human reviews diff in UI.
 3. LiveView tweak → `preview_open_app` screenshot → human compares preview iframe.

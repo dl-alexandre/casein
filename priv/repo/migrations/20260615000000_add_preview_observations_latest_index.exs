@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.AddPreviewObservationsLatestIndex do
+defmodule Casein.Repo.Migrations.AddPreviewObservationsLatestIndex do
   use Ecto.Migration
 
   # Serves the "latest observation per (session, kind)" queries in
-  # DevIDE.PreviewControl (latest_errors/1) without a post-filter sort.
+  # Casein.PreviewControl (latest_errors/1) without a post-filter sort.
   # The old (session_id, kind) index is a strict prefix of this one, so it is
   # redundant once this exists.
   def change do

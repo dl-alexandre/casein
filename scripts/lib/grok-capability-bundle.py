@@ -118,7 +118,7 @@ def build(args: argparse.Namespace) -> tuple[Path, str]:
             (temp / "hooks" / "hooks.json").write_text('{"hooks":{}}\n', encoding="utf-8")
         else:
             shutil.copyfile(Path(args.hook_config), temp / "hooks" / "hooks.json")
-            hook_script = temp / "hooks" / "devide-agent-state.sh"
+            hook_script = temp / "hooks" / "casein-agent-state.sh"
             shutil.copyfile(Path(args.hook_script), hook_script)
             hook_script.chmod(0o755)
 

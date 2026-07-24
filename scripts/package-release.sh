@@ -6,8 +6,8 @@
 #   ./scripts/package-release.sh --profile lan --target linux-x86_64
 #
 # Produces (under dist/):
-#   devide-lan-linux-x86_64-<shortsha>.tar.gz
-#   devide-lan-linux-x86_64-<shortsha>.tar.gz.sha256
+#   casein-lan-linux-x86_64-<shortsha>.tar.gz
+#   casein-lan-linux-x86_64-<shortsha>.tar.gz.sha256
 #   devide-canary.json
 #
 # Does not publish to GitHub Releases — generate locally, verify, then publish
@@ -108,7 +108,7 @@ fi
 
 log "building ${PROFILE}/${TARGET} release at ${REVISION}"
 
-export DEV_IDE_REPO_ADAPTER="${REPO_ADAPTER}"
+export CASEIN_REPO_ADAPTER="${REPO_ADAPTER}"
 export DEVIDE_GIT_REVISION="${REVISION}"
 export DEVIDE_RELEASE_PROFILE="${PROFILE}"
 export DEVIDE_RELEASE_REPO_ADAPTER="${REPO_ADAPTER}"
@@ -120,8 +120,8 @@ export DEVIDE_RELEASE_CHANNEL="${CHANNEL}"
   OUTPUT_DIR="${OUTPUT_DIR}" ./scripts/build-release.sh
 )
 
-[ -f "${OUTPUT_DIR}/releases/dev_ide.relmeta.json" ] ||
-  die "release tree missing releases/dev_ide.relmeta.json"
+[ -f "${OUTPUT_DIR}/releases/casein.relmeta.json" ] ||
+  die "release tree missing releases/casein.relmeta.json"
 
 log "packaging ${TARBALL}"
 mkdir -p "${DIST_DIR}"
@@ -134,7 +134,7 @@ tar -C "${OUTPUT_DIR}" -czf "${TARBALL}" .
 
 log "writing dist/devide-${CHANNEL}.json"
 WRITE_CODE="$(cat <<EOF
-alias DevIDE.Release.Package
+alias Casein.Release.Package
 prev = System.get_env("DEVIDE_PACKAGE_PREVIOUS_REVISION")
 opts = [
   release_root: System.get_env("DEVIDE_PACKAGE_RELEASE_ROOT"),

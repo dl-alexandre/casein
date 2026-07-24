@@ -1,0 +1,46 @@
+defmodule Casein.Agents.TerminalTools.CaptureAgent do
+  @moduledoc "terminal_capture_agent."
+
+  @default_capture_lines 120
+
+  use Jido.Action,
+    name: "terminal_capture_agent",
+    description:
+      "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane. " <>
+        "Defaults to the last #{@default_capture_lines} lines when lines is omitted.",
+    category: "terminal",
+    tags: ["terminal"],
+    vsn: "1.0.0",
+    schema: [
+      workspace_id: [type: :string],
+      session: [type: :string],
+      caller_pane: [type: :string],
+      lines: [type: :integer],
+      ansi: [type: :boolean]
+    ]
+
+  @behaviour Casein.Agents.ToolAction
+
+  alias Casein.Agents.TerminalTools.{Helpers, Impl.Agent}
+  alias McpCtl.Tool
+
+  @impl Casein.Agents.ToolAction
+  def parameters,
+    do:
+      Tool.object(
+        Map.merge(Helpers.workspace_props(), %{
+          session: Helpers.session_param(),
+          caller_pane: Helpers.caller_pane_param(),
+          lines: Helpers.lines_param(),
+          ansi: Helpers.ansi_param()
+        })
+      )
+
+  @impl Casein.Agents.ToolAction
+  def mcp_metadata, do: Helpers.metadata("terminal_capture_agent")
+
+  @impl Jido.Action
+  def run(params, _context) do
+    Agent.capture_agent(Helpers.to_impl_args(params))
+  end
+end

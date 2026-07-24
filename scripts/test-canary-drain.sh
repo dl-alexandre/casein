@@ -17,11 +17,11 @@ ok() { pass=$((pass + 1)); }
 # Collaborators the lib reads from caller scope.
 log() { :; }
 token="test-token"
-INST_DIR="/run/devide/instances"
-CURRENT_SYMLINK="/run/devide/current.sock"
+INST_DIR="/run/casein/instances"
+CURRENT_SYMLINK="/run/casein/current.sock"
 
 # ── current_sock_uuid: parse the symlink target into a uuid ──────────────────
-readlink() { printf '%s\n' "/run/devide/instances/abc123def4567890.sock"; }
+readlink() { printf '%s\n' "/run/casein/instances/abc123def4567890.sock"; }
 got="$(current_sock_uuid)"
 [ "${got}" = "abc123def4567890" ] || fail "current_sock_uuid parsed '${got}'"
 ok
@@ -95,8 +95,8 @@ systemctl() {
   cat <<'UNITS'
 devide-aaaaaaaaaaaaaaaa.service loaded active running DevIDE canary a
 devide-bbbbbbbbbbbbbbbb.service loaded active running DevIDE canary b
-devide-loopback.service         loaded active running DevIDE loopback
-devide-preview-router.service   loaded active running DevIDE preview
+casein-loopback.service         loaded active running DevIDE loopback
+casein-preview-router.service   loaded active running DevIDE preview
 UNITS
 }
 mapfile -t uuids < <(running_canary_uuids)
@@ -113,7 +113,7 @@ proc_cwd() { printf '%s' "${FIX_CWD[$1]:-}"; }
 
 # A leaked mix phx.server with a deleted worktree cwd → reapable.
 FIX_CMDLINE[100]="/home/devbox/.../elixir/bin/mix phx.server"
-FIX_CWD[100]="/tmp/devide-agent-worktrees/agent-x (deleted)"
+FIX_CWD[100]="/tmp/casein-agent-worktrees/agent-x (deleted)"
 orphaned_dev_server 100 || fail "leaked phx.server with deleted cwd must be orphaned"
 ok
 
@@ -123,16 +123,16 @@ FIX_CWD[101]="/data/workspaces/x/.claude/worktrees/agent-y (deleted)"
 orphaned_dev_server 101 || fail "leaked release node with deleted cwd must be orphaned"
 ok
 
-# The LIVE release: cwd is /opt/devide (not deleted) → never reaped. Also guarded
+# The LIVE release: cwd is /opt/casein (not deleted) → never reaped. Also guarded
 # by the explicit release-path exclusion.
-FIX_CMDLINE[200]="/opt/devide/release/erts-16.4/bin/beam.smp -- ... "
-FIX_CWD[200]="/opt/devide"
+FIX_CMDLINE[200]="/opt/casein/release/erts-16.4/bin/beam.smp -- ... "
+FIX_CWD[200]="/opt/casein"
 orphaned_dev_server 200 && fail "live release must never be orphaned" || ok
 
 # A canary boot from the release path but (implausibly) a deleted cwd is still
 # spared by the release-path exclusion — defense in depth.
-FIX_CMDLINE[201]="/opt/devide/release/bin/beam.smp -- -name dev_ide_ccc@host"
-FIX_CWD[201]="/opt/devide (deleted)"
+FIX_CMDLINE[201]="/opt/casein/release/bin/beam.smp -- -name dev_ide_ccc@host"
+FIX_CWD[201]="/opt/casein (deleted)"
 orphaned_dev_server 201 && fail "release-path beam must never be orphaned even if cwd deleted" || ok
 
 # A legitimate dev server in a LIVE worktree (cwd not deleted) → not reaped.

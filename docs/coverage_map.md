@@ -11,41 +11,41 @@
 Each `lib/` subsystem directory and its authoritative doc. The "Cross-link"
 column names the pre-existing doc the subsystem doc threads back into.
 
-### `lib/dev_ide/*` (the DevIDE app)
+### `lib/casein/*` (the DevIDE app)
 
 | Directory | Owning doc | Cross-link |
 |-----------|------------|------------|
-| `lib/dev_ide/terminals/` | [`subsystems/terminals.md`](subsystems/terminals.md) | `terminal.md` |
-| `lib/dev_ide/agents/` | [`subsystems/agents.md`](subsystems/agents.md) | `terminal_mcp.md` / `reference/mcp_tools.md` |
-| `lib/dev_ide/artifact_projects/` (+ `lib/dev_ide/artifact_projects.ex`) | [`subsystems/artifact_projects.md`](subsystems/artifact_projects.md) | `subsystems/runtimes.md` / `preview_mcp.md` |
-| `lib/dev_ide/previews/` | [`subsystems/previews.md`](subsystems/previews.md) | `preview_mcp.md` |
-| `lib/dev_ide/preview_control/` | [`subsystems/previews.md`](subsystems/previews.md) + [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | `preview_mcp.md` |
-| `lib/dev_ide/runtimes/` | [`subsystems/runtimes.md`](subsystems/runtimes.md) | — |
-| `lib/dev_ide/workspaces/` | [`subsystems/workspaces.md`](subsystems/workspaces.md) | `state_machines.md` |
-| `lib/dev_ide/workspace_source/` | [`subsystems/workspaces.md`](subsystems/workspaces.md) | `workspace_sources.md` |
-| `lib/dev_ide/proposals/` | [`subsystems/proposals.md`](subsystems/proposals.md) | `architecture.md` |
-| `lib/dev_ide/audit/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` / `audit_remote.md` |
-| `lib/dev_ide/runs/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` |
-| `lib/dev_ide/logs/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` |
-| `lib/dev_ide/files/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
-| `lib/dev_ide/search/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
-| `lib/dev_ide/git/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
-| `lib/dev_ide/elixir/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
-| `lib/dev_ide/palette/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
-| `lib/dev_ide/commands/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) + [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
-| `lib/dev_ide/labels/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
-| `lib/dev_ide/annotations/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
-| `lib/dev_ide/policy/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
-| `lib/dev_ide/deployment/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
-| `lib/dev_ide/export/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
-| `lib/dev_ide/cli/` | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
-| `lib/dev_ide/integrations/` | [`integrations/manager.md`](integrations/manager.md) | `deploy.md` |
+| `lib/casein/terminals/` | [`subsystems/terminals.md`](subsystems/terminals.md) | `terminal.md` |
+| `lib/casein/agents/` | [`subsystems/agents.md`](subsystems/agents.md) | `terminal_mcp.md` / `reference/mcp_tools.md` |
+| `lib/casein/artifact_projects/` (+ `lib/casein/artifact_projects.ex`) | [`subsystems/artifact_projects.md`](subsystems/artifact_projects.md) | `subsystems/runtimes.md` / `preview_mcp.md` |
+| `lib/casein/previews/` | [`subsystems/previews.md`](subsystems/previews.md) | `preview_mcp.md` |
+| `lib/casein/preview_control/` | [`subsystems/previews.md`](subsystems/previews.md) + [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | `preview_mcp.md` |
+| `lib/casein/runtimes/` | [`subsystems/runtimes.md`](subsystems/runtimes.md) | — |
+| `lib/casein/workspaces/` | [`subsystems/workspaces.md`](subsystems/workspaces.md) | `state_machines.md` |
+| `lib/casein/workspace_source/` | [`subsystems/workspaces.md`](subsystems/workspaces.md) | `workspace_sources.md` |
+| `lib/casein/proposals/` | [`subsystems/proposals.md`](subsystems/proposals.md) | `architecture.md` |
+| `lib/casein/audit/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` / `audit_remote.md` |
+| `lib/casein/runs/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` |
+| `lib/casein/logs/` | [`subsystems/audit_activity.md`](subsystems/audit_activity.md) | `audit_local.md` |
+| `lib/casein/files/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
+| `lib/casein/search/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
+| `lib/casein/git/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
+| `lib/casein/elixir/` | [`subsystems/code_intelligence.md`](subsystems/code_intelligence.md) | `architecture.md` |
+| `lib/casein/palette/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
+| `lib/casein/commands/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) + [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
+| `lib/casein/labels/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
+| `lib/casein/annotations/` | [`subsystems/palette_commands.md`](subsystems/palette_commands.md) | `leader_keys.md` |
+| `lib/casein/policy/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
+| `lib/casein/deployment/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
+| `lib/casein/export/` | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | `deploy.md` |
+| `lib/casein/cli/` | [`reference/cli_and_keys.md`](reference/cli_and_keys.md) | `leader_keys.md` |
+| `lib/casein/integrations/` | [`integrations/manager.md`](integrations/manager.md) | `deploy.md` |
 
-### `lib/*` (in-repo libraries) and the `dev_ide_web` tier
+### `lib/*` (in-repo libraries) and the `casein_web` tier
 
 | Directory | Owning doc | Cross-link |
 |-----------|------------|------------|
-| `lib/dev_ide_web/` | [`subsystems/web_cockpit.md`](subsystems/web_cockpit.md) + [`reference/http_api.md`](reference/http_api.md) | `architecture.md` |
+| `lib/casein_web/` | [`subsystems/web_cockpit.md`](subsystems/web_cockpit.md) + [`reference/http_api.md`](reference/http_api.md) | `architecture.md` |
 | `lib/tmux_ctl/` | [`subsystems/tmux_terminal_ctl.md`](subsystems/tmux_terminal_ctl.md) | `tmux_control_plane.md` |
 | `lib/terminal_ctl/` | [`subsystems/tmux_terminal_ctl.md`](subsystems/tmux_terminal_ctl.md) | `tmux_control_plane.md` |
 | `lib/preview_ctl/` | [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | `preview_mcp.md` |
@@ -64,16 +64,16 @@ now owned by [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md).
 
 ## Subsystems with NO owning doc
 
-> ✅ None. Every `lib/`, `lib/dev_ide_web/`, in-repo `lib/*` library, and
+> ✅ None. Every `lib/`, `lib/casein_web/`, in-repo `lib/*` library, and
 > `dev_ide_core/lib/` subsystem now maps to an owning doc in the tables above.
 > The last gaps closed in the follow-up pass:
 >
 > - **`dev_ide_core/lib/{exec_ctl,git_ctl,mcp_ctl}/`** — now owned by
 >   [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md). `ExecCtl.Allowlist`
->   is the authoritative command id→argv map that `DevIDE.Commands.Allowlist`
->   (and thus `DevIDE.Policy`) delegates into.
-> - **`lib/dev_ide/integrations/manager/`** — owned by
->   [`integrations/manager.md`](integrations/manager.md) (see the `lib/dev_ide/*`
+>   is the authoritative command id→argv map that `Casein.Commands.Allowlist`
+>   (and thus `Casein.Policy`) delegates into.
+> - **`lib/casein/integrations/manager/`** — owned by
+>   [`integrations/manager.md`](integrations/manager.md) (see the `lib/casein/*`
 >   table). It was only ever a mapping gap, not a missing doc.
 
 ## Gaps & divergences
@@ -88,7 +88,7 @@ against the **code** (docs win).
    `Ghostty.PTY` (forkpty) per pane with `tmux new-session -A`, never
    mentioning `SessionOwner`/`Attachment`. In code, `PaneWorker` defaults to
    backend `:session_owner` (`pane_worker.ex:113`), routing raw joins **and**
-   LiveView panes through `DevIDE.Terminals.SessionOwner → Attachment →
+   LiveView panes through `Casein.Terminals.SessionOwner → Attachment →
    Session` (one shared tmux-backed `Session` per `{workspace,sid}`).
    `:ghostty_pty` and `:shared_session` are retained only for tests/rollback.
 2. **terminals** — `docs/terminal.md` ("Multi-tab behaviour") says resize shrinks
@@ -102,12 +102,12 @@ against the **code** (docs win).
    in `show.ex`) describes the `:ghostty_pty` render path, now the non-default
    backend; under `:session_owner` the snapshot/render wiring differs. Flagged
    as potentially-stale rather than confirmed dead.
-4. **audit-activity** — `DevIDE.Audit` and `DevIDE.Audit.MemoryAdapter`
+4. **audit-activity** — `Casein.Audit` and `Casein.Audit.MemoryAdapter`
    `@moduledoc`s still describe the Ecto adapter as future ("M11", "Swap with an
    Ecto-backed adapter in M11"). The `EctoAdapter` is fully implemented and is
    the prod default per `audit_remote.md`. (`audit.ex:2-8`,
    `memory_adapter.ex:1-4`.)
-5. **audit-activity** — `DevIDE.Audit.Event` `@moduledoc` references "the M11
+5. **audit-activity** — `Casein.Audit.Event` `@moduledoc` references "the M11
    Ecto migration" as future; that migration / `audit_events` table and the
    mapping already exist. (`event.ex:2-5`.)
 6. **web** — `show.ex:164` carries an inline comment "NOTE: in-flight refactor
@@ -144,7 +144,7 @@ against the **code** (docs win).
 3. **dev_ide_core** — `ExecCtl.Port` (`dev_ide_core/lib/exec_ctl/port.ex`) has
    **no production caller**: the only callers are `test/exec_ctl/port_test.exs`
    and the unused `DevIdeCore.exec_run/3` facade. The app's real subprocess
-   executor, `DevIDE.Commands.spawn/3` (`lib/dev_ide/commands.ex`), reimplements
+   executor, `Casein.Commands.spawn/3` (`lib/casein/commands.ex`), reimplements
    the same erlexec-proxy-and-monitor plumbing inline rather than delegating to
    `ExecCtl.Port`. Parallel/duplicated logic; candidate for consolidation.
 4. **dev_ide_core** — the `DevIdeCore` convenience facade
@@ -163,31 +163,31 @@ against the **code** (docs win).
    (`mix phx.server`, `npm run dev`) yet the subsystem is record-only with no
    execution authority. The command is intent-metadata for a not-yet-existing
    provisioner; nothing consumes or runs it.
-3. **audit-activity** — `DevIDE.Runs.Status` carries first-class semantics for
+3. **audit-activity** — `Casein.Runs.Status` carries first-class semantics for
    legacy delegated-execution statuses (`expired` = "runner lease expired",
    `abandoned`, and `assignment_id`/`protocol`/`safe_action_id` fields surfaced
    by `Runs.Ledger.run_summary`). `architecture.md` says that stack "has been
    removed", yet these strings/keys remain live for backward-compatible
    timelines with no doc explaining the retention.
    (`status.ex:12-16,98-105`; `ledger.ex:226-231`.)
-4. **code-intel** — the public facades callers actually invoke (`DevIDE.Files`,
-   `DevIDE.Search`, `DevIDE.Git`, `DevIDE.Elixir`) and the dispatch wrapper
-   `DevIDE.Workspaces.FileAccess` live one directory *up* from the
+4. **code-intel** — the public facades callers actually invoke (`Casein.Files`,
+   `Casein.Search`, `Casein.Git`, `Casein.Elixir`) and the dispatch wrapper
+   `Casein.Workspaces.FileAccess` live one directory *up* from the
    implementation modules. They have moduledocs but no subsystem-level home
    until now.
-5. **code-intel** — `DevIDE.Git.Inspector` delegates worktree/checkout detection
+5. **code-intel** — `Casein.Git.Inspector` delegates worktree/checkout detection
    and ETS caching to `GitCtl.Inspector` / `GitCtl.Cache` in the
    `dev_ide_core` umbrella sibling — the git-inspection behavior is split across
    two apps; the GitCtl side is unowned.
 6. **palette-commands** — the palette's true runtime entry point is
-   `DevIdeWeb.WorkspaceLive.Show.PaletteItems`
-   (`palette_items.ex:46-140`), which merges static `DevIDE.Palette.query`
+   `CaseinWeb.WorkspaceLive.Show.PaletteItems`
+   (`palette_items.ex:46-140`), which merges static `Casein.Palette.query`
    results with dynamically-generated session/window/pane/template/workflow
    rows. Those dynamic rows (`resolve/3`) bypass `Actions.allowed_events/0`
    entirely — guarded only by re-checking current socket state. The two-layer
    (static facade + live orchestrator) structure and the dynamic-id guard path
    were undocumented.
-7. **palette-commands** — `DevIDE.Commands.Allowlist` is a thin `defdelegate` to
+7. **palette-commands** — `Casein.Commands.Allowlist` is a thin `defdelegate` to
    `ExecCtl.Allowlist` (`dev_ide_core`); the real id→argv map lives there.
    (`commands/allowlist.ex:10-13`.)
 8. **palette-commands** — `Annotation.preview_id` is intentionally a nullable
@@ -195,14 +195,14 @@ against the **code** (docs win).
    has not landed; `attach_to_preview/2` sets it but nothing enforces
    referential integrity. (`annotations/annotation.ex:30`.) Known incomplete
    area, not a mismatch.
-9. **policy-deploy-export** — `DevIDE.Export.Sanitizer.redact_text/1`
+9. **policy-deploy-export** — `Casein.Export.Sanitizer.redact_text/1`
    (`sanitizer.ex:34-49`) is public, `@doc`'d and `@spec`'d but has **zero
    callers** anywhere in `lib/`. Dead/orphan despite presenting as part of the
    egress-redaction API.
 10. **policy-deploy-export** — `docs/deploy.md` documents the Docker/compose
     path and defers the systemd path to `integrations/manager.md`, but does not
     describe the on-box deploy machinery this code implements (heartbeat
-    `Registry`, `/run/devide/current.sock` symlink, graceful `Drain` via POST
+    `Registry`, `/run/casein/current.sock` symlink, graceful `Drain` via POST
     `/api/drain`, `Drift` vs `origin/master`, `/api/deploy_status` `Health`
     probe). The new companion doc covers these; `deploy.md` intentionally
     unmodified.
@@ -247,20 +247,20 @@ Files that gained a `@moduledoc` during this documenting pass.
 
 | File | Pass |
 |------|------|
-| `lib/dev_ide/agents/mcp_urls.ex` | agents-mcp |
-| `lib/dev_ide/agents/pane_env.ex` | agents-mcp |
-| `lib/dev_ide/agents/mcp_materializer.ex` | agents-mcp |
-| `lib/dev_ide/previews/preview.ex` | previews |
-| `lib/dev_ide/previews/control_session.ex` | previews |
-| `lib/dev_ide/previews/control_action.ex` | previews |
-| `lib/dev_ide/previews/control_observation.ex` | previews |
+| `lib/casein/agents/mcp_urls.ex` | agents-mcp |
+| `lib/casein/agents/pane_env.ex` | agents-mcp |
+| `lib/casein/agents/mcp_materializer.ex` | agents-mcp |
+| `lib/casein/previews/preview.ex` | previews |
+| `lib/casein/previews/control_session.ex` | previews |
+| `lib/casein/previews/control_action.ex` | previews |
+| `lib/casein/previews/control_observation.ex` | previews |
 | `lib/preview_ctl/registry.ex` | preview-ctl |
 | `lib/preview_ctl/playwright/bridge.ex` | preview-ctl |
-| `lib/dev_ide_web/live/workspace_live/show.ex` | web |
-| `lib/dev_ide_web/router.ex` | ref-http |
-| `lib/dev_ide_web/controllers/page_controller.ex` | ref-http |
-| `lib/dev_ide_web/controllers/preview_artifact_controller.ex` | ref-http |
-| `lib/dev_ide_web/channels/user_socket.ex` | ref-http |
+| `lib/casein_web/live/workspace_live/show.ex` | web |
+| `lib/casein_web/router.ex` | ref-http |
+| `lib/casein_web/controllers/page_controller.ex` | ref-http |
+| `lib/casein_web/controllers/preview_artifact_controller.ex` | ref-http |
+| `lib/casein_web/channels/user_socket.ex` | ref-http |
 
 Subsystems whose passes added **no** moduledocs (docs-only, code untouched):
 terminals, runtimes, workspaces, proposals, audit-activity, code-intel,
@@ -277,12 +277,12 @@ After generation, every module/file identifier cited in `docs/subsystems/*` and
 > that was in flight during the documenting pass committed as
 > `0737aa0 "Remove dead preview/tmux adapters; wire TmuxServer test sandbox"`
 > (on the `chore/self-hosted-deploy-poller` deploy branch; not yet on `master`).
-> It deleted `lib/dev_ide/preview_control/{adapter,memory_adapter,playwright_adapter,playwright_bridge}.ex`,
-> `lib/dev_ide/terminals/tmux_adapter.ex`, and `lib/mix/tasks/dev_ide.preview.demo.ex`.
-> These docs have been updated to match: the `DevIDE.PreviewControl.*Adapter` /
-> `PlaywrightBridge` rows and the `DevIDE.Terminals.TmuxAdapter` row are dropped;
-> `DevIDE.PreviewControl` now drives `PreviewCtl.*` directly via
-> `PreviewCtl.Session.adapter_for/1`, and `DevIDE.PreviewControl.Registry` (which
+> It deleted `lib/casein/preview_control/{adapter,memory_adapter,playwright_adapter,playwright_bridge}.ex`,
+> `lib/casein/terminals/tmux_adapter.ex`, and `lib/mix/tasks/dev_ide.preview.demo.ex`.
+> These docs have been updated to match: the `Casein.PreviewControl.*Adapter` /
+> `PlaywrightBridge` rows and the `Casein.Terminals.TmuxAdapter` row are dropped;
+> `Casein.PreviewControl` now drives `PreviewCtl.*` directly via
+> `PreviewCtl.Session.adapter_for/1`, and `Casein.PreviewControl.Registry` (which
 > survives) still `defdelegate`s to `PreviewCtl.Registry`.
 
 ### Function-level verification (839 claims)

@@ -1,7 +1,7 @@
 export const DISPLAY_ZOOM_MIN = 0.5
 export const DISPLAY_ZOOM_MAX = 3.0
 export const DISPLAY_ZOOM_STEP = 0.1
-export const DISPLAY_ZOOM_STORAGE = "devide:term-display-zoom"
+export const DISPLAY_ZOOM_STORAGE = "casein:term-display-zoom"
 
 export function clampDisplayZoom(zoom) {
   if (!Number.isFinite(zoom)) return 1

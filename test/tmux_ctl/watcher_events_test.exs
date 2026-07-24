@@ -3,7 +3,7 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
   Event-source path for Topology.Watcher — FakeEventSource driven, no real tmux.
   """
 
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Test.FakeEventSource
   alias TmuxCtl.Test.FakeState
@@ -288,7 +288,7 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
       [
         registry: @registry,
         supervisor: @supervisor,
-        pubsub: DevIDE.PubSub,
+        pubsub: Casein.PubSub,
         tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
         broadcast_tag: @tag,
         refresh_ms: 60_000,
@@ -311,7 +311,7 @@ defmodule TmuxCtl.Topology.WatcherEventsTest do
     [
       registry: @registry,
       supervisor: @supervisor,
-      pubsub: DevIDE.PubSub,
+      pubsub: Casein.PubSub,
       tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
       broadcast_tag: @tag,
       refresh_ms: 200,

@@ -21,7 +21,7 @@ warn() { printf 'WARN %s\n' "$*" >&2; WARN=$((WARN + 1)); }
 fail() { printf 'FAIL %s\n' "$*" >&2; FAIL=$((FAIL + 1)); }
 
 devide_shims_expected() {
-  # Agent processes launched through launch-devide-agent.sh carry one of these
+  # Agent processes launched through launch-casein-agent.sh carry one of these
   # markers. The worktree marker covers the normal path; the explicit launch
   # marker covers deliberate DEVIDE_AGENT_SKIP_WORKTREE launches.
   if [[ -n "${DEVIDE_AGENT_LAUNCH_CONTEXT:-}" || "${DEVIDE_WORKTREE:-0}" == "1" ]]; then
@@ -43,7 +43,7 @@ devide_shims_expected() {
 }
 
 check_shims() {
-  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
   local runtime bin resolved bin_target resolved_target missing_runtimes=()
   local shims_expected=0
   if devide_shims_expected; then
@@ -104,7 +104,7 @@ check_shims() {
   # a missing shim still surfaces a real binary error rather than "not found"
   # from a release-only PATH — and so reinstall finds package candidates.
   local npm_prefix npm_bin
-  npm_prefix="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  npm_prefix="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
   npm_bin="${npm_prefix}/bin"
   case ":${PATH:-}:" in
     *":${shim_dir}:"*) pass "PATH includes ${shim_dir}" ;;
@@ -120,7 +120,7 @@ check_shims() {
     *":${npm_bin}:"*) pass "PATH includes npm agent bin (${npm_bin})" ;;
     *)
       if [[ "$shims_expected" == "1" ]]; then
-        warn "paired-context PATH missing ${npm_bin} — set DEV_IDE_NPM_PREFIX / repair-tmux-env"
+        warn "paired-context PATH missing ${npm_bin} — set CASEIN_NPM_PREFIX / repair-tmux-env"
       else
         pass "plain-shell PATH does not require npm agent bin (${npm_bin})"
       fi
@@ -133,7 +133,7 @@ check_shims() {
 # at once. The sed pattern must match the install-agent-shims.sh template
 # (pinned by scripts/test-agent-shims.sh).
 check_shim_targets() {
-  local shim_dir="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  local shim_dir="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
   local runtime shim cli target_missing=0 checked=0
   for runtime in grok claude codex opencode agent; do
     shim="${shim_dir}/${runtime}"
@@ -155,7 +155,7 @@ check_shim_targets() {
 # Self-updating agents (grok records a versioned binary path) can strand the
 # recorded symlink; launch falls back to a PATH search, so this is a warning.
 check_real_bins() {
-  local real_dir="${HOME}/.devide/real-bins"
+  local real_dir="${HOME}/.casein/real-bins"
   [[ -d "$real_dir" ]] || return 0
 
   local link dangling=0
@@ -173,16 +173,16 @@ check_real_bins() {
 }
 
 check_token() {
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   if [[ -z "$token" ]]; then
-    fail "DEV_IDE_API_TOKEN is not set"
+    fail "CASEIN_API_TOKEN is not set"
     return
   fi
 
   if [[ "$token" == \'*\' || "$token" == \"*\" ]]; then
-    fail "DEV_IDE_API_TOKEN has literal shell quotes — run repair-tmux-env.sh"
+    fail "CASEIN_API_TOKEN has literal shell quotes — run repair-tmux-env.sh"
   else
-    pass "DEV_IDE_API_TOKEN is set (unquoted)"
+    pass "CASEIN_API_TOKEN is set (unquoted)"
   fi
 }
 
@@ -253,7 +253,7 @@ check_tidewave_mcp() {
 }
 
 check_mcp_endpoints() {
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   local terminal_url="${DEVIDE_TERMINAL_MCP_URL:-}"
   local preview_url="${DEVIDE_PREVIEW_MCP_URL:-}"
   local artifact_url="${DEVIDE_ARTIFACT_MCP_URL:-}"
@@ -404,7 +404,7 @@ grok_bundle_contract() {
 
   local bundle_real bundle_root bundle_root_real
   bundle_real="$(realpath -m "$bundle")"
-  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.devide/grok-bundles}"
+  bundle_root="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME}/.casein/grok-bundles}"
   bundle_root_real="$(realpath -m "$bundle_root")"
 
   if [[ "$(dirname "$bundle_real")" != "$bundle_root_real" ]] ||
@@ -449,7 +449,7 @@ PY
     return 1
   fi
 
-  if [[ "$hooks_mode" == "enabled" && ! -x "${bundle_real}/hooks/devide-agent-state.sh" ]]; then
+  if [[ "$hooks_mode" == "enabled" && ! -x "${bundle_real}/hooks/casein-agent-state.sh" ]]; then
     fail "Grok capability bundle enables hooks without its executable state reporter"
     return 1
   fi
@@ -468,7 +468,7 @@ grok_leader_contract() {
   local managed="$1"
   local _grok_bin="$2"
   local socket="${DEVIDE_GROK_LEADER_SOCKET:-}"
-  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.devide/grok-leaders}"
+  local leader_root="${DEVIDE_GROK_LEADER_ROOT:-${HOME}/.casein/grok-leaders}"
 
   if [[ -z "$socket" ]]; then
     if [[ "$managed" == "1" ]]; then
@@ -579,7 +579,7 @@ print(slug or 'workspace')
     )"
     expected_servers=(
       "devide-terminal-${slug}"
-      "devide-preview-${slug}"
+      "casein-preview-${slug}"
       "devide-artifact-${slug}"
     )
   else
@@ -719,7 +719,7 @@ check_codex_capabilities() {
     warn "Codex plugin commands unavailable"
   fi
 
-  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/devide-codex-notify.sh"
+  hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ -x "$hook_script" ]]; then
     pass "DevIDE Codex hook receiver staged"
   else

@@ -1,5 +1,5 @@
 defmodule TerminalCtl.EscapeTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias TerminalCtl.Escape
 

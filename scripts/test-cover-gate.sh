@@ -27,7 +27,7 @@ cd "$REPO_ROOT"
 # push forever. The lock is held on fd 9 for the life of this process and releases
 # automatically on exit. Set TEST_COVER_LOCK_WAIT=0 to fail fast instead of
 # waiting (e.g. CI where runs are already serialized).
-LOCK_FILE="${TEST_COVER_LOCK_FILE:-/tmp/devide-test-cover-gate.lock}"
+LOCK_FILE="${TEST_COVER_LOCK_FILE:-/tmp/casein-test-cover-gate.lock}"
 LOCK_WAIT="${TEST_COVER_LOCK_WAIT:-2400}"
 
 if command -v flock >/dev/null 2>&1; then

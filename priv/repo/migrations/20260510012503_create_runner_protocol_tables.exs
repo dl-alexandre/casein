@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateRunnerProtocolTables do
+defmodule Casein.Repo.Migrations.CreateRunnerProtocolTables do
   use Ecto.Migration
 
   def change do

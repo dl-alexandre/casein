@@ -1,7 +1,7 @@
-defmodule DevIDE.Test.ManagerReqTest do
+defmodule Casein.Test.ManagerReqTest do
   @moduledoc false
 
-  alias DevIDE.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Client
 
   def setup(context) do
     Req.Test.set_req_test_from_context(context)

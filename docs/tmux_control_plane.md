@@ -11,10 +11,10 @@ agent-friendly control plane over that engine.
 LiveView / API / Agents
         │
         ▼
-DevIDE.Terminals.TmuxTopology   (PubSub tag, audit on terminate)
-DevIDE.Terminals.Tmux           (policy + adapter facade)
-DevIDE.Terminals.TmuxPolicy     (session naming)
-DevIDE.Terminals.TmuxRunner     (container argv wrapping)
+Casein.Terminals.TmuxTopology   (PubSub tag, audit on terminate)
+Casein.Terminals.Tmux           (policy + adapter facade)
+Casein.Terminals.TmuxPolicy     (session naming)
+Casein.Terminals.TmuxRunner     (container argv wrapping)
         │
         ▼
 TmuxCtl.Topology.Watcher        (GenServer poll + PubSub)
@@ -27,19 +27,19 @@ tmux server (host or container)
 ```
 
 `TmuxCtl` is in-repo only: no DevIDE/Audit/WorkspaceSource references.
-Tests swap `Application.get_env(:dev_ide, :tmux_adapter)` for
-`TmuxCtl.Test.FakeAdapter` (aliased as `DevIDE.Test.FakeTmuxAdapter`).
+Tests swap `Application.get_env(:casein, :tmux_adapter)` for
+`TmuxCtl.Test.FakeAdapter` (aliased as `Casein.Test.FakeTmuxAdapter`).
 
-`DevIDE.Terminals.backend/0` is the product-level selection boundary. It reads
+`Casein.Terminals.backend/0` is the product-level selection boundary. It reads
 `:terminal_backend`, then uses the historical `:tmux_adapter` key as a migration
-fallback, and finally defaults to `DevIDE.Terminals.Backends.Tmux`. Existing
+fallback, and finally defaults to `Casein.Terminals.Backends.Tmux`. Existing
 deployments and tests therefore keep their current behavior. The wrapper implements
-`DevIDE.Terminals.Backend`; the existing facade continues implementing
+`Casein.Terminals.Backend`; the existing facade continues implementing
 `TmuxCtl.Adapter`. New cross-platform code should depend on the product-level
 behaviour, while tmux-only call sites are migrated incrementally.
 
 Durable `Session` startup resolves one backend for the session lifetime and
-requests a `DevIDE.Terminals.Backend.SpawnSpec`. The tmux backend owns the
+requests a `Casein.Terminals.Backend.SpawnSpec`. The tmux backend owns the
 host/container/SSH attach argv; `Session` owns the current erlexec PTY transport
 and byte fan-out. A future ConPTY transport can therefore change process
 creation without putting Windows command construction into LiveView code.
@@ -51,40 +51,40 @@ env keys on purpose:
 
 | Key | App | Used by | Purpose |
 |-----|-----|---------|---------|
-| `:tmux_adapter` | `:dev_ide` | `DevIDE.Terminals.Tmux`, `TmuxTopology`, LiveView, API, MCP | Product call sites; unchanged historical key |
+| `:tmux_adapter` | `:casein` | `Casein.Terminals.Tmux`, `TmuxTopology`, LiveView, API, MCP | Product call sites; unchanged historical key |
 | `:adapter` | `:tmux_ctl` | `TmuxCtl.Topology.Watcher` fallback when `tmux_resolver` is omitted | Generic watcher default |
 
-At boot, `DevIDE.Application.configure_tmux_ctl!/0` copies
-`config :dev_ide, :tmux_ctl` (runner, session prefix, PubSub, prefix-bind
+At boot, `Casein.Application.configure_tmux_ctl!/0` copies
+`config :casein, :tmux_ctl` (runner, session prefix, PubSub, prefix-bind
 hint strings, etc.) into `config :tmux_ctl`. **Adapter selection is not
 copied** — each layer keeps its own key.
 
-**DevIDE watcher path:** `DevIDE.Terminals.TmuxTopology` injects
-`tmux_resolver: fn -> Application.get_env(:dev_ide, :tmux_adapter, Tmux) end`
+**DevIDE watcher path:** `Casein.Terminals.TmuxTopology` injects
+`tmux_resolver: fn -> Application.get_env(:casein, :tmux_adapter, Tmux) end`
 into `TmuxCtl.Topology.Watcher`, so production and tests always resolve the
-facade/fake adapter from `:dev_ide`.
+facade/fake adapter from `:casein`.
 
 **Standalone `TmuxCtl` tests:** pass `tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end`
 (or `tmux: adapter` for direct snapshots). Fake session state lives under
 `:tmux_ctl` via `TmuxCtl.Test.FakeState` (`:fake_tmux_windows`, `:fake_tmux_panes`, …).
 
 **Tests:** `config/test.exs` does not set `:tmux_adapter`; individual tests
-set `Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)`.
-`DevIDE.Test.FakeTmuxAdapter` is a `@behaviour TmuxCtl.Adapter` shim that
+set `Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)`.
+`Casein.Test.FakeTmuxAdapter` is a `@behaviour TmuxCtl.Adapter` shim that
 defdelegates to `TmuxCtl.Test.FakeAdapter`.
 
 ## Server selection & config (`-L` / `-f`)
 
 DevIDE does **not** drive the host's default tmux server. Every invocation is
-prefixed with a per-env server label (`DevIDE.Terminals.TmuxServer.args/0` →
+prefixed with a per-env server label (`Casein.Terminals.TmuxServer.args/0` →
 `["-L", label]`): `devide` (prod), `devide_dev` (dev), `devide_test` (test).
 Each label is a fully independent server — its own socket, session list, and
 config — so DevIDE coexists with a plain SSH user's `tmux` (default server,
 their `~/.tmux.conf`) and the three envs never collide on the shared devbox.
 
 On the **host** path, `TmuxRunner` also appends `-f <file>` (precedence:
-`:tmux_ctl, :config_file` → `:dev_ide, :tmux_config_file` →
-`$DEV_IDE_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
+`:tmux_ctl, :config_file` → `:casein, :tmux_config_file` →
+`$CASEIN_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
 skip `-f` and get the same options via `TmuxCtl.Client.apply_defaults/1`
 instead. Because tmux reads `-f` only when it *starts* a server, config is
 per-server, not per-client: a different config means a different `-L` label.
@@ -100,7 +100,7 @@ empty server; existing sessions on the old server become invisible).
   active ids, pane geometry, cwd, current command, and a version hash.
 - **LiveView controls** render tmux windows as tabs and the active window's
   panes as the real tmux layout. Operators can focus, split, close, resize,
-  drag-resize, rename, and inspect activity without leaving DevIDE.
+  drag-resize, rename, and inspect activity without leaving Casein.
 - **Agent API** mirrors the LiveView mutations and always returns an updated
   topology snapshot after successful non-dry-run mutations.
 - **Audit** records successful non-dry-run mutations as `tmux.*` events.
@@ -141,12 +141,12 @@ preserve the same capture → versioned commit → confirmed redraw → frozen-f
 animation boundary.
 
 DevIDE configures `:tmux_ctl, :terminal_env` at boot from
-`DevIDE.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
+`Casein.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
 `new-session`, `new-window`, `split-window`, and `set-environment` defaults so
 new shells inherit the DevIDE terminal capability contract. The generic
-contract is `DEV_IDE_TERMINAL=1` and `DEV_IDE_CLIPBOARD=osc52`; app-specific
-behavior stays lazy in command shims such as `~/.devide/terminal-shims/elio`.
-The pane `PATH` also includes `~/.devide/tools/bin/`, where known missing tools
+contract is `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; app-specific
+behavior stays lazy in command shims such as `~/.casein/terminal-shims/elio`.
+The pane `PATH` also includes `~/.casein/tools/bin/`, where known missing tools
 can be installed on first invocation. For example, typing `elio` in a DevIDE
 terminal resolves the real binary if present; otherwise the shim runs
 `devide ensure-installed elio` or its materialized fallback installer, then
@@ -607,7 +607,7 @@ Built-in templates may declare pane roles. Applying `agent_pair` persists the
 role metadata to tmux (`operator`, `agent`, `verify`), and subsequent topology
 reads return those roles on the pane objects.
 Terminal helpers use that metadata for safe agent targeting:
-`DevIDE.Terminals.find_agent_pane/2` only returns a pane with `role: "agent"`;
+`Casein.Terminals.find_agent_pane/2` only returns a pane with `role: "agent"`;
 `send_agent_prompt_to_agent_pane/3` refuses to send when the role is missing
 instead of guessing from focus or process names. Missing-agent-pane errors
 include `suggested_template: "agent_pair"`, `required_role: "agent"`, and

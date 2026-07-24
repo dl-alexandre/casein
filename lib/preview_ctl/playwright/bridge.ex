@@ -227,7 +227,7 @@ defmodule PreviewCtl.Playwright.Bridge do
   end
 
   defp priv_dir do
-    app = Application.get_env(:preview_ctl, :priv_app, :dev_ide)
+    app = Application.get_env(:preview_ctl, :priv_app, :casein)
 
     case :code.priv_dir(app) do
       dir when is_list(dir) -> List.to_string(dir)

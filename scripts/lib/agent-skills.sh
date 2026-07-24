@@ -7,7 +7,7 @@
 # dev_ide skills — so an orchestrator there cannot invoke delegate-to-grok even
 # though the capability is host infrastructure, not app code.
 #
-# Used by launch-devide-agent.sh for:
+# Used by launch-casein-agent.sh for:
 #   - Claude → $CLAUDE_CONFIG_DIR or ~/.claude  (skills/<name>/SKILL.md)
 #   - OpenCode → ~/.config/opencode and project .opencode
 #     (skills/<name>/SKILL.md; OpenCode also auto-loads ~/.claude/skills)

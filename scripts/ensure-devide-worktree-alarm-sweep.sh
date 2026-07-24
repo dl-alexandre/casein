@@ -4,17 +4,17 @@
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Usage:
-#   bash scripts/ensure-devide-worktree-alarm-sweep.sh
-#   bash scripts/ensure-devide-worktree-alarm-sweep.sh --no-start
-#   bash scripts/ensure-devide-worktree-alarm-sweep.sh --disable
+#   bash scripts/ensure-casein-worktree-alarm-sweep.sh
+#   bash scripts/ensure-casein-worktree-alarm-sweep.sh --no-start
+#   bash scripts/ensure-casein-worktree-alarm-sweep.sh --disable
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
-SERVICE="devide-worktree-alarm-sweep.service"
-TIMER="devide-worktree-alarm-sweep.timer"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+SERVICE="casein-worktree-alarm-sweep.service"
+TIMER="casein-worktree-alarm-sweep.timer"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 
 START=1
 DISABLE=0
@@ -68,7 +68,7 @@ if [[ "$DISABLE" -eq 1 ]]; then
 fi
 
 ensure_env_policy
-chmod 0755 "${ROOT}/scripts/devide-worktree-alarm-sweep.sh"
+chmod 0755 "${ROOT}/scripts/casein-worktree-alarm-sweep.sh"
 
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"

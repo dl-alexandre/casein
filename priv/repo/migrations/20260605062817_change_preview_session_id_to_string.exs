@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.ChangePreviewSessionIdToString do
+defmodule Casein.Repo.Migrations.ChangePreviewSessionIdToString do
   use Ecto.Migration
 
   def up do
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       execute """
       ALTER TABLE previews
       ALTER COLUMN session_id TYPE varchar(255)
@@ -12,7 +12,7 @@ defmodule DevIDE.Repo.Migrations.ChangePreviewSessionIdToString do
   end
 
   def down do
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       execute """
       ALTER TABLE previews
       ALTER COLUMN session_id TYPE uuid

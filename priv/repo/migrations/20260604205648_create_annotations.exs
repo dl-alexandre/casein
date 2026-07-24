@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateAnnotations do
+defmodule Casein.Repo.Migrations.CreateAnnotations do
   use Ecto.Migration
 
   def change do
@@ -30,6 +30,6 @@ defmodule DevIDE.Repo.Migrations.CreateAnnotations do
     create index(:annotations, [:approval_state, "inserted_at desc"])
   end
 
-  defp list_type(inner_type), do: DevIDE.Repo.Adapter.list_storage_type(repo(), inner_type)
-  defp list_default, do: DevIDE.Repo.Adapter.list_default(repo())
+  defp list_type(inner_type), do: Casein.Repo.Adapter.list_storage_type(repo(), inner_type)
+  defp list_default, do: Casein.Repo.Adapter.list_default(repo())
 end

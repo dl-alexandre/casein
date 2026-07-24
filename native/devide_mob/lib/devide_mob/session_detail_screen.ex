@@ -2,7 +2,7 @@ defmodule DevideMob.SessionDetailScreen do
   @moduledoc """
   Focused supervisory view for one workspace. Subscribes to its
   `session:<workspace_id>` channel via `DevideMob.SessionClient` and renders the
-  live `DevIDE.Session.Snapshot`: mode + connection status, the current run,
+  live `Casein.Session.Snapshot`: mode + connection status, the current run,
   recent policy/audit activity, and active agents.
 
   Pure projection consumer — it never mutates session state (that stays on the

@@ -48,12 +48,12 @@ invoke_release_cli() {
   done
 
   export DEVIDE_CLI_ARGV="${argv}"
-  export DEV_IDE_RELEASE_CLI=1
+  export CASEIN_RELEASE_CLI=1
 
   if command -v mise >/dev/null 2>&1; then
-    (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'Casein.Release.CLI.main() |> then(&System.halt/1)')
   else
-    (cd "$DEVIDE_ROOT" && mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mix eval 'Casein.Release.CLI.main() |> then(&System.halt/1)')
   fi
 }
 
@@ -93,7 +93,7 @@ export_agent_env() {
   agent_env_export_runtime_paths
 
   local key
-  for key in DEV_IDE_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
+  for key in CASEIN_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
     DEVIDE_API_BASE_URL DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_ARTIFACT_MCP_URL DEVIDE_CHECKOUT \
     DEVIDE_AGENT_MCP_HOME DEVIDE_SCRIPTS DEVIDE_AGENT_ENV_FILE \
     CLAUDE_CONFIG_DIR CODEX_HOME PATH; do
@@ -350,9 +350,9 @@ launch_agent() {
   # so preferring DEVIDE_SCRIPTS here can silently route a freshly-installed
   # shim back through stale launch policy. Only fall back to the paired scripts
   # tree when this CLI is itself a standalone copy without a sibling launcher.
-  local launcher="${DEVIDE_ROOT}/scripts/launch-devide-agent.sh"
+  local launcher="${DEVIDE_ROOT}/scripts/launch-casein-agent.sh"
   if [[ ! -f "$launcher" ]]; then
-    launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
+    launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-casein-agent.sh"
   fi
 
   case "$runtime" in

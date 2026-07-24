@@ -29,8 +29,8 @@ test("unspecified foreground stays readable on a dark cell in a light terminal",
   globalThis.getComputedStyle = () => ({
     getPropertyValue(name) {
       return {
-        "--devide-term-bg": "#eff1f5",
-        "--devide-term-fg": "#4c4f69"
+        "--casein-term-bg": "#eff1f5",
+        "--casein-term-fg": "#4c4f69"
       }[name] || ""
     }
   })

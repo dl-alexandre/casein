@@ -5,7 +5,7 @@ A walk manifest is the **app-owned contract** for one UI smoke **workflow**
 
 | Layer | Owns | Lives in |
 |-------|------|----------|
-| **Product** | paths, login, safety, runtime probes, page steps | `.devide/preview-walk.json` **and/or** `.devide/preview-walks/<id>.json` |
+| **Product** | paths, login, safety, runtime probes, page steps | `.casein/preview-walk.json` **and/or** `.casein/preview-walks/<id>.json` |
 | **DevIDE** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
 
 Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).
@@ -17,7 +17,7 @@ Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.
 
 ```text
 <product-repo>/
-  .devide/
+  .casein/
     preview-walk.json                 # optional default (back-compat)
     preview-walks/
       README.md                       # optional index
@@ -166,7 +166,7 @@ Safety for runtime:
 
 ### Host hints (prefer launch env)
 
-- **`workspace`** — `~/.devide/agent-mcp/<name>/env.sh`; omit from product files when the agent already has workspace context.
+- **`workspace`** — `~/.casein/agent-mcp/<name>/env.sh`; omit from product files when the agent already has workspace context.
 - **`app_surface`** — preview surface name for `walk.py` only.
 
 ## Report shape
@@ -191,10 +191,10 @@ walk-level probes, server log delta total.
 ```bash
 # default or named workflow
 check-jsonschema --schemafile references/preview-walk.schema.json \
-  /path/to/app/.devide/preview-walk.json
+  /path/to/app/.casein/preview-walk.json
 
 check-jsonschema --schemafile references/preview-walk.schema.json \
-  /path/to/app/.devide/preview-walks/facility-parity.json
+  /path/to/app/.casein/preview-walks/facility-parity.json
 ```
 
 Or any draft-07 validator. Drivers should fail closed on schema-invalid manifests once validation is wired into the skill entrypoint.

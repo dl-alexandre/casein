@@ -1,4 +1,4 @@
-defmodule DevIDE.TestSupport.ExportSecretStruct do
+defmodule Casein.TestSupport.ExportSecretStruct do
   @moduledoc false
 
   defstruct [:name, :token, :nested]

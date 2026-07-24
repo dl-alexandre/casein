@@ -47,23 +47,23 @@ LiveView, MCP, agent, preview, or persistence contracts.
 The first extraction should define narrow behaviours rather than one broad
 platform module:
 
-- `DevIDE.Terminals.Backend`: create, attach, resize, input, capture, topology,
+- `Casein.Terminals.Backend`: create, attach, resize, input, capture, topology,
   and terminate terminal sessions.
-- `DevIDE.Processes.Backend`: spawn and terminate complete process trees and
+- `Casein.Processes.Backend`: spawn and terminate complete process trees and
   report exit status.
-- `DevIDE.Platform.Paths`: application data, cache, logs, workspace paths, and
+- `Casein.Platform.Paths`: application data, cache, logs, workspace paths, and
   path normalization.
-- `DevIDE.Platform.Shell`: default shell and command-line construction.
-- `DevIDE.Platform.Lifecycle`: readiness publication and graceful shutdown.
+- `Casein.Platform.Shell`: default shell and command-line construction.
+- `Casein.Platform.Lifecycle`: readiness publication and graceful shutdown.
 
-The first terminal boundary is now present as `DevIDE.Terminals.Backend`, with
-`DevIDE.Terminals.Backends.Tmux` adapting the existing implementation. Backend
-selection uses `config :dev_ide, :terminal_backend`; the older
+The first terminal boundary is now present as `Casein.Terminals.Backend`, with
+`Casein.Terminals.Backends.Tmux` adapting the existing implementation. Backend
+selection uses `config :casein, :terminal_backend`; the older
 `:tmux_adapter` test and compatibility key is used as a migration fallback
 while call sites are moved in small slices. Durable session naming, existence
 checks, replay capture, initial size discovery, and initial resize now cross
 this boundary. PTY process spawning now crosses it through
-`DevIDE.Terminals.Backend.SpawnSpec`; the tmux backend owns host, container, and
+`Casein.Terminals.Backend.SpawnSpec`; the tmux backend owns host, container, and
 remote SSH command construction. The next native-Windows seam is the transport
 that executes a spawn spec, writes input, resizes the PTY, and terminates its
 process tree.
@@ -76,11 +76,11 @@ MCP schemas.
 
 The initial repository scan found host coupling concentrated in these areas:
 
-1. `lib/tmux_ctl/` and `lib/dev_ide/terminals/tmux*.ex` implement the current
+1. `lib/tmux_ctl/` and `lib/casein/terminals/tmux*.ex` implement the current
    topology and mutation engine.
 2. Terminal sessions, templates, agent panes, and LiveView events expose tmux
    pane/window identifiers and commands beyond the adapter layer.
-3. `lib/dev_ide/terminals/shims.ex`, agent launchers, preview launchers, and most
+3. `lib/casein/terminals/shims.ex`, agent launchers, preview launchers, and most
    `scripts/` utilities assume Bash and POSIX command construction.
 4. Deploy, LAN, cleanup, and janitor paths assume systemd, Unix signals, `/proc`,
    Unix permissions, or Unix sockets.
@@ -114,7 +114,7 @@ The first native macOS surface is a menu bar extra (status item), not a
 windowed application. DevIDE's desktop shape — a long-running loopback daemon
 with a browser cockpit — matches the Docker Desktop/OrbStack model, and the
 status item directly fixes the release's current UX gaps: manual
-`bin/migrate && bin/dev_ide daemon` startup, an undiscoverable ephemeral port
+`bin/migrate && bin/casein daemon` startup, an undiscoverable ephemeral port
 (`PORT=0`), the epmd "name in use" restart race, no autostart, and no visible
 health. The app's main menu (File/Edit/Window) only becomes relevant once an
 embedded webview window exists; see "Later: windowed cockpit" below.
@@ -126,7 +126,7 @@ framework choice cheap to change.
 
 ### Status contract
 
-`DevIDE.Desktop.Runtime.status_path/0` already names the file
+`Casein.Desktop.Runtime.status_path/0` already names the file
 (`<data_dir>/runtime.json`); nothing writes it yet. The desktop profile must:
 
 - Write `runtime.json` when the endpoint is bound, atomically
@@ -155,7 +155,7 @@ Schema (versioned so hosts can reject what they don't understand):
 `status` is one of `starting | ready | stopping | unhealthy | stopped`; v1
 only ever writes `ready` (the file appears when the endpoint is bound and
 disappears on shutdown), but hosts must tolerate the full set. `version` and
-`revision` come from `DevIDE.Release.Metadata`, not a second source. Live
+`revision` come from `Casein.Release.Metadata`, not a second source. Live
 uptime deliberately does not live in the file — a file written once at boot
 would carry a permanently stale value — the health route reports `uptime_ms`
 and the host can derive it from `started_at` otherwise.
@@ -174,14 +174,14 @@ deliberately omits `pid`:
 }
 ```
 
-Implementation: `DevIDE.Desktop.Status` (writer, reader, `runtime.json`
-lifecycle) and `DevIdeWeb.DesktopHealthController`; the supervision wiring
-lives in `DevIDE.Application.desktop_status/0`.
+Implementation: `Casein.Desktop.Status` (writer, reader, `runtime.json`
+lifecycle) and `CaseinWeb.DesktopHealthController`; the supervision wiring
+lives in `Casein.Application.desktop_status/0`.
 
 The host must provide the release's environment (learned from the first
-desktop-profile boot): `DEV_IDE_PROFILE=desktop`, a generated-and-persisted
-`SECRET_KEY_BASE` and `DEV_IDE_API_TOKEN` (boot refuses to start without the
-token), and optionally `DEV_IDE_DESKTOP_DATA_DIR`. It should also set a
+desktop-profile boot): `CASEIN_PROFILE=desktop`, a generated-and-persisted
+`SECRET_KEY_BASE` and `CASEIN_API_TOKEN` (boot refuses to start without the
+token), and optionally `CASEIN_DESKTOP_DATA_DIR`. It should also set a
 distinct `RELEASE_NODE` if anything else on the machine may register a
 `dev_ide` node with epmd — a stale node holds the default name and start
 fails with "name in use".
@@ -247,7 +247,7 @@ desktop spike.
 
 ## Windows notification-area host
 
-The first host implementation lives in `windows/DevIDE.Tray.ps1`. It uses the
+The first host implementation lives in `windows/Casein.Tray.ps1`. It uses the
 Windows Forms `NotifyIcon` API, starts the packaged OTP release without a console
 window, and keeps the Phoenix cockpit on a loopback-only port. Its menu exposes
 open, restart, logs, launch-at-sign-in, and quit actions. Double-clicking the icon
@@ -272,7 +272,7 @@ Create a Windows payload from a native Windows checkout with:
 powershell -File scripts/package-windows-desktop.ps1
 ```
 
-Then launch `dist\DevIDE-windows-x64\windows\Start-DevIDE.cmd`. The packaging
+Then launch `dist\DevIDE-windows-x64\windows\Start-Casein.cmd`. The packaging
 script deliberately produces an installer-ready directory rather than choosing
 an installer technology. Code signing, an MSI/MSIX wrapper, branded icon assets,
 and auto-update remain release-engineering follow-ups.

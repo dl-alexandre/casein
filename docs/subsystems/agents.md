@@ -6,21 +6,21 @@
 
 ## Responsibility
 
-`DevIDE.Agents.*` is the capability + tool layer that connects external agents
+`Casein.Agents.*` is the capability + tool layer that connects external agents
 to a workspace. It does four distinct jobs:
 
-1. **Capability detection** (`DevIDE.Agents`, `LocalAdapter`, the
+1. **Capability detection** (`Casein.Agents`, `LocalAdapter`, the
    `*Capability` modules) — observe, read-only, what agent features a
    workspace exposes (opencode config, fff, browser artifacts, transcripts, and
    the MCP endpoints: terminal, preview, artifact, and Tidewave). Per the
-   `DevIDE.Agents`
+   `Casein.Agents`
    M7 contract this layer **never** starts agents, sends prompts, or grants
    permissions — every public function is a query.
 2. **Agent-facing tools** (`TerminalTools`, `PreviewTools`, `ArtifactTools`,
    `AnnotationTools`, `BrowserControl`) — the actual MCP tool definitions and
    dispatch handlers that let an agent drive tmux, previews, and artifact
    worktrees without arbitrary shell or browser access. The web layer
-   (`DevIdeWeb.API.TerminalMCP` / `PreviewMCP` / `ArtifactMCP`) wraps these in
+   (`CaseinWeb.API.TerminalMCP` / `PreviewMCP` / `ArtifactMCP`) wraps these in
    JSON-RPC.
 3. **Wiring agents in** (`MCPUrls`, `MCPMaterializer`, `PaneEnv`, `TidewaveMCP`)
    — build the MCP endpoint URLs, materialize per-workspace client config files
@@ -34,7 +34,7 @@ to a workspace. It does four distinct jobs:
    `Audit` log.
 
 Side-effecting runtime control deliberately lives beside this read-only facade:
-`DevIDE.AgentSessions.GrokACP` supervises a structured Grok ACP observer, while
+`Casein.AgentSessions.GrokACP` supervises a structured Grok ACP observer, while
 `ReviewCommand` / `Run` support allowlisted review-mode agent runs with
 compile-time-fixed argv.
 
@@ -42,36 +42,36 @@ compile-time-fixed argv.
 
 | Module | File | Role |
 |--------|------|------|
-| `DevIDE.Agents` | `lib/dev_ide/agents.ex` | Behaviour + public query API (`detect/2`, `transcripts/1`, `review_commands/1`); dispatches to the configured `:agents_adapter`. Read-only M7 contract. |
-| `DevIDE.Agents.LocalAdapter` | `lib/dev_ide/agents/local_adapter.ex` | Default adapter: filesystem + metadata detection of capabilities. Read-only; all path access via `Files.PathSafety`. |
-| `DevIDE.Agents.Capability` | `lib/dev_ide/agents/capability.ex` | Struct for one observed capability (`kind`, `status`, `source`, `url`, `details`). |
-| `DevIDE.Agents.Artifact` | `lib/dev_ide/agents/artifact.ex` | Read-only file pointer (e.g. transcript) returned by detection. |
-| `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Detect the terminal-control MCP endpoint; advertises URL + tool names. |
-| `DevIDE.Agents.PreviewTools.MCPCapability` | `lib/dev_ide/agents/preview_tools/mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
-| `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
-| `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
-| `DevIDE.Agents.TerminalTools` | `lib/dev_ide/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `devide_`-prefix and workspace scoping. |
-| `DevIDE.Agents.PreviewTools` | `lib/dev_ide/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
-| `DevIDE.Agents.ArtifactTools` | `lib/dev_ide/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
-| `DevIDE.Agents.AnnotationTools` | `lib/dev_ide/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
-| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/dev_ide/agents/preview_tools/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
-| `DevIDE.Agents.TerminalOutputFormat` | `lib/dev_ide/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
-| `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
-| `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
-| `DevIDE.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/dev_ide/agents/agent_capability_token.ex`, `lib/dev_ide/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
-| `DevIDE.Agents.GrokCapabilityPolicy` | `lib/dev_ide/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
-| `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
-| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
-| `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
-| `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool completion as a metadata-only `AgentEvent` and in `Activity`; emit an `Audit` event for successful mutating tools; propose labels from terminal calls. |
-| `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
-| `DevIDE.Agents.AgentEvent` / `AgentEvents` | `lib/dev_ide/agents/agent_event.ex`, `lib/dev_ide/agents/agent_events.ex` | Durable normalized agent timeline with native source-id dedupe, session/correlation queries, replay cursors, privacy constructors, and Jido publication. |
-| `DevIDE.Agents.Activity` | `lib/dev_ide/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
-| `DevIDE.Agents.ReviewCommand` | `lib/dev_ide/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
-| `DevIDE.Agents.Run` | `lib/dev_ide/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
-| `DevIDE.AgentSessions.GrokACP` | `lib/dev_ide/agent_sessions/grok_acp.ex` | Supervised Grok leader attachment: initialize/authenticate, `session/new` or `session/load`, normalize tool/plan/permission events into `Activity`. |
-| `DevIDE.AgentSessions.GrokACP.Attachments` | `lib/dev_ide/agent_sessions/grok_acp/attachments.ex` | Validates hook-reported private leader/bundle metadata, owns one ACP attachment per workspace/Grok session, and exposes workspace-scoped permission snapshots and decisions. |
-| `DevIDE.AgentSessions.GrokACP.Transport.Stdio` | `lib/dev_ide/agent_sessions/grok_acp/transport/stdio.ex` | Starts or adopts a no-auto-update Grok leader and talks ACP through Grok's supported newline-JSON stdio bridge. |
+| `Casein.Agents` | `lib/casein/agents.ex` | Behaviour + public query API (`detect/2`, `transcripts/1`, `review_commands/1`); dispatches to the configured `:agents_adapter`. Read-only M7 contract. |
+| `Casein.Agents.LocalAdapter` | `lib/casein/agents/local_adapter.ex` | Default adapter: filesystem + metadata detection of capabilities. Read-only; all path access via `Files.PathSafety`. |
+| `Casein.Agents.Capability` | `lib/casein/agents/capability.ex` | Struct for one observed capability (`kind`, `status`, `source`, `url`, `details`). |
+| `Casein.Agents.Artifact` | `lib/casein/agents/artifact.ex` | Read-only file pointer (e.g. transcript) returned by detection. |
+| `Casein.Agents.TerminalMCPCapability` | `lib/casein/agents/terminal_mcp_capability.ex` | Detect the terminal-control MCP endpoint; advertises URL + tool names. |
+| `Casein.Agents.PreviewTools.MCPCapability` | `lib/casein/agents/preview_tools/mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
+| `Casein.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
+| `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
+| `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `devide_`-prefix and workspace scoping. |
+| `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
+| `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
+| `Casein.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
+| `Casein.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
+| `Casein.Agents.TerminalOutputFormat` | `lib/casein/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
+| `Casein.Agents.MCPUrls` | `lib/casein/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
+| `Casein.Agents.MCPMaterializer` | `lib/casein/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
+| `Casein.Agents.AgentCapabilityToken` / `AgentCapabilityTokens` | `lib/casein/agents/agent_capability_token.ex`, `lib/casein/agents/agent_capability_tokens.ex` | Hash-at-rest, expiring managed-Grok bearer claims and replacement/revocation lifecycle. |
+| `Casein.Agents.GrokCapabilityPolicy` | `lib/casein/agents/grok_capability_policy.ex` | Computes exact direct-tool grants and intersects them with live workspace mode/write-unlock policy on every request. |
+| `Casein.Agents.PaneEnv` | `lib/casein/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
+| `Casein.Agents.AuthProfile` | `lib/casein/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.casein/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
+| `Casein.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
+| `Casein.Agents.MCPAudit` | `lib/casein/agents/mcp_audit.ex` | Record every tool completion as a metadata-only `AgentEvent` and in `Activity`; emit an `Audit` event for successful mutating tools; propose labels from terminal calls. |
+| `Casein.Agents.MCPError` | `lib/casein/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
+| `Casein.Agents.AgentEvent` / `AgentEvents` | `lib/casein/agents/agent_event.ex`, `lib/casein/agents/agent_events.ex` | Durable normalized agent timeline with native source-id dedupe, session/correlation queries, replay cursors, privacy constructors, and Jido publication. |
+| `Casein.Agents.Activity` | `lib/casein/agents/activity.ex` | Live operator feed. It remains a transient PubSub/cache projection and hydrates its reads from durable `AgentEvents`. |
+| `Casein.Agents.ReviewCommand` | `lib/casein/agents/review_command.ex` | Allowlisted review-mode command; argv fixed at compile time, gated on detected capabilities. |
+| `Casein.Agents.Run` | `lib/casein/agents/run.ex` | One in-flight review-mode run per workspace (supervised, linger, hard timeout). |
+| `Casein.AgentSessions.GrokACP` | `lib/casein/agent_sessions/grok_acp.ex` | Supervised Grok leader attachment: initialize/authenticate, `session/new` or `session/load`, normalize tool/plan/permission events into `Activity`. |
+| `Casein.AgentSessions.GrokACP.Attachments` | `lib/casein/agent_sessions/grok_acp/attachments.ex` | Validates hook-reported private leader/bundle metadata, owns one ACP attachment per workspace/Grok session, and exposes workspace-scoped permission snapshots and decisions. |
+| `Casein.AgentSessions.GrokACP.Transport.Stdio` | `lib/casein/agent_sessions/grok_acp/transport/stdio.ex` | Starts or adopts a no-auto-update Grok leader and talks ACP through Grok's supported newline-JSON stdio bridge. |
 
 ## Data flow / lifecycle
 
@@ -84,7 +84,7 @@ compile-time-fixed argv.
    writes a staging home containing `grok/config.toml`, `codex/config.toml`,
    `opencode.json`, `.mcp.json`, `cursor/mcp.json`, and `env.sh`. Grok,
    OpenCode, Claude/Cursor staging configs point at the terminal + preview MCP URLs
-   (from `MCPUrls`) with a `Bearer ${DEV_IDE_API_TOKEN}` header, plus an
+   (from `MCPUrls`) with a `Bearer ${CASEIN_API_TOKEN}` header, plus an
    optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Managed Grok has
    a separate `grok/.mcp.json` containing only the three DevIDE-authenticated
    servers; Tidewave is excluded because it is outside `ApiAuth`. Codex staging is
@@ -92,23 +92,23 @@ compile-time-fixed argv.
    runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
 3. `PaneEnv.ensure_for_session/3` (and app boot via
    `Terminals.Shims.sync_tmux_terminal_env!/0`) self-heals missing agent
-   launcher shims via `DevIDE.Agents.AgentShims.ensure/0` (partial loss of e.g.
+   launcher shims via `Casein.Agents.AgentShims.ensure/0` (partial loss of e.g.
    only `claude` has bitten after deploys/npm updates), refreshes
    `:tmux_ctl` `:terminal_env` so the next `new-window`/`split-window` gets
    `-e PATH=…` with agent bins, then builds the `DEVIDE_*` env map
-   (`DEV_IDE_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
+   (`CASEIN_API_TOKEN`, `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`,
    `DEVIDE_PREVIEW_MCP_URL`, `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional
    `DEVIDE_TIDEWAVE_MCP_URL`) and pushes it into the session with
    `Tmux.set_environments/2`. Template apply calls this **before** creating
    panes so the first window is not racy. `PATH` always includes
-   `~/.devide/agent-shims` and the npm global bin dir (also embedded in
+   `~/.casein/agent-shims` and the npm global bin dir (also embedded in
    `Terminals.Shims.path_with_shims/1`; shell-integration force-fronts them
    after user rc files run, so session create is not bashrc-dependent and
    installer-prepended dirs cannot shadow the launchers). The shim dir is
    never on PATH outside DevIDE contexts — plain terminals resolve agent
    names to the real binaries. `PaneEnv` also injects
    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
-   `~/.devide/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
+   `~/.casein/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
    signed in (`.credentials.json` / `auth.json` present); otherwise the
    runtime keeps the host global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
@@ -125,7 +125,7 @@ compile-time-fixed argv.
    passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`
    (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
-   Plain agent starts do not depend on `DEV_IDE_API_TOKEN` because DevIDE MCP is
+   Plain agent starts do not depend on `CASEIN_API_TOKEN` because DevIDE MCP is
    not persisted in global agent configs. Version/help probes
    (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
    `claude update`) bypass the launcher entirely and exec the real binary —
@@ -139,7 +139,7 @@ compile-time-fixed argv.
    explains the fallback on stderr; `DEVIDE_AGENT_LAUNCH_STRICT=1` restores
    the hard failure), and the installer's migration cleanup removes legacy
    launcher shims from `~/.local/bin` so plain terminals are untouched by
-   DevIDE. Every launch also stamps the tmux pane options `@devide_paired`
+   Casein. Every launch also stamps the tmux pane options `@devide_paired`
    (`1`/`0`) and `@devide_paired_reason`; topology reads them
    (`TmuxCtl.Client` `list-panes` formats → pane `paired`/`paired_reason`)
    and the viewer badges unpaired panes in the terminal chrome — pairing
@@ -149,7 +149,7 @@ compile-time-fixed argv.
 
 1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`, or
    `/api/artifacts/mcp` (bearer auth). The thin `*MCPController` hands the
-   decoded message to `DevIdeWeb.API.TerminalMCP.handle/2` /
+   decoded message to `CaseinWeb.API.TerminalMCP.handle/2` /
    `PreviewMCP.handle/2` / `ArtifactMCP.handle/2`.
 2. The web handler resolves/scopes `workspace_id` (pre-scoped from the URL query
    param when present), then dispatches `tools/call` to
@@ -247,7 +247,7 @@ capability.
 
 **Capability detection (observe):**
 
-`DevIDE.Agents.detect(root, workspace)` → `LocalAdapter.detect/2` →
+`Casein.Agents.detect(root, workspace)` → `LocalAdapter.detect/2` →
 `detect_filesystem_only/1` builds the capability list (opencode, fff, browser
 artifacts) and folds in the three MCP capabilities via their `*Capability.detect/0`
 modules. Tidewave is enriched from manager metadata / port fingerprints when
@@ -256,46 +256,46 @@ available. The list is surfaced through agent UI and `GET
 
 ## Public surface
 
-- `DevIDE.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
+- `Casein.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
   capability queries (delegate to the configured adapter).
-- `DevIDE.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
-  DevIDE launcher shims under `~/.devide/agent-shims`.
-- `DevIDE.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
+- `Casein.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
+  DevIDE launcher shims under `~/.casein/agent-shims`.
+- `Casein.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
   `launch_command/3` — build/install the agent env for a tmux session.
-- `DevIDE.Agents.MCPMaterializer.materialize/2` — write agent client config
+- `Casein.Agents.MCPMaterializer.materialize/2` — write agent client config
   files; returns the staging-home path.
-- `DevIDE.Agents.MCPUrls.terminal_url/1`, `preview_url/1`, `base_url/0` —
+- `Casein.Agents.MCPUrls.terminal_url/1`, `preview_url/1`, `base_url/0` —
   endpoint URL construction.
-- `DevIDE.Agents.TidewaveMCP.resolve_url/2`, `server_key/1`,
+- `Casein.Agents.TidewaveMCP.resolve_url/2`, `server_key/1`,
   `normalize_mcp_url/1` — optional Tidewave wiring.
-- `DevIDE.Agents.TerminalTools.definitions/0`, `invoke/2` — terminal MCP tool
-  surface (called by `DevIdeWeb.API.TerminalMCP`).
-- `DevIDE.Agents.PreviewTools.definitions/0`, `invoke/3` — preview MCP tool
-  surface (called by `DevIdeWeb.API.PreviewMCP`).
-- `DevIDE.Agents.MCPAudit.record_terminal/3`, `record_preview/4` — audit +
+- `Casein.Agents.TerminalTools.definitions/0`, `invoke/2` — terminal MCP tool
+  surface (called by `CaseinWeb.API.TerminalMCP`).
+- `Casein.Agents.PreviewTools.definitions/0`, `invoke/3` — preview MCP tool
+  surface (called by `CaseinWeb.API.PreviewMCP`).
+- `Casein.Agents.MCPAudit.record_terminal/3`, `record_preview/4` — audit +
   activity recording.
-- `DevIDE.Agents.AgentEvents.append_runtime/1`, `append_mcp/4`,
+- `Casein.Agents.AgentEvents.append_runtime/1`, `append_mcp/4`,
   `append_state_transition/1`, `append_handoff/1`, `recent_for/2`,
   `list_for_session/3`, `replay/2` — normalized append/recovery surface.
-- `DevIDE.Agents.MCPError.*` — error normalization for tool handlers.
-- `DevIDE.Agents.*Capability.detect/0` — individual endpoint detection.
-- `DevIDE.AgentSessions.GrokACP.ensure_started/3`, `status/1`, `attach/2`,
+- `Casein.Agents.MCPError.*` — error normalization for tool handlers.
+- `Casein.Agents.*Capability.detect/0` — individual endpoint detection.
+- `Casein.AgentSessions.GrokACP.ensure_started/3`, `status/1`, `attach/2`,
   `respond_permission/3`, `cancel_permission/2` — supervised structured Grok
   session observation and explicit permission responses.
-- `DevIDE.AgentSessions.GrokACP.Attachments.observe/1`, `list/1`, `subscribe/1`,
+- `Casein.AgentSessions.GrokACP.Attachments.observe/1`, `list/1`, `subscribe/1`,
   `respond_permission/4`, `cancel_permission/3` — production leader lifecycle
   and workspace-safe approval surface.
 
 ## Invariants & gotchas
 
-- **Detection is read-only (M7).** `DevIDE.Agents` and `LocalAdapter` observe
+- **Detection is read-only (M7).** `Casein.Agents` and `LocalAdapter` observe
   only; they never start agents or grant permissions. Don't add side effects to
   the detection path. Side-effecting ACP lifecycle belongs in the dedicated
   agent-session modules.
 - **Web layer depends on context, not the reverse.** `TerminalMCPCapability` /
   `PreviewMCPCapability` / `ArtifactMCPCapability` / `TidewaveCapability` resolve the endpoint base URL
   through a configured MFA (`:tidewave_url_provider`, etc.) so context code never
-  references `DevIdeWeb.Endpoint`. Keep this inversion.
+  references `CaseinWeb.Endpoint`. Keep this inversion.
 - **Bearer token is fully trusted on the host.** Scoping, not auth, is what
   keeps agents inside their workspace. Terminal tools only touch `devide_`-prefixed
   sessions; `workspace_id` resolves both the manager UUID *and* the workspace
@@ -329,7 +329,7 @@ available. The list is surfaced through agent UI and `GET
   sign-in. Use `devide agent auth status [workspace] [runtime]` or `devide agent
   auth list` to audit profile and sign-in state.
 - **Registered owners never fall back to the host global login.**
-  `~/.devide/agent-auth/owners` lists owner slugs (one per line, `#` comments)
+  `~/.casein/agent-auth/owners` lists owner slugs (one per line, `#` comments)
   managed with `devide agent auth register <owner>` / `unregister <owner>`.
   For a registered owner the profile dir applies even before sign-in, so
   Claude/Codex prompt for their own login inside the profile instead of using

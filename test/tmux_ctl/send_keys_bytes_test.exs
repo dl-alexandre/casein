@@ -1,8 +1,8 @@
 defmodule TmuxCtl.SendKeysBytesTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Client
-  alias DevIDE.Test.Eventually
+  alias Casein.Test.Eventually
 
   @moduletag :tmux
 

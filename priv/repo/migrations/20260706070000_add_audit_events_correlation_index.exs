@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.AddAuditEventsCorrelationIndex do
+defmodule Casein.Repo.Migrations.AddAuditEventsCorrelationIndex do
   @moduledoc """
-  Expression index for `DevIDE.Audit.list_by_correlation/1`: causality
+  Expression index for `Casein.Audit.list_by_correlation/1`: causality
   correlation ids live in the metadata JSONB (stamped by
-  `DevIDE.Signals.Context`), and provenance queries filter on
+  `Casein.Signals.Context`), and provenance queries filter on
   `metadata->>'correlation_id'`.
   """
   use Ecto.Migration

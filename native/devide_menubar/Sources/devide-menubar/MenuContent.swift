@@ -27,15 +27,15 @@ struct MenuContent: View {
 
     private var headerText: String {
         if let port = monitor.status?.port, monitor.state == .ready {
-            return "DevIDE — Running on :\(port)"
+            return "Casein — Running on :\(port)"
         }
-        return "DevIDE — \(monitor.state.label)"
+        return "Casein — \(monitor.state.label)"
     }
 
     @ViewBuilder
     private var openSection: some View {
         if monitor.status != nil, monitor.state == .ready {
-            Button("Open DevIDE") {
+            Button("Open Casein") {
                 Task {
                     if let url = await monitor.cockpitURL() {
                         NSWorkspace.shared.open(url)
@@ -100,7 +100,7 @@ struct MenuContent: View {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
-        panel.message = "Select a DevIDE release directory (contains bin/dev_ide)"
+        panel.message = "Select a Casein release directory (contains bin/casein)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if let paths = HostPaths.choose(releaseRoot: url) {
             monitor.reconfigure(paths: paths)
@@ -168,7 +168,7 @@ struct MenuContent: View {
     private var quitSection: some View {
         // Doc'd semantics: Quit stops the server; the explicit variant
         // leaves it running.
-        Button("Quit DevIDE") {
+        Button("Quit Casein") {
             Task {
                 await monitor.shutdownForQuit()
                 NSApplication.shared.terminate(nil)

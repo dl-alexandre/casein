@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Shared DevIDE agent env resolution — sourced by devide CLI and launch scripts.
 # Resolution order (first match wins):
-#   1. DEV_IDE_API_TOKEN + DEVIDE_WORKSPACE_ID already exported
+#   1. CASEIN_API_TOKEN + DEVIDE_WORKSPACE_ID already exported
 #   2. DEVIDE_AGENT_ENV_FILE (explicit env.sh path)
 #   3. Walk up from cwd for .devbox-agent.env
 #   4. tmux show-environment (DevIDE pane injection)
-#   5. tmux session name → ~/.devide/agent-mcp/<workspace>/env.sh
-#   6. Host /etc/devide/devide.env + workspace API lookup from tmux session name
+#   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
+#   6. Host /etc/casein/devide.env + workspace API lookup from tmux session name
 
 agent_env_load_file() {
   local file="$1"
@@ -115,7 +115,7 @@ agent_env_parse_workspace_name() {
 
 agent_env_staging_env_file() {
   local workspace_name="$1"
-  printf '%s\n' "${HOME}/.devide/agent-mcp/${workspace_name}/env.sh"
+  printf '%s\n' "${HOME}/.casein/agent-mcp/${workspace_name}/env.sh"
 }
 
 agent_env_load_tmux_session_env() {
@@ -128,7 +128,7 @@ agent_env_load_tmux_session_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      DEV_IDE_API_TOKEN|DEVIDE_WORKSPACE_ID|DEVIDE_WORKSPACE_NAME|DEVIDE_TMUX_SESSION|DEVIDE_API_BASE_URL|DEVIDE_TERMINAL_MCP_URL|DEVIDE_PREVIEW_MCP_URL|DEVIDE_ARTIFACT_MCP_URL|DEVIDE_TIDEWAVE_MCP_URL|DEVIDE_PREVIEW_ENV_ID|DEVIDE_CHECKOUT|DEVIDE_AGENT_MCP_HOME|DEVIDE_SCRIPTS|DEVIDE_AGENT_ENV_FILE|DEV_IDE_TERMINAL_SCHEME|DEV_IDE_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
+      CASEIN_API_TOKEN|DEVIDE_WORKSPACE_ID|DEVIDE_WORKSPACE_NAME|DEVIDE_TMUX_SESSION|DEVIDE_API_BASE_URL|DEVIDE_TERMINAL_MCP_URL|DEVIDE_PREVIEW_MCP_URL|DEVIDE_ARTIFACT_MCP_URL|DEVIDE_TIDEWAVE_MCP_URL|DEVIDE_PREVIEW_ENV_ID|DEVIDE_CHECKOUT|DEVIDE_AGENT_MCP_HOME|DEVIDE_SCRIPTS|DEVIDE_AGENT_ENV_FILE|CASEIN_TERMINAL_SCHEME|CASEIN_TERMINAL_PRESET|COLORFGBG|CLAUDE_CONFIG_DIR|CODEX_HOME|PATH)
         if [[ -z "${!key:-}" ]]; then
           export "${key}=${value}"
         fi
@@ -136,7 +136,7 @@ agent_env_load_tmux_session_env() {
     esac
   done < <(tmux show-environment -t "$session_id" 2>/dev/null || true)
 
-  [[ -n "${DEV_IDE_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]]
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]]
 }
 
 agent_env_load_staged_env() {
@@ -151,7 +151,7 @@ agent_env_load_staged_env() {
 }
 
 agent_env_load_host_devide_env() {
-  local host_env="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+  local host_env="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
   if [[ ! -r "$host_env" ]]; then
     return 1
   fi
@@ -160,7 +160,7 @@ agent_env_load_host_devide_env() {
   source "$host_env"
   set +a
   export DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-  [[ -n "${DEV_IDE_API_TOKEN:-}" ]]
+  [[ -n "${CASEIN_API_TOKEN:-}" ]]
 }
 
 agent_env_default_checkout() {
@@ -184,7 +184,7 @@ agent_env_default_checkout() {
 agent_env_resolve_workspace_id_from_api() {
   local workspace_name="$1"
   local base_url="${DEVIDE_URL:-http://127.0.0.1:4000}"
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
 
   [[ -n "$token" && -n "$workspace_name" ]] || return 1
 
@@ -242,7 +242,7 @@ agent_env_resolve_from_tmux_session_name() {
 }
 
 agent_env_resolve() {
-  if [[ -n "${DEV_IDE_API_TOKEN:-}" ]] && [[ -n "${DEVIDE_WORKSPACE_ID:-}" ]]; then
+  if [[ -n "${CASEIN_API_TOKEN:-}" ]] && [[ -n "${DEVIDE_WORKSPACE_ID:-}" ]]; then
     return 0
   fi
 
@@ -269,7 +269,7 @@ agent_env_resolve() {
   return 1
 }
 
-# Record pairing state on the tmux pane (@devide_paired / @devide_paired_reason)
+# Record pairing state on the tmux pane (@casein_paired / @casein_paired_reason)
 # so the viewer can badge unpaired agent panes without any terminal output.
 # Best-effort: plain terminals (no $TMUX / $TMUX_PANE) skip silently, and a
 # failing tmux never blocks the launch.
@@ -277,8 +277,8 @@ agent_env_stamp_pane_pairing() {
   local paired="$1" reason="${2:-}"
   [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] || return 0
   command -v tmux >/dev/null 2>&1 || return 0
-  tmux set-option -p -t "$TMUX_PANE" @devide_paired "$paired" 2>/dev/null || true
-  tmux set-option -p -t "$TMUX_PANE" @devide_paired_reason "$reason" 2>/dev/null || true
+  tmux set-option -p -t "$TMUX_PANE" @casein_paired "$paired" 2>/dev/null || true
+  tmux set-option -p -t "$TMUX_PANE" @casein_paired_reason "$reason" 2>/dev/null || true
 }
 
 agent_env_export_runtime_paths() {
@@ -286,6 +286,6 @@ agent_env_export_runtime_paths() {
   # materialization failed) must still put the launcher shims and the real
   # agent binaries on PATH. The npm prefix rides along so `codex update`
   # installs stay reachable; ~/.local/bin covers user-installed real bins.
-  export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-  export PATH="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}:${DEV_IDE_NPM_PREFIX}/bin:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
+  export CASEIN_NPM_PREFIX="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  export PATH="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}:${CASEIN_NPM_PREFIX}/bin:${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
 }

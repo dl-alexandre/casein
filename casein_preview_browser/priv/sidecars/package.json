@@ -1,0 +1,8 @@
+{
+  "name": "casein-preview-browser-sidecars",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

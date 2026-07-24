@@ -1,0 +1,168 @@
+defmodule Casein.Agents.MCPSessionsTest do
+  @moduledoc """
+  The Streamable HTTP session registry: create/fetch/delete, attaching an SSE
+  consumer, pushing notifications to it, and auto-detaching when the consumer
+  process dies.
+  """
+  use Casein.TestCase, async: false
+
+  alias Casein.Agents.MCPSessions
+
+  setup do
+    prev_ttl = Application.get_env(:casein, :mcp_session_ttl_ms)
+
+    on_exit(fn ->
+      if prev_ttl,
+        do: Application.put_env(:casein, :mcp_session_ttl_ms, prev_ttl),
+        else: Application.delete_env(:casein, :mcp_session_ttl_ms)
+    end)
+
+    :ok
+  end
+
+  test "create issues a fetchable session id with metadata" do
+    id = MCPSessions.create(%{server: :terminal, workspace_id: "ws-1"})
+
+    assert is_binary(id) and byte_size(id) > 0
+    assert {:ok, meta} = MCPSessions.fetch(id)
+    assert meta.server == :terminal
+    assert meta.workspace_id == "ws-1"
+    assert is_integer(meta.created_at)
+    assert MCPSessions.exists?(id)
+  end
+
+  test "unknown session ids are not found" do
+    refute MCPSessions.exists?("nope")
+    assert :error = MCPSessions.fetch("nope")
+    refute MCPSessions.exists?(nil)
+  end
+
+  test "delete removes the session" do
+    id = MCPSessions.create(%{server: :preview})
+    assert :ok = MCPSessions.delete(id)
+    refute MCPSessions.exists?(id)
+  end
+
+  test "notify pushes a message to the attached consumer" do
+    id = MCPSessions.create(%{server: :terminal})
+    test_pid = self()
+
+    consumer =
+      spawn(fn ->
+        :ok = MCPSessions.attach_stream(id, self())
+        send(test_pid, :attached)
+
+        receive do
+          {:mcp_sse, message} -> send(test_pid, {:got, message})
+        after
+          1000 -> send(test_pid, :timeout)
+        end
+      end)
+
+    assert_receive :attached, 1000
+    assert MCPSessions.streaming?(id)
+
+    assert :ok = MCPSessions.notify(id, %{jsonrpc: "2.0", method: "notifications/progress"})
+    assert_receive {:got, %{method: "notifications/progress"}}, 1000
+
+    # Consumer has exited after receiving; the registry detaches it.
+    refute Process.alive?(consumer)
+    wait_until(fn -> not MCPSessions.streaming?(id) end)
+    assert {:error, :no_stream} = MCPSessions.notify(id, %{jsonrpc: "2.0"})
+  end
+
+  test "attach_stream rejects unknown sessions" do
+    assert {:error, :unknown_session} = MCPSessions.attach_stream("ghost", self())
+  end
+
+  test "a dead consumer is auto-detached" do
+    id = MCPSessions.create(%{server: :preview})
+
+    consumer =
+      spawn(fn ->
+        :ok = MCPSessions.attach_stream(id, self())
+        Process.sleep(:infinity)
+      end)
+
+    wait_until(fn -> MCPSessions.streaming?(id) end)
+    Process.exit(consumer, :kill)
+    wait_until(fn -> not MCPSessions.streaming?(id) end)
+
+    assert {:error, :no_stream} = MCPSessions.notify(id, %{jsonrpc: "2.0"})
+  end
+
+  describe "idle-session sweep" do
+    test "reaps an idle session past the TTL" do
+      Application.put_env(:casein, :mcp_session_ttl_ms, 0)
+      id = MCPSessions.create(%{server: :terminal})
+      assert MCPSessions.exists?(id)
+
+      assert MCPSessions.sweep_now() >= 1
+      refute MCPSessions.exists?(id)
+    end
+
+    test "does not reap a session with a live attached stream" do
+      Application.put_env(:casein, :mcp_session_ttl_ms, 0)
+      id = MCPSessions.create(%{server: :terminal})
+      test_pid = self()
+
+      spawn(fn ->
+        :ok = MCPSessions.attach_stream(id, self())
+        send(test_pid, :attached)
+        Process.sleep(:infinity)
+      end)
+
+      assert_receive :attached, 1000
+      wait_until(fn -> MCPSessions.streaming?(id) end)
+
+      _ = MCPSessions.sweep_now()
+      assert MCPSessions.exists?(id), "a streaming session must survive the sweep"
+    end
+
+    test "touch keeps an actively used session alive across a sweep" do
+      Application.put_env(:casein, :mcp_session_ttl_ms, 40)
+      id = MCPSessions.create(%{server: :preview})
+
+      # Age it past the TTL, then touch — the touch cast is processed before the
+      # synchronous sweep_now call, so the refreshed stamp wins.
+      wait_past_deadline(System.monotonic_time(:millisecond) + 50)
+      MCPSessions.touch(id)
+      _ = MCPSessions.sweep_now()
+      assert MCPSessions.exists?(id)
+
+      # Without another touch it ages out and is reaped.
+      wait_past_deadline(System.monotonic_time(:millisecond) + 50)
+      _ = MCPSessions.sweep_now()
+      refute MCPSessions.exists?(id)
+    end
+  end
+
+  defp wait_until(fun, attempts \\ 50) do
+    cond do
+      fun.() ->
+        :ok
+
+      attempts <= 0 ->
+        flunk("condition not met in time")
+
+      true ->
+        receive do
+        after
+          10 -> wait_until(fun, attempts - 1)
+        end
+    end
+  end
+
+  defp wait_past_deadline(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining > 0 do
+      receive do
+      after
+        min(remaining, 10) -> wait_past_deadline(deadline)
+      end
+    else
+      :ok
+    end
+  end
+end

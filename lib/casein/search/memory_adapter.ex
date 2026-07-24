@@ -1,0 +1,37 @@
+defmodule Casein.Search.MemoryAdapter do
+  @moduledoc """
+  Test-only search adapter. Reads canned results from
+  `Application.get_env(:casein, :search_memory_results, %{})` keyed by query.
+  Setting `:available?` to `false` simulates a missing ripgrep binary.
+  """
+
+  @behaviour Casein.Search.Adapter
+
+  @impl true
+  def available?, do: Application.get_env(:casein, :search_memory_available, true)
+
+  @impl true
+  def search(root, query, _opts) do
+    case Application.get_env(:casein, :search_memory_response, nil) do
+      nil ->
+        results =
+          :casein
+          |> Application.get_env(:search_memory_results, %{})
+          |> Map.get(query, [])
+
+        {:ok, Enum.map(results, &normalize(&1, root))}
+
+      {:error, _} = err ->
+        err
+
+      list when is_list(list) ->
+        {:ok, Enum.map(list, &normalize(&1, root))}
+    end
+  end
+
+  defp normalize(%Casein.Search.Result{} = r, _), do: r
+
+  defp normalize(map, _root) when is_map(map) do
+    struct(Casein.Search.Result, map)
+  end
+end

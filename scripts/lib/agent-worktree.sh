@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Shared git worktree helpers for DevIDE agent launch.
-# Sourced by launch-devide-agent.sh — not executed directly.
+# Sourced by launch-casein-agent.sh — not executed directly.
 
 agent_worktree_root() {
-  printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/devide-agent-worktrees}"
+  printf '%s\n' "${DEVIDE_AGENT_WORKTREE_ROOT:-${TMPDIR:-/tmp}/casein-agent-worktrees}"
 }
 
 agent_worktree_primary_repo() {
@@ -96,12 +96,12 @@ agent_worktree_create() {
 agent_worktree_report_mcp() {
   local worktree_path="$1"
   local runtime="${2:-}"
-  local token="${DEV_IDE_API_TOKEN:-}"
+  local token="${CASEIN_API_TOKEN:-}"
   local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
   local mcp_url="${DEVIDE_TERMINAL_MCP_URL:-${DEVIDE_URL:-http://127.0.0.1:4000}/api/terminals/mcp}"
 
   [[ -n "$token" && -n "$workspace_id" ]] || {
-    echo "warn: skipping terminal_report_worktree (missing DEV_IDE_API_TOKEN or DEVIDE_WORKSPACE_ID)" >&2
+    echo "warn: skipping terminal_report_worktree (missing CASEIN_API_TOKEN or DEVIDE_WORKSPACE_ID)" >&2
     return 0
   }
 
@@ -128,8 +128,8 @@ print(json.dumps({
 '
   )"
 
-  # shellcheck source=scripts/devide-curl.sh
-  source "${ROOT}/scripts/devide-curl.sh"
+  # shellcheck source=scripts/casein-curl.sh
+  source "${ROOT}/scripts/casein-curl.sh"
 
   local rpc_body response
   rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"terminal_report_worktree\",\"arguments\":${params}}}"

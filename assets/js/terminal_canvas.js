@@ -21,7 +21,7 @@
  * text used for native selection.
  *
  * Opt-in and default-off: enable per element with `data-renderer="canvas"` or,
- * for quick in-browser checks, `localStorage["devide:terminal-renderer"] =
+ * for quick in-browser checks, `localStorage["casein:terminal-renderer"] =
  * "canvas"`. Falls back to the DOM renderer if a 2D context isn't available.
  */
 import {
@@ -47,7 +47,7 @@ export function canvasRendererEnabled(hook) {
   try {
     if (hook?.el?.dataset?.renderer === "canvas") return true
     if (hook?.el?.dataset?.renderer === "dom") return false
-    return window.localStorage?.getItem("devide:terminal-renderer") === "canvas"
+    return window.localStorage?.getItem("casein:terminal-renderer") === "canvas"
   } catch (_e) {
     return false
   }
@@ -55,7 +55,7 @@ export function canvasRendererEnabled(hook) {
 
 // rAF-coalesced painting (experimental, default-OFF). Independent of the canvas
 // flag so it can be verified in isolation. Enable per element with
-// `data-coalesce="raf"` or `localStorage["devide:terminal-coalesce"] = "raf"`.
+// `data-coalesce="raf"` or `localStorage["casein:terminal-coalesce"] = "raf"`.
 // NOTE: this changes WHEN the canvas paints (next animation frame vs. inline),
 // which interacts with the hook's selection-preservation and latency-HUD frame
 // correlation. It is intentionally off until verified in a real browser.
@@ -63,7 +63,7 @@ export function canvasCoalesceEnabled(hook) {
   try {
     if (hook?.el?.dataset?.coalesce === "raf") return true
     if (hook?.el?.dataset?.coalesce === "off") return false
-    return window.localStorage?.getItem("devide:terminal-coalesce") === "raf"
+    return window.localStorage?.getItem("casein:terminal-coalesce") === "raf"
   } catch (_e) {
     return false
   }
@@ -205,8 +205,8 @@ export function paintCanvasCells(hook, pre, rows, metricsFn) {
   const styles = window.getComputedStyle(pre)
   const family = styles.fontFamily || "ui-monospace, monospace"
   const fontSize = parseFloat(styles.fontSize) || 14
-  const bg = termVar("--devide-term-bg") || "#0a0a0a"
-  const fg = termVar("--devide-term-fg") || "#e4e4e7"
+  const bg = termVar("--casein-term-bg") || "#0a0a0a"
+  const fg = termVar("--casein-term-fg") || "#e4e4e7"
 
   ctx.save()
   ctx.scale(dpr, dpr)

@@ -1,7 +1,7 @@
-defmodule DevIDE.Test.ManagerStub do
+defmodule Casein.Test.ManagerStub do
   @moduledoc "Req.Test stubs for the Integrations Manager HTTP client."
 
-  alias DevIDE.Integrations.Manager.Client
+  alias Casein.Integrations.Manager.Client
 
   def stub_list(workspaces \\ []) do
     Req.Test.stub(Client, fn conn ->

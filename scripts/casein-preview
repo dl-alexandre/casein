@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+#
+# casein-preview — bind a tmux pane as a DevIDE preview surface.
+#
+# Usage:
+#   casein-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
+#
+# URL shorthand :PORT expands to http://localhost:PORT/
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/casein-curl.sh
+source "${SCRIPT_DIR}/casein-curl.sh"
+
+API_BASE="${DEVIDE_URL:-http://127.0.0.1:4000}"
+TOKEN="${CASEIN_API_TOKEN:-}"
+
+URL=""
+VIEWPORT=""
+SHARE_SESSION=""
+ATTACH_TO_PANE_ID=""
+PANE_ID="${TMUX_PANE:-}"
+TMUX_SESSION=""
+PANE_WINDOW_ID=""
+CWD="$(pwd)"
+WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
+STORAGE_PROFILE="${DEVIDE_PREVIEW_STORAGE_PROFILE:-}"
+STORAGE_PROFILE_NAME="${DEVIDE_PREVIEW_STORAGE_PROFILE_NAME:-}"
+PLACEMENT="${DEVIDE_PREVIEW_PLACEMENT:-}"
+ANCHOR_PANE_ID="${DEVIDE_PREVIEW_ANCHOR_PANE_ID:-}"
+ANCHOR_WINDOW_ID="${DEVIDE_PREVIEW_ANCHOR_WINDOW_ID:-}"
+
+usage() {
+  cat <<'EOF'
+Usage: casein-preview <url> [--viewport WxH] [--share] [--attach-to-pane PANE]
+
+  url          Preview URL or :PORT shorthand (e.g. :4000)
+  --viewport   Locked viewport size, e.g. 375x812
+  --share      Attach this pane to an existing same-origin preview session
+  --attach-to-pane PANE
+               Attach to a specific existing preview pane session
+
+Environment:
+  TMUX_PANE           tmux pane id (set automatically inside tmux)
+  DEVIDE_WORKSPACE_ID workspace id to register this preview against
+  DEVIDE_PREVIEW_STORAGE_PROFILE persistent storage mode: ephemeral, workspace, profile
+  DEVIDE_PREVIEW_STORAGE_PROFILE_NAME named profile when mode is profile
+  DEVIDE_PREVIEW_PLACEMENT preview placement label, e.g. beside_agent
+  DEVIDE_PREVIEW_ANCHOR_PANE_ID tmux pane id this preview was split from
+  DEVIDE_PREVIEW_ANCHOR_WINDOW_ID tmux window id this preview should stay beside
+  CASEIN_API_TOKEN   bearer token for /api/preview/panes
+  DEVIDE_URL          DevIDE base URL (default http://127.0.0.1:4000)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --viewport)
+      VIEWPORT="${2:-}"
+      shift 2
+      ;;
+    --share)
+      SHARE_SESSION="true"
+      shift
+      ;;
+    --attach-to-pane)
+      SHARE_SESSION="true"
+      ATTACH_TO_PANE_ID="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "error: unknown option $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -z "${URL}" ]]; then
+        URL="$1"
+        shift
+      else
+        echo "error: unexpected argument $1" >&2
+        exit 2
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "${URL}" ]]; then
+  echo "error: url is required" >&2
+  usage >&2
+  exit 2
+fi
+
+if [[ -z "${PANE_ID}" ]]; then
+  echo "error: TMUX_PANE is not set — run inside a tmux pane" >&2
+  exit 2
+fi
+
+if [[ -z "${TOKEN}" ]]; then
+  echo "error: CASEIN_API_TOKEN is not set" >&2
+  exit 2
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+  TMUX_SESSION="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
+  PANE_WINDOW_ID="$(tmux display-message -p '#{window_id}' 2>/dev/null || true)"
+  title="preview ${URL}"
+  [[ -n "${VIEWPORT}" ]] && title="${title} (${VIEWPORT})"
+  tmux select-pane -T "${title}" >/dev/null 2>&1 || true
+fi
+
+registration_id=""
+display_url=""
+
+deregister() {
+  if [[ -n "${registration_id}" ]]; then
+    devide_curl -fsS -X DELETE \
+      -H "authorization: Bearer ${TOKEN}" \
+      -H "content-type: application/json" \
+      "${API_BASE}/api/preview/panes/${registration_id}" >/dev/null 2>&1 || true
+  fi
+}
+
+trap 'deregister; exit 0' INT TERM
+
+register_preview() {
+  local heartbeat="${1:-false}"
+  local register_payload
+  local response
+
+  register_payload="$(jq -n \
+    --arg pane_id "${PANE_ID}" \
+    --arg url "${URL}" \
+    --arg cwd "${CWD}" \
+    --arg workspace_id "${WORKSPACE_ID}" \
+    --arg viewport "${VIEWPORT}" \
+    --arg tmux_session "${TMUX_SESSION}" \
+    --arg storage_profile "${STORAGE_PROFILE}" \
+    --arg storage_profile_name "${STORAGE_PROFILE_NAME}" \
+    --arg share_session "${SHARE_SESSION}" \
+    --arg attach_to_pane_id "${ATTACH_TO_PANE_ID}" \
+    --arg placement "${PLACEMENT}" \
+    --arg anchor_pane_id "${ANCHOR_PANE_ID}" \
+    --arg anchor_window_id "${ANCHOR_WINDOW_ID}" \
+    --arg pane_window_id "${PANE_WINDOW_ID}" \
+    --arg heartbeat "${heartbeat}" \
+    '{
+      pane_id: $pane_id,
+      url: $url,
+      cwd: $cwd
+    }
+    + (if $workspace_id != "" then {workspace_id: $workspace_id} else {} end)
+    + (if $viewport != "" then {viewport: $viewport} else {} end)
+    + (if $tmux_session != "" then {tmux_session: $tmux_session} else {} end)
+    + (if $storage_profile != "" then {storage_profile: $storage_profile} else {} end)
+    + (if $storage_profile_name != "" then {storage_profile_name: $storage_profile_name} else {} end)
+    + (if $share_session != "" then {share_session: true} else {} end)
+    + (if $attach_to_pane_id != "" then {attach_to_pane_id: $attach_to_pane_id} else {} end)
+    + (if $placement != "" then {placement: $placement} else {} end)
+    + (if $anchor_pane_id != "" then {anchor_pane_id: $anchor_pane_id} else {} end)
+    + (if $anchor_window_id != "" then {anchor_window_id: $anchor_window_id} else {} end)
+    + (if $pane_window_id != "" then {pane_window_id: $pane_window_id} else {} end)
+    + (if $heartbeat == "true" then {heartbeat: true} else {} end)')"
+
+  response="$(
+    devide_curl -fsS -X POST \
+      -H "authorization: Bearer ${TOKEN}" \
+      -H "content-type: application/json" \
+      -d "${register_payload}" \
+      "${API_BASE}/api/preview/panes"
+  )" || return 1
+
+  registration_id="$(printf '%s' "${response}" | jq -r '.pane_id // .id // empty')"
+  display_url="$(printf '%s' "${response}" | jq -r '.display_url // empty')"
+
+  [[ -n "${registration_id}" ]]
+}
+
+deploy_marker() {
+  devide_curl -fsS \
+    -H "authorization: Bearer ${TOKEN}" \
+    "${API_BASE}/api/deploy_status" 2>/dev/null |
+    jq -r '.socket_path // .version // empty' 2>/dev/null || true
+}
+
+if ! register_preview; then
+  echo "error: registration failed" >&2
+  exit 1
+fi
+
+last_deploy_marker="$(deploy_marker)"
+
+cat <<EOF
+Preview pane registered
+  pane:     ${PANE_ID}
+  url:      ${URL}
+  display:  ${display_url:-${URL}}
+  viewport: ${VIEWPORT:-pane-sized 1:1}
+  viewers:  DevIDE workspace terminal tab
+
+Press Ctrl+C to close this preview pane.
+EOF
+
+while true; do
+  sleep 10
+
+  deploy_marker="$(deploy_marker)"
+
+  if [[ -n "${deploy_marker}" && "${deploy_marker}" != "${last_deploy_marker}" ]]; then
+    if register_preview true; then
+      last_deploy_marker="${deploy_marker}"
+    fi
+  fi
+done

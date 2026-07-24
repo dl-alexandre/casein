@@ -3,16 +3,16 @@
 # Ensure http://127.0.0.1:4000 reaches the active DevIDE instance.
 #
 # Canary deploys listen on a Unix socket; legacy deploys bind :4000 directly.
-# This script starts devide-loopback (socat) only when the socket exists and
+# This script starts casein-loopback (socat) only when the socket exists and
 # nothing is already serving loopback.
 #
 set -euo pipefail
 
-CURRENT_SOCK="/run/devide/current.sock"
+CURRENT_SOCK="/run/casein/current.sock"
 LOOPBACK_PORT="${DEVIDE_LOOPBACK_PORT:-4000}"
 LOOPBACK_URL="http://127.0.0.1:${LOOPBACK_PORT}"
-SERVICE="devide-loopback"
-DEPLOY_DST="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/deploy"
+SERVICE="casein-loopback"
+DEPLOY_DST="${CASEIN_DEPLOY_ROOT:-/opt/casein}/deploy"
 
 log() { printf '>>> %s\n' "$*"; }
 
@@ -37,7 +37,7 @@ if ! command -v socat >/dev/null 2>&1; then
   exit 1
 fi
 
-unit_src="${DEPLOY_DST}/devide-loopback.service"
+unit_src="${DEPLOY_DST}/casein-loopback.service"
 if sudo test -f "${unit_src}"; then
   log "installing ${SERVICE}.service from ${unit_src}"
   sudo cp "${unit_src}" "/etc/systemd/system/${SERVICE}.service"
@@ -47,7 +47,7 @@ else
   log "warning: ${unit_src} missing — using inline socat unit definition"
   sudo tee "/etc/systemd/system/${SERVICE}.service" >/dev/null <<EOF
 [Unit]
-Description=DevIDE loopback HTTP proxy (127.0.0.1:${LOOPBACK_PORT})
+Description=Casein loopback HTTP proxy (127.0.0.1:${LOOPBACK_PORT})
 After=network-online.target
 
 [Service]

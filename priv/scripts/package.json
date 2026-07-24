@@ -1,5 +1,5 @@
 {
-  "name": "dev-ide-preview-playwright",
+  "name": "casein-preview-playwright",
   "private": true,
   "type": "module",
   "dependencies": {

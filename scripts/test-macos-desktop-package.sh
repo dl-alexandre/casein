@@ -7,10 +7,10 @@ APP="$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")"
 RELEASE="$APP/Contents/Resources/release"
 
 [[ -x "$APP/Contents/MacOS/devide-menubar" ]]
-[[ -x "$RELEASE/bin/dev_ide" ]]
+[[ -x "$RELEASE/bin/casein" ]]
 tmux_bin="$(find "$RELEASE/lib" -path '*/dev_ide-*/priv/bin/tmux' -print -quit)"
 [[ -x "$tmux_bin" ]]
-metadata="$RELEASE/releases/dev_ide.relmeta.json"
+metadata="$RELEASE/releases/casein.relmeta.json"
 [[ -f "$metadata" ]]
 [[ "$(plutil -extract profile raw "$metadata")" == "desktop" ]]
 case "$(uname -m)" in
@@ -26,8 +26,8 @@ env -u TMUX "$tmux_bin" -V | rg -x 'tmux 3\.7b'
 resolver_secret="package-smoke-secret-package-smoke-secret-package-smoke-secret-1234"
 resolved_tmux="$(DATABASE_PATH="${TMPDIR:-/tmp}/devide-resolver-$$.sqlite3" \
   SECRET_KEY_BASE="$resolver_secret" \
-  DEV_IDE_API_TOKEN="$resolver_secret" \
-  "$RELEASE/bin/dev_ide" eval 'IO.puts(DevIDE.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
+  CASEIN_API_TOKEN="$resolver_secret" \
+  "$RELEASE/bin/casein" eval 'IO.puts(Casein.Terminals.TmuxExecutable.resolve())' | tail -n 1)"
 [[ "$resolved_tmux" == "$tmux_bin" ]]
 
 smoke_label="devide_package_$$"
@@ -93,7 +93,7 @@ done
 
 # Launch through LaunchServices to exercise the same bundle/resource discovery
 # path as Finder and Start at Login. No release or Homebrew path is injected.
-DEV_IDE_DESKTOP_DATA_DIR="$smoke_dir" open -n "$APP"
+CASEIN_DESKTOP_DATA_DIR="$smoke_dir" open -n "$APP"
 for _ in $(seq 1 15); do
   host_pid="$(pgrep -f "^$APP/Contents/MacOS/devide-menubar$" | tail -n 1 || true)"
   [[ -n "$host_pid" ]] && break

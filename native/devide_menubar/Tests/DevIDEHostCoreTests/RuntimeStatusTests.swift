@@ -376,7 +376,7 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         #expect(environment["SHELL"] == "/bin/zsh")
         #expect(environment["PATH"]?.hasPrefix("/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin") == true)
         #expect(environment["RELEASE_TMP"] == dataDir.appending(path: "runtime").path)
-        #expect(environment["DEV_IDE_DESKTOP_LAN"] == nil)
+        #expect(environment["CASEIN_DESKTOP_LAN"] == nil)
         #expect(environment["PHX_IP"] == nil)
     }
 
@@ -454,21 +454,21 @@ private final class MemoryHostSecretStore: HostSecretStore, @unchecked Sendable 
         let paths = try #require(
             HostPaths.detect(
                 environment: [
-                    "DEVIDE_RELEASE_ROOT": "/opt/devide/release",
-                    "DEV_IDE_DESKTOP_DATA_DIR": "/tmp/devide-data",
+                    "DEVIDE_RELEASE_ROOT": "/opt/casein/release",
+                    "CASEIN_DESKTOP_DATA_DIR": "/tmp/casein-data",
                 ],
                 defaults: try freshDefaults(), bundleResources: nil))
 
-        #expect(paths.statusFile.path == "/tmp/devide-data/runtime.json")
-        #expect(paths.devIdeBinary.path == "/opt/devide/release/bin/dev_ide")
-        #expect(paths.migrateBinary.path == "/opt/devide/release/bin/migrate")
-        #expect(paths.logsDir.path == "/tmp/devide-data/runtime/log")
+        #expect(paths.statusFile.path == "/tmp/casein-data/runtime.json")
+        #expect(paths.devIdeBinary.path == "/opt/casein/release/bin/casein")
+        #expect(paths.migrateBinary.path == "/opt/casein/release/bin/migrate")
+        #expect(paths.logsDir.path == "/tmp/casein-data/runtime/log")
     }
 
     @Test func defaultsDataDirToApplicationSupport() throws {
         let paths = try #require(
             HostPaths.detect(
-                environment: ["DEVIDE_RELEASE_ROOT": "/opt/devide/release"],
+                environment: ["DEVIDE_RELEASE_ROOT": "/opt/casein/release"],
                 defaults: try freshDefaults(), bundleResources: nil))
 
         #expect(paths.dataDir.path.hasSuffix("Library/Application Support/DevIDE"))

@@ -1,0 +1,20 @@
+<%!--
+  Live layout for the workspace LiveViews. Unlike root.html.heex (rendered once
+  from the disconnected mount), this layout re-renders on connected diffs.
+  Deploy state (update / drift / poller status) is surfaced in the
+  notifications bell and drawer on workspace and dashboard headers — not here.
+  Keep it to fixed-position chrome plus {@inner_content}; the LiveViews render
+  their own full-page content.
+--%>
+<button
+  id="browser-alert-opt-in"
+  type="button"
+  data-casein-notification-permission
+  class="browser-alert-opt-in hidden fixed z-[9999] items-center gap-1.5 rounded-lg border border-zinc-300/70 bg-white/95 px-3 py-2 text-xs font-medium text-zinc-800 shadow-lg backdrop-blur transition hover:bg-zinc-50 active:scale-[0.99] dark:border-zinc-700 dark:bg-zinc-950/95 dark:text-zinc-100 dark:hover:bg-zinc-900"
+  title="Enable browser alerts"
+  aria-label="Enable browser alerts"
+>
+  <.icon name="hero-bell-alert" class="size-4 text-amber-500" />
+  <span>Enable alerts</span>
+</button>
+{@inner_content}

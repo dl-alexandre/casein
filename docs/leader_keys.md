@@ -179,7 +179,7 @@ in LiveView event handlers.
 - **Quiet-agent flags** (tmux `monitor-silence`): a window whose active pane
   runs an interactive agent (`Boundary.interactive_command_ids/0`) and has
   been silent for 60s–30min is flagged violet — the "agent finished or is
-  blocked on input" signal. `DevIDE.Terminals.Activity.agent_window_quiet?/1`
+  blocked on input" signal. `Casein.Terminals.Activity.agent_window_quiet?/1`
   quantizes the volatile activity timestamp into a boolean stored in the
   **stable** `metadata.windows` map, so the flip (and only the flip)
   re-broadcasts the tab list — a notification with no per-poll churn. Surfaced

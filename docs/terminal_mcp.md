@@ -10,7 +10,7 @@ POST /api/terminals/mcp
 The endpoint uses the same bearer-token gate as the rest of the API:
 
 ```text
-Authorization: Bearer $DEV_IDE_API_TOKEN
+Authorization: Bearer $CASEIN_API_TOKEN
 ```
 
 Agents should discover this endpoint from the `terminal_mcp` capability. The
@@ -35,7 +35,7 @@ that supplies an unknown id gets `404 unknown_mcp_session`, signalling the clien
 to re-`initialize`. Missing or unknown streamable-session errors preserve the
 top-level `error` string and include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
-`DevIDE.Agents.MCPSessions.notify/2`.
+`Casein.Agents.MCPSessions.notify/2`.
 Session ids are bound to their server, workspace, and authenticated bearer scope;
 another workspace, MCP surface, or managed-agent capability receives the same
 `404 unknown_mcp_session` response as an unknown id.
@@ -68,23 +68,23 @@ MCP. Prefer always scoping in production and dogfood setups.
 
 `terminal_send_command` / `terminal_send_agent_command` run arbitrary shell, so
 DevIDE runs an allow/deny gate in front of them
-(`DevIDE.Agents.TerminalCommandPolicy`). The default is a small denylist for
+(`Casein.Agents.TerminalCommandPolicy`). The default is a small denylist for
 high-risk host commands such as recursive root deletes, pipe-to-shell downloads,
 and `sudo`. Configure it with an allowlist or denylist of regexes matched
 against the full command string:
 
 ```elixir
 # config/runtime.exs (or dev.exs)
-config :dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
-config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
+config :casein, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
+config :casein, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
 # Trusted local-only setups may opt out explicitly:
-config :dev_ide, :terminal_command_policy, :disabled
+config :casein, :terminal_command_policy, :disabled
 ```
 
-Releases can use the `DEV_IDE_TERMINAL_COMMAND_POLICY` env var instead (JSON):
+Releases can use the `CASEIN_TERMINAL_COMMAND_POLICY` env var instead (JSON):
 
 ```bash
-DEV_IDE_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "]}'
+CASEIN_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "]}'
 ```
 
 A blocked call returns a structured `command_blocked` tool error and is recorded
@@ -193,21 +193,21 @@ report; `blocked`/`done` are never inferred from the title):
 - **Explicit reports** via the MCP tool below. Launched agents report
   automatically (opt out of all of it with `DEVIDE_AGENT_STATE_HOOKS=0`):
   - **Claude Code**: hooks in a materialized `--settings` file run
-    `devide-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
+    `casein-agent-state.sh` on UserPromptSubmit/PreToolUse (working),
     Notification (blocked), Stop (done), SessionStart/End (idle). The
     materializer stages the script into the workspace MCP home and the hook
     resolves it via `$DEVIDE_AGENT_MCP_HOME`, so it works for any paired
     project, not only the dev_ide checkout itself.
   - **Grok**: the launcher installs a global hook file
-    (`~/.grok/hooks/devide-agent-state.json`, from
-    `scripts/agent-hooks/grok-devide-agent-state.json`) that runs the same
+    (`~/.grok/hooks/casein-agent-state.json`, from
+    `scripts/agent-hooks/grok-casein-agent-state.json`) that runs the same
     script on the equivalent Grok events; `stop_failure` (turn died on an API
     error) also maps to blocked. Grok's camelCase `sessionId` and
     `transcriptPath` hook fields are retained as pane metadata. The hook command
     is env-guarded, so grok sessions outside DevIDE pairing no-op silently.
   - **Codex**: the launcher injects lifecycle hooks for SessionStart,
     UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, and
-    SubagentStart/Stop. `devide-codex-notify.sh` sends their JSON to the
+    SubagentStart/Stop. `casein-codex-notify.sh` sends their JSON to the
     workspace-scoped Codex hook receiver; the completion-only `notify` program
     remains enabled as a transition fallback. Hooks report working, blocked,
     done, and parent/child agent state without parsing terminal scrollback.
@@ -302,7 +302,7 @@ On the milc devbox, MCP is also reachable at
 Same-host agents may use `http://127.0.0.1:4000/api/terminals/mcp`.
 
 Deploy durability: commit and push to `master` before relying on devbox
-behavior — `deploy-devbox.yml` replaces `/opt/devide/release` from git. See
+behavior — `deploy-devbox.yml` replaces `/opt/casein/release` from git. See
 `AGENTS.md` (Devbox agent pairing).
 
 ## Tool Flow
@@ -331,7 +331,7 @@ Set the base URL, token, and workspace:
 
 ```bash
 export DEVIDE_URL=http://localhost:4000
-export DEV_IDE_API_TOKEN=...
+export CASEIN_API_TOKEN=...
 export WORKSPACE_ID=my-workspace-id
 ```
 
@@ -345,7 +345,7 @@ Initialize:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -359,7 +359,7 @@ List tools:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -372,7 +372,7 @@ List live sessions (scoped):
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -389,7 +389,7 @@ Read the tail of a pane (plain text):
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -412,7 +412,7 @@ Run a command in the agent pane:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",

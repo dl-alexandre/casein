@@ -8,8 +8,8 @@
 # Callers provide these from their own scope (resolved at call time):
 #   log()             — logging function
 #   token             — API bearer token for /api/drain
-#   INST_DIR          — /run/devide/instances
-#   CURRENT_SYMLINK   — /run/devide/current.sock
+#   INST_DIR          — /run/casein/instances
+#   CURRENT_SYMLINK   — /run/casein/current.sock
 #   drain_count       — integer the drain loop tallies successful drains into
 # Commands (systemctl, curl, kill, sudo, git, readlink) are invoked by name so
 # tests can shadow them with shell functions.
@@ -20,14 +20,14 @@
 # shellcheck disable=SC2154
 
 # Stale instance JSON records store a PID that may be reused by unrelated
-# processes (mix test, opencode, etc.). Require an /opt/devide/release beam.
+# processes (mix test, opencode, etc.). Require an /opt/casein/release beam.
 dev_ide_release_pid_alive() {
   pid="$1"
   [ -n "${pid}" ] || return 1
   kill -0 "${pid}" 2>/dev/null || return 1
   cmdline="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
   case "${cmdline}" in
-    */opt/devide/release/*) return 0 ;;
+    */opt/casein/release/*) return 0 ;;
     *dev_ide_*@*) return 0 ;;
     *) return 1 ;;
   esac
@@ -141,15 +141,15 @@ proc_cwd() { readlink "/proc/$1/cwd" 2>/dev/null || true; }
 
 # True when pid is a leaked dev_ide beam that is safe to reap: one of our beams
 # (a mix phx.server dev server or a release node), with a DELETED working
-# directory. The live release and running canaries run from /opt/devide with
-# cwd /opt/devide (never deleted), so the deleted-cwd gate alone already spares
+# directory. The live release and running canaries run from /opt/casein with
+# cwd /opt/casein (never deleted), so the deleted-cwd gate alone already spares
 # them; the explicit release-path exclusion is belt-and-suspenders.
 orphaned_dev_server() {
   od_pid="$1"
   [ -n "${od_pid}" ] || return 1
   od_cmdline="$(proc_cmdline "${od_pid}")"
   case "${od_cmdline}" in
-    */opt/devide/release/*) return 1 ;;
+    */opt/casein/release/*) return 1 ;;
     *phx.server*) : ;;
     *dev_ide_*@*) : ;;
     *) return 1 ;;

@@ -1,21 +1,21 @@
-# DevIDE — Deployment
+# Casein — Deployment
 
 > Operator runbook for a Remote-mode deployment (product.md §4.2).
 > Tracks audit_remote.md cross-cutting gaps CC-1, CC-2. This document
-> is the single-source for what an operator must do to bring up DevIDE
+> is the single-source for what an operator must do to bring up Casein
 > on a remote machine.
 
 ## Architectural decision
 
-**DevIDE ships as its own image.** By default it discovers workspaces
-as directories under `DEV_IDE_WORKSPACES_ROOT` (the
-`DevIDE.WorkspaceSource.Local` source). To plug a different source —
+**Casein ships as its own image.** By default it discovers workspaces
+as directories under `CASEIN_WORKSPACES_ROOT` (the
+`Casein.WorkspaceSource.Local` source). To plug a different source —
 e.g. a managed-workspace integration — see [`docs/integrations/`](integrations/)
-and set `:dev_ide, :workspace_source` accordingly.
+and set `:casein, :workspace_source` accordingly.
 
 ## Required environment
 
-DevIDE refuses to boot in prod with any of these missing — see
+Casein refuses to boot in prod with any of these missing — see
 [`config/runtime.exs`](../config/runtime.exs).
 
 | Variable                    | Purpose                                                              |
@@ -24,8 +24,8 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `DATABASE_URL`              | Postgres URL: `ecto://user:pass@host:5432/dev_ide_prod`.              |
 | `PHX_HOST`                  | The public hostname (e.g. `cloud-1.dev`). Used for cookie scope + URL. |
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
-| `DEV_IDE_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
-| `DEV_IDE_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
+| `CASEIN_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
+| `CASEIN_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
 | `PORT`                      | HTTP port. Default `4000`.                                            |
 | `POOL_SIZE`                 | Postgres pool size. Default `10`.                                     |
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
@@ -33,13 +33,13 @@ DevIDE refuses to boot in prod with any of these missing — see
 
 ### Operator overlay contract
 
-Portable DevIDE does not require host deployment automation. Operators that
-integrate DevIDE with a reverse proxy, socket handoff, deploy poller, or source
+Portable Casein does not require host deployment automation. Operators that
+integrate Casein with a reverse proxy, socket handoff, deploy poller, or source
 repository can keep those site-specific values outside the core checkout in a
 strict JSON file:
 
 ```bash
-export DEV_IDE_OPERATOR_CONFIG_FILE=/etc/devide/operator.json
+export CASEIN_OPERATOR_CONFIG_FILE=/etc/devide/operator.json
 ```
 
 [`config/operator.example.json`](../config/operator.example.json) documents the
@@ -57,14 +57,14 @@ and omitted capabilities default to none. Generic timing defaults may still
 come from core. This lets an overlay start with `{}` as a neutral profile and
 opt into each integration deliberately.
 
-`DEV_IDE_PROFILE=portable`, LAN, and desktop profiles continue to disable all
+`CASEIN_PROFILE=portable`, LAN, and desktop profiles continue to disable all
 operator deployment capabilities even if a file is present. This prevents a
 portable release from becoming dependent on an accidentally mounted host
 profile.
 
 ## Local stack (smoke validation)
 
-The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
+The repo ships a `docker-compose.yml` that brings up Casein + Postgres
 locally so you can validate the production Dockerfile end-to-end
 without provisioning a real remote machine.
 
@@ -83,7 +83,7 @@ configuration in the release artifact.
 cp .env.example .env
 # Edit .env and fill in:
 #   SECRET_KEY_BASE   (python3 -c "import secrets;print(secrets.token_urlsafe(48))")
-#   DEV_IDE_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
+#   CASEIN_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
 
 # 2. Seed a workspace directory under the host bind-mount.
 mkdir -p workspaces-local/alpha
@@ -103,7 +103,7 @@ the workspace name to attach a terminal.
 Quick API smoke (bearer-gate validation):
 
 ```bash
-TOKEN=$(grep '^DEV_IDE_API_TOKEN=' .env | cut -d= -f2)
+TOKEN=$(grep '^CASEIN_API_TOKEN=' .env | cut -d= -f2)
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces                            # → 401 (fail-closed)
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer wrong"  # → 401
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer $TOKEN" # → 200
@@ -119,7 +119,7 @@ opening a browser):
 
 # 1. Sign a user token from inside the running release.
 TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \
-    'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("smoke-user"))')
+    'IO.write(CaseinWeb.ChannelAuth.sign_user_token("smoke-user"))')
 
 # 2. Run the smoke. Sends `echo <marker>\n` as a channel `input`
 # event and waits for the marker bytes to come back as `data` pushes.
@@ -189,8 +189,8 @@ docker run --rm \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
-  -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
-  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
+  -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
+  -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
   dev_ide:latest /app/bin/migrate
 
 # 2. Start the server.
@@ -199,9 +199,9 @@ docker run -d --name dev_ide \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
-  -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
-  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
-  -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
+  -e CASEIN_API_TOKEN="$CASEIN_API_TOKEN" \
+  -e CASEIN_RUNNER_TOKEN="$CASEIN_RUNNER_TOKEN" \
+  -e CASEIN_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
   dev_ide:latest
 ```
@@ -219,12 +219,12 @@ strategies:
    the platform terminates TLS on a public hostname and forwards plain
    HTTP to port 4000. `PHX_HOST` is your public hostname; the endpoint
    is configured for HTTPS URLs in `config/runtime.exs` (`scheme:
-   "https"`). `DevIdeWeb.RuntimeSSLPlug` issues the runtime redirect and
+   "https"`). `CaseinWeb.RuntimeSSLPlug` issues the runtime redirect and
    HSTS headers unless a service profile disables it.
    **Recommended starting point.**
 
 2. **Reverse proxy with TLS** (Caddy, Nginx, Traefik) — terminate TLS
-   on the proxy, forward to DevIDE on `:4000`. Same DevIDE config as (1).
+   on the proxy, forward to Casein on `:4000`. Same Casein config as (1).
    Caddy is the lowest-config option:
    ```caddyfile
    cloud-1.dev {
@@ -232,7 +232,7 @@ strategies:
    }
    ```
 
-3. **DevIDE-terminated TLS** — Uncomment and fill in the `https:`
+3. **Casein-terminated TLS** — Uncomment and fill in the `https:`
    block in [`config/runtime.exs`](../config/runtime.exs) (lines 76–84
    of the original generator template). Mount the keyfile/certfile
    into the container. Useful for air-gapped or fully-self-managed
@@ -248,11 +248,11 @@ curl -sf "http://${PHX_HOST}/workspaces" -H "Host: ${PHX_HOST}" -I
 
 # API is fail-closed without a bearer
 curl -sf "http://${PHX_HOST}/api/workspaces" -o /dev/null -w "%{http_code}\n"
-# Expected: 401 (or 503 if DEV_IDE_API_TOKEN missed somehow)
+# Expected: 401 (or 503 if CASEIN_API_TOKEN missed somehow)
 
 # API responds when authenticated
 curl -sf "http://${PHX_HOST}/api/workspaces" \
-  -H "Authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+  -H "Authorization: Bearer ${CASEIN_API_TOKEN}" \
   | head
 ```
 
@@ -281,13 +281,13 @@ the operational ground truth in the meantime.
 ## macOS (Darwin) native builds
 
 A release can be built and run natively on macOS with
-`MIX_ENV=prod DEV_IDE_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
+`MIX_ENV=prod CASEIN_REPO_ADAPTER=sqlite mix dev_ide.release.lan`
 (toolchain via mise, per AGENTS.md). Two Darwin-specific hazards are
 handled by the build itself:
 
 - **Case-insensitive APFS beam collisions.** Release assembly rejects any
   modules whose BEAM filenames differ only by case. Boundary roots use unique
-  names (`DevIDE` and `DevIDEMix`) so local compilation and packaged releases
+  names (`Casein` and `CaseinMix`) so local compilation and packaged releases
   enforce the same dependency graph on APFS, NTFS, and case-sensitive Linux.
 - **Tailwind's Bun-compiled CLI.** Darwin kills it with SIGKILL
   (`Code Signature Invalid`) unless it is ad-hoc re-signed after
@@ -304,9 +304,9 @@ warnings); the durable fix is renaming one module of each pair.
 
 ## What this deploy doc deliberately does not address
 
-- **Multi-instance topologies.** DevIDE is a single-runtime cockpit;
+- **Multi-instance topologies.** Casein is a single-runtime cockpit;
   there is no coordinator or cross-host scheduler.
-- **High availability.** A single DevIDE instance is the target.
+- **High availability.** A single Casein instance is the target.
   Scaling to N depends on session affinity (tmux is per-host).
 - **Backup / DR.** The audit log lives in Postgres; treat that DB
   like any other operational DB. Workspaces are on disk; their

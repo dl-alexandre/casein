@@ -9,10 +9,10 @@ defmodule Scripts.AgentStateScriptsTest do
   """
   use ExUnit.Case, async: true
 
-  @state_script Path.expand("../../scripts/devide-agent-state.sh", __DIR__)
-  @codex_script Path.expand("../../scripts/devide-codex-notify.sh", __DIR__)
+  @state_script Path.expand("../../scripts/casein-agent-state.sh", __DIR__)
+  @codex_script Path.expand("../../scripts/casein-codex-notify.sh", __DIR__)
   @grok_hook Path.expand(
-               "../../scripts/agent-hooks/grok-devide-agent-state.json",
+               "../../scripts/agent-hooks/grok-casein-agent-state.json",
                __DIR__
              )
 
@@ -30,17 +30,17 @@ defmodule Scripts.AgentStateScriptsTest do
       assert [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}] =
                Map.fetch!(hooks, event)
 
-      assert command =~ "devide-agent-state.sh"
+      assert command =~ "casein-agent-state.sh"
       assert command =~ "GROK_PLUGIN_ROOT"
       assert command =~ ~s([ -n "${DEVIDE_AGENT_MCP_HOME:-}" ] || exit 0)
     end
   end
 
-  test "state script exits 0 and stays silent without DevIDE env" do
+  test "state script exits 0 and stays silent without Casein env" do
     assert {"", 0} =
              System.cmd("bash", [@state_script],
                env: [
-                 {"DEV_IDE_API_TOKEN", nil},
+                 {"CASEIN_API_TOKEN", nil},
                  {"DEVIDE_WORKSPACE_ID", nil},
                  {"DEVIDE_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
@@ -85,13 +85,13 @@ defmodule Scripts.AgentStateScriptsTest do
       run_state_script(%{
         "GROK_HOOK_EVENT" => "session_start",
         "DEVIDE_AGENT_LAUNCH_CONTEXT" => "grok",
-        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/devide-grok-leaders-test/abc.sock",
+        "DEVIDE_GROK_LEADER_SOCKET" => "/tmp/casein-grok-leaders-test/abc.sock",
         "DEVIDE_GROK_BUNDLE_DIR" => "/tmp/grok-bundles/sha256-#{digest}",
         "DEVIDE_GROK_BUNDLE_DIGEST" => digest
       })
 
     assert body =~ ~s("agent_runtime": "grok")
-    assert body =~ ~s("grok_leader_socket": "/tmp/devide-grok-leaders-test/abc.sock")
+    assert body =~ ~s("grok_leader_socket": "/tmp/casein-grok-leaders-test/abc.sock")
     assert body =~ ~s("grok_bundle_digest": "#{digest}")
   end
 
@@ -145,11 +145,11 @@ defmodule Scripts.AgentStateScriptsTest do
     assert body =~ ~s("reason":"Network access")
   end
 
-  test "codex exits 0 without DevIDE env" do
+  test "codex exits 0 without Casein env" do
     assert {"", 0} =
              System.cmd("bash", [@codex_script, "{}"],
                env: [
-                 {"DEV_IDE_API_TOKEN", nil},
+                 {"CASEIN_API_TOKEN", nil},
                  {"DEVIDE_WORKSPACE_ID", nil},
                  {"DEVIDE_TERMINAL_MCP_URL", nil},
                  {"TMUX_PANE", nil}
@@ -212,7 +212,7 @@ defmodule Scripts.AgentStateScriptsTest do
     [
       {"PATH", stub_dir <> ":" <> System.get_env("PATH")},
       {"CURL_CAPTURE", capture},
-      {"DEV_IDE_API_TOKEN", "test-token"},
+      {"CASEIN_API_TOKEN", "test-token"},
       {"DEVIDE_WORKSPACE_ID", "ws-test"},
       {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:1/api/terminals/mcp"},
       {"TMUX_PANE", "%9"},

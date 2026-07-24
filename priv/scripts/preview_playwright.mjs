@@ -15,19 +15,19 @@ const browsers = new Map();
 const instrumentedPages = new WeakSet();
 const DAEMON_STARTED_AT = Date.now();
 const BROWSER_IDLE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_BROWSER_IDLE_MS", "DEV_IDE_PREVIEW_BROWSER_IDLE_MS"],
+  ["DEVIDE_PLAYWRIGHT_BROWSER_IDLE_MS", "CASEIN_PREVIEW_BROWSER_IDLE_MS"],
   5 * 60 * 1000
 );
 const BROWSER_MAX_AGE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_BROWSER_MAX_AGE_MS", "DEV_IDE_PREVIEW_BROWSER_MAX_AGE_MS"],
+  ["DEVIDE_PLAYWRIGHT_BROWSER_MAX_AGE_MS", "CASEIN_PREVIEW_BROWSER_MAX_AGE_MS"],
   30 * 60 * 1000
 );
 const DAEMON_MAX_AGE_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_DAEMON_MAX_AGE_MS", "DEV_IDE_PREVIEW_DAEMON_MAX_AGE_MS"],
+  ["DEVIDE_PLAYWRIGHT_DAEMON_MAX_AGE_MS", "CASEIN_PREVIEW_DAEMON_MAX_AGE_MS"],
   60 * 60 * 1000
 );
 const SWEEP_MS = envMs(
-  ["DEVIDE_PLAYWRIGHT_SWEEP_MS", "DEV_IDE_PREVIEW_SWEEP_INTERVAL_MS"],
+  ["DEVIDE_PLAYWRIGHT_SWEEP_MS", "CASEIN_PREVIEW_SWEEP_INTERVAL_MS"],
   60 * 1000
 );
 let maintenanceRunning = false;
@@ -411,7 +411,7 @@ async function resolveLocator(page, selector, nth) {
 }
 
 // Chromium's setuid sandbox can't initialize when running as root or inside a
-// container without user namespaces (the devbox case, DEV_IDE_ON_DEVBOX=true),
+// container without user namespaces (the devbox case, CASEIN_ON_DEVBOX=true),
 // where launch otherwise hangs. --no-sandbox is safe here: the helper only ever
 // loads workspace-trusted, origin-gated URLs validated upstream by PreviewControl.
 // --disable-gpu avoids a headless GPU/SwiftShader init hang on the devbox when

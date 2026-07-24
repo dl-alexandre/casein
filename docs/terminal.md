@@ -16,7 +16,7 @@ Raw shell path:
 ```
 Browser (Ghostty.LiveTerminal.Component + GhosttyTerminal JS hook)
    ↕  LiveView events (key / text / mouse / resize / ready)
-DevIdeWeb.WorkspaceLive.Show
+CaseinWeb.WorkspaceLive.Show
    ↕  Ghostty.Terminal.write/2  +  Ghostty.PTY.write/2
 Ghostty.Terminal (libghostty-vt cell grid)
    ↕  {:data, binary} messages
@@ -37,21 +37,21 @@ workspace mode; `:raw_terminal_everywhere` is an explicit opt-in for allowing
 raw shell in any workspace/mode/host. The verdict is recorded in the run ledger
 as a session event (`run.session_attached` / `run.session_denied`).
 
-`DevIdeWeb.TerminalChannel` serves raw channel attaches for shell and
+`CaseinWeb.TerminalChannel` serves raw channel attaches for shell and
 `:execution` sessions (MCP-driven tmux attach); those payloads may include
 `replay_frame` metadata on reconnect. The workspace UI renders raw PTY through
 Ghostty LiveView panes.
 
 ## Agent prompt staging
 
-`DevIDE.Terminals.send_agent_prompt/4` sends a prompt to a specific tmux pane in
+`Casein.Terminals.send_agent_prompt/4` sends a prompt to a specific tmux pane in
 small, line-preserving chunks via `paste_text/3`. It normalizes CRLF/bare-CR to
 LF, preserves blank lines, caps chunks by line count and byte size, and applies
 `submit: true` only to the final chunk. Chunks are shaped so sequential tmux
 pastes reconstruct the normalized prompt exactly. Empty prompt text sends no
 chunks and never presses Enter.
 
-`DevIDE.Terminals.find_agent_pane/2` resolves only panes with persisted
+`Casein.Terminals.find_agent_pane/2` resolves only panes with persisted
 `role: "agent"` metadata from the `agent_pair` template. If no role-marked pane
 exists, the error tells the caller to apply `agent_pair` and includes candidate
 pane metadata instead of falling back to the operator pane. The error also
@@ -104,7 +104,7 @@ argument remains authoritative.
 
 ## Auth
 
-`DevIdeWeb.ChannelAuth` centralises the token salt (`"user socket"`,
+`CaseinWeb.ChannelAuth` centralises the token salt (`"user socket"`,
 24h max age). Show LiveView signs on mount; UserSocket verifies on connect.
 When real auth lands, change one module.
 
@@ -135,7 +135,7 @@ and independent PTY workers (`PaneWorker`). Each pane owns its own tmux session
   keybar), not a header control.
 - Per-pane error states, snapshots ("snap all"), and equalize/reset.
 
-**Remote hosts**: an SSH adapter behind a `DevIDE.Terminals.Adapter` behaviour
+**Remote hosts**: an SSH adapter behind a `Casein.Terminals.Adapter` behaviour
 is the planned extension path. Raw-terminal admission stays a server-side
 `Policy.can_use_raw_terminal?/1` decision regardless of transport.
 
@@ -156,7 +156,7 @@ now; it's tmux behaviour, not ours.
 ## Terminal mode
 
 Terminals are **raw everywhere**. The governed-command plane and the old
-per-window mode toggle have been removed, so `DevIDE.Terminals.ModePolicy`
+per-window mode toggle have been removed, so `Casein.Terminals.ModePolicy`
 resolves every session — workspace shell, execution, or agent — to `:raw`, and
 there is no per-window mode to remember, no badge, and no `?mode=raw` deep-link
 param (a stray one from an old link is ignored).
@@ -180,7 +180,7 @@ UI affordances:
 
 ## Idle GC
 
-`DevIDE.Terminals.TmuxJanitor` is a singleton GenServer that tracks
+`Casein.Terminals.TmuxJanitor` is a singleton GenServer that tracks
 LiveView subscribers per tmux session (keyed by session name, e.g.
 `devide_alpha_u-<user>`). On mount the LiveView calls
 `TmuxJanitor.subscribe/1`; the janitor monitors the socket pid. On `:DOWN`
@@ -209,7 +209,7 @@ them into a `<pre>` with styled spans. Why Ghostty for raw PTY:
 - **Same persistence**: tmux survives BEAM restarts; a new
   `Ghostty.Terminal` rebuilds the grid from tmux's history on reattach.
 
-Wiring lives in `lib/dev_ide_web/live/workspace_live/show.ex`:
+Wiring lives in `lib/casein_web/live/workspace_live/show.ex`:
 `@ghostty_term_id`, `start_ghostty_terminal/1`,
 `handle_info({:terminal_ready, ...})` (lazily spawns the PTY using the
 fitted cols/rows), `handle_info({:data, ...})` (forwards PTY output into
@@ -217,6 +217,6 @@ the terminal grid), `cleanup_ghostty_resources/1` (called on mode
 transitions out of `:raw` and from `terminate/2`).
 
 Disk writes for the Snapshot button live in
-`lib/dev_ide/terminals/ghostty_snapshot.ex` — extracted from `show.ex` so
-the LiveView source stays write-free for the `DevIDE.ProposalsNoApplyTest`
+`lib/casein/terminals/ghostty_snapshot.ex` — extracted from `show.ex` so
+the LiveView source stays write-free for the `Casein.ProposalsNoApplyTest`
 boundary guard.

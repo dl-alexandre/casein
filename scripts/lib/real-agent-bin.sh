@@ -2,11 +2,11 @@
 # Resolve the real agent binary, skipping DevIDE launcher shims.
 
 devide_npm_prefix() {
-  printf '%s\n' "${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+  printf '%s\n' "${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
 }
 
 devide_agent_shim_dir() {
-  printf '%s\n' "${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+  printf '%s\n' "${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
 }
 
 real_agent_bin_path_without_shims() {
@@ -67,7 +67,7 @@ real_agent_npm_candidate() {
 
 real_agent_bin() {
   local name="$1"
-  local recorded="${HOME}/.devide/real-bins/${name}"
+  local recorded="${HOME}/.casein/real-bins/${name}"
   local candidate=""
 
   case "$name" in

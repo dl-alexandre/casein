@@ -18,7 +18,7 @@ PORT=4213 ELIXIR_ERL_OPTIONS="+JMsingle true" mise exec -- mix phx.server
 
 Gotchas:
 - On the devbox the dev endpoint binds a **Unix socket**
-  (`/run/devide/instances/<id>.sock`, printed in the boot log), not TCP.
+  (`/run/casein/instances/<id>.sock`, printed in the boot log), not TCP.
   Bridge it: `socat TCP-LISTEN:4213,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:<sock>`.
 - The dev server uses its own tmux server (`tmux -L devide_dev`) — scratch
   sessions there can never disturb the user's prod tmux (`devide` label).

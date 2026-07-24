@@ -4,17 +4,17 @@
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Usage:
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh --no-start
-#   bash scripts/ensure-devide-tmux-janitor-sweep.sh --disable
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh --no-start
+#   bash scripts/ensure-casein-tmux-janitor-sweep.sh --disable
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
-SERVICE="devide-tmux-janitor-sweep.service"
-TIMER="devide-tmux-janitor-sweep.timer"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+SERVICE="casein-tmux-janitor-sweep.service"
+TIMER="casein-tmux-janitor-sweep.timer"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 
 START=1
 DISABLE=0
@@ -47,23 +47,23 @@ ensure_env_policy() {
       seen_window_idle = 0
       seen_session_idle = 0
     }
-    /^DEV_IDE_TMUX_WINDOW_SWEEP_MS=/ {
+    /^CASEIN_TMUX_WINDOW_SWEEP_MS=/ {
       next
     }
-    /^DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=/ {
-      print "DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=86400"
+    /^CASEIN_TMUX_WINDOW_IDLE_SECONDS=/ {
+      print "CASEIN_TMUX_WINDOW_IDLE_SECONDS=86400"
       seen_window_idle = 1
       next
     }
-    /^DEV_IDE_TMUX_SESSION_IDLE_SECONDS=/ {
-      print "DEV_IDE_TMUX_SESSION_IDLE_SECONDS=86400"
+    /^CASEIN_TMUX_SESSION_IDLE_SECONDS=/ {
+      print "CASEIN_TMUX_SESSION_IDLE_SECONDS=86400"
       seen_session_idle = 1
       next
     }
     { print }
     END {
-      if (!seen_window_idle) print "DEV_IDE_TMUX_WINDOW_IDLE_SECONDS=86400"
-      if (!seen_session_idle) print "DEV_IDE_TMUX_SESSION_IDLE_SECONDS=86400"
+      if (!seen_window_idle) print "CASEIN_TMUX_WINDOW_IDLE_SECONDS=86400"
+      if (!seen_session_idle) print "CASEIN_TMUX_SESSION_IDLE_SECONDS=86400"
     }
   ' "$backup" | sudo tee "$ENV_FILE" >/dev/null
   sudo chmod 600 "$ENV_FILE"
@@ -80,7 +80,7 @@ if [[ "$DISABLE" -eq 1 ]]; then
 fi
 
 ensure_env_policy
-chmod 0755 "${ROOT}/scripts/devide-tmux-janitor-sweep.sh"
+chmod 0755 "${ROOT}/scripts/casein-tmux-janitor-sweep.sh"
 
 for f in "$SERVICE" "$TIMER"; do
   src="${ROOT}/scripts/${f}"
@@ -101,5 +101,5 @@ else
   log "installed + enabled (not started) — start with: sudo systemctl start ${TIMER}"
 fi
 
-log "dry-run: scripts/devide-tmux-janitor-sweep.sh --dry-run"
+log "dry-run: scripts/casein-tmux-janitor-sweep.sh --dry-run"
 log "run once now: sudo systemctl start ${SERVICE}"

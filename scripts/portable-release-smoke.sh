@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT="${DEVIDE_PORTABLE_SMOKE_PROJECT:-devide-portable-smoke-$$}"
 TIMEOUT_SECONDS="${DEVIDE_PORTABLE_SMOKE_TIMEOUT_SECONDS:-120}"
 
-DEV_IDE_IMAGE="${DEVIDE_PORTABLE_SMOKE_IMAGE:-${PROJECT}:latest}"
+CASEIN_IMAGE="${DEVIDE_PORTABLE_SMOKE_IMAGE:-${PROJECT}:latest}"
 CHANNEL_SMOKE_IMAGE="${DEVIDE_PORTABLE_CHANNEL_SMOKE_IMAGE:-${PROJECT}-channel:latest}"
 remove_dev_ide_image=1
 remove_channel_smoke_image=1
@@ -38,7 +38,7 @@ cleanup() {
 
   if [ "${DEVIDE_PORTABLE_SMOKE_KEEP_IMAGES:-0}" != "1" ]; then
     if [ "$remove_dev_ide_image" -eq 1 ]; then
-      docker image rm -f "$DEV_IDE_IMAGE" >/dev/null 2>&1
+      docker image rm -f "$CASEIN_IMAGE" >/dev/null 2>&1
     fi
 
     if [ "$remove_channel_smoke_image" -eq 1 ]; then
@@ -83,19 +83,19 @@ printf '# Portable smoke workspace\n' >"$TMP_ROOT/workspaces/alpha/README.md"
 # portable profile boots with only this neutral configuration.
 export COMPOSE_DISABLE_ENV_FILE=1
 export SECRET_KEY_BASE="portable-smoke-secret-key-base-000000000000000000000000000000000000"
-export DEV_IDE_API_TOKEN="portable-smoke-api-token"
-export DEV_IDE_RUNNER_TOKEN="portable-smoke-runner-token"
+export CASEIN_API_TOKEN="portable-smoke-api-token"
+export CASEIN_RUNNER_TOKEN="portable-smoke-runner-token"
 export PHX_HOST="localhost"
 export PORT="4000"
 export POSTGRES_USER="dev_ide"
 export POSTGRES_PASSWORD="portable_smoke_postgres"
 export POSTGRES_DB="dev_ide_portable_smoke"
-export DEV_IDE_HOST_PORT="0"
-export DEV_IDE_PROFILE="portable"
+export CASEIN_HOST_PORT="0"
+export CASEIN_PROFILE="portable"
 export DEVIDE_RELEASE_PROFILE="portable"
-export DEV_IDE_IMAGE
-export DEV_IDE_WORKSPACES_ROOT="/workspaces"
-export DEV_IDE_WORKSPACES_HOST="$TMP_ROOT/workspaces"
+export CASEIN_IMAGE
+export CASEIN_WORKSPACES_ROOT="/workspaces"
+export CASEIN_WORKSPACES_HOST="$TMP_ROOT/workspaces"
 
 trap cleanup EXIT
 trap 'exit 130' INT
@@ -142,7 +142,7 @@ curl --fail --silent --show-error --location "$base_url/" >/dev/null
 log "checking terminal MCP initialization"
 mcp_json="$(
   curl --fail --silent --show-error \
-    --header "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    --header "authorization: Bearer ${CASEIN_API_TOKEN}" \
     --header "content-type: application/json" \
     --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
     "$base_url/api/terminals/mcp"
@@ -151,14 +151,14 @@ mcp_json="$(
 log "checking a fresh terminal inside the production image"
 terminal_json="$(
   curl --fail --silent --show-error \
-    --header "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    --header "authorization: Bearer ${CASEIN_API_TOKEN}" \
     "$base_url/api/smoke/terminal"
 )"
 
 log "checking Phoenix Channel keystroke round-trip"
 user_token="$(
-  "${compose[@]}" exec --no-TTY dev_ide /app/bin/dev_ide rpc \
-    'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("portable-smoke-user"))'
+  "${compose[@]}" exec --no-TTY dev_ide /app/bin/casein rpc \
+    'IO.write(CaseinWeb.ChannelAuth.sign_user_token("portable-smoke-user"))'
 )"
 app_container="$("${compose[@]}" ps --quiet dev_ide)"
 
@@ -173,7 +173,7 @@ docker run --rm \
 log "checking bearer-gated workspace API"
 workspaces_json="$(
   curl --fail --silent --show-error \
-    --header "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    --header "authorization: Bearer ${CASEIN_API_TOKEN}" \
     "$base_url/api/workspaces"
 )"
 

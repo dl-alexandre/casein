@@ -9,7 +9,7 @@ defmodule Scripts.SpawnAgentWorkerTest do
 
   # A worker must branch off the *primary* repo. When DEVIDE_CHECKOUT points at
   # the orchestrator's own linked worktree, the resolver has to redirect to the
-  # main working tree — otherwise launch-devide-agent.sh adopts the linked
+  # main working tree — otherwise launch-casein-agent.sh adopts the linked
   # worktree in place and the worker silently shares the orchestrator's branch.
   test "dry run resolves a linked-worktree DEVIDE_CHECKOUT to the primary repo" do
     tmp = Path.join(System.tmp_dir!(), "spawn-worker-#{System.unique_integer([:positive])}")
@@ -36,8 +36,8 @@ defmodule Scripts.SpawnAgentWorkerTest do
           {"DEVIDE_CHECKOUT", linked},
           {"PATH", fakebin <> ":" <> System.get_env("PATH")},
           # Satisfy agent_env_resolve's first branch (already-exported creds) so
-          # the script doesn't abort looking for a DevIDE tmux pane / env file.
-          {"DEV_IDE_API_TOKEN", "test-token"},
+          # the script doesn't abort looking for a Casein tmux pane / env file.
+          {"CASEIN_API_TOKEN", "test-token"},
           {"DEVIDE_WORKSPACE_ID", "test-ws"}
         ]
       )

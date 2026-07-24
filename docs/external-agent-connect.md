@@ -20,7 +20,7 @@ Three JSON-RPC 2.0 MCP servers back everything:
 | Workspace UUID | `e7c18b93-688b-4bb0-904d-ac93d61e9372` |
 | Public host (Door 2) | `devide.devbox.milcgroup.com` |
 | Loopback base (Door 1) | `http://127.0.0.1:4000` |
-| Tool-search | ON (`DEV_IDE_MCP_TOOL_SEARCH=1` on the box) |
+| Tool-search | ON (`CASEIN_MCP_TOOL_SEARCH=1` on the box) |
 
 > **The bearer token is a root-grade secret.** Never inline it in a prompt, transcript, or
 > committed config. Read it from env or a `chmod 600` file. A **global** token is
@@ -58,7 +58,7 @@ whether `workspace_id` is baked into the URL.
 
 **Use durable when** you hop between / spin up / abandon workspaces and don't want to
 regenerate MCP config each time. The endpoint resolves `workspace_id` per-call
-(`DevIDE.MCP.Scope`), so one wiring outlives any individual workspace.
+(`Casein.MCP.Scope`), so one wiring outlives any individual workspace.
 
 > **Token caveat.** A durable/workspaceless config needs a token that can reach more than
 > one workspace — i.e. the **global** orchestrator token (root-grade). That's fine over
@@ -78,7 +78,7 @@ Same for either door — just swap the host. Note: **no `?workspace_id`** in any
       "url": "http://127.0.0.1:4000/api/terminals/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "http://127.0.0.1:4000/api/preview/mcp",
       "headers": { "Authorization": "Bearer PASTE_GLOBAL_TOKEN_HERE" }
     },
@@ -112,16 +112,16 @@ With no workspace pinned, **discover first, then confine each call**:
 Curl form of the discover-then-target loop:
 
 ```bash
-export DEV_IDE_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # GLOBAL token, chmod 600
+export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # GLOBAL token, chmod 600
 BASE=http://127.0.0.1:4000                                        # or the Door 2 public host
 rpc() { curl -s -X POST "$BASE/api/terminals/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" -H 'content-type: application/json' -d "$1"; }
+  -H "authorization: Bearer $CASEIN_API_TOKEN" -H 'content-type: application/json' -d "$1"; }
 
 # box-wide inventory — which workspaces have live sessions (and which are stale)
 rpc '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"terminal_list_sessions","arguments":{}}}'
 
 # workspace map (id / name / path)
-curl -s -H "authorization: Bearer $DEV_IDE_API_TOKEN" "$BASE/api/workspaces"
+curl -s -H "authorization: Bearer $CASEIN_API_TOKEN" "$BASE/api/workspaces"
 
 # confine a call to one workspace by passing its id in arguments
 rpc '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"terminal_topology","arguments":{"session":"<name>","workspace_id":"<uuid>"}}}'
@@ -145,11 +145,11 @@ for any off-box agent/CI you control.
 ssh -N -L 4000:127.0.0.1:4000 devbox &          # ← replace 'devbox' with your SSH host/alias
 
 # token from a private file, never committed / never pasted into a prompt
-export DEV_IDE_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
+export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
 
 # sanity: 401 = gate reached (good). 000 = tunnel not up. 200 with bearer = you're in.
 curl -s -o /dev/null -w "no-bearer: %{http_code}\n" http://127.0.0.1:4000/api/workspaces
-curl -s -o /dev/null -w "bearer:    %{http_code}\n" -H "Authorization: Bearer $DEV_IDE_API_TOKEN" \
+curl -s -o /dev/null -w "bearer:    %{http_code}\n" -H "Authorization: Bearer $CASEIN_API_TOKEN" \
   http://127.0.0.1:4000/api/workspaces
 ```
 
@@ -164,7 +164,7 @@ Save as `devide-remote.mcp.json`, replace the token placeholder, keep it gitigno
       "url": "http://127.0.0.1:4000/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "http://127.0.0.1:4000/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
@@ -190,12 +190,12 @@ tunnel is possible there).
 ### Step 1 — Token + verify (must send a bearer)
 
 ```bash
-export DEV_IDE_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
+export CASEIN_API_TOKEN="$(cat ~/.devide-orchestrator-token)"   # chmod 600 this file
 
 # Correct test — WITH a bearer. Expect 200 (good token) or 401 (bad token).
 curl -s -o /dev/null -w "bearer:    %{http_code}\n" -X POST \
   https://devide.devbox.milcgroup.com/api/terminals/mcp \
-  -H "Authorization: Bearer $DEV_IDE_API_TOKEN" -H 'content-type: application/json' \
+  -H "Authorization: Bearer $CASEIN_API_TOKEN" -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
 
 # Sanity of the "no-bearer 302 is expected" behavior — this SHOULD show 302, not a failure.
@@ -221,7 +221,7 @@ Save as `devide-remote-door2.mcp.json`, replace the token placeholder, keep it g
       "url": "https://devide.devbox.milcgroup.com/api/terminals/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
-    "devide-preview": {
+    "casein-preview": {
       "url": "https://devide.devbox.milcgroup.com/api/preview/mcp?workspace_id=e7c18b93-688b-4bb0-904d-ac93d61e9372",
       "headers": { "Authorization": "Bearer PASTE_TOKEN_HERE" }
     },
@@ -252,7 +252,7 @@ You are connected to a remote DevIDE dev box over MCP with a workspace-agnostic 
 config — no workspace is pinned. Three JSON-RPC 2.0 servers are wired as MCP clients:
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 How to work here:
@@ -292,7 +292,7 @@ Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandr
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 Ground rules:
@@ -320,7 +320,7 @@ Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandr
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
-  • devide-preview   — preview panes + headless browser control
+  • casein-preview   — preview panes + headless browser control
   • devide-artifact  — artifact projects
 
 Ground rules:
@@ -355,5 +355,5 @@ windows, and any agent panes you find. Then wait for my instructions.
 **Security posture:** keep the **global** token off any public surface — prefer a
 workspace-scoped token for Door 2, or put access behind a Tailscale/WireGuard overlay for
 anywhere-access without exposing MCP to the internet (Door 1 already has that property).
-Rate limiting (`McpRateLimit`) and audit (`DevIDE.Agents.MCPAudit`) are on the pipeline;
+Rate limiting (`McpRateLimit`) and audit (`Casein.Agents.MCPAudit`) are on the pipeline;
 confirm audit retention before exposing publicly.

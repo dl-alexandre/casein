@@ -1,7 +1,7 @@
 defmodule Scripts.PrePushCheckTest do
   @moduledoc """
   Guards the pre-push gate's run-recording contract: the script must report
-  its verdict to DevIDE via the terminal MCP `gate_report` tool, and that
+  its verdict to Casein via the terminal MCP `gate_report` tool, and that
   reporting must be fail-open on every path — a dead API, missing env, or
   missing python3 must never change the gate's exit code.
   """
@@ -28,7 +28,7 @@ defmodule Scripts.PrePushCheckTest do
 
     # Skipped silently without the workspace env vars.
     assert content =~
-             "[[ -n \"${DEV_IDE_API_TOKEN:-}\" && -n \"${DEVIDE_WORKSPACE_ID:-}\" ]] || return 0"
+             "[[ -n \"${CASEIN_API_TOKEN:-}\" && -n \"${DEVIDE_WORKSPACE_ID:-}\" ]] || return 0"
 
     # Skipped when the helper binaries are missing.
     assert content =~ "command -v python3 >/dev/null 2>&1 || return 0"

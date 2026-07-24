@@ -7,14 +7,14 @@ description: >
   evidence (logs, probes, SQL, LiveView keys) + assert/click steps, publish one
   Artifact report with a durable login-gated public URL. Use for any app surface
   (superadmin, facility, feed, login, kiosk, …) — not only one panel. Create or
-  improve workflows by editing manifests under .devide/. NOT for driving
+  improve workflows by editing manifests under .casein/. NOT for driving
   dev_ide's own UI (use `verify`). Pair product agents first with
   workspace-agent-pair when MCP/skills are missing.
 ---
 
 # Preview UI walk
 
-A **generic** UI walk engine for product apps on DevIDE. Default is **read-only**
+A **generic** UI walk engine for product apps on Casein. Default is **read-only**
 (navigate + assert + screenshot). Product workflows may opt into **gated
 interactions** (`safety.allow_interactions`) when env_check is non-prod.
 
@@ -33,20 +33,20 @@ them over time without changing this skill.
 
 | Path | Role |
 |------|------|
-| `.devide/preview-walk.json` | **Default** workflow (back-compat; optional once named walks exist) |
-| `.devide/preview-walks/<id>.json` | **Named** workflows (`superadmin-smoke`, `facility-parity`, `login-only`, …) |
-| `.devide/preview-walks/README.md` | Optional human index (ids, when to run, risk notes) |
+| `.casein/preview-walk.json` | **Default** workflow (back-compat; optional once named walks exist) |
+| `.casein/preview-walks/<id>.json` | **Named** workflows (`superadmin-smoke`, `facility-parity`, `login-only`, …) |
+| `.casein/preview-walks/README.md` | Optional human index (ids, when to run, risk notes) |
 
 `id` = `^[a-z0-9][a-z0-9._-]*$` (matches `report.name` style). Drivers take any path:
 
 ```bash
-node …/playwright_walk.mjs --manifest .devide/preview-walks/facility-parity.json --base http://127.0.0.1:<port> --out ./run
-python3 …/walk.py --manifest .devide/preview-walk.json --out ./run
+node …/playwright_walk.mjs --manifest .casein/preview-walks/facility-parity.json --base http://127.0.0.1:<port> --out ./run
+python3 …/walk.py --manifest .casein/preview-walk.json --out ./run
 ```
 
 ### Resolve which workflow to run
 
-1. User named a workflow → `.devide/preview-walks/<id>.json` (or an explicit path).
+1. User named a workflow → `.casein/preview-walks/<id>.json` (or an explicit path).
 2. Else list candidates: default file (if present) + every `preview-walks/*.json`.
 3. One candidate → run it. Multiple → list ids + `report.name` / `_note` and ask, or
    prefer `preview-walk.json` only when the user said “the default walk”.
@@ -61,7 +61,7 @@ python3 …/walk.py --manifest .devide/preview-walk.json --out ./run
    `safety` (env_check + deny_events), optional `runtime` probes.
 4. Validate: `check-jsonschema --schemafile <skill>/references/preview-walk.schema.json <manifest>`.
 5. Dry-run once read-only; fix probes/login before expanding pages.
-6. Commit the manifest in the **product** repo under `.devide/` — never under
+6. Commit the manifest in the **product** repo under `.casein/` — never under
    `.claude/skills/preview-ui-walk/`.
 
 Improving a walk = edit the product JSON (pages, asserts, probes, budgets). The
@@ -114,16 +114,16 @@ The DevIDE MCP tools are workspace-scoped, so to drive a *non-dev_ide* app you u
 that workspace's own credentials. From the box:
 
 ```bash
-source /home/devbox/.devide/agent-mcp/<workspace-name>/env.sh
+source /home/devbox/.casein/agent-mcp/<workspace-name>/env.sh
 # → DEVIDE_PREVIEW_MCP_URL (workspace-scoped, includes ?workspace_id&tmux_session)
-# → DEV_IDE_API_TOKEN (64-char, workspace-scoped)
+# → CASEIN_API_TOKEN (64-char, workspace-scoped)
 ```
 
 Drive tools over plain JSON-RPC (never echo the token):
 
 ```bash
 curl -sS "$DEVIDE_PREVIEW_MCP_URL" \
-  -H "Authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "Authorization: Bearer $CASEIN_API_TOKEN" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -261,6 +261,6 @@ the page-sharding, not a redesign.
   against a prior run's screenshots for visual-diff regression once a baseline
   exists (only meaningful for pages with stable content).
 - **Boundary:** product routes, login, safety, and runtime probes stay in the
-  target repo under `.devide/preview-walk.json` and/or `.devide/preview-walks/*.json`.
+  target repo under `.casein/preview-walk.json` and/or `.casein/preview-walks/*.json`.
   This skill must stay app-agnostic — new product scenarios are new manifests, not
   skill forks.

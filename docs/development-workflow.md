@@ -1,4 +1,4 @@
-# Development workflow for DevIDE
+# Development workflow for Casein
 
 **Status**: Draft v0.1 — 2026-06-24  
 **Audience**: Human developers + AI agents operating in this repository  
@@ -10,18 +10,18 @@
 
 1. **Primary checkout is deploy infrastructure, not the default edit surface.**
    `/data/workspaces/dalexandre/dev_ide` (and equivalents) exists to fetch remotes,
-   run the deploy poller (`/opt/devide/deploy-build`), and materialize MCP configs.
+   run the deploy poller (`/opt/casein/deploy-build`), and materialize MCP configs.
    **Rule**: no uncommitted edits; no agent or human should use it as `$PWD` during
    active work.
 
 2. **Every agent session lives in a dedicated, reported git worktree.**
    One worktree per task/agent/session. The path is recorded via
-   `terminal_report_worktree` at launch (wired in `scripts/launch-devide-agent.sh`).
+   `terminal_report_worktree` at launch (wired in `scripts/launch-casein-agent.sh`).
    Worktrees are short-lived: created from `origin/master` (or a named base ref) and
    pruned within 24h of merge or explicit close.
 
 3. **Isolation is enforced at launch, not opt-in discipline.**
-   `launch-devide-agent.sh` creates a worktree when the agent would otherwise start
+   `launch-casein-agent.sh` creates a worktree when the agent would otherwise start
    in the primary checkout. Set `DEVIDE_AGENT_SKIP_WORKTREE=1` only for deliberate
    exceptions. `Runtimes.observe_worktree/2` rejects the main checkout
    (`:main_checkout_not_allowed`).
@@ -49,11 +49,11 @@
 | Location | Role | Allowed edits? | Agent default `$PWD`? |
 |----------|------|----------------|----------------------|
 | `/data/workspaces/.../dev_ide` | Fetch, poller base, MCP materialization | No | Never |
-| `$TMPDIR/devide-agent-worktrees/` | All development, tests, commits | Yes | Always |
+| `$TMPDIR/casein-agent-worktrees/` | All development, tests, commits | Yes | Always |
 
 ### Enforcement at launch
 
-`scripts/launch-devide-agent.sh` calls `scripts/lib/agent-worktree.sh` after
+`scripts/launch-casein-agent.sh` calls `scripts/lib/agent-worktree.sh` after
 resolving agent env:
 
 1. Skip when `DEVIDE_AGENT_SKIP_WORKTREE=1`.
@@ -66,7 +66,7 @@ Environment knobs:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DEVIDE_AGENT_WORKTREE_ROOT` | `$TMPDIR/devide-agent-worktrees` | Worktree parent directory |
+| `DEVIDE_AGENT_WORKTREE_ROOT` | `$TMPDIR/casein-agent-worktrees` | Worktree parent directory |
 | `DEVIDE_AGENT_WORKTREE_BASE` | `origin/master` | Base ref for new worktrees |
 | `DEVIDE_AGENT_TASK` | `adhoc` | Task slug in branch name |
 | `DEVIDE_AGENT_SKIP_WORKTREE` | `0` | Set `1` to opt out (escape hatch) |
@@ -99,8 +99,8 @@ the primary checkout (linked agent worktrees are exempt). Enable with
 Never `git commit -a` from the primary checkout. Stage and commit explicit paths:
 
 ```bash
-git add lib/dev_ide/my_file.ex test/dev_ide/my_file_test.exs
-git commit -- lib/dev_ide/my_file.ex test/dev_ide/my_file_test.exs
+git add lib/casein/my_file.ex test/casein/my_file_test.exs
+git commit -- lib/casein/my_file.ex test/casein/my_file_test.exs
 ```
 
 Verify claims against `HEAD`, not the working tree — see [`agent_concurrency.md`](agent_concurrency.md).
@@ -133,7 +133,7 @@ master (protected; green pre-push gate)
 
 1. `git fetch origin`
 2. `git rebase origin/master` on `merge-agent-worktree-sessions`
-3. `git worktree add /tmp/devide-rebase-$(date +%s) merge-agent-worktree-sessions`
+3. `git worktree add /tmp/casein-rebase-$(date +%s) merge-agent-worktree-sessions`
 4. Split WIP: worktree-session core in one PR; preview recordings in a follow-up
 5. Mark frozen paths in [`in-progress.md`](in-progress.md) until merge
 6. Delete the long-lived branch and its worktree after merge
@@ -152,14 +152,14 @@ master (protected; green pre-push gate)
 
 **Today**
 
-- Poller already builds from `/opt/devide/deploy-build` at the target SHA and runs
+- Poller already builds from `/opt/casein/deploy-build` at the target SHA and runs
   the full pre-push gate before packaging — a `--no-verify` push cannot activate
   until that worktree gate passes.
 - `deploy-local.sh` deploys the **current checkout** immediately; the poller
   replaces it within ~2 min when `origin/master` advances. Use only for dogfooding;
   commit + push for durable deploys.
 - Non-SHA `DEVIDE_GIT_REVISION` values (manual labels) trigger the drift banner via
-  `DevIDE.Deployment.Drift`.
+  `Casein.Deployment.Drift`.
 
 **Future**
 
@@ -173,7 +173,7 @@ master (protected; green pre-push gate)
 
 ```mermaid
 flowchart TD
-    A[launch-devide-agent.sh] --> B[agent_worktree_ensure]
+    A[launch-casein-agent.sh] --> B[agent_worktree_ensure]
     B --> C[cd worktree path]
     C --> D[terminal_report_worktree via MCP]
     D --> E[Session-scoped MCP URLs materialized]
@@ -189,8 +189,8 @@ flowchart TD
 
 Before ending a session, every agent must leave an explicit handoff — see
 `AGENTS.md` § "Agent session exit protocol". The daily worktree-alarm sweep
-(`scripts/devide-worktree-alarm-sweep.sh`, timer via
-`scripts/ensure-devide-worktree-alarm-sweep.sh`) turns "dirty worktree, no
+(`scripts/casein-worktree-alarm-sweep.sh`, timer via
+`scripts/ensure-casein-worktree-alarm-sweep.sh`) turns "dirty worktree, no
 report, no process, >24h" into `workspace.agent_worktree_stale` audit events
 instead of silent archaeology.
 
@@ -226,9 +226,9 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 |---|------|--------|--------|--------|
 | 1 | Rebase + land worktree sessions (split recordings) | High | Medium | In progress |
 | 2 | SEC-1 workspace-scoped MCP tokens | Critical | Medium | **Done** |
-| 3 | Auto-worktree in `launch-devide-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
+| 3 | Auto-worktree in `launch-casein-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
 | 4 | Worktree janitor script | Medium | Low | **Done** (cron wiring TBD) |
-| 4b | Stale worktree alarm sweep + exit protocol | High | Low | **Done** (timer via `ensure-devide-worktree-alarm-sweep.sh`) |
+| 4b | Stale worktree alarm sweep + exit protocol | High | Low | **Done** (timer via `ensure-casein-worktree-alarm-sweep.sh`) |
 | 5 | Canary vs stable deploy tiers | Medium | Medium | Partial (poller gate exists) |
 | 6 | Converge Elixir versions | Low | Low | Not started |
 | 7 | `in-progress.md` subsystem freeze | Medium | Very low | **Done** |
@@ -237,7 +237,7 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 
 ## How to use this document
 
-- **Humans**: read before starting work; launch agents via `launch-devide-agent.sh`,
+- **Humans**: read before starting work; launch agents via `launch-casein-agent.sh`,
   not by `cd`ing into the primary checkout.
 - **Agents**: treat every **Rule** and **MUST** as executable specification. Refuse
   actions that violate them and surface the violation.

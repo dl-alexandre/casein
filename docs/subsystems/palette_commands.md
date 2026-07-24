@@ -25,17 +25,17 @@ the palette's file rows open them:
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.CommandPalette` | `lib/dev_ide/command_palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
-| `DevIDE.CommandPalette.FileIndex` | `lib/dev_ide/command_palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
-| `DevIDE.CommandPalette.Fuzzy` | `lib/dev_ide/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
-| `DevIDE.CommandPalette.Item` | `lib/dev_ide/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
-| `DevIDE.CommandPalette.Actions` | `lib/dev_ide/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
-| `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
-| `DevIDE.Labels` | `lib/dev_ide/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
-| `DevIDE.Labels.Derivation` | `lib/dev_ide/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
-| `DevIDE.Annotations` | `lib/dev_ide/annotations.ex` *(context, outside assigned dir)* | CRUD + approval lifecycle for annotations; audits each write and broadcasts on `workspace:<id>`. |
-| `DevIDE.Annotations.Annotation` | `lib/dev_ide/annotations/annotation.ex` | Ecto schema + changeset; `validate_context_present/1` requires at least one of terminal/file/preview/linked context. |
-| `DevIdeWeb.WorkspaceLive.Show.PaletteItems` | `lib/dev_ide_web/live/workspace_live/show/palette_items.ex` *(web tier)* | Per-request orchestrator: merges static `Palette.query` results with live socket-derived rows (sessions, windows, panes, templates, workflows, shell) and re-`resolve`s dynamic ids. |
+| `Casein.CommandPalette` | `lib/casein/command_palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
+| `Casein.CommandPalette.FileIndex` | `lib/casein/command_palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
+| `Casein.CommandPalette.Fuzzy` | `lib/casein/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
+| `Casein.CommandPalette.Item` | `lib/casein/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
+| `Casein.CommandPalette.Actions` | `lib/casein/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
+| `Casein.Commands.Allowlist` | `lib/casein/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
+| `Casein.Labels` | `lib/casein/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
+| `Casein.Labels.Derivation` | `lib/casein/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
+| `Casein.Annotations` | `lib/casein/annotations.ex` *(context, outside assigned dir)* | CRUD + approval lifecycle for annotations; audits each write and broadcasts on `workspace:<id>`. |
+| `Casein.Annotations.Annotation` | `lib/casein/annotations/annotation.ex` | Ecto schema + changeset; `validate_context_present/1` requires at least one of terminal/file/preview/linked context. |
+| `CaseinWeb.WorkspaceLive.Show.PaletteItems` | `lib/casein_web/live/workspace_live/show/palette_items.ex` *(web tier)* | Per-request orchestrator: merges static `Palette.query` results with live socket-derived rows (sessions, windows, panes, templates, workflows, shell) and re-`resolve`s dynamic ids. |
 
 ## Data flow / lifecycle
 
@@ -85,15 +85,15 @@ same audit+broadcast path.
 
 ## Public surface
 
-- `DevIDE.CommandPalette.query/3`, `DevIDE.CommandPalette.resolve/2` — static facade.
-- `DevIDE.CommandPalette.Actions.all/0`, `allowed_events/0` — action set + dispatch guard.
-- `DevIDE.CommandPalette.Fuzzy.score/2` — reused directly by `PaletteItems` for dynamic rows.
-- `DevIDE.CommandPalette.FileIndex.list/1`, `cap/0`.
-- `DevIDE.CommandPalette.Item.category/1`.
-- `DevIDE.Commands.Allowlist.all/0`, `allowed?/1`, `argv_for/1` (delegating to `ExecCtl.Allowlist`).
-- `DevIDE.Labels` GenServer: `propose_from_mcp/4`, `set_agent_label/5`, `mark_quiet/3`, `clear_quiet/3`, `prune_session/2`, `get/2`, `for_session/1`, `subscribe/1`.
-- `DevIDE.Labels.Derivation.from_mcp/3`, `from_agent_label/1`.
-- `DevIDE.Annotations`: `create/2`, `propose_from_agent/2`, `list_for_workspace/2`, `get/1`, `get!/1`, `approve/2`, `reject/2`, `attach_to_preview/2`, `subscribe/1`.
+- `Casein.CommandPalette.query/3`, `Casein.CommandPalette.resolve/2` — static facade.
+- `Casein.CommandPalette.Actions.all/0`, `allowed_events/0` — action set + dispatch guard.
+- `Casein.CommandPalette.Fuzzy.score/2` — reused directly by `PaletteItems` for dynamic rows.
+- `Casein.CommandPalette.FileIndex.list/1`, `cap/0`.
+- `Casein.CommandPalette.Item.category/1`.
+- `Casein.Commands.Allowlist.all/0`, `allowed?/1`, `argv_for/1` (delegating to `ExecCtl.Allowlist`).
+- `Casein.Labels` GenServer: `propose_from_mcp/4`, `set_agent_label/5`, `mark_quiet/3`, `clear_quiet/3`, `prune_session/2`, `get/2`, `for_session/1`, `subscribe/1`.
+- `Casein.Labels.Derivation.from_mcp/3`, `from_agent_label/1`.
+- `Casein.Annotations`: `create/2`, `propose_from_agent/2`, `list_for_workspace/2`, `get/1`, `get!/1`, `approve/2`, `reject/2`, `attach_to_preview/2`, `subscribe/1`.
 
 ## Invariants & gotchas
 

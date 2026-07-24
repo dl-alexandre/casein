@@ -42,11 +42,11 @@ SCRATCH="$SCRATCH" DEVBOX_AGENT_ENV="$ENV_FILE" bash scripts/mcp-dogfood-agent-p
   >"${SCRATCH}/mcp-dogfood-direct.log" 2>&1
 
 log "mix test policy/audit"
-mise exec -- mix test test/dev_ide/policy_test.exs test/dev_ide/audit_test.exs \
+mise exec -- mix test test/casein/policy_test.exs test/casein/audit_test.exs \
   >"${SCRATCH}/policy-audit-tests.log" 2>&1
 
 log "mix test tmux_janitor"
-mise exec -- mix test test/dev_ide/terminals/tmux_janitor_test.exs \
+mise exec -- mix test test/casein/terminals/tmux_janitor_test.exs \
   >"${SCRATCH}/tmux-janitor-test.log" 2>&1
 
 log "pre-push-check.sh"

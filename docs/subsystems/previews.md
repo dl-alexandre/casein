@@ -10,8 +10,8 @@ this doc does not duplicate it.
 ## Responsibility
 
 A *preview* is a durable, workspace-scoped surface or URL
-(`DevIDE.Previews.Preview`). A *control session* is one short-lived browser/runtime
-attached to a preview (`DevIDE.Previews.ControlSession`). The subsystem:
+(`Casein.Previews.Preview`). A *control session* is one short-lived browser/runtime
+attached to a preview (`Casein.Previews.ControlSession`). The subsystem:
 
 - discovers and resolves named surfaces (`app`, `tidewave`, `api`, localhost
   ports) from manager metadata and terminal output;
@@ -25,8 +25,8 @@ attached to a preview (`DevIDE.Previews.ControlSession`). The subsystem:
 - reverse-proxies frame-blocked loopback dev servers so they stay embeddable in
   an iframe.
 
-Origin/port enforcement lives in `DevIDE.Previews.Url` and
-`DevIDE.Previews.WorkspaceContext`; the generic browser primitives live in the
+Origin/port enforcement lives in `Casein.Previews.Url` and
+`Casein.Previews.WorkspaceContext`; the generic browser primitives live in the
 sibling `PreviewCtl.*` boundary (out of these paths), reached through DevIDE
 facades.
 
@@ -34,36 +34,36 @@ facades.
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.PreviewControl` | `lib/dev_ide/preview_control.ex` | Agent-first control context: opens sessions, enforces origin boundary, dispatches actions via `PreviewCtl.Session`, persists actions/observations, audits, broadcasts. |
-| `DevIDE.Previews` | `lib/dev_ide/previews.ex` (sibling of paths) | Preview Broker context: `open/2`, `find_or_open/2`, `open_surface/3`; computes `trusted` flag and persists `Preview` rows. |
-| `DevIDE.Previews.Preview` | `lib/dev_ide/previews/preview.ex` | Ecto schema for a preview (url/title/mode/status/trusted/workspace/session/pane/metadata); validates URL against allowed origins. |
-| `DevIDE.Previews.ControlSession` | `lib/dev_ide/previews/control_session.ex` | Ecto schema for one browser runtime attached to a preview (adapter, current_url, storage profile, status). |
-| `DevIDE.Previews.ControlAction` | `lib/dev_ide/previews/control_action.ex` | Ecto schema for one audited control action (params/result/status/actor). |
-| `DevIDE.Previews.ControlObservation` | `lib/dev_ide/previews/control_observation.ex` | Ecto schema for a captured observation (kind: url/dom_summary/console_errors/network_errors/storage/screenshot). |
-| `DevIDE.Previews.Surface` | `lib/dev_ide/previews/surface.ex` | Struct for a named surface (name/url/title/port/source). |
-| `DevIDE.Previews.SurfaceResolver` | `lib/dev_ide/previews/surface_resolver.ex` | Resolves named surfaces from manager metadata, host, and terminal candidates; `resolve/1`, `get/2`, `primary_surface/1`. |
-| `DevIDE.Previews.Identity` | `lib/dev_ide/previews/identity.ex` | `surface_key/1` / `url_key/1` — stable dedupe keys (path/query ignored). |
-| `DevIDE.Previews.Url` | `lib/dev_ide/previews/url.ex` | Origin allowlist + `port_allowed?/2` / `valid_preview_url?/2`; delegates loopback checks to `PreviewCtl.Origin`. |
-| `DevIDE.Previews.WorkspaceContext` | `lib/dev_ide/previews/workspace_context.ex` | `prepare/1` enriches a workspace with detected ports; `validate_port/2`, `localhost_url/2`. |
-| `DevIDE.Previews.Detector` | `lib/dev_ide/previews/detector.ex` | Parses localhost URLs / host:port hints from terminal scrollback. |
-| `DevIDE.Previews.SocketDetector` | `lib/dev_ide/previews/socket_detector.ex` | Detects dev-server ports from listening TCP sockets inside the workspace. |
-| `DevIDE.Previews.TerminalOutput` | `lib/dev_ide/previews/terminal_output.ex` | Captures recent tmux scrollback for port detection. |
-| `DevIDE.Previews.TidewaveProbe` | `lib/dev_ide/previews/tidewave_probe.ex` | Fingerprints listening localhost ports as Tidewave endpoints. |
-| `DevIDE.Previews.EnvPorts` / `EnvRegistry` | `lib/dev_ide/previews/env_ports.ex`, `env_registry.ex` | Ephemeral preview-environment port helpers / instance registry. |
-| `DevIDE.Previews.Artifacts` | `lib/dev_ide/previews/artifacts.ex` | `store_png!/3` persists screenshots to a servable path; prunes to `:preview_max_artifacts`. |
-| `DevIDE.Previews.Commands` | `lib/dev_ide/previews/commands.ex` | Narrow audited command surface for terminals/agents (no arbitrary URLs). |
-| `DevIDE.PreviewControl` | `lib/dev_ide/preview_control.ex` | Host facade for controllable previews (`open_session`, `navigate`, `observe`, `click`/`type`/`press`, `screenshot`, storage, `close_session`). Selects the adapter from the `:preview_control_adapter` config (`:memory` → `PreviewCtl.Test.FakeAdapter`, `:playwright` → `PreviewCtl.Playwright.Adapter`, resolved by `PreviewCtl.Session.adapter_for/1`) and drives `PreviewCtl.*` directly. |
-| `DevIDE.PreviewControl.Registry` | `lib/dev_ide/preview_control/registry.ex` | `defdelegate`s into `PreviewCtl.Registry` (in-memory, instance-local session registry). |
-| `DevIdeWeb.PreviewProxy.Rewrite` | `lib/dev_ide_web/preview_proxy/rewrite.ex` | Pure header/body transforms for the proxy: drops frame-blocking headers, injects `<base href>`, rewrites root-relative assets, keeps Phoenix LiveView fallback endpoints under the proxy prefix, and (HMR) injects the import map + WebSocket-reroute shim and rewrites loopback origins. |
-| `DevIdeWeb.PreviewProxy.WebSocketBridge` | `lib/dev_ide_web/preview_proxy/web_socket_bridge.ex` | `WebSock` handler that tunnels a preview WebSocket to the workspace loopback dev server via `Mint.WebSocket` (HMR / LiveReload). Gated by `:preview_proxy_hmr`. |
+| `Casein.PreviewControl` | `lib/casein/preview_control.ex` | Agent-first control context: opens sessions, enforces origin boundary, dispatches actions via `PreviewCtl.Session`, persists actions/observations, audits, broadcasts. |
+| `Casein.Previews` | `lib/casein/previews.ex` (sibling of paths) | Preview Broker context: `open/2`, `find_or_open/2`, `open_surface/3`; computes `trusted` flag and persists `Preview` rows. |
+| `Casein.Previews.Preview` | `lib/casein/previews/preview.ex` | Ecto schema for a preview (url/title/mode/status/trusted/workspace/session/pane/metadata); validates URL against allowed origins. |
+| `Casein.Previews.ControlSession` | `lib/casein/previews/control_session.ex` | Ecto schema for one browser runtime attached to a preview (adapter, current_url, storage profile, status). |
+| `Casein.Previews.ControlAction` | `lib/casein/previews/control_action.ex` | Ecto schema for one audited control action (params/result/status/actor). |
+| `Casein.Previews.ControlObservation` | `lib/casein/previews/control_observation.ex` | Ecto schema for a captured observation (kind: url/dom_summary/console_errors/network_errors/storage/screenshot). |
+| `Casein.Previews.Surface` | `lib/casein/previews/surface.ex` | Struct for a named surface (name/url/title/port/source). |
+| `Casein.Previews.SurfaceResolver` | `lib/casein/previews/surface_resolver.ex` | Resolves named surfaces from manager metadata, host, and terminal candidates; `resolve/1`, `get/2`, `primary_surface/1`. |
+| `Casein.Previews.Identity` | `lib/casein/previews/identity.ex` | `surface_key/1` / `url_key/1` — stable dedupe keys (path/query ignored). |
+| `Casein.Previews.Url` | `lib/casein/previews/url.ex` | Origin allowlist + `port_allowed?/2` / `valid_preview_url?/2`; delegates loopback checks to `PreviewCtl.Origin`. |
+| `Casein.Previews.WorkspaceContext` | `lib/casein/previews/workspace_context.ex` | `prepare/1` enriches a workspace with detected ports; `validate_port/2`, `localhost_url/2`. |
+| `Casein.Previews.Detector` | `lib/casein/previews/detector.ex` | Parses localhost URLs / host:port hints from terminal scrollback. |
+| `Casein.Previews.SocketDetector` | `lib/casein/previews/socket_detector.ex` | Detects dev-server ports from listening TCP sockets inside the workspace. |
+| `Casein.Previews.TerminalOutput` | `lib/casein/previews/terminal_output.ex` | Captures recent tmux scrollback for port detection. |
+| `Casein.Previews.TidewaveProbe` | `lib/casein/previews/tidewave_probe.ex` | Fingerprints listening localhost ports as Tidewave endpoints. |
+| `Casein.Previews.EnvPorts` / `EnvRegistry` | `lib/casein/previews/env_ports.ex`, `env_registry.ex` | Ephemeral preview-environment port helpers / instance registry. |
+| `Casein.Previews.Artifacts` | `lib/casein/previews/artifacts.ex` | `store_png!/3` persists screenshots to a servable path; prunes to `:preview_max_artifacts`. |
+| `Casein.Previews.Commands` | `lib/casein/previews/commands.ex` | Narrow audited command surface for terminals/agents (no arbitrary URLs). |
+| `Casein.PreviewControl` | `lib/casein/preview_control.ex` | Host facade for controllable previews (`open_session`, `navigate`, `observe`, `click`/`type`/`press`, `screenshot`, storage, `close_session`). Selects the adapter from the `:preview_control_adapter` config (`:memory` → `PreviewCtl.Test.FakeAdapter`, `:playwright` → `PreviewCtl.Playwright.Adapter`, resolved by `PreviewCtl.Session.adapter_for/1`) and drives `PreviewCtl.*` directly. |
+| `Casein.PreviewControl.Registry` | `lib/casein/preview_control/registry.ex` | `defdelegate`s into `PreviewCtl.Registry` (in-memory, instance-local session registry). |
+| `CaseinWeb.PreviewProxy.Rewrite` | `lib/casein_web/preview_proxy/rewrite.ex` | Pure header/body transforms for the proxy: drops frame-blocking headers, injects `<base href>`, rewrites root-relative assets, keeps Phoenix LiveView fallback endpoints under the proxy prefix, and (HMR) injects the import map + WebSocket-reroute shim and rewrites loopback origins. |
+| `CaseinWeb.PreviewProxy.WebSocketBridge` | `lib/casein_web/preview_proxy/web_socket_bridge.ex` | `WebSock` handler that tunnels a preview WebSocket to the workspace loopback dev server via `Mint.WebSocket` (HMR / LiveReload). Gated by `:preview_proxy_hmr`. |
 
-The HTTP edges (`DevIdeWeb.PreviewProxyController`, `PreviewArtifactController`,
-`PreviewPaneController`) and `DevIDE.PreviewPanes` live outside these paths but
+The HTTP edges (`CaseinWeb.PreviewProxyController`, `PreviewArtifactController`,
+`PreviewPaneController`) and `Casein.PreviewPanes` live outside these paths but
 are part of the data flow below.
 
 ## Data flow / lifecycle
 
-**Open (`DevIDE.PreviewControl.open_session/3`)**
+**Open (`Casein.PreviewControl.open_session/3`)**
 
 1. `WorkspaceContext.prepare/1` enriches the workspace with terminal/socket-detected ports.
 2. `fetch_surface/2` → `SurfaceResolver.get/2` (with an `app`→`primary_surface/1` fallback).
@@ -110,21 +110,21 @@ the flag is on. Screenshots are served from `/preview-artifacts/...` via
 
 ## Public surface
 
-Called by `DevIDE.Agents.PreviewTools` (MCP), `DevIDE.Previews.Commands`, and
+Called by `Casein.Agents.PreviewTools` (MCP), `Casein.Previews.Commands`, and
 LiveView preview panels:
 
-- `DevIDE.PreviewControl.open_session/3`, `open_localhost_session/3`, `open_for_preview/3`
+- `Casein.PreviewControl.open_session/3`, `open_localhost_session/3`, `open_for_preview/3`
 - `observe/1`, `observe_live/1`, `navigate/3`, `click/2`, `type/4`, `press/2`
 - `go_back/2`, `go_forward/2`, `reload/2`, `screenshot/2`
 - `get_storage/1`, `clear_storage/1`
 - `close_session/1`, `close_sessions_for_preview/1`
 - `latest_observation/1`, `latest_screenshot/1`, `latest_errors/1`,
   `latest_observation_for_preview/1`, `get_open_session_for_preview/2`
-- `DevIDE.Previews.open/2`, `find_or_open/2`, `open_surface/3`
-- `DevIDE.Previews.SurfaceResolver.resolve/1`, `get/2`, `primary_surface/1`
-- `DevIDE.Previews.Url.port_allowed?/2`, `valid_preview_url?/2`, `allowed_origins/1`
+- `Casein.Previews.open/2`, `find_or_open/2`, `open_surface/3`
+- `Casein.Previews.SurfaceResolver.resolve/1`, `get/2`, `primary_surface/1`
+- `Casein.Previews.Url.port_allowed?/2`, `valid_preview_url?/2`, `allowed_origins/1`
 
-Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :memory)`
+Configured adapter: `Application.get_env(:casein, :preview_control_adapter, :memory)`
 (`:memory` | `:playwright`), resolved at boot into `:preview_ctl :adapter` — see
 [`../preview_mcp.md`](../preview_mcp.md) "Adapter configuration".
 
@@ -152,7 +152,7 @@ Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :me
 - **Observation broadcast filters echoes.** `real_observation?/1` requires a
   url/dom_summary/artifact_path key so minimal type/press results don't blank the
   live panel.
-- **DevIDE.*Adapter/*Bridge/*Registry are thin facades** over `PreviewCtl.*` kept
+- **Casein.*Adapter/*Bridge/*Registry are thin facades** over `PreviewCtl.*` kept
   for backward compatibility; new logic belongs in the `PreviewCtl` boundary.
 - **Artifact pruning is best-effort** — a screenshot capture never fails because
   cleanup of older PNGs failed.
@@ -160,10 +160,10 @@ Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :me
   `scripts/preview-env.sh` boots each env with `DEVIDE_HTTP_SOCKET=<state>/sockets/<id>.sock`
   (the canonical front door — a pure function of the id, collision-free, dialed by
   `scripts/preview-router.sh` as `reverse_proxy unix//…`, mirroring the live
-  `/run/devide/current.sock` model) **and** `DEVIDE_PREVIEW_TIDEWAVE_PORT=<port>`.
+  `/run/casein/current.sock` model) **and** `DEVIDE_PREVIEW_TIDEWAVE_PORT=<port>`.
   The port spins a second, loopback-only Bandit listener
-  (`DevIDE.Application.preview_tidewave_listener/0`) serving the same endpoint, so
-  the programmatic Tidewave MCP dial (`DevIDE.Agents.TidewaveMCP` →
+  (`Casein.Application.preview_tidewave_listener/0`) serving the same endpoint, so
+  the programmatic Tidewave MCP dial (`Casein.Agents.TidewaveMCP` →
   `http://127.0.0.1:<port>/tidewave/mcp`) and local tooling (screenshots, on-box
   browser) keep working — a unix socket can't serve those. Prod never sets the var,
   so the live supervision tree is unchanged. The port is still derived

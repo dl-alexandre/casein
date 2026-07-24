@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # sidechat.sh — helpers for read-only Claude sidechat launches.
 #
-# Sourced by scripts/launch-devide-agent.sh. Not meant to be executed directly.
+# Sourced by scripts/launch-casein-agent.sh. Not meant to be executed directly.
 
 # Resolve --sidechat target to session + pane identifiers for the advisor prompt.
 #   %2              — pane in DEVIDE_TMUX_SESSION

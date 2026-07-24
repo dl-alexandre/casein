@@ -1,0 +1,28 @@
+# DevIDE loopback HTTP bridge for canary (Unix socket) deploys.
+#
+# Canary releases listen on /run/casein/instances/<uuid>.sock; Caddy uses
+# /run/casein/current.sock. On-box agents and scripts still expect
+# http://127.0.0.1:4000 — this unit forwards loopback TCP to the current socket.
+#
+# Install (via activate_devbox_deploy or ensure-casein-loopback-proxy.sh):
+#   sudo cp /opt/casein/deploy/casein-loopback.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now casein-loopback
+#
+# When casein.service binds :4000 directly (legacy rollback), leave this unit
+# stopped — ensure-casein-loopback-proxy.sh detects an existing listener.
+
+[Unit]
+Description=Casein loopback HTTP proxy (127.0.0.1:4000 → current Unix socket)
+Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/casein/integrations/manager/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:4000,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/casein/current.sock
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

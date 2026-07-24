@@ -2,34 +2,34 @@ defmodule Mix.Tasks.Uat.TierA do
   @shortdoc "Run Tier A UAT scenarios (deterministic replay of frozen traces)"
   @moduledoc """
   CI entrypoint for Tier A UAT. Discovers scenarios under a root (default
-  `priv/uat`), runs each `:tier_a`-eligible one through `DevIDE.UAT.TierA`, and
+  `priv/uat`), runs each `:tier_a`-eligible one through `Casein.UAT.TierA`, and
   exits with a code that distinguishes the outcomes (see `TierA.exit_code/1`):
   `0` clean, `1` regression, `2` drift (needs self-heal), `3` infra/not-configured.
 
       mix uat.tier_a --dry-run        # list scenarios + tier eligibility, boot nothing
-      mix uat.tier_a                  # run (needs :dev_ide, :uat_sandbox_workspace)
+      mix uat.tier_a                  # run (needs :casein, :uat_sandbox_workspace)
       mix uat.tier_a priv/uat/checkout
 
   A real run boots ephemeral instances, so it needs a sandbox workspace map
-  configured as `config :dev_ide, :uat_sandbox_workspace, %{...}` — the live-smoke
+  configured as `config :casein, :uat_sandbox_workspace, %{...}` — the live-smoke
   wiring (Phase 2). Without it the task lists and exits `3` rather than pretending.
   """
 
   use Mix.Task
   # Mix tasks aren't a domain boundary. Keep this as a top-level boundary
-  # that may depend on the DevIDE domain. Manual classification is reserved
-  # for tasks grouped under the uniquely named `DevIDEMix` boundary.
+  # that may depend on the Casein domain. Manual classification is reserved
+  # for tasks grouped under the uniquely named `CaseinMix` boundary.
   # targeting a mix boundary, and emits "unknown boundary" otherwise.)
-  use Boundary, top_level?: true, deps: [DevIDE], exports: :all
+  use Boundary, top_level?: true, deps: [Casein], exports: :all
 
-  alias DevIDE.UAT.{Manifest, TierA}
+  alias Casein.UAT.{Manifest, TierA}
 
   @impl true
   def run(argv) do
     {opts, paths, _} = OptionParser.parse(argv, strict: [dry_run: :boolean])
     root = List.first(paths) || "priv/uat"
     Mix.Task.run("app.config")
-    {:ok, _} = Application.ensure_all_started(:dev_ide)
+    {:ok, _} = Application.ensure_all_started(:casein)
 
     dirs = scenario_dirs(root, paths)
 
@@ -68,10 +68,10 @@ defmodule Mix.Tasks.Uat.TierA do
   end
 
   defp execute(dirs) do
-    case Application.get_env(:dev_ide, :uat_sandbox_workspace) do
+    case Application.get_env(:casein, :uat_sandbox_workspace) do
       nil ->
         Mix.shell().error(
-          "Real runs need config :dev_ide, :uat_sandbox_workspace (Phase 2 live-smoke). Use --dry-run."
+          "Real runs need config :casein, :uat_sandbox_workspace (Phase 2 live-smoke). Use --dry-run."
         )
 
         System.halt(3)

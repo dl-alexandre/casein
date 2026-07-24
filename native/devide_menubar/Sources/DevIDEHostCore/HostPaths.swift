@@ -2,7 +2,7 @@ import Foundation
 
 /// Filesystem layout the host cares about: the release it supervises and the
 /// data directory holding the status contract. Mirrors
-/// `DevIDE.Desktop.Runtime.data_dir/0` defaults on Darwin.
+/// `Casein.Desktop.Runtime.data_dir/0` defaults on Darwin.
 public struct HostPaths: Sendable, Equatable {
     public var dataDir: URL
     public var releaseRoot: URL
@@ -16,7 +16,7 @@ public struct HostPaths: Sendable, Equatable {
     /// Host-generated boot secrets (see `HostSecrets`).
     public var hostSecretsFile: URL { dataDir.appending(path: "host-secrets.json") }
     public var hostSettingsFile: URL { dataDir.appending(path: "desktop-host.json") }
-    public var devIdeBinary: URL { releaseRoot.appending(path: "bin/dev_ide") }
+    public var devIdeBinary: URL { releaseRoot.appending(path: "bin/casein") }
     public var migrateBinary: URL { releaseRoot.appending(path: "bin/migrate") }
     /// Writable release runtime state. Keeping this outside the signed app
     /// bundle prevents run_erl logs from invalidating its code signature.
@@ -35,7 +35,7 @@ public struct HostPaths: Sendable, Equatable {
     ) -> HostPaths? {
         let bundledRoot = bundleResources?.appending(path: "release")
         let usableBundledRoot = bundledRoot.flatMap { root in
-            FileManager.default.isExecutableFile(atPath: root.appending(path: "bin/dev_ide").path)
+            FileManager.default.isExecutableFile(atPath: root.appending(path: "bin/casein").path)
                 ? root.path : nil
         }
         let root =
@@ -45,7 +45,7 @@ public struct HostPaths: Sendable, Equatable {
         guard let root, !root.isEmpty else { return nil }
 
         let dataDir =
-            environment["DEV_IDE_DESKTOP_DATA_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
+            environment["CASEIN_DESKTOP_DATA_DIR"].flatMap { $0.isEmpty ? nil : URL(filePath: $0) }
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: "Library/Application Support/DevIDE")
 
@@ -54,13 +54,13 @@ public struct HostPaths: Sendable, Equatable {
 
     /// Persist an operator-chosen release directory and return the resulting
     /// paths. Returns nil if the directory is not a usable release
-    /// (`bin/dev_ide` missing).
+    /// (`bin/casein` missing).
     public static func choose(
         releaseRoot: URL,
         defaults: UserDefaults = .standard
     ) -> HostPaths? {
         let candidate = releaseRoot.standardizedFileURL
-        guard FileManager.default.isExecutableFile(atPath: candidate.appending(path: "bin/dev_ide").path)
+        guard FileManager.default.isExecutableFile(atPath: candidate.appending(path: "bin/casein").path)
         else { return nil }
         defaults.set(candidate.path, forKey: releaseRootDefaultsKey)
         return detect(defaults: defaults)

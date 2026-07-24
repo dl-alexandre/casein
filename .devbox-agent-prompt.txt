@@ -6,9 +6,9 @@ source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
 - Workspace id: $DEVIDE_WORKSPACE_ID  (dalexandre-devide)
 - Checkout path: /data/workspaces/dalexandre/dev_ide
 - UI: $DEVIDE_PUBLIC_URL/workspaces/$DEVIDE_WORKSPACE_ID
-- Terminal MCP: $DEVIDE_TERMINAL_MCP_URL  (Bearer $DEV_IDE_API_TOKEN)
-- Preview MCP: $DEVIDE_PREVIEW_MCP_URL  (Bearer $DEV_IDE_API_TOKEN)
-- Artifact MCP: $DEVIDE_ARTIFACT_MCP_URL  (Bearer $DEV_IDE_API_TOKEN)
+- Terminal MCP: $DEVIDE_TERMINAL_MCP_URL  (Bearer $CASEIN_API_TOKEN)
+- Preview MCP: $DEVIDE_PREVIEW_MCP_URL  (Bearer $CASEIN_API_TOKEN)
+- Artifact MCP: $DEVIDE_ARTIFACT_MCP_URL  (Bearer $CASEIN_API_TOKEN)
 
 ## Pairing protocol
 1. Ask the operator to open the workspace in DevIDE and click **Agents → Apply Preview Demo** (or Apply Agent Pair layout) if not already done.

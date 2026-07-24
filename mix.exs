@@ -1,9 +1,9 @@
-defmodule DevIDE.MixProject do
+defmodule Casein.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :dev_ide,
+      app: :casein,
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -22,7 +22,7 @@ defmodule DevIDE.MixProject do
       # Raise the floor as coverage improves; never lower it.
       test_coverage: [summary: [threshold: 66]],
       releases: [
-        dev_ide: [
+        casein: [
           include_executables_for: [:unix, :windows],
           applications: [runtime_tools: :permanent],
           steps: [
@@ -43,7 +43,7 @@ defmodule DevIDE.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {DevIDE.Application, []},
+      mod: {Casein.Application, []},
       extra_applications:
         [:logger, :runtime_tools] ++ if(native_windows?(), do: [], else: [:erlexec])
     ]
@@ -106,8 +106,8 @@ defmodule DevIDE.MixProject do
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
-      {:dev_ide_core, path: "dev_ide_core"},
-      {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
+      {:casein_core, path: "casein_core"},
+      {:casein_preview_browser, path: "casein_preview_browser"},
       ghostty_dependency(),
       {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev, :test]},
@@ -130,14 +130,14 @@ defmodule DevIDE.MixProject do
 
   defp ghostty_dependency do
     if native_windows?() do
-      {:ghostty, path: "dev_ide_ghostty_windows", override: true}
+      {:ghostty, path: "casein_ghostty_windows", override: true}
     else
       {:ghostty, "~> 0.4"}
     end
   end
 
   defp native_windows? do
-    match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") in ~w(1 true)
+    match?({:win32, _}, :os.type()) or System.get_env("CASEIN_NATIVE_WINDOWS") in ~w(1 true)
   end
 
   # Aliases are shortcuts or tasks specific to the current project.
@@ -153,24 +153,24 @@ defmodule DevIDE.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind dev_ide", "esbuild dev_ide"],
+      "assets.build": ["compile", "tailwind casein", "esbuild casein"],
       "assets.deploy": [
-        "tailwind dev_ide --minify",
-        "esbuild dev_ide --minify",
+        "tailwind casein --minify",
+        "esbuild casein --minify",
         "phx.digest"
       ],
       "assets.npm": ["cmd --cd assets npm ci --no-audit --no-fund --no-progress"],
       "preview.npm": [
         "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress"
       ],
-      "dev_ide.release.lan": [
+      "casein.release.lan": [
         "compile",
         "assets.npm",
         "preview.npm",
         "tailwind.install --if-missing",
         &resign_bun_binaries/1,
         "assets.deploy",
-        "release dev_ide --overwrite"
+        "release casein --overwrite"
       ],
       precommit: [
         "compile --warnings-as-errors",
@@ -220,7 +220,7 @@ defmodule DevIDE.MixProject do
 
       Run `MIX_ENV=prod mix assets.deploy` before `mix release`, or use:
 
-          MIX_ENV=prod mix dev_ide.release.lan
+          MIX_ENV=prod mix casein.release.lan
       """)
     end
 
@@ -335,8 +335,8 @@ defmodule DevIDE.MixProject do
   end
 
   defp write_release_metadata(release) do
-    metadata = DevIDE.Release.Metadata.build_for_assemble()
-    DevIDE.Release.Metadata.write!(release.path, metadata)
+    metadata = Casein.Release.Metadata.build_for_assemble()
+    Casein.Release.Metadata.write!(release.path, metadata)
     release
   end
 

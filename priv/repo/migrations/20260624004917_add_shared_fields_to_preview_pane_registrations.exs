@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.AddSharedFieldsToPreviewPaneRegistrations do
+defmodule Casein.Repo.Migrations.AddSharedFieldsToPreviewPaneRegistrations do
   use Ecto.Migration
 
   def up do
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       alter table(:preview_pane_registrations) do
         add_if_not_exists :shared, :boolean, null: false, default: false
         add_if_not_exists :source_pane_id, :string
@@ -19,7 +19,7 @@ defmodule DevIDE.Repo.Migrations.AddSharedFieldsToPreviewPaneRegistrations do
   def down do
     drop_if_exists index(:preview_pane_registrations, [:source_pane_id])
 
-    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+    unless Casein.Repo.Adapter.sqlite?(repo()) do
       alter table(:preview_pane_registrations) do
         remove_if_exists :pane_window_id, :string
         remove_if_exists :anchor_window_id, :string

@@ -10,9 +10,9 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   # async: false — `setup_all` disables the Playwright helper and restarts the
   # app-supervised Bridge singleton so `observe_live/1` deterministically falls
   # back to the static `observe/1` path instead of reaching a live helper.
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  alias DevIDE.TestSupport.HTTPStub
+  alias Casein.TestSupport.HTTPStub
   alias PreviewCtl.Playwright.Adapter
 
   # Force the Bridge into its :playwright_unavailable state (no script/executable)
@@ -41,8 +41,8 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   end
 
   defp restart_bridge do
-    _ = Supervisor.terminate_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, PreviewCtl.Playwright.Bridge)
+    _ = Supervisor.terminate_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
+    {:ok, _} = Supervisor.restart_child(Casein.Supervisor, PreviewCtl.Playwright.Bridge)
     :ok
   end
 

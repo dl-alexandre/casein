@@ -20,17 +20,17 @@ fi
 source "$ENV_FILE"
 
 DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 WS_ID="${DEVIDE_WORKSPACE_ID:-}"
-ADMIN_TOKEN="${DEV_IDE_ADMIN_API_TOKEN:-$TOKEN}"
+ADMIN_TOKEN="${CASEIN_ADMIN_API_TOKEN:-$TOKEN}"
 
 if [[ -z "$TOKEN" || -z "$WS_ID" ]]; then
-  echo "ERROR: DEV_IDE_API_TOKEN and DEVIDE_WORKSPACE_ID required" >&2
+  echo "ERROR: CASEIN_API_TOKEN and DEVIDE_WORKSPACE_ID required" >&2
   exit 1
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 auth_header=( -H "authorization: Bearer $TOKEN" -H "content-type: application/json" )
 admin_header=( -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" )

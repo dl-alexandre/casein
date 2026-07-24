@@ -1,0 +1,15 @@
+defmodule Casein.Workspaces.State.Adapter do
+  @moduledoc "Behaviour for workspace record persistence adapters."
+
+  alias Casein.Workspaces.State.WorkspaceRecord
+
+  @callback upsert(WorkspaceRecord.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  @callback upsert_all([WorkspaceRecord.t()]) :: {:ok, [WorkspaceRecord.t()]} | {:error, term()}
+  @callback get(external_id :: String.t()) :: {:ok, WorkspaceRecord.t()} | :error
+  @callback get_many(external_ids :: [String.t()]) ::
+              %{optional(String.t()) => WorkspaceRecord.t()}
+  @callback records_for_host_paths(host_paths :: [String.t()]) ::
+              %{optional(String.t()) => WorkspaceRecord.t()}
+  @callback list() :: [WorkspaceRecord.t()]
+  @callback delete(external_id :: String.t()) :: :ok
+end

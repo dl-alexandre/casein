@@ -137,7 +137,7 @@ defmodule Scripts.AgentWorktreeTest do
           {"ROOT", @root},
           {"PATH", "#{Path.dirname(curl_bin)}:#{system_path()}"},
           {"FAKE_CURL_BODY", body_path},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_TMUX_SESSION", "devide_workspace-123_u-agent"},
           {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"}
@@ -172,7 +172,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", home},
           {"PATH", system_path()},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
           {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
@@ -199,7 +199,7 @@ defmodule Scripts.AgentWorktreeTest do
     npm_prefix = Path.join(home, ".local/share/npm-global")
     user_codex = Path.join(npm_prefix, "lib/node_modules/@openai/codex/bin/codex.js")
     stale_codex = Path.join(tmp, "usr/lib/node_modules/@openai/codex/bin/codex.js")
-    real_bins = Path.join(home, ".devide/real-bins")
+    real_bins = Path.join(home, ".casein/real-bins")
 
     File.mkdir_p!(Path.dirname(user_codex))
     File.mkdir_p!(Path.dirname(stale_codex))
@@ -221,7 +221,7 @@ defmodule Scripts.AgentWorktreeTest do
         ],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"PATH", "#{Path.dirname(stale_codex)}:#{system_path()}"}
         ]
       )
@@ -271,9 +271,9 @@ defmodule Scripts.AgentWorktreeTest do
         [Path.join(@root, "scripts/install-agent-shims.sh")],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
-          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
+          {"CASEIN_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:#{system_codex_dir}:#{system_path()}"}
         ],
         stderr_to_stdout: true
@@ -281,9 +281,9 @@ defmodule Scripts.AgentWorktreeTest do
 
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
-    assert File.read_link!(Path.join(home, ".devide/real-bins/codex")) == user_codex
+    assert File.read_link!(Path.join(home, ".casein/real-bins/codex")) == user_codex
 
-    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~
+    assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
              "devide\" agent launch codex"
   end
 
@@ -338,9 +338,9 @@ defmodule Scripts.AgentWorktreeTest do
         [Path.join(@root, "scripts/devide"), "agent", "launch", "codex", "update"],
         env: [
           {"HOME", home},
-          {"DEV_IDE_NPM_PREFIX", npm_prefix},
+          {"CASEIN_NPM_PREFIX", npm_prefix},
           {"FAKE_NPM_SET", npm_set},
-          {"DEV_IDE_MANAGE_NPM_PREFIX", "1"},
+          {"CASEIN_MANAGE_NPM_PREFIX", "1"},
           {"PATH", "#{fake_bin}:/usr/bin:/bin"}
         ],
         stderr_to_stdout: true
@@ -350,7 +350,7 @@ defmodule Scripts.AgentWorktreeTest do
     assert output =~ "Installed DevIDE agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
 
-    assert File.read!(Path.join(home, ".devide/agent-shims/codex")) =~
+    assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~
              "devide\" agent launch codex"
   end
 
@@ -369,12 +369,12 @@ defmodule Scripts.AgentWorktreeTest do
       File.ln_s!(Path.join(@root, "scripts/lib/#{file}"), Path.join(lib, file))
     end
 
-    File.write!(Path.join(scripts, "launch-devide-agent.sh"), """
+    File.write!(Path.join(scripts, "launch-casein-agent.sh"), """
     #!/usr/bin/env bash
     printf 'installed launcher <%s>\n' "$1"
     """)
 
-    File.write!(Path.join(stale_scripts, "launch-devide-agent.sh"), """
+    File.write!(Path.join(stale_scripts, "launch-casein-agent.sh"), """
     #!/usr/bin/env bash
     printf 'stale launcher <%s>\n' "$1"
     """)
@@ -386,7 +386,7 @@ defmodule Scripts.AgentWorktreeTest do
         env: [
           {"HOME", Path.join(tmp, "home")},
           {"PATH", system_path()},
-          {"DEV_IDE_API_TOKEN", "scoped-token"},
+          {"CASEIN_API_TOKEN", "scoped-token"},
           {"DEVIDE_WORKSPACE_ID", "workspace-123"},
           {"DEVIDE_WORKSPACE_NAME", "workspace-123"},
           {"DEVIDE_SCRIPTS", stale_scripts}
@@ -408,7 +408,7 @@ defmodule Scripts.AgentWorktreeTest do
 
     git!(["init", "--initial-branch=master", repo])
     git!(["-C", repo, "config", "user.email", "devide@example.invalid"])
-    git!(["-C", repo, "config", "user.name", "DevIDE Test"])
+    git!(["-C", repo, "config", "user.name", "Casein Test"])
     File.write!(Path.join(repo, "README.md"), "test\n")
     git!(["-C", repo, "add", "README.md"])
     git!(["-C", repo, "commit", "-m", "init"])
@@ -462,14 +462,14 @@ defmodule Scripts.AgentWorktreeTest do
     scripts = Path.join(root, "scripts")
     lib = Path.join(scripts, "lib")
     home = Path.join(tmp, "home")
-    real_bins = Path.join(home, ".devide/real-bins")
+    real_bins = Path.join(home, ".casein/real-bins")
 
     File.mkdir_p!(lib)
     File.mkdir_p!(real_bins)
 
     File.ln_s!(
-      Path.join(@root, "scripts/launch-devide-agent.sh"),
-      Path.join(scripts, "launch-devide-agent.sh")
+      Path.join(@root, "scripts/launch-casein-agent.sh"),
+      Path.join(scripts, "launch-casein-agent.sh")
     )
 
     for file <- [
@@ -487,7 +487,7 @@ defmodule Scripts.AgentWorktreeTest do
 
     File.write!(Path.join(scripts, "materialize-agent-mcp.sh"), """
     #!/usr/bin/env bash
-    printf 'export DEV_IDE_API_TOKEN=leaked-token\\n'
+    printf 'export CASEIN_API_TOKEN=leaked-token\\n'
     printf 'materialize stderr body\\n' >&2
     exit 42
     """)
@@ -509,7 +509,7 @@ defmodule Scripts.AgentWorktreeTest do
     File.chmod!(fake_agent, 0o755)
     on_exit(fn -> File.rm_rf(tmp) end)
 
-    %{launcher: Path.join(scripts, "launch-devide-agent.sh"), home: home}
+    %{launcher: Path.join(scripts, "launch-casein-agent.sh"), home: home}
   end
 
   defp tmp_dir!(prefix) do

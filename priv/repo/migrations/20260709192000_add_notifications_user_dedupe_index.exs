@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.AddNotificationsUserDedupeIndex do
+defmodule Casein.Repo.Migrations.AddNotificationsUserDedupeIndex do
   use Ecto.Migration
 
   def change do

@@ -118,7 +118,7 @@ export function readFocusedPaneScrollAttrs(root = document) {
 
 export function scrollDebugEnabled() {
   try {
-    if (typeof localStorage !== "undefined" && localStorage.getItem("devide:termscroll") === "1") {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("casein:termscroll") === "1") {
       return true
     }
   } catch {

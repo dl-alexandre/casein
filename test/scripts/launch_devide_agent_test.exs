@@ -1,7 +1,7 @@
 defmodule Scripts.LaunchDevideAgentTest do
   use ExUnit.Case, async: true
 
-  @script Path.expand("../../scripts/launch-devide-agent.sh", __DIR__)
+  @script Path.expand("../../scripts/launch-casein-agent.sh", __DIR__)
 
   test "script has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -89,7 +89,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ "PermissionRequest"
     assert text =~ "SubagentStart"
     assert text =~ "DEVIDE_AGENT_STATE_HOOKS"
-    assert text =~ "agent-hooks/grok-devide-agent-bootstrap.json"
+    assert text =~ "agent-hooks/grok-casein-agent-bootstrap.json"
     assert text =~ "grok_prepare_private_leader"
     assert text =~ "grok-leader-runtime.py"
     assert text =~ ~S(metadata="${root_real}/.devide-launcher")
@@ -133,7 +133,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     refute text =~ ~S("/data/workspaces/*/.devbox-agent.env")
     refute text =~ ~S("/data/workspaces/*/*/.devbox-agent.env")
     assert text =~ "managed Grok capability materialization failed"
-    assert text =~ ~S(unset DEV_IDE_ADMIN_API_TOKEN DEV_IDE_WORKSPACE_API_TOKENS)
+    assert text =~ ~S(unset CASEIN_ADMIN_API_TOKEN CASEIN_WORKSPACE_API_TOKENS)
     assert text =~ ~S(--permission-mode "$DEVIDE_GROK_PERMISSION_MODE")
     assert text =~ "--no-auto-update"
     refute text =~ ~S(lock_file="${socket_real%.sock}.lock")
@@ -145,8 +145,8 @@ defmodule Scripts.LaunchDevideAgentTest do
     setup = File.read!(Path.expand("../../scripts/setup-devbox-agent-pairing.sh", __DIR__))
     refresh = File.read!(Path.expand("../../scripts/refresh-devbox-agent-pairing.sh", __DIR__))
 
-    refute setup =~ "export DEV_IDE_ADMIN_API_TOKEN="
-    refute refresh =~ "export DEV_IDE_ADMIN_API_TOKEN="
+    refute setup =~ "export CASEIN_ADMIN_API_TOKEN="
+    refute refresh =~ "export CASEIN_ADMIN_API_TOKEN="
   end
 
   test "codex defaults to full access, preserves explicit policies, and scrubs bearer credentials" do
@@ -171,7 +171,7 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ ~S(tui.terminal_title=*)
   end
 
-  test "claude launches stage DevIDE-infra skills into the resolved config home" do
+  test "claude launches stage Casein-infra skills into the resolved config home" do
     text = File.read!(@script)
 
     assert text =~ "lib/agent-skills.sh"

@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEMO_DIR="${DEVIDE_PREVIEW_DEMO_DIR:-${ROOT}/.devide/preview-demo}"
+DEMO_DIR="${DEVIDE_PREVIEW_DEMO_DIR:-${ROOT}/.casein/preview-demo}"
 DEMO_PORT="${DEVIDE_PREVIEW_DEMO_PORT:-5173}"
 SRC="${ROOT}/priv/preview_demo"
 

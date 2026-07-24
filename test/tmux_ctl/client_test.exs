@@ -1,5 +1,5 @@
 defmodule TmuxCtl.ClientTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState
@@ -133,21 +133,21 @@ defmodule TmuxCtl.ClientTest do
     assert :ok = Client.set_session_alias(@session, "billing")
 
     assert_receive {:tmux_runner,
-                    ["set-option", "-t", @session, "@devide_session_alias", "billing"]}
+                    ["set-option", "-t", @session, "@casein_session_alias", "billing"]}
   end
 
   test "set_session_alias unsets the option for a blank name" do
     assert :ok = Client.set_session_alias(@session, "   ")
-    assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
+    assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@casein_session_alias"]}
   end
 
   test "set_pane_role stores and clears a managed pane user option" do
     assert :ok = Client.set_pane_role(@session, "%1", "agent")
 
-    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", "agent"]}
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "@casein_pane_role", "agent"]}
 
     assert :ok = Client.set_pane_role(@session, "%1", nil)
-    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "-u", "@devide_pane_role"]}
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "-u", "@casein_pane_role"]}
   end
 
   test "set_pane_role refuses unsafe roles and unmanaged sessions" do
@@ -156,7 +156,7 @@ defmodule TmuxCtl.ClientTest do
     assert {:error, :refused_non_devide_session} =
              Client.set_pane_role("other_session", "%1", "agent")
 
-    refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", _]}
+    refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@casein_pane_role", _]}
   end
 
   test "consolidate_sessions appends source windows into target session" do
@@ -212,14 +212,14 @@ defmodule TmuxCtl.ClientTest do
 
   test "new_window includes configured terminal env" do
     Application.put_env(:tmux_ctl, :terminal_env, %{
-      "DEV_IDE_CLIPBOARD" => "osc52",
-      "PATH" => "/tmp/devide-shims:/usr/bin"
+      "CASEIN_CLIPBOARD" => "osc52",
+      "PATH" => "/tmp/casein-shims:/usr/bin"
     })
 
     assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
     assert_receive {:tmux_runner, argv}
-    assert contains_sequence?(argv, ["-e", "DEV_IDE_CLIPBOARD=osc52"])
-    assert contains_sequence?(argv, ["-e", "PATH=/tmp/devide-shims:/usr/bin"])
+    assert contains_sequence?(argv, ["-e", "CASEIN_CLIPBOARD=osc52"])
+    assert contains_sequence?(argv, ["-e", "PATH=/tmp/casein-shims:/usr/bin"])
   end
 
   test "new_window ignores malformed terminal env config" do
@@ -240,11 +240,11 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "split_pane includes configured terminal env" do
-    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_TERMINAL" => "1"})
+    Application.put_env(:tmux_ctl, :terminal_env, %{"CASEIN_TERMINAL" => "1"})
 
     assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
     assert_receive {:tmux_runner, argv}
-    assert contains_sequence?(argv, ["-e", "DEV_IDE_TERMINAL=1"])
+    assert contains_sequence?(argv, ["-e", "CASEIN_TERMINAL=1"])
   end
 
   test "split_pane appends default command unless an explicit command is provided" do
@@ -264,7 +264,7 @@ defmodule TmuxCtl.ClientTest do
     assert :ok = Client.apply_defaults(@session)
   end
 
-  test "apply_defaults sets window-size manual so DevIDE owns resizing" do
+  test "apply_defaults sets window-size manual so Casein owns resizing" do
     assert :ok = Client.apply_defaults(@session)
     assert_receive {:tmux_runner, argv}
 
@@ -294,7 +294,7 @@ defmodule TmuxCtl.ClientTest do
   end
 
   test "apply_defaults pushes configured terminal env into the tmux session" do
-    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_CLIPBOARD" => "osc52"})
+    Application.put_env(:tmux_ctl, :terminal_env, %{"CASEIN_CLIPBOARD" => "osc52"})
 
     assert :ok = Client.apply_defaults(@session)
     assert_receive {:tmux_runner, argv}
@@ -303,7 +303,7 @@ defmodule TmuxCtl.ClientTest do
              "set-environment",
              "-t",
              @session,
-             "DEV_IDE_CLIPBOARD",
+             "CASEIN_CLIPBOARD",
              "osc52"
            ])
   end
@@ -359,7 +359,7 @@ defmodule TmuxCtl.ClientTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :tmux, :inject],
+      [:casein, :tmux, :inject],
       fn event, measurements, metadata, pid ->
         send(pid, {:tmux_inject_telemetry, event, measurements, metadata})
       end,
@@ -370,7 +370,7 @@ defmodule TmuxCtl.ClientTest do
 
     assert :ok = Client.inject("%7", "hello")
 
-    assert_receive {:tmux_inject_telemetry, [:dev_ide, :tmux, :inject], %{count: 1},
+    assert_receive {:tmux_inject_telemetry, [:casein, :tmux, :inject], %{count: 1},
                     %{target: "%7"}}
   end
 
@@ -379,7 +379,7 @@ defmodule TmuxCtl.ClientTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :tmux, :inject, :error],
+      [:casein, :tmux, :inject, :error],
       fn event, measurements, metadata, pid ->
         send(pid, {:tmux_inject_error_telemetry, event, measurements, metadata})
       end,
@@ -396,7 +396,7 @@ defmodule TmuxCtl.ClientTest do
     assert ["tmux", "set-buffer", "-b", _buffer, "--", "[REDACTED]"] = command
     refute inspect(reason) =~ "super secret prompt"
 
-    assert_receive {:tmux_inject_error_telemetry, [:dev_ide, :tmux, :inject, :error], %{count: 1},
+    assert_receive {:tmux_inject_error_telemetry, [:casein, :tmux, :inject, :error], %{count: 1},
                     %{reason: telemetry_reason, target: "%7"}}
 
     refute inspect(telemetry_reason) =~ "super secret prompt"

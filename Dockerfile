@@ -9,7 +9,7 @@
 #             compiler, no node.
 #
 # Build:
-#   docker build -t dev_ide:latest .
+#   docker build -t casein:latest .
 #
 # Run (operator provides env — see docs/deploy.md):
 #   docker run --rm -p 4000:4000 \
@@ -18,13 +18,13 @@
 #     -e PORT=4000 \
 #     -e SECRET_KEY_BASE=<mix phx.gen.secret> \
 #     -e DATABASE_URL=ecto://... \
-#     -e DEV_IDE_API_TOKEN=<bearer> \
-#     -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
+#     -e CASEIN_API_TOKEN=<bearer> \
+#     -e CASEIN_WORKSPACES_ROOT=/workspaces \
 #     -v /path/to/workspaces:/workspaces \
-#     dev_ide:latest
+#     casein:latest
 #
 # By default DevIDE discovers workspaces as directories under
-# DEV_IDE_WORKSPACES_ROOT. Optional integrations (see
+# CASEIN_WORKSPACES_ROOT. Optional integrations (see
 # docs/integrations/) supply alternative workspace sources via config.
 
 # ---- Stage 1: build the release --------------------------------------
@@ -36,7 +36,7 @@ ARG DEBIAN_RELEASE=bookworm
 ARG DEBIAN_DATE=20260610
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG RUNNER_IMAGE="debian:${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
-ARG DEV_IDE_REPO_ADAPTER=postgres
+ARG CASEIN_REPO_ADAPTER=postgres
 ARG DEVIDE_GIT_REVISION=
 ARG DEVIDE_RELEASE_PROFILE=devbox
 ARG DEVIDE_RELEASE_REPO_ADAPTER=
@@ -45,7 +45,7 @@ ARG DEVIDE_RELEASE_CHANNEL=canary
 ARG DEVIDE_UPDATE_MANIFEST_URL=
 
 FROM ${BUILDER_IMAGE} AS builder
-ARG DEV_IDE_REPO_ADAPTER
+ARG CASEIN_REPO_ADAPTER
 ARG DEVIDE_GIT_REVISION
 ARG DEVIDE_RELEASE_PROFILE
 ARG DEVIDE_RELEASE_REPO_ADAPTER
@@ -68,7 +68,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 ENV MIX_ENV=prod \
-    DEV_IDE_REPO_ADAPTER=${DEV_IDE_REPO_ADAPTER} \
+    CASEIN_REPO_ADAPTER=${CASEIN_REPO_ADAPTER} \
     DEVIDE_GIT_REVISION=${DEVIDE_GIT_REVISION} \
     DEVIDE_RELEASE_PROFILE=${DEVIDE_RELEASE_PROFILE} \
     DEVIDE_RELEASE_REPO_ADAPTER=${DEVIDE_RELEASE_REPO_ADAPTER} \
@@ -108,7 +108,7 @@ COPY rel rel
 COPY README.md README.md
 COPY docs docs
 
-RUN mix release dev_ide
+RUN mix release casein
 
 # ---- Stage 2: minimal runtime ----------------------------------------
 FROM ${RUNNER_IMAGE} AS runtime
@@ -140,19 +140,19 @@ ENV LANG=en_US.UTF-8 \
 RUN groupadd --gid 1000 dev_ide \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash dev_ide \
     && mkdir -p /workspaces \
-    && chown -R dev_ide:dev_ide /workspaces
+    && chown -R dev_ide:casein /workspaces
 
 WORKDIR /app
 
-COPY --from=builder --chown=dev_ide:dev_ide /app/_build/prod/rel/dev_ide ./
+COPY --from=builder --chown=dev_ide:casein /app/_build/prod/rel/dev_ide ./
 
 USER dev_ide
 
 EXPOSE 4000
 
 # Migrations are explicit, not at server boot — operator runs:
-#   docker run dev_ide:latest /app/bin/dev_ide eval "DevIDE.Release.migrate()"
+#   docker run casein:latest /app/bin/casein eval "Casein.Release.migrate()"
 # (or use the rel/overlays/bin/migrate helper) before bringing up the
 # server pool. This keeps zero-downtime upgrades sane: one task pod
 # migrates; the server pool then rolls.
-CMD ["/app/bin/dev_ide", "start"]
+CMD ["/app/bin/casein", "start"]

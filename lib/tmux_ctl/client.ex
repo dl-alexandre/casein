@@ -10,7 +10,7 @@ defmodule TmuxCtl.Client do
 
   @resize_amount_default 5
   @resize_amount_max 50
-  @pane_role_option "@devide_pane_role"
+  @pane_role_option "@casein_pane_role"
 
   defp session_prefix do
     Application.get_env(:tmux_ctl, :session_prefix, "devide")
@@ -95,7 +95,7 @@ defmodule TmuxCtl.Client do
 
     case result do
       :ok ->
-        :telemetry.execute([:dev_ide, :tmux, :inject], %{count: 1}, %{target: target})
+        :telemetry.execute([:casein, :tmux, :inject], %{count: 1}, %{target: target})
         :ok
 
       {:error, reason} = error ->
@@ -106,7 +106,7 @@ defmodule TmuxCtl.Client do
           reason: inspect(reason)
         )
 
-        :telemetry.execute([:dev_ide, :tmux, :inject, :error], %{count: 1}, %{
+        :telemetry.execute([:casein, :tmux, :inject, :error], %{count: 1}, %{
           target: target,
           reason: reason
         })
@@ -145,11 +145,11 @@ defmodule TmuxCtl.Client do
 
   # `automatic-rename` (hyphenated, the window-option lookup) is 0 once a
   # window has been deliberately named — by the user, `new-window -n`, or a
-  # DevIDE rename — and 1 while tmux still auto-names it after the running
+  # Casein rename — and 1 while tmux still auto-names it after the running
   # command. The underscored spelling is NOT a tmux format variable and
   # silently expands to "".
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{automatic-rename}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role}|#{@devide_paired}|#{@devide_paired_reason}|#{pane_title})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@casein_pane_role}|#{@casein_paired}|#{@casein_paired_reason}|#{pane_title})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -251,7 +251,7 @@ defmodule TmuxCtl.Client do
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
   @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{automatic-rename}|#{window_name})
-  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@devide_pane_role}|#{@devide_paired}|#{pane_title})
+  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@casein_pane_role}|#{@casein_paired}|#{pane_title})
 
   @doc """
   Windows and pane paths for every session on the server, in one tmux
@@ -713,7 +713,7 @@ defmodule TmuxCtl.Client do
     }
   end
 
-  # Agent-launch pairing stamp (@devide_paired): "1"/"0" once a launcher ran
+  # Agent-launch pairing stamp (@casein_paired): "1"/"0" once a launcher ran
   # in the pane, "" (nil — unknown) for panes that never launched an agent.
   defp parse_paired("1"), do: true
   defp parse_paired("0"), do: false
@@ -812,7 +812,7 @@ defmodule TmuxCtl.Client do
 
   Windows are appended to the target session and source sessions naturally
   disappear when their final window is moved. The mutation is intentionally
-  scoped to managed DevIDE sessions, matching the destructive pane/window
+  scoped to managed Casein sessions, matching the destructive pane/window
   guards elsewhere in this adapter.
   """
   @spec consolidate_sessions(String.t(), [String.t()]) :: {:ok, map()} | {:error, term()}
@@ -1161,18 +1161,18 @@ defmodule TmuxCtl.Client do
   @doc """
   Set (or clear) a session's display alias.
 
-  Stored as the per-session tmux user option `@devide_session_alias` so the name
+  Stored as the per-session tmux user option `@casein_session_alias` so the name
   lives with the tmux session itself — it survives app restarts and leaves the
   load-bearing `devide_<workspace>_<sid>` session name (and MCP scoping) untouched.
   A blank name unsets the option. The scan in `list_sessions/0` reads it back via
-  the `@devide_session_alias` tmux format field.
+  the `@casein_session_alias` tmux format field.
   """
   @spec set_session_alias(String.t(), String.t()) :: :ok | {:error, term()}
   def set_session_alias(session, name) when is_binary(session) do
     args =
       case String.trim(to_string(name || "")) do
-        "" -> ["set-option", "-t", session, "-u", "@devide_session_alias"]
-        trimmed -> ["set-option", "-t", session, "@devide_session_alias", trimmed]
+        "" -> ["set-option", "-t", session, "-u", "@casein_session_alias"]
+        trimmed -> ["set-option", "-t", session, "@casein_session_alias", trimmed]
       end
 
     case run(args) do
@@ -1182,9 +1182,9 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
-  Set or clear a pane's DevIDE role metadata.
+  Set or clear a pane's Casein role metadata.
 
-  The role is stored as the per-pane tmux user option `@devide_pane_role`, so
+  The role is stored as the per-pane tmux user option `@casein_pane_role`, so
   it survives app restarts and is visible through topology reads.
   """
   @spec set_pane_role(String.t(), String.t(), String.t() | nil) :: :ok | {:error, term()}
@@ -1270,7 +1270,7 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@devide_session_alias})
+  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@casein_session_alias})
 
   @doc """
   List every session with the fields the session janitor needs. Returns `[]`
@@ -1403,7 +1403,7 @@ defmodule TmuxCtl.Client do
       [
         {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
         {["set-option", "-s", "escape-time", "0"], "escape-time"},
-        # Survive last-session teardown; DevIDE owns session lifecycle.
+        # Survive last-session teardown; Casein owns session lifecycle.
         {["set-option", "-s", "exit-empty", "off"], "exit-empty"},
         {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
         {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
@@ -1416,11 +1416,11 @@ defmodule TmuxCtl.Client do
         {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
         {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
         default_command_options(session),
-        # `window-size manual` makes DevIDE's SessionOwner the sole writer via
+        # `window-size manual` makes Casein's SessionOwner the sole writer via
         # explicit `resize-window` calls. `latest` invites any attached tmux
         # client (SSH attach, agent pairing, etc.) to re-pin the window and
-        # race DevIDE's focused-viewer policy — the narrow-column-with-dots
-        # failure mode. External clients may see letterboxing; DevIDE viewers
+        # race Casein's focused-viewer policy — the narrow-column-with-dots
+        # failure mode. External clients may see letterboxing; Casein viewers
         # never will.
         #
         # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
@@ -1671,7 +1671,7 @@ defmodule TmuxCtl.Client do
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
   attached tmux client) should be enough, but with `tmux new-session -A`
   re-attaching to a session that survives BEAM/page-reload cycles, tmux's
-  Under `window-size manual`, DevIDE's SessionOwner is the sole writer; an
+  Under `window-size manual`, Casein's SessionOwner is the sole writer; an
   explicit `resize-window` is how the authoritative viewer size reaches tmux.
 
   Resizes EVERY window in the session, not just the current one: under
@@ -1728,7 +1728,7 @@ defmodule TmuxCtl.Client do
   @doc """
   Force a full redraw of every client attached to `session`.
 
-  DevIDE renders tmux through server-side emulator grids that consume the
+  Casein renders tmux through server-side emulator grids that consume the
   attached PTY client's byte stream, and tmux only sends diffs against its own
   model of that client's screen. Once an emulator grid diverges from that
   model (replay on reconnect, resize races, dropped bytes), the corruption is
@@ -2002,6 +2002,6 @@ defmodule TmuxCtl.Client do
 
   defp tmux_input_path do
     suffix = :crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false)
-    Path.join(System.tmp_dir!(), "devide-tmux-input-#{suffix}")
+    Path.join(System.tmp_dir!(), "casein-tmux-input-#{suffix}")
   end
 end

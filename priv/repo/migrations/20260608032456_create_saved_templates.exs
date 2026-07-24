@@ -1,8 +1,8 @@
-defmodule DevIDE.Repo.Migrations.CreateSavedTemplates do
+defmodule Casein.Repo.Migrations.CreateSavedTemplates do
   use Ecto.Migration
 
   def up do
-    if DevIDE.Repo.Adapter.sqlite?(repo()) do
+    if Casein.Repo.Adapter.sqlite?(repo()) do
       create_if_not_exists table(:saved_templates, primary_key: false) do
         add :id, :binary_id, primary_key: true
         add :workspace_id, :text, null: false

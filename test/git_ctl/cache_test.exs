@@ -1,5 +1,5 @@
 defmodule GitCtl.CacheTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias GitCtl.Cache
 

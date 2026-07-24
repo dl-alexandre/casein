@@ -2,8 +2,8 @@
 # Resolve opt-in owner auth homes for Claude and Codex.
 #
 # Matching <owner>-* workspaces use owner-scoped provider homes once signed in:
-#   ~/.devide/agent-auth/profiles/<owner-key>/claude -> CLAUDE_CONFIG_DIR
-#   ~/.devide/agent-auth/profiles/<owner-key>/codex  -> CODEX_HOME
+#   ~/.casein/agent-auth/profiles/<owner-key>/claude -> CLAUDE_CONFIG_DIR
+#   ~/.casein/agent-auth/profiles/<owner-key>/codex  -> CODEX_HOME
 # A profile only counts as signed in once it holds provider credentials
 # (.credentials.json for Claude, auth.json for Codex). A missing directory —
 # or one without credentials, e.g. after an aborted sign-in — means "use
@@ -17,7 +17,7 @@
 # every owner as registered.
 
 agent_auth_profile_root() {
-  printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.devide/agent-auth}"
+  printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.casein/agent-auth}"
 }
 
 agent_auth_owners_file() {

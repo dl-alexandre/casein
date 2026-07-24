@@ -10,7 +10,7 @@ approvals, history, subagents, and usage come from explicit protocol events.
 Workspace → Runtime → Thread → Turn → Item
 ```
 
-Every ingress path produces `%DevIDE.Codex.Event{}` with workspace, runtime,
+Every ingress path produces `%Casein.Codex.Event{}` with workspace, runtime,
 thread, turn, item, request, transport, sequence, and UTC occurrence fields.
 Wire-specific fields stay under payload/metadata.
 
@@ -30,7 +30,7 @@ durable and audited. Tool payloads are bounded before retention.
 
 ## Interactive App Server runtime
 
-`DevIDE.Codex.Runtime` is the OTP boundary for one worktree, Codex home, and
+`Casein.Codex.Runtime` is the OTP boundary for one worktree, Codex home, and
 security context. It supervises:
 
 - `AppServer`: owns the `codex app-server --stdio` Port and JSON-RPC requests.
@@ -49,7 +49,7 @@ without answering the broker is not a valid approval.
 ## CLI and batch transports
 
 Paired Codex launches receive eight lifecycle hooks plus legacy `notify`. The
-staged `devide-codex-notify.sh` posts JSON to:
+staged `casein-codex-notify.sh` posts JSON to:
 
 ```text
 POST /api/workspaces/:workspace_id/codex/hooks
@@ -60,7 +60,7 @@ hooks mark the thread as waiting; the local Codex prompt remains authoritative.
 Remote approval cards are App Server-only because hooks cannot safely hold a
 bidirectional JSON-RPC request open.
 
-`DevIDE.Codex.ExecRun` runs `codex exec --json` as a cancellable background job.
+`Casein.Codex.ExecRun` runs `codex exec --json` as a cancellable background job.
 It uses argv execution, a read-only sandbox by default, `approval_policy="never"`,
 bounded stderr/JSONL buffers, the canonical event model, and the existing run
 ledger. Workspace-write is available only when an explicit trusted caller asks
@@ -96,8 +96,8 @@ arguments:
 | `manual` (default) | `workspace-write` | `on-request` |
 | explicit `DEVIDE_CODEX_DEFAULT_YOLO=1` | unrestricted | bypassed |
 
-`shell_environment_policy.exclude` removes `DEV_IDE_API_TOKEN`,
-`DEV_IDE_ADMIN_API_TOKEN`, and `DEV_IDE_WORKSPACE_API_TOKENS` from commands run
+`shell_environment_policy.exclude` removes `CASEIN_API_TOKEN`,
+`CASEIN_ADMIN_API_TOKEN`, and `CASEIN_WORKSPACE_API_TOKENS` from commands run
 inside repositories. The Codex process keeps the workspace token so its MCP
 client can authenticate.
 

@@ -9,7 +9,7 @@
 # and a non-preview file. A mixed cycle means a preview module reacquired a
 # compile/runtime edge into core (or vice-versa) that re-entangles the two — the
 # exact regression this guard exists to catch. Typically that is a preview
-# module referencing DevIDE.Terminals/Workspaces/Runtimes directly instead of
+# module referencing Casein.Terminals/Workspaces/Runtimes directly instead of
 # through its injected Previews.Deps.* seam.
 #
 # KNOWN INTERNAL CYCLES (tracked debt, NOT flagged): the preview domain still
@@ -34,10 +34,10 @@ cd "${ROOT}" || exit 1
 # $MIX may be a multi-word command (e.g. "mise exec … -- mix"); split on words.
 read -ra MIX_CMD <<< "${MIX:-mix}"
 
-# Preview-DOMAIN files. The injected impls (lib/dev_ide/{terminals,workspaces,
-# runtimes}/preview_deps.ex, lib/dev_ide/panes/preview_deps.ex) are CORE-side
+# Preview-DOMAIN files. The injected impls (lib/casein/{terminals,workspaces,
+# runtimes}/preview_deps.ex, lib/casein/panes/preview_deps.ex) are CORE-side
 # adapters and are deliberately NOT matched — they may live in the core cycle.
-PREVIEW_RE='lib/dev_ide/previews/|lib/dev_ide/previews[.]ex|lib/dev_ide/preview_panes([.]ex|/)|lib/dev_ide/preview_control([.]ex|/)|lib/dev_ide/agents/preview_tools([.]ex|/)|lib/dev_ide/panes/preview[.]ex'
+PREVIEW_RE='lib/casein/previews/|lib/casein/previews[.]ex|lib/casein/preview_panes([.]ex|/)|lib/casein/preview_control([.]ex|/)|lib/casein/agents/preview_tools([.]ex|/)|lib/casein/panes/preview[.]ex'
 
 cycles="$(mktemp)"
 trap 'rm -f "$cycles"' EXIT

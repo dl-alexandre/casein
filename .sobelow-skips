@@ -1,74 +1,74 @@
 
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/proposals/local_adapter.ex:41,2D0F542
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/inspection_commands.ex:170,3935FF9
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:490,1F5A0E
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:507,3AA418C
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/files/version.ex:28,3A9D16A
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux.ex:821,611E8BE
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/workspace_source/local.ex:71,F3B22E
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/workspaces/isolation_probe/local_adapter.ex:121,579B43D
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:482,7E80A5B
-Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/previews/artifacts.ex:11,8C8539
-Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/files.ex:119,F83AD0
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/terminals/clipboard_paste.ex:166,17A2C7
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:474,600C1B2
-Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/fleet/dossier_export.ex:52,4171949
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/files.ex:222,76C61B8
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:457,53E2B0
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux.ex:720,5F435CC
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/elixir/tooling.ex:49,77F0DB9
-Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/terminals/clipboard_paste.ex:50,3791171
-Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/terminals/clipboard_paste.ex:182,57766EF
-Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/artifacts.ex:15,72040B1
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/files.ex:172,373FEAC
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux.ex:75,4AD874C
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/files.ex:173,808B62
-Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/files.ex:176,5E43C9F
-Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/files.ex:217,1CA8618
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/terminals/clipboard_paste.ex:49,506191D
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/files.ex:63,4BAAC2B
-Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/terminals/ghostty_snapshot.ex:30,138E005
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/clipboard_paste.ex:155,50DD920
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:470,3466AB5
-Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/terminals/ghostty_snapshot.ex:37,7FEB96A
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runtimes.ex:626,6C19054
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/fleet/dossier_export.ex:51,2C062C7
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:443,B59FFE
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/elixir/project.ex:65,5D56529
-CI.System: Command Injection via `System` function,lib/dev_ide/search/ripgrep_adapter.ex:69,6A0E60D
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/proposals/local_adapter.ex:41,2D0F542
+CI.System: Command Injection via `System` function,lib/casein/terminals/inspection_commands.ex:170,3935FF9
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:490,1F5A0E
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:507,3AA418C
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files/version.ex:28,3A9D16A
+CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:821,611E8BE
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/workspace_source/local.ex:71,F3B22E
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/workspaces/isolation_probe/local_adapter.ex:121,579B43D
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:482,7E80A5B
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/casein/previews/artifacts.ex:11,8C8539
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/files.ex:119,F83AD0
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/terminals/clipboard_paste.ex:166,17A2C7
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:474,600C1B2
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/fleet/dossier_export.ex:52,4171949
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:222,76C61B8
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:457,53E2B0
+CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:720,5F435CC
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/tooling.ex:49,77F0DB9
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/terminals/clipboard_paste.ex:50,3791171
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/terminals/clipboard_paste.ex:182,57766EF
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/previews/artifacts.ex:15,72040B1
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:172,373FEAC
+CI.System: Command Injection via `System` function,lib/casein/terminals/tmux.ex:75,4AD874C
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files.ex:173,808B62
+Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/casein/files.ex:176,5E43C9F
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/files.ex:217,1CA8618
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/terminals/clipboard_paste.ex:49,506191D
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files.ex:63,4BAAC2B
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/casein/terminals/ghostty_snapshot.ex:30,138E005
+CI.System: Command Injection via `System` function,lib/casein/terminals/clipboard_paste.ex:155,50DD920
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:470,3466AB5
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/terminals/ghostty_snapshot.ex:37,7FEB96A
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runtimes.ex:626,6C19054
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/fleet/dossier_export.ex:51,2C062C7
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:443,B59FFE
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/elixir/project.ex:65,5D56529
+CI.System: Command Injection via `System` function,lib/casein/search/ripgrep_adapter.ex:69,6A0E60D
 
-DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:453,7A18182
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/terminals/clipboard_paste.ex:129,2B7AE57
-Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/files.ex:216,1AF607
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/files.ex:196,2AE31B9
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/files/janitor.ex:77,6A33CFC
-CI.System: Command Injection via `System` function,lib/dev_ide/git/local_adapter.ex:51,3F6C35A
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/workspaces/file_access.ex:59,36B63E8
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/files.ex:130,5095112
-Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/workspace_source/local.ex:100,845F0F
-Traversal.FileModule: Directory Traversal in `File.cp`,lib/dev_ide/agents/mcp_materializer.ex:208,143D1DA
-Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:197,1C9F379
-Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/agents/mcp_materializer.ex:221,23716C2
-Traversal.FileModule: Directory Traversal in `File.cp`,lib/dev_ide/agents/mcp_materializer.ex:209,24B775E
-Traversal.FileModule: Directory Traversal in `File.ln_s`,lib/dev_ide/deployment/registry.ex:123,269AF81
-Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/previews/artifacts.ex:18,27EB4A6
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:220,291EF
-Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:210,2AD96B3
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:19,3B496D1
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:207,3D6DBAD
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:143,3EF0456
-Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/deployment/registry.ex:148,401791F
-CI.System: Command Injection via `System` function,lib/dev_ide/integrations/manager/workspace_source.ex:306,403FD1C
-Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/previews/artifacts.ex:38,405231
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:20,4D8A1D7
-CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:53,58F9413
-Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/deployment/registry.ex:140,5EB9A45
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:21,66E8CD0
-Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/deployment/registry.ex:161,67BC4A2
+DOS.StringToAtom: Unsafe `String.to_atom`,lib/casein/runners.ex:453,7A18182
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/terminals/clipboard_paste.ex:129,2B7AE57
+Traversal.FileModule: Directory Traversal in `File.write`,lib/casein/files.ex:216,1AF607
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/files.ex:196,2AE31B9
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/files/janitor.ex:77,6A33CFC
+CI.System: Command Injection via `System` function,lib/casein/git/local_adapter.ex:51,3F6C35A
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/workspaces/file_access.ex:59,36B63E8
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/files.ex:130,5095112
+Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/casein/workspace_source/local.ex:100,845F0F
+Traversal.FileModule: Directory Traversal in `File.cp`,lib/casein/agents/mcp_materializer.ex:208,143D1DA
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/agents/mcp_materializer.ex:197,1C9F379
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/agents/mcp_materializer.ex:221,23716C2
+Traversal.FileModule: Directory Traversal in `File.cp`,lib/casein/agents/mcp_materializer.ex:209,24B775E
+Traversal.FileModule: Directory Traversal in `File.ln_s`,lib/casein/deployment/registry.ex:123,269AF81
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/casein/previews/artifacts.ex:18,27EB4A6
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:220,291EF
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/agents/mcp_materializer.ex:210,2AD96B3
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:19,3B496D1
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:207,3D6DBAD
+CI.System: Command Injection via `System` function,lib/casein/terminals/tmux_runner.ex:143,3EF0456
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/casein/deployment/registry.ex:148,401791F
+CI.System: Command Injection via `System` function,lib/casein/integrations/manager/workspace_source.ex:306,403FD1C
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/casein/previews/artifacts.ex:38,405231
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:20,4D8A1D7
+CI.System: Command Injection via `System` function,lib/casein/terminals/tmux_runner.ex:53,58F9413
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/deployment/registry.ex:140,5EB9A45
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/agents/mcp_materializer.ex:21,66E8CD0
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/casein/deployment/registry.ex:161,67BC4A2
 CI.System: Command Injection via `System` function,lib/tmux_ctl/client.ex:949,6E4F2F2
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/terminals/workflows.ex:305,74494A3
-CI.System: Command Injection via `System` function,lib/dev_ide/git/local_adapter.ex:66,7805D49
-Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/artifacts.ex:22,794888C
-Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
-Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
-Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:76,6699B22
+Traversal.FileModule: Directory Traversal in `File.read`,lib/casein/terminals/workflows.ex:305,74494A3
+CI.System: Command Injection via `System` function,lib/casein/git/local_adapter.ex:66,7805D49
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/casein/previews/artifacts.ex:22,794888C
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/casein/agents/mcp_materializer.ex:211,7DA8DBE
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/casein/terminals/theme.ex:306,7ED56AA
+Config.CSRF: Missing CSRF Protections,lib/casein_web/router.ex:76,6699B22

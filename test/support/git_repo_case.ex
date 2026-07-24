@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.GitRepoCase do
+defmodule Casein.Test.GitRepoCase do
   @moduledoc false
 
   import ExUnit.Callbacks, only: [on_exit: 1]
@@ -34,7 +34,7 @@ defmodule DevIDE.Test.GitRepoCase do
   end
 
   def tmp_root do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     File.mkdir_p!(root)
     root
   end

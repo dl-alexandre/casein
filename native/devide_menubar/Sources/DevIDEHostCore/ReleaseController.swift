@@ -185,7 +185,7 @@ public actor ReleaseController {
         // PHX_IP would fail the loopback guard, and DATABASE_PATH or a
         // status-path override would detach the contract from the data dir.
         // Allowlist rather than denylist so the next release-reconfiguring
-        // var (MIX_ENV, DEV_IDE_LAN, …) is excluded by default instead of
+        // var (MIX_ENV, CASEIN_LAN, …) is excluded by default instead of
         // needing a new scrub entry. PATH passes through for tmux/git.
         let inherited = inheritedEnvironment
         var environment: [String: String] = [:]
@@ -196,12 +196,12 @@ public actor ReleaseController {
         environment["PATH"] = hostPath(inherited["PATH"])
         environment["LANG"] = inherited["LANG"] ?? "en_US.UTF-8"
         environment["LC_ALL"] = inherited["LC_ALL"] ?? "en_US.UTF-8"
-        environment["DEV_IDE_PROFILE"] = "desktop"
-        environment["DEV_IDE_DESKTOP_DATA_DIR"] = paths.dataDir.path
+        environment["CASEIN_PROFILE"] = "desktop"
+        environment["CASEIN_DESKTOP_DATA_DIR"] = paths.dataDir.path
         environment["RELEASE_TMP"] = paths.runtimeDir.path
         environment["SECRET_KEY_BASE"] = secrets.secretKeyBase
-        environment["DEV_IDE_API_TOKEN"] = secrets.apiToken
-        environment["DEV_IDE_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
+        environment["CASEIN_API_TOKEN"] = secrets.apiToken
+        environment["CASEIN_DESKTOP_LAUNCH_TOKEN"] = secrets.desktopLaunchToken
         let settings: HostSettings
         let port: Int
         if let selectedPort {
@@ -225,11 +225,11 @@ public actor ReleaseController {
                     output: "no active private IPv4 network was found"
                 )
             }
-            environment["DEV_IDE_DESKTOP_LAN"] = "true"
-            environment["DEV_IDE_LAN_INSECURE_HTTP"] = "true"
-            environment["DEV_IDE_LAN_HOST"] = lan.host
-            environment["DEV_IDE_LAN_IP"] = lan.ip
-            environment["DEV_IDE_LAN_IPS"] = lan.ips.joined(separator: ",")
+            environment["CASEIN_DESKTOP_LAN"] = "true"
+            environment["CASEIN_LAN_INSECURE_HTTP"] = "true"
+            environment["CASEIN_LAN_HOST"] = lan.host
+            environment["CASEIN_LAN_IP"] = lan.ip
+            environment["CASEIN_LAN_IPS"] = lan.ips.joined(separator: ",")
             environment["PHX_IP"] = "0.0.0.0"
         }
         return environment

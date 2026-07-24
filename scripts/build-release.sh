@@ -12,7 +12,7 @@
 #   ./scripts/build-release.sh                       # builds, leaves tree at ./release-out
 #   OUTPUT_DIR=/some/path ./scripts/build-release.sh # extract elsewhere
 #
-# The final builder image is also tagged with DEV_IDE_BUILDER_CACHE_TAG
+# The final builder image is also tagged with CASEIN_BUILDER_CACHE_TAG
 # (default: dev_ide:builder) and kept as a cache anchor for future builds.
 # Extraction still uses a per-run tag so concurrent builds cannot retag the
 # image out from under a running extraction.
@@ -30,7 +30,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
-BUILDER_CACHE_TAG="${DEV_IDE_BUILDER_CACHE_TAG:-dev_ide:builder}"
+BUILDER_CACHE_TAG="${CASEIN_BUILDER_CACHE_TAG:-dev_ide:builder}"
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
 
@@ -46,7 +46,7 @@ if [ -z "${DEVIDE_GIT_REVISION:-}" ] && command -v git >/dev/null 2>&1; then
   DEVIDE_GIT_REVISION="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
 fi
 
-add_build_arg DEV_IDE_REPO_ADAPTER "${DEV_IDE_REPO_ADAPTER:-}"
+add_build_arg CASEIN_REPO_ADAPTER "${CASEIN_REPO_ADAPTER:-}"
 add_build_arg DEVIDE_GIT_REVISION "${DEVIDE_GIT_REVISION:-}"
 add_build_arg DEVIDE_RELEASE_PROFILE "${DEVIDE_RELEASE_PROFILE:-}"
 add_build_arg DEVIDE_RELEASE_REPO_ADAPTER "${DEVIDE_RELEASE_REPO_ADAPTER:-}"
@@ -102,7 +102,7 @@ if [ ! -x "${OUTPUT_DIR}/bin/clean_devide_socket" ]; then
 fi
 STATIC_DIR="$(find "${OUTPUT_DIR}/lib" -path '*/priv/static' -type d | grep '/dev_ide-' | head -n 1 || true)"
 if [ "${STATIC_DIR}" = "" ]; then
-  echo "error: extracted tree missing DevIDE priv/static directory" >&2
+  echo "error: extracted tree missing Casein priv/static directory" >&2
   exit 1
 fi
 if [ ! -f "${STATIC_DIR}/cache_manifest.json" ] || \

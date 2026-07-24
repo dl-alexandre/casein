@@ -40,7 +40,7 @@ run_installer_rejects_bin_dir_candidate() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   bin_dir="${HOME}/.local/bin"
   package_claude="${HOME}/.local/lib/node_modules/@anthropic-ai/claude-code/bin/claude"
 
@@ -53,7 +53,7 @@ echo package-claude"
   # overwritten shim path as the "real" binary.
   PATH="${bin_dir}/:${PATH:-/usr/bin:/bin}" bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
-  target="$(readlink -f "${HOME}/.devide/real-bins/claude")"
+  target="$(readlink -f "${HOME}/.casein/real-bins/claude")"
   assert_eq "recorded claude target" "$package_claude" "$target"
   assert_not_under "recorded claude target" "$target" "$bin_dir"
 )
@@ -66,11 +66,11 @@ run_resolver_rejects_recorded_devide_shim() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   real_dir="${home}/real-bin-dir"
   real_codex="${real_dir}/codex"
 
-  write_executable "${HOME}/.devide/real-bins/codex" "#!/usr/bin/env bash
+  write_executable "${HOME}/.casein/real-bins/codex" "#!/usr/bin/env bash
 exec \"${ROOT}/scripts/devide\" agent launch codex \"\$@\""
   write_executable "$real_codex" "#!/usr/bin/env bash
 echo real-codex"
@@ -91,7 +91,7 @@ run_installer_generated_shims_carry_marker() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
@@ -101,7 +101,7 @@ run_installer_generated_shims_carry_marker() (
   # The shim template (installer) and the marker grep (real-agent-bin.sh)
   # live in different files; this pins their coupling.
   for name in grok claude codex opencode agent; do
-    if ! is_devide_shim "${HOME}/.devide/agent-shims/${name}"; then
+    if ! is_devide_shim "${HOME}/.casein/agent-shims/${name}"; then
       echo "FAIL: installed shim not detected as a DevIDE shim: ${name}" >&2
       exit 1
     fi
@@ -110,7 +110,7 @@ run_installer_generated_shims_carry_marker() (
   # agent-doctor.sh extracts the embedded devide CLI path with this sed
   # pattern; pin it against the installer's shim template.
   local embedded
-  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.devide/agent-shims/claude" | head -n 1)"
+  embedded="$(sed -n 's/^exec "\(.*\)" agent launch .*/\1/p' "${HOME}/.casein/agent-shims/claude" | head -n 1)"
   assert_eq "embedded devide CLI path" "${ROOT}/scripts/devide" "$embedded"
 )
 
@@ -122,7 +122,7 @@ run_installer_cleans_legacy_shims() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   # A legacy marker-carrying launcher shim and a user's own script side by
   # side in ~/.local/bin: migration must remove exactly the former.
@@ -141,8 +141,8 @@ echo mine"
     echo "FAIL: user file in ~/.local/bin must be untouched" >&2
     exit 1
   fi
-  if [[ ! -x "${HOME}/.devide/agent-shims/grok" ]]; then
-    echo "FAIL: grok shim missing from ~/.devide/agent-shims" >&2
+  if [[ ! -x "${HOME}/.casein/agent-shims/grok" ]]; then
+    echo "FAIL: grok shim missing from ~/.casein/agent-shims" >&2
     exit 1
   fi
 )
@@ -155,7 +155,7 @@ run_installer_verifies_precedence_when_bin_dir_off_path() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   err="${home}/stderr.log"
 
   # Non-interactive callers (systemd units, deploy poller) run without the
@@ -180,7 +180,7 @@ run_launch_version_passthrough_skips_launcher() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   write_executable \
     "${HOME}/.local/share/npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude" \
@@ -189,8 +189,8 @@ echo \"real-claude \$*\""
 
   write_executable "${HOME}/real-bin-dir/opencode" "#!/usr/bin/env bash
 echo \"real-opencode \$*\""
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.devide/real-bins/opencode"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.casein/real-bins/opencode"
 
   # Version/help probes must not resolve env, create a worktree, or inject
   # MCP — with no DevIDE env in this HOME, anything but a clean passthrough
@@ -213,18 +213,18 @@ run_launch_falls_back_unpaired_without_env() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
 echo \"real-grok \$*\""
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
   # A plain terminal outside DevIDE: no pane env, no .devbox-agent.env in
   # cwd ancestry. The shimmed name must launch the real binary with ZERO
   # added output — the shim never adds noise to the command it wraps.
   err="${home}/stderr.log"
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
   assert_eq "unpaired fallback execs real grok" "real-grok chat" "$out"
   if [[ -s "$err" ]]; then
@@ -233,7 +233,7 @@ echo \"real-grok \$*\""
     exit 1
   fi
 
-  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     DEVIDE_AGENT_LAUNCH_VERBOSE=1 \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>"$err")"
   assert_eq "verbose unpaired fallback execs real grok" "real-grok chat" "$out"
@@ -244,7 +244,7 @@ echo \"real-grok \$*\""
   fi
 
   status=0
-  (cd "$home" && env -u TMUX -u TMUX_PANE -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  (cd "$home" && env -u TMUX -u TMUX_PANE -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     DEVIDE_AGENT_LAUNCH_STRICT=1 \
     bash "${ROOT}/scripts/devide" agent launch grok chat >/dev/null 2>"$err") || status=$?
   if [[ "$status" -eq 0 ]]; then
@@ -259,20 +259,20 @@ echo \"real-grok \$*\""
 )
 
 run_launch_stamps_pane_pairing_state() (
-  echo "== agent launch stamps @devide_paired on the tmux pane =="
+  echo "== agent launch stamps @casein_paired on the tmux pane =="
 
   local home tmux_log out
   home="$(cd "$(mktemp -d)" && pwd -P)"
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
   tmux_log="${home}/tmux-calls.log"
 
   write_executable "${HOME}/real-bin-dir/grok" "#!/usr/bin/env bash
 echo real-grok"
-  mkdir -p "${HOME}/.devide/real-bins"
-  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.devide/real-bins/grok"
+  mkdir -p "${HOME}/.casein/real-bins"
+  ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
   # Fake tmux: answers env probes with nothing (so resolution still fails)
   # and records set-option calls — pairing state must reach the pane option
@@ -281,18 +281,18 @@ echo real-grok"
 printf '%s\\n' \"\$*\" >>\"${tmux_log}\"
 exit 0"
 
-  out="$(cd "$home" && env -u DEV_IDE_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
+  out="$(cd "$home" && env -u CASEIN_API_TOKEN -u DEVIDE_WORKSPACE_ID -u DEVIDE_AGENT_ENV_FILE \
     TMUX="${home}/fake-socket,1,0" TMUX_PANE="%7" PATH="${HOME}/fake-bin:${PATH:-/usr/bin:/bin}" \
     bash "${ROOT}/scripts/devide" agent launch grok chat 2>&1)"
   assert_eq "stamped fallback still execs real grok" "real-grok" "$out"
 
-  if ! grep -q '^set-option -p -t %7 @devide_paired 0$' "$tmux_log"; then
-    echo "FAIL: expected @devide_paired 0 stamp on pane %7, tmux calls were:" >&2
+  if ! grep -q '^set-option -p -t %7 @casein_paired 0$' "$tmux_log"; then
+    echo "FAIL: expected @casein_paired 0 stamp on pane %7, tmux calls were:" >&2
     cat "$tmux_log" >&2
     exit 1
   fi
-  if ! grep -q '^set-option -p -t %7 @devide_paired_reason no agent env$' "$tmux_log"; then
-    echo "FAIL: expected @devide_paired_reason stamp, tmux calls were:" >&2
+  if ! grep -q '^set-option -p -t %7 @casein_paired_reason no agent env$' "$tmux_log"; then
+    echo "FAIL: expected @casein_paired_reason stamp, tmux calls were:" >&2
     cat "$tmux_log" >&2
     exit 1
   fi
@@ -306,7 +306,7 @@ run_check_and_ensure_modes() (
   trap 'rm -rf "$home"' EXIT
 
   export HOME="$home"
-  unset DEV_IDE_NPM_PREFIX
+  unset CASEIN_NPM_PREFIX
 
   bash "${ROOT}/scripts/install-agent-shims.sh" >/dev/null
 
@@ -315,7 +315,7 @@ run_check_and_ensure_modes() (
   assert_eq "check after full install" "0" "$status"
 
   # Simulate the production failure mode: one runtime shim deleted, siblings ok.
-  rm -f "${HOME}/.devide/agent-shims/claude"
+  rm -f "${HOME}/.casein/agent-shims/claude"
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --check >/dev/null 2>&1 || status=$?
   if [[ "$status" -eq 0 ]]; then
@@ -326,7 +326,7 @@ run_check_and_ensure_modes() (
   status=0
   bash "${ROOT}/scripts/install-agent-shims.sh" --ensure >/dev/null || status=$?
   assert_eq "ensure heals missing claude" "0" "$status"
-  if [[ ! -x "${HOME}/.devide/agent-shims/claude" ]]; then
+  if [[ ! -x "${HOME}/.casein/agent-shims/claude" ]]; then
     echo "FAIL: --ensure did not restore claude shim" >&2
     exit 1
   fi

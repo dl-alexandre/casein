@@ -14,9 +14,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="codex-autoupdate.service"
 TIMER="codex-autoupdate.timer"
-INSTALL_USER="${DEV_IDE_CODEX_AUTOUPDATE_USER:-${SUDO_USER:-$(id -un)}}"
+INSTALL_USER="${CASEIN_CODEX_AUTOUPDATE_USER:-${SUDO_USER:-$(id -un)}}"
 INSTALL_HOME="$(getent passwd "$INSTALL_USER" | cut -d: -f6)"
-NPM_BIN="${DEV_IDE_NPM_BIN:-$(command -v npm || true)}"
+NPM_BIN="${CASEIN_NPM_BIN:-$(command -v npm || true)}"
 
 START=1
 DISABLE=0
@@ -48,7 +48,7 @@ if [[ -z "$INSTALL_HOME" ]]; then
 fi
 
 if [[ -z "$NPM_BIN" ]]; then
-  echo "error: npm not found on PATH; set DEV_IDE_NPM_BIN=/path/to/npm" >&2
+  echo "error: npm not found on PATH; set CASEIN_NPM_BIN=/path/to/npm" >&2
   exit 1
 fi
 

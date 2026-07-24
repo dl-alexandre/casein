@@ -10,7 +10,7 @@ POST /api/preview/mcp
 The endpoint uses the same bearer-token gate as the rest of the API:
 
 ```text
-Authorization: Bearer $DEV_IDE_API_TOKEN
+Authorization: Bearer $CASEIN_API_TOKEN
 ```
 
 Agents should discover this endpoint from the `preview_mcp` capability. The
@@ -35,7 +35,7 @@ that supplies an unknown id gets `404 unknown_mcp_session`, signalling the clien
 to re-`initialize`. Missing or unknown streamable-session errors preserve the
 top-level `error` string and include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
-`DevIDE.Agents.MCPSessions.notify/2`.
+`Casein.Agents.MCPSessions.notify/2`.
 
 ## Access scope
 
@@ -57,7 +57,7 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    - `mode: "here"` opens the app surface beside the calling agent (needs
      `tmux_session`, injected automatically by a session-scoped MCP URL).
 
-   `preview_open` splits the active tmux window and runs `devide-preview <url>`
+   `preview_open` splits the active tmux window and runs `casein-preview <url>`
    in the new pane. The response includes `pane_id` plus the usual `session_id`.
    The older `preview_open_app`, `preview_open_localhost`, `preview_open_here`,
    and `preview_open_current_workspace` tools remain as deprecated aliases.
@@ -86,17 +86,17 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    already embedded preview pane and update connected DevIDE viewers.
 9. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
-   `devide_reload_page` to ask them to reload the whole workspace page.
+   `casein_reload_page` to ask them to reload the whole workspace page.
 10. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
-`devide-preview` is shipped in release `priv/scripts/`. Humans can also run
-`devide-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
+`casein-preview` is shipped in release `priv/scripts/`. Humans can also run
+`casein-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
 registers the pane via `POST /api/preview/panes` and DevIDE paints an
 iframe overlay at the pane rectangle.
 
 Preview actions are scoped to workspace/localhost origins through
-`DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+`Casein.PreviewControl`; agents do not get arbitrary browser access.
 For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback DevIDE URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
@@ -131,8 +131,8 @@ screen activity.
 Production DevIDE traffic and ephemeral preview traffic use separate socket
 lanes:
 
-- Main app: `/run/devide/current.sock`
-- Preview envs: `.devide-preview/sockets/*.sock`
+- Main app: `/run/casein/current.sock`
+- Preview envs: `.casein-preview/sockets/*.sock`
 
 The preview router must never become the upstream for
 `devide.devbox.milcgroup.com`, and a worktree preview launch must not touch the
@@ -150,8 +150,8 @@ scripts/verify-preview-socket-boundaries.sh --cleanup
 ```
 
 The script verifies the main socket responds, preview registry socket paths stay
-under `.devide-preview/sockets/`, and `scripts/preview-router.sh status` does
-not reference `/run/devide/current.sock`.
+under `.casein-preview/sockets/`, and `scripts/preview-router.sh status` does
+not reference `/run/casein/current.sock`.
 
 ## Control-plane layers
 
@@ -159,7 +159,7 @@ not reference `/run/devide/current.sock`.
 MCP tools (PreviewTools)
         │
         ▼
-DevIDE.PreviewControl          ← Ecto sessions, audit, PubSub, surface open
+Casein.PreviewControl          ← Ecto sessions, audit, PubSub, surface open
         │
         ▼
 PreviewCtl.Session             ← origin guard, registry, adapter dispatch
@@ -171,20 +171,20 @@ FakeAdapter  Playwright.Adapter (+ Bridge GenServer)
 
 `PreviewCtl` is an in-repo boundary (like `TmuxCtl`): generic URL primitives,
 ETS session registry, adapter behaviour, and optional Node Playwright bridge.
-DevIDE keeps workspace allowlists (`DevIDE.Previews.Url`), persistence, and
+DevIDE keeps workspace allowlists (`Casein.Previews.Url`), persistence, and
 human-iframe broadcasts.
 
 ### Adapter configuration (two keys)
 
 | Key | App | Purpose |
 |-----|-----|---------|
-| `:preview_control_adapter` | `:dev_ide` | Operator-facing atom (`:memory` \| `:playwright`) |
+| `:preview_control_adapter` | `:casein` | Operator-facing atom (`:memory` \| `:playwright`) |
 | `:adapter` | `:preview_ctl` | Resolved adapter module (set at boot from the atom) |
 
-`DevIDE.Application.configure_preview_ctl!/0` copies `config :dev_ide, :preview_ctl`
+`Casein.Application.configure_preview_ctl!/0` copies `config :casein, :preview_ctl`
 and maps `:preview_control_adapter` → `:preview_ctl :adapter`. Playwright script
-path uses `:dev_ide :preview_playwright_script` → `:preview_ctl :playwright_script`.
-DevIDE facades (`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
+path uses `:casein :preview_playwright_script` → `:preview_ctl :playwright_script`.
+DevIDE facades (`Casein.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
 `PlaywrightBridge`, `Registry`) defdelegate to `PreviewCtl.*` for backward
 compatibility.
 Opening a preview session registers a tmux preview pane and broadcasts to
@@ -217,15 +217,15 @@ always win):
 
 ```bash
 # Either a full JSON header object…
-DEV_IDE_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
+CASEIN_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
 # …or the forward-auth email shorthand.
-DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
+CASEIN_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
 ```
 
 These env vars are read in the prod-only section of `config/runtime.exs`, so
 they apply to releases (the devbox systemd deploy) but are ignored by a dev
 `mix phx.server`. In dev, set the application env directly if needed:
-`config :dev_ide, :preview_default_headers, %{...}` in `dev.exs`.
+`config :casein, :preview_default_headers, %{...}` in `dev.exs`.
 
 The named `app` surface falls back to the best discoverable surface (manager
 surfaces first, then terminal-detected localhost ports) when the workspace has
@@ -313,14 +313,14 @@ Set the base URL and token:
 
 ```bash
 export DEVIDE_URL=http://localhost:4000
-export DEV_IDE_API_TOKEN=...
+export CASEIN_API_TOKEN=...
 ```
 
 Initialize:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -334,7 +334,7 @@ List tools:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -347,7 +347,7 @@ Open the app preview:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -370,7 +370,7 @@ from the browser runtime:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -389,7 +389,7 @@ Close the session:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
-  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "authorization: Bearer $CASEIN_API_TOKEN" \
   -H "content-type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -455,10 +455,10 @@ npx playwright install chromium
 Production can opt into browser automation with:
 
 ```bash
-DEV_IDE_PREVIEW_CONTROL_ADAPTER=playwright
+CASEIN_PREVIEW_CONTROL_ADAPTER=playwright
 # Optional; relative paths resolve from the release app priv directory.
-DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
-DEV_IDE_PREVIEW_ARTIFACTS_ROOT=/opt/devide/preview_artifacts
+CASEIN_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
+CASEIN_PREVIEW_ARTIFACTS_ROOT=/opt/casein/preview_artifacts
 ```
 
 For the systemd devbox deployment, the release build installs the locked
@@ -466,12 +466,12 @@ For the systemd devbox deployment, the release build installs the locked
 installed once for the service user:
 
 ```bash
-cd /opt/devide/release/lib/dev_ide-*/priv/scripts
+cd /opt/casein/release/lib/casein-*/priv/scripts
 sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
 ```
 
 Then restart `devide` so `PreviewCtl.Playwright.Bridge` starts with the
-configured helper (`DevIDE.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
+configured helper (`Casein.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
 include Node or browser OS dependencies, so keep
-`DEV_IDE_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
+`CASEIN_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
 browser automation.

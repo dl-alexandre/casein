@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://devide.devbox.milcgroup.com/schemas/preview-walk/v1.json",
   "title": "DevIDE preview-ui-walk manifest",
-  "description": "App-owned contract for a UI smoke walk (.devide/preview-walk.json). DevIDE ships drivers + this schema; product repos own instances. Browser baseline: path/lands_on/budget/console/network/screenshot. Runtime (Tidewave): logs, project_eval probes, SELECT-only SQL, LiveView assign keys. Optional pages[].steps for assertions and (gated) interactions. Drivers skip runtime when Tidewave is unavailable and MUST mark that skip explicitly.",
+  "description": "App-owned contract for a UI smoke walk (.casein/preview-walk.json). DevIDE ships drivers + this schema; product repos own instances. Browser baseline: path/lands_on/budget/console/network/screenshot. Runtime (Tidewave): logs, project_eval probes, SELECT-only SQL, LiveView assign keys. Optional pages[].steps for assertions and (gated) interactions. Drivers skip runtime when Tidewave is unavailable and MUST mark that skip explicitly.",
   "type": "object",
   "additionalProperties": false,
   "required": ["login", "pages", "report"],
@@ -39,7 +39,7 @@
     "workspace": {
       "type": "string",
       "minLength": 1,
-      "description": "OPTIONAL host hint: DevIDE agent-mcp env dir name (~/.devide/agent-mcp/<workspace>/env.sh). Prefer resolving workspace from launch env; product manifests should omit this when possible."
+      "description": "OPTIONAL host hint: DevIDE agent-mcp env dir name (~/.casein/agent-mcp/<workspace>/env.sh). Prefer resolving workspace from launch env; product manifests should omit this when possible."
     },
     "app_surface": {
       "type": "string",

@@ -4,7 +4,7 @@
 @import "tailwindcss" source(none);
 @source "../css";
 @source "../js";
-@source "../../lib/dev_ide_web";
+@source "../../lib/casein_web";
 
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
@@ -148,7 +148,7 @@ body {
   min-height: 0;
 }
 
-.devide-markdown {
+.casein-markdown {
   height: 100%;
   min-height: 0;
   overflow: auto;
@@ -159,75 +159,75 @@ body {
   line-height: 1.65;
 }
 
-.devide-markdown > :first-child {
+.casein-markdown > :first-child {
   margin-top: 0;
 }
 
-.devide-markdown > :last-child {
+.casein-markdown > :last-child {
   margin-bottom: 0;
 }
 
-.devide-markdown h1,
-.devide-markdown h2,
-.devide-markdown h3,
-.devide-markdown h4 {
+.casein-markdown h1,
+.casein-markdown h2,
+.casein-markdown h3,
+.casein-markdown h4 {
   margin: 1.35em 0 0.55em;
   color: #09090b;
   font-weight: 700;
   line-height: 1.2;
 }
 
-.devide-markdown h1 {
+.casein-markdown h1 {
   padding-bottom: 0.35rem;
   border-bottom: 1px solid #e4e4e7;
   font-size: 1.55rem;
 }
 
-.devide-markdown h2 {
+.casein-markdown h2 {
   padding-bottom: 0.25rem;
   border-bottom: 1px solid #f4f4f5;
   font-size: 1.25rem;
 }
 
-.devide-markdown h3 {
+.casein-markdown h3 {
   font-size: 1.08rem;
 }
 
-.devide-markdown p,
-.devide-markdown ul,
-.devide-markdown ol,
-.devide-markdown pre,
-.devide-markdown blockquote,
-.devide-markdown table {
+.casein-markdown p,
+.casein-markdown ul,
+.casein-markdown ol,
+.casein-markdown pre,
+.casein-markdown blockquote,
+.casein-markdown table {
   margin: 0.85rem 0;
 }
 
-.devide-markdown ul,
-.devide-markdown ol {
+.casein-markdown ul,
+.casein-markdown ol {
   padding-left: 1.35rem;
 }
 
-.devide-markdown ul {
+.casein-markdown ul {
   list-style: disc;
 }
 
-.devide-markdown ol {
+.casein-markdown ol {
   list-style: decimal;
 }
 
-.devide-markdown a {
+.casein-markdown a {
   color: #2563eb;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.16em;
 }
 
-.devide-markdown a[href^="http://"],
-.devide-markdown a[href^="https://"] {
+.casein-markdown a[href^="http://"],
+.casein-markdown a[href^="https://"] {
   text-decoration-style: dotted;
 }
 
-.devide-markdown code {
+.casein-markdown code {
   border-radius: 0.25rem;
   background: #f4f4f5;
   padding: 0.12rem 0.28rem;
@@ -236,7 +236,7 @@ body {
   font-size: 0.88em;
 }
 
-.devide-markdown pre {
+.casein-markdown pre {
   overflow: auto;
   border: 1px solid #e4e4e7;
   border-radius: 0.375rem;
@@ -245,46 +245,46 @@ body {
   color: #f4f4f5;
 }
 
-.devide-markdown pre code {
+.casein-markdown pre code {
   border-radius: 0;
   background: transparent;
   padding: 0;
   color: inherit;
 }
 
-.devide-markdown blockquote {
+.casein-markdown blockquote {
   border-left: 3px solid #d4d4d8;
   padding-left: 1rem;
   color: #52525b;
 }
 
-.devide-markdown table {
+.casein-markdown table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
 
-.devide-markdown th,
-.devide-markdown td {
+.casein-markdown th,
+.casein-markdown td {
   border: 1px solid #e4e4e7;
   padding: 0.45rem 0.6rem;
   text-align: left;
   vertical-align: top;
 }
 
-.devide-markdown th {
+.casein-markdown th {
   background: #f4f4f5;
   color: #27272a;
   font-weight: 650;
 }
 
-.devide-markdown img {
+.casein-markdown img {
   max-width: 100%;
   height: auto;
   border-radius: 0.375rem;
 }
 
-.devide-markdown-error {
+.casein-markdown-error {
   color: #b91c1c;
 }
 
@@ -437,26 +437,26 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 }
 
 /* Font size CSS variable — managed by app.js; mobile A- / A+ adjust it.
-   --devide-terminal-line-height is kept in sync by applyFontSize() in app.js. */
+   --casein-terminal-line-height is kept in sync by applyFontSize() in app.js. */
 :root {
-  --devide-font-size: 13px;
+  --casein-font-size: 13px;
   /* Terminal chrome — JS applies Catppuccin presets; zinc fallbacks for first paint */
-  --devide-term-bg: #0a0a0a;
-  --devide-term-fg: #e4e4e7;
-  --devide-term-border: #27272a;
-  --devide-term-selection: rgba(137, 180, 250, 0.35);
-  --devide-term-cursor: #e4e4e7;
-  --devide-term-prompt: #67e8f9;
-  --devide-term-muted: #64748b;
-  --devide-term-success: #4ade80;
-  --devide-term-warning: #fbbf24;
-  --devide-term-error: #f87171;
-  --devide-term-info: #67e8f9;
-  --devide-term-scrollbar-track: rgba(24, 24, 27, 0.55);
-  --devide-term-scrollbar-thumb: rgba(113, 113, 122, 0.55);
-  --devide-term-scrollbar-active: rgba(137, 180, 250, 0.9);
-  --devide-term-focus-ring: #3b82f6;
-  --devide-term-prompt-border: #18181b;
+  --casein-term-bg: #0a0a0a;
+  --casein-term-fg: #e4e4e7;
+  --casein-term-border: #27272a;
+  --casein-term-selection: rgba(137, 180, 250, 0.35);
+  --casein-term-cursor: #e4e4e7;
+  --casein-term-prompt: #67e8f9;
+  --casein-term-muted: #64748b;
+  --casein-term-success: #4ade80;
+  --casein-term-warning: #fbbf24;
+  --casein-term-error: #f87171;
+  --casein-term-info: #67e8f9;
+  --casein-term-scrollbar-track: rgba(24, 24, 27, 0.55);
+  --casein-term-scrollbar-thumb: rgba(113, 113, 122, 0.55);
+  --casein-term-scrollbar-active: rgba(137, 180, 250, 0.9);
+  --casein-term-focus-ring: #3b82f6;
+  --casein-term-prompt-border: #18181b;
 }
 
 /* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
@@ -474,35 +474,35 @@ body[data-pane-overlay-active] [data-pane-index]::after {
    (see terminal_bg_fill.mjs). */
 
 /* Ghostty viewport scrollback indicator (see ghostty_terminal.js) */
-.devide-term-scrollbar {
+.casein-term-scrollbar {
   position: absolute;
   top: 4px;
   right: 3px;
   bottom: 4px;
   width: 6px;
   border-radius: 999px;
-  background: var(--devide-term-scrollbar-track);
+  background: var(--casein-term-scrollbar-track);
   pointer-events: none;
   z-index: 4;
   opacity: 0.85;
   transition: opacity 120ms ease;
 }
 
-.devide-term-scrollbar-thumb {
+.casein-term-scrollbar-thumb {
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
   border-radius: 999px;
-  background: var(--devide-term-scrollbar-thumb);
+  background: var(--casein-term-scrollbar-thumb);
   transition: transform 80ms linear, background-color 120ms ease;
 }
 
-.devide-term-scrollbar[data-pinned="false"] .devide-term-scrollbar-thumb {
-  background: var(--devide-term-scrollbar-active);
+.casein-term-scrollbar[data-pinned="false"] .casein-term-scrollbar-thumb {
+  background: var(--casein-term-scrollbar-active);
 }
 
-.devide-term-scrollbar[data-pinned="false"] {
+.casein-term-scrollbar[data-pinned="false"] {
   opacity: 1;
 }
 
@@ -631,7 +631,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 }
 
 /* Per-interface display zoom badge (see ghostty_terminal.js / terminal_display_zoom.mjs) */
-.devide-term-zoom-badge {
+.casein-term-zoom-badge {
   position: absolute;
   top: 0.35rem;
   left: 0.35rem;
@@ -687,9 +687,9 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   max-width: min(92vw, 28rem);
   padding: 0.55rem 0.9rem;
   border-radius: 0.5rem;
-  border: 1px solid var(--devide-term-border);
-  background: color-mix(in srgb, var(--devide-term-bg) 96%, transparent);
-  color: var(--devide-term-fg);
+  border: 1px solid var(--casein-term-border);
+  background: color-mix(in srgb, var(--casein-term-bg) 96%, transparent);
+  color: var(--casein-term-fg);
   font: 13px/1.35 ui-sans-serif, system-ui, sans-serif;
   text-align: center;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -868,6 +868,22 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: auto;
 }
 
+/* Chromeless file panes (desktop default): the in-pane tab strip is hidden —
+   the focused pane's buffers render in the header strip instead — and the
+   editor fills the whole pane. The mobile media query re-reveals the in-pane
+   strip and insets the editor below it. */
+.file-pane-inpane-strip {
+  display: none;
+}
+
+/* Chromeless preview panes (desktop default): the routine "Session X" badge
+   moves to the header context strip. The amber session-MISMATCH warning stays
+   in-pane — it must be visible even on an unfocused preview. Mobile (below)
+   shows every badge, since there's no header strip there. */
+.preview-session-badge:not([data-mismatch="true"]) {
+  display: none;
+}
+
 /* Mobile terminal chrome is hidden by default and revealed on the same
    touch/narrow marker as the compact header below, so session switching is
    reachable on narrow viewports too — not just coarse-pointer (touch) devices. */
@@ -886,7 +902,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 
   /* Reserve the fixed key bar's footprint from first paint. The MobileKeyBar
-     hook publishes the exact measured inset (--devide-mobile-terminal-inset)
+     hook publishes the exact measured inset (--casein-mobile-terminal-inset)
      after mount; without a fallback the terminal mounts full-height behind the
      bar, then shrinks by ~44-70px once JS runs — a guaranteed refit + repaint
      flicker on every load. The estimate mirrors the closed-keyboard bar:
@@ -894,7 +910,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
      safe area is taller. */
   .terminal-shell {
     padding-bottom: var(
-      --devide-mobile-terminal-inset,
+      --casein-mobile-terminal-inset,
       max(2.75rem, calc(2.15rem + 1px + max(0.25rem, env(safe-area-inset-bottom, 0px))))
     );
     transition: padding-bottom 120ms ease-out;
@@ -924,7 +940,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 
   [data-mobile-focus-layout="true"] {
-    --devide-mobile-pane-rail-hit: 2.75rem;
+    --casein-mobile-pane-rail-hit: 2.75rem;
   }
 
   /* When the pane is tmux-zoomed the surface already fills the window natively, so
@@ -932,10 +948,10 @@ body[data-pane-overlay-active] [data-pane-index]::after {
      focus layout stays on for a zoomed multi-pane window so you can switch panes. */
   [data-mobile-focus-layout="true"]:not([data-window-zoomed="true"]) [data-terminal-surface-mount] {
     transform:
-      scale(var(--devide-mobile-pane-scale, 1))
+      scale(var(--casein-mobile-pane-scale, 1))
       translate(
-        calc(-1 * var(--devide-mobile-pane-left, 0%)),
-        calc(-1 * var(--devide-mobile-pane-top, 0%))
+        calc(-1 * var(--casein-mobile-pane-left, 0%)),
+        calc(-1 * var(--casein-mobile-pane-top, 0%))
       );
     transform-origin: top left;
     will-change: transform;
@@ -973,6 +989,39 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   [data-mobile-focus-layout="true"] > .preview-pane-overlay[data-mobile-pane-active="false"] {
     display: none !important;
+  }
+
+  /* File overlays need the same focus-layout treatment previews get: force the
+     active pane full-screen (overriding the JS-applied tmux rect) and hide the
+     inactive ones. Without these a file pane stayed pinned to its narrow tmux
+     rectangle on mobile. */
+  [data-mobile-focus-layout="true"] > .file-pane-overlay[data-mobile-pane-active="true"] {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    z-index: 35 !important;
+    contain: layout;
+  }
+
+  [data-mobile-focus-layout="true"] > .file-pane-overlay[data-mobile-pane-active="false"] {
+    display: none !important;
+  }
+
+  /* Chromeless panes are desktop-only: with no persistent header on mobile, the
+     tab strip renders in-pane and the editor/placeholder inset below it, and
+     the preview session badge is shown regardless of mismatch. */
+  .file-pane-inpane-strip {
+    display: flex;
+  }
+
+  .file-pane-overlay .file-pane-editor,
+  .file-pane-overlay [data-file-pane-placeholder] {
+    top: 1.75rem;
+  }
+
+  .preview-session-badge {
+    display: block !important;
   }
 
   [data-mobile-focus-layout="true"] .mobile-pane-rail {
@@ -1022,7 +1071,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
    JS-set, and the bar's ResizeObserver re-publishes the exact inset the moment
    the bar appears; the fallback only bridges that frame. */
 :root[data-chrome-narrow] .terminal-shell {
-  padding-bottom: var(--devide-mobile-terminal-inset, 2.5rem);
+  padding-bottom: var(--casein-mobile-terminal-inset, 2.5rem);
   transition: padding-bottom 120ms ease-out;
 }
 
@@ -1193,7 +1242,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     overscroll-behavior: none;
   }
 
-  .devide-keyboard-open body {
+  .casein-keyboard-open body {
     overflow: hidden;
   }
 
@@ -1202,15 +1251,15 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     overscroll-behavior: contain;
   }
 
-  .devide-keyboard-open .workspace-shell {
+  .casein-keyboard-open .workspace-shell {
     padding-top: 0.125rem;
   }
 
-  .devide-keyboard-open .workspace-main-header {
+  .casein-keyboard-open .workspace-main-header {
     display: none;
   }
 
-  .devide-keyboard-open .terminal-utility { display: none; }
+  .casein-keyboard-open .terminal-utility { display: none; }
 
   /* Single scrollable row when the soft keyboard is closed. Size to the key
      row (plus safe-area padding) rather than a fixed max-height — a hard cap
@@ -1247,15 +1296,15 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     max-width: none;
   }
 
-  .devide-keyboard-open .mobile-key-bar {
+  .casein-keyboard-open .mobile-key-bar {
     display: flex;
     flex-wrap: nowrap;
     align-content: center;
     align-items: center;
     min-height: 2rem;
     padding-top: 0.2rem;
-    --devide-mobile-keybar-safe-area-bottom: 0px;
-    --devide-mobile-keybar-padding-bottom: 0.2rem;
+    --casein-mobile-keybar-safe-area-bottom: 0px;
+    --casein-mobile-keybar-padding-bottom: 0.2rem;
     row-gap: 0;
     box-shadow: 0 -4px 16px rgb(0 0 0 / 0.35);
   }
@@ -1294,18 +1343,18 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     height: 1.1rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
+  .casein-keyboard-open .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
     gap: 0.3rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar button {
+  .casein-keyboard-open .mobile-key-bar button {
     min-height: 1.75rem;
     min-width: 2rem;
     padding-inline: 0.45rem;
     font-size: 0.6875rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
+  .casein-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
     min-height: 1.75rem;
     padding-inline: 0.45rem;
     /* Give the (now leading) arrow d-pad + primary keys room while typing —
@@ -1313,30 +1362,30 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     max-width: min(30vw, 7.5rem);
   }
 
-  .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
+  .casein-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
     font-size: 0.625rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar .leader-indicator {
+  .casein-keyboard-open .mobile-key-bar .leader-indicator {
     padding-inline: 0.3rem;
     padding-block: 0;
     font-size: 0.5625rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar .h-5.w-px {
+  .casein-keyboard-open .mobile-key-bar .h-5.w-px {
     height: 1.1rem;
   }
 
   /* While typing, hide low-priority chrome (font/zoom/window cycle) so the
      primary keys stay on-screen without a long horizontal hunt. */
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontDown"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontUp"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomDown"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomReset"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ZoomUp"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Select"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Palette"],
-  .devide-keyboard-open .mobile-key-bar [data-keybar-secondary="true"] {
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="FontDown"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="FontUp"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="ZoomDown"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="ZoomReset"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="ZoomUp"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="Select"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-key="Palette"],
+  .casein-keyboard-open .mobile-key-bar [data-keybar-secondary="true"] {
     display: none !important;
   }
 

@@ -68,7 +68,7 @@ defmodule Scripts.PreCommitHookTest do
   end
 
   defp git_fixture! do
-    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    root = System.get_env("CASEIN_TEST_TMPDIR") || System.tmp_dir!()
     repo = Path.join(root, "devide-pre-commit-#{System.unique_integer([:positive])}")
     File.rm_rf!(repo)
     File.mkdir_p!(repo)

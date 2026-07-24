@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-LOCK_FILE="${PUSH_MASTER_QUEUE_LOCK:-/tmp/devide-push-master-queue.lock}"
+LOCK_FILE="${PUSH_MASTER_QUEUE_LOCK:-/tmp/casein-push-master-queue.lock}"
 LOCK_WAIT="${PUSH_MASTER_QUEUE_WAIT:-3600}"
 MAX_ATTEMPTS="${PUSH_MASTER_QUEUE_ATTEMPTS:-12}"
 SLEEP_SECS="${PUSH_MASTER_QUEUE_SLEEP:-5}"

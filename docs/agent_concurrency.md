@@ -7,7 +7,7 @@
 > the corruption modes we have actually hit.
 >
 > **Canonical workflow**: [`development-workflow.md`](development-workflow.md) —
-> `launch-devide-agent.sh` now enforces worktree creation at agent start.
+> `launch-casein-agent.sh` now enforces worktree creation at agent start.
 
 ## The hazard, concretely
 
@@ -21,8 +21,8 @@ it. Two failure modes have bitten real work:
 2. **Read races.** A verification or "does this file exist?" check reads the
    working tree *while* another agent is mid-refactor. On 2026-06-20 a doc-accuracy
    pass concluded five real modules
-   (`DevIDE.PreviewControl.{Adapter,MemoryAdapter,PlaywrightAdapter,PlaywrightBridge}`,
-   `DevIDE.Terminals.TmuxAdapter`) were "hallucinations" because a concurrent agent
+   (`Casein.PreviewControl.{Adapter,MemoryAdapter,PlaywrightAdapter,PlaywrightBridge}`,
+   `Casein.Terminals.TmuxAdapter`) were "hallucinations" because a concurrent agent
    had just **staged their deletion** — they were present in `HEAD` the whole time.
    The pass nearly "corrected" accurate docs to match a transient state.
 
@@ -49,8 +49,8 @@ If you must check whether a symbol or file exists in the shared root, ask the
 committed tree, which no concurrent edit can mutate under you:
 
 ```sh
-git cat-file -e HEAD:lib/dev_ide/foo.ex      # exists in HEAD?
-git show HEAD:lib/dev_ide/foo.ex | grep …    # read the committed content
+git cat-file -e HEAD:lib/casein/foo.ex      # exists in HEAD?
+git show HEAD:lib/casein/foo.ex | grep …    # read the committed content
 ```
 
 If the working tree and `HEAD` disagree, a concurrent agent is mid-refactor —
@@ -63,8 +63,8 @@ or commit a bare index. Stage and commit explicit paths so you cannot capture
 someone else's work:
 
 ```sh
-git add docs/ lib/dev_ide/my_file.ex
-git commit -- docs/ lib/dev_ide/my_file.ex
+git add docs/ lib/casein/my_file.ex
+git commit -- docs/ lib/casein/my_file.ex
 ```
 
 ### 4. Snapshot before anything destructive

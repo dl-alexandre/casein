@@ -1,0 +1,8 @@
+[Unit]
+Description=Casein tmux blank session/window janitor sweep
+Wants=casein-loopback.service
+After=casein-loopback.service
+
+[Service]
+Type=oneshot
+ExecStart=__CHECKOUT__/scripts/casein-tmux-janitor-sweep.sh --release-sweep

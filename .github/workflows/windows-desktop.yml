@@ -5,9 +5,9 @@ on:
   pull_request:
     paths:
       - "windows/**"
-      - "dev_ide_ghostty_windows/**"
-      - "lib/dev_ide/desktop/**"
-      - "lib/dev_ide_web/plugs/desktop_auth.ex"
+      - "casein_ghostty_windows/**"
+      - "lib/casein/desktop/**"
+      - "lib/casein_web/plugs/desktop_auth.ex"
       - "scripts/package-windows-desktop.ps1"
       - "scripts/test-windows-desktop-package.ps1"
       - ".github/workflows/windows-desktop.yml"

@@ -3,8 +3,8 @@ defmodule DevideMob.SessionClient do
   Phoenix Channel client for the mobile session companion.
 
   Runs on the device, holds a single WSS connection to the dev_ide host's
-  `/socket` (`DevIdeWeb.UserSocket`), joins one `session:<workspace_id>` topic
-  per watched workspace (`DevIdeWeb.SessionChannel`), and can also join the
+  `/socket` (`CaseinWeb.UserSocket`), joins one `session:<workspace_id>` topic
+  per watched workspace (`CaseinWeb.SessionChannel`), and can also join the
   authenticated user's `mobile:user:me` card stream.
 
   Screens are pure consumers — they call `watch/2` on mount and receive, on the
@@ -126,7 +126,7 @@ defmodule DevideMob.SessionClient do
   Register this device's OS push token for a workspace. Prefer the user-level
   mobile card stream when joined, with the workspace session channel retained as
   a fallback for older flows. The server stores it and pushes alerts even when
-  the app is backgrounded — see `DevIDE.Push`. The dashboard obtains `token`
+  the app is backgrounded — see `Casein.Push`. The dashboard obtains `token`
   from `mob_notify` after notification permission is granted.
   """
   @spec register_push(String.t(), String.t(), String.t()) :: :ok

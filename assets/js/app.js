@@ -22,7 +22,7 @@ import "phoenix_html"
 // Establish Phoenix Socket and LiveView configuration.
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
-import {hooks as colocatedHooks} from "phoenix-colocated/dev_ide"
+import {hooks as colocatedHooks} from "phoenix-colocated/casein"
 import topbar from "../vendor/topbar"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
@@ -55,7 +55,7 @@ import {initTerminalThemes} from "./terminal_themes"
 
 // Move the session onto the freshly-deployed instance. Prefer a background
 // LiveView reconnect over a full page reload: the reconnect re-dials
-// /run/devide/current.sock, which the atomic symlink swap now points at the new
+// /run/casein/current.sock, which the atomic symlink swap now points at the new
 // instance. For a code-only deploy the session resumes in place with no reload
 // (tmux-backed terminals survive; mount rebuilds from params/session/tmux). If
 // the new instance's static asset digest changed, its mount detects that via
@@ -64,7 +64,7 @@ import {initTerminalThemes} from "./terminal_themes"
 // a hard reload if the LiveSocket isn't available for any reason.
 function applyDeployUpdate() {
   try {
-    window.sessionStorage.setItem("devide:justUpdated", "1")
+    window.sessionStorage.setItem("casein:justUpdated", "1")
   } catch (_) {
     /* private mode / storage disabled — the toast is best-effort */
   }
@@ -131,21 +131,21 @@ const AttentionSurface = {
 
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
-    window.performance.mark(`devide:${name}`)
+    window.performance.mark(`casein:${name}`)
   }
 
-  window.dispatchEvent(new CustomEvent("devide:perf", { detail: { name, ...detail } }))
+  window.dispatchEvent(new CustomEvent("casein:perf", { detail: { name, ...detail } }))
 
   try {
     if (new URLSearchParams(window.location.search).has("perf")) {
-      console.debug("[devide:perf]", name, detail)
+      console.debug("[casein:perf]", name, detail)
     }
   } catch (_) {
     /* location parsing can fail in constrained test contexts */
   }
 }
 
-window.__devideMarkPerf = markPerf
+window.__caseinMarkPerf = markPerf
 markPerf("app_js_loaded")
 
 function installServiceWorker() {
@@ -163,7 +163,7 @@ function installServiceWorker() {
           worker.addEventListener("statechange", () => {
             if (worker.state === "installed" && navigator.serviceWorker.controller) {
               window.dispatchEvent(
-                new CustomEvent("devide:service-worker-update", {
+                new CustomEvent("casein:service-worker-update", {
                   detail: {registration}
                 })
               )
@@ -188,10 +188,10 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 // while separate windows stay independent instead of converging.
 function devideTabId() {
   try {
-    let id = window.sessionStorage.getItem("devide:tab")
+    let id = window.sessionStorage.getItem("casein:tab")
     if (!id) {
       id = Math.random().toString(36).slice(2, 10)
-      window.sessionStorage.setItem("devide:tab", id)
+      window.sessionStorage.setItem("casein:tab", id)
     }
     return id
   } catch (_) {
@@ -354,7 +354,7 @@ window.addEventListener("phx:clipboard:write", (e) => {
   )
 })
 
-window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
+window.addEventListener("phx:casein:reload_preview_iframes", (event) => {
   const paneId = event.detail?.pane_id || event.detail?.["pane-id"]
   const force = event.detail?.force === true || event.detail?.force === "true"
   const iframes = Array.from(
@@ -395,7 +395,7 @@ window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
   })
 })
 
-window.addEventListener("phx:devide:preview_pane_action", (event) => {
+window.addEventListener("phx:casein:preview_pane_action", (event) => {
   const paneId = event.detail?.pane_id || event.detail?.["pane-id"]
   if (!paneId) return
 
@@ -404,21 +404,21 @@ window.addEventListener("phx:devide:preview_pane_action", (event) => {
   if (!overlay) return
 
   overlay.dispatchEvent(
-    new CustomEvent("devide:preview-pane-action", {
+    new CustomEvent("casein:preview-pane-action", {
       bubbles: false,
       detail: event.detail || {}
     })
   )
 })
 
-window.addEventListener("phx:devide:reload_page", () => {
+window.addEventListener("phx:casein:reload_page", () => {
   window.location.reload()
 })
 
 // A draining instance asked its still-attached clients to move. Reuse the same
 // background reconnect the "Update now" button uses: invisible for code-only
 // deploys, and it lets the old node drain and stop instead of lingering.
-window.addEventListener("phx:devide:deploy_reconnect", () => {
+window.addEventListener("phx:casein:deploy_reconnect", () => {
   applyDeployUpdate()
 })
 
@@ -519,11 +519,11 @@ document.addEventListener("visibilitychange", () => {
 })
 window.addEventListener("focus", closeQuietAgentNotifications)
 
-// Quiet-agent OS notifications: the server pushes devide:agent_quiet only when
+// Quiet-agent OS notifications: the server pushes casein:agent_quiet only when
 // the attention policy chooses `notify` for a quiet transition. Inline quiet
 // badges cover focused workspace cases. The `tag` dedupes per window, so a
 // flapping agent updates one notification instead of stacking.
-window.addEventListener("phx:devide:agent_quiet", (e) => {
+window.addEventListener("phx:casein:agent_quiet", (e) => {
   if ((e.detail || {}).reaction !== "notify") return
   if (document.visibilityState === "visible" && document.hasFocus()) return
   if (!("Notification" in window) || Notification.permission !== "granted") return
@@ -596,8 +596,8 @@ function openAgentQuietConversation(detail) {
 }
 
 // Browser alert permission must be an explicit user action. Any button or menu
-// item can opt in by setting data-devide-notification-permission, and server or
-// hook code can dispatch devide:notifications:request from a gesture handler.
+// item can opt in by setting data-casein-notification-permission, and server or
+// hook code can dispatch casein:notifications:request from a gesture handler.
 const requestNotificationPermission = () => {
   if (!("Notification" in window)) return Promise.resolve("unsupported")
   if (Notification.permission !== "default") return Promise.resolve(Notification.permission)
@@ -610,7 +610,7 @@ const notificationPermissionState = () => {
 }
 
 const syncNotificationPermissionTriggers = (permission = notificationPermissionState()) => {
-  document.querySelectorAll("[data-devide-notification-permission]").forEach((trigger) => {
+  document.querySelectorAll("[data-casein-notification-permission]").forEach((trigger) => {
     const visible = permission === "default"
     trigger.classList.toggle("hidden", !visible)
     trigger.classList.toggle("inline-flex", visible)
@@ -641,7 +641,7 @@ window.DevIDE = Object.assign(window.DevIDE || {}, {
   requestNotificationPermission
 })
 
-window.addEventListener("devide:notifications:request", requestAndRenderNotificationPermission)
+window.addEventListener("casein:notifications:request", requestAndRenderNotificationPermission)
 window.addEventListener("phx:page-loading-stop", () => syncNotificationPermissionTriggers())
 
 if (document.readyState === "loading") {
@@ -658,7 +658,7 @@ if (navigator.serviceWorker) {
 }
 
 document.addEventListener("click", (e) => {
-  const trigger = e.target.closest?.("[data-devide-notification-permission]")
+  const trigger = e.target.closest?.("[data-casein-notification-permission]")
   if (!trigger) return
 
   e.preventDefault()
@@ -670,23 +670,23 @@ document.addEventListener("click", (e) => {
 // ensure-zoom logic — see assets/js/tmux_pane_resize_hook.js — not by a split event.
 
 // Font size via CSS variable — persisted in localStorage.
-// Mobile keybar A- / A+ buttons dispatch "devide:font-size" with {delta: ±1}.
-// The CSS variable --devide-terminal-line-height is kept in sync (≈ fontSize × 1.31).
-let _fontSize = parseInt(localStorage.getItem("devide:font-size") || "13", 10)
+// Mobile keybar A- / A+ buttons dispatch "casein:font-size" with {delta: ±1}.
+// The CSS variable --casein-terminal-line-height is kept in sync (≈ fontSize × 1.31).
+let _fontSize = parseInt(localStorage.getItem("casein:font-size") || "13", 10)
 
 function applyFontSize(px) {
   const root = document.documentElement.style
-  root.setProperty("--devide-font-size", px + "px")
-  root.setProperty("--devide-terminal-line-height", Math.round(px * 1.31) + "px")
+  root.setProperty("--casein-font-size", px + "px")
+  root.setProperty("--casein-terminal-line-height", Math.round(px * 1.31) + "px")
 }
 
 applyFontSize(_fontSize)
 initTerminalThemes()
 
-window.addEventListener("devide:font-size", (e) => {
+window.addEventListener("casein:font-size", (e) => {
   _fontSize = Math.max(8, Math.min(24, _fontSize + (e.detail?.delta || 0)))
   applyFontSize(_fontSize)
-  localStorage.setItem("devide:font-size", _fontSize)
+  localStorage.setItem("casein:font-size", _fontSize)
   const lineH = Math.round(_fontSize * 1.31) + "px"
   // Re-patch all mounted terminal pres with new lineHeight so cell metrics update
   document.querySelectorAll('[phx-hook="GhosttyTerminal"] pre').forEach((pre) => {
@@ -700,7 +700,7 @@ window.addEventListener("devide:font-size", (e) => {
   })
 })
 
-window.addEventListener("phx:devide:open_tab", (e) => {
+window.addEventListener("phx:casein:open_tab", (e) => {
   const url = e.detail?.url
   if (url) window.open(url, "_blank", "noreferrer")
 })
@@ -713,8 +713,8 @@ const deploySocket = typeof liveSocket.getSocket === "function" && liveSocket.ge
 if (deploySocket && typeof deploySocket.onOpen === "function") {
   deploySocket.onOpen(() => {
     try {
-      if (window.sessionStorage.getItem("devide:justUpdated")) {
-        window.sessionStorage.removeItem("devide:justUpdated")
+      if (window.sessionStorage.getItem("casein:justUpdated")) {
+        window.sessionStorage.removeItem("casein:justUpdated")
         showClipboardToast("Updated to the latest version")
       }
     } catch (_) {

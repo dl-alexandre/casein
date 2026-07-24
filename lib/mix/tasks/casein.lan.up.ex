@@ -1,0 +1,125 @@
+defmodule Mix.Tasks.Casein.Lan.Up do
+  @moduledoc """
+  Starts Casein LAN HTTP mode as a managed local service.
+
+      mix casein.lan.up
+
+  This installs or updates:
+
+    * `casein-lan.service` - the loopback Phoenix backend
+    * `casein-lan-http-edge.socket` - privileged port 80
+    * `casein-lan-http-edge.service` - socket proxy to the backend
+
+  Administrator access is required for systemd unit installation and port 80.
+  The Mix task itself should still be run as the normal developer user.
+  """
+
+  use Mix.Task
+  use Boundary, classify_to: CaseinMix
+
+  @shortdoc "Start the product-like Casein LAN HTTP service"
+
+  @impl Mix.Task
+  def run(args) do
+    config = parse_config!(args)
+
+    case Casein.Setup.LanRuntime.validate(config) do
+      :ok -> :ok
+      {:error, message} -> Mix.raise(message)
+    end
+
+    ensure_workspace_paths!(config)
+
+    paths = Casein.Setup.LanRuntime.prepare_units!(config)
+    commands = Casein.Setup.LanRuntime.install_commands(paths, config)
+
+    Mix.shell().info("Installing and starting Casein LAN...\n")
+
+    case Casein.Setup.LanRuntime.run_commands_noninteractive(commands) do
+      :ok ->
+        timeout_ms = config.timeout_seconds * 1_000
+        status = Casein.Setup.LanRuntime.wait_until_ready(config, timeout_ms)
+        Casein.Setup.LanRuntime.print_status(status, Mix.shell())
+
+        unless status.ready? do
+          Mix.raise("""
+          Casein LAN did not become ready within #{config.timeout_seconds}s.
+
+          Inspect the backend with:
+
+            journalctl -u casein-lan.service -n 100 --no-pager
+          """)
+        end
+
+      {:error, failed_command, output} ->
+        Mix.shell().info(Casein.Setup.LanRuntime.sudo_hint(commands))
+        Mix.shell().info("\nFirst failed command:\n  #{Enum.join(failed_command, " ")}")
+
+        if String.trim(output) != "" do
+          Mix.shell().info("\nOutput:\n#{String.trim(output)}")
+        end
+
+        Mix.raise("could not install or start Casein LAN")
+    end
+  end
+
+  defp parse_config!(args) do
+    {opts, _argv, invalid} =
+      OptionParser.parse(args,
+        strict: [
+          backend_port: :integer,
+          build_path: :string,
+          home_workspace_path: :string,
+          host: :string,
+          ip: :string,
+          listen_port: :integer,
+          mise_path: :string,
+          no_firewall: :boolean,
+          proxyd_path: :string,
+          timeout: :integer,
+          unit_dir: :string,
+          workspace: :string,
+          workspaces_root: :string
+        ]
+      )
+
+    if invalid != [] do
+      Mix.raise("invalid option(s): #{Enum.map_join(invalid, ", ", &elem(&1, 0))}")
+    end
+
+    opts
+    |> runtime_opts()
+    |> Keyword.put(:timeout_seconds, Keyword.get(opts, :timeout, 30))
+    |> Casein.Setup.LanRuntime.config()
+  end
+
+  defp runtime_opts(opts) do
+    [
+      backend_port: opts[:backend_port],
+      build_path: opts[:build_path],
+      firewall?: not Keyword.get(opts, :no_firewall, false),
+      home_workspace_path: opts[:home_workspace_path],
+      lan_host: opts[:host],
+      lan_ip: opts[:ip],
+      listen_port: opts[:listen_port],
+      mise_path: opts[:mise_path],
+      proxyd_path: opts[:proxyd_path],
+      unit_dir: opts[:unit_dir],
+      workspace: opts[:workspace],
+      workspaces_root: opts[:workspaces_root]
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp ensure_workspace_paths!(%{} = config) do
+    File.mkdir_p!(Path.expand(config.workspaces_root))
+
+    if is_binary(config.home_workspace_path) do
+      File.mkdir_p!(Path.expand(config.home_workspace_path))
+    end
+
+    unless config.workspace == "home" and is_binary(config.home_workspace_path) do
+      File.mkdir_p!(Path.expand(Path.join(config.workspaces_root, config.workspace)))
+    end
+  end
+end

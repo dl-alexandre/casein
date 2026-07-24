@@ -8,15 +8,15 @@ on:
   #
   # Auto-deploy is now handled ON-BOX, with no GitHub Actions dependency, by a
   # systemd timer that polls origin/master and builds+activates a release when
-  # it advances (scripts/deploy-poller.sh + devide-deploy.timer; install with
-  # `bash scripts/ensure-devide-deploy-poller.sh`). The test gate runs at push
+  # it advances (scripts/deploy-poller.sh + casein-deploy.timer; install with
+  # `bash scripts/ensure-casein-deploy-poller.sh`). The test gate runs at push
   # time via .githooks/pre-push. `bash scripts/deploy-local.sh` remains the
   # manual override.
   #
   # This workflow is kept dormant (workflow_dispatch only) as a fallback path
   # for the day Actions billing is restored. To return to GitHub-driven
   # deploys, un-comment the push trigger below and disable the on-box timer
-  # (`bash scripts/ensure-devide-deploy-poller.sh --disable`).
+  # (`bash scripts/ensure-casein-deploy-poller.sh --disable`).
   # push:
   #   branches:
   #     - master

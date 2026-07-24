@@ -1,5 +1,5 @@
 defmodule PreviewCtl.Playwright.BridgeTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias PreviewCtl.Playwright.Bridge
 
@@ -37,7 +37,7 @@ defmodule PreviewCtl.Playwright.BridgeTest do
     Application.put_env(:preview_ctl, :playwright_script, "scripts/preview_playwright.mjs")
 
     assert Bridge.script_path() ==
-             :dev_ide
+             :casein
              |> :code.priv_dir()
              |> List.to_string()
              |> Path.join("scripts/preview_playwright.mjs")
@@ -134,8 +134,8 @@ defmodule PreviewCtl.Playwright.BridgeTest do
   end
 
   defp restart_bridge! do
-    _ = Supervisor.terminate_child(DevIDE.Supervisor, Bridge)
-    {:ok, _} = Supervisor.restart_child(DevIDE.Supervisor, Bridge)
+    _ = Supervisor.terminate_child(Casein.Supervisor, Bridge)
+    {:ok, _} = Supervisor.restart_child(Casein.Supervisor, Bridge)
   end
 
   defp bridge_state, do: :sys.get_state(Bridge)

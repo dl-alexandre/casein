@@ -3,7 +3,7 @@ defmodule TmuxCtl.EventSource do
   Push-event seam for tmux topology consumers.
 
   Watchers and session directories receive `{TmuxCtl.Events, ...}` tuples after
-  a successful `subscribe/2`. Production uses `DevIDE.Terminals.TmuxEvents`;
+  a successful `subscribe/2`. Production uses `Casein.Terminals.TmuxEvents`;
   tests inject `TmuxCtl.Test.FakeEventSource`.
 
   When the source is unavailable (flag off, listener down, no server),

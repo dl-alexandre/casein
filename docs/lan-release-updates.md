@@ -16,7 +16,7 @@ systemd/canary deploys remain documented in
 | Update source | Embedded release metadata includes `update_manifest_url`; env override `DEVIDE_UPDATE_MANIFEST_URL` wins at check time. |
 | Comparison key | `revision` is the update identity. `version` is display-only (Mix app version). |
 | Install layout | Versioned release directories plus stable symlinks (see Filesystem shape). |
-| Ownership | Release trees owned by `root:root`; the BEAM still runs as the LAN user from `/etc/devide/lan.env`. |
+| Ownership | Release trees owned by `root:root`; the BEAM still runs as the LAN user from `/etc/casein/lan.env`. |
 | Privilege | `devide update check` is unprivileged; `devide update install` and `devide update rollback` require `sudo`. |
 | Auto-update | No silent install in v1. The UI may show the exact terminal command only. |
 
@@ -25,7 +25,7 @@ systemd/canary deploys remain documented in
 Keep compatibility with the current stable path by making it a symlink:
 
 ```text
-/opt/devide/lan/
+/opt/casein/lan/
   releases/
     504670c/
     67f393a/
@@ -33,17 +33,17 @@ Keep compatibility with the current stable path by making it a symlink:
   previous -> releases/504670c
   downloads/          # fetched tarballs (install step)
 
-/opt/devide/lan-release -> /opt/devide/lan/current
-/etc/devide/lan.env
-/etc/devide/lan.public.env
+/opt/casein/lan-release -> /opt/casein/lan/current
+/etc/casein/lan.env
+/etc/casein/lan.public.env
 ```
 
 Systemd continues to point at the stable path:
 
 ```text
-WorkingDirectory=/opt/devide/lan-release
-ExecStartPre=/opt/devide/lan-release/bin/migrate
-ExecStart=/opt/devide/lan-release/bin/dev_ide start
+WorkingDirectory=/opt/casein/lan-release
+ExecStartPre=/opt/casein/lan-release/bin/migrate
+ExecStart=/opt/casein/lan-release/bin/casein start
 ```
 
 `lan-release` preserves the existing mental model while enabling clean rollback via
@@ -54,7 +54,7 @@ ExecStart=/opt/devide/lan-release/bin/dev_ide start
 Ship inside every LAN release at:
 
 ```text
-releases/dev_ide.relmeta.json
+releases/casein.relmeta.json
 ```
 
 Schema (metadata version 1):
@@ -103,7 +103,7 @@ Channel-scoped, evolvable JSON published to GitHub Releases (or any HTTPS host):
       "profile": "lan",
       "repo_adapter": "sqlite",
       "target": "linux-x86_64",
-      "url": "https://github.com/dl-alexandre/dev_ide/releases/download/canary/devide-lan-linux-x86_64-67f393a.tar.gz",
+      "url": "https://github.com/dl-alexandre/dev_ide/releases/download/canary/casein-lan-linux-x86_64-67f393a.tar.gz",
       "sha256": "...",
       "size": 123456789,
       "min_installer_metadata_version": 1,
@@ -143,7 +143,7 @@ Install and rollback are implemented in Phase 4. `lan status --json` follows in
 Phase 5.
 
 Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
-release tree and `DEV_IDE_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
+release tree and `CASEIN_RELEASE_CLI=1` while invoking `bin/casein eval`. That
 keeps read-only operator commands independent of server runtime requirements like
 `DATABASE_PATH`, `DATABASE_URL`, and `SECRET_KEY_BASE`.
 
@@ -166,24 +166,24 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 
 ## Install algorithm (Phase 4)
 
-1. Read current metadata from `/opt/devide/lan-release/releases/dev_ide.relmeta.json`.
+1. Read current metadata from `/opt/casein/lan-release/releases/casein.relmeta.json`.
 2. Fetch manifest (`DEVIDE_UPDATE_MANIFEST_URL` override, else embedded URL).
 3. Select artifact matching `profile + target`.
 4. Refuse incompatible manifest/installer versions.
-5. Download tarball to `/opt/devide/lan/downloads/`.
+5. Download tarball to `/opt/casein/lan/downloads/`.
 6. Verify SHA256.
-7. Extract to `/opt/devide/lan/releases/<revision>.staging`.
+7. Extract to `/opt/casein/lan/releases/<revision>.staging`.
 8. Validate staging tree:
-   - `bin/devide`, `bin/dev_ide`, `bin/migrate`
-   - static assets under `lib/dev_ide-*/priv/static`
+   - `bin/devide`, `bin/casein`, `bin/migrate`
+   - static assets under `lib/casein-*/priv/static`
    - metadata `profile` / `repo_adapter` / `target`
-9. Move staging → `/opt/devide/lan/releases/<revision>`.
+9. Move staging → `/opt/casein/lan/releases/<revision>`.
 10. Point `previous` at old `current`.
 11. Point `current` at new release.
-12. `systemctl restart devide-lan.service`.
+12. `systemctl restart casein-lan.service`.
 13. Probe:
     - `http://127.0.0.1:$PORT/`
-    - `http://$DEV_IDE_LAN_HOST/`
+    - `http://$CASEIN_LAN_HOST/`
     - `/assets/css/app.css`
 14. On probe failure: roll back symlinks and restart.
 
@@ -208,16 +208,16 @@ making the dynamic probe mandatory.
 
 | Module | Role |
 |--------|------|
-| `DevIDE.Release.Metadata` | Read/write `dev_ide.relmeta.json`; assemble-time writer. |
-| `DevIDE.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
-| `DevIDE.Release.Update.Check` | Compare installed revision vs manifest artifact. |
-| `DevIDE.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
-| `DevIDE.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
+| `Casein.Release.Metadata` | Read/write `casein.relmeta.json`; assemble-time writer. |
+| `Casein.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
+| `Casein.Release.Update.Check` | Compare installed revision vs manifest artifact. |
+| `Casein.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
+| `Casein.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
 | `mix.exs` `write_release_metadata/1` | Release assemble step emitting metadata. |
 | `rel/overlays/bin/devide` | Release-local CLI wrapper, LAN systemd install, update install, rollback. |
 | `scripts/devide` | Checkout CLI wrapper (`mix run --no-start`). |
 | `scripts/package-release.sh` | Build + tarball + sha256 + local manifest generation (Phase 3). |
-| `DevIDE.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
+| `Casein.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
 
 ## Rollout targets
 

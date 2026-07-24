@@ -1,7 +1,7 @@
 # DevIDE local stack — `docker compose up` to bring up Postgres +
 # DevIDE for a smoke test against the production Dockerfile.
 #
-#   cp .env.example .env  # fill in SECRET_KEY_BASE + DEV_IDE_API_TOKEN
+#   cp .env.example .env  # fill in SECRET_KEY_BASE + CASEIN_API_TOKEN
 #   docker compose build
 #   docker compose run --rm dev_ide /app/bin/migrate
 #   docker compose up
@@ -16,13 +16,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dev_ide}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_ide_local_password}
-      POSTGRES_DB: ${POSTGRES_DB:-dev_ide_prod}
+      POSTGRES_USER: ${POSTGRES_USER:-casein}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-casein_local_password}
+      POSTGRES_DB: ${POSTGRES_DB:-casein_prod}
     volumes:
-      - dev_ide_pgdata:/var/lib/postgresql/data
+      - casein_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ide} -d ${POSTGRES_DB:-dev_ide_prod}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-casein} -d ${POSTGRES_DB:-casein_prod}"]
       interval: 2s
       timeout: 3s
       retries: 20
@@ -38,7 +38,7 @@ services:
         # The generic Compose stack is the portable product profile. The
         # devbox release builder keeps its separate Dockerfile default.
         DEVIDE_RELEASE_PROFILE: ${DEVIDE_RELEASE_PROFILE:-portable}
-    image: ${DEV_IDE_IMAGE:-dev_ide:latest}
+    image: ${CASEIN_IMAGE:-casein:latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,17 +46,17 @@ services:
       PHX_SERVER: "true"
       PHX_HOST: ${PHX_HOST:-localhost}
       PORT: ${PORT:-4000}
-      DEV_IDE_PROFILE: ${DEV_IDE_PROFILE:-portable}
+      CASEIN_PROFILE: ${CASEIN_PROFILE:-portable}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE:?SECRET_KEY_BASE is required (see .env.example)}
-      DEV_IDE_API_TOKEN: ${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN is required (see .env.example)}
-      DEV_IDE_WORKSPACES_ROOT: ${DEV_IDE_WORKSPACES_ROOT:-/workspaces}
-      DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
+      CASEIN_API_TOKEN: ${CASEIN_API_TOKEN:?CASEIN_API_TOKEN is required (see .env.example)}
+      CASEIN_WORKSPACES_ROOT: ${CASEIN_WORKSPACES_ROOT:-/workspaces}
+      DATABASE_URL: ecto://${POSTGRES_USER:-casein}:${POSTGRES_PASSWORD:-casein_local_password}@postgres:5432/${POSTGRES_DB:-casein_prod}
     ports:
-      - "127.0.0.1:${DEV_IDE_HOST_PORT:-4000}:${PORT:-4000}"
+      - "127.0.0.1:${CASEIN_HOST_PORT:-4000}:${PORT:-4000}"
     volumes:
       # Bind-mount a host directory under which workspaces live.
       # Adjust the host path if your workspaces live elsewhere.
-      - "${DEV_IDE_WORKSPACES_HOST:-./workspaces-local}:${DEV_IDE_WORKSPACES_ROOT:-/workspaces}"
+      - "${CASEIN_WORKSPACES_HOST:-./workspaces-local}:${CASEIN_WORKSPACES_ROOT:-/workspaces}"
 
 volumes:
-  dev_ide_pgdata:
+  casein_pgdata:

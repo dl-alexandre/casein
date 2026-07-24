@@ -16,38 +16,38 @@ Expose a narrow, auditable, workspace-scoped tool surface so external agents
 (Grok, Claude, Codex, opencode) can drive DevIDE the way a human would — tmux
 panes, browser previews, and review annotations — over JSON-RPC 2.0, without
 arbitrary shell or browser access. Each surface is one HTTP POST endpoint behind
-the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
+the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
 
 ## Module map
 
 | Module | File | Role |
 |--------|------|------|
-| `DevIdeWeb.API.TerminalMCP` | `lib/dev_ide_web/api/terminal_mcp.ex` | Pure JSON-RPC handler for the terminal surface; `initialize`/`tools/list`/`tools/call`/`ping` dispatch |
-| `DevIdeWeb.API.PreviewMCP` | `lib/dev_ide_web/api/preview_mcp.ex` | Pure JSON-RPC handler for the preview surface; resolves/validates workspace per call |
-| `DevIdeWeb.API.ArtifactMCP` | `lib/dev_ide_web/api/artifact_mcp.ex` | Pure JSON-RPC handler for the artifact-project surface; returns Preview MCP handoff args |
-| `DevIdeWeb.API.TerminalMCPController` | `lib/dev_ide_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for terminal MCP; maps handler outcomes to status codes |
-| `DevIdeWeb.API.PreviewMCPController` | `lib/dev_ide_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for preview MCP |
-| `DevIdeWeb.API.ArtifactMCPController` | `lib/dev_ide_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for artifact MCP |
-| `DevIDE.Agents.TerminalTools` | `lib/dev_ide/agents/terminal_tools.ex` | Tool definitions + `invoke/2` for all `terminal_*` tools |
-| `DevIDE.Agents.PreviewTools` | `lib/dev_ide/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `devide_reload_page` tools |
-| `DevIDE.Agents.ArtifactTools` | `lib/dev_ide/agents/artifact_tools.ex` | Tool definitions + `invoke/2` for all `artifact_*` tools |
-| `DevIDE.Agents.AnnotationTools` | `lib/dev_ide/agents/annotation_tools.ex` | `annotation_*` tools (folded into the terminal surface) |
-| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection / mismatch enforcement / schema-`required` rewriting |
-| `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Records activity feed + `Audit.emit!` for mutating tools |
-| `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalizes `{:error, reason}` into MCP `tool_result` content |
-| `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Advertises terminal MCP URL + tool names in capability detection |
-| `DevIDE.Agents.PreviewTools.MCPCapability` | `lib/dev_ide/agents/preview_tools/mcp_capability.ex` | Advertises preview MCP URL + tool names |
-| `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
-| `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
-| `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
-| `DevIDE.Agents.PreviewTools.BrowserControl` | `lib/dev_ide/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `devide_reload_page` viewer broadcasts |
+| `CaseinWeb.API.TerminalMCP` | `lib/casein_web/api/terminal_mcp.ex` | Pure JSON-RPC handler for the terminal surface; `initialize`/`tools/list`/`tools/call`/`ping` dispatch |
+| `CaseinWeb.API.PreviewMCP` | `lib/casein_web/api/preview_mcp.ex` | Pure JSON-RPC handler for the preview surface; resolves/validates workspace per call |
+| `CaseinWeb.API.ArtifactMCP` | `lib/casein_web/api/artifact_mcp.ex` | Pure JSON-RPC handler for the artifact-project surface; returns Preview MCP handoff args |
+| `CaseinWeb.API.TerminalMCPController` | `lib/casein_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for terminal MCP; maps handler outcomes to status codes |
+| `CaseinWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for preview MCP |
+| `CaseinWeb.API.ArtifactMCPController` | `lib/casein_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for artifact MCP |
+| `Casein.Agents.TerminalTools` | `lib/casein/agents/terminal_tools.ex` | Tool definitions + `invoke/2` for all `terminal_*` tools |
+| `Casein.Agents.PreviewTools` | `lib/casein/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `casein_reload_page` tools |
+| `Casein.Agents.ArtifactTools` | `lib/casein/agents/artifact_tools.ex` | Tool definitions + `invoke/2` for all `artifact_*` tools |
+| `Casein.Agents.AnnotationTools` | `lib/casein/agents/annotation_tools.ex` | `annotation_*` tools (folded into the terminal surface) |
+| `CaseinWeb.API.MCPWorkspaceScope` | `lib/casein_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection / mismatch enforcement / schema-`required` rewriting |
+| `Casein.Agents.MCPAudit` | `lib/casein/agents/mcp_audit.ex` | Records activity feed + `Audit.emit!` for mutating tools |
+| `Casein.Agents.MCPError` | `lib/casein/agents/mcp_error.ex` | Normalizes `{:error, reason}` into MCP `tool_result` content |
+| `Casein.Agents.TerminalMCPCapability` | `lib/casein/agents/terminal_mcp_capability.ex` | Advertises terminal MCP URL + tool names in capability detection |
+| `Casein.Agents.PreviewTools.MCPCapability` | `lib/casein/agents/preview_tools/mcp_capability.ex` | Advertises preview MCP URL + tool names |
+| `Casein.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
+| `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
+| `Casein.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
+| `Casein.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `casein_reload_page` viewer broadcasts |
 | `McpCtl.Tool` / `McpCtl.Params` | (in-repo `mcp_ctl` boundary) | `Tool.define/3`, `Tool.object/1,2`, shared param schemas used by every definition |
 
 ## Endpoints
 
 | Surface | Method + Path | Auth | Handler → Tools |
 |---------|---------------|------|------------------|
-| Terminal MCP | `POST /api/terminals/mcp` | `Authorization: Bearer $DEV_IDE_API_TOKEN` | `TerminalMCP` → `TerminalTools` + `AnnotationTools` |
+| Terminal MCP | `POST /api/terminals/mcp` | `Authorization: Bearer $CASEIN_API_TOKEN` | `TerminalMCP` → `TerminalTools` + `AnnotationTools` |
 | Terminal MCP stream | `GET /api/terminals/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Terminal MCP session end | `DELETE /api/terminals/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview MCP | `POST /api/preview/mcp` | bearer | `PreviewMCP` → `PreviewTools` |
@@ -56,10 +56,10 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | Artifact MCP | `POST /api/artifacts/mcp` | bearer | `ArtifactMCP` → `ArtifactTools` |
 | Artifact MCP stream | `GET /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Artifact MCP session end | `DELETE /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
-| Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `devide-preview` CLI, not an MCP tool |
+| Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `casein-preview` CLI, not an MCP tool |
 | Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by DevIDE; URL resolved by `TidewaveMCP` |
 
-Routes defined in `lib/dev_ide_web/router.ex` (`scope "/api", DevIdeWeb.API`).
+Routes defined in `lib/casein_web/router.ex` (`scope "/api", CaseinWeb.API`).
 JSON-RPC: `protocolVersion` `2025-03-26`; `initialize` returns an
 `Mcp-Session-Id` response header for Streamable HTTP clients; `tools/list`
 returns `{name, description, inputSchema}`; `tools/call` returns
@@ -67,7 +67,7 @@ returns `{name, description, inputSchema}`; `tools/call` returns
 
 ## Tool catalog — Terminal MCP (`POST /api/terminals/mcp`)
 
-Implemented in `DevIDE.Agents.TerminalTools` (dispatch in `invoke/2`). Every
+Implemented in `Casein.Agents.TerminalTools` (dispatch in `invoke/2`). Every
 session-scoped tool is guarded to `devide_`-prefixed tmux sessions. `workspace_id`
 is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 
@@ -89,7 +89,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 
 ### Annotation tools (folded into the terminal surface)
 
-Implemented in `DevIDE.Agents.AnnotationTools`; appended to `TerminalTools.definitions/0`.
+Implemented in `Casein.Agents.AnnotationTools`; appended to `TerminalTools.definitions/0`.
 
 | Tool | Does | Key params (required\*) | Implementing fn |
 |------|------|--------------------------|-----------------|
@@ -98,11 +98,11 @@ Implemented in `DevIDE.Agents.AnnotationTools`; appended to `TerminalTools.defin
 
 ## Tool catalog — Preview MCP (`POST /api/preview/mcp`)
 
-Implemented in `DevIDE.Agents.PreviewTools` (dispatch in `invoke/3`). Workspace
+Implemented in `Casein.Agents.PreviewTools` (dispatch in `invoke/3`). Workspace
 tools listed in `PreviewMCP.@workspace_tools` resolve a workspace from
 `workspace_id`/`workspace_path`; session tools resolve the workspace from the
 runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
-`DevIDE.PreviewControl` and `DevIDE.PreviewPanes`.
+`Casein.PreviewControl` and `Casein.PreviewPanes`.
 
 | Tool | Does | Key params (required\*) | Implementing fn |
 |------|------|--------------------------|-----------------|
@@ -132,7 +132,7 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_clear_storage` | Clear cookies/localStorage/sessionStorage (updates saved profile) | `session_id`\* | `clear_storage/1` |
 | `preview_report_errors` | Return console + network errors from the latest observation | `session_id`\* | `report_errors/1` |
 | `preview_reload_iframe` | Best-effort: ask connected viewers to reload the active preview iframe | `workspace_id`\*, `actor_id`, `reason` | `reload_iframe/2` |
-| `devide_reload_page` | Best-effort: ask connected viewers to reload the whole workspace page | `workspace_id`\*, `actor_id`, `reason` | `reload_page/2` |
+| `casein_reload_page` | Best-effort: ask connected viewers to reload the whole workspace page | `workspace_id`\*, `actor_id`, `reason` | `reload_page/2` |
 
 Open tools also accept `new_control_session`, `isolation_key`, `storage_profile`
 (`ephemeral`/`workspace`/`profile`), `storage_profile_name`, `default_headers`,
@@ -143,7 +143,7 @@ live app-surface pane.
 
 ## Tool catalog — Artifact MCP (`POST /api/artifacts/mcp`)
 
-Implemented in `DevIDE.Agents.ArtifactTools` (dispatch in `invoke/2`). Every
+Implemented in `Casein.Agents.ArtifactTools` (dispatch in `invoke/2`). Every
 tool requires `workspace_id`; pre-scoped endpoints inject it and remove it from
 the required schema. Project payloads include `preview_open_arguments` plus
 `next_tool: "preview_open"` / `next_arguments` for handoff to Preview MCP.
@@ -168,9 +168,9 @@ is the third-party `:tidewave` dependency, compiled only in `MIX_ENV=dev`
 (including ephemeral preview-env instances on ports 41000–41049). DevIDE's role
 is discovery and client-config materialization:
 
-- `DevIDE.Agents.TidewaveCapability.detect/0` reports the endpoint
+- `Casein.Agents.TidewaveCapability.detect/0` reports the endpoint
   (`url <> "/tidewave"`, `details.mcp_url = url <> "/tidewave/mcp"`).
-- `DevIDE.Agents.TidewaveMCP.resolve_url/2` resolves an MCP URL by precedence:
+- `Casein.Agents.TidewaveMCP.resolve_url/2` resolves an MCP URL by precedence:
   `DEVIDE_TIDEWAVE_MCP_URL` → self-hosted node → workspace metadata
   (`ports.tidewave`, fingerprinted ports) → latest running preview-env instance;
   `normalize_mcp_url/1` canonicalizes to the `…/tidewave/mcp` path.
@@ -183,7 +183,7 @@ Agents call Tidewave's own tools (e.g. `project_eval`, `execute_sql_query`,
 
 ```text
 Agent (JSON-RPC 2.0 over HTTPS)
-  │  Authorization: Bearer $DEV_IDE_API_TOKEN
+  │  Authorization: Bearer $CASEIN_API_TOKEN
   ▼
 {Terminal,Preview,Artifact}MCPController  ── ApiAuth plug; default_workspace_id from ?workspace_id= or :api_workspace_id
   ▼
@@ -242,7 +242,7 @@ are mapped to HTTP status by the controllers.
   (`parse_id/1`); the workspace is resolved from `PreviewControl.Registry`, so an
   empty workspace is fine for them.
 - **Browser refresh tools are best-effort broadcasts** (`preview_reload_iframe`,
-  `devide_reload_page`) — they return once queued for connected viewers, not when
+  `casein_reload_page`) — they return once queued for connected viewers, not when
   every tab has reloaded.
 - **MCP streams are session-scoped.** `GET` and `DELETE` require an
   `Mcp-Session-Id`; missing ids return `missing_mcp_session_id`, unknown ids

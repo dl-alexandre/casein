@@ -30,7 +30,7 @@ test("formatDisplayZoomPercent renders whole percentages", () => {
 test("displayZoomStorageKey scopes zoom per surface", () => {
   assert.equal(
     displayZoomStorageKey("terminal-surface-ws-1", "ghostty-pane-1"),
-    "devide:term-display-zoom:terminal-surface-ws-1"
+    "casein:term-display-zoom:terminal-surface-ws-1"
   )
-  assert.equal(displayZoomStorageKey(null, "ghostty-pane-1"), "devide:term-display-zoom:ghostty-pane-1")
+  assert.equal(displayZoomStorageKey(null, "ghostty-pane-1"), "casein:term-display-zoom:ghostty-pane-1")
 })

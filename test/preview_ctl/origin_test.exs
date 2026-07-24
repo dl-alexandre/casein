@@ -1,5 +1,5 @@
 defmodule PreviewCtl.OriginTest do
-  use DevIDE.TestCase, async: true
+  use Casein.TestCase, async: true
 
   alias PreviewCtl.Origin
 

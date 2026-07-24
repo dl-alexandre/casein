@@ -4,7 +4,7 @@
 // Human-readable reason a file could not be opened in the editor, from the
 // server's `error` atom (arrives as a string). Used for the in-pane
 // placeholder so an unopenable file reads as calm information, not an error.
-// The server's read caps live in DevIDE.Files (2 MB, binary sniff).
+// The server's read caps live in Casein.Files (2 MB, binary sniff).
 export function fileErrorMessage(error) {
   switch (error) {
     case "binary":

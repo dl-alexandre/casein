@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateDeviceLinkTokens do
+defmodule Casein.Repo.Migrations.CreateDeviceLinkTokens do
   use Ecto.Migration
 
   def change do

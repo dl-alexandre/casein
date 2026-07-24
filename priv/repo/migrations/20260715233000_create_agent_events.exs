@@ -1,4 +1,4 @@
-defmodule DevIDE.Repo.Migrations.CreateAgentEvents do
+defmodule Casein.Repo.Migrations.CreateAgentEvents do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.FakeReleaseMigrator do
+defmodule Casein.Test.FakeReleaseMigrator do
   @moduledoc false
 
   def with_repo(repo, fun) do

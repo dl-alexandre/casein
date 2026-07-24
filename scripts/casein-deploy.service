@@ -1,0 +1,30 @@
+# DevIDE on-box auto-deploy poller — self-hosted replacement for the GitHub
+# Actions deploy job while Actions is billing-blocked.
+#
+# Oneshot unit fired by casein-deploy.timer (~every 2 min). It fetches
+# origin/master and, when it advances, builds + activates a release from a
+# clean detached worktree at that SHA. See scripts/deploy-poller.sh.
+#
+# Install / enable via: bash scripts/ensure-casein-deploy-poller.sh
+# (that installer substitutes the real checkout path for __CHECKOUT__ below).
+
+[Unit]
+Description=Casein on-box auto-deploy poller (self-hosted CI deploy)
+After=network-online.target docker.service casein.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=devbox
+Group=docker
+WorkingDirectory=__CHECKOUT__
+ExecStart=__CHECKOUT__/scripts/deploy-poller.sh
+
+# A docker release build can take several minutes; give it real margin.
+TimeoutStartSec=1800
+
+# Clean env so an ambient GH_TOKEN can't shadow the repo-local credential
+# helper used for `git fetch` (a known "repository not found" trap).
+Environment=GH_TOKEN=
+Environment=GITHUB_TOKEN=

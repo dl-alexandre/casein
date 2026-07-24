@@ -71,7 +71,7 @@ export function viewportFrameStyles(viewport, scale) {
 }
 
 // Whether an unscaled point falls inside the locked viewport. Mirrors the
-// server's own guard (DevIDE.PreviewPanes.ensure_inside_viewport/3) so an
+// server's own guard (Casein.PreviewPanes.ensure_inside_viewport/3) so an
 // out-of-frame click in the letterbox margin is dropped before it is sent.
 // With no locked viewport every point is in bounds; the pane is the frame.
 export function withinViewport(viewport, x, y) {

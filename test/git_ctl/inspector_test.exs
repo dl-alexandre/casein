@@ -1,7 +1,7 @@
 defmodule GitCtl.InspectorTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
-  import DevIDE.Test.GitRepoCase
+  import Casein.Test.GitRepoCase
 
   alias GitCtl.Inspector
 

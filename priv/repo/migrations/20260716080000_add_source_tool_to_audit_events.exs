@@ -1,10 +1,10 @@
-defmodule DevIDE.Repo.Migrations.AddSourceToolToAuditEvents do
+defmodule Casein.Repo.Migrations.AddSourceToolToAuditEvents do
   use Ecto.Migration
 
   # Legacy MCP audit rows encode both surface and tool in the action string
   # ("agent.terminal_" <> tool, etc.). The backfill parses those prefixes into
   # the new dedicated columns; new rows get them stamped by
-  # `DevIDE.Agents.MCPAudit`. Exposed as a function so the migration test can
+  # `Casein.Agents.MCPAudit`. Exposed as a function so the migration test can
   # run the exact statements against legacy-shaped fixture rows.
   @backfill_sql [
     """

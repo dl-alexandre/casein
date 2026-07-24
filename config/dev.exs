@@ -11,15 +11,15 @@ end
 # Configure your database
 # Supports DATABASE_URL for easy docker/local Postgres (e.g. when host port 5432 is taken)
 sqlite_repo? =
-  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  System.get_env("CASEIN_REPO_ADAPTER", "postgres")
   |> String.downcase()
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, DevIDE.Repo,
+  config :casein, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
-        Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
+        Path.expand("../casein_dev.sqlite3", System.tmp_dir!()),
     journal_mode: :delete,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
     busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000"),
@@ -27,34 +27,34 @@ if sqlite_repo? do
     show_sensitive_data_on_connection_error: true
 else
   if System.get_env("DATABASE_URL") do
-    config :dev_ide, DevIDE.Repo, url: System.get_env("DATABASE_URL")
+    config :casein, Casein.Repo, url: System.get_env("DATABASE_URL")
   else
-    config :dev_ide, DevIDE.Repo,
+    config :casein, Casein.Repo,
       username: "postgres",
       password: "postgres",
       hostname: "localhost",
-      database: "dev_ide_dev",
+      database: "casein_dev",
       stacktrace: true,
       show_sensitive_data_on_connection_error: true,
       pool_size: 10
   end
 end
 
-# Run the dev server's tmux sessions on their own server (`tmux -L devide_dev`),
+# Run the dev server's tmux sessions on their own server (`tmux -L casein_dev`),
 # distinct from prod's `devide` (config/prod.exs) and test's `devide_test`
 # (config/test.exs). On the devbox the :4000 mix dev server and the release run
 # as the same user, so a shared label would collide on one socket. Resolved by
-# DevIDE.Terminals.TmuxServer.
-config :dev_ide, :tmux_server_label, "devide_dev"
+# Casein.Terminals.TmuxServer.
+config :casein, :tmux_server_label, "devide_dev"
 
 # Slice 3 rollout ladder step 1: event-driven tmux topology ON in dev.
 # Canary soak + prod default stay operational (watch TmuxEventsFlapWatch
 # telemetry / flap alarm; flip via DEVIDE_TMUX_EVENTS). runtime.exs env
 # overrides both ways when set. Test env stays OFF for flag-off no-op proofs.
-config :dev_ide, :tmux_events, true
+config :casein, :tmux_events, true
 
-devide_lan_requested? = truthy?.(System.get_env("DEV_IDE_LAN"))
-devide_lan_insecure_http? = truthy?.(System.get_env("DEV_IDE_LAN_INSECURE_HTTP"))
+devide_lan_requested? = truthy?.(System.get_env("CASEIN_LAN"))
+devide_lan_insecure_http? = truthy?.(System.get_env("CASEIN_LAN_INSECURE_HTTP"))
 devide_lan? = devide_lan_requested? or devide_lan_insecure_http?
 
 devide_lan_hostname =
@@ -77,24 +77,24 @@ devide_lan_mdns_host =
   end
 
 devide_lan_host =
-  System.get_env("DEV_IDE_LAN_HOST") ||
+  System.get_env("CASEIN_LAN_HOST") ||
     devide_lan_mdns_host
 
 devide_http_port = String.to_integer(System.get_env("PORT") || "4000")
-devide_lan_https_port = String.to_integer(System.get_env("DEV_IDE_LAN_HTTPS_PORT") || "4443")
+devide_lan_https_port = String.to_integer(System.get_env("CASEIN_LAN_HTTPS_PORT") || "4443")
 
 devide_lan_insecure_http_port =
-  String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80")
+  String.to_integer(System.get_env("CASEIN_LAN_INSECURE_HTTP_PORT") || "80")
 
 devide_lan_certfile =
-  System.get_env("DEV_IDE_LAN_CERTFILE") ||
-    Path.expand("../priv/cert/devide-lan.pem", __DIR__)
+  System.get_env("CASEIN_LAN_CERTFILE") ||
+    Path.expand("../priv/cert/casein-lan.pem", __DIR__)
 
 devide_lan_keyfile =
-  System.get_env("DEV_IDE_LAN_KEYFILE") ||
-    Path.expand("../priv/cert/devide-lan-key.pem", __DIR__)
+  System.get_env("CASEIN_LAN_KEYFILE") ||
+    Path.expand("../priv/cert/casein-lan-key.pem", __DIR__)
 
-devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("DEV_IDE_LAN_HTTPS"))
+devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("CASEIN_LAN_HTTPS"))
 
 devide_endpoint_config = [
   # HTTP stays loopback-only; LAN mode adds a trusted HTTPS listener below.
@@ -104,12 +104,12 @@ devide_endpoint_config = [
   debug_errors: true,
   secret_key_base: "IG4EOlcBEwImKOlB6OwEc8r/O1dn4NjtGBJU7VV0w0iQv8v839fWk7PZLzP39/86",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:dev_ide, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:dev_ide, ~w(--watch)]}
+    esbuild: {Esbuild, :install_and_run, [:casein, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:casein, ~w(--watch)]}
   ]
 ]
 
-config :dev_ide,
+config :casein,
        :origin_identity_secret,
        "IG4EOlcBEwImKOlB6OwEc8r/O1dn4NjtGBJU7VV0w0iQv8v839fWk7PZLzP39/86"
 
@@ -144,7 +144,7 @@ devide_endpoint_config =
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
-config :dev_ide, DevIdeWeb.Endpoint, devide_endpoint_config
+config :casein, CaseinWeb.Endpoint, devide_endpoint_config
 
 # ## SSL Support
 #
@@ -170,30 +170,30 @@ config :dev_ide, DevIdeWeb.Endpoint, devide_endpoint_config
 # different ports.
 
 if devide_lan? do
-  config :dev_ide, :lan_mode, true
+  config :casein, :lan_mode, true
 
   if devide_lan_insecure_http? do
-    config :dev_ide, :lan_insecure_http, true
-    config :dev_ide, :session_same_site, nil
+    config :casein, :lan_insecure_http, true
+    config :casein, :session_same_site, nil
   end
 
-  config :dev_ide, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+  config :casein, :default_workspace, System.get_env("CASEIN_DEFAULT_WORKSPACE") || "home"
 else
-  if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
-    config :dev_ide, :default_workspace, default_workspace
+  if default_workspace = System.get_env("CASEIN_DEFAULT_WORKSPACE") do
+    config :casein, :default_workspace, default_workspace
   end
 end
 
-case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+case System.get_env("CASEIN_LAN_PATH_ROOT") do
   path when is_binary(path) and path != "" ->
-    config :dev_ide, :lan_path_root, path
+    config :casein, :lan_path_root, path
 
   _ ->
     :ok
 end
 
 # Reload browser tabs when matching files change.
-config :dev_ide, DevIdeWeb.Endpoint,
+config :casein, CaseinWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
@@ -202,13 +202,13 @@ config :dev_ide, DevIdeWeb.Endpoint,
       # Gettext translations
       ~r"priv/gettext/.*\.po$"E,
       # Router, Controllers, LiveViews and LiveComponents
-      ~r"lib/dev_ide_web/router\.ex$"E,
-      ~r"lib/dev_ide_web/(controllers|live|components)/.*\.(ex|heex)$"E
+      ~r"lib/casein_web/router\.ex$"E,
+      ~r"lib/casein_web/(controllers|live|components)/.*\.(ex|heex)$"E
     ]
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :dev_ide, dev_routes: true
+config :casein, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
@@ -233,33 +233,33 @@ config :swoosh, :api_client, false
 
 # Pin the seed workspaces into :manual mode so "Raw shell" is
 # selectable in the terminal tab (raw requires manual + local host).
-config :dev_ide, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
+config :casein, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 
 # Local workspace source root — `/tmp/...` is always writable by the
 # developer running `mix phx.server`, so the picker renders without
 # requiring `/workspaces` to exist with special perms. The default
-# `DevIDE.WorkspaceSource.Local` discovers subdirectories here as
+# `Casein.WorkspaceSource.Local` discovers subdirectories here as
 # workspaces.
-# Honors DEV_IDE_WORKSPACES_ROOT so an isolated preview instance
+# Honors CASEIN_WORKSPACES_ROOT so an isolated preview instance
 # (scripts/dev-preview-instance.sh) can point at a persistent seed root.
 # The prod block in runtime.exs reads the same env var.
-config :dev_ide,
+config :casein,
        :workspaces_root,
-       System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
+       System.get_env("CASEIN_WORKSPACES_ROOT") || "/tmp/casein_workspaces"
 
-case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+case System.get_env("CASEIN_HOME_WORKSPACE_PATH") do
   home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
-    config :dev_ide, :home_workspace_path, home_workspace_path
+    config :casein, :home_workspace_path, home_workspace_path
 
-    config :dev_ide,
+    config :casein,
            :lan_path_root,
-           System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
+           System.get_env("CASEIN_LAN_PATH_ROOT") || home_workspace_path
 
   _ ->
     :ok
 end
 
-config :dev_ide,
+config :casein,
   preview_control_adapter: :playwright,
   preview_playwright_script: "priv/scripts/preview_playwright.mjs",
   preview_artifacts_root: Path.expand("priv/preview_artifacts")

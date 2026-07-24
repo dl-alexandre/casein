@@ -24,7 +24,7 @@ GATE_STARTED_AT="$(date +%s)"
 
 report_gate_result() {
   local exit_code="$1"
-  [[ -n "${DEV_IDE_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
+  [[ -n "${CASEIN_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   command -v curl >/dev/null 2>&1 || return 0
 
@@ -61,7 +61,7 @@ print(json.dumps({
 
   rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"gate_report\",\"arguments\":${params}}}"
   curl -fsS --max-time 5 -X POST "${mcp_url}" \
-    -H "authorization: Bearer ${DEV_IDE_API_TOKEN}" \
+    -H "authorization: Bearer ${CASEIN_API_TOKEN}" \
     -H "content-type: application/json" \
     -d "${rpc_body}" >/dev/null 2>&1 || true
   return 0
@@ -114,7 +114,7 @@ if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning -x \
     scripts/devide \
     scripts/install-agent-shims.sh \
-    scripts/launch-devide-agent.sh \
+    scripts/launch-casein-agent.sh \
     scripts/lib/real-agent-bin.sh \
     scripts/lib/agent-doctor.sh \
     scripts/lib/canary-drain.sh \
@@ -125,16 +125,16 @@ else
 fi
 
 log "boundary: agent launcher shims must never target ~/.local/bin again"
-# The shims moved to ~/.devide/agent-shims so plain terminals stay untouched
+# The shims moved to ~/.casein/agent-shims so plain terminals stay untouched
 # by DevIDE (operator call, 2026-07-13). Pin the installer's target dir and
 # the Elixir default; a regression here silently re-hijacks agent names
 # machine-wide.
-if ! grep -q 'BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"' scripts/install-agent-shims.sh; then
-  echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.devide/agent-shims" >&2
+if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"' scripts/install-agent-shims.sh; then
+  echo "ERROR: install-agent-shims.sh BIN_DIR no longer pins ~/.casein/agent-shims" >&2
   exit 1
 fi
-if ! grep -q '@default_bin_dir "~/.devide/agent-shims"' lib/dev_ide/agents/agent_shims.ex; then
-  echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.devide/agent-shims" >&2
+if ! grep -q '@default_bin_dir "~/.casein/agent-shims"' lib/casein/agents/agent_shims.ex; then
+  echo "ERROR: AgentShims @default_bin_dir no longer pins ~/.casein/agent-shims" >&2
   exit 1
 fi
 

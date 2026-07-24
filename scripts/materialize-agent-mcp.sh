@@ -28,16 +28,16 @@ if [[ "${1:-}" == "--export" ]]; then
   EXPORT_ONLY=1
 fi
 
-if [[ -f "${ROOT}/.devbox-agent.env" ]] && [[ -z "${DEV_IDE_API_TOKEN:-}" ]]; then
+if [[ -f "${ROOT}/.devbox-agent.env" ]] && [[ -z "${CASEIN_API_TOKEN:-}" ]]; then
   # shellcheck source=/dev/null
   source "${ROOT}/.devbox-agent.env"
 fi
 
-: "${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN is required (source .devbox-agent.env)}"
-DEV_IDE_API_TOKEN="$(
-  DEV_IDE_API_TOKEN="${DEV_IDE_API_TOKEN}" python3 -c "
+: "${CASEIN_API_TOKEN:?CASEIN_API_TOKEN is required (source .devbox-agent.env)}"
+CASEIN_API_TOKEN="$(
+  CASEIN_API_TOKEN="${CASEIN_API_TOKEN}" python3 -c "
 import os
-t = os.environ.get('DEV_IDE_API_TOKEN', '').strip()
+t = os.environ.get('CASEIN_API_TOKEN', '').strip()
 if len(t) >= 2 and t[0] == t[-1] and t[0] in \"'\\\"\":
     t = t[1:-1]
 print(t)
@@ -50,26 +50,26 @@ print(t)
 # agent configs. The MCP endpoints reject tools/call from any token not scoped
 # to the workspace (workspace_scoped_token_required), and a pane shell can
 # inherit the global admin token, a stale/rotated token, or another workspace's
-# token as DEV_IDE_API_TOKEN. Validating membership in the scoped-token registry
+# token as CASEIN_API_TOKEN. Validating membership in the scoped-token registry
 # (env file + runtime store) closes all three cases in one place: keep the
 # inherited token only if it is registered here, otherwise swap in this
 # workspace's scoped token, and fail closed when none exists.
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
-DEV_IDE_ENV_FILE_REF="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+CASEIN_ENV_FILE_REF="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 if ! workspace_scoped_token_is_registered_for \
-    "$DEV_IDE_ENV_FILE_REF" "$DEVIDE_WORKSPACE_ID" "$DEV_IDE_API_TOKEN"; then
+    "$CASEIN_ENV_FILE_REF" "$DEVIDE_WORKSPACE_ID" "$CASEIN_API_TOKEN"; then
   SCOPED_TOKEN="$(
-    workspace_scoped_token_lookup "$DEV_IDE_ENV_FILE_REF" "${DEVIDE_WORKSPACE_ID}"
+    workspace_scoped_token_lookup "$CASEIN_ENV_FILE_REF" "${DEVIDE_WORKSPACE_ID}"
   )"
   if [[ -n "$SCOPED_TOKEN" ]]; then
-    DEV_IDE_API_TOKEN="$SCOPED_TOKEN"
+    CASEIN_API_TOKEN="$SCOPED_TOKEN"
   else
     cat >&2 <<'ERR'
-error: DEV_IDE_API_TOKEN is not a workspace-scoped token for this workspace and
+error: CASEIN_API_TOKEN is not a workspace-scoped token for this workspace and
 no scoped token exists in the registry. Refusing to materialize agent configs
 the MCP endpoints would reject. Run scripts/refresh-devbox-agent-pairing.sh to
-mint scoped tokens, or export the workspace's scoped DEV_IDE_API_TOKEN.
+mint scoped tokens, or export the workspace's scoped CASEIN_API_TOKEN.
 ERR
     exit 1
   fi
@@ -109,7 +109,7 @@ if [[ -z "${DEVIDE_CHECKOUT:-}" ]]; then
   esac
 fi
 HOME_DIR="${HOME:?HOME is required}"
-DEFAULT_STAGING="${HOME_DIR}/.devide/agent-mcp/${DEVIDE_WORKSPACE_NAME}"
+DEFAULT_STAGING="${HOME_DIR}/.casein/agent-mcp/${DEVIDE_WORKSPACE_NAME}"
 if [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" ]] && [[ "${DEVIDE_AGENT_MCP_HOME}" != "${DEFAULT_STAGING}" ]]; then
   unset DEVIDE_AGENT_MCP_HOME
 fi
@@ -139,7 +139,7 @@ mkdir -p "${STAGING}/grok" "${STAGING}/codex" "${STAGING}/cursor"
 # Stage checkout-independent agent hook scripts into the workspace home so they
 # resolve no matter which project is the checkout. Prefer the release-shipped
 # priv/scripts copy; fall back to the plain scripts tree in a dev checkout.
-for _hook in devide-agent-state.sh devide-codex-notify.sh; do
+for _hook in casein-agent-state.sh casein-codex-notify.sh; do
   if [[ -f "${ROOT}/priv/scripts/${_hook}" ]]; then
     _hook_src="${ROOT}/priv/scripts/${_hook}"
   elif [[ -f "${DEVIDE_SCRIPTS}/${_hook}" ]]; then
@@ -159,7 +159,7 @@ print(slug or 'workspace')
 "
 )"
 TERMINAL_KEY="devide-terminal-${WORKSPACE_SLUG}"
-PREVIEW_KEY="devide-preview-${WORKSPACE_SLUG}"
+PREVIEW_KEY="casein-preview-${WORKSPACE_SLUG}"
 ARTIFACT_KEY="devide-artifact-${WORKSPACE_SLUG}"
 TIDEWAVE_KEY="devide-tidewave-${WORKSPACE_SLUG}"
 
@@ -198,7 +198,7 @@ url = "${DEVIDE_TERMINAL_MCP_URL}"
 enabled = true
 
 [mcp_servers.${TERMINAL_KEY}.headers]
-Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+Authorization = "Bearer \${CASEIN_API_TOKEN}"
 X-DevIDE-Caller-Pane = "\${DEVIDE_CALLER_PANE}"
 
 [mcp_servers.${PREVIEW_KEY}]
@@ -206,21 +206,21 @@ url = "${DEVIDE_PREVIEW_MCP_URL}"
 enabled = true
 
 [mcp_servers.${PREVIEW_KEY}.headers]
-Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+Authorization = "Bearer \${CASEIN_API_TOKEN}"
 
 [mcp_servers.${ARTIFACT_KEY}]
 url = "${DEVIDE_ARTIFACT_MCP_URL}"
 enabled = true
 
 [mcp_servers.${ARTIFACT_KEY}.headers]
-Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+Authorization = "Bearer \${CASEIN_API_TOKEN}"
 ${TIDEWAVE_GROK_BLOCK}
 EOF
 
-# --- Codex staging marker (launch-devide-agent.sh injects MCP at startup) ---
+# --- Codex staging marker (launch-casein-agent.sh injects MCP at startup) ---
 cat >"${STAGING}/codex/config.toml" <<EOF
 # Generated by scripts/materialize-agent-mcp.sh — do not edit by hand.
-# DevIDE MCP is injected into Codex by scripts/launch-devide-agent.sh with
+# DevIDE MCP is injected into Codex by scripts/launch-casein-agent.sh with
 # per-launch -c overrides. Keeping this file free of DevIDE MCP entries prevents
 # plain Codex startups from requiring a DevIDE token in the environment.
 EOF
@@ -236,7 +236,7 @@ cat >"${STAGING}/opencode.json" <<EOF
       "enabled": true,
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}",
+        "Authorization": "Bearer {env:CASEIN_API_TOKEN}",
         "X-DevIDE-Caller-Pane": "{env:DEVIDE_CALLER_PANE}"
       }
     },
@@ -246,7 +246,7 @@ cat >"${STAGING}/opencode.json" <<EOF
       "enabled": true,
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
+        "Authorization": "Bearer {env:CASEIN_API_TOKEN}"
       }
     },
     "${ARTIFACT_KEY}": {
@@ -255,7 +255,7 @@ cat >"${STAGING}/opencode.json" <<EOF
       "enabled": true,
       "oauth": false,
       "headers": {
-        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
+        "Authorization": "Bearer {env:CASEIN_API_TOKEN}"
       }
     }${TIDEWAVE_OPENCODE_BLOCK}
   }
@@ -272,7 +272,7 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-grok-mcp \
 # --- Claude Code hooks settings (semantic agent-state reporting) ---
 # Injected by the launcher via `claude --settings`. The hook command runs
 # through a shell, so $DEVIDE_SCRIPTS resolves from the agent's env at hook time.
-AGENT_STATE_HOOK="${STAGING}/devide-agent-state.sh"
+AGENT_STATE_HOOK="${STAGING}/casein-agent-state.sh"
 HOOKS_SETTINGS="${STAGING}/claude-hooks-settings.json"
 AGENT_STATE_HOOK="${AGENT_STATE_HOOK}" python3 - "${HOOKS_SETTINGS}" <<'PY'
 import json, os, sys
@@ -327,10 +327,10 @@ chmod 600 "${SIDECHAT_SETTINGS}"
 
 # --- Grok session capability bundle ---------------------------------------
 # Keep DevIDE capabilities out of the checkout and global Grok config. The
-# bundle contains no bearer token: .mcp.json references DEV_IDE_API_TOKEN from
+# bundle contains no bearer token: .mcp.json references CASEIN_API_TOKEN from
 # this launch environment. A digest directory is never overwritten, so the
 # path supplied through ACP `_meta.pluginDirs` is reproducible and immutable.
-GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.devide/grok-bundles}"
+GROK_BUNDLE_ROOT="${DEVIDE_GROK_BUNDLE_ROOT:-${HOME_DIR}/.casein/grok-bundles}"
 GROK_BUNDLE_ARGS=(
   build
   --bundle-root "${GROK_BUNDLE_ROOT}"
@@ -344,8 +344,8 @@ case "${DEVIDE_AGENT_STATE_HOOKS:-1}" in
     ;;
   *)
     GROK_BUNDLE_ARGS+=(
-      --hook-config "${ROOT}/scripts/agent-hooks/grok-devide-agent-state.json"
-      --hook-script "${STAGING}/devide-agent-state.sh"
+      --hook-config "${ROOT}/scripts/agent-hooks/grok-casein-agent-state.json"
+      --hook-script "${STAGING}/casein-agent-state.sh"
     )
     ;;
 esac
@@ -371,7 +371,7 @@ export DEVIDE_GROK_BUNDLE_DIR DEVIDE_GROK_BUNDLE_DIGEST
 # One private leader per workspace/worktree lets the human TUI and DevIDE ACP
 # attachment converge on the same Grok session without touching the global
 # ~/.grok/leader.sock. Keep the path short enough for Unix sockaddr_un.
-GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.devide/grok-leaders}"
+GROK_LEADER_BASE="${DEVIDE_GROK_LEADER_BASE:-${HOME_DIR}/.casein/grok-leaders}"
 GROK_LEADER_KEY="$(printf '%s\0%s' "${DEVIDE_WORKSPACE_ID}" "$(realpath -m "${DEVIDE_CHECKOUT}")" | sha256sum | cut -c1-24)"
 DEVIDE_GROK_LEADER_ROOT="${GROK_LEADER_BASE}/${GROK_LEADER_KEY}"
 DEVIDE_GROK_LEADER_SOCKET="${DEVIDE_GROK_LEADER_ROOT}/leader.sock"
@@ -391,7 +391,7 @@ ENV_SH="${STAGING}/env.sh"
 ENV_SH_TMP="$(mktemp "${STAGING}/.env.sh.XXXXXX")"
 cat >"${ENV_SH_TMP}" <<EOF
 # Generated by scripts/materialize-agent-mcp.sh — source or load via devide agent env.
-export DEV_IDE_API_TOKEN='${DEV_IDE_API_TOKEN}'
+export CASEIN_API_TOKEN='${CASEIN_API_TOKEN}'
 export DEVIDE_WORKSPACE_ID='${DEVIDE_WORKSPACE_ID}'
 export DEVIDE_WORKSPACE_NAME='${DEVIDE_WORKSPACE_NAME}'
 export DEVIDE_WORKSPACE_MODE='${DEVIDE_WORKSPACE_MODE}'
@@ -411,8 +411,8 @@ export DEVIDE_GROK_LEADER_ROOT='${DEVIDE_GROK_LEADER_ROOT}'
 export DEVIDE_GROK_LEADER_SOCKET='${DEVIDE_GROK_LEADER_SOCKET}'
 export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'
 export DEVIDE_AGENT_ENV_FILE='${ENV_SH}'
-export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export PATH="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}:\${DEV_IDE_NPM_PREFIX}/bin:\${PATH}"
+export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
+export PATH="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}:\${CASEIN_NPM_PREFIX}/bin:\${PATH}"
 EOF
 chmod 600 "${ENV_SH_TMP}"
 mv -f "${ENV_SH_TMP}" "${ENV_SH}"
@@ -431,10 +431,10 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" 2>/dev/null || true
 
 if [[ "$EXPORT_ONLY" -eq 1 ]]; then
   # The materialized .mcp.json (and grok/opencode configs) auth with the
-  # literal placeholder `Bearer ${DEV_IDE_API_TOKEN}`, which the agent expands
+  # literal placeholder `Bearer ${CASEIN_API_TOKEN}`, which the agent expands
   # from its process env. The launch wrapper eval's this output before exec'ing
   # the agent, so the token MUST be exported here or every server 401s.
-  printf 'export DEV_IDE_API_TOKEN=%q\n' "$DEV_IDE_API_TOKEN"
+  printf 'export CASEIN_API_TOKEN=%q\n' "$CASEIN_API_TOKEN"
   printf 'export DEVIDE_ARTIFACT_MCP_URL=%q\n' "$DEVIDE_ARTIFACT_MCP_URL"
   printf 'export DEVIDE_AGENT_MCP_HOME=%q\n' "$STAGING"
   printf 'export DEVIDE_GROK_BUNDLE_DIR=%q\n' "$DEVIDE_GROK_BUNDLE_DIR"

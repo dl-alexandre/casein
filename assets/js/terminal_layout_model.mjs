@@ -69,7 +69,7 @@ const NOOP = Object.freeze({noop: true, reason: "unmeasurable"})
  * @param {boolean} input.mobile
  * @param {boolean} input.keyboardOpen
  * @param {boolean} input.rowPinAllowed       the ?rowpin= flag
- * @param {"normal"|"alternate"} [input.screenMode]  from DevIDE.Terminals.ScreenMode
+ * @param {"normal"|"alternate"} [input.screenMode]  from Casein.Terminals.ScreenMode
  * @param {number} input.userZoom
  * @param {"event"|"periodic"} [input.trigger]
  * @returns {{

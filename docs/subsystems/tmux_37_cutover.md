@@ -61,7 +61,7 @@ not enabled in `priv/tmux/devide.conf`.
    ```
    Expect **exactly one** `\e]11;rgb:…` reply matching the session background.
    Flip the browser scheme (dark↔light), wait ~1 s, re-run: the reply must show
-   the new background and `tmux -L devide show-environment DEV_IDE_TERMINAL_SCHEME`
+   the new background and `tmux -L devide show-environment CASEIN_TERMINAL_SCHEME`
    must agree.
 7. **Smoke-check explicit theme reports** (3.6+ only):
    ```sh
@@ -92,6 +92,6 @@ reports 3.4 again — no code revert needed. Also revert the CI/install pin if
   (host-tmux fallback is fine today).
 - The client colour report covers **fg/bg only** (OSC 10/11). Full palette
   (OSC 4), named themes, and app-specific config still go through the
-  `DevIDE.Terminals.ToolThemes` registry path.
+  `Casein.Terminals.ToolThemes` registry path.
 - 3.7 changes theme send timing ("do not send theme unless changed"); re-run the
   smoke checks above after cutover.

@@ -8,22 +8,22 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
-WORKSPACE_NAME="${DEV_IDE_WORKSPACE_NAME:-dalexandre-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
+WORKSPACE_NAME="${CASEIN_WORKSPACE_NAME:-dalexandre-devide}"
 AGENT_ENV="${ROOT}/.devbox-agent.env"
 
 log() { printf '>>> %s\n' "$*"; }
 
-ADMIN_TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
+ADMIN_TOKEN="$(sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
 if [[ -z "$ADMIN_TOKEN" ]]; then
-  echo "error: DEV_IDE_API_TOKEN missing from $ENV_FILE" >&2
+  echo "error: CASEIN_API_TOKEN missing from $ENV_FILE" >&2
   exit 1
 fi
 
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
-bash scripts/ensure-devide-loopback-proxy.sh
+bash scripts/ensure-casein-loopback-proxy.sh
 
 LOCAL_URL="http://127.0.0.1:4000"
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
@@ -92,10 +92,10 @@ relaunch_current_release_if_needed() {
     return 0
   fi
 
-  local active_release="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/release"
+  local active_release="${CASEIN_DEPLOY_ROOT:-/opt/casein}/release"
   local tarball revision
 
-  if [[ ! -x "${active_release}/bin/dev_ide" ]]; then
+  if [[ ! -x "${active_release}/bin/casein" ]]; then
     log "warning: workspace token env changed but ${active_release} is not an executable release"
     return 0
   fi
@@ -104,7 +104,7 @@ relaunch_current_release_if_needed() {
   revision="${revision:-manual-token-refresh}"
 
   log "relaunching current release so it sees updated workspace-scoped tokens"
-  tarball="$(sudo mktemp "${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/dev_ide-token-refresh-XXXXXX.tgz")"
+  tarball="$(sudo mktemp "${CASEIN_DEPLOY_ROOT:-/opt/casein}/dev_ide-token-refresh-XXXXXX.tgz")"
   sudo tar -C "$active_release" -czf "$tarball" .
   sudo chown "$(id -un):$(id -gn)" "$tarball"
 
@@ -116,7 +116,7 @@ relaunch_current_release_if_needed() {
   fi
 
   sudo rm -f "$tarball"
-  bash scripts/ensure-devide-loopback-proxy.sh
+  bash scripts/ensure-casein-loopback-proxy.sh
 }
 
 WORKSPACES_JSON="$(
@@ -190,7 +190,7 @@ for ws in json.loads(os.environ['WORKSPACES_JSON']):
     scripts="$(scripts_for_checkout "$checkout")"
     log "materializing MCP for ${ws_name}"
     ensure_scoped_token_for_workspace "$ws_id" ws_token
-    DEV_IDE_API_TOKEN="${ws_token}" \
+    CASEIN_API_TOKEN="${ws_token}" \
       DEVIDE_WORKSPACE_NAME="${ws_name}" \
       DEVIDE_WORKSPACE_ID="${ws_id}" \
       DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${ws_id}" \
@@ -219,10 +219,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
-# DEV_IDE_API_TOKEN is workspace-scoped. The global admin token stays only in
-# /etc/devide/devide.env; never copy it into an agent-readable checkout.
+# CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
+# /etc/casein/devide.env; never copy it into an agent-readable checkout.
 
-export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
+export CASEIN_API_TOKEN='${AGENT_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
 export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
@@ -233,14 +233,14 @@ export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WO
 $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
-export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
-export DEV_IDE_NPM_PREFIX="\${DEV_IDE_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
-export DEV_IDE_AGENT_BIN_DIR="\${DEV_IDE_AGENT_BIN_DIR:-\${HOME}/.devide/agent-shims}"
+export DEVIDE_AGENT_MCP_HOME="\${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
+export CASEIN_NPM_PREFIX="\${CASEIN_NPM_PREFIX:-\${HOME}/.local/share/npm-global}"
+export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
-case ":\${PATH:-}:" in *":\${DEV_IDE_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${DEV_IDE_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
+case ":\${PATH:-}:" in *":\${CASEIN_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${CASEIN_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 # Launcher shims last so they land frontmost: bare agent names in this shell
 # must hit DevIDE MCP injection once this file is sourced.
-case ":\${PATH:-}:" in *":\${DEV_IDE_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${DEV_IDE_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
+case ":\${PATH:-}:" in *":\${CASEIN_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${CASEIN_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
 EOF
 chmod 600 "$AGENT_ENV"
 
@@ -258,7 +258,7 @@ bash scripts/refresh-tmux-pane-env.sh --workspace-prefix dalexandre
 
 relaunch_current_release_if_needed
 
-DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$AGENT_TOKEN" \
+DEVIDE_URL="$LOCAL_URL" CASEIN_API_TOKEN="$AGENT_TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
   bash scripts/verify_agent_pairing.sh
 

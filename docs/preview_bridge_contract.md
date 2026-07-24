@@ -37,7 +37,7 @@ Preview pages emit browser-native messages:
 ```javascript
 window.parent.postMessage(
   {
-    source: "devide-preview",
+    source: "casein-preview",
     version: 1,
     type: "devide:preview:live_socket_connected",
     payload: {
@@ -73,7 +73,7 @@ All events share the base payload:
 
 ```json
 {
-  "source": "devide-preview",
+  "source": "casein-preview",
   "version": 1,
   "type": "devide:preview:dom_loaded",
   "payload": {

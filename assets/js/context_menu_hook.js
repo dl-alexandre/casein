@@ -70,7 +70,7 @@ export const ContextMenu = {
     document.addEventListener("pointermove", this.onPointerMove, true)
     document.addEventListener("pointerup", this.onPointerEnd, true)
     document.addEventListener("pointercancel", this.onPointerEnd, true)
-    document.addEventListener("devide:ctx-menu-mounted", this.onMenuMounted)
+    document.addEventListener("casein:ctx-menu-mounted", this.onMenuMounted)
   },
 
   destroyed() {
@@ -81,7 +81,7 @@ export const ContextMenu = {
     document.removeEventListener("pointermove", this.onPointerMove, true)
     document.removeEventListener("pointerup", this.onPointerEnd, true)
     document.removeEventListener("pointercancel", this.onPointerEnd, true)
-    document.removeEventListener("devide:ctx-menu-mounted", this.onMenuMounted)
+    document.removeEventListener("casein:ctx-menu-mounted", this.onMenuMounted)
   },
 
   open(trigger, x, y) {
@@ -93,7 +93,7 @@ export const ContextMenu = {
     // Let the owning hook refresh its data-ctx-* attrs synchronously before
     // we harvest them — e.g. the terminal snapshots its selection here,
     // because opening/clicking the menu will destroy that selection.
-    trigger.dispatchEvent(new CustomEvent("devide:ctx-before-open"))
+    trigger.dispatchEvent(new CustomEvent("casein:ctx-before-open"))
 
     const ctx = {}
     for (const [key, value] of Object.entries(trigger.dataset)) {

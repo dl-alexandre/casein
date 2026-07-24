@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily DevIDE agent-worktree cleanup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=casein-worktree-cleanup.service
+
+[Install]
+WantedBy=timers.target

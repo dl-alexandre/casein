@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-MAIN_SOCKET="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
+MAIN_SOCKET="${DEVIDE_CURRENT_SOCK:-/run/casein/current.sock}"
 DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
-TOKEN="${DEV_IDE_API_TOKEN:-}"
+TOKEN="${CASEIN_API_TOKEN:-}"
 WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-}}"
 TMUX_SESSION="${TMUX_SESSION:-${DEVIDE_TMUX_SESSION:-}}"
 PREVIEW_OPEN="${VERIFY_PREVIEW_OPEN:-0}"
@@ -51,12 +51,12 @@ else
 fi
 
 if [[ -z "$TOKEN" || -z "$WORKSPACE_ID" ]]; then
-  log "MCP preview smoke skipped (set DEV_IDE_API_TOKEN and WORKSPACE_ID)"
+  log "MCP preview smoke skipped (set CASEIN_API_TOKEN and WORKSPACE_ID)"
   exit 0
 fi
 
-# shellcheck source=scripts/devide-curl.sh
-source "${ROOT}/scripts/devide-curl.sh"
+# shellcheck source=scripts/casein-curl.sh
+source "${ROOT}/scripts/casein-curl.sh"
 
 preview_rpc() {
   local id="$1"

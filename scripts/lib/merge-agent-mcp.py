@@ -20,7 +20,7 @@ def server_keys(workspace_name: str) -> tuple[str, str, str, str]:
     slug = workspace_slug(workspace_name)
     return (
         f"devide-terminal-{slug}",
-        f"devide-preview-{slug}",
+        f"casein-preview-{slug}",
         f"devide-artifact-{slug}",
         f"devide-tidewave-{slug}",
     )
@@ -34,7 +34,7 @@ def claude_mcp_payload(
     tidewave_url: str | None = None,
 ) -> dict:
     terminal_key, preview_key, artifact_key, tidewave_key = server_keys(workspace_name)
-    auth = "Bearer ${DEV_IDE_API_TOKEN}"
+    auth = "Bearer ${CASEIN_API_TOKEN}"
     servers: dict = {
         terminal_key: {
             "type": "http",
@@ -42,7 +42,7 @@ def claude_mcp_payload(
             "headers": {
                 "Authorization": auth,
                 # Anchors terminal MCP pane resolution to the calling agent's
-                # own pane; expanded per process from launch-devide-agent.sh's
+                # own pane; expanded per process from launch-casein-agent.sh's
                 # export. The server ignores empty/unexpanded values.
                 "X-DevIDE-Caller-Pane": "${DEVIDE_CALLER_PANE}",
             },
@@ -114,7 +114,7 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
 
 
 def write_grok_config(path: Path) -> None:
-    # The `[ui].theme` line is owned by DevIDE.Terminals.ToolThemes now, which
+    # The `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, which
     # stamps groknight (dark) / tokyonight (light) — grokday is banned as
     # illegible in the DevIDE viewer. This helper only
     # strips stale devide-* MCP blocks and preserves everything else, theme
@@ -202,7 +202,7 @@ def main() -> int:
 
     # Claude no longer reads a shared-checkout project .mcp.json — the launcher
     # injects the workspace's isolated staging file via `claude --mcp-config`
-    # (see scripts/launch-devide-agent.sh). Writing the checkout file here is
+    # (see scripts/launch-casein-agent.sh). Writing the checkout file here is
     # what accumulated every workspace's servers into one shared config, so it
     # is intentionally not done.
     return 0

@@ -13,53 +13,53 @@ for the deep-link URL grammar used by the cockpit UI see
 
 Translate browser, operator-tool, and external-agent traffic into DevIDE
 context calls and back. Everything here is a thin transport layer:
-controllers map domain results (`DevIDE.Export`, `DevIDE.Workspaces`,
-`DevIDE.PreviewPanes`, `DevIDE.Deployment.*`, MCP tool modules) onto HTTP
+controllers map domain results (`Casein.Export`, `Casein.Workspaces`,
+`Casein.PreviewPanes`, `Casein.Deployment.*`, MCP tool modules) onto HTTP
 status codes / JSON-RPC envelopes; the terminal channel maps socket frames
-onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
+onto a `Casein.Terminals.SessionOwner`. No business logic lives in this tier.
 
 ## Module map
 
 | Module | File | Role |
 |---|---|---|
-| `DevIdeWeb.Router` | `lib/dev_ide_web/router.ex` | Route table + the `:browser`, `:preview_proxy`, `:api`, `:mcp_api` pipelines and CSP |
-| `DevIdeWeb.LegacyWorkspaceController` | `lib/dev_ide_web/controllers/legacy_workspace_controller.ex` | `GET /workspaces` redirects to `/` (the picker was absorbed by the dashboard) |
-| `DevIdeWeb.PreviewArtifactController` | `lib/dev_ide_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
-| `DevIdeWeb.PreviewProxyController` | `lib/dev_ide_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
-| `DevIdeWeb.API.WorkspaceController` | `lib/dev_ide_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
-| `DevIdeWeb.API.WorkspaceWindowController` | `lib/dev_ide_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
-| `DevIdeWeb.API.WorkspacePaneController` | `lib/dev_ide_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
-| `DevIdeWeb.API.WorkspaceTemplateController` | `lib/dev_ide_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
-| `DevIdeWeb.API.ArtifactProjectController` | `lib/dev_ide_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
-| `DevIdeWeb.API.WorkspaceAPI` | `lib/dev_ide_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
-| `DevIdeWeb.API.PreviewPaneController` | `lib/dev_ide_web/controllers/api/preview_pane_controller.ex` | Register/deregister `devide-preview` CLI panes |
-| `DevIdeWeb.API.DeployStatusController` | `lib/dev_ide_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
-| `DevIdeWeb.API.DrainController` | `lib/dev_ide_web/api/drain_controller.ex` | Start a graceful deployment drain |
-| `DevIdeWeb.API.PreviewMCPController` | `lib/dev_ide_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for the preview MCP server |
-| `DevIdeWeb.API.PreviewMCP` | `lib/dev_ide_web/api/preview_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.PreviewTools` |
-| `DevIdeWeb.API.TerminalMCPController` | `lib/dev_ide_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for the terminal MCP server |
-| `DevIdeWeb.API.TerminalMCP` | `lib/dev_ide_web/api/terminal_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.TerminalTools` |
-| `DevIdeWeb.API.ArtifactMCPController` | `lib/dev_ide_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for the artifact MCP server |
-| `DevIdeWeb.API.ArtifactMCP` | `lib/dev_ide_web/api/artifact_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.ArtifactTools` |
-| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for MCP handlers |
-| `DevIdeWeb.UserSocket` | `lib/dev_ide_web/channels/user_socket.ex` | Token-verified socket; routes `terminal:*` to the terminal channel |
-| `DevIdeWeb.TerminalChannel` | `lib/dev_ide_web/channels/terminal_channel.ex` | Bidirectional terminal stream bridged to a `SessionOwner` |
-| `DevIdeWeb.ErrorHTML` / `DevIdeWeb.ErrorJSON` | `lib/dev_ide_web/controllers/error_{html,json}.ex` | Status-message rendering for error responses |
+| `CaseinWeb.Router` | `lib/casein_web/router.ex` | Route table + the `:browser`, `:preview_proxy`, `:api`, `:mcp_api` pipelines and CSP |
+| `CaseinWeb.LegacyWorkspaceController` | `lib/casein_web/controllers/legacy_workspace_controller.ex` | `GET /workspaces` redirects to `/` (the picker was absorbed by the dashboard) |
+| `CaseinWeb.PreviewArtifactController` | `lib/casein_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
+| `CaseinWeb.PreviewProxyController` | `lib/casein_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
+| `CaseinWeb.API.WorkspaceController` | `lib/casein_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
+| `CaseinWeb.API.WorkspaceWindowController` | `lib/casein_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
+| `CaseinWeb.API.WorkspacePaneController` | `lib/casein_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
+| `CaseinWeb.API.WorkspaceTemplateController` | `lib/casein_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
+| `CaseinWeb.API.ArtifactProjectController` | `lib/casein_web/controllers/api/artifact_project_controller.ex` | Workspace-scoped artifact restoration from retained Git state |
+| `CaseinWeb.API.WorkspaceAPI` | `lib/casein_web/controllers/api/workspace_api.ex` | Shared helpers: params, topology snapshot/refresh, path safety, JSON errors |
+| `CaseinWeb.API.PreviewPaneController` | `lib/casein_web/controllers/api/preview_pane_controller.ex` | Register/deregister `casein-preview` CLI panes |
+| `CaseinWeb.API.DeployStatusController` | `lib/casein_web/api/deploy_status_controller.ex` | Deploy-handoff health probe |
+| `CaseinWeb.API.DrainController` | `lib/casein_web/api/drain_controller.ex` | Start a graceful deployment drain |
+| `CaseinWeb.API.PreviewMCPController` | `lib/casein_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for the preview MCP server |
+| `CaseinWeb.API.PreviewMCP` | `lib/casein_web/api/preview_mcp.ex` | Pure JSON-RPC handler exposing `Casein.Agents.PreviewTools` |
+| `CaseinWeb.API.TerminalMCPController` | `lib/casein_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for the terminal MCP server |
+| `CaseinWeb.API.TerminalMCP` | `lib/casein_web/api/terminal_mcp.ex` | Pure JSON-RPC handler exposing `Casein.Agents.TerminalTools` |
+| `CaseinWeb.API.ArtifactMCPController` | `lib/casein_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for the artifact MCP server |
+| `CaseinWeb.API.ArtifactMCP` | `lib/casein_web/api/artifact_mcp.ex` | Pure JSON-RPC handler exposing `Casein.Agents.ArtifactTools` |
+| `CaseinWeb.API.MCPWorkspaceScope` | `lib/casein_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for MCP handlers |
+| `CaseinWeb.UserSocket` | `lib/casein_web/channels/user_socket.ex` | Token-verified socket; routes `terminal:*` to the terminal channel |
+| `CaseinWeb.TerminalChannel` | `lib/casein_web/channels/terminal_channel.ex` | Bidirectional terminal stream bridged to a `SessionOwner` |
+| `CaseinWeb.ErrorHTML` / `CaseinWeb.ErrorJSON` | `lib/casein_web/controllers/error_{html,json}.ex` | Status-message rendering for error responses |
 
 ## Pipelines (auth)
 
-Defined in `DevIdeWeb.Router`. Auth plugs themselves live in
-`lib/dev_ide_web/plugs/` (outside this subsystem) — referenced here for completeness.
+Defined in `CaseinWeb.Router`. Auth plugs themselves live in
+`lib/casein_web/plugs/` (outside this subsystem) — referenced here for completeness.
 
 | Pipeline | Plugs | Identity model |
 |---|---|---|
-| `:browser` | session, live-flash, CSP headers, `:protect_from_forgery`, `DevIdeWeb.Plugs.ForwardAuth` | Trusted `X-Auth-Request-Email` header from the reverse proxy (`ForwardAuth`); falls back to the static single-user `AssignCurrentUser` identity when forward-auth is disabled. Assigns `:current_user`. |
+| `:browser` | session, live-flash, CSP headers, `:protect_from_forgery`, `CaseinWeb.Plugs.ForwardAuth` | Trusted `X-Auth-Request-Email` header from the reverse proxy (`ForwardAuth`); falls back to the static single-user `AssignCurrentUser` identity when forward-auth is disabled. Assigns `:current_user`. |
 | `:preview_proxy` | session, `ForwardAuth` | Same identity as `:browser`, but **omits** the cockpit CSP / secure-browser headers so proxied app HTML runs under its own framing rules. |
-| `:api` | `:accepts ["json"]`, `DevIdeWeb.Plugs.ApiAuth` | Bearer token (`:dev_ide, :api_token` / `DEV_IDE_API_TOKEN`, or per-workspace `workspace_api_tokens`). No token configured → **503** `api_token_not_configured`; bad token → 401; workspace-scoped token outside its workspace → 403. |
-| `:mcp_api` | `:accepts ["json"]`, `ApiAuth`, `DevIdeWeb.Plugs.McpRateLimit` | Same bearer gate as `:api`, plus per-token (hashed) rate limiting (default 120 hits / 60 s → **429** `rate_limited` with `Retry-After`). |
+| `:api` | `:accepts ["json"]`, `CaseinWeb.Plugs.ApiAuth` | Bearer token (`:casein, :api_token` / `CASEIN_API_TOKEN`, or per-workspace `workspace_api_tokens`). No token configured → **503** `api_token_not_configured`; bad token → 401; workspace-scoped token outside its workspace → 403. |
+| `:mcp_api` | `:accepts ["json"]`, `ApiAuth`, `CaseinWeb.Plugs.McpRateLimit` | Same bearer gate as `:api`, plus per-token (hashed) rate limiting (default 120 hits / 60 s → **429** `rate_limited` with `Retry-After`). |
 
 The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
-`Application.compile_env(:dev_ide, :dev_routes)` is true (dev/test).
+`Application.compile_env(:casein, :dev_routes)` is true (dev/test).
 
 ## HTTP route reference
 
@@ -76,11 +76,11 @@ The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| ANY | `/preview-proxy/:workspace_id/:port/*path` | `PreviewProxyController` · `:proxy` | Forward to `127.0.0.1:<port><path>` server-side, preserving method, cookies, headers, and body; strip frame-blocking response headers; inject `<base href>` and rewrite root-relative assets plus standard Phoenix socket endpoint literals for LiveView long-poll fallback. This is not a raw websocket tunnel. Authorizes via `Workspaces.viewer_terminal_owner?/2`; port validated by `DevIDE.Previews.Url.port_allowed?/2`. Returns 403/400/404, or 502 "nothing listening" page when upstream is down |
+| ANY | `/preview-proxy/:workspace_id/:port/*path` | `PreviewProxyController` · `:proxy` | Forward to `127.0.0.1:<port><path>` server-side, preserving method, cookies, headers, and body; strip frame-blocking response headers; inject `<base href>` and rewrite root-relative assets plus standard Phoenix socket endpoint literals for LiveView long-poll fallback. This is not a raw websocket tunnel. Authorizes via `Workspaces.viewer_terminal_owner?/2`; port validated by `Casein.Previews.Url.port_allowed?/2`. Returns 403/400/404, or 502 "nothing listening" page when upstream is down |
 
 ### Read-only workspace API — pipeline `:api`
 
-All under `scope "/api", DevIdeWeb.API`. `:id` is a workspace id (manager UUID
+All under `scope "/api", CaseinWeb.API`. `:id` is a workspace id (manager UUID
 or `folder:<base64url-path>`). Unknown workspace → 404 `not_found`.
 
 | Method | Path | Controller · action | Purpose |
@@ -172,16 +172,16 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| POST | `/api/preview/panes` | `PreviewPaneController` · `:create` | Register a `devide-preview` CLI pane (201); 422 on `workspace_not_found` / `untrusted_url` |
+| POST | `/api/preview/panes` | `PreviewPaneController` · `:create` | Register a `casein-preview` CLI pane (201); 422 on `workspace_not_found` / `untrusted_url` |
 | DELETE | `/api/preview/panes/:id` | `PreviewPaneController` · `:delete` | Deregister a pane; 404 if unknown |
 
 ### Deploy control — pipeline `:api`
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| GET | `/api/deploy_status` | `DeployStatusController` · `:show` | `DevIDE.Deployment.Health.status/1`; 200 when `ok`, else **503** |
-| POST | `/api/drain` | `DrainController` · `:drain` | `DevIDE.Deployment.Drain.start_drain/1` (`commits_behind` arg); 409 `already_draining` if already draining |
-| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `devide-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
+| GET | `/api/deploy_status` | `DeployStatusController` · `:show` | `Casein.Deployment.Health.status/1`; 200 when `ok`, else **503** |
+| POST | `/api/drain` | `DrainController` · `:drain` | `Casein.Deployment.Drain.start_drain/1` (`commits_behind` arg); 409 `already_draining` if already draining |
+| POST | `/api/deploy_webhook` | `DeployWebhookController` · `:github` | GitHub push webhook (`X-Hub-Signature-256` + `X-GitHub-Event`); starts `casein-deploy.service` on `master` pushes; **503** when `DEVIDE_DEPLOY_WEBHOOK_SECRET` unset; must bypass Caddy `forward_auth` |
 
 ### Agent MCP — pipeline `:mcp_api`
 
@@ -194,7 +194,7 @@ down. A missing session id on `GET`/`DELETE` returns **400**
 `error` string and also include `code`, `message`, and
 `error_version: "mcp-streamable-http-v1"` so clients can branch on a versioned
 shape. POST bodies over `:mcp_max_body_bytes`
-(`DEV_IDE_MCP_MAX_BODY_BYTES`, default `1_000_000`) return **413**
+(`CASEIN_MCP_MAX_BODY_BYTES`, default `1_000_000`) return **413**
 `request_body_too_large` before JSON-RPC handling with the same
 `error_version`. `?workspace_id=` pre-scopes the endpoint:
 `MCPWorkspaceScope` injects it into omitted `tools/call` args and rejects calls
@@ -207,19 +207,19 @@ workspace-scoping rules.
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| POST | `/api/preview/mcp` | `PreviewMCPController` · `:rpc` | Drive `DevIDE.Agents.PreviewTools` (surfaces/open/observe/click/screenshot/…) via `PreviewMCP.handle/2` |
+| POST | `/api/preview/mcp` | `PreviewMCPController` · `:rpc` | Drive `Casein.Agents.PreviewTools` (surfaces/open/observe/click/screenshot/…) via `PreviewMCP.handle/2` |
 | GET | `/api/preview/mcp` | `PreviewMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
 | DELETE | `/api/preview/mcp` | `PreviewMCPController` · `:delete` | End a streamable MCP session |
-| POST | `/api/terminals/mcp` | `TerminalMCPController` · `:rpc` | Drive `DevIDE.Agents.TerminalTools` (list sessions, topology, capture, send keys/command) via `TerminalMCP.handle/2` |
+| POST | `/api/terminals/mcp` | `TerminalMCPController` · `:rpc` | Drive `Casein.Agents.TerminalTools` (list sessions, topology, capture, send keys/command) via `TerminalMCP.handle/2` |
 | GET | `/api/terminals/mcp` | `TerminalMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
 | DELETE | `/api/terminals/mcp` | `TerminalMCPController` · `:delete` | End a streamable MCP session |
-| POST | `/api/artifacts/mcp` | `ArtifactMCPController` · `:rpc` | Drive `DevIDE.Agents.ArtifactTools` (create/update/list/get/serve/snapshot artifact worktrees) via `ArtifactMCP.handle/2` |
+| POST | `/api/artifacts/mcp` | `ArtifactMCPController` · `:rpc` | Drive `Casein.Agents.ArtifactTools` (create/update/list/get/serve/snapshot artifact worktrees) via `ArtifactMCP.handle/2` |
 | GET | `/api/artifacts/mcp` | `ArtifactMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
 | DELETE | `/api/artifacts/mcp` | `ArtifactMCPController` · `:delete` | End a streamable MCP session |
 
 MCP methods handled by all `*MCP` modules: `initialize`, `ping`,
 `tools/list`, `tools/call`; `notifications/*` → 202 no-body. Every
-`tools/call` is recorded via `DevIDE.Agents.MCPAudit`. Invalid JSON-RPC
+`tools/call` is recorded via `Casein.Agents.MCPAudit`. Invalid JSON-RPC
 objects return **400** with error code `-32600`; unknown methods return **400**
 with error code `-32601`. Contract tests also assert these transport errors and
 oversized-body rejections do not echo request secrets or workspace paths into
@@ -229,14 +229,14 @@ responses or logs.
 
 | Method | Path | Purpose |
 |---|---|---|
-| LIVE | `/dev/dashboard` | Phoenix LiveDashboard (`DevIdeWeb.Telemetry`) |
+| LIVE | `/dev/dashboard` | Phoenix LiveDashboard (`CaseinWeb.Telemetry`) |
 | FWD | `/dev/mailbox` | Swoosh mailbox preview |
 
 ## Channel reference
 
-Socket mounted at `/socket` (`DevIdeWeb.UserSocket`, in `endpoint.ex`).
+Socket mounted at `/socket` (`CaseinWeb.UserSocket`, in `endpoint.ex`).
 Connect requires `params["token"]`, verified by
-`DevIdeWeb.ChannelAuth.verify_user_token/1`; assigns `:current_user`
+`CaseinWeb.ChannelAuth.verify_user_token/1`; assigns `:current_user`
 (`role: :owner`). Socket id `users_socket:<user_id>`.
 
 | Topic | Channel · handler | Purpose |
@@ -261,7 +261,7 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
   parses `?session=` → adapter call (`tmux_adapter/0`) →
   `refreshed_topology_payload/2` (`TmuxTopology.configure` + `refresh` +
   snapshot) → `Audit.emit!` → JSON `%{action, dry_run, result, topology}`.
-  Helpers shared via `import DevIdeWeb.API.WorkspaceAPI`.
+  Helpers shared via `import CaseinWeb.API.WorkspaceAPI`.
 - **MCP call** → `*Controller.rpc` fetches query params, calls the pure
   `*MCP.handle/2` with `default_workspace_id` from `?workspace_id=` or the
   workspace-scoped token (`conn.assigns[:api_workspace_id]`) → `{:reply,…}`
@@ -275,18 +275,18 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
 
 ## Public surface (what other code calls)
 
-- `DevIdeWeb.API.WorkspaceAPI` — `not_found/1`, `rejected/3`,
+- `CaseinWeb.API.WorkspaceAPI` — `not_found/1`, `rejected/3`,
   `topology_session/1`, `topology_payload/2`, `refreshed_topology_payload/2`,
   `resolve_workspace_path/2`, `workspace_root/1`, `tmux_adapter/0`,
   `dry_run?/1`, `reconcile?/1`, param coercers. Imported by all four workspace
   API controllers.
-- `DevIdeWeb.API.PreviewMCP.handle/2`, `DevIdeWeb.API.TerminalMCP.handle/2`,
-  and `DevIdeWeb.API.ArtifactMCP.handle/2`
+- `CaseinWeb.API.PreviewMCP.handle/2`, `CaseinWeb.API.TerminalMCP.handle/2`,
+  and `CaseinWeb.API.ArtifactMCP.handle/2`
   — pure JSON-RPC entry points; both expose `tool_specs/0`.
-- `DevIdeWeb.API.MCPWorkspaceScope` — `default_workspace_id/1`,
+- `CaseinWeb.API.MCPWorkspaceScope` — `default_workspace_id/1`,
   `inject_default_workspace/2`, `scoped_call_params/2`,
   `workspaces_compatible?/2`, `tool_specs/2`, `scoped_instructions/2`.
-- `DevIdeWeb.UserSocket` / `DevIdeWeb.TerminalChannel` — driven by Phoenix
+- `CaseinWeb.UserSocket` / `CaseinWeb.TerminalChannel` — driven by Phoenix
   from the `/socket` mount; not called directly by app code.
 
 ## Invariants & gotchas

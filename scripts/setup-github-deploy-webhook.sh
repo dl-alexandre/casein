@@ -4,9 +4,9 @@
 # poller via POST /api/deploy_webhook.
 #
 # Prerequisites:
-#   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/devide/devide.env (or exported)
+#   - DEVIDE_DEPLOY_WEBHOOK_SECRET in /etc/casein/devide.env (or exported)
 #   - Caddy serves /api/deploy_webhook WITHOUT forward_auth (GitHub has no session)
-#   - bash scripts/ensure-devide-deploy-poller.sh (sudoers for systemctl start)
+#   - bash scripts/ensure-casein-deploy-poller.sh (sudoers for systemctl start)
 #
 # Usage:
 #   DEVIDE_URL=https://devide.devbox.milcgroup.com bash scripts/setup-github-deploy-webhook.sh
@@ -15,7 +15,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/casein/devide.env}"
 DEVIDE_URL="${DEVIDE_URL:-https://devide.devbox.milcgroup.com}"
 GITHUB_REPO="${GITHUB_REPO:-dl-alexandre/dev_ide}"
 DRY_RUN=0
@@ -67,8 +67,8 @@ cat <<EOF
 Caddy must expose ${WEBHOOK_URL} without oauth2-proxy forward_auth.
 Add a handle block on the DevIDE site BEFORE the forward_auth import, e.g.:
 
-  @devide_deploy_webhook path /api/deploy_webhook
-  handle @devide_deploy_webhook {
+  @casein_deploy_webhook path /api/deploy_webhook
+  handle @casein_deploy_webhook {
     reverse_proxy 127.0.0.1:4000
   }
 
@@ -116,5 +116,5 @@ else
     -f 'config[insecure_ssl]=0' >/dev/null
 fi
 
-log "webhook registered — push to master should trigger devide-deploy.service within seconds"
-log "timer fallback remains active via devide-deploy.timer"
+log "webhook registered — push to master should trigger casein-deploy.service within seconds"
+log "timer fallback remains active via casein-deploy.timer"

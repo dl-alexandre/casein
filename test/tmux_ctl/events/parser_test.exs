@@ -96,7 +96,7 @@ defmodule TmuxCtl.Events.ParserTest do
     end
 
     test "ignores unknown notifications and malformed lines" do
-      assert :ignore = Parser.parse_line("%session-changed $0 __devide_keepalive")
+      assert :ignore = Parser.parse_line("%session-changed $0 __casein_keepalive")
       assert :ignore = Parser.parse_line("%future-notification foo bar")
       assert :ignore = Parser.parse_line("not a notification")
       assert :ignore = Parser.parse_line("")

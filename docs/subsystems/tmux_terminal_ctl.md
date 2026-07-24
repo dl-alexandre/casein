@@ -14,7 +14,7 @@ surface; read the authoritative doc for that.
 `TmuxCtl.*` is a self-contained tmux control plane: it reads session topology,
 mutates windows/panes, and watches sessions for change — with **no** references to
 `DevIDE`, `Audit`, or `WorkspaceSource`. The product layer
-(`DevIDE.Terminals.Tmux`, `DevIDE.Terminals.TmuxTopology`, outside these paths)
+(`Casein.Terminals.Tmux`, `Casein.Terminals.TmuxTopology`, outside these paths)
 is a thin facade that injects config and adds audit on top.
 
 `TerminalCtl.*` is two small pure helpers for PTY byte streams: stripping terminal
@@ -63,15 +63,15 @@ Consumers `watch/2` (monitored, cancels idle-stop) and `subscribe/2` (PubSub top
 (`new_window`, `split_pane`, `resize_pane`, `kill_pane`, …) directly on `TmuxCtl.Client`,
 then refresh topology so the UI/audit converge on tmux truth.
 
-**PTY conditioning (TerminalCtl):** raw PTY output arriving in `DevIDE.Terminals.SessionOwner`
+**PTY conditioning (TerminalCtl):** raw PTY output arriving in `Casein.Terminals.SessionOwner`
 is passed through `TerminalCtl.Escape.strip_handshakes/1` before being appended to the
 replay buffer via `TerminalCtl.Replay.append/4` (exposed app-side as
-`DevIDE.BoundedBuffer.append/4`). This keeps control handshakes out of reconnect
+`Casein.BoundedBuffer.append/4`). This keeps control handshakes out of reconnect
 scrollback and out of raw subscriber streams.
 
 ## Public surface
 
-Other code (primarily the `DevIDE.Terminals.*` facade) calls:
+Other code (primarily the `Casein.Terminals.*` facade) calls:
 
 - **`TmuxCtl.Topology.snapshot/2`** — one-shot topology read with an explicit `tmux:`
   adapter. Also `structure_version/2` for DOM-keying that ignores per-poll churn.
@@ -90,14 +90,14 @@ Other code (primarily the `DevIDE.Terminals.*` facade) calls:
 - **`TmuxCtl.Runner.run/2` / `argv/2`** — execute or materialize tmux argv; call sites that
   open Ports (`attach/1`) or run `System.cmd` directly (`send_command/3`) use `argv/2`.
 - **`TerminalCtl.Escape.strip_handshakes/1`**, **`TerminalCtl.Replay.append/4`** — consumed by
-  `lib/dev_ide/terminals/session_owner.ex` and `lib/dev_ide/bounded_buffer.ex`.
+  `lib/casein/terminals/session_owner.ex` and `lib/casein/bounded_buffer.ex`.
 
 ## Invariants & gotchas
 
 - **No DevIDE references.** `TmuxCtl.*` must not reference `DevIDE`/`Audit`/`WorkspaceSource`.
   All app coupling (audit, config injection) lives in the facade outside these paths.
 - **Two adapter config keys.** `TmuxCtl` reads `config :tmux_ctl, :adapter` (default
-  `TmuxCtl.Client`); the product reads `:dev_ide, :tmux_adapter`. Adapter selection is
+  `TmuxCtl.Client`); the product reads `:casein, :tmux_adapter`. Adapter selection is
   deliberately **not** copied between them by `configure_tmux_ctl!` — see the authoritative
   doc's "Adapter configuration (two keys)" table. The watcher resolves its adapter lazily
   via `:tmux_resolver` (or the `:tmux_ctl, :adapter` fallback).

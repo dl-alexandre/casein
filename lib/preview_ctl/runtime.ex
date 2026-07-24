@@ -3,7 +3,7 @@ defmodule PreviewCtl.Runtime do
   Adapter startup and registry wiring for preview control sessions.
 
   Ecto persistence, audit, and PubSub remain in host applications such as
-  `DevIDE.Previews.Control`.
+  `Casein.Previews.Control`.
   """
 
   alias PreviewCtl.{Registry, Session}
@@ -62,7 +62,7 @@ defmodule PreviewCtl.Runtime do
   @doc """
   Apply configured default HTTP headers when the caller did not supply any.
 
-  `env_key` names an `Application.get_env/2` key on `:dev_ide` (or another app
+  `env_key` names an `Application.get_env/2` key on `:casein` (or another app
   passed via `:app` in opts).
   """
   @spec with_default_headers(keyword(), keyword()) :: keyword()
@@ -72,7 +72,7 @@ defmodule PreviewCtl.Runtime do
         opts
 
       _ ->
-        app = Keyword.get(config_opts, :app, :dev_ide)
+        app = Keyword.get(config_opts, :app, :casein)
         key = Keyword.get(config_opts, :env_key, :preview_default_headers)
 
         case Application.get_env(app, key) do

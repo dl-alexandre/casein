@@ -1,5 +1,5 @@
 defmodule TmuxCtl.Topology.WatcherTest do
-  use DevIDE.TestCase, async: false
+  use Casein.TestCase, async: false
 
   alias TmuxCtl.Test.FakeState
   alias TmuxCtl.Topology.Watcher
@@ -209,7 +209,7 @@ defmodule TmuxCtl.Topology.WatcherTest do
     [
       registry: @registry,
       supervisor: @supervisor,
-      pubsub: DevIDE.PubSub,
+      pubsub: Casein.PubSub,
       tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end,
       broadcast_tag: @tag,
       refresh_ms: 60_000
@@ -268,7 +268,7 @@ defmodule TmuxCtl.Topology.WatcherTest do
   end
 
   defp await_unregistered(session, attempts \\ 50) do
-    DevIDE.Test.Eventually.await(
+    Casein.Test.Eventually.await(
       fn ->
         case Registry.lookup(@registry, session) do
           [] -> :ok

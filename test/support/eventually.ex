@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.Eventually do
+defmodule Casein.Test.Eventually do
   @moduledoc """
   Shared deadline-based poller for tests.
 

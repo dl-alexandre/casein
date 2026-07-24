@@ -3,7 +3,7 @@ defmodule TmuxCtl.Events.ControlListener do
   Read-only tmux control-mode listener for host-server topology notifications.
 
   Opens `tmux -L <label> -C attach-session -t <anchor>` (default anchor
-  `__devide_keepalive`) and broadcasts pure notification events on
+  `__casein_keepalive`) and broadcasts pure notification events on
   `"tmux_events:<label>"`. Never writes shared tmux state — the only bytes sent
   on the control channel are the client-local `refresh-client -f no-output`.
 
@@ -17,7 +17,7 @@ defmodule TmuxCtl.Events.ControlListener do
 
   alias TmuxCtl.Events.Parser
 
-  @default_anchor "__devide_keepalive"
+  @default_anchor "__casein_keepalive"
   @default_backoff_ms [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
   # A connection must stay up this long before disconnect resets backoff to
   # the floor (prevents fast connect/die flaps from retrying at 1s forever).
@@ -68,7 +68,7 @@ defmodule TmuxCtl.Events.ControlListener do
       tmux_bin: Keyword.get_lazy(opts, :tmux_bin, fn -> System.find_executable("tmux") end),
       anchor_session:
         Keyword.get(opts, :anchor_session) ||
-          Application.get_env(:dev_ide, :tmux_events_anchor_session, @default_anchor),
+          Application.get_env(:casein, :tmux_events_anchor_session, @default_anchor),
       backoff_ms: Keyword.get(opts, :backoff_ms, @default_backoff_ms),
       backoff_index: 0,
       state: :connecting,

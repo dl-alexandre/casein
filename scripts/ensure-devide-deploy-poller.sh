@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install + enable the on-box auto-deploy poller (devide-deploy.timer/.service).
+# Install + enable the on-box auto-deploy poller (casein-deploy.timer/.service).
 # This is the self-hosted replacement for the GitHub Actions deploy job while
 # Actions is billing-blocked: it polls origin/master and auto-deploys when it
 # advances (see scripts/deploy-poller.sh).
@@ -9,16 +9,16 @@
 # files before installing, so it works regardless of where the checkout lives.
 #
 # Usage:
-#   bash scripts/ensure-devide-deploy-poller.sh            # install + enable + start timer
-#   bash scripts/ensure-devide-deploy-poller.sh --no-start # install + enable, don't start now
-#   bash scripts/ensure-devide-deploy-poller.sh --disable  # stop + disable + remove units
+#   bash scripts/ensure-casein-deploy-poller.sh            # install + enable + start timer
+#   bash scripts/ensure-casein-deploy-poller.sh --no-start # install + enable, don't start now
+#   bash scripts/ensure-casein-deploy-poller.sh --disable  # stop + disable + remove units
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
-SERVICE="devide-deploy.service"
-TIMER="devide-deploy.timer"
+SERVICE="casein-deploy.service"
+TIMER="casein-deploy.timer"
 
 START=1
 DISABLE=0
@@ -33,21 +33,21 @@ done
 
 log() { printf '>>> %s\n' "$*"; }
 
-SUDOERS_FILE="/etc/sudoers.d/devide-deploy-trigger"
+SUDOERS_FILE="/etc/sudoers.d/casein-deploy-trigger"
 
 install_poller_trigger_sudoers() {
   log "installing sudoers drop-in for webhook poller trigger (${SUDOERS_FILE})"
   printf '%s\n' \
-    'devbox ALL=(root) NOPASSWD: /bin/systemctl start devide-deploy.service' \
-    'devbox ALL=(root) NOPASSWD: /usr/bin/install -o devbox -g devbox -m 664 /tmp/last-deploy-*.json /run/devide/last-deploy.json' |
+    'devbox ALL=(root) NOPASSWD: /bin/systemctl start casein-deploy.service' \
+    'devbox ALL=(root) NOPASSWD: /usr/bin/install -o devbox -g devbox -m 664 /tmp/last-deploy-*.json /run/casein/last-deploy.json' |
     sudo tee "${SUDOERS_FILE}" >/dev/null
   sudo chmod 440 "${SUDOERS_FILE}"
   sudo visudo -cf "${SUDOERS_FILE}" >/dev/null
 }
 
 ensure_last_deploy_status_file() {
-  local status_file="/run/devide/last-deploy.json"
-  sudo mkdir -p /run/devide
+  local status_file="/run/casein/last-deploy.json"
+  sudo mkdir -p /run/casein
   if [ ! -f "${status_file}" ]; then
     sudo touch "${status_file}"
   fi

@@ -13,7 +13,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $ReleasePath) { $ReleasePath = Join-Path $root '_build\prod\rel\dev_ide' }
-if (-not $OutputPath) { $OutputPath = Join-Path $root 'dist\DevIDE-windows-x64' }
+if (-not $OutputPath) { $OutputPath = Join-Path $root 'dist\Casein-windows-x64' }
 $releasePath = [IO.Path]::GetFullPath($ReleasePath)
 $outputPath = [IO.Path]::GetFullPath($OutputPath)
 
@@ -38,7 +38,7 @@ function Get-SourceRevision {
 function Read-DesktopReleaseMetadata {
     param([string]$Path, [string]$Revision)
 
-    $metadataPath = Join-Path $Path 'releases\dev_ide.relmeta.json'
+    $metadataPath = Join-Path $Path 'releases\casein.relmeta.json'
     if (-not (Test-Path -LiteralPath $metadataPath)) {
         throw "Release metadata is missing at $metadataPath"
     }
@@ -136,17 +136,17 @@ function Write-ReleaseTrustManifest {
     param([string]$PackagePath, [string]$Revision, [string]$Version)
 
     $relativeFiles = @(
-        'bin\dev_ide.bat',
-        'releases\dev_ide.relmeta.json',
-        'windows\DevIDE.Tray.ps1',
-        'windows\DevIDE.Launcher.ps1',
-        'windows\Install-DevIDE.ps1',
-        'windows\Repair-DevIDE.ps1',
-        'windows\Rollback-DevIDE.ps1',
-        'windows\New-DevIDESupportBundle.ps1'
+        'bin\casein.bat',
+        'releases\casein.relmeta.json',
+        'windows\Casein.Tray.ps1',
+        'windows\Casein.Launcher.ps1',
+        'windows\Install-Casein.ps1',
+        'windows\Repair-Casein.ps1',
+        'windows\Rollback-Casein.ps1',
+        'windows\New-CaseinSupportBundle.ps1'
     )
     if (-not $SkipPreviewRuntime) {
-        $relativeFiles += @('windows\Start-DevIDE.cmd')
+        $relativeFiles += @('windows\Start-Casein.cmd')
         $scripts = Get-ChildItem -LiteralPath (Join-Path $PackagePath 'lib') -Directory |
             ForEach-Object { Join-Path $_.FullName 'priv\scripts' } |
             Where-Object { Test-Path -LiteralPath (Join-Path $_ 'preview_playwright.mjs') } |
@@ -161,7 +161,7 @@ function Write-ReleaseTrustManifest {
         if (-not (Test-Path -LiteralPath $path)) { throw "Trust manifest input is missing: $relative" }
         "        '$($relative.Replace("'", "''"))' = '$((Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant())'"
     }
-    $manifest = Join-Path $PackagePath 'windows\DevIDE.Release.psd1'
+    $manifest = Join-Path $PackagePath 'windows\Casein.Release.psd1'
     @"
 @{
     Schema = 1
@@ -212,8 +212,8 @@ if (-not $SkipBuild) {
     Push-Location $root
     try {
         $env:MIX_ENV = 'prod'
-        $env:DEV_IDE_NATIVE_WINDOWS = 'true'
-        $env:DEV_IDE_REPO_ADAPTER = 'sqlite'
+        $env:CASEIN_NATIVE_WINDOWS = 'true'
+        $env:CASEIN_REPO_ADAPTER = 'sqlite'
         $env:DEVIDE_RELEASE_PROFILE = 'desktop'
         $env:DEVIDE_GIT_REVISION = $sourceRevision
         if (-not (Test-Path -LiteralPath (Join-Path $root 'assets\node_modules\@codemirror\view'))) {
@@ -230,7 +230,7 @@ if (-not $SkipBuild) {
     }
 }
 
-$releaseBat = Join-Path $releasePath 'bin\dev_ide.bat'
+$releaseBat = Join-Path $releasePath 'bin\casein.bat'
 if (-not (Test-Path -LiteralPath $releaseBat)) {
     throw "Windows release not found at $releaseBat"
 }
@@ -268,16 +268,16 @@ if (-not $SkipPreviewRuntime) {
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $outputPath 'windows') | Out-Null
 Copy-Item -Force -LiteralPath @(
-    (Join-Path $root 'windows\DevIDE.Tray.ps1'),
-    (Join-Path $root 'windows\DevIDE.Launcher.ps1'),
-    (Join-Path $root 'windows\Install-DevIDE.ps1'),
-    (Join-Path $root 'windows\Uninstall-DevIDE.ps1'),
-    (Join-Path $root 'windows\Repair-DevIDE.ps1'),
-    (Join-Path $root 'windows\Rollback-DevIDE.ps1'),
-    (Join-Path $root 'windows\New-DevIDESupportBundle.ps1'),
-    (Join-Path $root 'windows\Start-DevIDE.cmd')
+    (Join-Path $root 'windows\Casein.Tray.ps1'),
+    (Join-Path $root 'windows\Casein.Launcher.ps1'),
+    (Join-Path $root 'windows\Install-Casein.ps1'),
+    (Join-Path $root 'windows\Uninstall-Casein.ps1'),
+    (Join-Path $root 'windows\Repair-Casein.ps1'),
+    (Join-Path $root 'windows\Rollback-Casein.ps1'),
+    (Join-Path $root 'windows\New-CaseinSupportBundle.ps1'),
+    (Join-Path $root 'windows\Start-Casein.cmd')
 ) -Destination (Join-Path $outputPath 'windows')
-Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\DevIDE.png')
+Copy-Item -Force -LiteralPath (Join-Path $root 'priv\static\images\pwa-icon-192.png') -Destination (Join-Path $outputPath 'windows\Casein.png')
 Write-ReleaseTrustManifest -PackagePath $outputPath -Revision $sourceRevision -Version $metadata.version
 
 $docsPath = Join-Path $outputPath 'docs'
@@ -286,7 +286,7 @@ if (Test-Path -LiteralPath $docsPath) {
 }
 
 $shortRevision = $sourceRevision.Substring(0, 7)
-$archiveBase = "DevIDE-windows-x64-$($metadata.version)-$shortRevision"
+$archiveBase = "Casein-windows-x64-$($metadata.version)-$shortRevision"
 $archivePath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip"
 $manifestPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.manifest.json"
 $shaPath = Join-Path (Split-Path -Parent $outputPath) "$archiveBase.zip.sha256"
@@ -309,7 +309,7 @@ $archiveHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.T
 } | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 Set-Content -LiteralPath $shaPath -Value "$archiveHash *$([IO.Path]::GetFileName($archivePath))" -Encoding ascii
 
-Write-Host "Packaged DevIDE Windows desktop runtime: $outputPath"
-Write-Host "Launch: $outputPath\windows\Start-DevIDE.cmd"
+Write-Host "Packaged Casein Windows desktop runtime: $outputPath"
+Write-Host "Launch: $outputPath\windows\Start-Casein.cmd"
 Write-Host "Artifact: $archivePath"
 Write-Host "SHA-256: $shaPath"

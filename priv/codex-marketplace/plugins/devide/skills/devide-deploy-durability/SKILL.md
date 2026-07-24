@@ -1,5 +1,5 @@
 ---
-name: devide-deploy-durability
+name: casein-deploy-durability
 description: Make DevIDE changes durable through source control and the release gate. Use before deploying, after a manual dogfood deploy, when a drift banner appears, or whenever work must survive the next origin/master poller release.
 ---
 
@@ -14,4 +14,4 @@ description: Make DevIDE changes durable through source control and the release 
 7. Treat `bash scripts/deploy-local.sh` as temporary dogfooding only; it is not durable until the same change lands in Git.
 8. Finish with `terminal_report_worktree` using the correct exit outcome.
 
-Never edit `/opt/devide/release` by hand or describe an unpushed manual release as durable.
+Never edit `/opt/casein/release` by hand or describe an unpushed manual release as durable.

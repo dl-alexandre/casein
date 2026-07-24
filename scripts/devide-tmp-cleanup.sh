@@ -8,7 +8,7 @@
 #   credo-diff-*        full working-tree snapshots from credo --diff (~330M each)
 #   ghostty_snapshot_*  diagnostic terminal dumps (runtime self-prunes; this is a backstop)
 #   <test-artifact-*>   ExUnit workspace roots (tests now clean via on_exit; backstop for
-#                       crashed runs — see DevIDE.TmpWorkspace)
+#                       crashed runs — see Casein.TmpWorkspace)
 #
 # NEVER touches `devide-agent-worktrees` — those are git worktrees with their own
 # git-aware janitor (scripts/cleanup-agent-worktrees.sh). Age filtering means

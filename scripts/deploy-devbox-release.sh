@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy a prebuilt DevIDE release tarball on the devbox host.
+# Deploy a prebuilt Casein release tarball on the devbox host.
 #
 # Intended caller: run as a FILE PATH from a repo checkout so the sibling
 # scripts/lib/canary-drain.sh is resolvable, e.g.
@@ -16,19 +16,19 @@ set -euo pipefail
 TARBALL="${1:?usage: deploy-devbox-release.sh /path/to/release.tgz [revision]}"
 REVISION="${2:-manual}"
 
-APP_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
-SERVICE="${DEV_IDE_SYSTEMD_SERVICE:-devide}"
-ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
-OPERATOR_CONFIG_FILE="${DEV_IDE_OPERATOR_CONFIG_FILE:-/etc/devide/operator.json}"
-USER_NAME="${DEV_IDE_DEPLOY_USER:-devbox}"
-GROUP_NAME="${DEV_IDE_DEPLOY_GROUP:-devbox}"
+APP_ROOT="${CASEIN_DEPLOY_ROOT:-/opt/devide}"
+SERVICE="${CASEIN_SYSTEMD_SERVICE:-devide}"
+ENV_FILE="${CASEIN_ENV_FILE:-/etc/devide/devide.env}"
+OPERATOR_CONFIG_FILE="${CASEIN_OPERATOR_CONFIG_FILE:-/etc/devide/operator.json}"
+USER_NAME="${CASEIN_DEPLOY_USER:-devbox}"
+GROUP_NAME="${CASEIN_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 DEPLOY_ID="${TS}.$$"
 STAGING="${APP_ROOT}/release.staging.${REVISION}.${TS}"
 FAILED_RELEASE="${APP_ROOT}/release.failed.${REVISION}.${DEPLOY_ID}"
 ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
-RELEASE_BACKUP_KEEP="${DEV_IDE_RELEASE_BACKUP_KEEP:-5}"
+RELEASE_BACKUP_KEEP="${CASEIN_RELEASE_BACKUP_KEEP:-5}"
 ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
 INST_DIR="/run/devide/instances"
 CURRENT_SYMLINK="/run/devide/current.sock"
@@ -73,7 +73,7 @@ cleanup_stale_instance_records() {
   done
 }
 
-# True if any recorded instance is a live DevIDE release process. Used to refuse
+# True if any recorded instance is a live Casein release process. Used to refuse
 # (re)generating a missing RELEASE_COOKIE while an instance is already running
 # under a cookie we can no longer see — regenerating a fresh one would diverge
 # from the live node and turn the next graceful drain into a hard SIGTERM.
@@ -97,7 +97,7 @@ neutralize_legacy_service() {
   log "installing no-op drop-in for legacy ${SERVICE}.service"
   sudo mkdir -p "${dropin_dir}"
   sudo tee "${dropin_dir}/90-devide-canary-noop.conf" >/dev/null <<EOF
-# Managed by DevIDE deploy-devbox-release.sh.
+# Managed by Casein deploy-devbox-release.sh.
 # Traffic is served by transient devide-<uuid> units via /run/devide/current.sock.
 # Keep the legacy enabled unit harmless on boot instead of binding the active socket.
 [Service]
@@ -159,7 +159,7 @@ cleanup_release_backup_pattern() {
 
 cleanup_release_backups() {
   if ! [[ "${RELEASE_BACKUP_KEEP}" =~ ^[0-9]+$ ]]; then
-    log "warning: invalid DEV_IDE_RELEASE_BACKUP_KEEP=${RELEASE_BACKUP_KEEP}; skipping release backup cleanup"
+    log "warning: invalid CASEIN_RELEASE_BACKUP_KEEP=${RELEASE_BACKUP_KEEP}; skipping release backup cleanup"
     return 0
   fi
 
@@ -297,7 +297,7 @@ if ! sudo grep -qE '^RELEASE_COOKIE=.+' "${ENV_FILE}"; then
   # mid-session — draining LiveView sockets and killing live tmux terminals.
   # Abort instead so the operator can restore the real cookie before redeploying.
   if cookie_dependent_instance_running; then
-    echo "error: RELEASE_COOKIE is missing from ${ENV_FILE} but a DevIDE instance" >&2
+    echo "error: RELEASE_COOKIE is missing from ${ENV_FILE} but a Casein instance" >&2
     echo "       is already running under a cookie this deploy can no longer read." >&2
     echo "       Regenerating it now would hard-kill that instance (and its tmux" >&2
     echo "       terminals) on handoff. The env file was likely rebuilt from" >&2
@@ -336,12 +336,12 @@ else
 fi
 
 token="$(
-  sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "${ENV_FILE}" |
+  sudo awk -F= '/^CASEIN_API_TOKEN=/{print $2}' "${ENV_FILE}" |
     tail -n 1
 )"
 
 if [ -z "${token}" ]; then
-  echo "error: DEV_IDE_API_TOKEN missing from ${ENV_FILE}" >&2
+  echo "error: CASEIN_API_TOKEN missing from ${ENV_FILE}" >&2
   exit 1
 fi
 
@@ -349,7 +349,7 @@ fi
 # was reconstructed from devide.env.example during incident recovery and lost
 # commented-by-default keys). Warn loudly so a lossy rebuild is caught at the
 # next deploy instead of in the UI.
-for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN; do
+for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL CASEIN_FORWARD_AUTH_EMAIL_DOMAIN; do
   if ! sudo grep -q "^${key}=" "${ENV_FILE}"; then
     log "WARNING: ${key} missing from ${ENV_FILE} — env file may have been rebuilt from template"
   fi
@@ -387,14 +387,14 @@ log "starting new instance ${NEW_UUID} on ${NEW_SOCKET} (node ${NEW_RELEASE_NODE
 operator_property=()
 if sudo -u "${USER_NAME}" test -r "${OPERATOR_CONFIG_FILE}"; then
   log "using operator profile ${OPERATOR_CONFIG_FILE}"
-  operator_property+=(--property="Environment=DEV_IDE_OPERATOR_CONFIG_FILE=${OPERATOR_CONFIG_FILE}")
+  operator_property+=(--property="Environment=CASEIN_OPERATOR_CONFIG_FILE=${OPERATOR_CONFIG_FILE}")
 else
   log "operator profile not installed; deployment capabilities remain disabled"
 fi
 
 sudo systemd-run \
   --unit="devide-${NEW_UUID}" \
-  --description="DevIDE canary ${REVISION} (${NEW_UUID})" \
+  --description="Casein canary ${REVISION} (${NEW_UUID})" \
   --property="User=${USER_NAME}" \
   --property="Group=${GROUP_NAME}" \
   --property="EnvironmentFile=${ENV_FILE}" \
@@ -438,7 +438,7 @@ tools_json="$(
 )"
 
 # preview_open_app is in the always-on tool-search CORE set, so it is advertised
-# whether DEV_IDE_MCP_TOOL_SEARCH is on or off. preview_close is NOT in core, so
+# whether CASEIN_MCP_TOOL_SEARCH is on or off. preview_close is NOT in core, so
 # when tool-search is armed it moves behind the search_tools/invoke_tool meta-
 # tools and drops out of tools/list — a hard-coded grep for it fails the smoke
 # check and blocks the deploy even though preview MCP is healthy. Accept either
@@ -513,7 +513,7 @@ sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
 CURRENT_SYMLINK_SWAPPED=1
 
-# ── One-time Caddy migration: switch DevIDE host from 127.0.0.1:4000 to the symlink ─
+# ── One-time Caddy migration: switch Casein host from 127.0.0.1:4000 to the symlink ─
 # Safe to re-run: if already pointing at the unix socket this is a no-op. Scope the
 # patch to PHX_HOST's app upstream; other devbox routes may legitimately dial 4000.
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
@@ -618,7 +618,7 @@ neutralize_legacy_service
 
 # ── Clean up stale instance records ─────────────────────────────────────────
 # JSON files from killed/rolled-back instances persist because terminate/2 only
-# runs on graceful shutdown. Drop records whose PID is gone or no longer DevIDE.
+# runs on graceful shutdown. Drop records whose PID is gone or no longer Casein.
 log "cleaning stale instance records under ${INST_DIR}"
 cleanup_stale_instance_records
 

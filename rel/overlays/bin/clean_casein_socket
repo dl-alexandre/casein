@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#
+# Remove a stale DEVIDE_HTTP_SOCKET before the Phoenix endpoint binds it.
+# Unix socket files can survive a crashed BEAM process; Bandit then fails with
+# eaddrinuse even though no process owns the socket.
+
+set -euo pipefail
+
+socket="${DEVIDE_HTTP_SOCKET:-}"
+
+case "${socket}" in
+  /run/casein/instances/*.sock | /tmp/devide/instances/*.sock) ;;
+  *) exit 0 ;;
+esac
+
+if [ ! -S "${socket}" ]; then
+  exit 0
+fi
+
+if ! command -v ss >/dev/null 2>&1; then
+  echo "warning: ss not found; leaving possible stale socket ${socket}" >&2
+  exit 0
+fi
+
+if ss -xlH | grep -F -- "${socket}" >/dev/null 2>&1; then
+  exit 0
+fi
+
+echo "removing stale DevIDE socket ${socket}" >&2
+rm -f -- "${socket}"

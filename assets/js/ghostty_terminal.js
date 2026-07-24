@@ -1328,7 +1328,7 @@ function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
 
   // Normal vs alternate screen, folded server-side out of the PTY stream
-  // (DevIDE.Terminals.ScreenMode). The layout model branches on it: only a
+  // (Casein.Terminals.ScreenMode). The layout model branches on it: only a
   // scrolling shell may be row-pinned when the soft keyboard opens, because a
   // full-screen TUI draws to the whole grid and must be told its real size.
   // Carried on every frame, so it is read before the payload is accepted —
@@ -1842,7 +1842,7 @@ function pushKey(hook, key) {
 // Report whether this viewer's tab is the active one — visible AND holding
 // window focus. The server sizes the shared PTY/tmux to the focused viewer, so a
 // backgrounded tab or a passive second viewer no longer shrinks the primary
-// terminal (see DevIDE.Terminals.SessionOwner). `document.hasFocus()` is true
+// terminal (see Casein.Terminals.SessionOwner). `document.hasFocus()` is true
 // for at most one window at a time, so normally exactly one viewer reports
 // active. Deduped so only transitions cross the wire.
 //

@@ -1,8 +1,8 @@
-defmodule DevIdeWeb.CoreComponentsTableTestView do
+defmodule CaseinWeb.CoreComponentsTableTestView do
   @moduledoc false
   use Phoenix.Component
 
-  import DevIdeWeb.CoreComponents
+  import CaseinWeb.CoreComponents
 
   attr :id, :string, required: true
   attr :rows, :list, required: true

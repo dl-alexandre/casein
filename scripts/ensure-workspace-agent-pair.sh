@@ -4,7 +4,7 @@
 #
 # This is the mechanical half of the workspace-agent-pair skill: safe to run
 # from any cwd on the milc devbox when the target workspace is already paired
-# (staging under ~/.devide/agent-mcp/<name>/). Does not mint tokens — use
+# (staging under ~/.casein/agent-mcp/<name>/). Does not mint tokens — use
 # scripts/refresh-devbox-agent-pairing.sh for first-time pairing.
 #
 # Usage:
@@ -44,9 +44,9 @@ Options:
   --quiet            Less chatter
   -h, --help         Show this help
 
-Environment (usually from ~/.devide/agent-mcp/<name>/env.sh or tmux session):
+Environment (usually from ~/.casein/agent-mcp/<name>/env.sh or tmux session):
   DEVIDE_WORKSPACE_NAME, DEVIDE_WORKSPACE_ID, DEVIDE_CHECKOUT,
-  DEVIDE_AGENT_MCP_HOME, DEV_IDE_API_TOKEN, DEVIDE_*_MCP_URL
+  DEVIDE_AGENT_MCP_HOME, CASEIN_API_TOKEN, DEVIDE_*_MCP_URL
 
 When --workspace is passed, ambient DEVIDE_AGENT_MCP_HOME / DEVIDE_CHECKOUT from
 another workspace are ignored so a foreign shell cannot pair the wrong target.
@@ -102,7 +102,7 @@ esac
 # Always key staging by workspace *name*. Prefer ambient DEVIDE_AGENT_MCP_HOME
 # only when it already points at that name (session env). Never let a foreign
 # shell's DEVIDE_AGENT_MCP_HOME override an explicit --workspace.
-CANONICAL_STAGING="${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+CANONICAL_STAGING="${HOME}/.casein/agent-mcp/${WORKSPACE_NAME}"
 if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
   STAGING="$CANONICAL_STAGING"
 elif [[ -n "${DEVIDE_AGENT_MCP_HOME:-}" && "${DEVIDE_AGENT_MCP_HOME}" == *"/agent-mcp/${WORKSPACE_NAME}" ]]; then
@@ -116,7 +116,7 @@ if [[ -f "$ENV_SH" ]]; then
   # Drop foreign pairing vars before source so a wrong ambient checkout/token
   # cannot survive when --workspace selected a different staging tree.
   if [[ "$WORKSPACE_EXPLICIT" -eq 1 ]]; then
-    unset DEVIDE_CHECKOUT DEVIDE_AGENT_MCP_HOME DEVIDE_WORKSPACE_ID DEV_IDE_API_TOKEN \
+    unset DEVIDE_CHECKOUT DEVIDE_AGENT_MCP_HOME DEVIDE_WORKSPACE_ID CASEIN_API_TOKEN \
       DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_ARTIFACT_MCP_URL \
       DEVIDE_TMUX_SESSION DEVIDE_API_BASE_URL 2>/dev/null || true
   fi
@@ -131,7 +131,7 @@ else
 fi
 
 : "${DEVIDE_WORKSPACE_ID:?DEVIDE_WORKSPACE_ID missing after sourcing env.sh}"
-: "${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN missing after sourcing env.sh}"
+: "${CASEIN_API_TOKEN:?CASEIN_API_TOKEN missing after sourcing env.sh}"
 : "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL missing after sourcing env.sh}"
 
 # Guard: env.sh must describe the workspace we asked for.
@@ -158,8 +158,8 @@ skill_source_dir() {
   for candidate in \
     "${ROOT}/.claude/skills" \
     "/data/workspaces/dalexandre/dev_ide/.claude/skills" \
-    "/opt/devide/deploy-build/.claude/skills" \
-    "/opt/devide/release/lib/dev_ide-0.1.0/priv/claude/skills"
+    "/opt/casein/deploy-build/.claude/skills" \
+    "/opt/casein/release/lib/casein-0.1.0/priv/claude/skills"
   do
     if [[ -d "${candidate}/preview-ui-walk" || -d "${candidate}/workspace-agent-pair" ]]; then
       printf '%s\n' "$candidate"
@@ -205,7 +205,7 @@ install_for_claude() {
   # Owner profile if present, else global (already done above).
   local profile="${CLAUDE_CONFIG_DIR:-}"
   if [[ -z "$profile" && -n "${DEVIDE_WORKSPACE_NAME:-}" ]]; then
-    local guess="${HOME}/.devide/agent-auth/profiles/${DEVIDE_WORKSPACE_NAME%%-*}/claude"
+    local guess="${HOME}/.casein/agent-auth/profiles/${DEVIDE_WORKSPACE_NAME%%-*}/claude"
     # profiles are per-owner (dalexandre), not per-workspace — leave global.
     :
   fi
@@ -239,7 +239,7 @@ install_for_codex() {
   if [[ ! -d "${STAGING}/codex" ]]; then
     mkdir -p "${STAGING}/codex"
   fi
-  log "Codex: use launch-devide-agent.sh codex (per-launch MCP flags); skills N/A"
+  log "Codex: use launch-casein-agent.sh codex (per-launch MCP flags); skills N/A"
 }
 
 case "$RUNTIME" in
@@ -260,9 +260,9 @@ verify_terminal_mcp() {
 import json, os, sys, urllib.request
 
 url = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
-token = os.environ.get("DEV_IDE_API_TOKEN", "")
+token = os.environ.get("CASEIN_API_TOKEN", "")
 if not url or not token:
-    print("verify: missing DEVIDE_TERMINAL_MCP_URL or DEV_IDE_API_TOKEN", file=sys.stderr)
+    print("verify: missing DEVIDE_TERMINAL_MCP_URL or CASEIN_API_TOKEN", file=sys.stderr)
     sys.exit(1)
 
 def call(method, params=None, id=1, session=None):
@@ -314,8 +314,8 @@ verify_opencode() {
   # Prefer the real binary over the DevIDE shim (shim re-enters launch + worktree).
   if [[ -x "${HOME}/.opencode/bin/opencode" ]]; then
     real_bin="${HOME}/.opencode/bin/opencode"
-  elif [[ -L "${HOME}/.devide/real-bins/opencode" ]]; then
-    real_bin="$(readlink -f "${HOME}/.devide/real-bins/opencode")"
+  elif [[ -L "${HOME}/.casein/real-bins/opencode" ]]; then
+    real_bin="$(readlink -f "${HOME}/.casein/real-bins/opencode")"
   fi
   if [[ ! -x "$real_bin" ]]; then
     echo "verify: opencode binary not found — skip skill/config probe" >&2
@@ -388,7 +388,7 @@ Next:
   # OpenCode (restart existing sessions so config reloads):
   opencode
   # or Claude / Grok / Codex via:
-  #   bash ${ROOT}/scripts/launch-devide-agent.sh <runtime>
+  #   bash ${ROOT}/scripts/launch-casein-agent.sh <runtime>
 
 Host skills now available: preview-ui-walk, delegate-to-grok, workspace-agent-pair
 EOF

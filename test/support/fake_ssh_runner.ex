@@ -1,4 +1,4 @@
-defmodule DevIDE.Test.FakeSshRunner do
+defmodule Casein.Test.FakeSshRunner do
   @moduledoc """
   Test `SshRunner` that replays canned responses. Each test registers a
   handler via `set/1` / `set_stdin/1`.
@@ -9,7 +9,7 @@ defmodule DevIDE.Test.FakeSshRunner do
   walking `:"$callers"` — the chain ExUnit + Task propagate.
   """
 
-  @behaviour DevIDE.Workspaces.SshRunner
+  @behaviour Casein.Workspaces.SshRunner
 
   @table :fake_ssh_runner_handlers
 

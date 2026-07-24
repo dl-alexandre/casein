@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install DevIDE agent launcher shims into ~/.devide/agent-shims.
+# Install DevIDE agent launcher shims into ~/.casein/agent-shims.
 # The dir is only put on PATH inside DevIDE contexts (pane env, shell
 # integration, agent env files) — plain terminals resolve grok/claude/codex/
 # opencode/agent straight to the real binaries with zero DevIDE footprint.
@@ -19,13 +19,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/real-agent-bin.sh
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
-BIN_DIR="${DEV_IDE_AGENT_BIN_DIR:-${HOME}/.devide/agent-shims}"
+BIN_DIR="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
 # Pre-migration shim home; runtime shims found here get cleaned up so plain
 # terminals stop resolving agent names to DevIDE launchers.
 LEGACY_BIN_DIR="${HOME}/.local/bin"
-REAL_DIR="${HOME}/.devide/real-bins"
-export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
-NPM_PREFIX="${DEV_IDE_NPM_PREFIX}"
+REAL_DIR="${HOME}/.casein/real-bins"
+export CASEIN_NPM_PREFIX="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+NPM_PREFIX="${CASEIN_NPM_PREFIX}"
 DEVIDE_CLI="${ROOT}/scripts/devide"
 # clauded is a bash alias → claude --dangerously-skip-permissions; do not shim it.
 RUNTIMES=(grok claude codex opencode agent)
@@ -110,14 +110,14 @@ fi
 
 # Repointing the npm global prefix redirects ALL of the user's `npm -g`
 # installs — a boundary violation on personal machines. Auto-on only for
-# DevIDE-managed hosts (marked by /etc/devide/devide.env);
-# DEV_IDE_MANAGE_NPM_PREFIX=1/0 overrides in either direction.
+# DevIDE-managed hosts (marked by /etc/casein/devide.env);
+# CASEIN_MANAGE_NPM_PREFIX=1/0 overrides in either direction.
 manage_npm_prefix() {
-  case "${DEV_IDE_MANAGE_NPM_PREFIX:-}" in
+  case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
     1) return 0 ;;
     0) return 1 ;;
   esac
-  [[ -f /etc/devide/devide.env ]]
+  [[ -f /etc/casein/devide.env ]]
 }
 
 ensure_npm_prefix() {

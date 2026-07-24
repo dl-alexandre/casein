@@ -1,6 +1,6 @@
 defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   @moduledoc """
-  Real-tmux integration for ControlListener on the sandboxed `-L devide_test`
+  Real-tmux integration for ControlListener on the sandboxed `-L casein_test`
   server. Excluded by default (`@moduletag :tmux`); run with `mix test --include tmux`.
   """
 
@@ -9,10 +9,10 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
   @moduletag :tmux
 
   alias TmuxCtl.Events.ControlListener
-  alias DevIDE.Test.Eventually
+  alias Casein.Test.Eventually
 
   @label "devide_test"
-  @anchor "__devide_keepalive"
+  @anchor "__casein_keepalive"
   @topic "tmux_events:" <> @label
 
   setup do
@@ -38,7 +38,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
         stderr_to_stdout: true
       )
 
-    :ok = Phoenix.PubSub.subscribe(DevIDE.PubSub, @topic)
+    :ok = Phoenix.PubSub.subscribe(Casein.PubSub, @topic)
 
     name = :"control_listener_tmux_test_#{System.unique_integer([:positive])}"
 
@@ -47,7 +47,7 @@ defmodule TmuxCtl.Events.ControlListenerTmuxTest do
         {ControlListener,
          [
            label: @label,
-           pubsub: DevIDE.PubSub,
+           pubsub: Casein.PubSub,
            tmux_bin: tmux,
            anchor_session: @anchor,
            name: name,

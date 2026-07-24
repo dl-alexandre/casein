@@ -1,6 +1,6 @@
 function dispatchTerminalRefit(el, reason) {
   window.dispatchEvent(
-    new CustomEvent("devide:terminal-refit", {
+    new CustomEvent("casein:terminal-refit", {
       detail: {
         surface_id: el?.id || null,
         pane_id: el?.dataset?.paneId || null,

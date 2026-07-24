@@ -13,8 +13,8 @@ production Dockerfile.
 Usage (assumes the dev-profile compose stack is up):
 
     # 1. Generate a signed user token from inside the running release.
-    TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \\
-        'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("smoke-user"))')
+    TOKEN=$(docker compose exec -T dev_ide /app/bin/casein rpc \\
+        'IO.write(CaseinWeb.ChannelAuth.sign_user_token("smoke-user"))')
 
     # 2. Run the smoke.
     python3 docker/smoke/channel_smoke.py \\
@@ -120,7 +120,7 @@ async def smoke(url: str, token: str, workspace: str, timeout: float) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Phoenix Channel keystroke-roundtrip smoke for DevIDE."
+        description="Phoenix Channel keystroke-roundtrip smoke for Casein."
     )
     parser.add_argument("--url", required=True, help="ws:// URL of the socket endpoint")
     parser.add_argument("--token", required=True, help="signed user token")

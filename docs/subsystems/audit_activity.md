@@ -25,7 +25,7 @@ be reconstructable for replay, review, and post-mortem.
 | `Runs.Ledger` | Constrained run/session projection (`run.*`) over Audit |
 | `AgentEvents` | Operational projection for agent-session replay |
 
-`DevIDE.Agents.AgentEvents` is a neighboring durable *operational* projection
+`Casein.Agents.AgentEvents` is a neighboring durable *operational* projection
 for agent-session replay (ACP/MCP/state/handoffs). It intentionally does not
 replace this security evidence log: `Audit` accepts occasional duplicates and
 records decisions, while `AgentEvents` deduplicates native provider events and
@@ -42,21 +42,21 @@ vocabulary.
 
 It has three layers under this subsystem’s direct ownership:
 
-1. **Audit** (`lib/dev_ide/audit/`) — the raw record. A flat, append-only
+1. **Audit** (`lib/casein/audit/`) — the raw record. A flat, append-only
    `Event` struct, written through a swappable `Adapter` (in-memory ring in
    dev/test, Postgres in prod). It knows nothing about run vocabulary; it just
    stores and returns events.
-2. **Run ledger** (`lib/dev_ide/runs/`) — a normalized vocabulary *on top of*
+2. **Run ledger** (`lib/casein/runs/`) — a normalized vocabulary *on top of*
    Audit. `Runs.Ledger` writes/reads a constrained set of `run.*` actions
    (session attach/deny, run started/succeeded/failed/timed_out, approval
    request/grant/deny) so terminal and run surfaces cannot invent incompatible
    event shapes. `Runs.Status` is the single source of truth for what each
    status string *means* (terminal? failed? retryable?).
-3. **Logs** (`lib/dev_ide/logs/`) — live, *non-durable* workspace service log
+3. **Logs** (`lib/casein/logs/`) — live, *non-durable* workspace service log
    streaming (SSE from the workspace source). It is part of the activity
    surface but is a transient transport, not part of the durable plane.
 
-This subsystem does **not** decide anything — `DevIDE.Policy` makes the
+This subsystem does **not** decide anything — `Casein.Policy` makes the
 decisions and hands a `%Policy.Decision{}` here to be recorded.
 
 Sensitive evidence must carry an **authenticated principal** or an explicit
@@ -67,15 +67,15 @@ request parameters (MCP `actor_id` especially).
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Audit` | `lib/dev_ide/audit.ex` | Public entry point. `emit/1`, `emit!/1`, `emit_decision/2`, `list/1`, `recent_for/2`, `clear/0`; dispatches to the configured adapter. |
-| `DevIDE.Audit.Event` | `lib/dev_ide/audit/event.ex` | The single audit record struct. Stable shape mirroring the `audit_events` table; `new/1` mints `id` + `inserted_at`. |
-| `DevIDE.Audit.Adapter` | `lib/dev_ide/audit/adapter.ex` | Behaviour for persistence backends (`record/1`, `list/1`, `recent_for/2`, `clear/0`). |
-| `DevIDE.Audit.MemoryAdapter` | `lib/dev_ide/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. **Test** default only (the `config/test.exs` override). |
-| `DevIDE.Audit.EctoAdapter` | `lib/dev_ide/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. **Default for every env** (`config.exs`); test overrides to `MemoryAdapter`. Caps metadata at 32 KB. |
-| `DevIDE.Runs.Ledger` | `lib/dev_ide/runs/ledger.ex` | Normalized run vocabulary over Audit: emits `run.*` events, reads back run summaries/timelines, tags every event with `ledger`/`ledger_version`. |
-| `DevIDE.Runs.Status` | `lib/dev_ide/runs/status.ex` | Status semantics: `normalize/1`, `terminal?/1`, `failed?/1`, `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`, `status_class/1`. |
-| `DevIDE.Logs.Adapter` | `lib/dev_ide/logs/adapter.ex` | Behaviour + dispatcher for workspace service log streaming. |
-| `DevIDE.Logs.SSE` | `lib/dev_ide/logs/sse.ex` | Default log adapter; delegates to `DevIDE.Workspaces.stream_logs/3`. |
+| `Casein.Audit` | `lib/casein/audit.ex` | Public entry point. `emit/1`, `emit!/1`, `emit_decision/2`, `list/1`, `recent_for/2`, `clear/0`; dispatches to the configured adapter. |
+| `Casein.Audit.Event` | `lib/casein/audit/event.ex` | The single audit record struct. Stable shape mirroring the `audit_events` table; `new/1` mints `id` + `inserted_at`. |
+| `Casein.Audit.Adapter` | `lib/casein/audit/adapter.ex` | Behaviour for persistence backends (`record/1`, `list/1`, `recent_for/2`, `clear/0`). |
+| `Casein.Audit.MemoryAdapter` | `lib/casein/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. **Test** default only (the `config/test.exs` override). |
+| `Casein.Audit.EctoAdapter` | `lib/casein/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. **Default for every env** (`config.exs`); test overrides to `MemoryAdapter`. Caps metadata at 32 KB. |
+| `Casein.Runs.Ledger` | `lib/casein/runs/ledger.ex` | Normalized run vocabulary over Audit: emits `run.*` events, reads back run summaries/timelines, tags every event with `ledger`/`ledger_version`. |
+| `Casein.Runs.Status` | `lib/casein/runs/status.ex` | Status semantics: `normalize/1`, `terminal?/1`, `failed?/1`, `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`, `status_class/1`. |
+| `Casein.Logs.Adapter` | `lib/casein/logs/adapter.ex` | Behaviour + dispatcher for workspace service log streaming. |
+| `Casein.Logs.SSE` | `lib/casein/logs/sse.ex` | Default log adapter; delegates to `Casein.Workspaces.stream_logs/3`. |
 
 ## Data flow / lifecycle
 
@@ -84,18 +84,18 @@ request parameters (MCP `actor_id` especially).
 ```text
 Policy.Decision ─┐
                  ▼
-  DevIDE.Audit.emit_decision/2   (sensitive UI actions, mode changes)
-  DevIDE.Runs.Ledger.run_started / run_finished / raw_session_attached / approval_*
+  Casein.Audit.emit_decision/2   (sensitive UI actions, mode changes)
+  Casein.Runs.Ledger.run_started / run_finished / raw_session_attached / approval_*
                  │  (builds attrs: action, target_type, target_ref, metadata)
                  ▼
-        DevIDE.Audit.emit!/1  ──►  Event.new/1  ──►  impl().record(event)
+        Casein.Audit.emit!/1  ──►  Event.new/1  ──►  impl().record(event)
                                                          │
                                           MemoryAdapter (ring) | EctoAdapter (audit_events)
 ```
 
 Callers never build an `Event` directly. The two front doors are
-`DevIDE.Audit` (for one-off decisions, e.g. `Agents.MCPAudit` emitting
-`Audit.emit!` for MCP tool calls; mode changes) and `DevIDE.Runs.Ledger`
+`Casein.Audit` (for one-off decisions, e.g. `Agents.MCPAudit` emitting
+`Audit.emit!` for MCP tool calls; mode changes) and `Casein.Runs.Ledger`
 (for anything with run/session vocabulary). `Ledger.emit/3` always merges
 `"ledger" => "run"` and `"ledger_version" => 1` into metadata so ledger events
 are distinguishable from generic audit events.
@@ -131,17 +131,17 @@ a human-readable `failure_reason/2` from the timeline.
 
 **Key writers/readers outside this subsystem:**
 
-- `DevIDE.Terminals.Boundary` — gates raw PTY attach via
+- `Casein.Terminals.Boundary` — gates raw PTY attach via
   `Policy.can_use_raw_terminal?/1`, records the verdict with
   `Ledger.raw_session_attached/2`, and dedups reconnects via
   `Ledger.recent_for/2`.
-- `DevIDE.Agents.MCPAudit` — emits MCP tool-call events via `Audit.emit!`.
+- `Casein.Agents.MCPAudit` — emits MCP tool-call events via `Audit.emit!`.
   Must accept a **trusted principal** from auth/scope, not a caller-supplied
   `actor_id`.
-- `DevIdeWeb.WorkspaceLive.Show` + `Show.AuditDrawer` ("Evidence" drawer) —
+- `CaseinWeb.WorkspaceLive.Show` + `Show.AuditDrawer` ("Evidence" drawer) —
   read both counts (`Audit.recent_for` total vs. `Ledger.ledger_event?`
   ledger count) and render run timelines.
-- `DevIDE.Export.WorkspaceStatus` — exports run summaries/timelines.
+- `Casein.Export.WorkspaceStatus` — exports run summaries/timelines.
 
 **Logs path (transient):** `WorkspaceLive.Show` calls
 `Logs.Adapter.start_stream/3` → `Logs.SSE` → `Workspaces.stream_logs/3`,
@@ -152,19 +152,19 @@ activity, not durable evidence — nothing is written to `audit_events`.
 
 Other code should call these and nothing deeper:
 
-- **`DevIDE.Audit`** — `emit/1`, `emit!/1` (fire-and-forget),
+- **`Casein.Audit`** — `emit/1`, `emit!/1` (fire-and-forget),
   `emit_decision/2` (takes a `%Policy.Decision{}`), `list/1`,
   `recent_for/2`, `clear/0`.
-- **`DevIDE.Runs.Ledger`** — `new_run_id/0`, `run_started/1`,
+- **`Casein.Runs.Ledger`** — `new_run_id/0`, `run_started/1`,
   `run_finished/2`, `approval_requested/1` / `approval_granted/1` /
   `approval_denied/1`, `raw_session_attached/2`, `recent_runs_for/2`,
   `timeline_for/2`, `summary_for/2`, `recent_for/2`, `ledger_event?/1`.
-- **`DevIDE.Runs.Status`** — `normalize/1`, `terminal?/1`, `failed?/1`,
+- **`Casein.Runs.Status`** — `normalize/1`, `terminal?/1`, `failed?/1`,
   `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`,
   `status_class/1`.
-- **`DevIDE.Logs.Adapter`** — `start_stream/3`, `stop_stream/1`.
+- **`Casein.Logs.Adapter`** — `start_stream/3`, `stop_stream/1`.
 
-Processes: only `DevIDE.Audit.MemoryAdapter` is a long-lived GenServer
+Processes: only `Casein.Audit.MemoryAdapter` is a long-lived GenServer
 (supervised, named). The Ecto adapter is stateless (Repo-backed).
 
 ## Invariants & gotchas
@@ -176,7 +176,7 @@ Processes: only `DevIDE.Audit.MemoryAdapter` is a long-lived GenServer
   20-event lookback) is accepted as harmless rather than guarded with a unique
   constraint.
 - **The adapter is swappable at runtime** via
-  `Application.get_env(:dev_ide, :audit_adapter, …)`. Default
+  `Application.get_env(:casein, :audit_adapter, …)`. Default
   `EctoAdapter` (`config.exs`, inherited by every env); `config/test.exs`
   overrides to `MemoryAdapter`. Anything relying on durability
   across restart must run on the Ecto adapter.
@@ -195,7 +195,7 @@ Processes: only `DevIDE.Audit.MemoryAdapter` is a long-lived GenServer
   "is this terminal/failed/retryable" inline; route through `Status`. It also
   recognizes legacy delegated-execution statuses (`expired`, `abandoned`,
   `denied`) for backward-compatible timelines.
-- **Logs are not evidence.** `DevIDE.Logs.*` is a transient stream from the
+- **Logs are not evidence.** `Casein.Logs.*` is a transient stream from the
   workspace source; it never touches the durable plane. Do not treat a log
   line as an audit record.
 - **`recent_for` over-fetches then filters.** `Ledger.recent_for/2` asks Audit
