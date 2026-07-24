@@ -20,7 +20,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { preIsScaled } from "../js/terminal_canvas_scale.mjs"
+import { DisplayMode, computeTerminalLayout, isIdentityMode } from "../js/terminal_layout_model.mjs"
 import {
   CELL_H,
   CELL_W,
@@ -28,6 +28,7 @@ import {
   displayMode,
   expectedFit,
   frameOf,
+  closeKeyboard,
   gridPayload,
   lastSizeReport,
   layoutSnapshot,
@@ -145,16 +146,7 @@ function assertAllInsideFrame(hook, label) {
   }
 }
 
-// KNOWN FAILING (Phase 2 fixes). ensureScaleFrame adopts hook.__glyphCanvas
-// only if it exists when the frame is built — but the frame is built during the
-// transient "scale" beat at mount, before the first paint creates the canvas.
-// So the adopt branch is effectively dead and the canvas is ALWAYS left outside
-// the frame, painting unscrolled while the DOM layers move.
-const CANVAS_FRAME_TODO = {
-  todo: "Phase 2: ensureScaleFrame must adopt late-created children",
-}
-
-test("I3: canvas created BEFORE the frame moves with the transform", CANVAS_FRAME_TODO, async (t) => {
+test("I3: canvas created BEFORE the frame moves with the transform", async (t) => {
   const { hook, el } = await mountTerminal({ t, mobile: true, renderer: "canvas" })
   const { cols, rows } = expectedFit(390, 800)
 
@@ -169,18 +161,28 @@ test("I3: canvas created BEFORE the frame moves with the transform", CANVAS_FRAM
   assertAllInsideFrame(hook, "canvas-before-frame")
 })
 
-test("I3: canvas created AFTER the frame moves with the transform", CANVAS_FRAME_TODO, async (t) => {
+test("I3: a canvas created after the frame already exists still moves with it", async (t) => {
   const { hook, el } = await mountTerminal({ t, mobile: true, renderer: "canvas" })
   const { cols, rows } = expectedFit(390, 800)
 
-  // Transform first: build the frame with no canvas in existence yet.
+  // Build the frame first, with no canvas in existence. The canvas cannot be
+  // created while row-pinned — it is correctly disabled under a transform — so
+  // drop back to an identity mode before painting. That is the real hazard: a
+  // frame from an earlier transform, still in the DOM, and a canvas created
+  // afterwards that has to find its way inside it.
   openKeyboard(hook, el)
   await wait(150)
   assert.ok(frameOf(hook), "frame built before any canvas existed")
+  assert.ok(!hook.__glyphCanvas, "no canvas is created while the frame is transformed")
 
-  // Then render: ensureCanvas runs with the frame already in place.
+  closeKeyboard(hook, el)
+  await wait(150)
   await renderSettled(hook, gridPayload({ cols, rows, painted: 16, cursorRow: 15 }))
-  assert.ok(hook.__glyphCanvas, "canvas renderer created its canvas")
+  assert.ok(hook.__glyphCanvas, "canvas renderer created its canvas once back in an identity mode")
+
+  // Now transform again: the late-created canvas must have been adopted.
+  openKeyboard(hook, el)
+  await wait(150)
 
   assertAllInsideFrame(hook, "frame-before-canvas")
 })
@@ -255,31 +257,66 @@ test("I5: an unfocused desktop viewer scales to fit and reports nothing", async 
 // I6 — the canvas engages only when the transform is identity
 // ---------------------------------------------------------------------------
 
-// The canvas draws glyphs at unscaled cell metrics into its own element. It is
-// only correct when the frame carries no transform; under any other mode the
-// DOM painter must take over. This decision has to cover EVERY mode — the
-// original list was written before row-pinning existed and never grew.
-const TRANSFORMED_MODES = ["scale", "zoom", "rowpin"]
+// The canvas draws glyphs at unscaled cell metrics into its own element, so it
+// is only correct while the frame carries no transform. The decision must be
+// derived from the mode itself — the old hand-kept list next to the painter was
+// written before row-pinning existed and never grew.
+for (const mode of Object.values(DisplayMode)) {
+  const identity = mode === DisplayMode.FIT
 
-for (const mode of TRANSFORMED_MODES) {
-  // "rowpin" is KNOWN FAILING (Phase 2 fixes): preIsScaled's mode list was
-  // written before row-pinning existed and never grew, so the canvas stays
-  // engaged while the frame is translated.
-  const opts = mode === "rowpin"
-    ? { todo: "Phase 2: canvasSafe must come from the layout model, not a hand-kept list" }
-    : {}
-
-  test(`I6: canvas is released to the DOM in "${mode}" mode`, opts, () => {
-    const hook = { el: { dataset: { displayMode: mode } } }
-    assert.equal(
-      preIsScaled(hook),
-      true,
-      `"${mode}" transforms the frame, so the canvas must hand back to the DOM painter`
-    )
+  test(`I6: "${mode}" declares canvas safety from the model`, () => {
+    assert.equal(isIdentityMode(mode), identity)
   })
 }
 
-test('I6: canvas stays engaged in "fit" mode and before any mode is set', () => {
-  assert.equal(preIsScaled({ el: { dataset: { displayMode: "fit" } } }), false)
-  assert.equal(preIsScaled({ el: { dataset: {} } }), false)
+test("I6: every layout the model can produce agrees with its own mode", () => {
+  const base = {
+    container: {availableW: 390, availableH: 800, padL: 0, padT: 0},
+    cell: {w: CELL_W, h: CELL_H, padX: PRE_PAD, padY: PRE_PAD},
+    renderedGrid: {cols: 37, rows: 46},
+    lastFit: {cols: 37, rows: 46},
+    lastAppliedUserZoom: 1,
+    pinnedRows: 46,
+    cursor: {x: 0, y: 45, visible: true},
+    rowsData: null,
+    authority: true,
+    mobile: true,
+    keyboardOpen: false,
+    rowPinAllowed: true,
+    userZoom: 1,
+  }
+
+  const variants = [
+    {name: "fit", input: base},
+    {name: "zoom", input: {...base, userZoom: 1.5, lastAppliedUserZoom: 1.5}},
+    {name: "scale (overflow)", input: {...base, renderedGrid: {cols: 200, rows: 60}}},
+    {name: "observer", input: {...base, authority: false}},
+    {name: "rowpin", input: {...base, keyboardOpen: true, container: {availableW: 390, availableH: 280, padL: 0, padT: 0}}},
+  ]
+
+  for (const v of variants) {
+    const out = computeTerminalLayout(v.input)
+    assert.ok(!out.noop, `${v.name}: produced a layout`)
+    assert.equal(
+      out.canvasSafe,
+      isIdentityMode(out.mode),
+      `${v.name}: canvasSafe disagrees with mode "${out.mode}"`
+    )
+    // A transformed frame and canvas safety are mutually exclusive by definition.
+    assert.equal(out.canvasSafe, out.frame == null, `${v.name}: frame/canvasSafe mismatch`)
+  }
+})
+
+test("I6: the hook publishes the model's verdict for the painter", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+  const { cols, rows } = expectedFit(390, 800)
+
+  await renderSettled(hook, gridPayload({ cols, rows, painted: 16, cursorRow: 15 }))
+  assert.equal(displayMode(hook), DisplayMode.FIT)
+  assert.equal(hook.__canvasSafe, true, "identity fit keeps the canvas engaged")
+
+  openKeyboard(hook, el)
+  await wait(150)
+  assert.equal(displayMode(hook), DisplayMode.ROWPIN)
+  assert.equal(hook.__canvasSafe, false, "a translated frame must release the canvas")
 })

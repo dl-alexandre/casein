@@ -1960,12 +1960,6 @@ function ensureScaleFrame(hook) {
     transformOrigin: "top left"
   })
 
-  const move = [hook.pre, hook.selectionLayer, hook.measure, hook.input, hook.cursorEl]
-  for (const node of move) {
-    if (node) frame.appendChild(node)
-  }
-  if (hook.__glyphCanvas) frame.appendChild(hook.__glyphCanvas)
-
   // Keep scrollbar chrome as a direct child of screen (viewport-fixed, unscaled).
   const track = hook.__scrollbarTrack
   if (track && track.parentNode === hook.screen) {
@@ -1975,7 +1969,37 @@ function ensureScaleFrame(hook) {
   }
 
   hook.__scaleFrame = frame
+  adoptTransformChildren(hook)
   return frame
+}
+
+// Everything that paints cells or marks a position inside the grid, in paint
+// order: the glyph canvas sits behind the (transparent, in canvas mode) <pre>.
+function transformSetNodes(hook) {
+  return [hook.__glyphCanvas, hook.pre, hook.selectionLayer, hook.measure, hook.input, hook.cursorEl]
+}
+
+/**
+ * Pull the whole transform set inside the frame.
+ *
+ * The frame is the transform host: anything left outside stays put while the
+ * grid scales or scrolls — the "caret parked on the left edge of the letterbox"
+ * class of bug. This used to be a one-shot snapshot taken when the frame was
+ * built, which quietly did nothing for the glyph canvas: the frame is created
+ * during the transient scale beat at mount, BEFORE the first paint creates the
+ * canvas, so the canvas was always left behind. Adopt on every layout instead,
+ * so a lazily-created child cannot miss the boat.
+ */
+function adoptTransformChildren(hook) {
+  const frame = hook.__scaleFrame
+  if (!frame?.isConnected) return
+
+  for (const node of transformSetNodes(hook)) {
+    if (node && node.parentNode !== frame) frame.appendChild(node)
+  }
+  // Restore paint order for anything that was already inside.
+  const canvas = hook.__glyphCanvas
+  if (canvas && frame.firstChild !== canvas) frame.insertBefore(canvas, frame.firstChild)
 }
 
 function clearDisplayScale(hook) {
@@ -2108,6 +2132,12 @@ function applyLayoutResult(hook, result) {
     if (hook.screen) hook.screen.style.overflow = ""
   }
 
+  // The canvas renderer draws glyphs at unscaled cell metrics into its own
+  // element, so it is only correct while the frame carries no transform. This
+  // comes from the model rather than a mode list kept by hand next to the
+  // painter — that list was written before row-pinning existed and never grew.
+  hook.__canvasSafe = result.canvasSafe !== false
+
   if (result.frame) {
     const frame = ensureScaleFrame(hook)
     if (frame) {
@@ -2157,6 +2187,7 @@ function applyLayoutResult(hook, result) {
   }
 
   hook.el.dataset.displayMode = result.mode
+  adoptTransformChildren(hook)
 
   if (result.fitAnchor) {
     hook.__lastFitCols = result.fitAnchor.cols
