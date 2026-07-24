@@ -13,8 +13,6 @@ argv, shells, HTTP proxy targets, or mutation commands (see the `@moduledoc` on
 
 Its live jobs are:
 
-- **Host registry** — `list_hosts/0` feeds the workspace picker (where a new
-  workspace can run).
 - **Agent worktree discovery** — agents report the git worktrees they create via
   `observe_worktree/2`; `list_agent_worktrees/1` lists them for the workspace show
   view, agent events, and terminal MCP.
@@ -33,14 +31,12 @@ Its live jobs are:
 | --- | --- | --- |
 | `Casein.Runtimes` | `lib/casein/runtimes.ex` | Context + adapter behaviour. Public API, agent-worktree validation/upsert, lifecycle transitions, payload shaping. (Sibling of the assigned dir; the rest of the table lives under it.) |
 | `Casein.Runtimes.Runtime` | `lib/casein/runtimes/runtime.ex` | Durable projection struct of a workspace execution environment. |
-| `Casein.Runtimes.Host` | `lib/casein/runtimes/host.ex` | Host capability-inventory struct used for placement context. |
 | `Casein.Runtimes.LifecycleEvent` | `lib/casein/runtimes/lifecycle_event.ex` | Append-only lifecycle event struct (the event stream that projects status). |
 | `Casein.Runtimes.Profile` | `lib/casein/runtimes/profile.ex` | Normalizes dev-server *intent* (command/ports/surfaces) into metadata; builds preview-surface payloads. Metadata only — no execution. |
 | `Casein.Runtimes.StateMachine` | `lib/casein/runtimes/state_machine.ex` | Lifecycle transition rules + event-stream reducer (`reduce/1`). |
 | `Casein.Runtimes.EctoAdapter` | `lib/casein/runtimes/ecto_adapter.ex` | Postgres-backed adapter (prod/dev). Implements the `Casein.Runtimes` behaviour. |
 | `Casein.Runtimes.MemoryAdapter` | `lib/casein/runtimes/memory_adapter.ex` | In-memory GenServer adapter (test). Implements the behaviour. |
 | `Casein.Runtimes.RuntimeRow` | `lib/casein/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
-| `Casein.Runtimes.HostRow` | `lib/casein/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
 | `Casein.Runtimes.LifecycleEventRow` | `lib/casein/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
 
 ## Data flow / lifecycle
@@ -84,7 +80,6 @@ sweep calls both in sequence.
 
 Called by API / LiveView / MCP / export code:
 
-- `register_host/1`, `get_host/1`, `list_hosts/0` — host registry.
 - `observe_worktree/2` — record an agent-created worktree (validated).
 - `list_agent_worktrees/1` — worktree payloads for a workspace, newest-active first,
   excluding `cleaned`/`expired`/`failed`.

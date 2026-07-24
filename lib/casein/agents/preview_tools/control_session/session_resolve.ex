@@ -16,7 +16,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
     |> Keyword.merge(
       tmux_session: tmux_session,
       workspace_id: Shared.workspace_id(workspace),
-      cwd: Map.get(params, "cwd") || Map.get(params, :cwd) || Shared.workspace_host_path(workspace),
+      cwd:
+        Map.get(params, "cwd") || Map.get(params, :cwd) || Shared.workspace_host_path(workspace),
       anchor_pane_id: Map.get(params, "anchor_pane_id") || Map.get(params, :anchor_pane_id),
       anchor_window_id: Map.get(params, "anchor_window_id") || Map.get(params, :anchor_window_id),
       placement: Map.get(params, "placement") || Map.get(params, :placement),
@@ -146,7 +147,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
   defp pane_visibility_rank(_workspace_id, _registration), do: 0
 
   defp fresh_loaded_visibility?(entry) do
-    Visibility.fresh_browser_visibility_event?(entry) and Visibility.loaded_browser_visibility_event?(entry)
+    Visibility.fresh_browser_visibility_event?(entry) and
+      Visibility.loaded_browser_visibility_event?(entry)
   end
 
   def missing_tmux_session_error do
@@ -225,5 +227,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.SessionResolve do
       true -> workspace_tmux_session(workspace)
     end
   end
-
 end

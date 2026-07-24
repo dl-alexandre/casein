@@ -9,7 +9,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
   @doc "Click in the preview session."
   @spec click(map()) :: {:ok, map()} | {:error, term()}
   def click(params) when is_map(params) do
-    with {:ok, id} <- Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+    with {:ok, id} <-
+           Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, target} <- click_target(id, params) do
       visible_or_fallback(id, "click", target, params, fn ->
         case PreviewControl.click(id, Map.merge(target, preview_diff_opts(params))) do
@@ -35,7 +36,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
   @doc "Type into a preview input."
   @spec type(map()) :: {:ok, map()} | {:error, term()}
   def type(params) when is_map(params) do
-    with {:ok, id} <- Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+    with {:ok, id} <-
+           Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, selector} <- type_selector(id, params),
          {:ok, text} <- Shared.required_string(params, :text) do
       opts = Shared.maybe_put_nth(%{}, params) |> Map.merge(preview_diff_opts(params))
@@ -53,7 +55,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
   @doc "Press a key in the preview session."
   @spec press(map()) :: {:ok, map()} | {:error, term()}
   def press(params) when is_map(params) do
-    with {:ok, id} <- Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
+    with {:ok, id} <-
+           Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       key = Map.get(params, "key") || Map.get(params, :key)
 
       visible_or_fallback(id, "press", %{key: key}, params, fn ->
@@ -465,5 +468,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Interaction do
          }}
     end
   end
-
 end

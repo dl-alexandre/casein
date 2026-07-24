@@ -113,5 +113,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Playback do
         "artifact_path must be a traversal-free /preview-artifacts/#{workspace_id}/...webm or .mp4 path."
     }
   end
-
 end

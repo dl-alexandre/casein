@@ -15,15 +15,15 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
   def observation_url(_), do: nil
 
   def kill_preview_pane(tmux_session, pane_id)
-       when is_binary(tmux_session) and tmux_session != "" and is_binary(pane_id) and
-              pane_id != "" do
+      when is_binary(tmux_session) and tmux_session != "" and is_binary(pane_id) and
+             pane_id != "" do
     terminals().kill_pane(tmux_session, pane_id)
   end
 
   def kill_preview_pane(_tmux_session, _pane_id), do: {:error, :tmux_session_required}
 
   def ensure_tmux_pane_exists(tmux_session, pane_id)
-       when is_binary(tmux_session) and is_binary(pane_id) do
+      when is_binary(tmux_session) and is_binary(pane_id) do
     if tmux_pane_exists?(tmux_session, pane_id) do
       :ok
     else
@@ -73,8 +73,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
   end
 
   def viewport_string(%{width: width, height: height})
-       when is_integer(width) and is_integer(height),
-       do: "#{width}x#{height}"
+      when is_integer(width) and is_integer(height),
+      do: "#{width}x#{height}"
 
   def viewport_string(viewport) when is_binary(viewport), do: viewport
   def viewport_string(_), do: nil
@@ -608,5 +608,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Shared do
       _ -> map
     end
   end
-
 end

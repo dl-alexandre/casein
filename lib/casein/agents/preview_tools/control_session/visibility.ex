@@ -89,7 +89,11 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Visibility do
         }
 
       {:error, reason} ->
-        %{ready: false, reason: :browser_observation_failed, observe_error: Shared.health_error(reason)}
+        %{
+          ready: false,
+          reason: :browser_observation_failed,
+          observe_error: Shared.health_error(reason)
+        }
     end
   end
 
@@ -327,7 +331,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Visibility do
   def loaded_browser_visibility_event?(%{event: "iframe_loaded"}), do: true
 
   def loaded_browser_visibility_event?(%{event: "visibility_heartbeat", metadata: metadata})
-       when is_map(metadata) do
+      when is_map(metadata) do
     Map.get(metadata, "loaded") == true
   end
 
@@ -394,5 +398,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Visibility do
 
     Application.get_env(:casein, app_key, default)
   end
-
 end

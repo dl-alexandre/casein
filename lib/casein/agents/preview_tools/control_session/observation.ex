@@ -109,13 +109,15 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
       )
 
   def observe_live(id) when is_integer(id) do
-    with {:ok, obs} <- PreviewControl.observe_live(id), do: {:ok, Shared.guide_observation(obs, id)}
+    with {:ok, obs} <- PreviewControl.observe_live(id),
+         do: {:ok, Shared.guide_observation(obs, id)}
   end
 
   @doc "List visible elements with stable element_id targets for the current page."
   @spec elements(map()) :: {:ok, map()} | {:error, term()}
   def elements(params) when is_map(params) do
-    with {:ok, id} <- Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+    with {:ok, id} <-
+           Shared.parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, observation} <- PreviewControl.observe_live(id) do
       elements =
         observation
@@ -124,7 +126,8 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
 
       payload = %{session_id: id, elements: elements, count: length(elements)}
 
-      {:ok, Shared.put_preview_next(payload, "preview_click", Shared.first_element_args(id, elements))}
+      {:ok,
+       Shared.put_preview_next(payload, "preview_click", Shared.first_element_args(id, elements))}
     end
   end
 
@@ -172,5 +175,4 @@ defmodule Casein.Agents.PreviewTools.ControlSession.Observation do
   defp tmux_presence(%{pane_id: pane_id}) do
     %{pane_id: pane_id, present: nil}
   end
-
 end
