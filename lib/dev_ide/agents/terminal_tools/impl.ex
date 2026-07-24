@@ -1,7 +1,7 @@
 defmodule DevIDE.Agents.TerminalTools.Impl do
   @moduledoc false
 
-  alias DevIDE.Agents
+  alias DevIDE.Agents.PreviewTools
   alias DevIDE.Agents.{AgentPane, PaneEnv, TerminalOutputFormat, Transcripts}
   alias DevIDE.AgentSessions.GrokACP.Attachments
   alias DevIDE.Audit
@@ -524,7 +524,7 @@ defmodule DevIDE.Agents.TerminalTools.Impl do
         ]
         |> Enum.reject(fn {_k, v} -> is_nil(v) end)
 
-      case Agents.split_preview_pane(workspace, url, opts) do
+      case PreviewTools.split_preview_pane(workspace, url, opts) do
         {:ok, %{pane_id: pane_id} = result} ->
           registration = Map.get(result, :registration)
 
