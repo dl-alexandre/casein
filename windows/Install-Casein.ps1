@@ -23,7 +23,7 @@ function Read-ReleaseMetadata {
 function Test-ReleaseTrust {
     param([string]$Root)
 
-    $manifestPath = Join-Path $Root 'windows\DevIDE.Release.psd1'
+    $manifestPath = Join-Path $Root 'windows\Casein.Release.psd1'
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw 'Release trust manifest is missing.' }
     $signature = Get-AuthenticodeSignature -FilePath $manifestPath
     $signatureRequired = $RequireSigned -or $env:DEVIDE_REQUIRE_SIGNED_RELEASES -eq '1'
@@ -77,7 +77,7 @@ function Remove-ReleaseTree {
     param([string]$Path)
 
     $full = [IO.Path]::GetFullPath($Path)
-    $releases = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\DevIDE\releases')).TrimEnd('\') + '\'
+    $releases = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs\Casein\releases')).TrimEnd('\') + '\'
     if (-not $full.StartsWith($releases, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Refusing unsafe release cleanup: $full"
     }
@@ -109,9 +109,9 @@ $metadata = Read-ReleaseMetadata $packageRoot
 if ($trust.Version -ne $metadata.version -or $trust.Revision -ne $metadata.revision) {
     throw 'Release trust identity does not match release metadata.'
 }
-$installRoot = Join-Path $env:LOCALAPPDATA 'Programs\DevIDE'
+$installRoot = Join-Path $env:LOCALAPPDATA 'Programs\Casein'
 $releasesRoot = Join-Path $installRoot 'releases'
-$dataRoot = Join-Path $env:LOCALAPPDATA 'DevIDE'
+$dataRoot = Join-Path $env:LOCALAPPDATA 'Casein'
 $backupRoot = Join-Path $dataRoot 'backups'
 $releaseId = "$($metadata.version)-$($metadata.revision.Substring(0, 7))"
 $destination = Join-Path $releasesRoot $releaseId
@@ -146,21 +146,21 @@ try {
     Set-Content -LiteralPath $temporaryCurrent -Value $current -Encoding UTF8
     Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force
 
-    $launcher = Join-Path $installRoot 'DevIDE.Launcher.ps1'
-    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\DevIDE.Launcher.ps1') -Destination $launcher -Force
-    $installedUninstaller = Join-Path $installRoot 'Uninstall-DevIDE.ps1'
-    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Uninstall-DevIDE.ps1') -Destination $installedUninstaller -Force
-    $installedRepair = Join-Path $installRoot 'Repair-DevIDE.ps1'
-    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Repair-DevIDE.ps1') -Destination $installedRepair -Force
-    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Rollback-DevIDE.ps1') -Destination (Join-Path $installRoot 'Rollback-DevIDE.ps1') -Force
-    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-DevIDESupportBundle.ps1') -Destination (Join-Path $installRoot 'New-DevIDESupportBundle.ps1') -Force
-    Set-Content -LiteralPath (Join-Path $installRoot 'DevIDE.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0DevIDE.Launcher.ps1`""
+    $launcher = Join-Path $installRoot 'Casein.Launcher.ps1'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Casein.Launcher.ps1') -Destination $launcher -Force
+    $installedUninstaller = Join-Path $installRoot 'Uninstall-Casein.ps1'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Uninstall-Casein.ps1') -Destination $installedUninstaller -Force
+    $installedRepair = Join-Path $installRoot 'Repair-Casein.ps1'
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Repair-Casein.ps1') -Destination $installedRepair -Force
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\Rollback-Casein.ps1') -Destination (Join-Path $installRoot 'Rollback-Casein.ps1') -Force
+    Copy-Item -LiteralPath (Join-Path $packageRoot 'windows\New-CaseinSupportBundle.ps1') -Destination (Join-Path $installRoot 'New-CaseinSupportBundle.ps1') -Force
+    Set-Content -LiteralPath (Join-Path $installRoot 'Casein.cmd') -Encoding ascii -Value "@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Casein.Launcher.ps1`""
 
-    $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\DevIDE'
+    $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Casein'
     New-Item -Path $uninstallKey -Force | Out-Null
-    New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'DevIDE' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name DisplayName -Value 'Casein' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $metadata.version -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $uninstallKey -Name Publisher -Value 'DevIDE' -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $uninstallKey -Name Publisher -Value 'Casein' -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installRoot -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
     New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 0 -PropertyType DWord -Force | Out-Null
@@ -169,7 +169,7 @@ try {
 
     if ($Launch) { & $launcher }
     Write-Host "Installed Casein $releaseId for $env:USERNAME"
-    Write-Host "Launcher: $(Join-Path $installRoot 'DevIDE.cmd')"
+    Write-Host "Launcher: $(Join-Path $installRoot 'Casein.cmd')"
 } catch {
     if (Test-Path -LiteralPath $stage) { Remove-ReleaseTree -Path $stage }
     throw

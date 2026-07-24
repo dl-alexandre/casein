@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'DevIDE'),
-    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE'),
-    [string]$Destination = (Join-Path ([Environment]::GetFolderPath('Desktop')) ("DevIDE-support-{0}.zip" -f [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')))
+    [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'Casein'),
+    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Programs\Casein'),
+    [string]$Destination = (Join-Path ([Environment]::GetFolderPath('Desktop')) ("Casein-support-{0}.zip" -f [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')))
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$stage = Join-Path $env:TEMP ("DevIDE-support-{0}" -f [Guid]::NewGuid().ToString('N'))
+$stage = Join-Path $env:TEMP ("Casein-support-{0}" -f [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 try {

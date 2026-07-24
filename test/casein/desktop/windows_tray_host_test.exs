@@ -1,18 +1,18 @@
 defmodule Casein.Desktop.WindowsTrayHostTest do
   use ExUnit.Case, async: true
 
-  @tray_script Path.expand("../../../windows/DevIDE.Tray.ps1", __DIR__)
+  @tray_script Path.expand("../../../windows/Casein.Tray.ps1", __DIR__)
   @package_script Path.expand("../../../scripts/package-windows-desktop.ps1", __DIR__)
   @preview_prepare Path.expand(
                      "../../../scripts/prepare-windows-preview-runtime.ps1",
                      __DIR__
                    )
-  @installer Path.expand("../../../windows/Install-DevIDE.ps1", __DIR__)
-  @launcher Path.expand("../../../windows/DevIDE.Launcher.ps1", __DIR__)
-  @uninstaller Path.expand("../../../windows/Uninstall-DevIDE.ps1", __DIR__)
-  @repair Path.expand("../../../windows/Repair-DevIDE.ps1", __DIR__)
-  @support Path.expand("../../../windows/New-DevIDESupportBundle.ps1", __DIR__)
-  @rollback Path.expand("../../../windows/Rollback-DevIDE.ps1", __DIR__)
+  @installer Path.expand("../../../windows/Install-Casein.ps1", __DIR__)
+  @launcher Path.expand("../../../windows/Casein.Launcher.ps1", __DIR__)
+  @uninstaller Path.expand("../../../windows/Uninstall-Casein.ps1", __DIR__)
+  @repair Path.expand("../../../windows/Repair-Casein.ps1", __DIR__)
+  @support Path.expand("../../../windows/New-CaseinSupportBundle.ps1", __DIR__)
+  @rollback Path.expand("../../../windows/Rollback-Casein.ps1", __DIR__)
 
   test "tray host supervises the loopback desktop release" do
     script = File.read!(@tray_script)
@@ -21,7 +21,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "Add-Type -AssemblyName System.Security"
     assert script =~ "Windows.Forms.NotifyIcon"
     assert script =~ "http://127.0.0.1:$Port/healthz"
-    assert script =~ "function New-DevIDELaunchClaim"
+    assert script =~ "function New-CaseinLaunchClaim"
     assert script =~ "[Security.Cryptography.HMACSHA256]"
     assert script =~ "desktop_nonce={0}&desktop_timestamp={1}&desktop_proof={2}"
     refute script =~ "?desktop_token="
@@ -35,17 +35,17 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "'CASEIN_DESKTOP_LAUNCH_TOKEN' = $launchToken"
     assert script =~ "'RELEASE_DISTRIBUTION' = 'none'"
     assert script =~ "'RELEASE_TMP' = $script:Paths.RuntimeTemp"
-    assert script =~ "$runtime = Invoke-DevIDERelease -Arguments @('start') -Port $Port"
+    assert script =~ "$runtime = Invoke-CaseinRelease -Arguments @('start') -Port $Port"
     assert script =~ "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE"
     assert script =~ "AssignProcessToJobObject"
-    assert script =~ "function Clear-DevIDEStaleRuntimeState"
+    assert script =~ "function Clear-CaseinStaleRuntimeState"
     assert script =~ "Remove-Item -LiteralPath $script:Paths.RuntimeStatus"
     assert script =~ "Attempting automatic runtime recovery"
-    refute script =~ "Invoke-DevIDERelease -Arguments @('start') -Port $Port -Wait"
+    refute script =~ "Invoke-CaseinRelease -Arguments @('start') -Port $Port -Wait"
     assert script =~ "taskkill.exe /PID $runtimePid /T /F"
-    assert script =~ "Local\\DevIDE.Desktop.Tray"
-    assert script =~ "function Open-DevIDECockpit"
-    assert script =~ "Opened the already-running DevIDE cockpit from a second launch"
+    assert script =~ "Local\\Casein.Desktop.Tray"
+    assert script =~ "function Open-CaseinCockpit"
+    assert script =~ "Opened the already-running Casein cockpit from a second launch"
     assert script =~ "$maxBytes = 2MB"
   end
 
@@ -114,10 +114,10 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert script =~ "Write-ReleaseTrustManifest"
     assert script =~ "Set-AuthenticodeSignature"
     assert script =~ "RequireSigned"
-    assert script =~ "windows\\DevIDE.Tray.ps1"
-    assert script =~ "windows\\Install-DevIDE.ps1"
+    assert script =~ "windows\\Casein.Tray.ps1"
+    assert script =~ "windows\\Install-Casein.ps1"
     assert script =~ "pwa-icon-192.png"
-    assert script =~ "windows\\DevIDE.png"
+    assert script =~ "windows\\Casein.png"
   end
 
   test "installer verifies signed release identity and file hashes before mutation" do
@@ -144,10 +144,10 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     assert prepare =~ "install chromium"
   end
 
-  test "tray uses the DevIDE code mark with status badges" do
+  test "tray uses the Casein code mark with status badges" do
     script = File.read!(@tray_script)
 
-    assert script =~ "Join-Path $PSScriptRoot 'DevIDE.png'"
+    assert script =~ "Join-Path $PSScriptRoot 'Casein.png'"
     assert script =~ "$graphics.DrawImage($source"
     assert script =~ "$graphics.FillEllipse($statusBrush"
     refute script =~ "$graphics.DrawString('D'"
@@ -158,7 +158,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
     launcher = File.read!(@launcher)
     uninstaller = File.read!(@uninstaller)
 
-    assert installer =~ "Programs\\DevIDE"
+    assert installer =~ "Programs\\Casein"
     assert installer =~ "before-update-"
     assert installer =~ "previous_data_backup"
     refute installer =~ "@('devide.sqlite3', 'desktop-host.json', 'secret-key-base.txt'"
@@ -167,7 +167,7 @@ defmodule Casein.Desktop.WindowsTrayHostTest do
              "Move-Item -LiteralPath $temporaryCurrent -Destination $currentPath -Force"
 
     assert launcher =~ "current.json"
-    assert launcher =~ "DevIDE.Tray.ps1"
+    assert launcher =~ "Casein.Tray.ps1"
     assert installer =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
     assert uninstaller =~ "Get-Process -Id $runtimePid -ErrorAction SilentlyContinue"
     assert uninstaller =~ "RemoveUserData"

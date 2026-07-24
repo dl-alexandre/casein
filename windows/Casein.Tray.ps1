@@ -8,13 +8,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
 
-function Get-DevIDEPaths {
+function Get-CaseinPaths {
     param([string]$Root)
 
     $dataRoot = if ($env:CASEIN_DESKTOP_DATA_DIR) {
         $env:CASEIN_DESKTOP_DATA_DIR
     } else {
-        Join-Path $env:LOCALAPPDATA 'DevIDE'
+        Join-Path $env:LOCALAPPDATA 'Casein'
     }
 
     [pscustomobject]@{
@@ -27,11 +27,11 @@ function Get-DevIDEPaths {
         RuntimePid  = Join-Path $dataRoot 'runtime.pid'
         RuntimeStatus = Join-Path $dataRoot 'runtime.json'
         RuntimeTemp = Join-Path $dataRoot 'runtime-tmp'
-        StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'DevIDE.lnk'
+        StartupLink = Join-Path ([Environment]::GetFolderPath('Startup')) 'Casein.lnk'
     }
 }
 
-function Write-DevIDELog {
+function Write-CaseinLog {
     param([string]$Message)
 
     $maxBytes = 2MB
@@ -44,23 +44,23 @@ function Write-DevIDELog {
     Add-Content -LiteralPath $script:Paths.Log -Value $line -Encoding UTF8
 }
 
-function Open-DevIDECockpit {
+function Open-CaseinCockpit {
     param([int]$Port)
 
-    if (-not (Test-DevIDEReady $Port)) { return $false }
-    $token = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
-    $claim = New-DevIDELaunchClaim $token
+    if (-not (Test-CaseinReady $Port)) { return $false }
+    $token = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+    $claim = New-CaseinLaunchClaim $token
     Start-Process "http://127.0.0.1:$Port/?$claim"
     return $true
 }
 
-function ConvertTo-DevIDEBase64Url {
+function ConvertTo-CaseinBase64Url {
     param([byte[]]$Bytes)
 
     [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
 
-function New-DevIDELaunchClaim {
+function New-CaseinLaunchClaim {
     param([string]$Secret, [long]$Timestamp = 0, [string]$Nonce = '')
 
     if (-not $Nonce) {
@@ -71,14 +71,14 @@ function New-DevIDELaunchClaim {
         } finally {
             $generator.Dispose()
         }
-        $Nonce = ConvertTo-DevIDEBase64Url $nonceBytes
+        $Nonce = ConvertTo-CaseinBase64Url $nonceBytes
     }
 
     if ($Timestamp -eq 0) { $Timestamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
     $message = [Text.Encoding]::UTF8.GetBytes("v1.$Timestamp.$Nonce")
     $hmac = [Security.Cryptography.HMACSHA256]::new([Text.Encoding]::UTF8.GetBytes($Secret))
     try {
-        $proof = ConvertTo-DevIDEBase64Url ($hmac.ComputeHash($message))
+        $proof = ConvertTo-CaseinBase64Url ($hmac.ComputeHash($message))
     } finally {
         $hmac.Dispose()
     }
@@ -96,7 +96,7 @@ function Get-FreeLoopbackPort {
     }
 }
 
-function Test-DevIDEPortAvailable {
+function Test-CaseinPortAvailable {
     param([int]$Port)
 
     try {
@@ -109,7 +109,7 @@ function Test-DevIDEPortAvailable {
     }
 }
 
-function Read-DevIDESettings {
+function Read-CaseinSettings {
     $defaults = [ordered]@{ port = 0; launchAtSignIn = $false }
     if (-not (Test-Path -LiteralPath $script:Paths.Settings)) {
         return [pscustomobject]$defaults
@@ -120,13 +120,13 @@ function Read-DevIDESettings {
         if ($saved.port -as [int]) { $defaults.port = [int]$saved.port }
         $defaults.launchAtSignIn = [bool]$saved.launchAtSignIn
     } catch {
-        Write-DevIDELog "Ignoring invalid settings: $($_.Exception.Message)"
+        Write-CaseinLog "Ignoring invalid settings: $($_.Exception.Message)"
     }
 
     [pscustomobject]$defaults
 }
 
-function Save-DevIDESettings {
+function Save-CaseinSettings {
     param([int]$Port, [bool]$LaunchAtSignIn)
 
     [ordered]@{ port = $Port; launchAtSignIn = $LaunchAtSignIn } |
@@ -134,11 +134,11 @@ function Save-DevIDESettings {
         Set-Content -LiteralPath $script:Paths.Settings -Encoding UTF8
 }
 
-function Get-DevIDEPort {
+function Get-CaseinPort {
     param([int]$SavedPort)
 
     if ($SavedPort -ge 1024 -and $SavedPort -le 65535) {
-        if ((Test-DevIDEReady $SavedPort) -or (Test-DevIDEPortAvailable $SavedPort)) {
+        if ((Test-CaseinReady $SavedPort) -or (Test-CaseinPortAvailable $SavedPort)) {
             return $SavedPort
         }
     }
@@ -146,7 +146,7 @@ function Get-DevIDEPort {
     Get-FreeLoopbackPort
 }
 
-function Get-OrCreateDevIDESecret {
+function Get-OrCreateCaseinSecret {
     param([string]$Path, [int]$Bytes)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -158,7 +158,7 @@ function Get-OrCreateDevIDESecret {
             $generator.Dispose()
         }
         $secret = [Convert]::ToBase64String($buffer)
-        Save-DevIDEProtectedSecret $Path $secret
+        Save-CaseinProtectedSecret $Path $secret
         return $secret
     }
 
@@ -172,11 +172,11 @@ function Get-OrCreateDevIDESecret {
 
     # One-time migration from the original plaintext file format. Replace the
     # file before returning so update backups never replicate reusable roots.
-    Save-DevIDEProtectedSecret $Path $stored
+    Save-CaseinProtectedSecret $Path $stored
     return $stored
 }
 
-function Save-DevIDEProtectedSecret {
+function Save-CaseinProtectedSecret {
     param([string]$Path, [string]$Secret)
 
     $plain = [Text.Encoding]::UTF8.GetBytes($Secret)
@@ -188,12 +188,12 @@ function Save-DevIDEProtectedSecret {
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
-function Get-DevIDEEnvironment {
+function Get-CaseinEnvironment {
     param([int]$Port)
 
-    $secret = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'secret-key-base.txt') 64
-    $apiToken = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'api-token.txt') 48
-    $launchToken = Get-OrCreateDevIDESecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
+    $secret = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'secret-key-base.txt') 64
+    $apiToken = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'api-token.txt') 48
+    $launchToken = Get-OrCreateCaseinSecret (Join-Path $script:Paths.DataRoot 'desktop-launch-token.txt') 48
     New-Item -ItemType Directory -Force -Path $script:Paths.RuntimeTemp | Out-Null
 
     @{
@@ -217,8 +217,8 @@ function Get-DevIDEEnvironment {
     }
 }
 
-function Initialize-DevIDEJobObjectSupport {
-    if ('DevIDE.Windows.JobObject' -as [type]) { return }
+function Initialize-CaseinJobObjectSupport {
+    if ('Casein.Windows.JobObject' -as [type]) { return }
 
     Add-Type -TypeDefinition @'
 using System;
@@ -226,7 +226,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
-namespace DevIDE.Windows {
+namespace Casein.Windows {
     public static class JobObject {
         private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
 
@@ -285,28 +285,28 @@ namespace DevIDE.Windows {
 '@
 }
 
-function Get-DevIDERuntimePid {
+function Get-CaseinRuntimePid {
     if (-not (Test-Path -LiteralPath $script:Paths.RuntimePid)) { return 0 }
     $runtimePid = 0
     [void][int]::TryParse((Get-Content -Raw -LiteralPath $script:Paths.RuntimePid).Trim(), [ref]$runtimePid)
     return $runtimePid
 }
 
-function Test-DevIDEProcessAlive {
+function Test-CaseinProcessAlive {
     param([int]$RuntimePid)
     if ($RuntimePid -le 0) { return $false }
     return $null -ne (Get-Process -Id $RuntimePid -ErrorAction SilentlyContinue)
 }
 
-function Clear-DevIDEStaleRuntimeState {
+function Clear-CaseinStaleRuntimeState {
     param([int]$Port)
 
-    $runtimePid = Get-DevIDERuntimePid
-    if (Test-DevIDEReady $Port) { return $true }
+    $runtimePid = Get-CaseinRuntimePid
+    if (Test-CaseinReady $Port) { return $true }
 
-    if (-not (Test-DevIDEProcessAlive $runtimePid)) {
+    if (-not (Test-CaseinProcessAlive $runtimePid)) {
         if ($runtimePid -gt 0 -or (Test-Path -LiteralPath $script:Paths.RuntimeStatus)) {
-            Write-DevIDELog "Removing stale desktop runtime state for process $runtimePid"
+            Write-CaseinLog "Removing stale desktop runtime state for process $runtimePid"
         }
         Remove-Item -LiteralPath $script:Paths.RuntimePid -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $script:Paths.RuntimeStatus -Force -ErrorAction SilentlyContinue
@@ -314,7 +314,7 @@ function Clear-DevIDEStaleRuntimeState {
     return $false
 }
 
-function Invoke-DevIDERelease {
+function Invoke-CaseinRelease {
     param(
         [Parameter(Mandatory)][string[]]$Arguments,
         [Parameter(Mandatory)][int]$Port,
@@ -322,7 +322,7 @@ function Invoke-DevIDERelease {
     )
 
     if (-not (Test-Path -LiteralPath $script:Paths.ReleaseBat)) {
-        throw "DevIDE release not found at $($script:Paths.ReleaseBat)"
+        throw "Casein release not found at $($script:Paths.ReleaseBat)"
     }
 
     $startInfo = New-Object Diagnostics.ProcessStartInfo
@@ -331,7 +331,7 @@ function Invoke-DevIDERelease {
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
     $startInfo.Arguments = '/d /s /c ""{0}" {1}"' -f $script:Paths.ReleaseBat, ($Arguments -join ' ')
-    foreach ($entry in (Get-DevIDEEnvironment $Port).GetEnumerator()) {
+    foreach ($entry in (Get-CaseinEnvironment $Port).GetEnumerator()) {
         $startInfo.EnvironmentVariables[$entry.Key] = $entry.Value
     }
 
@@ -345,7 +345,7 @@ function Invoke-DevIDERelease {
     $process
 }
 
-function Test-DevIDEReady {
+function Test-CaseinReady {
     param([int]$Port)
 
     try {
@@ -356,43 +356,43 @@ function Test-DevIDEReady {
     }
 }
 
-function Wait-DevIDEReady {
+function Wait-CaseinReady {
     param([int]$Port, [int]$TimeoutSeconds = 45)
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-DevIDEReady $Port) { return $true }
+        if (Test-CaseinReady $Port) { return $true }
         Start-Sleep -Milliseconds 400
     }
     return $false
 }
 
-function Start-DevIDERuntime {
+function Start-CaseinRuntime {
     param([int]$Port)
 
-    if (Clear-DevIDEStaleRuntimeState $Port) { return $true }
-    Write-DevIDELog "Starting desktop runtime on 127.0.0.1:$Port"
-    Invoke-DevIDERelease -Arguments @('eval', 'DevIDE.Release.migrate()') -Port $Port -Wait | Out-Null
+    if (Clear-CaseinStaleRuntimeState $Port) { return $true }
+    Write-CaseinLog "Starting desktop runtime on 127.0.0.1:$Port"
+    Invoke-CaseinRelease -Arguments @('eval', 'Casein.Release.migrate()') -Port $Port -Wait | Out-Null
     # On Windows the release `start` command remains attached to the daemon it
-    # launches. Waiting for that command therefore waits until DevIDE stops and
+    # launches. Waiting for that command therefore waits until Casein stops and
     # then misreports the shutdown exit code as a startup failure.
-    $runtime = Invoke-DevIDERelease -Arguments @('start') -Port $Port
+    $runtime = Invoke-CaseinRelease -Arguments @('start') -Port $Port
     if ($script:RuntimeJob) { $script:RuntimeJob.Dispose() }
-    $script:RuntimeJob = [DevIDE.Windows.JobObject]::CreateKillOnClose()
-    [DevIDE.Windows.JobObject]::Assign($script:RuntimeJob, $runtime.Handle)
+    $script:RuntimeJob = [Casein.Windows.JobObject]::CreateKillOnClose()
+    [Casein.Windows.JobObject]::Assign($script:RuntimeJob, $runtime.Handle)
     Set-Content -LiteralPath $script:Paths.RuntimePid -Value $runtime.Id -Encoding ascii
-    $ready = Wait-DevIDEReady $Port
-    if (-not $ready) { Stop-DevIDERuntime $Port }
-    Write-DevIDELog "Runtime ready: $ready"
+    $ready = Wait-CaseinReady $Port
+    if (-not $ready) { Stop-CaseinRuntime $Port }
+    Write-CaseinLog "Runtime ready: $ready"
     $ready
 }
 
-function Stop-DevIDERuntime {
+function Stop-CaseinRuntime {
     param([int]$Port)
 
     if (-not (Test-Path -LiteralPath $script:Paths.RuntimePid)) {
-        if (Test-DevIDEReady $Port) {
-            Write-DevIDELog 'Runtime is healthy but was not started by this tray host; leaving it untouched'
+        if (Test-CaseinReady $Port) {
+            Write-CaseinLog 'Runtime is healthy but was not started by this tray host; leaving it untouched'
         }
         if ($script:RuntimeJob) {
             $script:RuntimeJob.Dispose()
@@ -401,7 +401,7 @@ function Stop-DevIDERuntime {
         return
     }
 
-    $runtimePid = Get-DevIDERuntimePid
+    $runtimePid = Get-CaseinRuntimePid
     Remove-Item -LiteralPath $script:Paths.RuntimePid -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $script:Paths.RuntimeStatus -Force -ErrorAction SilentlyContinue
     if ($runtimePid -le 0) {
@@ -412,10 +412,10 @@ function Stop-DevIDERuntime {
         return
     }
 
-    Write-DevIDELog "Stopping desktop runtime process tree $runtimePid"
+    Write-CaseinLog "Stopping desktop runtime process tree $runtimePid"
     & taskkill.exe /PID $runtimePid /T /F *> $null
     if ($LASTEXITCODE -ne 0) {
-        Write-DevIDELog "Runtime process tree $runtimePid was already stopped or could not be terminated"
+        Write-CaseinLog "Runtime process tree $runtimePid was already stopped or could not be terminated"
     }
     if ($script:RuntimeJob) {
         $script:RuntimeJob.Dispose()
@@ -423,7 +423,7 @@ function Stop-DevIDERuntime {
     }
 }
 
-function Set-DevIDEStartup {
+function Set-CaseinStartup {
     param([bool]$Enabled)
 
     if ($Enabled) {
@@ -441,15 +441,15 @@ function Set-DevIDEStartup {
     }
 }
 
-function New-DevIDEIcon {
+function New-CaseinIcon {
     param([Drawing.Color]$StatusColor)
 
-    $sourcePath = Join-Path $PSScriptRoot 'DevIDE.png'
+    $sourcePath = Join-Path $PSScriptRoot 'Casein.png'
     if (-not (Test-Path -LiteralPath $sourcePath)) {
         $sourcePath = Join-Path $PSScriptRoot '..\priv\static\images\pwa-icon-192.png'
     }
     if (-not (Test-Path -LiteralPath $sourcePath)) {
-        throw "DevIDE tray icon asset is missing"
+        throw "Casein tray icon asset is missing"
     }
 
     $source = [Drawing.Image]::FromFile($sourcePath)
@@ -476,14 +476,14 @@ function New-DevIDEIcon {
     }
 }
 
-function Start-DevIDETray {
+function Start-CaseinTray {
     $createdNew = $false
-    $script:InstanceMutex = New-Object Threading.Mutex($true, 'Local\DevIDE.Desktop.Tray', [ref]$createdNew)
+    $script:InstanceMutex = New-Object Threading.Mutex($true, 'Local\Casein.Desktop.Tray', [ref]$createdNew)
     if (-not $createdNew) {
         $script:InstanceMutex.Dispose()
-        $settings = Read-DevIDESettings
-        if (Open-DevIDECockpit $settings.port) {
-            Write-DevIDELog 'Opened the already-running DevIDE cockpit from a second launch'
+        $settings = Read-CaseinSettings
+        if (Open-CaseinCockpit $settings.port) {
+            Write-CaseinLog 'Opened the already-running Casein cockpit from a second launch'
         }
         return
     }
@@ -491,19 +491,19 @@ function Start-DevIDETray {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [Windows.Forms.Application]::EnableVisualStyles()
-    Initialize-DevIDEJobObjectSupport
+    Initialize-CaseinJobObjectSupport
 
     $script:IconBitmaps = [Collections.Generic.List[Drawing.Bitmap]]::new()
-    $settings = Read-DevIDESettings
-    $script:Port = Get-DevIDEPort $settings.port
+    $settings = Read-CaseinSettings
+    $script:Port = Get-CaseinPort $settings.port
     $script:LaunchAtSignIn = [bool]$settings.launchAtSignIn
     $script:RecoveryAttempts = 0
     $script:NextRecoveryAt = [DateTime]::MinValue
-    Save-DevIDESettings $script:Port $script:LaunchAtSignIn
+    Save-CaseinSettings $script:Port $script:LaunchAtSignIn
 
-    $runningIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(34, 197, 94))
-    $stoppedIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(107, 114, 128))
-    $errorIcon = New-DevIDEIcon ([Drawing.Color]::FromArgb(239, 68, 68))
+    $runningIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(34, 197, 94))
+    $stoppedIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(107, 114, 128))
+    $errorIcon = New-CaseinIcon ([Drawing.Color]::FromArgb(239, 68, 68))
 
     $tray = [Windows.Forms.NotifyIcon]::new()
     $tray.Text = 'Casein is starting'
@@ -527,7 +527,7 @@ function Start-DevIDETray {
     $tray.ContextMenuStrip = $menu
 
     $open = {
-        if (-not (Open-DevIDECockpit $script:Port)) {
+        if (-not (Open-CaseinCockpit $script:Port)) {
             $tray.ShowBalloonTip(3000, 'Casein', 'Casein is not ready yet.', [Windows.Forms.ToolTipIcon]::Info)
         }
     }
@@ -542,14 +542,14 @@ function Start-DevIDETray {
     })
     $startupItem.Add_Click({
         $script:LaunchAtSignIn = -not $script:LaunchAtSignIn
-        Set-DevIDEStartup $script:LaunchAtSignIn
+        Set-CaseinStartup $script:LaunchAtSignIn
         $startupItem.Checked = $script:LaunchAtSignIn
-        Save-DevIDESettings $script:Port $script:LaunchAtSignIn
+        Save-CaseinSettings $script:Port $script:LaunchAtSignIn
     })
     $restartItem.Add_Click({
         $restartItem.Enabled = $false
-        Stop-DevIDERuntime $script:Port
-        $ready = Start-DevIDERuntime $script:Port
+        Stop-CaseinRuntime $script:Port
+        $ready = Start-CaseinRuntime $script:Port
         $restartItem.Enabled = $true
         if (-not $ready) {
             $tray.ShowBalloonTip(5000, 'Casein failed to start', "Open logs for details.", [Windows.Forms.ToolTipIcon]::Error)
@@ -558,12 +558,12 @@ function Start-DevIDETray {
     $repairItem.Add_Click({
         $repairItem.Enabled = $false
         try {
-            Stop-DevIDERuntime $script:Port
-            & (Join-Path $script:Paths.ReleaseRoot 'windows\Repair-DevIDE.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE')
-            if (-not (Start-DevIDERuntime $script:Port)) { throw 'Runtime did not become ready after repair.' }
+            Stop-CaseinRuntime $script:Port
+            & (Join-Path $script:Paths.ReleaseRoot 'windows\Repair-Casein.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\Casein')
+            if (-not (Start-CaseinRuntime $script:Port)) { throw 'Runtime did not become ready after repair.' }
             $tray.ShowBalloonTip(3000, 'Casein repaired', 'The local database and runtime state are healthy.', [Windows.Forms.ToolTipIcon]::Info)
         } catch {
-            Write-DevIDELog "Repair failed: $($_.Exception.Message)"
+            Write-CaseinLog "Repair failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Casein repair failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
         } finally {
             $repairItem.Enabled = $true
@@ -571,29 +571,29 @@ function Start-DevIDETray {
     })
     $rollbackItem.Add_Click({
         try {
-            Stop-DevIDERuntime $script:Port
-            & (Join-Path $script:Paths.ReleaseRoot 'windows\Rollback-DevIDE.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE')
-            & (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE\DevIDE.Launcher.ps1')
+            Stop-CaseinRuntime $script:Port
+            & (Join-Path $script:Paths.ReleaseRoot 'windows\Rollback-Casein.ps1') -InstallRoot (Join-Path $env:LOCALAPPDATA 'Programs\Casein')
+            & (Join-Path $env:LOCALAPPDATA 'Programs\Casein\Casein.Launcher.ps1')
             $tray.Visible = $false
             [Windows.Forms.Application]::Exit()
         } catch {
-            Write-DevIDELog "Rollback failed: $($_.Exception.Message)"
+            Write-CaseinLog "Rollback failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Casein rollback failed', $_.Exception.Message, [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $supportItem.Add_Click({
         try {
-            $bundle = & (Join-Path $script:Paths.ReleaseRoot 'windows\New-DevIDESupportBundle.ps1')
+            $bundle = & (Join-Path $script:Paths.ReleaseRoot 'windows\New-CaseinSupportBundle.ps1')
             Start-Process explorer.exe -ArgumentList @('/select,', $bundle)
             $tray.ShowBalloonTip(3000, 'Support bundle created', 'The redacted bundle is ready on your Desktop.', [Windows.Forms.ToolTipIcon]::Info)
         } catch {
-            Write-DevIDELog "Support bundle failed: $($_.Exception.Message)"
+            Write-CaseinLog "Support bundle failed: $($_.Exception.Message)"
             $tray.ShowBalloonTip(5000, 'Support bundle failed', 'Open logs for details.', [Windows.Forms.ToolTipIcon]::Error)
         }
     })
     $quitItem.Add_Click({
         $timer.Stop()
-        Stop-DevIDERuntime $script:Port
+        Stop-CaseinRuntime $script:Port
         $tray.Visible = $false
         [Windows.Forms.Application]::Exit()
     })
@@ -601,7 +601,7 @@ function Start-DevIDETray {
     $timer = [Windows.Forms.Timer]::new()
     $timer.Interval = 2000
     $timer.Add_Tick({
-        if (Test-DevIDEReady $script:Port) {
+        if (Test-CaseinReady $script:Port) {
             $statusItem.Text = 'Running'
             $tray.Text = 'Casein - Running'
             $tray.Icon = $runningIcon
@@ -612,22 +612,22 @@ function Start-DevIDETray {
             $tray.Text = 'Casein - Stopped'
             $tray.Icon = $errorIcon
             $openItem.Enabled = $false
-            Clear-DevIDEStaleRuntimeState $script:Port | Out-Null
+            Clear-CaseinStaleRuntimeState $script:Port | Out-Null
 
             if ($script:RecoveryAttempts -lt 3 -and [DateTime]::UtcNow -ge $script:NextRecoveryAt) {
                 $script:RecoveryAttempts++
                 $delaySeconds = [Math]::Pow(2, $script:RecoveryAttempts)
                 $script:NextRecoveryAt = [DateTime]::UtcNow.AddSeconds($delaySeconds)
                 $statusItem.Text = "Recovering ($($script:RecoveryAttempts)/3)"
-                Write-DevIDELog "Attempting automatic runtime recovery $($script:RecoveryAttempts)/3"
-                if (Start-DevIDERuntime $script:Port) { $script:RecoveryAttempts = 0 }
+                Write-CaseinLog "Attempting automatic runtime recovery $($script:RecoveryAttempts)/3"
+                if (Start-CaseinRuntime $script:Port) { $script:RecoveryAttempts = 0 }
             }
         }
     })
     $timer.Start()
 
     try {
-        if (Start-DevIDERuntime $script:Port) {
+        if (Start-CaseinRuntime $script:Port) {
             $tray.Icon = $runningIcon
             $tray.Text = 'Casein - Running'
             $statusItem.Text = 'Running'
@@ -651,15 +651,15 @@ function Start-DevIDETray {
     }
 }
 
-$script:Paths = Get-DevIDEPaths $ReleaseRoot
+$script:Paths = Get-CaseinPaths $ReleaseRoot
 $script:RuntimeJob = $null
 New-Item -ItemType Directory -Force -Path $script:Paths.DataRoot | Out-Null
 
 if (-not $LibraryOnly) {
     try {
-        Start-DevIDETray
+        Start-CaseinTray
     } catch {
-        Write-DevIDELog "Fatal tray host error: $($_.Exception.ToString())"
+        Write-CaseinLog "Fatal tray host error: $($_.Exception.ToString())"
         Add-Type -AssemblyName System.Windows.Forms
         [Windows.Forms.MessageBox]::Show(
             "Casein could not start.`r`n`r`n$($_.Exception.Message)`r`n`r`nLog: $($script:Paths.Log)",

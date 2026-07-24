@@ -1,23 +1,23 @@
 [CmdletBinding()]
 param(
-    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Programs\DevIDE'),
+    [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Programs\Casein'),
     [switch]$Launch
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $currentPath = Join-Path $InstallRoot 'current.json'
-if (-not (Test-Path -LiteralPath $currentPath)) { throw 'DevIDE is not installed.' }
+if (-not (Test-Path -LiteralPath $currentPath)) { throw 'Casein is not installed.' }
 $current = Get-Content -Raw -LiteralPath $currentPath | ConvertFrom-Json
 $releaseRoot = [IO.Path]::GetFullPath([string]$current.release_root)
 $releasesRoot = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'releases'))
 if (-not $releaseRoot.StartsWith($releasesRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Installed release path is outside the DevIDE releases directory.'
+    throw 'Installed release path is outside the Casein releases directory.'
 }
 $release = Join-Path $releaseRoot 'bin\casein.bat'
 if (-not (Test-Path -LiteralPath $release)) { throw "Installed runtime is missing: $release" }
 
-$dataRoot = Join-Path $env:LOCALAPPDATA 'DevIDE'
+$dataRoot = Join-Path $env:LOCALAPPDATA 'Casein'
 $pidPath = Join-Path $dataRoot 'runtime.pid'
 if (Test-Path -LiteralPath $pidPath) {
     $runtimePid = 0
@@ -33,9 +33,9 @@ $env:CASEIN_REPO_ADAPTER = 'sqlite'
 $env:CASEIN_DESKTOP_DATA_DIR = $dataRoot
 $env:DEVIDE_RELEASE_ROOT = $releaseRoot
 & $release migrate
-if ($LASTEXITCODE -ne 0) { throw "DevIDE database repair failed with exit code $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "Casein database repair failed with exit code $LASTEXITCODE" }
 
 if ($Launch) {
-    & (Join-Path $InstallRoot 'DevIDE.Launcher.ps1')
+    & (Join-Path $InstallRoot 'Casein.Launcher.ps1')
 }
 Write-Host 'Casein installation repair completed.'
