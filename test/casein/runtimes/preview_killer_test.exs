@@ -107,7 +107,7 @@ defmodule Casein.Runtimes.PreviewKillerTest do
     test "derives preview home from cwd when env is absent" do
       cwd = Path.join(System.tmp_dir!(), "pk-cwd-#{System.unique_integer([:positive])}")
       runtime_id = "rt-cwd-#{System.unique_integer([:positive])}"
-      preview_home = Path.join(cwd, ".devide-preview")
+      preview_home = Path.join(cwd, ".casein-preview")
       instances = Path.join(preview_home, "instances")
       File.mkdir_p!(instances)
       registry = Path.join(instances, "#{runtime_id}.json")

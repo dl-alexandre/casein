@@ -305,7 +305,7 @@ codex_terminal_mcp_url() {
 codex_mcp_config_args() {
   local slug terminal_key preview_key artifact_key tidewave_key
   slug="$(workspace_slug)"
-  terminal_key="devide-terminal-${slug}"
+  terminal_key="casein-terminal-${slug}"
   preview_key="casein-preview-${slug}"
   artifact_key="devide-artifact-${slug}"
   tidewave_key="devide-tidewave-${slug}"

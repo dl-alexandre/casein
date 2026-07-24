@@ -19,7 +19,7 @@ def workspace_slug(name: str) -> str:
 def server_keys(workspace_name: str) -> tuple[str, str, str, str]:
     slug = workspace_slug(workspace_name)
     return (
-        f"devide-terminal-{slug}",
+        f"casein-terminal-{slug}",
         f"casein-preview-{slug}",
         f"devide-artifact-{slug}",
         f"devide-tidewave-{slug}",

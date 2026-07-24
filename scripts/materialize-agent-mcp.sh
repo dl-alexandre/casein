@@ -158,7 +158,7 @@ slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ['DEVIDE_WORKSPACE_NAME']).strip(
 print(slug or 'workspace')
 "
 )"
-TERMINAL_KEY="devide-terminal-${WORKSPACE_SLUG}"
+TERMINAL_KEY="casein-terminal-${WORKSPACE_SLUG}"
 PREVIEW_KEY="casein-preview-${WORKSPACE_SLUG}"
 ARTIFACT_KEY="devide-artifact-${WORKSPACE_SLUG}"
 TIDEWAVE_KEY="devide-tidewave-${WORKSPACE_SLUG}"

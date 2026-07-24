@@ -578,7 +578,7 @@ print(slug or 'workspace')
 "
     )"
     expected_servers=(
-      "devide-terminal-${slug}"
+      "casein-terminal-${slug}"
       "casein-preview-${slug}"
       "devide-artifact-${slug}"
     )
