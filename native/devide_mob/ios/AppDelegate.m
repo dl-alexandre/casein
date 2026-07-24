@@ -234,6 +234,21 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
 
 @implementation SceneDelegate
 
+- (void)fitWindowToScene:(UIWindowScene*)windowScene {
+    if (!windowScene || !self.window) {
+        return;
+    }
+
+    // iPadOS can resize a scene without recreating its UIWindow (rotation,
+    // split view, Stage Manager / Windowed Apps, keyboard-driven window
+    // changes). Keep the hosting controller attached to the authoritative
+    // scene coordinate space rather than the size from first connection.
+    self.window.frame = windowScene.coordinateSpace.bounds;
+    self.window.rootViewController.view.frame = self.window.bounds;
+    [self.window.rootViewController.view setNeedsLayout];
+    [self.window.rootViewController.view layoutIfNeeded];
+}
+
 - (void)scene:(UIScene*)scene
     willConnectToSession:(UISceneSession*)session
     options:(UISceneConnectionOptions*)connectionOptions {
@@ -247,6 +262,7 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     UIViewController* vc = [MobUIFactory makeRootViewController];
     window.rootViewController = vc;
     self.window = window;
+    [self fitWindowToScene:(UIWindowScene*)scene];
     [window makeKeyAndVisible];
 
     UNNotificationResponse* response = connectionOptions.notificationResponse;
@@ -256,6 +272,17 @@ static BOOL MobStoreDeepLinkURL(NSURL* url) {
     for (UIOpenURLContext* context in connectionOptions.URLContexts) {
         MobStoreDeepLinkURL(context.URL);
     }
+}
+
+- (void)windowScene:(UIWindowScene*)windowScene
+    didUpdateCoordinateSpace:(id<UICoordinateSpace>)previousCoordinateSpace
+    interfaceOrientation:(UIInterfaceOrientation)previousInterfaceOrientation
+    traitCollection:(UITraitCollection*)previousTraitCollection {
+    (void)previousCoordinateSpace;
+    (void)previousInterfaceOrientation;
+    (void)previousTraitCollection;
+
+    [self fitWindowToScene:windowScene];
 }
 
 - (void)scene:(UIScene*)scene openURLContexts:(NSSet<UIOpenURLContext*>*)URLContexts {

@@ -278,8 +278,16 @@ pub fn build(b: *std.Build) void {
 
     const epmd_specs = [_]CObjectSpec{
         .{ .name = "epmd_main", .source = b.fmt("{s}/epmd.c", .{epmd_src}) },
-        .{ .name = "epmd_srv", .source = b.fmt("{s}/epmd_srv.c", .{epmd_src}) },
+        .{
+            .name = "epmd_srv",
+            .source = b.fmt("{s}/epmd_srv.c", .{epmd_src}),
+            .extra_flags = &.{"-Ddbg_perror=devide_mob_epmd_dbg_perror"},
+        },
         .{ .name = "epmd_cli", .source = b.fmt("{s}/epmd_cli.c", .{epmd_src}) },
+        .{
+            .name = "epmd_errno_guard",
+            .source = b.fmt("{s}/epmd_errno_guard.c", .{project_ios_dir}),
+        },
     };
 
     for (epmd_specs) |spec| {
@@ -289,6 +297,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .c_flags = epmd_flags,
+            .extra_flags = spec.extra_flags,
             .epmd_build_src = epmd_build_src,
             .epmd_src = epmd_src,
             .sdkroot = sdkroot,
@@ -425,6 +434,7 @@ pub fn build(b: *std.Build) void {
 const CObjectSpec = struct {
     name: []const u8,
     source: []const u8,
+    extra_flags: []const []const u8 = &.{},
 };
 
 const ObjcSpec = struct {
@@ -560,6 +570,7 @@ const EpmdObjectOptions = struct {
     target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
     c_flags: []const []const u8,
+    extra_flags: []const []const u8,
     epmd_build_src: []const u8,
     epmd_src: []const u8,
     sdkroot: []const u8,
@@ -570,9 +581,14 @@ fn addEpmdObject(b: *std.Build, opts: EpmdObjectOptions) std.Build.LazyPath {
         .target = opts.target,
         .optimize = opts.optimize,
     });
+    const flags =
+        b.allocator.alloc([]const u8, opts.c_flags.len + opts.extra_flags.len) catch
+            @panic("OOM");
+    @memcpy(flags[0..opts.c_flags.len], opts.c_flags);
+    @memcpy(flags[opts.c_flags.len..], opts.extra_flags);
     mod.addCSourceFile(.{
         .file = .{ .cwd_relative = opts.source },
-        .flags = opts.c_flags,
+        .flags = flags,
     });
     // EPMD's includes are scattered across the OTP tree:
     //   erts/aarch64-apple-ios/   architecture-specific config.h etc.
