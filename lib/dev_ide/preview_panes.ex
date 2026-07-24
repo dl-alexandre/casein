@@ -72,6 +72,20 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:navigate, pane_id, path_or_url})
   end
 
+  @doc """
+  Retunes an open pane's locked viewport (`"WxH"`), or clears it with `nil`/`""`
+  so the preview goes back to filling the pane.
+
+  Viewport is a viewer-side concern — it letterboxes the iframe at a fixed CSS
+  pixel size — so unlike `navigate/2` this never touches the browser. It is an
+  ETS + row update plus an `:updated` broadcast, which is what re-renders
+  `data-viewport` for the overlay hook.
+  """
+  @spec set_viewport(String.t(), String.t() | nil) :: {:ok, registration()} | {:error, term()}
+  def set_viewport(pane_id, viewport) when is_binary(pane_id) do
+    GenServer.call(__MODULE__, {:set_viewport, pane_id, viewport})
+  end
+
   @spec go_back(String.t()) :: {:ok, registration() | :unchanged} | {:error, term()}
   def go_back(pane_id) when is_binary(pane_id) do
     GenServer.call(__MODULE__, {:history_action, pane_id, :go_back})
@@ -240,6 +254,13 @@ defmodule DevIDE.PreviewPanes do
 
   def handle_call({:history_action, pane_id, action}, from, state) do
     offload_op(from, :browser, nil, nil, fn -> do_history_action(pane_id, action) end, state)
+  end
+
+  # Its own kind rather than :browser: no browser round trip to wait on, so it
+  # must not inherit the browser test delay. Still offloaded — the row update is
+  # Repo I/O and this is a singleton.
+  def handle_call({:set_viewport, pane_id, viewport}, from, state) do
+    offload_op(from, :viewport, pane_id, nil, fn -> do_set_viewport(pane_id, viewport) end, state)
   end
 
   def handle_call({:sync_control_navigation, session_id, current_url}, from, state) do
@@ -846,6 +867,11 @@ defmodule DevIDE.PreviewPanes do
     state
   end
 
+  defp commit_op(%{kind: :viewport} = op, result, state) do
+    reply_op(op, result)
+    state
+  end
+
   defp commit_op(%{kind: :register, pane_id: pane_id, plan: plan} = op, result, state) do
     state =
       case result do
@@ -1293,6 +1319,36 @@ defmodule DevIDE.PreviewPanes do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp do_set_viewport(pane_id, viewport) do
+    with {:ok, parsed} <- validate_viewport(viewport),
+         %{} = registration <- get_by_pane(pane_id) do
+      updated = %{registration | viewport: parsed}
+
+      :ets.insert(@table, {updated.pane_id, updated})
+      persist_registration(updated)
+      broadcast_registered(updated, :updated)
+
+      {:ok, updated}
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # nil/"" is an intentional clear (back to filling the pane). A malformed
+  # non-empty string is a caller bug, not a clear — refusing it keeps a typo
+  # from silently unlocking a pane the caller meant to resize.
+  defp validate_viewport(viewport) when viewport in [nil, ""], do: {:ok, nil}
+
+  defp validate_viewport(viewport) when is_binary(viewport) do
+    case parse_viewport(viewport) do
+      nil -> {:error, :invalid_viewport}
+      parsed -> {:ok, parsed}
+    end
+  end
+
+  defp validate_viewport(_viewport), do: {:error, :invalid_viewport}
 
   defp do_sync_control_navigation(registration, current_url) do
     new_display_url = display_url_for_control_url(registration, current_url)
