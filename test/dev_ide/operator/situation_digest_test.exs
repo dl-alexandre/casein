@@ -14,8 +14,8 @@ defmodule Casein.Operator.SituationDigestTest do
   alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_runtimes_adapter = Application.get_env(:dev_ide, :runtimes_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
+    prev_runtimes_adapter = Application.get_env(:casein, :runtimes_adapter)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_session_meta = TmuxCtl.Test.FakeState.get(:fake_tmux_session_meta)
@@ -27,8 +27,8 @@ defmodule Casein.Operator.SituationDigestTest do
     Activity.clear()
     AgentState.clear()
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     TmuxCtl.Test.FakeState.delete(:fake_tmux_session_meta)
@@ -192,13 +192,13 @@ defmodule Casein.Operator.SituationDigestTest do
   end
 
   test "build honors configured freeze sentinel globs" do
-    prev = Application.get_env(:dev_ide, :freeze_sentinel_globs)
-    Application.put_env(:dev_ide, :freeze_sentinel_globs, [".devide/freeze-*"])
+    prev = Application.get_env(:casein, :freeze_sentinel_globs)
+    Application.put_env(:casein, :freeze_sentinel_globs, [".devide/freeze-*"])
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, :freeze_sentinel_globs, prev),
-        else: Application.delete_env(:dev_ide, :freeze_sentinel_globs)
+        do: Application.put_env(:casein, :freeze_sentinel_globs, prev),
+        else: Application.delete_env(:casein, :freeze_sentinel_globs)
     end)
 
     root = tmp_dir!("frozen-globs")
@@ -315,7 +315,7 @@ defmodule Casein.Operator.SituationDigestTest do
   end
 
   test "a failing worktree read marks the section degraded instead of silently emptying it" do
-    Application.put_env(:dev_ide, :runtimes_adapter, RaisingRuntimes)
+    Application.put_env(:casein, :runtimes_adapter, RaisingRuntimes)
 
     assert {:ok, digest} = SituationDigest.build("ws-digest")
     assert digest.worktrees == []
@@ -377,8 +377,8 @@ defmodule Casein.Operator.SituationDigestTest do
     path
   end
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp restore_fake_state(key, nil), do: TmuxCtl.Test.FakeState.delete(key)
   defp restore_fake_state(key, value), do: TmuxCtl.Test.FakeState.put(key, value)

@@ -28,7 +28,7 @@ defmodule Casein.ProcessEnv do
       Casein.ProcessEnv.put(:git_adapter, MyStubAdapter)
 
       # in production code
-      defp impl, do: Casein.ProcessEnv.get(:dev_ide, :git_adapter, Casein.Git.LocalAdapter)
+      defp impl, do: Casein.ProcessEnv.get(:casein, :git_adapter, Casein.Git.LocalAdapter)
   """
 
   @absent :"$devide_process_env_absent"

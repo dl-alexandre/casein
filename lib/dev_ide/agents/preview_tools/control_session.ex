@@ -894,7 +894,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
   defp loaded_browser_visibility_event?(_), do: false
 
   defp preview_visibility_fresh_ms do
-    Application.get_env(:dev_ide, :preview_operator_visibility_fresh_ms, 15_000)
+    Application.get_env(:casein, :preview_operator_visibility_fresh_ms, 15_000)
   end
 
   defp await_browser_iframe_loaded(_registration, _workspace_ids, _since, timeout_ms)
@@ -952,7 +952,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
         :page_reload -> :preview_operator_visibility_page_reload_timeout_ms
       end
 
-    Application.get_env(:dev_ide, app_key, default)
+    Application.get_env(:casein, app_key, default)
   end
 
   @doc """
@@ -1821,12 +1821,12 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
     do: parts ++ ["--attach-to-pane", shell_quote(pane_id)]
 
   defp preview_cli_executable do
-    case Application.get_env(:dev_ide, :devide_preview_script) do
+    case Application.get_env(:casein, :devide_preview_script) do
       path when is_binary(path) and path != "" ->
         shell_quote(path)
 
       _ ->
-        case :code.priv_dir(:dev_ide) do
+        case :code.priv_dir(:casein) do
           dir when is_list(dir) ->
             dir
             |> List.to_string()
@@ -1841,7 +1841,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
 
   defp preview_api_token do
     System.get_env("DEV_IDE_API_TOKEN") ||
-      Application.get_env(:dev_ide, :dev_ide_api_token)
+      Application.get_env(:casein, :casein_api_token)
   end
 
   defp playback_artifact_path(workspace, artifact_path) when is_binary(artifact_path) do
@@ -1897,7 +1897,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
   end
 
   defp playback_origin do
-    base_url = Application.get_env(:dev_ide, :preview_app_url) || preview_api_base_url()
+    base_url = Application.get_env(:casein, :preview_app_url) || preview_api_base_url()
 
     case Url.origin_of(base_url) do
       origin when is_binary(origin) and origin != "" ->
@@ -2507,7 +2507,7 @@ defmodule Casein.Agents.PreviewTools.ControlSession do
   defp loopback_devide_session?(_), do: false
 
   defp devide_loopback_url?(url) do
-    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    port = Application.get_env(:casein, :preview_loopback_port, 4000)
 
     Url.localhost_url?(url) and
       case URI.parse(url) do

@@ -43,18 +43,18 @@ defmodule Casein.Deployment.GithubWebhookTest do
   end
 
   test "master_push? can require the configured repository" do
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       (prev_deploy || []) |> Keyword.put(:github_repo, @repo)
     )
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
     end)
 
     assert {:ignore, "unexpected_repo:other/repo,expected:" <> _} =

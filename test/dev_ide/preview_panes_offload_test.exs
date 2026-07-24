@@ -12,14 +12,14 @@ defmodule Casein.PreviewPanesOffloadTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
-    prev_delay = Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
+    prev_delay = Application.get_env(:casein, :preview_panes_test_browser_delay_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
-    Application.delete_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, true)
+    Application.delete_env(:casein, :preview_panes_test_browser_delay_ms)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -33,15 +33,15 @@ defmodule Casein.PreviewPanesOffloadTest do
       restore(:preview_pane_persistence_enabled, prev_persistence)
 
       if prev_delay,
-        do: Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, prev_delay),
-        else: Application.delete_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+        do: Application.put_env(:casein, :preview_panes_test_browser_delay_ms, prev_delay),
+        else: Application.delete_env(:casein, :preview_panes_test_browser_delay_ms)
     end)
 
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp wait_until(fun, attempts \\ 100)
 
@@ -64,7 +64,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {root, path}
   end
 
@@ -117,7 +117,7 @@ defmodule Casein.PreviewPanesOffloadTest do
 
     warm = register_pane!(session, warm_pane, path)
 
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 400)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 400)
     parent = self()
 
     spawn(fn ->
@@ -160,7 +160,7 @@ defmodule Casein.PreviewPanesOffloadTest do
     pane_id = "%collapse"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 200)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 200)
     parent = self()
 
     spawn(fn ->
@@ -218,7 +218,7 @@ defmodule Casein.PreviewPanesOffloadTest do
     seed_session!(session, pane_id)
     _registration = register_pane!(session, pane_id, path)
 
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 200)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 200)
     parent = self()
 
     spawn(fn ->
@@ -309,7 +309,7 @@ defmodule Casein.PreviewPanesOffloadTest do
     end
 
     ets_panes =
-      :ets.tab2list(:dev_ide_preview_panes)
+      :ets.tab2list(:casein_preview_panes)
       |> Enum.map(fn {pane_id, _} -> pane_id end)
       |> Enum.sort()
 
@@ -325,7 +325,7 @@ defmodule Casein.PreviewPanesOffloadTest do
     pane_id = "%crash"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 500)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 500)
     parent = self()
 
     spawn(fn ->
@@ -381,8 +381,8 @@ defmodule Casein.PreviewPanesOffloadTest do
   test "crashed rehydrate op replies shape-correct nil, not an error tuple" do
     pane_id = "%rehydrate-crash-#{System.unique_integer([:positive])}"
 
-    Application.put_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms, 500)
-    on_exit(fn -> Application.delete_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms) end)
+    Application.put_env(:casein, :preview_panes_test_rehydrate_delay_ms, 500)
+    on_exit(fn -> Application.delete_env(:casein, :preview_panes_test_rehydrate_delay_ms) end)
 
     parent = self()
 
@@ -418,7 +418,7 @@ defmodule Casein.PreviewPanesOffloadTest do
     pane_id = "%clearq"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 500)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 500)
     parent = self()
 
     spawn(fn ->
@@ -500,13 +500,13 @@ defmodule Casein.PreviewPanesOwnershipTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
 
     on_exit(fn ->
       if prev_tmux,
-        do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux),
-        else: Application.delete_env(:dev_ide, :tmux_adapter)
+        do: Application.put_env(:casein, :tmux_adapter, prev_tmux),
+        else: Application.delete_env(:casein, :tmux_adapter)
     end)
 
     :ok

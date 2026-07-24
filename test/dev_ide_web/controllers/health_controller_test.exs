@@ -2,13 +2,13 @@ defmodule CaseinWeb.HealthControllerTest do
   use CaseinWeb.ConnCase, async: false
 
   setup do
-    previous = Application.get_env(:dev_ide, :readiness_opts)
+    previous = Application.get_env(:casein, :readiness_opts)
 
     on_exit(fn ->
       if is_nil(previous) do
-        Application.delete_env(:dev_ide, :readiness_opts)
+        Application.delete_env(:casein, :readiness_opts)
       else
-        Application.put_env(:dev_ide, :readiness_opts, previous)
+        Application.put_env(:casein, :readiness_opts, previous)
       end
     end)
 
@@ -27,7 +27,7 @@ defmodule CaseinWeb.HealthControllerTest do
   end
 
   test "GET /healthz returns a minimal 503 when the database is unavailable", %{conn: conn} do
-    Application.put_env(:dev_ide, :readiness_opts, query: fn -> {:error, :secret_reason} end)
+    Application.put_env(:casein, :readiness_opts, query: fn -> {:error, :secret_reason} end)
 
     conn = get(conn, "/healthz")
 

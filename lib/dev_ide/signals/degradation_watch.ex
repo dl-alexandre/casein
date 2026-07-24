@@ -13,7 +13,7 @@ defmodule Casein.Signals.DegradationWatch do
 
   Config-driven so new signal types are a config entry, not code:
 
-      config :dev_ide, :degradation_watch_rules, [
+      config :casein, :degradation_watch_rules, [
         %{action: "workspace.db_isolation_detected",
           fingerprint: ["isolation", "source"], threshold: 5, window_ms: 60_000}
       ]
@@ -89,7 +89,7 @@ defmodule Casein.Signals.DegradationWatch do
       opts
       |> Keyword.get(
         :rules,
-        Application.get_env(:dev_ide, :degradation_watch_rules, @default_rules)
+        Application.get_env(:casein, :degradation_watch_rules, @default_rules)
       )
       |> Map.new(fn rule -> {rule.action, rule} end)
 
@@ -170,7 +170,7 @@ defmodule Casein.Signals.DegradationWatch do
     )
 
     :telemetry.execute(
-      [:dev_ide, :signals, :degradation_storm],
+      [:casein, :signals, :degradation_storm],
       %{count: count},
       %{action: rule.action, workspace_id: ws}
     )
@@ -191,6 +191,6 @@ defmodule Casein.Signals.DegradationWatch do
   end
 
   defp signal_bus_enabled? do
-    Application.get_env(:dev_ide, :signal_bus_enabled, true)
+    Application.get_env(:casein, :signal_bus_enabled, true)
   end
 end

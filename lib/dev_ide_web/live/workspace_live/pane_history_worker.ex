@@ -68,7 +68,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneHistoryWorker do
 
     Process.flag(:trap_exit, true)
 
-    max_scrollback = Application.get_env(:dev_ide, :pane_history_max_scrollback, 10_000)
+    max_scrollback = Application.get_env(:casein, :pane_history_max_scrollback, 10_000)
 
     case Ghostty.Terminal.start_link(cols: cols, rows: rows, max_scrollback: max_scrollback) do
       {:ok, term} ->

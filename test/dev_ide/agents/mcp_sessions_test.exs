@@ -9,12 +9,12 @@ defmodule Casein.Agents.MCPSessionsTest do
   alias Casein.Agents.MCPSessions
 
   setup do
-    prev_ttl = Application.get_env(:dev_ide, :mcp_session_ttl_ms)
+    prev_ttl = Application.get_env(:casein, :mcp_session_ttl_ms)
 
     on_exit(fn ->
       if prev_ttl,
-        do: Application.put_env(:dev_ide, :mcp_session_ttl_ms, prev_ttl),
-        else: Application.delete_env(:dev_ide, :mcp_session_ttl_ms)
+        do: Application.put_env(:casein, :mcp_session_ttl_ms, prev_ttl),
+        else: Application.delete_env(:casein, :mcp_session_ttl_ms)
     end)
 
     :ok
@@ -93,7 +93,7 @@ defmodule Casein.Agents.MCPSessionsTest do
 
   describe "idle-session sweep" do
     test "reaps an idle session past the TTL" do
-      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 0)
+      Application.put_env(:casein, :mcp_session_ttl_ms, 0)
       id = MCPSessions.create(%{server: :terminal})
       assert MCPSessions.exists?(id)
 
@@ -102,7 +102,7 @@ defmodule Casein.Agents.MCPSessionsTest do
     end
 
     test "does not reap a session with a live attached stream" do
-      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 0)
+      Application.put_env(:casein, :mcp_session_ttl_ms, 0)
       id = MCPSessions.create(%{server: :terminal})
       test_pid = self()
 
@@ -120,7 +120,7 @@ defmodule Casein.Agents.MCPSessionsTest do
     end
 
     test "touch keeps an actively used session alive across a sweep" do
-      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 40)
+      Application.put_env(:casein, :mcp_session_ttl_ms, 40)
       id = MCPSessions.create(%{server: :preview})
 
       # Age it past the TTL, then touch — the touch cast is processed before the

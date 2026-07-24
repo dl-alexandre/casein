@@ -33,7 +33,7 @@ defmodule Casein.Previews.Embeddability do
   def frame_blocked_url?(url, opts) when is_binary(url) do
     timeout =
       Keyword.get(opts, :timeout_ms) ||
-        Application.get_env(:dev_ide, :preview_embed_check_timeout_ms, @default_timeout_ms)
+        Application.get_env(:casein, :preview_embed_check_timeout_ms, @default_timeout_ms)
 
     case Req.get(url,
            max_redirects: 3,

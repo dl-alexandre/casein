@@ -4,6 +4,6 @@ defmodule Casein.Repo do
   use Boundary, top_level?: true, deps: [], exports: [Adapter]
 
   use Ecto.Repo,
-    otp_app: :dev_ide,
-    adapter: Application.compile_env(:dev_ide, :repo_adapter, Ecto.Adapters.Postgres)
+    otp_app: :casein,
+    adapter: Application.compile_env(:casein, :repo_adapter, Ecto.Adapters.Postgres)
 end

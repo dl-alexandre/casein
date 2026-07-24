@@ -9,7 +9,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
 
   setup do
     # Disable idle GC by default; tests that need a timer reconfigure it.
-    Application.delete_env(:dev_ide, :tmux_idle_seconds)
+    Application.delete_env(:casein, :tmux_idle_seconds)
     :ok
   end
 
@@ -124,7 +124,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
   end
 
   test "kill_idle fires after the configured delay and removes the entry" do
-    Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
+    Application.put_env(:casein, :tmux_idle_seconds, 1)
     s = session_name("kill_")
 
     TmuxJanitor.subscribe(s)
@@ -137,7 +137,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
   end
 
   test "resubscribing before the kill fires cancels the timer" do
-    Application.put_env(:dev_ide, :tmux_idle_seconds, 60)
+    Application.put_env(:casein, :tmux_idle_seconds, 60)
     s = session_name("cancel_")
 
     TmuxJanitor.subscribe(s)
@@ -153,7 +153,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
   end
 
   test "kill_idle skips durable workspace shells backed by a live SessionOwner" do
-    Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
+    Application.put_env(:casein, :tmux_idle_seconds, 1)
     workspace_key = "jtest_ws"
     sid = unique("shell_")
     session = "devide_#{workspace_key}_#{sid}"
@@ -186,7 +186,7 @@ defmodule Casein.Terminals.TmuxJanitorTest do
     # Scratch uses the same durable-shell path as real workspaces: a live
     # :shell SessionOwner marks the tmux session durable, so idle GC must not
     # special-case/kill `devide___scratch___*`.
-    Application.put_env(:dev_ide, :tmux_idle_seconds, 1)
+    Application.put_env(:casein, :tmux_idle_seconds, 1)
     workspace_key = "__scratch__"
     sid = unique("shell_")
     session = Casein.Terminals.Tmux.session_name(workspace_key, sid)

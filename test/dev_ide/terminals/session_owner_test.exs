@@ -445,8 +445,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
   end
 
   test "replay truncation honors runtime replay buffer limit configuration" do
-    previous_limit = Application.get_env(:dev_ide, :terminal_replay_buffer_bytes)
-    Application.put_env(:dev_ide, :terminal_replay_buffer_bytes, 6)
+    previous_limit = Application.get_env(:casein, :terminal_replay_buffer_bytes)
+    Application.put_env(:casein, :terminal_replay_buffer_bytes, 6)
 
     try do
       info = Terminals.new_shell("ws-shell-config-truncate", "sid-config-truncate")
@@ -481,9 +481,9 @@ defmodule Casein.Terminals.SessionOwnerTest do
       GenServer.stop(owner_pid, :normal)
     after
       if previous_limit == nil do
-        Application.delete_env(:dev_ide, :terminal_replay_buffer_bytes)
+        Application.delete_env(:casein, :terminal_replay_buffer_bytes)
       else
-        Application.put_env(:dev_ide, :terminal_replay_buffer_bytes, previous_limit)
+        Application.put_env(:casein, :terminal_replay_buffer_bytes, previous_limit)
       end
     end
   end
@@ -872,7 +872,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     dir =
       Path.join(System.tmp_dir!(), "devide-kill-archive-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :tmux_scrollback_archive_dir, dir)
+    Application.put_env(:casein, :tmux_scrollback_archive_dir, dir)
     Casein.Terminals.ScrollbackArchive.ensure_table!()
     Casein.Terminals.ScrollbackArchive.put(session, "doomed output\n")
     assert Casein.Terminals.ScrollbackArchive.present?(session)
@@ -884,7 +884,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
 
     refute Casein.Terminals.ScrollbackArchive.present?(session)
   after
-    Application.delete_env(:dev_ide, :tmux_scrollback_archive_dir)
+    Application.delete_env(:casein, :tmux_scrollback_archive_dir)
   end
 
   test "subscriber_count/1 and Terminals.owner_subscriber_count/1 return correct live count" do
@@ -1059,17 +1059,17 @@ defmodule Casein.Terminals.SessionOwnerTest do
     our_socket = Path.join(tmp, "ours.sock")
     File.ln_s!(live_socket, current)
 
-    prev_current = Application.get_env(:dev_ide, :deployment_current_socket)
+    prev_current = Application.get_env(:casein, :deployment_current_socket)
     prev_env = System.get_env("DEVIDE_HTTP_SOCKET")
-    Application.put_env(:dev_ide, :deployment_current_socket, current)
+    Application.put_env(:casein, :deployment_current_socket, current)
     System.put_env("DEVIDE_HTTP_SOCKET", our_socket)
 
     on_exit(fn ->
       File.rm_rf!(tmp)
 
       case prev_current do
-        nil -> Application.delete_env(:dev_ide, :deployment_current_socket)
-        _ -> Application.put_env(:dev_ide, :deployment_current_socket, prev_current)
+        nil -> Application.delete_env(:casein, :deployment_current_socket)
+        _ -> Application.put_env(:casein, :deployment_current_socket, prev_current)
       end
 
       case prev_env do
@@ -1118,7 +1118,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: "ws-size-flap"} end)
 
     :telemetry_test.attach_event_handlers(self(), [
-      [:dev_ide, :terminals, :owner, :size_flap]
+      [:casein, :terminals, :owner, :size_flap]
     ])
 
     # Bootstrap default as the FIRST report is normal (fresh mount) — no flap.
@@ -1127,13 +1127,13 @@ defmodule Casein.Terminals.SessionOwnerTest do
     GenServer.cast(owner_pid, {:resize, self(), 228, 117})
     GenServer.cast(owner_pid, {:resize, self(), 100, 30})
     _ = :sys.get_state(owner_pid)
-    refute_received {[:dev_ide, :terminals, :owner, :size_flap], _, _, _}
+    refute_received {[:casein, :terminals, :owner, :size_flap], _, _, _}
 
     # Fitted size immediately clobbered by the bootstrap default — the bug.
     GenServer.cast(owner_pid, {:resize, self(), 228, 117})
     GenServer.cast(owner_pid, {:resize, self(), 80, 24})
 
-    assert_receive {[:dev_ide, :terminals, :owner, :size_flap], _ref, %{elapsed_ms: _},
+    assert_receive {[:casein, :terminals, :owner, :size_flap], _ref, %{elapsed_ms: _},
                     %{from: {228, 117}, to: {80, 24}}}
 
     GenServer.stop(owner_pid, :normal)
@@ -1158,7 +1158,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
 
     :telemetry_test.attach_event_handlers(self(), [
-      [:dev_ide, :terminals, :owner, :drift_fight]
+      [:casein, :terminals, :owner, :drift_fight]
     ])
 
     # A sustained fight also raises a drawer alert through the audit spine.
@@ -1173,7 +1173,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
     # the size again, or the task's own write would race ours.
     for n <- 1..4 do
       if n == 4 do
-        refute_received {[:dev_ide, :terminals, :owner, :drift_fight], _, _, _}
+        refute_received {[:casein, :terminals, :owner, :drift_fight], _, _, _}
       end
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_window_sizes, %{session => {80, 24}})
@@ -1183,7 +1183,7 @@ defmodule Casein.Terminals.SessionOwnerTest do
       await_resize_settled(owner_pid)
     end
 
-    assert_receive {[:dev_ide, :terminals, :owner, :drift_fight], _ref, %{streak: 4},
+    assert_receive {[:casein, :terminals, :owner, :drift_fight], _ref, %{streak: 4},
                     %{applied: {120, 40}, actual: {80, 24}}}
 
     # ...and exactly one alert-worthy audit event, scoped to the workspace so
@@ -1209,14 +1209,14 @@ defmodule Casein.Terminals.SessionOwnerTest do
   defp with_tmux_window_size_hang_test(fun) do
     swap_in_fake_tmux_adapter()
 
-    prev_timeout = Application.get_env(:dev_ide, :tmux_window_size_timeout_ms)
-    Application.put_env(:dev_ide, :tmux_window_size_timeout_ms, 50)
+    prev_timeout = Application.get_env(:casein, :tmux_window_size_timeout_ms)
+    Application.put_env(:casein, :tmux_window_size_timeout_ms, 50)
 
     on_exit(fn ->
       if prev_timeout do
-        Application.put_env(:dev_ide, :tmux_window_size_timeout_ms, prev_timeout)
+        Application.put_env(:casein, :tmux_window_size_timeout_ms, prev_timeout)
       else
-        Application.delete_env(:dev_ide, :tmux_window_size_timeout_ms)
+        Application.delete_env(:casein, :tmux_window_size_timeout_ms)
       end
 
       TmuxCtl.Test.FakeState.delete(:fake_tmux_window_size_hang)
@@ -1780,9 +1780,9 @@ defmodule Casein.Terminals.SessionOwnerTest do
         ) <>
           Casein.Terminals.Theme.client_theme_report(:dark)
 
-      Application.put_env(:dev_ide, :test_shell_attachment_pid, fake_session)
+      Application.put_env(:casein, :test_shell_attachment_pid, fake_session)
 
-      on_exit(fn -> Application.delete_env(:dev_ide, :test_shell_attachment_pid) end)
+      on_exit(fn -> Application.delete_env(:casein, :test_shell_attachment_pid) end)
 
       :sys.replace_state(owner_pid, fn state -> %{state | attachment: nil} end)
 
@@ -1854,17 +1854,17 @@ defmodule Casein.Terminals.SessionOwnerTest do
   # apply-defaults / refresh-client) to the fake adapter and deliver its
   # breadcrumb messages to this test process. Restored on exit.
   defp swap_in_fake_tmux_adapter do
-    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       if prev_adapter do
-        Application.put_env(:dev_ide, :tmux_adapter, prev_adapter)
+        Application.put_env(:casein, :tmux_adapter, prev_adapter)
       else
-        Application.delete_env(:dev_ide, :tmux_adapter)
+        Application.delete_env(:casein, :tmux_adapter)
       end
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, prev_pid)
@@ -1881,9 +1881,9 @@ defmodule Casein.Terminals.SessionOwnerTest do
     # and "nothing applied yet" is proven with refute_received after syncing both
     # GenServers (no wall-clock windows, no Process.sleep).
     setup do
-      prev = Application.get_env(:dev_ide, :terminal_owner_size_debounce)
+      prev = Application.get_env(:casein, :terminal_owner_size_debounce)
 
-      Application.put_env(:dev_ide, :terminal_owner_size_debounce,
+      Application.put_env(:casein, :terminal_owner_size_debounce,
         leading_ms: 3_600_000,
         quiet_ms: 3_600_000,
         max_defer_ms: 3_600_000
@@ -1891,8 +1891,8 @@ defmodule Casein.Terminals.SessionOwnerTest do
 
       on_exit(fn ->
         if prev,
-          do: Application.put_env(:dev_ide, :terminal_owner_size_debounce, prev),
-          else: Application.delete_env(:dev_ide, :terminal_owner_size_debounce)
+          do: Application.put_env(:casein, :terminal_owner_size_debounce, prev),
+          else: Application.delete_env(:casein, :terminal_owner_size_debounce)
       end)
 
       :ok

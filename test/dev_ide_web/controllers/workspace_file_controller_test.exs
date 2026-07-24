@@ -5,7 +5,7 @@ defmodule CaseinWeb.WorkspaceFileControllerTest do
     alias Casein.Workspace
 
     def get(id, _auth) do
-      root = Application.fetch_env!(:dev_ide, :workspace_file_controller_root)
+      root = Application.fetch_env!(:casein, :workspace_file_controller_root)
 
       {:ok,
        %Workspace{
@@ -26,13 +26,13 @@ defmodule CaseinWeb.WorkspaceFileControllerTest do
     File.rm_rf!(root)
     File.mkdir_p!(root)
 
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_root = Application.get_env(:dev_ide, :workspace_file_controller_root)
-    prev_fa = Application.get_env(:dev_ide, :forward_auth)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_root = Application.get_env(:casein, :workspace_file_controller_root)
+    prev_fa = Application.get_env(:casein, :forward_auth)
 
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
-    Application.put_env(:dev_ide, :workspace_file_controller_root, root)
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
+    Application.put_env(:casein, :workspace_file_controller_root, root)
+    Application.put_env(:casein, :forward_auth, true)
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -108,8 +108,8 @@ defmodule CaseinWeb.WorkspaceFileControllerTest do
     assert text_response(conn, 404) =~ "not found"
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp as(conn, email), do: put_req_header(conn, "x-auth-request-email", email)
 end

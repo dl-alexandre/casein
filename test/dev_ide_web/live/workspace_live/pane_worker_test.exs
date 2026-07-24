@@ -55,7 +55,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :terminal, :pane_worker, :frame],
+      [:casein, :terminal, :pane_worker, :frame],
       fn event, measurements, metadata, _cfg ->
         send(test_pid, {:pane_worker_frame, event, measurements, metadata})
       end,
@@ -67,13 +67,13 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
     send(worker, {:terminal_payload, :data, %{data: "a", gen: 1}})
     assert_receive {:pane_frame, "pane-gen-1", %{frame_seq: 0, frame_epoch: 1}}, 1_000
 
-    assert_receive {:pane_worker_frame, [:dev_ide, :terminal, :pane_worker, :frame],
+    assert_receive {:pane_worker_frame, [:casein, :terminal, :pane_worker, :frame],
                     %{changed_rows: 5}, %{status: :sent, frame_seq: 0, frame_epoch: 1}},
                    1_000
 
     send(worker, {:terminal_payload, :data, %{data: "", gen: 2}})
 
-    assert_receive {:pane_worker_frame, [:dev_ide, :terminal, :pane_worker, :frame],
+    assert_receive {:pane_worker_frame, [:casein, :terminal, :pane_worker, :frame],
                     %{changed_rows: 0}, %{status: :skipped, frame_seq: 1, frame_epoch: 1}},
                    1_000
 
@@ -92,7 +92,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+      [:casein, :terminal, :pane_worker, :flush_schedule],
       fn event, measurements, metadata, _cfg ->
         send(test_pid, {:flush_schedule, event, measurements, metadata})
       end,
@@ -103,7 +103,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
 
     send(worker, {:terminal_payload, :data, %{data: "x", gen: 1}})
 
-    assert_receive {:flush_schedule, [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+    assert_receive {:flush_schedule, [:casein, :terminal, :pane_worker, :flush_schedule],
                     %{interval_ms: 8, pending_bytes: 1},
                     %{pane_id: "pane-gen-1", burst?: false, burst_frames: 0}},
                    1_000
@@ -113,7 +113,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
     large = String.duplicate("y", 4 * 1024)
     send(worker, {:terminal_payload, :data, %{data: large, gen: 2}})
 
-    assert_receive {:flush_schedule, [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+    assert_receive {:flush_schedule, [:casein, :terminal, :pane_worker, :flush_schedule],
                     %{interval_ms: 24, pending_bytes: 4096},
                     %{pane_id: "pane-gen-1", burst?: true}},
                    1_000
@@ -201,7 +201,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorkerTest do
 
       :telemetry.attach(
         handler_id,
-        [:dev_ide, :terminal, :link_scan],
+        [:casein, :terminal, :link_scan],
         fn _event, measurements, metadata, _cfg ->
           send(test_pid, {:link_scan, measurements, metadata})
         end,

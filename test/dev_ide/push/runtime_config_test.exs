@@ -66,6 +66,6 @@ defmodule Casein.Push.RuntimeConfigTest do
   defp devide_runtime_config do
     "config/runtime.exs"
     |> Config.Reader.read!(env: :dev)
-    |> Keyword.fetch!(:dev_ide)
+    |> Keyword.fetch!(:casein)
   end
 end

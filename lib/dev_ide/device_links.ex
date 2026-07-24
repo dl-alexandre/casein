@@ -136,7 +136,7 @@ defmodule Casein.DeviceLinks do
 
   @doc false
   def ttl_seconds do
-    Application.get_env(:dev_ide, :device_link_ttl_seconds, 60 * 60 * 24 * 90)
+    Application.get_env(:casein, :device_link_ttl_seconds, 60 * 60 * 24 * 90)
   end
 
   @doc """

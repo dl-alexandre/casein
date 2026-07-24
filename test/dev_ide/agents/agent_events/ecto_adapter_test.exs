@@ -5,9 +5,9 @@ defmodule Casein.Agents.AgentEvents.EctoAdapterTest do
   alias Casein.Agents.AgentEvents.EctoAdapter
 
   setup do
-    previous = Application.get_env(:dev_ide, :agent_events_adapter)
-    Application.put_env(:dev_ide, :agent_events_adapter, EctoAdapter)
-    on_exit(fn -> Application.put_env(:dev_ide, :agent_events_adapter, previous) end)
+    previous = Application.get_env(:casein, :agent_events_adapter)
+    Application.put_env(:casein, :agent_events_adapter, EctoAdapter)
+    on_exit(fn -> Application.put_env(:casein, :agent_events_adapter, previous) end)
     :ok
   end
 

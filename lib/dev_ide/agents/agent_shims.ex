@@ -24,7 +24,7 @@ defmodule Casein.Agents.AgentShims do
   @doc "Directory that holds Casein agent launcher shims."
   @spec bin_dir() :: String.t()
   def bin_dir do
-    :dev_ide
+    :casein
     |> Application.get_env(:agent_bin_dir)
     |> non_empty_or(System.get_env("DEV_IDE_AGENT_BIN_DIR"))
     |> non_empty_or(@default_bin_dir)
@@ -34,7 +34,7 @@ defmodule Casein.Agents.AgentShims do
   @doc "npm global prefix used for real agent package binaries."
   @spec npm_prefix() :: String.t()
   def npm_prefix do
-    :dev_ide
+    :casein
     |> Application.get_env(:agent_npm_prefix)
     |> non_empty_or(System.get_env("DEV_IDE_NPM_PREFIX"))
     |> non_empty_or(@default_npm_prefix)
@@ -157,7 +157,7 @@ defmodule Casein.Agents.AgentShims do
 
   defp install_script_candidates do
     [
-      Application.get_env(:dev_ide, :install_agent_shims_path),
+      Application.get_env(:casein, :install_agent_shims_path),
       join_scripts_env("DEVIDE_SCRIPTS"),
       join_agent_scripts_path(),
       Path.expand("scripts/install-agent-shims.sh"),
@@ -178,7 +178,7 @@ defmodule Casein.Agents.AgentShims do
   end
 
   defp join_agent_scripts_path do
-    case Application.get_env(:dev_ide, :agent_scripts_path) do
+    case Application.get_env(:casein, :agent_scripts_path) do
       path when is_binary(path) and path != "" ->
         Path.join(path, "install-agent-shims.sh")
 

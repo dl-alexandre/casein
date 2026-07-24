@@ -70,7 +70,7 @@ defmodule Casein.Deployment.PollerWatcher do
   end
 
   defp config(key, default) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(key, default)
   end

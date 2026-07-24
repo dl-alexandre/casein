@@ -7,12 +7,12 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
   alias CaseinWeb.Plugs.{AssignCurrentUser, ForwardAuth}
 
   setup do
-    prev = Application.get_env(:dev_ide, :forward_auth)
+    prev = Application.get_env(:casein, :forward_auth)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :forward_auth)
-        val -> Application.put_env(:dev_ide, :forward_auth, val)
+        nil -> Application.delete_env(:casein, :forward_auth)
+        val -> Application.put_env(:casein, :forward_auth, val)
       end
     end)
 
@@ -43,8 +43,8 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
     end
 
     test "user_from_email/1 never elevates via the legacy admins list" do
-      Application.put_env(:dev_ide, :admins, ["boss@example.com"])
-      on_exit(fn -> Application.delete_env(:dev_ide, :admins) end)
+      Application.put_env(:casein, :admins, ["boss@example.com"])
+      on_exit(fn -> Application.delete_env(:casein, :admins) end)
 
       assert ForwardAuth.user_from_email("boss@example.com").role == :user
       assert ForwardAuth.user_from_email("dev@example.com").role == :user
@@ -53,13 +53,13 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
 
   describe "admins (legacy list, no privileges)" do
     setup do
-      prev = Application.get_env(:dev_ide, :admins)
+      prev = Application.get_env(:casein, :admins)
       prev_env = System.get_env("DEV_IDE_ADMINS")
 
       on_exit(fn ->
         case prev do
-          nil -> Application.delete_env(:dev_ide, :admins)
-          val -> Application.put_env(:dev_ide, :admins, val)
+          nil -> Application.delete_env(:casein, :admins)
+          val -> Application.put_env(:casein, :admins, val)
         end
 
         case prev_env do
@@ -72,12 +72,12 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
     end
 
     test "admins/0 lowercases the configured list" do
-      Application.put_env(:dev_ide, :admins, ["Foo@Bar.com", "baz@qux.com"])
+      Application.put_env(:casein, :admins, ["Foo@Bar.com", "baz@qux.com"])
       assert ForwardAuth.admins() == ["foo@bar.com", "baz@qux.com"]
     end
 
     test "admins/0 is empty when nothing is configured" do
-      Application.delete_env(:dev_ide, :admins)
+      Application.delete_env(:casein, :admins)
       System.delete_env("DEV_IDE_ADMINS")
       assert ForwardAuth.admins() == []
     end
@@ -92,7 +92,7 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
 
   describe "call/2 with forward-auth enabled" do
     setup do
-      Application.put_env(:dev_ide, :forward_auth, true)
+      Application.put_env(:casein, :forward_auth, true)
       :ok
     end
 
@@ -139,7 +139,7 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
 
   describe "call/2 with forward-auth disabled" do
     test "ignores the header, falls back to the static identity, still writes the session" do
-      Application.put_env(:dev_ide, :forward_auth, false)
+      Application.put_env(:casein, :forward_auth, false)
 
       conn =
         [{"x-auth-request-email", "someone@example.com"}]
@@ -154,18 +154,18 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
 
   describe "assert_safe_listener_bind!/0" do
     setup do
-      prev_forward = Application.get_env(:dev_ide, :forward_auth)
-      prev_endpoint = Application.get_env(:dev_ide, CaseinWeb.Endpoint)
+      prev_forward = Application.get_env(:casein, :forward_auth)
+      prev_endpoint = Application.get_env(:casein, CaseinWeb.Endpoint)
 
       on_exit(fn ->
         case prev_forward do
-          nil -> Application.delete_env(:dev_ide, :forward_auth)
-          val -> Application.put_env(:dev_ide, :forward_auth, val)
+          nil -> Application.delete_env(:casein, :forward_auth)
+          val -> Application.put_env(:casein, :forward_auth, val)
         end
 
         case prev_endpoint do
-          nil -> Application.delete_env(:dev_ide, CaseinWeb.Endpoint)
-          val -> Application.put_env(:dev_ide, CaseinWeb.Endpoint, val)
+          nil -> Application.delete_env(:casein, CaseinWeb.Endpoint)
+          val -> Application.put_env(:casein, CaseinWeb.Endpoint, val)
         end
       end)
 
@@ -173,23 +173,23 @@ defmodule CaseinWeb.Plugs.ForwardAuthTest do
     end
 
     test "passes when forward-auth is disabled" do
-      Application.put_env(:dev_ide, :forward_auth, false)
-      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0}])
+      Application.put_env(:casein, :forward_auth, false)
+      Application.put_env(:casein, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0}])
 
       assert :ok = ForwardAuth.assert_safe_listener_bind!()
     end
 
     test "passes when forward-auth is enabled on loopback" do
-      Application.put_env(:dev_ide, :forward_auth, true)
-      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {127, 0, 0, 1}])
+      Application.put_env(:casein, :forward_auth, true)
+      Application.put_env(:casein, CaseinWeb.Endpoint, http: [ip: {127, 0, 0, 1}])
 
       assert :ok = ForwardAuth.assert_safe_listener_bind!()
       assert ForwardAuth.listener_bind_safe?()
     end
 
     test "raises when forward-auth is enabled outside loopback (fail closed in all envs)" do
-      Application.put_env(:dev_ide, :forward_auth, true)
-      Application.put_env(:dev_ide, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}])
+      Application.put_env(:casein, :forward_auth, true)
+      Application.put_env(:casein, CaseinWeb.Endpoint, http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}])
 
       assert_raise RuntimeError, ~r/Forward-auth is enabled/, fn ->
         ForwardAuth.assert_safe_listener_bind!()

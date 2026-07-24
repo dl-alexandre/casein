@@ -387,6 +387,6 @@ defmodule Casein.Agents.AgentEvents do
   end
 
   defp impl do
-    Application.get_env(:dev_ide, :agent_events_adapter, Casein.Agents.AgentEvents.EctoAdapter)
+    Application.get_env(:casein, :agent_events_adapter, Casein.Agents.AgentEvents.EctoAdapter)
   end
 end

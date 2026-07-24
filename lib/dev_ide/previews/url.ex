@@ -102,7 +102,7 @@ defmodule Casein.Previews.Url do
 
   defp host_app_origins do
     if HostMode.on_host?() do
-      case Application.get_env(:dev_ide, :preview_app_url) do
+      case Application.get_env(:casein, :preview_app_url) do
         url when is_binary(url) and url != "" ->
           case Origin.origin_of(url) do
             origin when is_binary(origin) -> [origin]

@@ -65,9 +65,9 @@ defmodule Casein.Terminals.SessionTemplate do
   def export_topology(topology, opts \\ []),
     do: exporter().from_topology(topology, opts)
 
-  defp loader, do: Application.get_env(:dev_ide, :session_template_loader, @loader)
-  defp executor, do: Application.get_env(:dev_ide, :session_template_executor, @executor)
-  defp exporter, do: Application.get_env(:dev_ide, :session_template_exporter, @exporter)
+  defp loader, do: Application.get_env(:casein, :session_template_loader, @loader)
+  defp executor, do: Application.get_env(:casein, :session_template_executor, @executor)
+  defp exporter, do: Application.get_env(:casein, :session_template_exporter, @exporter)
 
   defp normalize_windows([]), do: {:error, :windows_required}
 

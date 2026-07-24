@@ -10,20 +10,20 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
   alias Casein.Agents.{TerminalCommandPolicy, TerminalTools}
 
   setup do
-    prev = Application.get_env(:dev_ide, :terminal_command_policy)
+    prev = Application.get_env(:casein, :terminal_command_policy)
     prev_env = System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, :terminal_command_policy, prev),
-        else: Application.delete_env(:dev_ide, :terminal_command_policy)
+        do: Application.put_env(:casein, :terminal_command_policy, prev),
+        else: Application.delete_env(:casein, :terminal_command_policy)
 
       if prev_env,
         do: System.put_env("DEV_IDE_TERMINAL_COMMAND_POLICY", prev_env),
         else: System.delete_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
     end)
 
-    Application.delete_env(:dev_ide, :terminal_command_policy)
+    Application.delete_env(:casein, :terminal_command_policy)
     System.delete_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
     :ok
   end
@@ -45,7 +45,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
 
   describe "authorize/2 with an allowlist" do
     setup do
-      Application.put_env(:dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]})
+      Application.put_env(:casein, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]})
       :ok
     end
 
@@ -80,7 +80,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
 
   describe "authorize/2 with a denylist" do
     setup do
-      Application.put_env(:dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]})
+      Application.put_env(:casein, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]})
       :ok
     end
 
@@ -119,7 +119,7 @@ defmodule Casein.Agents.TerminalCommandPolicyTest do
 
   describe "TerminalTools.invoke/2 enforcement" do
     test "a denied command short-circuits before reaching tmux" do
-      Application.put_env(:dev_ide, :terminal_command_policy, {:denylist, ["rm -rf"]})
+      Application.put_env(:casein, :terminal_command_policy, {:denylist, ["rm -rf"]})
 
       assert {:error, %{error: :command_blocked, reason: :denylisted}} =
                TerminalTools.invoke("terminal_send_command", %{

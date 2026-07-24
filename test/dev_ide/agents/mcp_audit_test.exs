@@ -15,8 +15,8 @@ defmodule Casein.Agents.MCPAuditTest do
   alias Casein.PreviousSessions
 
   setup do
-    prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
-    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    prev_adapter = Application.get_env(:casein, :audit_adapter)
+    Application.put_env(:casein, :audit_adapter, MemoryAdapter)
     Activity.clear()
     MemoryAdapter.clear()
 
@@ -25,8 +25,8 @@ defmodule Casein.Agents.MCPAuditTest do
       MemoryAdapter.clear()
 
       if prev_adapter,
-        do: Application.put_env(:dev_ide, :audit_adapter, prev_adapter),
-        else: Application.delete_env(:dev_ide, :audit_adapter)
+        do: Application.put_env(:casein, :audit_adapter, prev_adapter),
+        else: Application.delete_env(:casein, :audit_adapter)
     end)
 
     :ok

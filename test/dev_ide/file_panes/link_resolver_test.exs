@@ -20,7 +20,7 @@ defmodule Casein.FilePanes.LinkResolverTest do
     on_exit(fn ->
       LinkResolver.clear_cache()
       File.rm_rf(root)
-      Application.delete_env(:dev_ide, :file_link_cache_ttl_ms)
+      Application.delete_env(:casein, :file_link_cache_ttl_ms)
     end)
 
     {:ok, root: root}
@@ -73,7 +73,7 @@ defmodule Casein.FilePanes.LinkResolverTest do
     end
 
     test "entries expire after the TTL", %{root: root} do
-      Application.put_env(:dev_ide, :file_link_cache_ttl_ms, 30)
+      Application.put_env(:casein, :file_link_cache_ttl_ms, 30)
 
       assert {:error, :not_found} = LinkResolver.resolve(root, "lib/new.ex")
       File.write!(Path.join(root, "lib/new.ex"), "x")

@@ -13,7 +13,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
     Runtimes.clear()
     Casein.Audit.MemoryAdapter.clear()
 
-    prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
+    prev_agent_roots = Application.get_env(:casein, :agent_worktree_roots)
 
     on_exit(fn ->
       Runtimes.clear()
@@ -32,7 +32,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
     File.write!(Path.join(worktree, "stale.txt"), "wip\n")
     set_old_mtime!(worktree, hours_ago: 30)
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-alarm", root)
 
     result = WorktreeAlarm.sweep_now(emit: false, ttl_seconds: 86_400)
@@ -50,7 +50,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
     git!(root, ["worktree", "add", "-b", "agent/grok/handoff", worktree, "main"])
     set_old_mtime!(worktree, hours_ago: 30)
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-handoff", root)
 
     old = DateTime.add(DateTime.utc_now(), -30 * 3600, :second)
@@ -80,7 +80,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
 
     set_old_mtime!(worktree, hours_ago: 30)
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-wip", root)
 
     result = WorktreeAlarm.sweep_now(emit: false, ttl_seconds: 86_400)
@@ -94,7 +94,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
     git!(root, ["worktree", "add", "-b", "agent/grok/fresh", worktree, "main"])
     File.write!(Path.join(worktree, "fresh.txt"), "now\n")
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-fresh-#{System.unique_integer([:positive])}", root)
 
     result = WorktreeAlarm.sweep_now(emit: false, ttl_seconds: 86_400)
@@ -110,7 +110,7 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
     File.write!(Path.join(worktree, "audit.txt"), "dirty\n")
     set_old_mtime!(worktree, hours_ago: 30)
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace(ws, root)
 
     prev_level = Logger.level()
@@ -159,8 +159,8 @@ defmodule Casein.Runtimes.WorktreeAlarmTest do
       System.cmd("touch", ["-d", "#{hours} hours ago", path], stderr_to_stdout: true)
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp tmp_repo!(name) do
     path = tmp_dir!(name)

@@ -336,7 +336,7 @@ defmodule Casein.Runtimes.WorktreeAlarm do
 
   defp worktree_roots do
     configured =
-      Application.get_env(:dev_ide, :agent_worktree_roots, []) ++ env_agent_worktree_roots()
+      Application.get_env(:casein, :agent_worktree_roots, []) ++ env_agent_worktree_roots()
 
     if configured != [] do
       configured
@@ -377,10 +377,10 @@ defmodule Casein.Runtimes.WorktreeAlarm do
   defp clean_path(_), do: nil
 
   defp ttl_seconds do
-    Application.get_env(:dev_ide, :worktree_alarm_ttl_seconds, @default_ttl_seconds)
+    Application.get_env(:casein, :worktree_alarm_ttl_seconds, @default_ttl_seconds)
   end
 
   defp process_grace_seconds do
-    Application.get_env(:dev_ide, :worktree_alarm_process_grace_seconds, 300)
+    Application.get_env(:casein, :worktree_alarm_process_grace_seconds, 300)
   end
 end

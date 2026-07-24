@@ -19,7 +19,7 @@ defmodule CaseinWeb.Plugs.AssignCurrentUser do
 
   def call(conn, _opts), do: assign(conn, :current_user, current_user())
 
-  def current_user, do: Application.get_env(:dev_ide, :current_user, @default)
+  def current_user, do: Application.get_env(:casein, :current_user, @default)
 
   @doc """
   Look up the current user from a LiveView session map.

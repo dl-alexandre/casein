@@ -28,28 +28,28 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   }
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
-    prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_api_token = Application.get_env(:casein, :casein_api_token)
+    prev_preflight = Application.get_env(:casein, :preview_open_preflight)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
 
     prev_visibility_initial =
-      Application.get_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_initial_timeout_ms)
 
     prev_visibility_iframe =
-      Application.get_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_iframe_reload_timeout_ms)
 
     prev_visibility_page =
-      Application.get_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_page_reload_timeout_ms)
 
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
-    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 0)
-    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
-    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :casein_api_token, "preview-tools-test-token")
+    Application.put_env(:casein, :preview_pane_persistence_enabled, false)
+    Application.put_env(:casein, :preview_operator_visibility_initial_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_page_reload_timeout_ms, 0)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     Runtimes.clear()
@@ -70,11 +70,11 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
-        do: Application.delete_env(:dev_ide, :workspaces_root),
-        else: Application.put_env(:dev_ide, :workspaces_root, prev_root)
+        do: Application.delete_env(:casein, :workspaces_root),
+        else: Application.put_env(:casein, :workspaces_root, prev_root)
 
       restore_env(:tmux_adapter, prev_tmux)
-      restore_env(:dev_ide_api_token, prev_api_token)
+      restore_env(:casein_api_token, prev_api_token)
       restore_env(:preview_open_preflight, prev_preflight)
       restore_env(:preview_pane_persistence_enabled, prev_persistence)
       restore_env(:preview_operator_visibility_initial_timeout_ms, prev_visibility_initial)
@@ -504,10 +504,10 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
   def fake_surface_probe_all_dead(ports), do: Map.new(ports, &{&1, false})
 
   defp enable_surface_probe(prober) do
-    prev_probe = Application.get_env(:dev_ide, :preview_surface_probe)
-    prev_prober = Application.get_env(:dev_ide, :preview_surface_prober)
-    Application.put_env(:dev_ide, :preview_surface_probe, true)
-    Application.put_env(:dev_ide, :preview_surface_prober, prober)
+    prev_probe = Application.get_env(:casein, :preview_surface_probe)
+    prev_prober = Application.get_env(:casein, :preview_surface_prober)
+    Application.put_env(:casein, :preview_surface_probe, true)
+    Application.put_env(:casein, :preview_surface_prober, prober)
 
     on_exit(fn ->
       restore_env(:preview_surface_probe, prev_probe)
@@ -585,8 +585,8 @@ defmodule Casein.Agents.PreviewToolsExtraTest do
 
   defp restore_env(key, value) do
     if is_nil(value),
-      do: Application.delete_env(:dev_ide, key),
-      else: Application.put_env(:dev_ide, key, value)
+      do: Application.delete_env(:casein, key),
+      else: Application.put_env(:casein, key, value)
   end
 
   defp restore_fake_state(key, nil), do: FakeState.delete(key)

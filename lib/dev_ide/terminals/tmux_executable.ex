@@ -29,7 +29,7 @@ defmodule Casein.Terminals.TmuxExecutable do
   end
 
   defp configured do
-    [System.get_env(@env_key), Application.get_env(:dev_ide, :tmux_executable)]
+    [System.get_env(@env_key), Application.get_env(:casein, :tmux_executable)]
     |> Enum.find(&executable_file?/1)
   end
 
@@ -37,7 +37,7 @@ defmodule Casein.Terminals.TmuxExecutable do
   defp bundled_path(_priv_dir), do: nil
 
   defp app_priv_dir do
-    case :code.priv_dir(:dev_ide) do
+    case :code.priv_dir(:casein) do
       path when is_list(path) -> to_string(path)
       _ -> nil
     end

@@ -274,8 +274,8 @@ defmodule Casein.Agents.MCPSessions do
     end
   end
 
-  defp ttl_ms, do: Application.get_env(:dev_ide, :mcp_session_ttl_ms, @default_ttl_ms)
+  defp ttl_ms, do: Application.get_env(:casein, :mcp_session_ttl_ms, @default_ttl_ms)
 
   defp sweep_interval_ms,
-    do: Application.get_env(:dev_ide, :mcp_session_sweep_interval_ms, @default_sweep_interval_ms)
+    do: Application.get_env(:casein, :mcp_session_sweep_interval_ms, @default_sweep_interval_ms)
 end

@@ -46,8 +46,8 @@ defmodule Casein.Signals.PublishDomainTest do
   end
 
   test "mark_preview_server failed also publishes a runtime domain signal" do
-    prev = Application.get_env(:dev_ide, :runtimes_adapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    prev = Application.get_env(:casein, :runtimes_adapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     on_exit(fn -> restore_adapter(prev) end)
     Runtimes.clear()
 
@@ -84,6 +84,6 @@ defmodule Casein.Signals.PublishDomainTest do
     assert data.workspace_id == "ws-preview-fail"
   end
 
-  defp restore_adapter(nil), do: Application.delete_env(:dev_ide, :runtimes_adapter)
-  defp restore_adapter(value), do: Application.put_env(:dev_ide, :runtimes_adapter, value)
+  defp restore_adapter(nil), do: Application.delete_env(:casein, :runtimes_adapter)
+  defp restore_adapter(value), do: Application.put_env(:casein, :runtimes_adapter, value)
 end

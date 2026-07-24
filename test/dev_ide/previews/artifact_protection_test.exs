@@ -5,15 +5,15 @@ defmodule Casein.Previews.ArtifactProtectionTest do
   alias Casein.Previews.Artifacts
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
-    prev_max = Application.get_env(:dev_ide, :preview_max_artifacts)
+    prev_root = Application.get_env(:casein, :preview_artifacts_root)
+    prev_max = Application.get_env(:casein, :preview_max_artifacts)
 
     root =
       Path.join(System.tmp_dir!(), "artifact-protection-#{System.unique_integer([:positive])}")
 
     File.rm_rf!(root)
     File.mkdir_p!(root)
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
+    Application.put_env(:casein, :preview_artifacts_root, root)
     _ = ArtifactProtection.clear()
 
     on_exit(fn ->
@@ -21,13 +21,13 @@ defmodule Casein.Previews.ArtifactProtectionTest do
       File.rm_rf!(root)
 
       case prev_root do
-        nil -> Application.delete_env(:dev_ide, :preview_artifacts_root)
-        val -> Application.put_env(:dev_ide, :preview_artifacts_root, val)
+        nil -> Application.delete_env(:casein, :preview_artifacts_root)
+        val -> Application.put_env(:casein, :preview_artifacts_root, val)
       end
 
       case prev_max do
-        nil -> Application.delete_env(:dev_ide, :preview_max_artifacts)
-        val -> Application.put_env(:dev_ide, :preview_max_artifacts, val)
+        nil -> Application.delete_env(:casein, :preview_max_artifacts)
+        val -> Application.put_env(:casein, :preview_max_artifacts, val)
       end
     end)
 
@@ -52,7 +52,7 @@ defmodule Casein.Previews.ArtifactProtectionTest do
   end
 
   test "protect/2 gates prune so displayed screenshots are not evicted", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+    Application.put_env(:casein, :preview_max_artifacts, 1)
 
     Artifacts.store_png!("ws-protect", 1, "old")
     assert :ok = ArtifactProtection.protect("ws-protect", "1.png")

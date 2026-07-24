@@ -11,13 +11,13 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   setup do
     previous = %{
-      tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
+      tmux_adapter: Application.get_env(:casein, :tmux_adapter),
       fake_tmux_windows: TmuxCtl.Test.FakeState.get(:fake_tmux_windows),
       fake_tmux_panes: TmuxCtl.Test.FakeState.get(:fake_tmux_panes),
       fake_tmux_scrollback: TmuxCtl.Test.FakeState.get(:fake_tmux_scrollback),
       fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid),
-      api_token: Application.get_env(:dev_ide, :api_token),
-      agent_mcp_base_url: Application.get_env(:dev_ide, :agent_mcp_base_url),
+      api_token: Application.get_env(:casein, :api_token),
+      agent_mcp_base_url: Application.get_env(:casein, :agent_mcp_base_url),
       env_api_token: System.get_env("DEV_IDE_API_TOKEN"),
       env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME"),
       env_home: System.get_env("HOME")
@@ -34,8 +34,8 @@ defmodule Casein.Agents.TerminalToolsTest do
       TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
 
       if previous.tmux_adapter,
-        do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),
-        else: Application.delete_env(:dev_ide, :tmux_adapter)
+        do: Application.put_env(:casein, :tmux_adapter, previous.tmux_adapter),
+        else: Application.delete_env(:casein, :tmux_adapter)
 
       restore_app_env(:api_token, previous.api_token)
       restore_app_env(:agent_mcp_base_url, previous.agent_mcp_base_url)
@@ -85,7 +85,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   end
 
   test "unscoped list_sessions filters out synthetic scratch sessions" do
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     real_session = Tmux.session_name("alpha", "u-dev")
     scratch_session = Tmux.session_name("__scratch__", "u-dev")
@@ -132,9 +132,9 @@ defmodule Casein.Agents.TerminalToolsTest do
       restore_system_env("HOME", previous_home)
     end)
 
-    Application.put_env(:dev_ide, :api_token, "terminal-tools-token")
-    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :api_token, "terminal-tools-token")
+    Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:4000")
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -167,7 +167,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "agent pane shortcuts target only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -244,7 +244,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "terminal_context returns safe agent-pane next step" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -278,7 +278,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     stale = prefix <> "_stale"
     live = prefix <> "_live"
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -306,7 +306,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     older = prefix <> "_older"
     newer = prefix <> "_newer"
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -325,7 +325,7 @@ defmodule Casein.Agents.TerminalToolsTest do
 
   describe "caller-pane anchoring" do
     setup do
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
       :ok
     end
@@ -524,7 +524,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "terminal_paste_agent_text targets only the marked agent pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -562,7 +562,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "capture strips ANSI escapes by default" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -581,7 +581,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "read-only agent pane discovery prefers marker over earlier agent process pane" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -623,7 +623,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   test "send_agent_command requires the agent_pair marker" do
     session = Tmux.session_name("alpha", "main")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -655,7 +655,7 @@ defmodule Casein.Agents.TerminalToolsTest do
     session_a = prefix <> "_a"
     session_b = prefix <> "_b"
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -986,7 +986,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   defp write_claude_fixture!(assistant_suffix \\ "hello") do
     root = tmp_dir!("transcript-fixture")
     auth_root = Path.join([root, "agent-auth"])
-    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+    Application.put_env(:casein, :agent_auth_profile_root, auth_root)
 
     path =
       Path.join([
@@ -1025,7 +1025,7 @@ defmodule Casein.Agents.TerminalToolsTest do
   defp agent_pair_session! do
     session = Tmux.session_name("alpha", "wait")
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -1060,8 +1060,8 @@ defmodule Casein.Agents.TerminalToolsTest do
     session
   end
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)

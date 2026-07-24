@@ -43,7 +43,7 @@ defmodule Casein.Terminals.GhosttyRawAdapter do
     result = Session.ensure_started(workspace, sid, loc)
 
     if match?({:ok, _}, result) do
-      :telemetry.execute([:dev_ide, :terminals, :raw_bridge, :attach], %{count: 1}, %{
+      :telemetry.execute([:casein, :terminals, :raw_bridge, :attach], %{count: 1}, %{
         workspace: workspace,
         sid: sid,
         reuse: reuse?,

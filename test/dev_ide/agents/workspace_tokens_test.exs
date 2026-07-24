@@ -4,9 +4,9 @@ defmodule Casein.Agents.WorkspaceTokensTest do
   alias Casein.Agents.WorkspaceTokens
 
   setup do
-    prev_registry = Application.get_env(:dev_ide, :workspace_api_tokens)
-    prev_store = Application.get_env(:dev_ide, :workspace_tokens_store)
-    prev_api_token = Application.get_env(:dev_ide, :api_token)
+    prev_registry = Application.get_env(:casein, :workspace_api_tokens)
+    prev_store = Application.get_env(:casein, :workspace_tokens_store)
+    prev_api_token = Application.get_env(:casein, :api_token)
     prev_env_registry = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
     System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
@@ -16,8 +16,8 @@ defmodule Casein.Agents.WorkspaceTokensTest do
       System.tmp_dir!()
       |> Path.join("workspace-tokens-#{System.unique_integer([:positive])}.json")
 
-    Application.put_env(:dev_ide, :workspace_tokens_store, store)
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{})
+    Application.put_env(:casein, :workspace_tokens_store, store)
+    Application.put_env(:casein, :workspace_api_tokens, %{})
 
     on_exit(fn ->
       restore_app_env(:workspace_api_tokens, prev_registry)
@@ -32,7 +32,7 @@ defmodule Casein.Agents.WorkspaceTokensTest do
   end
 
   test "token_for finds direct and list-scoped registry entries" do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{
+    Application.put_env(:casein, :workspace_api_tokens, %{
       "tok-direct" => "ws-1",
       "tok-list" => ["ws-2", "ws-3"]
     })
@@ -48,7 +48,7 @@ defmodule Casein.Agents.WorkspaceTokensTest do
   end
 
   test "ensure_for returns the registered token without minting" do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"tok-a" => "ws-a"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"tok-a" => "ws-a"})
     assert {:ok, "tok-a"} = WorkspaceTokens.ensure_for("ws-a")
   end
 
@@ -59,7 +59,7 @@ defmodule Casein.Agents.WorkspaceTokensTest do
     assert token =~ ~r/^[0-9a-f]{64}$/
 
     # registered: both auth plugs read the application env per request
-    assert Application.get_env(:dev_ide, :workspace_api_tokens)[token] == "ws-fresh"
+    assert Application.get_env(:casein, :workspace_api_tokens)[token] == "ws-fresh"
 
     # persisted: survives a restart via the runtime.exs boot merge
     assert Jason.decode!(File.read!(store))[token] == "ws-fresh"
@@ -74,13 +74,13 @@ defmodule Casein.Agents.WorkspaceTokensTest do
   end
 
   test "for_agent resolves the scoped token for a workspace with an id" do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"tok-b" => "ws-b"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"tok-b" => "ws-b"})
     assert {:ok, "tok-b"} = WorkspaceTokens.for_agent(%{id: "ws-b", name: "b"})
     assert {:ok, "tok-b"} = WorkspaceTokens.for_agent(%{"id" => "ws-b"})
   end
 
   test "for_agent falls back to the global token only for id-less workspaces" do
-    Application.put_env(:dev_ide, :api_token, "global-token")
+    Application.put_env(:casein, :api_token, "global-token")
 
     {result, log} =
       ExUnit.CaptureLog.with_log(fn -> WorkspaceTokens.for_agent(%{name: "no-id"}) end)
@@ -89,8 +89,8 @@ defmodule Casein.Agents.WorkspaceTokensTest do
     assert log =~ "global token"
   end
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp restore_sys_env(name, nil), do: System.delete_env(name)
   defp restore_sys_env(name, value), do: System.put_env(name, value)

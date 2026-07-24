@@ -5,8 +5,8 @@ defmodule Casein.Terminals.TmuxTest do
   alias Casein.Terminals.TmuxRunner
 
   setup do
-    workspace_source = Application.get_env(:dev_ide, :workspace_source)
-    tmux_host_shell = Application.get_env(:dev_ide, :tmux_host_shell)
+    workspace_source = Application.get_env(:casein, :workspace_source)
+    tmux_host_shell = Application.get_env(:casein, :tmux_host_shell)
     tmux_config_file = Application.get_env(:tmux_ctl, :config_file)
     env_host_shell = System.get_env("DEV_IDE_TMUX_HOST_SHELL")
     path = System.get_env("PATH")
@@ -58,8 +58,8 @@ defmodule Casein.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
-    Application.put_env(:dev_ide, :tmux_host_shell, true)
+    Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+    Application.put_env(:casein, :tmux_host_shell, true)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
     assert [
@@ -96,8 +96,8 @@ defmodule Casein.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
-    Application.put_env(:dev_ide, :tmux_host_shell, false)
+    Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+    Application.put_env(:casein, :tmux_host_shell, false)
     Application.put_env(:tmux_ctl, :config_file, config_file)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
@@ -134,8 +134,8 @@ defmodule Casein.Terminals.TmuxTest do
 
     File.chmod!(tmux_bin, 0o755)
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
-    Application.put_env(:dev_ide, :tmux_host_shell, true)
+    Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+    Application.put_env(:casein, :tmux_host_shell, true)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
     assert {:ok, %{windows: windows, panes: panes}} = Tmux.directory_inventory()
@@ -206,7 +206,7 @@ defmodule Casein.Terminals.TmuxTest do
     end
 
     test "host_shell? and container_has_tmux? delegate to TmuxRunner" do
-      Application.put_env(:dev_ide, :tmux_host_shell, true)
+      Application.put_env(:casein, :tmux_host_shell, true)
       assert Tmux.host_shell?()
       assert is_boolean(Tmux.container_has_tmux?(System.tmp_dir!()))
     end
@@ -385,8 +385,8 @@ defmodule Casein.Terminals.TmuxTest do
   defp put_or_delete_env(name, nil), do: System.delete_env(name)
   defp put_or_delete_env(name, value), do: System.put_env(name, value)
 
-  defp put_or_delete_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp put_or_delete_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp put_or_delete_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp put_or_delete_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp put_or_delete_tmux_ctl_env(key, nil), do: Application.delete_env(:tmux_ctl, key)
   defp put_or_delete_tmux_ctl_env(key, value), do: Application.put_env(:tmux_ctl, key, value)

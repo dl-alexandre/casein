@@ -10,7 +10,7 @@ defmodule Casein.Agents.ToolActionTest do
       Process.put(:tool_action_events, [{measurements, metadata} | events])
     end
 
-    :ok = :telemetry.attach("tool-action-test", [:dev_ide, :agents, :tool, :stop], handler, nil)
+    :ok = :telemetry.attach("tool-action-test", [:casein, :agents, :tool, :stop], handler, nil)
     on_exit(fn -> :telemetry.detach("tool-action-test") end)
     Process.delete(:tool_action_events)
     :ok

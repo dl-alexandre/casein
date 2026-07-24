@@ -275,7 +275,7 @@ defmodule Casein.Policy do
   defp agent_triggered?(ctx), do: Map.get(ctx, :actor_type) == :agent
 
   defp raw_terminal_everywhere?,
-    do: Application.get_env(:dev_ide, :raw_terminal_everywhere, false) == true
+    do: Application.get_env(:casein, :raw_terminal_everywhere, false) == true
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
 

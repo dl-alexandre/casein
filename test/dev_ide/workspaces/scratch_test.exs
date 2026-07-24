@@ -6,7 +6,7 @@ defmodule Casein.Workspaces.ScratchTest do
   alias Casein.Workspaces.Scratch
 
   setup do
-    prev_home = Application.get_env(:dev_ide, :home_workspace_path)
+    prev_home = Application.get_env(:casein, :home_workspace_path)
 
     on_exit(fn ->
       restore(:home_workspace_path, prev_home)
@@ -31,7 +31,7 @@ defmodule Casein.Workspaces.ScratchTest do
   test "workspace/0 builds a synthetic running workspace rooted at home" do
     home = Path.join(System.tmp_dir!(), "devide-scratch-home-#{System.unique_integer()}")
     File.mkdir_p!(home)
-    Application.put_env(:dev_ide, :home_workspace_path, home)
+    Application.put_env(:casein, :home_workspace_path, home)
 
     on_exit(fn -> File.rm_rf(home) end)
 
@@ -47,7 +47,7 @@ defmodule Casein.Workspaces.ScratchTest do
   end
 
   test "workspace/0 falls back to $HOME when home_workspace_path is unset" do
-    Application.delete_env(:dev_ide, :home_workspace_path)
+    Application.delete_env(:casein, :home_workspace_path)
     expected = System.get_env("HOME") || System.user_home!()
 
     ws = Scratch.workspace()
@@ -57,7 +57,7 @@ defmodule Casein.Workspaces.ScratchTest do
   test "Workspaces.get/2 resolves the scratch sentinel without source lookup" do
     home = Path.join(System.tmp_dir!(), "devide-scratch-get-#{System.unique_integer()}")
     File.mkdir_p!(home)
-    Application.put_env(:dev_ide, :home_workspace_path, home)
+    Application.put_env(:casein, :home_workspace_path, home)
 
     on_exit(fn -> File.rm_rf(home) end)
 
@@ -69,7 +69,7 @@ defmodule Casein.Workspaces.ScratchTest do
   test "safe_host_loc/1 and safe_host_path/1 return the home directory for scratch" do
     home = Path.join(System.tmp_dir!(), "devide-scratch-loc-#{System.unique_integer()}")
     File.mkdir_p!(home)
-    Application.put_env(:dev_ide, :home_workspace_path, home)
+    Application.put_env(:casein, :home_workspace_path, home)
 
     on_exit(fn -> File.rm_rf(home) end)
 
@@ -87,6 +87,6 @@ defmodule Casein.Workspaces.ScratchTest do
     assert Workspaces.viewer_can_access_workspace?(ws, bob)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

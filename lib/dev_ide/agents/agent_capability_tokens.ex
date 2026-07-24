@@ -127,7 +127,7 @@ defmodule Casein.Agents.AgentCapabilityTokens do
   @doc false
   def ttl_seconds do
     case Application.get_env(
-           :dev_ide,
+           :casein,
            :grok_agent_capability_token_ttl_seconds,
            @default_ttl_seconds
          ) do

@@ -19,22 +19,22 @@ defmodule Casein.Agents.ArtifactToolsTest do
   @other_workspace_id "ws-artifact-tools-other"
 
   setup do
-    prev_artifact_root = Application.get_env(:dev_ide, :artifact_projects_root)
-    prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
-    prev_launcher_enabled = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
-    prev_runtimes_adapter = Application.get_env(:dev_ide, :runtimes_adapter)
-    prev_workspace_state_adapter = Application.get_env(:dev_ide, :workspace_state_adapter)
+    prev_artifact_root = Application.get_env(:casein, :artifact_projects_root)
+    prev_agent_roots = Application.get_env(:casein, :agent_worktree_roots)
+    prev_launcher_enabled = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    prev_runtimes_adapter = Application.get_env(:casein, :runtimes_adapter)
+    prev_workspace_state_adapter = Application.get_env(:casein, :workspace_state_adapter)
 
     base = Path.join(System.tmp_dir!(), "artifact-tools-#{System.unique_integer([:positive])}")
     repo = Path.join(base, "repo")
     other_repo = Path.join(base, "other_repo")
     artifact_root = Path.join(base, "artifacts")
 
-    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
-    Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
-    Application.put_env(:dev_ide, :agent_worktree_roots, [])
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:casein, :workspace_state_adapter, MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :artifact_projects_root, artifact_root)
+    Application.put_env(:casein, :agent_worktree_roots, [])
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
 
     MemoryAdapter.clear()
     Runtimes.clear()
@@ -303,6 +303,6 @@ defmodule Casein.Agents.ArtifactToolsTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

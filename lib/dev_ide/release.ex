@@ -12,7 +12,7 @@ defmodule Casein.Release do
 
   use Boundary, deps: [Casein.Repo], exports: :all
 
-  @app :dev_ide
+  @app :casein
 
   @doc """
   Run all pending Ecto migrations against the configured repos.

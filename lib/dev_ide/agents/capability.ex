@@ -14,7 +14,7 @@ defmodule Casein.Agents.Capability do
           | :browser_artifacts
           | :transcripts
   @type status :: :detected | :missing
-  @type source :: :manager | :workspace_fs | :config | :dev_ide | :preview_env
+  @type source :: :manager | :workspace_fs | :config | :casein | :preview_env
 
   @type t :: %__MODULE__{
           kind: kind(),

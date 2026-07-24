@@ -63,15 +63,15 @@ defmodule Casein.Previews.SurfaceResolverTest do
   end
 
   test "host surfaces are appended on devbox when manager metadata is empty" do
-    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
-    previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+    previous_on_devbox = Application.get_env(:casein, :on_devbox)
+    previous_app_url = Application.get_env(:casein, :preview_app_url)
+    previous_root = Application.get_env(:casein, :workspaces_root)
     workspace = Path.join(System.tmp_dir!(), "surface-host-#{System.unique_integer([:positive])}")
     File.mkdir_p!(workspace)
-    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace))
-    Application.put_env(:dev_ide, :on_devbox, true)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :workspaces_root, Path.dirname(workspace))
+    Application.put_env(:casein, :on_devbox, true)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     on_exit(fn ->
       File.rm_rf(workspace)
@@ -104,15 +104,15 @@ defmodule Casein.Previews.SurfaceResolverTest do
   end
 
   test "detected_ports from metadata become host-detected localhost surfaces" do
-    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+    previous_on_devbox = Application.get_env(:casein, :on_devbox)
+    previous_root = Application.get_env(:casein, :workspaces_root)
 
     workspace =
       Path.join(System.tmp_dir!(), "surface-detected-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(workspace)
-    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace))
-    Application.put_env(:dev_ide, :on_devbox, true)
+    Application.put_env(:casein, :workspaces_root, Path.dirname(workspace))
+    Application.put_env(:casein, :on_devbox, true)
 
     on_exit(fn ->
       File.rm_rf(workspace)
@@ -145,15 +145,15 @@ defmodule Casein.Previews.SurfaceResolverTest do
   end
 
   test "off-devbox folder workspaces prefer terminal-detected primary_surface" do
-    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+    previous_on_devbox = Application.get_env(:casein, :on_devbox)
+    previous_root = Application.get_env(:casein, :workspaces_root)
 
     workspace =
       Path.join(System.tmp_dir!(), "surface-off-devbox-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(workspace)
-    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace))
-    Application.put_env(:dev_ide, :on_devbox, false)
+    Application.put_env(:casein, :workspaces_root, Path.dirname(workspace))
+    Application.put_env(:casein, :on_devbox, false)
 
     on_exit(fn ->
       File.rm_rf(workspace)
@@ -230,7 +230,7 @@ defmodule Casein.Previews.SurfaceResolverTest do
 
   defp restore_env(key, value) do
     if is_nil(value),
-      do: Application.delete_env(:dev_ide, key),
-      else: Application.put_env(:dev_ide, key, value)
+      do: Application.delete_env(:casein, key),
+      else: Application.put_env(:casein, key, value)
   end
 end

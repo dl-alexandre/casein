@@ -15,13 +15,13 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_user = Application.get_env(:dev_ide, :current_user)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_user = Application.get_env(:casein, :current_user)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
     # The :browser ForwardAuth plug overrides session identity, so set the test
     # user via application env (the plug's static fallback) rather than the session.
-    Application.put_env(:dev_ide, :current_user, %{
+    Application.put_env(:casein, :current_user, %{
       id: "tester",
       username: "tester",
       email: "tester@local",
@@ -61,8 +61,8 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
 
       restore = fn key, prev ->
         if prev,
-          do: Application.put_env(:dev_ide, key, prev),
-          else: Application.delete_env(:dev_ide, key)
+          do: Application.put_env(:casein, key, prev),
+          else: Application.delete_env(:casein, key)
       end
 
       restore.(:workspaces_root, prev_root)
@@ -247,16 +247,16 @@ defmodule CaseinWeb.WorkspaceLive.PreviewObservationTest do
     conn: conn,
     workspace_id: workspace_id
   } do
-    prev_proxy_enabled = Application.fetch_env(:dev_ide, :preview_proxy_enabled)
-    prev_app_url = Application.fetch_env(:dev_ide, :preview_app_url)
+    prev_proxy_enabled = Application.fetch_env(:casein, :preview_proxy_enabled)
+    prev_app_url = Application.fetch_env(:casein, :preview_app_url)
 
-    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_proxy_enabled, true)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     on_exit(fn ->
       restore = fn
-        key, {:ok, prev} -> Application.put_env(:dev_ide, key, prev)
-        key, :error -> Application.delete_env(:dev_ide, key)
+        key, {:ok, prev} -> Application.put_env(:casein, key, prev)
+        key, :error -> Application.delete_env(:casein, key)
       end
 
       restore.(:preview_proxy_enabled, prev_proxy_enabled)

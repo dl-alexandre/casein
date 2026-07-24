@@ -6,18 +6,18 @@ defmodule Casein.Deployment.WebhookTriggerTest do
   @repo "dl-alexandre/dev_ide"
 
   setup do
-    prev_trigger = Application.get_env(:dev_ide, :deploy_poller_trigger)
+    prev_trigger = Application.get_env(:casein, :deploy_poller_trigger)
     parent = self()
 
-    Application.put_env(:dev_ide, :deploy_poller_trigger, fn _opts ->
+    Application.put_env(:casein, :deploy_poller_trigger, fn _opts ->
       send(parent, :poller_triggered)
       :ok
     end)
 
     on_exit(fn ->
       if prev_trigger,
-        do: Application.put_env(:dev_ide, :deploy_poller_trigger, prev_trigger),
-        else: Application.delete_env(:dev_ide, :deploy_poller_trigger)
+        do: Application.put_env(:casein, :deploy_poller_trigger, prev_trigger),
+        else: Application.delete_env(:casein, :deploy_poller_trigger)
     end)
 
     :ok
@@ -44,7 +44,7 @@ defmodule Casein.Deployment.WebhookTriggerTest do
   end
 
   test "handle surfaces poller trigger failures" do
-    Application.put_env(:dev_ide, :deploy_poller_trigger, fn _opts ->
+    Application.put_env(:casein, :deploy_poller_trigger, fn _opts ->
       {:error, :nope}
     end)
 

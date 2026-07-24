@@ -4,12 +4,12 @@ defmodule Casein.Terminals.TemplatePreference do
   wipe can re-apply operator/agent layout (e.g. `agent_pair`) automatically.
   """
 
-  @table :dev_ide_template_preferences
+  @table :casein_template_preferences
 
   def ensure_table! do
     case :ets.whereis(@table) do
       :undefined ->
-        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        access = Application.get_env(:casein, :ets_table_access, :protected)
         :ets.new(@table, [:named_table, access, :set])
         :ok
 
@@ -61,7 +61,7 @@ defmodule Casein.Terminals.TemplatePreference do
   def default_recovery_template, do: "agent_pair"
 
   defp store_dir do
-    Application.get_env(:dev_ide, :tmux_template_preference_dir) ||
+    Application.get_env(:casein, :tmux_template_preference_dir) ||
       Path.join(System.tmp_dir!(), "devide-template-prefs")
   end
 

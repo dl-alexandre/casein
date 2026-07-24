@@ -135,12 +135,12 @@ defmodule Casein.Terminals do
       catch
         :exit, {:noproc, _} ->
           Logger.warning("terminal owner orphaned detach (no-op on dead owner)", owner: owner_pid)
-          :telemetry.execute([:dev_ide, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
+          :telemetry.execute([:casein, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
           :ok
       end
     else
       Logger.debug("terminal owner detach on dead pid (orphaned)", owner: owner_pid)
-      :telemetry.execute([:dev_ide, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
+      :telemetry.execute([:casein, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
       :ok
     end
   end
@@ -356,7 +356,7 @@ defmodule Casein.Terminals do
   @doc "Configured tmux-compatible adapter during the platform migration."
   @spec tmux_adapter() :: module()
   def tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    Application.get_env(:casein, :tmux_adapter, Tmux)
   end
 
   @doc "Best-effort tmux server version as `{major, minor}`, or `nil` if unknown."

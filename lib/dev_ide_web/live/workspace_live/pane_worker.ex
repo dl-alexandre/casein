@@ -131,11 +131,11 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
     # Cap scrollback per pane to keep memory bounded with many panes.
     # Ghostty's default is 10_000 lines; we settle for 5_000 (config
-    # override at `:dev_ide, :pane_max_scrollback`). At ~80 bytes/cell
+    # override at `:casein, :pane_max_scrollback`). At ~80 bytes/cell
     # × 200 cols × 5_000 rows ≈ 80 MB worst case, but typical content
     # is far smaller.
     max_scrollback =
-      Application.get_env(:dev_ide, :pane_max_scrollback, 5_000)
+      Application.get_env(:casein, :pane_max_scrollback, 5_000)
 
     with :ok <- guard_raw_backend(backend, cwd),
          {:ok, term} <-
@@ -466,7 +466,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
   defp emit_flush_schedule_telemetry(state, interval_ms) do
     :telemetry.execute(
-      [:dev_ide, :terminal, :pane_worker, :flush_schedule],
+      [:casein, :terminal, :pane_worker, :flush_schedule],
       %{
         count: 1,
         interval_ms: interval_ms,
@@ -577,7 +577,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
 
   defp emit_worker_frame_telemetry(status, state, payload, started) do
     :telemetry.execute(
-      [:dev_ide, :terminal, :pane_worker, :frame],
+      [:casein, :terminal, :pane_worker, :frame],
       %{
         count: 1,
         duration_us: TerminalTelemetry.duration_us(started),
@@ -621,7 +621,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
     links = validate_links(state.link_root, candidates)
 
     :telemetry.execute(
-      [:dev_ide, :terminal, :link_scan],
+      [:casein, :terminal, :link_scan],
       %{
         duration_us:
           System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
@@ -652,7 +652,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
     links = WebLinkScanner.scan_rows(rows)
 
     :telemetry.execute(
-      [:dev_ide, :terminal, :web_link_scan],
+      [:casein, :terminal, :web_link_scan],
       %{
         duration_us:
           System.convert_time_unit(System.monotonic_time() - started, :native, :microsecond),
@@ -805,7 +805,7 @@ defmodule CaseinWeb.WorkspaceLive.PaneWorker do
   end
 
   defp wrapped_login_shell_command do
-    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+    Application.get_env(:casein, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
       Terminals.terminal_shell_command()
   end

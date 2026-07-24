@@ -249,5 +249,5 @@ defmodule Casein.Proposals.AutoApply do
     :unknown_skip_reason
   end
 
-  defp enabled?, do: Application.get_env(:dev_ide, __MODULE__, [])[:enabled] == true
+  defp enabled?, do: Application.get_env(:casein, __MODULE__, [])[:enabled] == true
 end

@@ -5,10 +5,10 @@ defmodule Casein.Previews.FileServerTest do
   alias Casein.Workspaces
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_idle = Application.get_env(:dev_ide, :file_server_idle_ms)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_idle = Application.get_env(:casein, :file_server_idle_ms)
     # Keep idle high so tests are not interrupted by the belt-and-suspenders timer.
-    Application.put_env(:dev_ide, :file_server_idle_ms, 60_000)
+    Application.put_env(:casein, :file_server_idle_ms, 60_000)
 
     on_exit(fn ->
       restore(:workspaces_root, prev_root)
@@ -18,14 +18,14 @@ defmodule Casein.Previews.FileServerTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "file-server-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {:ok, workspace} = Workspaces.attach_folder(path)
     {path, workspace}
   end
@@ -172,7 +172,7 @@ defmodule Casein.Previews.FileServerTest do
     File.write!(Path.join(ws_root, "keep.png"), <<137, 80, 78, 71>>)
     # Short idle so the test stays fast, but wide enough that a single request
     # round-trip cannot race the timer.
-    Application.put_env(:dev_ide, :file_server_idle_ms, 150)
+    Application.put_env(:casein, :file_server_idle_ms, 150)
 
     assert {:ok, port} = FileServer.ensure_started(workspace)
     assert {:ok, pid} = FileServer.whereis(workspace.id)

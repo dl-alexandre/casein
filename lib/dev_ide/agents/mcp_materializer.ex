@@ -100,7 +100,7 @@ defmodule Casein.Agents.MCPMaterializer do
     # Tests may set `:agent_home_dir` to a writable tmp path when the host
     # `~/.devide/agent-mcp` tree is locked (mode 000 / RO). Production leaves
     # this unset and uses $HOME.
-    Application.get_env(:dev_ide, :agent_home_dir) ||
+    Application.get_env(:casein, :agent_home_dir) ||
       System.get_env("HOME") ||
       System.get_env("USERPROFILE") ||
       raise ArgumentError, "HOME or USERPROFILE is required to materialize agent MCP configs"
@@ -309,7 +309,7 @@ defmodule Casein.Agents.MCPMaterializer do
 
     release_path =
       if Code.ensure_loaded?(Application),
-        do: Application.app_dir(:dev_ide, rel),
+        do: Application.app_dir(:casein, rel),
         else: rel
 
     source_path = Path.expand(rel)

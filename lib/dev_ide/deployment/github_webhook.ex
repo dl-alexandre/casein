@@ -87,7 +87,7 @@ defmodule Casein.Deployment.GithubWebhook do
   defp blank_to_nil(_), do: nil
 
   defp config(key) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(key)
   end

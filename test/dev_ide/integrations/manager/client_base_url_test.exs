@@ -5,18 +5,18 @@ defmodule Casein.Integrations.Manager.ClientBaseUrlTest do
 
   describe "base_url/0" do
     setup do
-      prev_manager = Application.get_env(:dev_ide, :manager_url)
+      prev_manager = Application.get_env(:casein, :manager_url)
       on_exit(fn -> restore(:manager_url, prev_manager) end)
       :ok
     end
 
     test "returns the configured :manager_url" do
-      Application.put_env(:dev_ide, :manager_url, "http://manager.test:4242")
+      Application.put_env(:casein, :manager_url, "http://manager.test:4242")
       assert Client.base_url() == "http://manager.test:4242"
     end
 
     test "falls back to the default localhost URL when unconfigured and no env" do
-      Application.delete_env(:dev_ide, :manager_url)
+      Application.delete_env(:casein, :manager_url)
       prev = System.get_env("MILC_DEVBOX_MANAGER_URL")
       System.delete_env("MILC_DEVBOX_MANAGER_URL")
 
@@ -28,7 +28,7 @@ defmodule Casein.Integrations.Manager.ClientBaseUrlTest do
     end
 
     test "prefers the MILC_DEVBOX_MANAGER_URL env over the default" do
-      Application.delete_env(:dev_ide, :manager_url)
+      Application.delete_env(:casein, :manager_url)
       prev = System.get_env("MILC_DEVBOX_MANAGER_URL")
       System.put_env("MILC_DEVBOX_MANAGER_URL", "http://example.test:1234")
 
@@ -42,6 +42,6 @@ defmodule Casein.Integrations.Manager.ClientBaseUrlTest do
     end
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

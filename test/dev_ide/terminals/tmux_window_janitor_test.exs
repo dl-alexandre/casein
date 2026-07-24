@@ -10,9 +10,9 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
   setup do
     previous = %{
       runner: Application.get_env(:tmux_ctl, :runner),
-      sweep_ms: Application.get_env(:dev_ide, :tmux_window_sweep_ms),
-      window_idle: Application.get_env(:dev_ide, :tmux_window_idle_seconds),
-      session_idle: Application.get_env(:dev_ide, :tmux_session_idle_seconds),
+      sweep_ms: Application.get_env(:casein, :tmux_window_sweep_ms),
+      window_idle: Application.get_env(:casein, :tmux_window_idle_seconds),
+      session_idle: Application.get_env(:casein, :tmux_session_idle_seconds),
       list_windows_all: FakeState.get(:fake_tmux_list_windows_all),
       list_sessions: FakeState.get(:fake_tmux_list_sessions),
       list_panes_all: FakeState.get(:fake_tmux_list_panes_all),
@@ -20,15 +20,15 @@ defmodule Casein.Terminals.TmuxWindowJanitorTest do
     }
 
     Application.put_env(:tmux_ctl, :runner, TmuxCtl.Test.FakeRunner)
-    Application.put_env(:dev_ide, :tmux_window_idle_seconds, @idle)
-    Application.put_env(:dev_ide, :tmux_session_idle_seconds, @idle)
+    Application.put_env(:casein, :tmux_window_idle_seconds, @idle)
+    Application.put_env(:casein, :tmux_session_idle_seconds, @idle)
     FakeState.put(:fake_tmux_runner_pid, self())
 
     on_exit(fn ->
       restore_env(:tmux_ctl, :runner, previous.runner)
-      restore_env(:dev_ide, :tmux_window_sweep_ms, previous.sweep_ms)
-      restore_env(:dev_ide, :tmux_window_idle_seconds, previous.window_idle)
-      restore_env(:dev_ide, :tmux_session_idle_seconds, previous.session_idle)
+      restore_env(:casein, :tmux_window_sweep_ms, previous.sweep_ms)
+      restore_env(:casein, :tmux_window_idle_seconds, previous.window_idle)
+      restore_env(:casein, :tmux_session_idle_seconds, previous.session_idle)
       FakeState.restore(:fake_tmux_list_windows_all, previous.list_windows_all)
       FakeState.restore(:fake_tmux_list_sessions, previous.list_sessions)
       FakeState.restore(:fake_tmux_list_panes_all, previous.list_panes_all)

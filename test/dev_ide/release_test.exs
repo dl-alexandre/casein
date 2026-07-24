@@ -6,11 +6,11 @@ defmodule Casein.ReleaseTest do
   @fake_repo Casein.Test.FakeReleaseRepo
 
   setup do
-    prev_repos = Application.get_env(:dev_ide, :ecto_repos)
-    prev_migrator = Application.get_env(:dev_ide, :ecto_migrator)
+    prev_repos = Application.get_env(:casein, :ecto_repos)
+    prev_migrator = Application.get_env(:casein, :ecto_migrator)
 
-    Application.put_env(:dev_ide, :ecto_repos, [@fake_repo])
-    Application.put_env(:dev_ide, :ecto_migrator, FakeReleaseMigrator)
+    Application.put_env(:casein, :ecto_repos, [@fake_repo])
+    Application.put_env(:casein, :ecto_migrator, FakeReleaseMigrator)
 
     on_exit(fn ->
       restore(:ecto_repos, prev_repos)
@@ -20,7 +20,7 @@ defmodule Casein.ReleaseTest do
 
   test "migrate/0 loads the app and completes without error" do
     assert [{:ok, @fake_repo, {:ran, @fake_repo, :up, [all: true]}}] = Casein.Release.migrate()
-    assert Application.loaded_applications() |> Enum.any?(fn {app, _, _} -> app == :dev_ide end)
+    assert Application.loaded_applications() |> Enum.any?(fn {app, _, _} -> app == :casein end)
     assert_received {:release_migrator, @fake_repo, :up, [all: true]}
   end
 
@@ -31,6 +31,6 @@ defmodule Casein.ReleaseTest do
     assert_received {:release_migrator, @fake_repo, :down, [to: 123]}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

@@ -21,5 +21,5 @@ defmodule CaseinWeb.Gettext do
 
   See the [Gettext Docs](https://hexdocs.pm/gettext) for detailed usage.
   """
-  use Gettext.Backend, otp_app: :dev_ide
+  use Gettext.Backend, otp_app: :casein
 end

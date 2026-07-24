@@ -3,7 +3,7 @@ defmodule Casein.MixProject do
 
   def project do
     [
-      app: :dev_ide,
+      app: :casein,
       version: "0.1.0",
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -106,8 +106,8 @@ defmodule Casein.MixProject do
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3", runtime: not native_windows?()},
-      {:dev_ide_core, path: "dev_ide_core"},
-      {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
+      {:casein_core, path: "dev_ide_core"},
+      {:casein_preview_browser, path: "dev_ide_preview_browser"},
       ghostty_dependency(),
       {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev, :test]},
@@ -153,10 +153,10 @@ defmodule Casein.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind dev_ide", "esbuild dev_ide"],
+      "assets.build": ["compile", "tailwind casein", "esbuild casein"],
       "assets.deploy": [
-        "tailwind dev_ide --minify",
-        "esbuild dev_ide --minify",
+        "tailwind casein --minify",
+        "esbuild casein --minify",
         "phx.digest"
       ],
       "assets.npm": ["cmd --cd assets npm ci --no-audit --no-fund --no-progress"],

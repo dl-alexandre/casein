@@ -16,9 +16,9 @@ defmodule Casein.RuntimesExtraTest do
     WorktreeReconciler.clear()
     Casein.Audit.MemoryAdapter.clear()
 
-    prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
+    prev_runtime = Application.get_env(:casein, :runtimes_adapter)
 
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -682,6 +682,6 @@ defmodule Casein.RuntimesExtraTest do
       })
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

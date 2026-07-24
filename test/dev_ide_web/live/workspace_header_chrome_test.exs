@@ -14,9 +14,9 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     MemoryAdapter.clear()
     Audit.clear()
@@ -50,8 +50,8 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
       File.rm_rf(workspace_root)
 
       if prev_root,
-        do: Application.put_env(:dev_ide, :workspaces_root, prev_root),
-        else: Application.delete_env(:dev_ide, :workspaces_root)
+        do: Application.put_env(:casein, :workspaces_root, prev_root),
+        else: Application.delete_env(:casein, :workspaces_root)
     end)
 
     {:ok, workspace_id: workspace_id, workspace_name: workspace_name}

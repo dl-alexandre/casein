@@ -8,12 +8,12 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
 
   setup do
     previous = %{
-      tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
+      tmux_adapter: Application.get_env(:casein, :tmux_adapter),
       fake_tmux_windows: TmuxCtl.Test.FakeState.get(:fake_tmux_windows),
       fake_tmux_panes: TmuxCtl.Test.FakeState.get(:fake_tmux_panes),
       fake_tmux_scrollback: TmuxCtl.Test.FakeState.get(:fake_tmux_scrollback),
       fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid),
-      terminal_command_policy: Application.get_env(:dev_ide, :terminal_command_policy),
+      terminal_command_policy: Application.get_env(:casein, :terminal_command_policy),
       env_command_policy: System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY")
     }
 
@@ -38,8 +38,8 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
       TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
 
       if previous.tmux_adapter,
-        do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),
-        else: Application.delete_env(:dev_ide, :tmux_adapter)
+        do: Application.put_env(:casein, :tmux_adapter, previous.tmux_adapter),
+        else: Application.delete_env(:casein, :tmux_adapter)
 
       restore_app_env(:terminal_command_policy, previous.terminal_command_policy)
       restore_system_env("DEV_IDE_TERMINAL_COMMAND_POLICY", previous.env_command_policy)
@@ -413,7 +413,7 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
     session = Tmux.session_name("alpha", "main")
     fake_adapter()
 
-    Application.put_env(:dev_ide, :terminal_command_policy, {:allowlist, ["^mix "]})
+    Application.put_env(:casein, :terminal_command_policy, {:allowlist, ["^mix "]})
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
@@ -431,7 +431,7 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
     session = Tmux.session_name("alpha", "main")
     fake_adapter()
 
-    Application.put_env(:dev_ide, :terminal_command_policy, {:denylist, ["rm -rf"]})
+    Application.put_env(:casein, :terminal_command_policy, {:denylist, ["rm -rf"]})
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
@@ -446,11 +446,11 @@ defmodule Casein.Agents.TerminalToolsExtraTest do
   end
 
   defp fake_adapter do
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
   end
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)

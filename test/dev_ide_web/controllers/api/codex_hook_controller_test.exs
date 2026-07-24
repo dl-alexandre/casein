@@ -8,11 +8,11 @@ defmodule CaseinWeb.API.CodexHookControllerTest do
   @admin_token "codex-hook-admin-token"
 
   setup do
-    previous_api_token = Application.get_env(:dev_ide, :api_token)
-    previous_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    previous_api_token = Application.get_env(:casein, :api_token)
+    previous_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
 
-    Application.put_env(:dev_ide, :api_token, @admin_token)
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{@workspace_token => @workspace_id})
+    Application.put_env(:casein, :api_token, @admin_token)
+    Application.put_env(:casein, :workspace_api_tokens, %{@workspace_token => @workspace_id})
     :ok = Store.clear()
 
     on_exit(fn ->
@@ -52,6 +52,6 @@ defmodule CaseinWeb.API.CodexHookControllerTest do
     assert %{"error" => "workspace_scoped_token_required"} = json_response(conn, 403)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

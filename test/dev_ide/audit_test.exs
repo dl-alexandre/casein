@@ -6,8 +6,8 @@ defmodule Casein.AuditTest do
   alias Casein.Policy.Decision
 
   setup do
-    prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
-    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    prev_adapter = Application.get_env(:casein, :audit_adapter)
+    Application.put_env(:casein, :audit_adapter, MemoryAdapter)
     MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -61,7 +61,7 @@ defmodule Casein.AuditTest do
   end
 
   test "emit! absorbs adapter exceptions — GenServer hot paths must not crash" do
-    Application.put_env(:dev_ide, :audit_adapter, RaisingAdapter)
+    Application.put_env(:casein, :audit_adapter, RaisingAdapter)
 
     assert Audit.emit!(%{action: "ops.pg_saturation_raised", workspace_id: "_ops"}) == nil
   end
@@ -128,6 +128,6 @@ defmodule Casein.AuditTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

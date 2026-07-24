@@ -27,9 +27,9 @@ defmodule Casein.Proposals.AutoApplyTest do
     git!(root, ["commit", "-m", "init"])
 
     MemoryAdapter.clear()
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_enabled = Application.get_env(:dev_ide, AutoApply)
-    Application.put_env(:dev_ide, :workspace_modes, %{root => :manual})
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_enabled = Application.get_env(:casein, AutoApply)
+    Application.put_env(:casein, :workspace_modes, %{root => :manual})
     Audit.clear()
 
     on_exit(fn ->
@@ -37,20 +37,20 @@ defmodule Casein.Proposals.AutoApplyTest do
       MemoryAdapter.clear()
 
       case prev_overrides do
-        nil -> Application.delete_env(:dev_ide, :workspace_modes)
-        v -> Application.put_env(:dev_ide, :workspace_modes, v)
+        nil -> Application.delete_env(:casein, :workspace_modes)
+        v -> Application.put_env(:casein, :workspace_modes, v)
       end
 
       case prev_enabled do
-        nil -> Application.delete_env(:dev_ide, AutoApply)
-        v -> Application.put_env(:dev_ide, AutoApply, v)
+        nil -> Application.delete_env(:casein, AutoApply)
+        v -> Application.put_env(:casein, AutoApply, v)
       end
     end)
 
     {:ok, root: root}
   end
 
-  defp enable!, do: Application.put_env(:dev_ide, AutoApply, enabled: true)
+  defp enable!, do: Application.put_env(:casein, AutoApply, enabled: true)
 
   defp unlock!(root),
     do: Workspaces.grant_agent_write_unlock(root, DateTime.add(DateTime.utc_now(), 3600), "alice")

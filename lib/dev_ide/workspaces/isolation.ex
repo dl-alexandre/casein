@@ -4,7 +4,7 @@ defmodule Casein.Workspaces.Isolation do
 
   Configure via:
 
-      config :dev_ide,
+      config :casein,
         shared_db_patterns: ["stage.rds.amazonaws.com", "stage-db."],
         unsafe_db_patterns: ["prod-db.", ".prod.rds.amazonaws.com"]
 
@@ -35,7 +35,7 @@ defmodule Casein.Workspaces.Isolation do
   defp impl,
     do:
       Application.get_env(
-        :dev_ide,
+        :casein,
         :isolation_probe,
         Casein.Workspaces.IsolationProbe.LocalAdapter
       )

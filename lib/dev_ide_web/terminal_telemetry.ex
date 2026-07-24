@@ -49,7 +49,7 @@ defmodule CaseinWeb.TerminalTelemetry do
   end
 
   defp terminal_payload_bytes_sample_rate do
-    :dev_ide
+    :casein
     |> Application.get_env(:terminal_payload_bytes_sample_rate, env_sample_rate())
     |> normalize_sample_rate()
   end

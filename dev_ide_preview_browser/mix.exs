@@ -6,7 +6,7 @@ defmodule CaseinPreviewBrowser.MixProject do
 
   def project do
     [
-      app: :dev_ide_preview_browser,
+      app: :casein_preview_browser,
       version: @version,
       elixir: "~> 1.15",
       elixirc_paths: elixirc_paths(Mix.env()),

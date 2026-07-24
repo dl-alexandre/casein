@@ -746,7 +746,7 @@ defmodule Casein.Agents.TerminalTools.Impl do
   defp pane_id_of(pane), do: Map.get(pane, :id) || Map.get(pane, "id")
 
   defp agent_state_recheck_ms do
-    Application.get_env(:dev_ide, :agent_state_wait_recheck_ms, 1_000)
+    Application.get_env(:casein, :agent_state_wait_recheck_ms, 1_000)
   end
 
   @doc """
@@ -1235,7 +1235,7 @@ defmodule Casein.Agents.TerminalTools.Impl do
   defp filter_contains(sessions, needle) when is_binary(needle),
     do: Enum.filter(sessions, &String.contains?(&1.session, needle))
 
-  defp tmux, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  defp tmux, do: Application.get_env(:casein, :tmux_adapter, Tmux)
 
   defp session_exists?(session) do
     adapter = tmux()

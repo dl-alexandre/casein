@@ -34,10 +34,10 @@ defmodule Casein.Mobile.UserObserverTest do
     :telemetry.attach_many(
       handler_id,
       [
-        [:dev_ide, :mobile, :user_observer, :start],
-        [:dev_ide, :mobile, :card, :upsert],
-        [:dev_ide, :mobile, :card, :remove],
-        [:dev_ide, :mobile, :snapshot, :broadcast]
+        [:casein, :mobile, :user_observer, :start],
+        [:casein, :mobile, :card, :upsert],
+        [:casein, :mobile, :card, :remove],
+        [:casein, :mobile, :snapshot, :broadcast]
       ],
       fn event, measurements, metadata, pid ->
         send(pid, {:mobile_telemetry, event, measurements, metadata})
@@ -49,7 +49,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
     assert {:ok, _pid} = UserObserver.ensure_started(user_id)
 
-    assert_receive {:mobile_telemetry, [:dev_ide, :mobile, :user_observer, :start], %{count: 1},
+    assert_receive {:mobile_telemetry, [:casein, :mobile, :user_observer, :start], %{count: 1},
                     %{user_id: ^user_id, observer_pid: pid}},
                    1_000
 
@@ -61,7 +61,7 @@ defmodule Casein.Mobile.UserObserverTest do
       command: "mix test"
     })
 
-    assert_receive {:mobile_telemetry, [:dev_ide, :mobile, :card, :upsert], %{count: 1},
+    assert_receive {:mobile_telemetry, [:casein, :mobile, :card, :upsert], %{count: 1},
                     %{
                       user_id: ^user_id,
                       card_type: :in_progress,
@@ -72,7 +72,7 @@ defmodule Casein.Mobile.UserObserverTest do
                     }},
                    1_000
 
-    assert_receive {:mobile_telemetry, [:dev_ide, :mobile, :snapshot, :broadcast],
+    assert_receive {:mobile_telemetry, [:casein, :mobile, :snapshot, :broadcast],
                     %{count: 1, duration: duration}, %{user_id: ^user_id, card_count: 1}},
                    1_000
 
@@ -80,7 +80,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
     UserObserver.in_progress_cleared(user_id, %{workspace_id: "ws-1", session_id: "run-1"})
 
-    assert_receive {:mobile_telemetry, [:dev_ide, :mobile, :card, :remove], %{count: 1},
+    assert_receive {:mobile_telemetry, [:casein, :mobile, :card, :remove], %{count: 1},
                     %{
                       user_id: ^user_id,
                       card_type: :in_progress,
@@ -257,10 +257,10 @@ defmodule Casein.Mobile.UserObserverTest do
     :telemetry.attach_many(
       handler_id,
       [
-        [:dev_ide, :mobile, :user_observer, :start],
-        [:dev_ide, :mobile, :card, :upsert],
-        [:dev_ide, :mobile, :card, :remove],
-        [:dev_ide, :mobile, :snapshot, :broadcast]
+        [:casein, :mobile, :user_observer, :start],
+        [:casein, :mobile, :card, :upsert],
+        [:casein, :mobile, :card, :remove],
+        [:casein, :mobile, :snapshot, :broadcast]
       ],
       fn event, measurements, metadata, pid ->
         send(pid, {:mobile_observer_telemetry, event, measurements, metadata})
@@ -272,7 +272,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
     assert {:ok, _pid} = UserObserver.ensure_started(user_id)
 
-    assert_receive {:mobile_observer_telemetry, [:dev_ide, :mobile, :user_observer, :start],
+    assert_receive {:mobile_observer_telemetry, [:casein, :mobile, :user_observer, :start],
                     %{count: 1}, %{user_id: ^user_id, observer_pid: observer_pid}},
                    1_000
 
@@ -287,7 +287,7 @@ defmodule Casein.Mobile.UserObserverTest do
       review_count: 1
     })
 
-    assert_receive {:mobile_observer_telemetry, [:dev_ide, :mobile, :card, :upsert], %{count: 1},
+    assert_receive {:mobile_observer_telemetry, [:casein, :mobile, :card, :upsert], %{count: 1},
                     %{
                       user_id: ^user_id,
                       card_type: :needs_review,
@@ -300,7 +300,7 @@ defmodule Casein.Mobile.UserObserverTest do
 
     assert_receive {:mobile_cards_snapshot, %{cards: [_card]}}, 1_000
 
-    assert_receive {:mobile_observer_telemetry, [:dev_ide, :mobile, :snapshot, :broadcast],
+    assert_receive {:mobile_observer_telemetry, [:casein, :mobile, :snapshot, :broadcast],
                     %{count: 1, duration: duration}, %{user_id: ^user_id, card_count: 1}},
                    1_000
 
@@ -312,7 +312,7 @@ defmodule Casein.Mobile.UserObserverTest do
       review_count: 0
     })
 
-    assert_receive {:mobile_observer_telemetry, [:dev_ide, :mobile, :card, :remove], %{count: 1},
+    assert_receive {:mobile_observer_telemetry, [:casein, :mobile, :card, :remove], %{count: 1},
                     %{
                       user_id: ^user_id,
                       card_type: :needs_review,

@@ -8,18 +8,18 @@ defmodule Casein.Signals.AlertsRouterTest do
   alias Jido.Signal.Bus
 
   setup do
-    prev = Application.get_env(:dev_ide, :push_test_pid)
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
-    Application.put_env(:dev_ide, :push_test_pid, self())
+    prev = Application.get_env(:casein, :push_test_pid)
+    Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
+    Application.put_env(:casein, :push_test_pid, self())
     Casein.Push.Registry.clear()
 
     on_exit(fn ->
       Casein.Push.Registry.clear()
-      Application.delete_env(:dev_ide, :push_test_pid)
+      Application.delete_env(:casein, :push_test_pid)
 
       if prev,
-        do: Application.put_env(:dev_ide, :push_test_pid, prev),
-        else: Application.delete_env(:dev_ide, :push_test_pid)
+        do: Application.put_env(:casein, :push_test_pid, prev),
+        else: Application.delete_env(:casein, :push_test_pid)
     end)
 
     :ok

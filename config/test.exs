@@ -11,7 +11,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, Casein.Repo,
+  config :casein, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand(
@@ -23,7 +23,7 @@ if sqlite_repo? do
     pool_size: 1,
     busy_timeout: 5_000
 else
-  config :dev_ide, Casein.Repo,
+  config :casein, Casein.Repo,
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
@@ -57,7 +57,7 @@ end
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
-config :dev_ide, CaseinWeb.Endpoint,
+config :casein, CaseinWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM",
   server: false
@@ -67,9 +67,9 @@ config :dev_ide, CaseinWeb.Endpoint,
 # sessions on another server — on the devbox the prod release (`devide`) and the
 # :4000 dev server (`devide_dev`) also run here. Each env gets its own label so
 # the servers stay isolated; resolved by Casein.Terminals.TmuxServer.
-config :dev_ide, :tmux_server_label, "devide_test"
+config :casein, :tmux_server_label, "devide_test"
 # Never spawn the host tmux keepalive anchor during the test suite.
-config :dev_ide, :tmux_host_anchor, false
+config :casein, :tmux_host_anchor, false
 
 # Keep test-boot deployment heartbeats out of the real /run/devide/instances.
 # Devbox terminals inherit DEVIDE_INSTANCE_UUID from the canary that spawned
@@ -79,7 +79,7 @@ config :dev_ide, :tmux_host_anchor, false
 # Keyed by OS pid, not MIX_TEST_PARTITION: concurrent agent test runs on the
 # devbox share partition "0" and inherit the same DEVIDE_INSTANCE_UUID, so a
 # shared dir would trip the registry's ownership guard across suites.
-config :dev_ide,
+config :casein,
        :deployment_instance_dir,
        Path.join(System.tmp_dir!(), "devide-test-instances-#{System.pid()}")
 
@@ -89,7 +89,7 @@ config :dev_ide,
 # contended devbox that real HTTP GET times out and retries (~7s), making those
 # endpoint tests flaky. Health tests inject :caddy_config explicitly, so this
 # only neutralizes the un-injected controller path.
-config :dev_ide, :caddy_admin_probe, false
+config :casein, :caddy_admin_probe, false
 
 # Neutralize SessionOwner.superseded?/0 in tests. It compares the inherited
 # DEVIDE_HTTP_SOCKET against whatever /run/devide/current.sock resolves to;
@@ -98,13 +98,13 @@ config :dev_ide, :caddy_admin_probe, false
 # tmux sizes. Point the seam at a path that isn't a symlink → read_link fails →
 # not superseded. The dedicated superseded? test overrides this with a temp
 # symlink it controls.
-config :dev_ide,
+config :casein,
        :deployment_current_socket,
        Path.join(System.tmp_dir!(), "devide-test-no-current-#{System.pid()}.sock")
 
 # Keep runtime-minted workspace tokens (Casein.Agents.WorkspaceTokens) out of
 # the real ~/.devide store when tests exercise the materializer/pane env.
-config :dev_ide,
+config :casein,
        :workspace_tokens_store,
        Path.join(
          System.tmp_dir!(),
@@ -112,7 +112,7 @@ config :dev_ide,
        )
 
 # In test we don't send emails
-config :dev_ide, Casein.Mailer, adapter: Swoosh.Adapters.Test
+config :casein, Casein.Mailer, adapter: Swoosh.Adapters.Test
 
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
@@ -131,11 +131,11 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-config :dev_ide, CaseinWeb.Plugs.McpRateLimit,
+config :casein, CaseinWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
-config :dev_ide,
+config :casein,
   ets_table_access: :public,
   # Tests mutate repos and re-inspect the same cwd within one run; a cached
   # read would make those assertions order-dependent.

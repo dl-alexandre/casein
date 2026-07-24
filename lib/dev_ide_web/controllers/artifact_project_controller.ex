@@ -163,8 +163,8 @@ defmodule CaseinWeb.ArtifactProjectController do
   # 'self'. When artifacts are served on the cockpit origin itself, 'self' already
   # covers it and nothing extra is added.
   defp frame_ancestors do
-    cockpit = Application.get_env(:dev_ide, :preview_app_url)
-    artifacts = Application.get_env(:dev_ide, :artifact_public_url)
+    cockpit = Application.get_env(:casein, :preview_app_url)
+    artifacts = Application.get_env(:casein, :artifact_public_url)
 
     if is_binary(artifacts) and artifacts != "" and is_binary(cockpit) and cockpit != "" do
       "'self' " <> Casein.Previews.origin_of(cockpit)

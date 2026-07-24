@@ -11,7 +11,7 @@ defmodule CaseinWeb.DesktopHealthController do
   use CaseinWeb, :controller
 
   def show(conn, _params) do
-    if Application.get_env(:dev_ide, :desktop_mode, false) do
+    if Application.get_env(:casein, :desktop_mode, false) do
       {uptime_ms, _since_last} = :erlang.statistics(:wall_clock)
 
       base =

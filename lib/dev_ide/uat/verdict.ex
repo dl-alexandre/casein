@@ -45,7 +45,7 @@ defmodule Casein.UAT.Verdict do
 
     * `:repo` — Ecto repo module (default `Casein.Repo`), for tests
     * `:artifacts_root` — base dir for relative `artifact_path` (default from
-      `:dev_ide, :preview_artifacts_root`)
+      `:casein, :preview_artifacts_root`)
   """
   @spec validate(map(), integer(), keyword()) :: {:ok, map()} | {:error, [String.t()]}
   def validate(verdict, session_id, opts \\ []) when is_map(verdict) do
@@ -58,7 +58,7 @@ defmodule Casein.UAT.Verdict do
   @doc "Path to the JSON-schema contract documenting the verdict shape."
   @spec schema_path() :: String.t()
   def schema_path do
-    Application.app_dir(:dev_ide, "priv/uat/verdict_schema.json")
+    Application.app_dir(:casein, "priv/uat/verdict_schema.json")
   end
 
   # --- Layer 1: shape -------------------------------------------------------
@@ -235,7 +235,7 @@ defmodule Casein.UAT.Verdict do
   defp absolute?(path), do: Path.type(path) == :absolute
 
   defp default_artifacts_root do
-    Application.get_env(:dev_ide, :preview_artifacts_root) ||
-      Application.app_dir(:dev_ide, "priv/preview_artifacts")
+    Application.get_env(:casein, :preview_artifacts_root) ||
+      Application.app_dir(:casein, "priv/preview_artifacts")
   end
 end

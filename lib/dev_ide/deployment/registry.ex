@@ -172,7 +172,7 @@ defmodule Casein.Deployment.Registry do
   # so the conflict path would otherwise be untestable off the devbox. Defaults
   # to the real check; tests inject a predicate. Mirrors Drain.stop_system/1.
   defp owner_alive?(pid) do
-    case Application.get_env(:dev_ide, :deployment_owner_liveness) do
+    case Application.get_env(:casein, :deployment_owner_liveness) do
       fun when is_function(fun, 1) -> fun.(pid)
       _ -> dev_ide_process?(pid)
     end
@@ -224,7 +224,7 @@ defmodule Casein.Deployment.Registry do
 
   # sobelow_skip ["Traversal.FileModule"]
   defp instance_dir do
-    case Application.get_env(:dev_ide, :deployment_instance_dir) do
+    case Application.get_env(:casein, :deployment_instance_dir) do
       dir when is_binary(dir) ->
         File.mkdir_p!(dir)
         dir

@@ -24,16 +24,16 @@ defmodule Casein.ProposalApplyTest do
     git!(root, ["add", "a.txt"])
     git!(root, ["commit", "-m", "init"])
 
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    Application.put_env(:dev_ide, :workspace_modes, %{root => :manual})
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    Application.put_env(:casein, :workspace_modes, %{root => :manual})
     Audit.clear()
 
     on_exit(fn ->
       File.rm_rf!(root)
 
       case prev_overrides do
-        nil -> Application.delete_env(:dev_ide, :workspace_modes)
-        v -> Application.put_env(:dev_ide, :workspace_modes, v)
+        nil -> Application.delete_env(:casein, :workspace_modes)
+        v -> Application.put_env(:casein, :workspace_modes, v)
       end
     end)
 

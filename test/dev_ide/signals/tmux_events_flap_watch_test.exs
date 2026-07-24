@@ -8,10 +8,10 @@ defmodule Casein.Signals.TmuxEventsFlapWatchTest do
   @ops_ws "_ops"
 
   setup do
-    prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
-    prev_flag = Application.get_env(:dev_ide, :tmux_events)
-    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :tmux_events, true)
+    prev_adapter = Application.get_env(:casein, :audit_adapter)
+    prev_flag = Application.get_env(:casein, :tmux_events)
+    Application.put_env(:casein, :audit_adapter, MemoryAdapter)
+    Application.put_env(:casein, :tmux_events, true)
     MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -23,8 +23,8 @@ defmodule Casein.Signals.TmuxEventsFlapWatchTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp start_watch(opts) do
     name = :"tmux_events_flap_#{System.unique_integer([:positive])}"
@@ -189,7 +189,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatchTest do
   end
 
   test "flag off is a no-op (no audit)" do
-    Application.put_env(:dev_ide, :tmux_events, false)
+    Application.put_env(:casein, :tmux_events, false)
     pid = start_watch(threshold: 1)
 
     feed(pid, :down)

@@ -41,10 +41,10 @@ defmodule Casein.Previews.DepsContractTest do
     end
 
     test "impl/1 is overridable via Application env (test seam)" do
-      previous = Application.get_env(:dev_ide, :preview_deps)
+      previous = Application.get_env(:casein, :preview_deps)
 
       try do
-        Application.put_env(:dev_ide, :preview_deps,
+        Application.put_env(:casein, :preview_deps,
           workspaces: Deps.Test.Fakes.Workspaces,
           terminals: Deps.Test.Fakes.Terminals,
           runtimes: Deps.Test.Fakes.Runtimes,
@@ -70,13 +70,13 @@ defmodule Casein.Previews.DepsContractTest do
 
   describe "HostMode leaf" do
     test "on_host? reflects :on_devbox config" do
-      previous = Application.get_env(:dev_ide, :on_devbox)
+      previous = Application.get_env(:casein, :on_devbox)
 
       try do
-        Application.put_env(:dev_ide, :on_devbox, true)
+        Application.put_env(:casein, :on_devbox, true)
         assert Casein.HostMode.on_host?()
 
-        Application.put_env(:dev_ide, :on_devbox, false)
+        Application.put_env(:casein, :on_devbox, false)
         refute Casein.HostMode.on_host?()
       after
         restore(:on_devbox, previous)
@@ -84,10 +84,10 @@ defmodule Casein.Previews.DepsContractTest do
     end
 
     test "Manager delegates on_host? and prepare_local_argv to HostMode" do
-      previous = Application.get_env(:dev_ide, :on_devbox)
+      previous = Application.get_env(:casein, :on_devbox)
 
       try do
-        Application.put_env(:dev_ide, :on_devbox, false)
+        Application.put_env(:casein, :on_devbox, false)
         assert Casein.WorkspaceSource.Manager.on_host?() == Casein.HostMode.on_host?()
         assert Casein.WorkspaceSource.Manager.prepare_local_argv(["echo"]) == ["echo"]
         assert Casein.HostMode.prepare_local_argv(["echo"]) == ["echo"]
@@ -109,9 +109,9 @@ defmodule Casein.Previews.DepsContractTest do
            "#{inspect(impl)} missing callbacks for #{inspect(behaviour)}: #{inspect(missing)}"
   end
 
-  defp restore_preview_deps(nil), do: Application.delete_env(:dev_ide, :preview_deps)
-  defp restore_preview_deps(val), do: Application.put_env(:dev_ide, :preview_deps, val)
+  defp restore_preview_deps(nil), do: Application.delete_env(:casein, :preview_deps)
+  defp restore_preview_deps(val), do: Application.put_env(:casein, :preview_deps, val)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

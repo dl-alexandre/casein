@@ -16,8 +16,8 @@ defmodule Casein.Signals.DegradationWatchTest do
   }
 
   setup do
-    prev = Application.get_env(:dev_ide, :audit_adapter)
-    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    prev = Application.get_env(:casein, :audit_adapter)
+    Application.put_env(:casein, :audit_adapter, MemoryAdapter)
     MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -28,8 +28,8 @@ defmodule Casein.Signals.DegradationWatchTest do
     :ok
   end
 
-  defp restore(nil), do: Application.delete_env(:dev_ide, :audit_adapter)
-  defp restore(v), do: Application.put_env(:dev_ide, :audit_adapter, v)
+  defp restore(nil), do: Application.delete_env(:casein, :audit_adapter)
+  defp restore(v), do: Application.put_env(:casein, :audit_adapter, v)
 
   # A private watcher fed by hand (subscribe?: false) so the shared bus-attached
   # instance never sees these synthetic signals.

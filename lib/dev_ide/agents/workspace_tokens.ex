@@ -99,11 +99,11 @@ defmodule Casein.Agents.WorkspaceTokens do
 
   defp register(token, workspace_id) do
     updated =
-      :dev_ide
+      :casein
       |> Application.get_env(:workspace_api_tokens, %{})
       |> Map.put(token, workspace_id)
 
-    Application.put_env(:dev_ide, :workspace_api_tokens, updated)
+    Application.put_env(:casein, :workspace_api_tokens, updated)
   end
 
   # Best effort: a persist failure still leaves the minted token valid in the
@@ -144,12 +144,12 @@ defmodule Casein.Agents.WorkspaceTokens do
   @doc "Path of the persisted token store file."
   @spec store_path() :: Path.t()
   def store_path do
-    Application.get_env(:dev_ide, :workspace_tokens_store) ||
+    Application.get_env(:casein, :workspace_tokens_store) ||
       Path.join(home_dir(), ".devide/workspace-api-tokens.json")
   end
 
   defp registry do
-    app_tokens = Application.get_env(:dev_ide, :workspace_api_tokens, %{})
+    app_tokens = Application.get_env(:casein, :workspace_api_tokens, %{})
     env_tokens = tokens_from_env(System.get_env("DEV_IDE_WORKSPACE_API_TOKENS"))
 
     [app_tokens, env_tokens]
@@ -167,7 +167,7 @@ defmodule Casein.Agents.WorkspaceTokens do
   defp tokens_from_env(_), do: %{}
 
   defp global_token do
-    case Application.get_env(:dev_ide, :api_token) || System.get_env("DEV_IDE_API_TOKEN") do
+    case Application.get_env(:casein, :api_token) || System.get_env("DEV_IDE_API_TOKEN") do
       value when is_binary(value) and value != "" -> value
       _ -> nil
     end

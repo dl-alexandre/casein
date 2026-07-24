@@ -7,12 +7,12 @@ defmodule Casein.Previews.PaneTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
 
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, true)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -147,14 +147,14 @@ defmodule Casein.Previews.PaneTest do
     end
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "preview-pane-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     path
   end
 

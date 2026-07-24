@@ -4,9 +4,9 @@ defmodule Casein.Agents.AgentShimsTest do
   alias Casein.Agents.AgentShims
 
   setup do
-    prev_bin = Application.get_env(:dev_ide, :agent_bin_dir)
-    prev_npm = Application.get_env(:dev_ide, :agent_npm_prefix)
-    prev_install = Application.get_env(:dev_ide, :install_agent_shims_path)
+    prev_bin = Application.get_env(:casein, :agent_bin_dir)
+    prev_npm = Application.get_env(:casein, :agent_npm_prefix)
+    prev_install = Application.get_env(:casein, :install_agent_shims_path)
 
     tmp = Path.join(System.tmp_dir!(), "agent-shims-#{System.unique_integer([:positive])}")
     bin = Path.join(tmp, "bin")
@@ -14,8 +14,8 @@ defmodule Casein.Agents.AgentShimsTest do
     File.mkdir_p!(bin)
     File.mkdir_p!(Path.join(npm, "bin"))
 
-    Application.put_env(:dev_ide, :agent_bin_dir, bin)
-    Application.put_env(:dev_ide, :agent_npm_prefix, npm)
+    Application.put_env(:casein, :agent_bin_dir, bin)
+    Application.put_env(:casein, :agent_npm_prefix, npm)
 
     on_exit(fn ->
       restore(:agent_bin_dir, prev_bin)
@@ -61,7 +61,7 @@ defmodule Casein.Agents.AgentShimsTest do
     )
 
     File.chmod!(script, 0o755)
-    Application.put_env(:dev_ide, :install_agent_shims_path, script)
+    Application.put_env(:casein, :install_agent_shims_path, script)
 
     assert {:ok, :installed} = AgentShims.ensure()
     assert AgentShims.complete?()
@@ -80,6 +80,6 @@ defmodule Casein.Agents.AgentShimsTest do
     File.chmod!(path, 0o755)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

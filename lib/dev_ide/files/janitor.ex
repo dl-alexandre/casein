@@ -41,8 +41,8 @@ defmodule Casein.Files.Janitor do
 
   def run_on_boot do
     for root <-
-          Application.get_env(:dev_ide, :workspaces_roots, []) ++
-            [Application.get_env(:dev_ide, :workspaces_root, "/workspaces")],
+          Application.get_env(:casein, :workspaces_roots, []) ++
+            [Application.get_env(:casein, :workspaces_root, "/workspaces")],
         root,
         File.dir?(root) do
       case clean(root) do

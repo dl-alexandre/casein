@@ -23,7 +23,7 @@ defmodule Casein.Terminals.Backend do
   @doc "Configured terminal backend module."
   @spec module() :: module()
   def module do
-    Application.get_env(:dev_ide, :terminal_backend) ||
+    Application.get_env(:casein, :terminal_backend) ||
       Casein.Terminals.Backends.Tmux
   end
 

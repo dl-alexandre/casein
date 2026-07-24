@@ -19,15 +19,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
   end
 
   test "terminal kill refuses tmux sessions outside the workspace prefix" do
-    previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    previous_adapter = Application.get_env(:casein, :tmux_adapter)
     previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     flush_mailbox()
 
     on_exit(fn ->
-      restore_env(:dev_ide, :tmux_adapter, previous_adapter)
+      restore_env(:casein, :tmux_adapter, previous_adapter)
       TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous_pid)
     end)
 
@@ -119,15 +119,15 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
     end
 
     setup do
-      previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      previous_adapter = Application.get_env(:casein, :tmux_adapter)
       previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
       flush_mailbox()
 
       on_exit(fn ->
-        restore_env(:dev_ide, :tmux_adapter, previous_adapter)
+        restore_env(:casein, :tmux_adapter, previous_adapter)
         TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous_pid)
       end)
 
@@ -203,10 +203,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
 
   describe "pane:history_open" do
     test "starts a pane-scoped history drawer with a stable scroll key" do
-      previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-      Application.put_env(:dev_ide, :tmux_adapter, EmptyHistoryTmux)
+      previous_adapter = Application.get_env(:casein, :tmux_adapter)
+      Application.put_env(:casein, :tmux_adapter, EmptyHistoryTmux)
 
-      on_exit(fn -> restore_env(:dev_ide, :tmux_adapter, previous_adapter) end)
+      on_exit(fn -> restore_env(:casein, :tmux_adapter, previous_adapter) end)
 
       socket = %Phoenix.LiveView.Socket{
         assigns: %{
@@ -273,9 +273,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
     setup do
       # Stub the network-touching embeddability probe; default = embeddable so
       # the URL flows to the normal preview-open path. Individual tests override.
-      previous = Application.get_env(:dev_ide, :embeddability_checker)
-      Application.put_env(:dev_ide, :embeddability_checker, EmbeddableChecker)
-      on_exit(fn -> restore_env(:dev_ide, :embeddability_checker, previous) end)
+      previous = Application.get_env(:casein, :embeddability_checker)
+      Application.put_env(:casein, :embeddability_checker, EmbeddableChecker)
+      on_exit(fn -> restore_env(:casein, :embeddability_checker, previous) end)
       :ok
     end
 
@@ -293,7 +293,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
     end
 
     test "a frame-blocking site falls back to opening a browser tab" do
-      Application.put_env(:dev_ide, :embeddability_checker, BlockedChecker)
+      Application.put_env(:casein, :embeddability_checker, BlockedChecker)
       socket = preview_socket(%{tmux_session: "devide_alpha_u-dev"})
 
       assert {:noreply, socket} =

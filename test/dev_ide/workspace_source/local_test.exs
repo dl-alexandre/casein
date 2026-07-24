@@ -6,21 +6,21 @@ defmodule Casein.WorkspaceSource.LocalTest do
 
   setup do
     # Save and restore global config
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
-    prev_home_workspace_path = Application.get_env(:dev_ide, :home_workspace_path)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_roots = Application.get_env(:casein, :workspaces_roots)
+    prev_home_workspace_path = Application.get_env(:casein, :home_workspace_path)
 
     # Create a unique temporary root for this test
     root = Path.join(System.tmp_dir!(), "devide_local_test_#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
 
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
-    Application.delete_env(:dev_ide, :home_workspace_path)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_roots, [])
+    Application.delete_env(:casein, :home_workspace_path)
 
     on_exit(fn ->
-      Application.put_env(:dev_ide, :workspaces_root, prev_root)
-      Application.put_env(:dev_ide, :workspaces_roots, prev_roots)
+      Application.put_env(:casein, :workspaces_root, prev_root)
+      Application.put_env(:casein, :workspaces_roots, prev_roots)
       restore_env(:home_workspace_path, prev_home_workspace_path)
       File.rm_rf(root)
     end)
@@ -48,7 +48,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
     end
 
     test "returns empty list when root does not exist" do
-      Application.put_env(:dev_ide, :workspaces_root, "/this/path/does/not/exist")
+      Application.put_env(:casein, :workspaces_root, "/this/path/does/not/exist")
 
       {:ok, list} = Local.list()
       assert list == []
@@ -68,7 +68,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
         Path.join(System.tmp_dir!(), "devide-local-home-#{System.unique_integer([:positive])}")
 
       File.mkdir_p!(home)
-      Application.put_env(:dev_ide, :home_workspace_path, home)
+      Application.put_env(:casein, :home_workspace_path, home)
       File.mkdir_p!(Path.join(root, "alpha"))
 
       on_exit(fn -> File.rm_rf(home) end)
@@ -101,7 +101,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
         )
 
       File.mkdir_p!(home)
-      Application.put_env(:dev_ide, :home_workspace_path, home)
+      Application.put_env(:casein, :home_workspace_path, home)
 
       on_exit(fn -> File.rm_rf(home) end)
 
@@ -142,7 +142,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
         )
 
       File.mkdir_p!(home)
-      Application.put_env(:dev_ide, :home_workspace_path, home)
+      Application.put_env(:casein, :home_workspace_path, home)
 
       on_exit(fn -> File.rm_rf(home) end)
 
@@ -175,7 +175,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
         )
 
       File.mkdir_p!(home)
-      Application.put_env(:dev_ide, :home_workspace_path, home)
+      Application.put_env(:casein, :home_workspace_path, home)
 
       on_exit(fn -> File.rm_rf(home) end)
 
@@ -206,7 +206,7 @@ defmodule Casein.WorkspaceSource.LocalTest do
         )
 
       File.mkdir_p!(home)
-      Application.put_env(:dev_ide, :home_workspace_path, home)
+      Application.put_env(:casein, :home_workspace_path, home)
 
       on_exit(fn -> File.rm_rf(home) end)
 
@@ -225,6 +225,6 @@ defmodule Casein.WorkspaceSource.LocalTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

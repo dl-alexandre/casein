@@ -19,7 +19,7 @@ defmodule Casein.Mobile.UserObserver do
   @supervisor Casein.Mobile.UserObserverSupervisor
   @topic_prefix "mobile:user:"
   @card_events_topic "mobile:cards"
-  @telemetry_prefix [:dev_ide, :mobile]
+  @telemetry_prefix [:casein, :mobile]
 
   @type snapshot :: %{
           user_id: String.t(),

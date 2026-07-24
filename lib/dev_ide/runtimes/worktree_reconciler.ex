@@ -141,6 +141,6 @@ defmodule Casein.Runtimes.WorktreeReconciler do
   defp cache, do: :persistent_term.get(@cache_key, %{})
 
   defp ttl_ms do
-    Application.get_env(:dev_ide, :worktree_reconcile_ttl_ms, @default_ttl_ms)
+    Application.get_env(:casein, :worktree_reconcile_ttl_ms, @default_ttl_ms)
   end
 end

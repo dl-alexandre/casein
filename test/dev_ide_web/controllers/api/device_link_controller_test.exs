@@ -11,8 +11,8 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
   end
 
   setup do
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
 
     on_exit(fn -> restore(:workspace_source, prev_source) end)
 
@@ -114,6 +114,6 @@ defmodule CaseinWeb.API.DeviceLinkControllerTest do
     assert {:error, :revoked} = DeviceLinks.verify_token(token)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

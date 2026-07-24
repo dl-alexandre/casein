@@ -13,16 +13,16 @@ defmodule Casein.FilePanesOffloadTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_persistence = Application.get_env(:dev_ide, :file_pane_persistence)
-    prev_io_delay = Application.get_env(:dev_ide, :file_panes_test_io_delay_ms)
-    prev_rehydrate_delay = Application.get_env(:dev_ide, :file_panes_test_rehydrate_delay_ms)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_persistence = Application.get_env(:casein, :file_pane_persistence)
+    prev_io_delay = Application.get_env(:casein, :file_panes_test_io_delay_ms)
+    prev_rehydrate_delay = Application.get_env(:casein, :file_panes_test_rehydrate_delay_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :file_pane_persistence, true)
-    Application.delete_env(:dev_ide, :file_panes_test_io_delay_ms)
-    Application.delete_env(:dev_ide, :file_panes_test_rehydrate_delay_ms)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :file_pane_persistence, true)
+    Application.delete_env(:casein, :file_panes_test_io_delay_ms)
+    Application.delete_env(:casein, :file_panes_test_rehydrate_delay_ms)
     FilePanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -36,20 +36,20 @@ defmodule Casein.FilePanesOffloadTest do
       restore(:file_pane_persistence, prev_persistence)
 
       if prev_io_delay,
-        do: Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, prev_io_delay),
-        else: Application.delete_env(:dev_ide, :file_panes_test_io_delay_ms)
+        do: Application.put_env(:casein, :file_panes_test_io_delay_ms, prev_io_delay),
+        else: Application.delete_env(:casein, :file_panes_test_io_delay_ms)
 
       if prev_rehydrate_delay,
         do:
-          Application.put_env(:dev_ide, :file_panes_test_rehydrate_delay_ms, prev_rehydrate_delay),
-        else: Application.delete_env(:dev_ide, :file_panes_test_rehydrate_delay_ms)
+          Application.put_env(:casein, :file_panes_test_rehydrate_delay_ms, prev_rehydrate_delay),
+        else: Application.delete_env(:casein, :file_panes_test_rehydrate_delay_ms)
     end)
 
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp wait_until(fun, attempts \\ 100)
 
@@ -72,7 +72,7 @@ defmodule Casein.FilePanesOffloadTest do
 
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
@@ -151,7 +151,7 @@ defmodule Casein.FilePanesOffloadTest do
 
     warm = register_pane!(workspace, session, warm_pane, "warm.ex")
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 400)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 400)
     parent = self()
 
     spawn(fn ->
@@ -196,7 +196,7 @@ defmodule Casein.FilePanesOffloadTest do
     pane_id = "%collapse"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 200)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 200)
     parent = self()
 
     spawn(fn ->
@@ -257,7 +257,7 @@ defmodule Casein.FilePanesOffloadTest do
     seed_session!(session, pane_id)
     _registration = register_pane!(workspace, session, pane_id)
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 200)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 200)
     parent = self()
 
     spawn(fn ->
@@ -367,7 +367,7 @@ defmodule Casein.FilePanesOffloadTest do
     end
 
     ets_panes =
-      :ets.tab2list(:dev_ide_file_panes)
+      :ets.tab2list(:casein_file_panes)
       |> Enum.map(fn {pane_id, _} -> pane_id end)
       |> Enum.sort()
 
@@ -389,7 +389,7 @@ defmodule Casein.FilePanesOffloadTest do
     pane_id = "%crash"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 500)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 500)
     parent = self()
 
     spawn(fn ->
@@ -448,8 +448,8 @@ defmodule Casein.FilePanesOffloadTest do
   test "crashed rehydrate op replies shape-correct nil, not an error tuple" do
     pane_id = "%rehydrate-crash-#{System.unique_integer([:positive])}"
 
-    Application.put_env(:dev_ide, :file_panes_test_rehydrate_delay_ms, 500)
-    on_exit(fn -> Application.delete_env(:dev_ide, :file_panes_test_rehydrate_delay_ms) end)
+    Application.put_env(:casein, :file_panes_test_rehydrate_delay_ms, 500)
+    on_exit(fn -> Application.delete_env(:casein, :file_panes_test_rehydrate_delay_ms) end)
 
     parent = self()
 
@@ -493,7 +493,7 @@ defmodule Casein.FilePanesOffloadTest do
                active_path: "first.ex"
              })
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 300)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 300)
     assert {:ok, _} = FilePanes.open_tab(pane_id, "second.ex")
 
     parent = self()
@@ -512,7 +512,7 @@ defmodule Casein.FilePanesOffloadTest do
     pane_id = "%clearq"
     seed_session!(session, pane_id)
 
-    Application.put_env(:dev_ide, :file_panes_test_io_delay_ms, 500)
+    Application.put_env(:casein, :file_panes_test_io_delay_ms, 500)
     parent = self()
 
     spawn(fn ->
@@ -616,7 +616,7 @@ defmodule Casein.FilePanesOffloadTest do
       })
       |> Repo.insert()
 
-    Application.put_env(:dev_ide, :file_panes_test_rehydrate_delay_ms, 200)
+    Application.put_env(:casein, :file_panes_test_rehydrate_delay_ms, 200)
     parent = self()
     panes_pid = Process.whereis(FilePanes)
 

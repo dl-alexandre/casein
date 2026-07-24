@@ -12,20 +12,20 @@ defmodule Casein.Terminals.BoundaryTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_allow_raw = Application.get_env(:dev_ide, :allow_local_raw_terminal)
-    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_allow_raw = Application.get_env(:casein, :allow_local_raw_terminal)
+    prev_raw_everywhere = Application.get_env(:casein, :raw_terminal_everywhere)
+    prev_root = Application.get_env(:casein, :workspaces_root)
     root = Path.join(System.tmp_dir!(), "devide-boundary-test")
     workspace_path = Path.join(root, "ws-1")
     File.rm_rf!(root)
     File.mkdir_p!(workspace_path)
     File.write!(Path.join(workspace_path, "README.md"), "hello\n")
 
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
-    Application.delete_env(:dev_ide, :workspace_modes)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :default_workspace_mode, :review)
+    Application.delete_env(:casein, :workspace_modes)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -92,7 +92,7 @@ defmodule Casein.Terminals.BoundaryTest do
   end
 
   test "raw terminal can be explicitly allowed from any workspace, mode, and host" do
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, true)
+    Application.put_env(:casein, :raw_terminal_everywhere, true)
 
     assert Boundary.raw_allowed?("ws-1", "local")
     assert Boundary.raw_allowed?("ws-1", "remote")
@@ -120,7 +120,7 @@ defmodule Casein.Terminals.BoundaryTest do
   end
 
   test "raw terminal stays gated when raw everywhere is explicitly disabled" do
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+    Application.put_env(:casein, :raw_terminal_everywhere, false)
 
     refute Boundary.raw_allowed?("ws-1", "local")
     assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
@@ -141,8 +141,8 @@ defmodule Casein.Terminals.BoundaryTest do
   end
 
   test "raw terminal does not allow local override without manual mode when re-tightened" do
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
-    Application.put_env(:dev_ide, :allow_local_raw_terminal, true)
+    Application.put_env(:casein, :raw_terminal_everywhere, false)
+    Application.put_env(:casein, :allow_local_raw_terminal, true)
 
     refute Boundary.raw_allowed?("ws-1", "local")
     assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
@@ -165,6 +165,6 @@ defmodule Casein.Terminals.BoundaryTest do
       })
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 end

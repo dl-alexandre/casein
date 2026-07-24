@@ -13,10 +13,10 @@ defmodule Casein.Previews.EnvRegistryTest do
     inst_dir = Path.join(home, "instances")
     File.mkdir_p!(inst_dir)
 
-    prev_home = Application.get_env(:dev_ide, :preview_env_home)
+    prev_home = Application.get_env(:casein, :preview_env_home)
     prev_env = System.get_env("DEVIDE_PREVIEW_HOME")
     System.delete_env("DEVIDE_PREVIEW_HOME")
-    Application.put_env(:dev_ide, :preview_env_home, home)
+    Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn ->
       File.rm_rf!(home)
@@ -88,6 +88,6 @@ defmodule Casein.Previews.EnvRegistryTest do
     File.write!(path, Jason.encode!(map))
   end
 
-  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
-  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
+  defp restore_preview_home(nil), do: Application.delete_env(:casein, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:casein, :preview_env_home, value)
 end

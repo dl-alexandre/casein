@@ -10,11 +10,11 @@ defmodule CaseinWeb.Plugs.DesktopAuthTest do
   @launch_secret String.duplicate("a", 48)
 
   setup do
-    previous_mode = Application.get_env(:dev_ide, :desktop_mode)
-    previous_token = Application.get_env(:dev_ide, :desktop_launch_token)
+    previous_mode = Application.get_env(:casein, :desktop_mode)
+    previous_token = Application.get_env(:casein, :desktop_launch_token)
 
-    Application.put_env(:dev_ide, :desktop_mode, true)
-    Application.put_env(:dev_ide, :desktop_launch_token, @launch_secret)
+    Application.put_env(:casein, :desktop_mode, true)
+    Application.put_env(:casein, :desktop_launch_token, @launch_secret)
     LaunchReplayStore.reset()
 
     on_exit(fn ->
@@ -134,8 +134,8 @@ defmodule CaseinWeb.Plugs.DesktopAuthTest do
     assert conn.assigns.current_user.id == "desktop"
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp claim_query(timestamp \\ System.system_time(:second)) do
     URI.encode_query(claim_params(timestamp))

@@ -8,9 +8,9 @@ defmodule Casein.Workspaces.StateTest do
 
   setup do
     MemoryAdapter.clear()
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
-    Application.delete_env(:dev_ide, :workspace_modes)
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
+    Application.delete_env(:casein, :workspace_modes)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -21,8 +21,8 @@ defmodule Casein.Workspaces.StateTest do
     :ok
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   defp ws(attrs) do
     base = %Workspace{
@@ -135,7 +135,7 @@ defmodule Casein.Workspaces.StateTest do
   end
 
   test "mode_for: config override beats persisted" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"abc" => :review})
+    Application.put_env(:casein, :workspace_modes, %{"abc" => :review})
     {:ok, _} = State.set_mode("abc", :manual)
     assert {:review, :config_override} = State.mode_for("abc")
   end
@@ -146,7 +146,7 @@ defmodule Casein.Workspaces.StateTest do
   end
 
   test "mode_for: default when neither config nor persisted" do
-    Application.delete_env(:dev_ide, :workspace_modes)
+    Application.delete_env(:casein, :workspace_modes)
     {mode, source} = State.mode_for("none")
     assert mode == :manual
     assert source == :default

@@ -12,7 +12,7 @@ defmodule Casein.Agents.ArtifactMCPCapability do
         %Capability{
           kind: :artifact_mcp,
           status: :detected,
-          source: :dev_ide,
+          source: :casein,
           url: url,
           details: %{
             transport: "http_json_rpc",

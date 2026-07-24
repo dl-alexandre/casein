@@ -6,7 +6,7 @@ defmodule Casein.WorkspaceSourceTest do
   # ---------------------------------------------------------------------------
   # Test stub sources used to exercise the "impl exports the optional callback"
   # branches of WorkspaceSource. WorkspaceSource resolves the active source via
-  # Application.get_env(:dev_ide, :workspace_source, ...) and then checks
+  # Application.get_env(:casein, :workspace_source, ...) and then checks
   # function_exported?/3, so a module that defines a callback drives the
   # delegating branch and one that omits it drives the fallback branch.
   # ---------------------------------------------------------------------------
@@ -39,25 +39,25 @@ defmodule Casein.WorkspaceSourceTest do
   end
 
   defp put_source(mod) do
-    prev = Application.get_env(:dev_ide, :workspace_source)
-    Application.put_env(:dev_ide, :workspace_source, mod)
+    prev = Application.get_env(:casein, :workspace_source)
+    Application.put_env(:casein, :workspace_source, mod)
 
     on_exit(fn ->
       if prev do
-        Application.put_env(:dev_ide, :workspace_source, prev)
+        Application.put_env(:casein, :workspace_source, prev)
       else
-        Application.delete_env(:dev_ide, :workspace_source)
+        Application.delete_env(:casein, :workspace_source)
       end
     end)
   end
 
   describe "impl/0" do
     test "defaults to Local when nothing configured" do
-      prev = Application.get_env(:dev_ide, :workspace_source)
-      Application.delete_env(:dev_ide, :workspace_source)
+      prev = Application.get_env(:casein, :workspace_source)
+      Application.delete_env(:casein, :workspace_source)
 
       on_exit(fn ->
-        if prev, do: Application.put_env(:dev_ide, :workspace_source, prev)
+        if prev, do: Application.put_env(:casein, :workspace_source, prev)
       end)
 
       assert WorkspaceSource.impl() == Casein.WorkspaceSource.Local

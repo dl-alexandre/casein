@@ -20,7 +20,7 @@ defmodule Mix.Tasks.Casein.Artifact.Smoke do
   @impl true
   def run(argv) do
     Mix.Task.run("app.config")
-    {:ok, _apps} = Application.ensure_all_started(:dev_ide)
+    {:ok, _apps} = Application.ensure_all_started(:casein)
 
     {opts, args, invalid} =
       OptionParser.parse(argv,

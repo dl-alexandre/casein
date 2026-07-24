@@ -32,13 +32,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsEventsTest do
   end
 
   setup do
-    prev = Application.get_env(:dev_ide, :logs_adapter)
+    prev = Application.get_env(:casein, :logs_adapter)
 
     on_exit(fn ->
       if prev do
-        Application.put_env(:dev_ide, :logs_adapter, prev)
+        Application.put_env(:casein, :logs_adapter, prev)
       else
-        Application.delete_env(:dev_ide, :logs_adapter)
+        Application.delete_env(:casein, :logs_adapter)
       end
     end)
 
@@ -110,7 +110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsEventsTest do
   end
 
   test "set_log_service assigns the service, resets the stream, and starts a stream ref" do
-    Application.put_env(:dev_ide, :logs_adapter, FakeLogsAdapter)
+    Application.put_env(:casein, :logs_adapter, FakeLogsAdapter)
 
     # Pre-seed so stream/4 takes the reset path (new streams never set reset?).
     s =
@@ -130,7 +130,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsEventsTest do
   end
 
   test "set_log_service stores a nil log_ref when the adapter fails" do
-    Application.put_env(:dev_ide, :logs_adapter, FailingLogsAdapter)
+    Application.put_env(:casein, :logs_adapter, FailingLogsAdapter)
     s = socket(%{log_ref: make_ref()})
 
     assert {:noreply, s2} =
@@ -141,7 +141,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.LogsEventsTest do
   end
 
   test "start_log_stream assigns ref from a successful adapter" do
-    Application.put_env(:dev_ide, :logs_adapter, FakeLogsAdapter)
+    Application.put_env(:casein, :logs_adapter, FakeLogsAdapter)
     s = socket(%{log_service: "web"})
     s2 = LogsEvents.start_log_stream(s)
     assert is_reference(s2.assigns.log_ref)

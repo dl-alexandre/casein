@@ -28,7 +28,7 @@ defmodule Casein.MCP.ScopeTest.Source do
     do: with({:ok, path} <- safe_host_path(workspace), do: {:ok, {:local, path}})
 
   defp workspace do
-    Application.get_env(:dev_ide, :mcp_scope_test_workspace, @workspace)
+    Application.get_env(:casein, :mcp_scope_test_workspace, @workspace)
   end
 end
 
@@ -43,13 +43,13 @@ defmodule Casein.MCP.ScopeTest do
   alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_workspace = Application.get_env(:dev_ide, :mcp_scope_test_workspace)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_workspace = Application.get_env(:casein, :mcp_scope_test_workspace)
+    prev_root = Application.get_env(:casein, :workspaces_root)
 
     MemoryAdapter.clear()
     _ = Registry.clear()
-    Application.put_env(:dev_ide, :workspace_source, Casein.MCP.ScopeTest.Source)
+    Application.put_env(:casein, :workspace_source, Casein.MCP.ScopeTest.Source)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -107,9 +107,9 @@ defmodule Casein.MCP.ScopeTest do
     root = tmp_root!("scope-linked")
     workspace = Path.join(root, "demo")
     File.mkdir_p!(workspace)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
-    Application.put_env(:dev_ide, :mcp_scope_test_workspace, %Workspace{
+    Application.put_env(:casein, :mcp_scope_test_workspace, %Workspace{
       id: "ws-scope",
       name: "scope",
       user: "alice",
@@ -138,7 +138,7 @@ defmodule Casein.MCP.ScopeTest do
     root = tmp_root!("scope-path")
     workspace = Path.join(root, "demo")
     File.mkdir_p!(workspace)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     for key <- ["workspace_path", "path", "cwd"] do
       assert {:ok, scope} =
@@ -295,6 +295,6 @@ defmodule Casein.MCP.ScopeTest do
     root
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

@@ -178,7 +178,7 @@ defmodule CaseinWeb.API.TerminalMCPTest do
     session_a = prefix <> "_a"
     session_b = prefix <> "_b"
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -187,7 +187,7 @@ defmodule CaseinWeb.API.TerminalMCPTest do
     })
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :tmux_adapter)
+      Application.delete_env(:casein, :tmux_adapter)
       TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
       TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
     end)

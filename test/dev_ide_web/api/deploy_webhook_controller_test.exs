@@ -5,8 +5,8 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
   @repo "dl-alexandre/dev_ide"
 
   setup %{conn: conn} do
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
-    prev_trigger = Application.get_env(:dev_ide, :deploy_poller_trigger)
+    prev_deploy = Application.get_env(:casein, :deployment)
+    prev_trigger = Application.get_env(:casein, :deploy_poller_trigger)
     parent = self()
 
     deployment =
@@ -14,21 +14,21 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
       |> Keyword.put(:github_webhook_secret, @secret)
       |> Keyword.put(:github_repo, @repo)
 
-    Application.put_env(:dev_ide, :deployment, deployment)
+    Application.put_env(:casein, :deployment, deployment)
 
-    Application.put_env(:dev_ide, :deploy_poller_trigger, fn _opts ->
+    Application.put_env(:casein, :deploy_poller_trigger, fn _opts ->
       send(parent, :poller_triggered)
       :ok
     end)
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
 
       if prev_trigger,
-        do: Application.put_env(:dev_ide, :deploy_poller_trigger, prev_trigger),
-        else: Application.delete_env(:dev_ide, :deploy_poller_trigger)
+        do: Application.put_env(:casein, :deploy_poller_trigger, prev_trigger),
+        else: Application.delete_env(:casein, :deploy_poller_trigger)
     end)
 
     {:ok, conn: conn}
@@ -39,11 +39,11 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
     System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
 
     deployment =
-      :dev_ide
+      :casein
       |> Application.get_env(:deployment, [])
       |> Keyword.delete(:github_webhook_secret)
 
-    Application.put_env(:dev_ide, :deployment, deployment)
+    Application.put_env(:casein, :deployment, deployment)
 
     on_exit(fn ->
       if prev_secret,
@@ -118,7 +118,7 @@ defmodule CaseinWeb.API.DeployWebhookControllerTest do
   end
 
   test "returns 502 when the poller trigger fails", %{conn: conn} do
-    Application.put_env(:dev_ide, :deploy_poller_trigger, fn _opts ->
+    Application.put_env(:casein, :deploy_poller_trigger, fn _opts ->
       {:error, {:systemctl_failed, 1, "boom"}}
     end)
 

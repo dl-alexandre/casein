@@ -50,8 +50,8 @@ defmodule CaseinWeb.ConnCase do
   end
 
   defp reset_devbox_env_overrides do
-    Application.put_env(:dev_ide, :forward_auth, false)
-    Application.put_env(:dev_ide, :admins, [])
-    Application.put_env(:dev_ide, :on_devbox, false)
+    Application.put_env(:casein, :forward_auth, false)
+    Application.put_env(:casein, :admins, [])
+    Application.put_env(:casein, :on_devbox, false)
   end
 end

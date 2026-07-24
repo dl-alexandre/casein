@@ -105,7 +105,7 @@ defmodule Casein.Agents.OrchestratorTokens do
 
   @doc false
   def ttl_seconds do
-    Application.get_env(:dev_ide, :orchestrator_token_ttl_seconds, @default_ttl_seconds)
+    Application.get_env(:casein, :orchestrator_token_ttl_seconds, @default_ttl_seconds)
   end
 
   @doc false

@@ -36,21 +36,21 @@ defmodule Casein.AgentsFacadeTest do
       Enum.filter(ReviewCommand.all(), &ReviewCommand.available?(&1, caps))
     end
 
-    defp stub_pid, do: Application.fetch_env!(:dev_ide, :agents_facade_stub_pid)
+    defp stub_pid, do: Application.fetch_env!(:casein, :agents_facade_stub_pid)
   end
 
   setup do
-    prev = Application.get_env(:dev_ide, :agents_adapter)
-    Application.put_env(:dev_ide, :agents_adapter, Stub)
-    Application.put_env(:dev_ide, :agents_facade_stub_pid, self())
+    prev = Application.get_env(:casein, :agents_adapter)
+    Application.put_env(:casein, :agents_adapter, Stub)
+    Application.put_env(:casein, :agents_facade_stub_pid, self())
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :agents_adapter)
-        value -> Application.put_env(:dev_ide, :agents_adapter, value)
+        nil -> Application.delete_env(:casein, :agents_adapter)
+        value -> Application.put_env(:casein, :agents_adapter, value)
       end
 
-      Application.delete_env(:dev_ide, :agents_facade_stub_pid)
+      Application.delete_env(:casein, :agents_facade_stub_pid)
     end)
 
     :ok

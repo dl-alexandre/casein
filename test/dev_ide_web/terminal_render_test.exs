@@ -83,7 +83,7 @@ defmodule CaseinWeb.TerminalRenderTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :terminal, :render_frame],
+      [:casein, :terminal, :render_frame],
       fn event, measurements, metadata, _cfg ->
         send(test_pid, {:render_frame_telemetry, event, measurements, metadata})
       end,
@@ -104,7 +104,7 @@ defmodule CaseinWeb.TerminalRenderTest do
       frame_epoch: 2
     )
 
-    assert_receive {:render_frame_telemetry, [:dev_ide, :terminal, :render_frame], measurements,
+    assert_receive {:render_frame_telemetry, [:casein, :terminal, :render_frame], measurements,
                     metadata}
 
     assert measurements.count == 1

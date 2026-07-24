@@ -17,28 +17,28 @@ defmodule Casein.Push.FCMProviderTest do
   }
 
   setup do
-    prev = Application.get_env(:dev_ide, FCMProvider)
-    prev_token = Application.get_env(:dev_ide, FCMToken)
+    prev = Application.get_env(:casein, FCMProvider)
+    prev_token = Application.get_env(:casein, FCMToken)
 
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
       http_client: Casein.Push.FCM.StubHTTP
     )
 
-    Application.put_env(:dev_ide, :fcm_test_pid, self())
+    Application.put_env(:casein, :fcm_test_pid, self())
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :fcm_test_pid)
-      Application.delete_env(:dev_ide, :fcm_stub_response)
+      Application.delete_env(:casein, :fcm_test_pid)
+      Application.delete_env(:casein, :fcm_stub_response)
 
       if prev,
-        do: Application.put_env(:dev_ide, FCMProvider, prev),
-        else: Application.delete_env(:dev_ide, FCMProvider)
+        do: Application.put_env(:casein, FCMProvider, prev),
+        else: Application.delete_env(:casein, FCMProvider)
 
       if prev_token,
-        do: Application.put_env(:dev_ide, FCMToken, prev_token),
-        else: Application.delete_env(:dev_ide, FCMToken)
+        do: Application.put_env(:casein, FCMToken, prev_token),
+        else: Application.delete_env(:casein, FCMToken)
     end)
 
     :ok
@@ -82,7 +82,7 @@ defmodule Casein.Push.FCMProviderTest do
 
   test "returns an error on a non-2xx FCM response" do
     Application.put_env(
-      :dev_ide,
+      :casein,
       :fcm_stub_response,
       {:ok, %{status: 404, body: %{"error" => "NOT_FOUND"}}}
     )
@@ -130,12 +130,12 @@ defmodule Casein.Push.FCMProviderTest do
   end
 
   test "infers project id from FCMToken service-account config" do
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
       http_client: Casein.Push.FCM.StubHTTP
     )
 
-    Application.put_env(:dev_ide, FCMToken,
+    Application.put_env(:casein, FCMToken,
       service_account: %{
         project_id: "inferred-project",
         client_email: "firebase-adminsdk@example.iam.gserviceaccount.com"
@@ -148,7 +148,7 @@ defmodule Casein.Push.FCMProviderTest do
   end
 
   test "errors cleanly when no access-token source is configured" do
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       project_id: "demo-project",
       http_client: Casein.Push.FCM.StubHTTP
     )
@@ -158,7 +158,7 @@ defmodule Casein.Push.FCMProviderTest do
   end
 
   test "errors cleanly when no project is configured" do
-    Application.put_env(:dev_ide, FCMProvider, access_token_fun: fn -> {:ok, "t"} end)
+    Application.put_env(:casein, FCMProvider, access_token_fun: fn -> {:ok, "t"} end)
 
     assert {:error, :no_project_id} = FCMProvider.push("t", "android", @notification)
     assert {:error, :no_project_id} = FCMProvider.configured?()

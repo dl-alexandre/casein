@@ -17,7 +17,7 @@ defmodule Casein.RuntimesTest do
     @impl true
     def start(spec) do
       send(
-        Application.fetch_env!(:dev_ide, :runtime_preview_runner_test_pid),
+        Application.fetch_env!(:casein, :runtime_preview_runner_test_pid),
         {:preview_start, spec}
       )
 
@@ -32,14 +32,14 @@ defmodule Casein.RuntimesTest do
     Casein.Audit.MemoryAdapter.clear()
     AgentEvents.clear()
 
-    prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
-    prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
-    prev_reconcile_ttl = Application.get_env(:dev_ide, :worktree_reconcile_ttl_ms)
-    prev_launcher_enabled = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
-    prev_runner = Application.get_env(:dev_ide, :runtime_preview_runner)
-    prev_runner_pid = Application.get_env(:dev_ide, :runtime_preview_runner_test_pid)
+    prev_runtime = Application.get_env(:casein, :runtimes_adapter)
+    prev_agent_roots = Application.get_env(:casein, :agent_worktree_roots)
+    prev_reconcile_ttl = Application.get_env(:casein, :worktree_reconcile_ttl_ms)
+    prev_launcher_enabled = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    prev_runner = Application.get_env(:casein, :runtime_preview_runner)
+    prev_runner_pid = Application.get_env(:casein, :runtime_preview_runner_test_pid)
 
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -257,8 +257,8 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "agent-expired-port-next", worktree_next, "main"])
     seed_workspace("ws-expired-port", root)
 
-    prev_range = Application.get_env(:dev_ide, :runtime_preview_port_range)
-    Application.put_env(:dev_ide, :runtime_preview_port_range, {41_990, 41_990})
+    prev_range = Application.get_env(:casein, :runtime_preview_port_range)
+    Application.put_env(:casein, :runtime_preview_port_range, {41_990, 41_990})
     on_exit(fn -> restore_env(:runtime_preview_port_range, prev_range) end)
 
     assert {:ok, stale} =
@@ -286,8 +286,8 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "agent-preview-full", worktree, "main"])
     seed_workspace("ws-preview-port-full", root)
 
-    prev_range = Application.get_env(:dev_ide, :runtime_preview_port_range)
-    Application.put_env(:dev_ide, :runtime_preview_port_range, {41_990, 41_990})
+    prev_range = Application.get_env(:casein, :runtime_preview_port_range)
+    Application.put_env(:casein, :runtime_preview_port_range, {41_990, 41_990})
     on_exit(fn -> restore_env(:runtime_preview_port_range, prev_range) end)
 
     {:ok, _busy} =
@@ -326,9 +326,9 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-launch", root)
 
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
-    Application.put_env(:dev_ide, :runtime_preview_runner, __MODULE__.PreviewRunner)
-    Application.put_env(:dev_ide, :runtime_preview_runner_test_pid, self())
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:casein, :runtime_preview_runner_test_pid, self())
 
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-launch", %{
@@ -361,9 +361,9 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-launch-missing", root)
 
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
-    Application.put_env(:dev_ide, :runtime_preview_runner, __MODULE__.PreviewRunner)
-    Application.put_env(:dev_ide, :runtime_preview_runner_test_pid, self())
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:casein, :runtime_preview_runner_test_pid, self())
     previous = System.get_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
     System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", Path.join(worktree, "missing-launcher.sh"))
 
@@ -458,7 +458,7 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
     seed_workspace("ws-preview-heartbeat", root)
 
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
 
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-heartbeat", %{
@@ -525,7 +525,7 @@ defmodule Casein.RuntimesTest do
     File.mkdir_p!(Path.dirname(worktree))
     git!(root, ["worktree", "add", "-b", "agent-feature", worktree, "main"])
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-agent-external", root)
 
     assert {:ok, runtime} =
@@ -546,7 +546,7 @@ defmodule Casein.RuntimesTest do
     File.mkdir_p!(unrelated)
     init_repo!(unrelated)
 
-    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    Application.put_env(:casein, :agent_worktree_roots, [agent_root])
     seed_workspace("ws-agent-unrelated", root)
 
     assert {:error, :unrelated_worktree} =
@@ -716,7 +716,7 @@ defmodule Casein.RuntimesTest do
     git!(root, ["worktree", "add", "-b", "first-cache", first, "main"])
     seed_workspace("ws-reconcile-cache", root)
 
-    Application.put_env(:dev_ide, :worktree_reconcile_ttl_ms, 60_000)
+    Application.put_env(:casein, :worktree_reconcile_ttl_ms, 60_000)
 
     assert {:ok, %{observed_count: 1}} = WorktreeReconciler.reconcile("ws-reconcile-cache")
     assert [%{path: ^first}] = WorktreeReconciler.list_agent_worktrees("ws-reconcile-cache")
@@ -759,8 +759,8 @@ defmodule Casein.RuntimesTest do
       })
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp tmp_repo!(name) do
     path = tmp_dir!(name)

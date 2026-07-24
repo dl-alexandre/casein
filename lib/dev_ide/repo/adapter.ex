@@ -3,7 +3,7 @@ defmodule Casein.Repo.Adapter do
 
   @sqlite Ecto.Adapters.SQLite3
   @postgres Ecto.Adapters.Postgres
-  @configured Application.compile_env(:dev_ide, :repo_adapter, @postgres)
+  @configured Application.compile_env(:casein, :repo_adapter, @postgres)
   @sqlite? @configured == @sqlite
   @postgres? @configured == @postgres
 

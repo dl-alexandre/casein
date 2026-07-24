@@ -442,7 +442,7 @@ defmodule Casein.Runtimes.PreviewServer do
 
       Code.ensure_loaded?(Application) ->
         release_path =
-          Application.app_dir(:dev_ide, Path.join(["priv", "scripts", @default_launcher]))
+          Application.app_dir(:casein, Path.join(["priv", "scripts", @default_launcher]))
 
         source_path = Path.expand(Path.join(["priv", "scripts", @default_launcher]))
 

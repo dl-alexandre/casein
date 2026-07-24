@@ -6,15 +6,15 @@ defmodule CaseinWeb.API.PreviewPaneControllerTest do
   @token "test-preview-pane-token"
 
   setup do
-    prev = Application.get_env(:dev_ide, :api_token)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :api_token, @token)
+    prev = Application.get_env(:casein, :api_token)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :api_token, @token)
     PreviewPanes.clear()
 
     root = Path.join(System.tmp_dir!(), "preview-pane-api-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     on_exit(fn ->
       PreviewPanes.clear()
@@ -26,8 +26,8 @@ defmodule CaseinWeb.API.PreviewPaneControllerTest do
     {:ok, path: path}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp auth_conn(conn, token \\ @token) do
     conn

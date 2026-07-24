@@ -4,19 +4,19 @@ defmodule Casein.Deployment.CapabilitiesTest do
   alias Casein.Deployment.Capabilities
 
   setup do
-    previous = Application.get_env(:dev_ide, :deployment_capabilities)
+    previous = Application.get_env(:casein, :deployment_capabilities)
 
     on_exit(fn ->
       if is_nil(previous) do
-        Application.delete_env(:dev_ide, :deployment_capabilities)
+        Application.delete_env(:casein, :deployment_capabilities)
       else
-        Application.put_env(:dev_ide, :deployment_capabilities, previous)
+        Application.put_env(:casein, :deployment_capabilities, previous)
       end
     end)
   end
 
   test "portable profiles can disable every operator integration" do
-    Application.put_env(:dev_ide, :deployment_capabilities, [])
+    Application.put_env(:casein, :deployment_capabilities, [])
 
     refute Capabilities.enabled?(:deploy_drift)
     refute Capabilities.enabled?(:deploy_status)
@@ -26,7 +26,7 @@ defmodule Casein.Deployment.CapabilitiesTest do
   end
 
   test "configured integrations are explicit" do
-    Application.put_env(:dev_ide, :deployment_capabilities, [:deploy_drift])
+    Application.put_env(:casein, :deployment_capabilities, [:deploy_drift])
 
     assert Capabilities.enabled?(:deploy_drift)
     refute Capabilities.enabled?(:poller)

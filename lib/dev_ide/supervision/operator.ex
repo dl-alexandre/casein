@@ -21,6 +21,6 @@ defmodule Casein.Supervision.Operator do
   # The Postgres saturation probe shells out to psql every interval — started
   # only when explicitly enabled (DEV_IDE_PG_PROBE, see config/runtime.exs).
   defp pg_probe do
-    if Application.get_env(:dev_ide, :pg_probe, false), do: [Casein.Ops.PgProbe], else: []
+    if Application.get_env(:casein, :pg_probe, false), do: [Casein.Ops.PgProbe], else: []
   end
 end

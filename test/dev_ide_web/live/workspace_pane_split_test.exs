@@ -35,15 +35,15 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
     workspace_tmux_prefix = Casein.Terminals.Tmux.workspace_session_prefix(workspace_name)
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_pane_backend = Application.get_env(:casein, :ghostty_pane_backend)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
-    Application.put_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
-    Application.delete_env(:dev_ide, :workspace_modes)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :default_workspace_mode, :review)
+    Application.put_env(:casein, :ghostty_pane_backend, :ghostty_pty)
+    Application.delete_env(:casein, :workspace_modes)
 
     MemoryAdapter.clear()
     Audit.clear()
@@ -105,7 +105,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -115,7 +115,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       extra_session = Casein.Terminals.Tmux.session_name(workspace_name, extra_sid)
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -195,7 +195,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -203,7 +203,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -285,7 +285,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -293,7 +293,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -451,7 +451,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -459,7 +459,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
@@ -526,7 +526,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -534,7 +534,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Two windows, the active one (@0) holding a single pane.
@@ -594,7 +594,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -602,7 +602,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Single window, single pane: closing it ends the tmux session.
@@ -677,7 +677,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -685,7 +685,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       session = Casein.Terminals.Tmux.session_name(workspace_name, "u-dev")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       # Active window @0 (single pane) plus a background window @1 holding two
@@ -1329,8 +1329,8 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
   @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_test_pid)a
 
   defp restore(k, v) when k in @fake_state_keys, do: TmuxCtl.Test.FakeState.restore(k, v)
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   defp kill_tmux_session(session) when is_binary(session) do
     _ =
@@ -1541,7 +1541,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
 
     test "palette consolidate session moves other workspace sessions into the active session",
          %{conn: conn, workspace_name: workspace_name, workspace_path: workspace_path} do
-      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
       prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
       prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
       prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -1554,7 +1554,7 @@ defmodule CaseinWeb.WorkspacePaneSplitTest do
       # session that consolidate folds the others into.
       older_activity = activity_now - 100
 
-      Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+      Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
       TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{

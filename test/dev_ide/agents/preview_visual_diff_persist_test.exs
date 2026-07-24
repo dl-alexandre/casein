@@ -12,15 +12,15 @@ defmodule Casein.Agents.PreviewVisualDiffPersistTest do
         )
 
       File.mkdir_p!(root)
-      previous = Application.get_env(:dev_ide, :preview_artifacts_root)
-      Application.put_env(:dev_ide, :preview_artifacts_root, root)
+      previous = Application.get_env(:casein, :preview_artifacts_root)
+      Application.put_env(:casein, :preview_artifacts_root, root)
 
       on_exit(fn ->
         File.rm_rf(root)
 
         if previous,
-          do: Application.put_env(:dev_ide, :preview_artifacts_root, previous),
-          else: Application.delete_env(:dev_ide, :preview_artifacts_root)
+          do: Application.put_env(:casein, :preview_artifacts_root, previous),
+          else: Application.delete_env(:casein, :preview_artifacts_root)
       end)
 
       :ok

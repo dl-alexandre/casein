@@ -37,7 +37,7 @@ defmodule PreviewCtl.Playwright.BridgeTest do
     Application.put_env(:preview_ctl, :playwright_script, "scripts/preview_playwright.mjs")
 
     assert Bridge.script_path() ==
-             :dev_ide
+             :casein
              |> :code.priv_dir()
              |> List.to_string()
              |> Path.join("scripts/preview_playwright.mjs")

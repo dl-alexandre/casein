@@ -62,5 +62,5 @@ defmodule Casein.Terminals.GhosttySnapshot do
     %{base: base, files: files, preview: preview}
   end
 
-  defp snapshot_dir, do: Application.get_env(:dev_ide, :ghostty_snapshot_dir, "/tmp")
+  defp snapshot_dir, do: Application.get_env(:casein, :ghostty_snapshot_dir, "/tmp")
 end

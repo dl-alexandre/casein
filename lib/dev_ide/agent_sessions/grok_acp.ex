@@ -623,7 +623,7 @@ defmodule Casein.AgentSessions.GrokACP do
   defp registry_key(workspace_id, key), do: {:grok_acp, workspace_id, key}
 
   defp app_version do
-    case Application.spec(:dev_ide, :vsn) do
+    case Application.spec(:casein, :vsn) do
       nil -> "dev"
       version -> to_string(version)
     end

@@ -117,5 +117,5 @@ defmodule Casein.Test.RuntimeSeed do
   defp generate_id, do: "rt-" <> Ecto.UUID.generate()
 
   defp impl,
-    do: Application.get_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    do: Application.get_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
 end

@@ -233,10 +233,10 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
 
   defp schedule(ms), do: Process.send_after(self(), :sweep, ms)
 
-  defp tmux, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  defp tmux, do: Application.get_env(:casein, :tmux_adapter, Tmux)
 
   defp sweep_ms do
-    case Application.get_env(:dev_ide, :tmux_window_sweep_ms) do
+    case Application.get_env(:casein, :tmux_window_sweep_ms) do
       n when is_integer(n) and n > 0 -> n
       _ -> nil
     end
@@ -246,7 +246,7 @@ defmodule Casein.Terminals.TmuxWindowJanitor do
   defp session_idle_seconds, do: idle_seconds(:tmux_session_idle_seconds)
 
   defp idle_seconds(key) do
-    case Application.get_env(:dev_ide, key) do
+    case Application.get_env(:casein, key) do
       n when is_integer(n) and n > 0 -> n
       _ -> @default_idle_seconds
     end

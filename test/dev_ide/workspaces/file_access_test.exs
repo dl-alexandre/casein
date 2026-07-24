@@ -9,9 +9,9 @@ defmodule Casein.Workspaces.FileAccessTest do
   @root "/data/workspaces/ws"
 
   setup do
-    prev = Application.get_env(:dev_ide, :ssh_runner)
-    Application.put_env(:dev_ide, :ssh_runner, FakeSshRunner)
-    on_exit(fn -> Application.put_env(:dev_ide, :ssh_runner, prev) end)
+    prev = Application.get_env(:casein, :ssh_runner)
+    Application.put_env(:casein, :ssh_runner, FakeSshRunner)
+    on_exit(fn -> Application.put_env(:casein, :ssh_runner, prev) end)
     :ok
   end
 

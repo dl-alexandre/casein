@@ -5,13 +5,13 @@ defmodule Casein.Previews.Storage.LocalDiskTest do
 
   setup do
     root = Path.join(System.tmp_dir!(), "local-disk-test-#{System.unique_integer([:positive])}")
-    prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
+    prev_root = Application.get_env(:casein, :preview_artifacts_root)
+    Application.put_env(:casein, :preview_artifacts_root, root)
 
     on_exit(fn ->
       case prev_root do
-        nil -> Application.delete_env(:dev_ide, :preview_artifacts_root)
-        value -> Application.put_env(:dev_ide, :preview_artifacts_root, value)
+        nil -> Application.delete_env(:casein, :preview_artifacts_root)
+        value -> Application.put_env(:casein, :preview_artifacts_root, value)
       end
 
       File.rm_rf(root)

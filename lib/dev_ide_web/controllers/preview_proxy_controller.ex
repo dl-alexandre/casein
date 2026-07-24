@@ -218,7 +218,7 @@ defmodule CaseinWeb.PreviewProxyController do
     if query in [nil, ""], do: path, else: path <> "?" <> query
   end
 
-  defp hmr_config, do: Application.get_env(:dev_ide, :preview_proxy_hmr, [])
+  defp hmr_config, do: Application.get_env(:casein, :preview_proxy_hmr, [])
 
   # sobelow_skip ["XSS.SendResp"]
   # Re-serving the upstream body verbatim IS the feature: the user's own,

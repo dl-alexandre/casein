@@ -10,17 +10,17 @@ defmodule Casein.Workspaces.SessionSummaryTest do
   alias Casein.Workspaces.State.WorkspaceRecord
 
   setup do
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_session_meta = TmuxCtl.Test.FakeState.get(:fake_tmux_session_meta)
-    prev_git_adapter = Application.get_env(:dev_ide, :git_adapter)
+    prev_git_adapter = Application.get_env(:casein, :git_adapter)
 
     Runtimes.clear()
     Activity.clear()
     AgentState.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :git_adapter, git_stub("git-branch", 2))
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :git_adapter, git_stub("git-branch", 2))
 
     on_exit(fn ->
       Runtimes.clear()
@@ -473,8 +473,8 @@ defmodule Casein.Workspaces.SessionSummaryTest do
   defp restore(key, value) when key in @fake_state_keys,
     do: TmuxCtl.Test.FakeState.restore(key, value)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp transcript_fixture! do
     root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
@@ -482,7 +482,7 @@ defmodule Casein.Workspaces.SessionSummaryTest do
     auth_root =
       Path.join([root, "summary-transcript-#{System.unique_integer([:positive])}", "auth"])
 
-    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+    Application.put_env(:casein, :agent_auth_profile_root, auth_root)
 
     path =
       Path.join([

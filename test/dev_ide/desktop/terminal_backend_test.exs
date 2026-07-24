@@ -10,21 +10,21 @@ defmodule Casein.Desktop.TerminalBackendTest do
   end
 
   test "runtime override makes platform routing testable" do
-    previous = Application.get_env(:dev_ide, :desktop_terminal_backend)
+    previous = Application.get_env(:casein, :desktop_terminal_backend)
 
     on_exit(fn ->
       if previous,
-        do: Application.put_env(:dev_ide, :desktop_terminal_backend, previous),
-        else: Application.delete_env(:dev_ide, :desktop_terminal_backend)
+        do: Application.put_env(:casein, :desktop_terminal_backend, previous),
+        else: Application.delete_env(:casein, :desktop_terminal_backend)
     end)
 
-    Application.put_env(:dev_ide, :desktop_terminal_backend, :powershell)
+    Application.put_env(:casein, :desktop_terminal_backend, :powershell)
     assert TerminalBackend.powershell?()
     refute TerminalBackend.tmux?()
     assert TerminalBackend.native_session?(true)
     refute TerminalBackend.native_session?(false)
 
-    Application.put_env(:dev_ide, :desktop_terminal_backend, :tmux)
+    Application.put_env(:casein, :desktop_terminal_backend, :tmux)
     refute TerminalBackend.native_session?(true)
   end
 end

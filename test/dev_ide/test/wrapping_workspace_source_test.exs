@@ -5,13 +5,13 @@ defmodule Casein.Test.WrappingWorkspaceSourceTest do
   alias Casein.Test.WrappingWorkspaceSource
 
   setup do
-    prev = Application.get_env(:dev_ide, :workspace_source)
-    Application.put_env(:dev_ide, :workspace_source, WrappingWorkspaceSource)
+    prev = Application.get_env(:casein, :workspace_source)
+    Application.put_env(:casein, :workspace_source, WrappingWorkspaceSource)
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, :workspace_source, prev),
-        else: Application.delete_env(:dev_ide, :workspace_source)
+        do: Application.put_env(:casein, :workspace_source, prev),
+        else: Application.delete_env(:casein, :workspace_source)
     end)
 
     :ok

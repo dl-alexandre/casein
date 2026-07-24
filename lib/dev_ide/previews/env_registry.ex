@@ -12,7 +12,7 @@ defmodule Casein.Previews.EnvRegistry do
   @doc "Absolute path to the preview-env state directory."
   @spec home() :: String.t()
   def home do
-    Application.get_env(:dev_ide, :preview_env_home) ||
+    Application.get_env(:casein, :preview_env_home) ||
       System.get_env("DEVIDE_PREVIEW_HOME") ||
       default_home()
   end
@@ -89,7 +89,7 @@ defmodule Casein.Previews.EnvRegistry do
 
   defp default_home do
     checkout =
-      Application.get_env(:dev_ide, :preview_env_checkout_root) ||
+      Application.get_env(:casein, :preview_env_checkout_root) ||
         File.cwd!()
 
     Path.join(Path.expand(Path.join(checkout, "..")), ".devide-preview")

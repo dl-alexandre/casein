@@ -73,7 +73,7 @@ defmodule Casein.Ops.PgProbe do
 
   @doc "Whether the probe is enabled (`DEV_IDE_PG_PROBE`)."
   @spec enabled?() :: boolean()
-  def enabled?, do: Application.get_env(:dev_ide, :pg_probe, false)
+  def enabled?, do: Application.get_env(:casein, :pg_probe, false)
 
   @doc "Whether a probe server is running (started by the supervision tree)."
   @spec running?() :: boolean()
@@ -430,10 +430,10 @@ defmodule Casein.Ops.PgProbe do
   @doc false
   @spec targets() :: [map()]
   def targets do
-    case Application.get_env(:dev_ide, :pg_probe_targets) do
+    case Application.get_env(:casein, :pg_probe_targets) do
       targets when is_list(targets) and targets != [] -> Enum.map(targets, &normalize_target/1)
       [] -> []
-      _ -> targets_from_json(Application.get_env(:dev_ide, :pg_probe_targets_json))
+      _ -> targets_from_json(Application.get_env(:casein, :pg_probe_targets_json))
     end
   end
 
@@ -479,17 +479,17 @@ defmodule Casein.Ops.PgProbe do
 
   defp port(_port), do: 5432
 
-  defp interval_ms, do: Application.get_env(:dev_ide, :pg_probe_interval_ms, 60_000)
-  defp warn_utilization, do: Application.get_env(:dev_ide, :pg_probe_warn_utilization, 0.7)
+  defp interval_ms, do: Application.get_env(:casein, :pg_probe_interval_ms, 60_000)
+  defp warn_utilization, do: Application.get_env(:casein, :pg_probe_warn_utilization, 0.7)
 
   defp critical_utilization,
-    do: Application.get_env(:dev_ide, :pg_probe_critical_utilization, 0.9)
+    do: Application.get_env(:casein, :pg_probe_critical_utilization, 0.9)
 
-  defp leak_suspects_max, do: Application.get_env(:dev_ide, :pg_probe_leak_suspects_max, 10)
-  defp psql, do: Application.get_env(:dev_ide, :pg_probe_psql, "psql")
-  defp default_user, do: Application.get_env(:dev_ide, :pg_probe_user, "postgres")
-  defp default_dbname, do: Application.get_env(:dev_ide, :pg_probe_dbname, "postgres")
-  defp default_password, do: Application.get_env(:dev_ide, :pg_probe_password, "postgres")
+  defp leak_suspects_max, do: Application.get_env(:casein, :pg_probe_leak_suspects_max, 10)
+  defp psql, do: Application.get_env(:casein, :pg_probe_psql, "psql")
+  defp default_user, do: Application.get_env(:casein, :pg_probe_user, "postgres")
+  defp default_dbname, do: Application.get_env(:casein, :pg_probe_dbname, "postgres")
+  defp default_password, do: Application.get_env(:casein, :pg_probe_password, "postgres")
 
   defp compact(map) do
     map

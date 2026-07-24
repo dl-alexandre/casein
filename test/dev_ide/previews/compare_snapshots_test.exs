@@ -1,5 +1,5 @@
 defmodule Casein.Previews.CompareSnapshotsTest do
-  # async: false — mutates :dev_ide app env (differ + artifacts root).
+  # async: false — mutates :casein app env (differ + artifacts root).
   use ExUnit.Case, async: false
 
   alias Casein.Previews.{Artifacts, Control}
@@ -24,12 +24,12 @@ defmodule Casein.Previews.CompareSnapshotsTest do
   end
 
   setup do
-    prev_differ = Application.get_env(:dev_ide, :preview_differ)
-    prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
+    prev_differ = Application.get_env(:casein, :preview_differ)
+    prev_root = Application.get_env(:casein, :preview_artifacts_root)
     root = Path.join(System.tmp_dir!(), "cmp-artifacts-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :preview_differ, FakeDiffer)
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
+    Application.put_env(:casein, :preview_differ, FakeDiffer)
+    Application.put_env(:casein, :preview_artifacts_root, root)
 
     on_exit(fn ->
       restore(:preview_differ, prev_differ)
@@ -45,8 +45,8 @@ defmodule Casein.Previews.CompareSnapshotsTest do
     %{ws: ws, a: a, b: b}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   test "diffs two persisted artifacts and returns stats + a persisted overlay", %{
     ws: ws,

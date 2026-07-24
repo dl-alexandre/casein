@@ -40,12 +40,12 @@ defmodule CaseinWeb.API.MCPToolSearchTest do
   ]
 
   setup do
-    prev = Application.get_env(:dev_ide, :mcp_tool_search)
+    prev = Application.get_env(:casein, :mcp_tool_search)
 
     on_exit(fn ->
       if is_nil(prev),
-        do: Application.delete_env(:dev_ide, :mcp_tool_search),
-        else: Application.put_env(:dev_ide, :mcp_tool_search, prev)
+        do: Application.delete_env(:casein, :mcp_tool_search),
+        else: Application.put_env(:casein, :mcp_tool_search, prev)
     end)
 
     :ok
@@ -55,12 +55,12 @@ defmodule CaseinWeb.API.MCPToolSearchTest do
 
   describe "list_tools/2" do
     test "returns the full list unchanged when disabled" do
-      Application.put_env(:dev_ide, :mcp_tool_search, false)
+      Application.put_env(:casein, :mcp_tool_search, false)
       assert MCPToolSearch.list_tools(@specs, :terminal) == @specs
     end
 
     test "reduces a surface with a core to core + meta when enabled" do
-      Application.put_env(:dev_ide, :mcp_tool_search, true)
+      Application.put_env(:casein, :mcp_tool_search, true)
       out = names(MCPToolSearch.list_tools(@specs, :terminal))
 
       assert "terminal_list_sessions" in out
@@ -73,7 +73,7 @@ defmodule CaseinWeb.API.MCPToolSearchTest do
     end
 
     test "returns the full list for a surface with no core, even when enabled" do
-      Application.put_env(:dev_ide, :mcp_tool_search, true)
+      Application.put_env(:casein, :mcp_tool_search, true)
       # :artifact has no core defined — must not be reduced (and must not become
       # just the two meta-tools).
       assert MCPToolSearch.list_tools(@specs, :artifact) == @specs

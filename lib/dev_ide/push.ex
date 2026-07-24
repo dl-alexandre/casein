@@ -13,7 +13,7 @@ defmodule Casein.Push do
       newly-created high-priority `:needs_review` mobile cards via the configured
       provider.
 
-  The provider is swappable (`config :dev_ide, :push_provider, ...`), defaulting
+  The provider is swappable (`config :casein, :push_provider, ...`), defaulting
   to `Casein.Push.LogProvider`. `Casein.Push.NativeProvider` routes Android FCM
   tokens and iOS APNs tokens to the right transport without caller changes.
 
@@ -34,7 +34,7 @@ defmodule Casein.Push do
   defdelegate stats(), to: Registry
 
   @spec provider() :: module()
-  def provider, do: Application.get_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
+  def provider, do: Application.get_env(:casein, :push_provider, Casein.Push.LogProvider)
 
   @spec ready_for?(String.t()) :: :ok | {:error, term()}
   def ready_for?(platform) do

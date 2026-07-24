@@ -11,12 +11,12 @@ defmodule CaseinWeb.Plugs.DeviceLinkRateLimitTest do
   defp path(suffix), do: "/api/device-links/exchange-test-#{suffix}"
 
   setup do
-    prev = Application.get_env(:dev_ide, DeviceLinkRateLimit)
+    prev = Application.get_env(:casein, DeviceLinkRateLimit)
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, DeviceLinkRateLimit, prev),
-        else: Application.delete_env(:dev_ide, DeviceLinkRateLimit)
+        do: Application.put_env(:casein, DeviceLinkRateLimit, prev),
+        else: Application.delete_env(:casein, DeviceLinkRateLimit)
     end)
 
     :ok

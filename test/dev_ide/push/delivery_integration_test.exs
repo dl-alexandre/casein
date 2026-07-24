@@ -21,21 +21,21 @@ defmodule Casein.Push.DeliveryIntegrationTest do
   alias Casein.Push.{APNSProvider, FCMProvider}
 
   setup do
-    prev_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_fcm = Application.get_env(:dev_ide, FCMProvider)
-    prev_apns = Application.get_env(:dev_ide, APNSProvider)
+    prev_provider = Application.get_env(:casein, :push_provider)
+    prev_fcm = Application.get_env(:casein, FCMProvider)
+    prev_apns = Application.get_env(:casein, APNSProvider)
 
     # The real production-shaped provider: route by platform, with both
     # transports configured to send through the test HTTP seam.
-    Application.put_env(:dev_ide, :push_provider, Push.NativeProvider)
+    Application.put_env(:casein, :push_provider, Push.NativeProvider)
 
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.integration-token"} end,
       http_client: Casein.Push.FCM.StubHTTP
     )
 
-    Application.put_env(:dev_ide, APNSProvider,
+    Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
@@ -44,8 +44,8 @@ defmodule Casein.Push.DeliveryIntegrationTest do
       now_fun: fn -> 1_800_000_000 end
     )
 
-    Application.put_env(:dev_ide, :fcm_test_pid, self())
-    Application.put_env(:dev_ide, :apns_test_pid, self())
+    Application.put_env(:casein, :fcm_test_pid, self())
+    Application.put_env(:casein, :apns_test_pid, self())
 
     Push.Registry.clear()
     Audit.clear()
@@ -53,8 +53,8 @@ defmodule Casein.Push.DeliveryIntegrationTest do
     on_exit(fn ->
       Push.Registry.clear()
       Audit.clear()
-      Application.delete_env(:dev_ide, :fcm_test_pid)
-      Application.delete_env(:dev_ide, :apns_test_pid)
+      Application.delete_env(:casein, :fcm_test_pid)
+      Application.delete_env(:casein, :apns_test_pid)
       restore(:push_provider, prev_provider)
       restore_module(FCMProvider, prev_fcm)
       restore_module(APNSProvider, prev_apns)
@@ -165,11 +165,11 @@ defmodule Casein.Push.DeliveryIntegrationTest do
     :public_key.pem_encode([:public_key.pem_entry_encode(:PrivateKeyInfo, key)])
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
-  defp restore_module(module, nil), do: Application.delete_env(:dev_ide, module)
-  defp restore_module(module, value), do: Application.put_env(:dev_ide, module, value)
+  defp restore_module(module, nil), do: Application.delete_env(:casein, module)
+  defp restore_module(module, value), do: Application.put_env(:casein, module, value)
 
   defp unique_user(prefix) do
     user_id = "#{prefix}-#{System.unique_integer([:positive])}"

@@ -7,7 +7,7 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
     dir =
       Path.join(System.tmp_dir!(), "devide-scrollback-test-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :tmux_scrollback_archive_dir, dir)
+    Application.put_env(:casein, :tmux_scrollback_archive_dir, dir)
     ScrollbackArchive.ensure_table!()
     on_exit(fn -> File.rm_rf(dir) end)
     %{dir: dir}
@@ -29,7 +29,7 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
   end
 
   test "trims oversized payloads to max_bytes" do
-    Application.put_env(:dev_ide, :tmux_scrollback_archive_bytes, 32)
+    Application.put_env(:casein, :tmux_scrollback_archive_bytes, 32)
     session = "devide_trim_#{System.unique_integer([:positive])}"
     data = String.duplicate("abcdefghij", 10)
 
@@ -38,6 +38,6 @@ defmodule Casein.Terminals.ScrollbackArchiveTest do
     assert byte_size(got) <= 32
     assert String.ends_with?(data, got) or String.contains?(data, got)
   after
-    Application.delete_env(:dev_ide, :tmux_scrollback_archive_bytes)
+    Application.delete_env(:casein, :tmux_scrollback_archive_bytes)
   end
 end

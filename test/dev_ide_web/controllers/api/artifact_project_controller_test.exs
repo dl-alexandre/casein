@@ -15,32 +15,32 @@ defmodule CaseinWeb.API.ArtifactProjectControllerTest do
 
   setup do
     previous = %{
-      api_token: Application.get_env(:dev_ide, :api_token),
-      workspace_api_tokens: Application.get_env(:dev_ide, :workspace_api_tokens),
-      artifact_projects_root: Application.get_env(:dev_ide, :artifact_projects_root),
-      agent_worktree_roots: Application.get_env(:dev_ide, :agent_worktree_roots),
+      api_token: Application.get_env(:casein, :api_token),
+      workspace_api_tokens: Application.get_env(:casein, :workspace_api_tokens),
+      artifact_projects_root: Application.get_env(:casein, :artifact_projects_root),
+      agent_worktree_roots: Application.get_env(:casein, :agent_worktree_roots),
       runtime_preview_launcher_enabled:
-        Application.get_env(:dev_ide, :runtime_preview_launcher_enabled),
-      runtimes_adapter: Application.get_env(:dev_ide, :runtimes_adapter),
-      workspace_state_adapter: Application.get_env(:dev_ide, :workspace_state_adapter)
+        Application.get_env(:casein, :runtime_preview_launcher_enabled),
+      runtimes_adapter: Application.get_env(:casein, :runtimes_adapter),
+      workspace_state_adapter: Application.get_env(:casein, :workspace_state_adapter)
     }
 
     base = Path.join(System.tmp_dir!(), "artifact-restore-#{System.unique_integer([:positive])}")
     repo = Path.join(base, "repo")
     artifact_root = Path.join(base, "artifacts")
 
-    Application.put_env(:dev_ide, :api_token, @global_token)
+    Application.put_env(:casein, :api_token, @global_token)
 
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{
+    Application.put_env(:casein, :workspace_api_tokens, %{
       @workspace_token => @workspace_id,
       @other_workspace_token => "ws-other"
     })
 
-    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
-    Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
-    Application.put_env(:dev_ide, :agent_worktree_roots, [])
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:casein, :workspace_state_adapter, MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :artifact_projects_root, artifact_root)
+    Application.put_env(:casein, :agent_worktree_roots, [])
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
 
     MemoryAdapter.clear()
     Runtimes.clear()
@@ -171,6 +171,6 @@ defmodule CaseinWeb.API.ArtifactProjectControllerTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

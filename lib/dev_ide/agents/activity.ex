@@ -73,7 +73,7 @@ defmodule Casein.Agents.Activity do
   end
 
   def handle_call(:clear, _from, _state) do
-    if Application.get_env(:dev_ide, :agent_events_adapter) ==
+    if Application.get_env(:casein, :agent_events_adapter) ==
          Casein.Agents.AgentEvents.MemoryAdapter do
       _ = AgentEvents.clear()
     end

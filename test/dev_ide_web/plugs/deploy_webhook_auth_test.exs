@@ -10,12 +10,12 @@ defmodule CaseinWeb.Plugs.DeployWebhookAuthTest do
   @body ~s({"ref":"refs/heads/master"})
 
   setup do
-    prev = Application.get_env(:dev_ide, :deployment)
+    prev = Application.get_env(:casein, :deployment)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :deployment)
-        val -> Application.put_env(:dev_ide, :deployment, val)
+        nil -> Application.delete_env(:casein, :deployment)
+        val -> Application.put_env(:casein, :deployment, val)
       end
     end)
 
@@ -24,17 +24,17 @@ defmodule CaseinWeb.Plugs.DeployWebhookAuthTest do
 
   defp put_secret(secret) do
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
-      Keyword.put(Application.get_env(:dev_ide, :deployment, []), :github_webhook_secret, secret)
+      Keyword.put(Application.get_env(:casein, :deployment, []), :github_webhook_secret, secret)
     )
   end
 
   defp clear_secret do
     config =
-      Application.get_env(:dev_ide, :deployment, []) |> Keyword.delete(:github_webhook_secret)
+      Application.get_env(:casein, :deployment, []) |> Keyword.delete(:github_webhook_secret)
 
-    Application.put_env(:dev_ide, :deployment, config)
+    Application.put_env(:casein, :deployment, config)
     System.delete_env("DEVIDE_DEPLOY_WEBHOOK_SECRET")
   end
 

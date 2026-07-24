@@ -183,13 +183,13 @@ defmodule Casein.Terminals.SessionDirectoryTest do
     Casein.Runtimes.clear()
     WorktreeReconciler.clear()
 
-    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
-    prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
+    prev_poll = Application.get_env(:casein, :session_directory_poll_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :session_directory_poll_ms, 25)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :session_directory_poll_ms, 25)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -209,8 +209,8 @@ defmodule Casein.Terminals.SessionDirectoryTest do
   defp restore(key, value) when key in @fake_state_keys,
     do: TmuxCtl.Test.FakeState.restore(key, value)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp put_fake_session(tmux_session, current_path \\ nil) do
     TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->

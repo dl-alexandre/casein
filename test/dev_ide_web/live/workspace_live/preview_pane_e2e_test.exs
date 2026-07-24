@@ -86,16 +86,16 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
 
   setup do
     # --- real playwright adapter + node bridge (mirrors AdapterTest) ---
-    prev_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
+    prev_adapter = Application.get_env(:casein, :preview_control_adapter)
     prev_script = Application.get_env(:preview_ctl, :playwright_script)
-    Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
+    Application.put_env(:casein, :preview_control_adapter, :playwright)
     Application.put_env(:preview_ctl, :playwright_script, "priv/scripts/preview_playwright.mjs")
     restart_bridge!()
 
     # --- fake tmux so pane registration needs no real tmux server ---
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -113,9 +113,9 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
       PreviewPanes.clear()
       FakeState.delete(:fake_tmux_windows)
       FakeState.delete(:fake_tmux_panes)
-      restore(:dev_ide, :preview_control_adapter, prev_adapter)
-      restore(:dev_ide, :tmux_adapter, prev_tmux)
-      restore(:dev_ide, :workspaces_root, prev_root)
+      restore(:casein, :preview_control_adapter, prev_adapter)
+      restore(:casein, :tmux_adapter, prev_tmux)
+      restore(:casein, :workspaces_root, prev_root)
       restore(:preview_ctl, :playwright_script, prev_script)
       restart_bridge!()
     end)
@@ -222,7 +222,7 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneE2ETest do
     root = Path.join(System.tmp_dir!(), "preview-e2e-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     path
   end
 

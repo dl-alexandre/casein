@@ -17,26 +17,26 @@ defmodule CaseinWeb.ArtifactProjectControllerTest do
 
   setup do
     prev = %{
-      artifact_root: Application.get_env(:dev_ide, :artifact_projects_root),
-      agent_roots: Application.get_env(:dev_ide, :agent_worktree_roots),
-      launcher: Application.get_env(:dev_ide, :runtime_preview_launcher_enabled),
-      runtimes: Application.get_env(:dev_ide, :runtimes_adapter),
-      wstate: Application.get_env(:dev_ide, :workspace_state_adapter),
-      source: Application.get_env(:dev_ide, :workspace_source),
-      fa: Application.get_env(:dev_ide, :forward_auth)
+      artifact_root: Application.get_env(:casein, :artifact_projects_root),
+      agent_roots: Application.get_env(:casein, :agent_worktree_roots),
+      launcher: Application.get_env(:casein, :runtime_preview_launcher_enabled),
+      runtimes: Application.get_env(:casein, :runtimes_adapter),
+      wstate: Application.get_env(:casein, :workspace_state_adapter),
+      source: Application.get_env(:casein, :workspace_source),
+      fa: Application.get_env(:casein, :forward_auth)
     }
 
     base = Path.join(System.tmp_dir!(), "artifact-pub-#{System.unique_integer([:positive])}")
     repo = Path.join(base, "repo")
 
-    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
-    Application.put_env(:dev_ide, :artifact_projects_root, Path.join(base, "artifacts"))
-    Application.put_env(:dev_ide, :agent_worktree_roots, [])
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
+    Application.put_env(:casein, :workspace_state_adapter, MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :artifact_projects_root, Path.join(base, "artifacts"))
+    Application.put_env(:casein, :agent_worktree_roots, [])
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
     # Identity comes from the X-Auth-Request-Email header, as in prod.
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :forward_auth, true)
 
     MemoryAdapter.clear()
     Runtimes.clear()
@@ -126,12 +126,12 @@ defmodule CaseinWeb.ArtifactProjectControllerTest do
   end
 
   test "a dedicated artifacts origin still lets the cockpit embed the artifact", ctx do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
-    Application.put_env(:dev_ide, :artifact_public_url, "https://artifacts.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :artifact_public_url, "https://artifacts.example.com")
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :preview_app_url)
-      Application.delete_env(:dev_ide, :artifact_public_url)
+      Application.delete_env(:casein, :preview_app_url)
+      Application.delete_env(:casein, :artifact_public_url)
     end)
 
     conn = ctx.conn |> as("owner@example.com") |> get(artifact_path(ctx.project_id))
@@ -232,6 +232,6 @@ defmodule CaseinWeb.ArtifactProjectControllerTest do
   defp env_key(:source), do: :workspace_source
   defp env_key(:fa), do: :forward_auth
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

@@ -6,16 +6,16 @@ defmodule Casein.Push.NativeProviderTest do
   @notification %{workspace_id: "ws-1", action: "policy.blocked", title: "Blocked"}
 
   setup do
-    prev_fcm = Application.get_env(:dev_ide, FCMProvider)
-    prev_apns = Application.get_env(:dev_ide, APNSProvider)
+    prev_fcm = Application.get_env(:casein, FCMProvider)
+    prev_apns = Application.get_env(:casein, APNSProvider)
 
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       project_id: "demo-project",
       access_token_fun: fn -> {:ok, "ya29.test-token"} end,
       http_client: Casein.Push.FCM.StubHTTP
     )
 
-    Application.put_env(:dev_ide, APNSProvider,
+    Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
@@ -23,20 +23,20 @@ defmodule Casein.Push.NativeProviderTest do
       http_client: Casein.Push.APNS.StubHTTP
     )
 
-    Application.put_env(:dev_ide, :fcm_test_pid, self())
-    Application.put_env(:dev_ide, :apns_test_pid, self())
+    Application.put_env(:casein, :fcm_test_pid, self())
+    Application.put_env(:casein, :apns_test_pid, self())
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :fcm_test_pid)
-      Application.delete_env(:dev_ide, :apns_test_pid)
+      Application.delete_env(:casein, :fcm_test_pid)
+      Application.delete_env(:casein, :apns_test_pid)
 
       if prev_fcm,
-        do: Application.put_env(:dev_ide, FCMProvider, prev_fcm),
-        else: Application.delete_env(:dev_ide, FCMProvider)
+        do: Application.put_env(:casein, FCMProvider, prev_fcm),
+        else: Application.delete_env(:casein, FCMProvider)
 
       if prev_apns,
-        do: Application.put_env(:dev_ide, APNSProvider, prev_apns),
-        else: Application.delete_env(:dev_ide, APNSProvider)
+        do: Application.put_env(:casein, APNSProvider, prev_apns),
+        else: Application.delete_env(:casein, APNSProvider)
     end)
 
     :ok

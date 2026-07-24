@@ -11,7 +11,7 @@ defmodule Casein.Deployment.Version do
   @spec version() :: String.t()
   def version do
     System.get_env("DEVIDE_GIT_REVISION") ||
-      to_string(Application.spec(:dev_ide, :vsn))
+      to_string(Application.spec(:casein, :vsn))
   rescue
     _ -> "dev"
   end

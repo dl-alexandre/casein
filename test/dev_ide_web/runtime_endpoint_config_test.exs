@@ -20,22 +20,22 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   setup do
     saved =
       Map.new(@env_keys, fn key ->
-        {key, Application.fetch_env(:dev_ide, key)}
+        {key, Application.fetch_env(:casein, key)}
       end)
 
     on_exit(fn ->
       Enum.each(saved, fn
-        {key, {:ok, value}} -> Application.put_env(:dev_ide, key, value)
-        {key, :error} -> Application.delete_env(:dev_ide, key)
+        {key, {:ok, value}} -> Application.put_env(:casein, key, value)
+        {key, :error} -> Application.delete_env(:casein, key)
       end)
     end)
   end
 
   test "session options use runtime LAN cookie config" do
-    Application.put_env(:dev_ide, :session_cookie_key, "_dev_ide_lan_http_key")
-    Application.put_env(:dev_ide, :secure_session_cookie, true)
-    Application.put_env(:dev_ide, :lan_insecure_http, true)
-    Application.put_env(:dev_ide, :session_same_site, nil)
+    Application.put_env(:casein, :session_cookie_key, "_dev_ide_lan_http_key")
+    Application.put_env(:casein, :secure_session_cookie, true)
+    Application.put_env(:casein, :lan_insecure_http, true)
+    Application.put_env(:casein, :session_same_site, nil)
 
     opts = SessionOptions.options()
 
@@ -45,8 +45,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "session options keep secure cookies outside insecure LAN HTTP" do
-    Application.put_env(:dev_ide, :secure_session_cookie, true)
-    Application.delete_env(:dev_ide, :lan_insecure_http)
+    Application.put_env(:casein, :secure_session_cookie, true)
+    Application.delete_env(:casein, :lan_insecure_http)
 
     opts = SessionOptions.options()
 
@@ -54,8 +54,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "runtime session plug writes the current cookie key" do
-    Application.put_env(:dev_ide, :session_cookie_key, "_dev_ide_lan_http_key")
-    Application.put_env(:dev_ide, :session_same_site, nil)
+    Application.put_env(:casein, :session_cookie_key, "_dev_ide_lan_http_key")
+    Application.put_env(:casein, :session_same_site, nil)
 
     conn =
       :get
@@ -73,8 +73,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "runtime SSL plug redirects when enabled" do
-    Application.put_env(:dev_ide, :runtime_force_ssl, true)
-    Application.delete_env(:dev_ide, :lan_insecure_http)
+    Application.put_env(:casein, :runtime_force_ssl, true)
+    Application.delete_env(:casein, :lan_insecure_http)
 
     conn = RuntimeSSLPlug.call(conn(:get, "http://example.com/workspaces"), [])
 
@@ -83,8 +83,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "endpoint pipeline enforces runtime SSL before app routing" do
-    Application.put_env(:dev_ide, :runtime_force_ssl, true)
-    Application.delete_env(:dev_ide, :lan_insecure_http)
+    Application.put_env(:casein, :runtime_force_ssl, true)
+    Application.delete_env(:casein, :lan_insecure_http)
 
     conn = CaseinWeb.Endpoint.call(conn(:get, "http://example.com/workspaces"), [])
 
@@ -93,8 +93,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "runtime SSL permits plain HTTP readiness probes on non-loopback hosts" do
-    Application.put_env(:dev_ide, :runtime_force_ssl, true)
-    Application.delete_env(:dev_ide, :lan_insecure_http)
+    Application.put_env(:casein, :runtime_force_ssl, true)
+    Application.delete_env(:casein, :lan_insecure_http)
 
     conn = RuntimeSSLPlug.call(conn(:get, "http://10.0.0.8/healthz"), [])
 
@@ -103,8 +103,8 @@ defmodule CaseinWeb.RuntimeEndpointConfigTest do
   end
 
   test "runtime SSL plug stays off for insecure LAN HTTP" do
-    Application.put_env(:dev_ide, :runtime_force_ssl, true)
-    Application.put_env(:dev_ide, :lan_insecure_http, true)
+    Application.put_env(:casein, :runtime_force_ssl, true)
+    Application.put_env(:casein, :lan_insecure_http, true)
 
     conn = RuntimeSSLPlug.call(conn(:get, "http://r630.local/"), [])
 

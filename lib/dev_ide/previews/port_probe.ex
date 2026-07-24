@@ -56,6 +56,6 @@ defmodule Casein.Previews.PortProbe do
   end
 
   defp timeout_ms do
-    Application.get_env(:dev_ide, :preview_surface_probe_timeout_ms, @default_timeout_ms)
+    Application.get_env(:casein, :preview_surface_probe_timeout_ms, @default_timeout_ms)
   end
 end

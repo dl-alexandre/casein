@@ -167,18 +167,18 @@ defmodule Casein.Deployment.LastDeployTest do
     on_exit(fn -> File.rm(path) end)
     write_status!(path, %{})
 
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       Keyword.put(prev_deploy || [], :last_deploy_path, path)
     )
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
     end)
 
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")

@@ -14,7 +14,7 @@ if match?({:win32, _}, :os.type()) or System.get_env("DEV_IDE_NATIVE_WINDOWS") i
 end
 
 # Compile-time env, readable at runtime (e.g. boot-time safety assertions).
-config :dev_ide, :env, config_env()
+config :casein, :env, config_env()
 
 repo_adapter =
   case System.get_env("DEV_IDE_REPO_ADAPTER", "postgres") |> String.downcase() do
@@ -23,13 +23,13 @@ repo_adapter =
     value -> raise "DEV_IDE_REPO_ADAPTER must be postgres or sqlite, got: #{inspect(value)}"
   end
 
-config :dev_ide, :repo_adapter, repo_adapter
+config :casein, :repo_adapter, repo_adapter
 
-config :dev_ide, CaseinWeb.Plugs.McpRateLimit,
+config :casein, CaseinWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
-config :dev_ide,
+config :casein,
   # Event-driven tmux topology (Slices 1/2). Default OFF — polling path
   # unchanged. Dev flips ON in config/dev.exs (Slice 3); canary/prod via
   # DEVIDE_TMUX_EVENTS after soak on flap/refresh telemetry (see
@@ -56,7 +56,7 @@ config :dev_ide,
     prefix_session_picker_hint: "Casein: use the browser session picker (C-b s)"
   ],
   preview_ctl: [
-    priv_app: :dev_ide,
+    priv_app: :casein,
     registry_table: :preview_ctl_sessions
   ],
   # Preview-domain outbound seams (extraction slice 3). Preview modules resolve
@@ -105,7 +105,7 @@ config :dev_ide,
   device_link_reaper_enabled: true
 
 # Configure the endpoint
-config :dev_ide, CaseinWeb.Endpoint,
+config :casein, CaseinWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
@@ -122,12 +122,12 @@ config :dev_ide, CaseinWeb.Endpoint,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :dev_ide, Casein.Mailer, adapter: Swoosh.Adapters.Local
+config :casein, Casein.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",
-  dev_ide: [
+  casein: [
     args:
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
@@ -137,7 +137,7 @@ config :esbuild,
 # Configure tailwind (the version is required)
 config :tailwind,
   version: "4.1.12",
-  dev_ide: [
+  casein: [
     args: ~w(
       --input=assets/css/app.css
       --output=priv/static/assets/css/app.css
@@ -201,24 +201,24 @@ config :phoenix, :filter_parameters, [
 # base URL from. Configured as an MFA so contexts never reference the web
 # endpoint directly (keeps the context->web dependency inverted). Only fires
 # when the :tidewave dep is present (dev); a no-op everywhere else.
-config :dev_ide, :tidewave_url_provider, {CaseinWeb.Endpoint, :url, []}
-config :dev_ide, :preview_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
-config :dev_ide, :terminal_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
+config :casein, :tidewave_url_provider, {CaseinWeb.Endpoint, :url, []}
+config :casein, :preview_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
+config :casein, :terminal_mcp_url_provider, {CaseinWeb.Endpoint, :url, []}
 
 # Preview infrastructure uses a partitioned 41000-41099 block:
 #   41000-41049: ephemeral preview envs (scripts/preview-env.sh, Tidewave)
 #   41050-41079: runtime-owned preview servers
 #   41080-41081: preview router listener + admin listener
-config :dev_ide, :preview_env_port_range, {41_000, 41_049}
-config :dev_ide, :runtime_preview_port_range, {41_050, 41_079}
-config :dev_ide, :preview_router_port, 41_080
-config :dev_ide, :preview_router_admin_port, 41_081
+config :casein, :preview_env_port_range, {41_000, 41_049}
+config :casein, :runtime_preview_port_range, {41_050, 41_079}
+config :casein, :preview_router_port, 41_080
+config :casein, :preview_router_admin_port, 41_081
 
 # Preview-proxy WebSocket tunnel (HMR / LiveReload support). Off by default:
 # it opens a new authenticated WS surface that bridges the browser to a
 # workspace loopback dev server, so it stays opt-in until vetted. `max_per_workspace`
 # bounds concurrent long-lived tunnels per workspace.
-config :dev_ide, :preview_proxy_hmr,
+config :casein, :preview_proxy_hmr,
   enabled: false,
   max_per_workspace: 8,
   handshake_timeout_ms: 5_000,

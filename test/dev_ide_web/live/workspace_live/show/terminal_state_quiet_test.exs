@@ -36,7 +36,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     :ok =
       :telemetry.attach(
         handler,
-        [:dev_ide, :attention, :quiet_agent, :transition],
+        [:casein, :attention, :quiet_agent, :transition],
         fn event, measurements, metadata, pid ->
           send(pid, {:quiet_transition, event, measurements, metadata})
         end,
@@ -65,7 +65,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     assert socket.assigns.quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
     assert socket.private.live_temp[:push_events] in [nil, []]
 
-    assert_receive {:quiet_transition, [:dev_ide, :attention, :quiet_agent, :transition],
+    assert_receive {:quiet_transition, [:casein, :attention, :quiet_agent, :transition],
                     %{count: 1}, metadata}
 
     assert metadata.reaction == :inline
@@ -181,7 +181,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     assert [["devide:agent_quiet", payload]] = socket.private.live_temp.push_events
     assert payload.reaction == "notify"
 
-    assert_receive {:quiet_transition, [:dev_ide, :attention, :quiet_agent, :transition],
+    assert_receive {:quiet_transition, [:casein, :attention, :quiet_agent, :transition],
                     %{count: 1}, metadata}
 
     assert metadata.reaction == :notify

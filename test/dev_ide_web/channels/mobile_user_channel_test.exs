@@ -23,13 +23,13 @@ defmodule CaseinWeb.MobileUserChannelTest do
         "devide-mobile-user-channel-#{System.unique_integer([:positive])}"
       )
 
-    prev_workspace_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_workspace_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_push_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_apns_config = Application.get_env(:dev_ide, Casein.Push.APNSProvider)
+    prev_workspace_root = Application.get_env(:casein, :workspaces_root)
+    prev_workspace_source = Application.get_env(:casein, :workspace_source)
+    prev_push_provider = Application.get_env(:casein, :push_provider)
+    prev_apns_config = Application.get_env(:casein, Casein.Push.APNSProvider)
     File.mkdir_p!(workspace_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
 
     Audit.clear()
     MemoryAdapter.clear()
@@ -123,7 +123,7 @@ defmodule CaseinWeb.MobileUserChannelTest do
   test "mobile user topic rejects push registration when provider is not deliverable" do
     user_id = unique_id("dev")
     prepare_user(user_id)
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.LogProvider)
 
     assert {:ok, _reply, socket} = join_mobile(user_id, [])
 
@@ -300,8 +300,8 @@ defmodule CaseinWeb.MobileUserChannelTest do
     prepare_user(user_id)
     create_workspace(workspace_root, workspace_id, user_id)
 
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
-    Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.NativeProvider)
+    Application.delete_env(:casein, Casein.Push.APNSProvider)
 
     assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
 
@@ -824,12 +824,12 @@ defmodule CaseinWeb.MobileUserChannelTest do
   defp unique_id(prefix), do: "#{prefix}-#{System.unique_integer([:positive])}"
 
   defp configure_ready_push_provider do
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
-  defp restore_module_env(module, nil), do: Application.delete_env(:dev_ide, module)
-  defp restore_module_env(module, value), do: Application.put_env(:dev_ide, module, value)
+  defp restore_module_env(module, nil), do: Application.delete_env(:casein, module)
+  defp restore_module_env(module, value), do: Application.put_env(:casein, module, value)
 end

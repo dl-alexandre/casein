@@ -11,17 +11,17 @@ defmodule Casein.Agents.MCPMaterializerTest do
   }
 
   setup do
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_base = Application.get_env(:dev_ide, :agent_mcp_base_url)
-    prev_auth_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
+    prev_token = Application.get_env(:casein, :api_token)
+    prev_base = Application.get_env(:casein, :agent_mcp_base_url)
+    prev_auth_root = Application.get_env(:casein, :agent_auth_profile_root)
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
-    prev_ws_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_ws_tokens = Application.get_env(:casein, :workspace_api_tokens)
     prev_env_ws_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
     System.delete_env("DEV_IDE_API_TOKEN")
     System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    Application.put_env(:dev_ide, :api_token, "secret-token")
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"scoped-ws-abc-token" => "ws-abc"})
-    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
+    Application.put_env(:casein, :api_token, "secret-token")
+    Application.put_env(:casein, :workspace_api_tokens, %{"scoped-ws-abc-token" => "ws-abc"})
+    Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     tmp = System.tmp_dir!() |> Path.join("mcp-materializer-#{System.unique_integer([:positive])}")
 
@@ -29,11 +29,11 @@ defmodule Casein.Agents.MCPMaterializerTest do
       System.tmp_dir!()
       |> Path.join("mcp-materializer-auth-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+    Application.put_env(:casein, :agent_auth_profile_root, auth_root)
 
     on_exit(fn ->
-      Application.put_env(:dev_ide, :api_token, prev_token)
-      Application.put_env(:dev_ide, :agent_mcp_base_url, prev_base)
+      Application.put_env(:casein, :api_token, prev_token)
+      Application.put_env(:casein, :agent_mcp_base_url, prev_base)
       restore_workspace_tokens(prev_ws_tokens)
       restore_auth_root(prev_auth_root)
 
@@ -170,10 +170,10 @@ defmodule Casein.Agents.MCPMaterializerTest do
       })
     )
 
-    prev_home = Application.get_env(:dev_ide, :preview_env_home)
+    prev_home = Application.get_env(:casein, :preview_env_home)
     prev_preview_home_env = System.get_env("DEVIDE_PREVIEW_HOME")
     System.delete_env("DEVIDE_PREVIEW_HOME")
-    Application.put_env(:dev_ide, :preview_env_home, home)
+    Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn ->
       File.rm_rf!(home)
@@ -206,7 +206,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
   end
 
   test "materialize strips accidental shell quotes from bearer token", %{staging: staging} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"'quoted-token'" => "ws-abc"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"'quoted-token'" => "ws-abc"})
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
@@ -223,7 +223,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
   end
 
   test "materialize mints a scoped token for an unregistered workspace", %{staging: staging} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{})
+    Application.put_env(:casein, :workspace_api_tokens, %{})
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
@@ -232,7 +232,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute token == "secret-token"
 
     # the minted token is registered so the MCP endpoints accept it immediately
-    assert Application.get_env(:dev_ide, :workspace_api_tokens)[token] == "ws-abc"
+    assert Application.get_env(:casein, :workspace_api_tokens)[token] == "ws-abc"
   end
 
   test "ignores an inherited DEVIDE_AGENT_MCP_HOME that belongs to a different workspace" do
@@ -308,15 +308,15 @@ defmodule Casein.Agents.MCPMaterializerTest do
     refute Enum.any?(Map.keys(bundle_mcp["mcpServers"]), &String.contains?(&1, "tidewave"))
   end
 
-  defp restore_workspace_tokens(nil), do: Application.delete_env(:dev_ide, :workspace_api_tokens)
+  defp restore_workspace_tokens(nil), do: Application.delete_env(:casein, :workspace_api_tokens)
 
   defp restore_workspace_tokens(value),
-    do: Application.put_env(:dev_ide, :workspace_api_tokens, value)
+    do: Application.put_env(:casein, :workspace_api_tokens, value)
 
-  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
-  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
-  defp restore_auth_root(nil), do: Application.delete_env(:dev_ide, :agent_auth_profile_root)
+  defp restore_preview_home(nil), do: Application.delete_env(:casein, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:casein, :preview_env_home, value)
+  defp restore_auth_root(nil), do: Application.delete_env(:casein, :agent_auth_profile_root)
 
   defp restore_auth_root(value),
-    do: Application.put_env(:dev_ide, :agent_auth_profile_root, value)
+    do: Application.put_env(:casein, :agent_auth_profile_root, value)
 end

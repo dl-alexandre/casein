@@ -130,6 +130,6 @@ defmodule Casein.UAT.TierB do
   end
 
   defp default_socket do
-    Application.get_env(:dev_ide, :uat_tier_b_socket, @default_socket)
+    Application.get_env(:casein, :uat_tier_b_socket, @default_socket)
   end
 end

@@ -281,8 +281,8 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     workspace_path = Path.join(workspace_root, @workspace_id)
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -345,8 +345,8 @@ defmodule CaseinWeb.WorkspaceHistoryPanelTest do
     })
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
     with executable when is_binary(executable) <- System.find_executable("tmux"),

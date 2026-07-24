@@ -6,8 +6,8 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
   alias Casein.Agents.TidewaveCapability
 
   setup do
-    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
-    prev_provider = Application.get_env(:dev_ide, :tidewave_url_provider)
+    prev_loopback = Application.get_env(:casein, :preview_loopback_port)
+    prev_provider = Application.get_env(:casein, :tidewave_url_provider)
 
     on_exit(fn ->
       restore_env(:preview_loopback_port, prev_loopback)
@@ -27,11 +27,11 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
 
   @tag :tidewave_available
   test "detect advertises MCP URL when Tidewave is available" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
 
     cap = TidewaveCapability.detect()
     assert cap.status == :detected
-    assert cap.source == :dev_ide
+    assert cap.source == :casein
     assert cap.url =~ "/tidewave"
     assert cap.details.mcp_url =~ "/tidewave/mcp"
     refute cap.details.preview_env
@@ -39,7 +39,7 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
 
   @tag :tidewave_available
   test "detect tags preview_env source on ephemeral loopback port" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 41_042)
+    Application.put_env(:casein, :preview_loopback_port, 41_042)
 
     cap = TidewaveCapability.detect()
     assert cap.status == :detected
@@ -49,7 +49,7 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
   end
 
   test "detect returns missing when no URL provider is configured" do
-    Application.delete_env(:dev_ide, :tidewave_url_provider)
+    Application.delete_env(:casein, :tidewave_url_provider)
 
     cap = TidewaveCapability.detect()
     assert cap.status == :missing
@@ -58,7 +58,7 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
 
   test "detect returns missing when provider module is unavailable" do
     Application.put_env(
-      :dev_ide,
+      :casein,
       :tidewave_url_provider,
       {NonExistent.TidewaveProvider, :url, []}
     )
@@ -69,12 +69,12 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
 
   @tag :tidewave_available
   test "detect uses configured provider MFA when Tidewave is available" do
-    Application.put_env(:dev_ide, :tidewave_url_provider, {__MODULE__.FakeProvider, :url, []})
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :tidewave_url_provider, {__MODULE__.FakeProvider, :url, []})
+    Application.put_env(:casein, :preview_loopback_port, 4000)
 
     cap = TidewaveCapability.detect()
     assert cap.status == :detected
-    assert cap.source == :dev_ide
+    assert cap.source == :casein
     assert cap.url == "http://fake.local/tidewave"
     assert cap.details.mcp_url == "http://fake.local/tidewave/mcp"
   end
@@ -83,6 +83,6 @@ defmodule Casein.Agents.TidewaveCapabilityTest do
     def url, do: "http://fake.local"
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

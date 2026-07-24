@@ -11,14 +11,14 @@ defmodule Casein.PreviewPanesTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
-    prev_proxy = Application.get_env(:dev_ide, :preview_proxy_enabled)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_app_url = Application.get_env(:casein, :preview_app_url)
+    prev_loopback = Application.get_env(:casein, :preview_loopback_port)
+    prev_proxy = Application.get_env(:casein, :preview_proxy_enabled)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, true)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -38,8 +38,8 @@ defmodule Casein.PreviewPanesTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp restart_preview_panes! do
     old_pid = Process.whereis(PreviewPanes)
@@ -87,7 +87,7 @@ defmodule Casein.PreviewPanesTest do
     root = Path.join(System.tmp_dir!(), "preview-panes-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {root, path}
   end
 
@@ -165,8 +165,8 @@ defmodule Casein.PreviewPanesTest do
     pane_id = "%13"
     display_url = "https://devide.example.com/whitehouse-preview.html"
     seed_session!(session, pane_id)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
-    Application.put_env(:dev_ide, :preview_loopback_port, 4100)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_loopback_port, 4100)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -189,7 +189,7 @@ defmodule Casein.PreviewPanesTest do
     session = "devide_ws_devide_loopback"
     pane_id = "%14"
     seed_session!(session, pane_id)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -215,7 +215,7 @@ defmodule Casein.PreviewPanesTest do
     pane_id = "%16"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
+    Application.put_env(:casein, :preview_proxy_enabled, true)
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -245,7 +245,7 @@ defmodule Casein.PreviewPanesTest do
     pane_id = "%17"
     seed_session!(session, pane_id)
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
-    Application.delete_env(:dev_ide, :preview_proxy_enabled)
+    Application.delete_env(:casein, :preview_proxy_enabled)
     System.delete_env("DEV_IDE_PREVIEW_PROXY")
 
     assert {:ok, registration} =
@@ -267,8 +267,8 @@ defmodule Casein.PreviewPanesTest do
     session = "devide_ws_devide_loopback_sync"
     pane_id = "%15"
     seed_session!(session, pane_id)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     assert {:ok, registration} =
              PreviewPanes.register(%{
@@ -295,9 +295,9 @@ defmodule Casein.PreviewPanesTest do
     session = "devide_ws_runtime_loopback_sync"
     pane_id = "%16"
     seed_session!(session, pane_id)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
-    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_proxy_enabled, true)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
     workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
 
     assert {:ok, registration} =
@@ -325,8 +325,8 @@ defmodule Casein.PreviewPanesTest do
     pane_id = "%20"
     seed_session!(session, pane_id)
 
-    prev_domain = Application.get_env(:dev_ide, :forward_auth_email_domain)
-    Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+    prev_domain = Application.get_env(:casein, :forward_auth_email_domain)
+    Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
 
     on_exit(fn ->
       restore(:forward_auth_email_domain, prev_domain)
@@ -382,7 +382,7 @@ defmodule Casein.PreviewPanesTest do
   end
 
   test "navigate routes a loopback preview through the proxy when HMR is enabled" do
-    prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
+    prev_hmr = Application.get_env(:casein, :preview_proxy_hmr)
     on_exit(fn -> restore(:preview_proxy_hmr, prev_hmr) end)
 
     {_root, path} = seed_workspace!()
@@ -393,7 +393,7 @@ defmodule Casein.PreviewPanesTest do
 
     # Register with the proxy off so the base stays a direct loopback URL,
     # making the navigation itself the thing that triggers proxying.
-    Application.put_env(:dev_ide, :preview_proxy_enabled, false)
+    Application.put_env(:casein, :preview_proxy_enabled, false)
 
     assert {:ok, _registration} =
              PreviewPanes.register(%{
@@ -403,9 +403,9 @@ defmodule Casein.PreviewPanesTest do
                "tmux_session" => session
              })
 
-    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :preview_proxy_enabled, true)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     assert {:ok, navigated} = PreviewPanes.navigate(pane_id, "/settings")
     assert navigated.display_url == "/preview-proxy/#{workspace_id}/5173/settings"
@@ -495,11 +495,11 @@ defmodule Casein.PreviewPanesTest do
     artifacts_root =
       Path.join(System.tmp_dir!(), "preview-artifacts-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :preview_artifacts_root, artifacts_root)
+    Application.put_env(:casein, :preview_artifacts_root, artifacts_root)
     Application.put_env(:preview_ctl, :frame_blocked_hosts, ["hex.pm"])
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :preview_artifacts_root)
+      Application.delete_env(:casein, :preview_artifacts_root)
       Application.delete_env(:preview_ctl, :frame_blocked_hosts)
       File.rm_rf(artifacts_root)
     end)

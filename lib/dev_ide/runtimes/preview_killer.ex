@@ -14,7 +14,7 @@ defmodule Casein.Runtimes.PreviewKiller do
   def kill(_), do: :ok
 
   defp impl do
-    Application.get_env(:dev_ide, :runtime_preview_killer, __MODULE__.Default)
+    Application.get_env(:casein, :runtime_preview_killer, __MODULE__.Default)
   end
 
   defmodule Default do

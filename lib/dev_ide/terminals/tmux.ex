@@ -3,7 +3,7 @@ defmodule Casein.Terminals.Tmux do
   Casein facade over `TmuxCtl.Client` for workspace tmux sessions.
 
   Session naming lives in `Casein.Terminals.TmuxPolicy`. Subprocess argv
-  wrapping (host vs container tmux) is configured via `config :dev_ide, :tmux_ctl`.
+  wrapping (host vs container tmux) is configured via `config :casein, :tmux_ctl`.
   See `docs/tmux_control_plane.md`.
   """
 

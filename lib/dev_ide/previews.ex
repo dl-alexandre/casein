@@ -312,11 +312,11 @@ defmodule Casein.Previews do
   end
 
   defp self_include_origins do
-    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    port = Application.get_env(:casein, :preview_loopback_port, 4000)
     control = "http://127.0.0.1:#{port}"
 
     app_origin =
-      case Application.get_env(:dev_ide, :preview_app_url) do
+      case Application.get_env(:casein, :preview_app_url) do
         url when is_binary(url) and url != "" -> Url.origin_of(url)
         _ -> nil
       end
@@ -333,7 +333,7 @@ defmodule Casein.Previews do
   end
 
   defp persisted_url_for_display("/" <> _ = path) do
-    case Application.get_env(:dev_ide, :preview_app_url) do
+    case Application.get_env(:casein, :preview_app_url) do
       app_url when is_binary(app_url) and app_url != "" ->
         app_url
         |> Url.origin_of()

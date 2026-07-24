@@ -276,7 +276,7 @@ defmodule Casein.Previews.FileServer do
   end
 
   defp idle_ms do
-    Application.get_env(:dev_ide, :file_server_idle_ms, @idle_ms)
+    Application.get_env(:casein, :file_server_idle_ms, @idle_ms)
   end
 
   defp workspace_id(%{id: id}) when is_binary(id), do: id

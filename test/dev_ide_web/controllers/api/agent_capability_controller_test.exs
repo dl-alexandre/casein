@@ -15,14 +15,14 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
 
   setup do
     previous = %{
-      api_token: Application.get_env(:dev_ide, :api_token),
-      workspace_tokens: Application.get_env(:dev_ide, :workspace_api_tokens),
-      tool_search: Application.get_env(:dev_ide, :mcp_tool_search)
+      api_token: Application.get_env(:casein, :api_token),
+      workspace_tokens: Application.get_env(:casein, :workspace_api_tokens),
+      tool_search: Application.get_env(:casein, :mcp_tool_search)
     }
 
-    Application.put_env(:dev_ide, :api_token, @global_token)
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{@workspace_token => @workspace_id})
-    Application.put_env(:dev_ide, :mcp_tool_search, true)
+    Application.put_env(:casein, :api_token, @global_token)
+    Application.put_env(:casein, :workspace_api_tokens, %{@workspace_token => @workspace_id})
+    Application.put_env(:casein, :mcp_tool_search, true)
 
     insert(:workspace_record,
       external_id: @workspace_id,
@@ -58,14 +58,14 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     record = Repo.get!(AgentCapabilityToken, response["capability_id"])
     assert record.token_hash == AgentCapabilityTokens.token_hash(response["token"])
     refute record.token_hash == response["token"]
-    refute Map.has_key?(Application.get_env(:dev_ide, :workspace_api_tokens), response["token"])
+    refute Map.has_key?(Application.get_env(:casein, :workspace_api_tokens), response["token"])
   end
 
   test "global and cross-workspace bearers cannot mint", %{conn: conn, tmux_session: session} do
     conn = post_json(conn, issue_path(), issue_params(session), @global_token)
     assert json_response(conn, 403)["error"] == "workspace_capability_issuer_required"
 
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"other-token" => "other-ws"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"other-token" => "other-ws"})
     conn = post_json(build_conn(), issue_path(), issue_params(session), "other-token")
     assert json_response(conn, 403)["error"] == "workspace_forbidden"
   end
@@ -137,9 +137,9 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     # Reserved capability prefixes never take the static workspace-token path;
     # doing so would bypass DB expiry and revocation.
     Application.put_env(
-      :dev_ide,
+      :casein,
       :workspace_api_tokens,
-      Map.put(Application.get_env(:dev_ide, :workspace_api_tokens), token, @workspace_id)
+      Map.put(Application.get_env(:casein, :workspace_api_tokens), token, @workspace_id)
     )
 
     forbidden = get_json(build_conn(), "/api/workspaces/#{@workspace_id}/status", token)
@@ -306,6 +306,6 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     |> delete(path)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

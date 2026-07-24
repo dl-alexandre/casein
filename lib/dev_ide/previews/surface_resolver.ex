@@ -577,11 +577,11 @@ defmodule Casein.Previews.SurfaceResolver do
   end
 
   defp preview_loopback_port do
-    Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.get_env(:casein, :preview_loopback_port, 4000)
   end
 
   defp host_app_url do
-    Application.get_env(:dev_ide, :preview_app_url) || MCPUrls.base_url()
+    Application.get_env(:casein, :preview_app_url) || MCPUrls.base_url()
   end
 
   # v3 serves its app at the apex (https://<domain_base>); legacy (v2) serves its

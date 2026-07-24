@@ -5,25 +5,25 @@ defmodule CaseinWeb.Plugs.McpRateLimitTest do
   @workspace_token "rate-limit-workspace-token"
 
   setup %{conn: conn} do
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    prev_limit = Application.get_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit)
+    prev_token = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    prev_limit = Application.get_env(:casein, CaseinWeb.Plugs.McpRateLimit)
 
-    Application.put_env(:dev_ide, :api_token, @token)
-    Application.put_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 10)
+    Application.put_env(:casein, :api_token, @token)
+    Application.put_env(:casein, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 10)
 
     on_exit(fn ->
       if prev_token,
-        do: Application.put_env(:dev_ide, :api_token, prev_token),
-        else: Application.delete_env(:dev_ide, :api_token)
+        do: Application.put_env(:casein, :api_token, prev_token),
+        else: Application.delete_env(:casein, :api_token)
 
       if prev_workspace_tokens,
-        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_workspace_tokens),
-        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
+        do: Application.put_env(:casein, :workspace_api_tokens, prev_workspace_tokens),
+        else: Application.delete_env(:casein, :workspace_api_tokens)
 
       if prev_limit,
-        do: Application.put_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit, prev_limit),
-        else: Application.delete_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit)
+        do: Application.put_env(:casein, CaseinWeb.Plugs.McpRateLimit, prev_limit),
+        else: Application.delete_env(:casein, CaseinWeb.Plugs.McpRateLimit)
     end)
 
     {:ok, conn: conn}
@@ -50,7 +50,7 @@ defmodule CaseinWeb.Plugs.McpRateLimitTest do
   end
 
   test "returns 429 when the MCP limit is exceeded", %{conn: conn} do
-    Application.put_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 2)
+    Application.put_env(:casein, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 2)
 
     for _ <- 1..2 do
       conn =
@@ -80,8 +80,8 @@ defmodule CaseinWeb.Plugs.McpRateLimitTest do
   end
 
   test "keys tool calls by tool and workspace" do
-    Application.put_env(:dev_ide, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 1)
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{@workspace_token => "alpha"})
+    Application.put_env(:casein, CaseinWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 1)
+    Application.put_env(:casein, :workspace_api_tokens, %{@workspace_token => "alpha"})
 
     first =
       build_conn()

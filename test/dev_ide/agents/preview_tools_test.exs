@@ -25,29 +25,29 @@ defmodule Casein.Agents.PreviewToolsTest do
   }
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
-    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_api_token = Application.get_env(:casein, :casein_api_token)
+    prev_app_url = Application.get_env(:casein, :preview_app_url)
+    prev_preflight = Application.get_env(:casein, :preview_open_preflight)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
 
     prev_visibility_initial =
-      Application.get_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_initial_timeout_ms)
 
     prev_visibility_iframe =
-      Application.get_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_iframe_reload_timeout_ms)
 
     prev_visibility_page =
-      Application.get_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms)
+      Application.get_env(:casein, :preview_operator_visibility_page_reload_timeout_ms)
 
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
-    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 0)
-    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
-    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :casein_api_token, "preview-tools-test-token")
+    Application.put_env(:casein, :preview_pane_persistence_enabled, false)
+    Application.put_env(:casein, :preview_operator_visibility_initial_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_page_reload_timeout_ms, 0)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     Runtimes.clear()
@@ -68,11 +68,11 @@ defmodule Casein.Agents.PreviewToolsTest do
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
-        do: Application.delete_env(:dev_ide, :workspaces_root),
-        else: Application.put_env(:dev_ide, :workspaces_root, prev_root)
+        do: Application.delete_env(:casein, :workspaces_root),
+        else: Application.put_env(:casein, :workspaces_root, prev_root)
 
       restore_env(:tmux_adapter, prev_tmux)
-      restore_env(:dev_ide_api_token, prev_api_token)
+      restore_env(:casein_api_token, prev_api_token)
       restore_env(:preview_app_url, prev_app_url)
       restore_env(:preview_open_preflight, prev_preflight)
       restore_env(:preview_pane_persistence_enabled, prev_persistence)
@@ -270,7 +270,7 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "playback tool opens a saved recording in fresh panes" do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test/workspaces")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.test/workspaces")
 
     artifact_path = "/preview-artifacts/#{@v3_workspace.id}/demo.webm"
     playback_url = "https://devide.example.test:443#{artifact_path}?fit=playback&loop=1"
@@ -299,7 +299,7 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "playback tool rejects artifacts outside the workspace and non-video artifacts" do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.test")
 
     assert {:error, %{error: :invalid_playback_artifact}} =
              PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
@@ -453,7 +453,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     workspace = Path.join(root, "demo")
     File.mkdir_p!(workspace)
     on_exit(fn -> File.rm_rf(root) end)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     assert {:ok, %{attached_folder: true}} =
              PreviewTools.invoke("preview_resolve_workspace", %{}, %{
@@ -470,7 +470,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "split_preview_pane opens pane and preview_close kills it" do
     script =
-      :code.priv_dir(:dev_ide)
+      :code.priv_dir(:casein)
       |> List.to_string()
       |> Path.join("scripts/devide-preview")
 
@@ -1141,13 +1141,13 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "preview_ensure_server_here starts the scoped runtime preview server" do
-    previous = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    previous = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
 
     on_exit(fn ->
       if is_nil(previous),
-        do: Application.delete_env(:dev_ide, :runtime_preview_launcher_enabled),
-        else: Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, previous)
+        do: Application.delete_env(:casein, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:casein, :runtime_preview_launcher_enabled, previous)
     end)
 
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
@@ -1320,9 +1320,9 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "open_app_preview confirms operator iframe load before reporting visible" do
-    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 500)
-    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
-    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_initial_timeout_ms, 500)
+    Application.put_env(:casein, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:casein, :preview_operator_visibility_page_reload_timeout_ms, 0)
 
     :ok = Phoenix.PubSub.subscribe(Casein.PubSub, "workspace_browser:ws-tools")
 
@@ -1441,19 +1441,19 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "invoke open_app auto-navigates loopback Casein to the workspace viewer" do
-    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
-    previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    previous_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+    previous_on_devbox = Application.get_env(:casein, :on_devbox)
+    previous_app_url = Application.get_env(:casein, :preview_app_url)
+    previous_loopback = Application.get_env(:casein, :preview_loopback_port)
+    previous_root = Application.get_env(:casein, :workspaces_root)
 
     workspace_dir =
       Path.join(System.tmp_dir!(), "preview-loopback-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(workspace_dir)
-    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace_dir))
-    Application.put_env(:dev_ide, :on_devbox, true)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :workspaces_root, Path.dirname(workspace_dir))
+    Application.put_env(:casein, :on_devbox, true)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     on_exit(fn ->
       File.rm_rf(workspace_dir)
@@ -1486,21 +1486,21 @@ defmodule Casein.Agents.PreviewToolsTest do
     bypass = HTTPStub.open()
     port = bypass.port
 
-    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
-    previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    previous_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
-    previous_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
+    previous_on_devbox = Application.get_env(:casein, :on_devbox)
+    previous_app_url = Application.get_env(:casein, :preview_app_url)
+    previous_loopback = Application.get_env(:casein, :preview_loopback_port)
+    previous_root = Application.get_env(:casein, :workspaces_root)
+    previous_adapter = Application.get_env(:casein, :preview_control_adapter)
 
     workspace_dir =
       Path.join(System.tmp_dir!(), "preview-nav-fail-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(workspace_dir)
-    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace_dir))
-    Application.put_env(:dev_ide, :on_devbox, true)
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
-    Application.put_env(:dev_ide, :preview_loopback_port, port)
-    Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
+    Application.put_env(:casein, :workspaces_root, Path.dirname(workspace_dir))
+    Application.put_env(:casein, :on_devbox, true)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_loopback_port, port)
+    Application.put_env(:casein, :preview_control_adapter, :playwright)
 
     on_exit(fn ->
       File.rm_rf(workspace_dir)
@@ -1542,8 +1542,8 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost rewrites loopback root path to /workspaces" do
-    previous = Application.get_env(:dev_ide, :preview_loopback_port)
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    previous = Application.get_env(:casein, :preview_loopback_port)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
     on_exit(fn -> restore_preview_loopback_port(previous) end)
     workspace = put_in(@v3_workspace, [:metadata, :ports, "devide"], 4000)
 
@@ -1576,7 +1576,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "invoke open_localhost reuses an existing pane for the same origin" do
     bypass = HTTPStub.open()
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     HTTPStub.expect(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "ok")
@@ -1603,7 +1603,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "invoke open_localhost rejects a stale existing pane when the origin no longer responds" do
     bypass = HTTPStub.open()
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 200, "ok")
@@ -1639,7 +1639,7 @@ defmodule Casein.Agents.PreviewToolsTest do
   test "invoke open_localhost rejects unreachable URL before splitting tmux" do
     bypass = HTTPStub.open()
     HTTPStub.down(bypass)
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
@@ -1661,7 +1661,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "invoke open_localhost rejects HTTP 404 before splitting tmux" do
     bypass = HTTPStub.open()
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     HTTPStub.expect_once(bypass, "GET", "/", fn conn ->
       Plug.Conn.resp(conn, 404, "missing")
@@ -1687,7 +1687,7 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   test "invoke open_localhost classifies the preview-router fallback 404 as workspace_app_not_running" do
     bypass = HTTPStub.open()
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     # Mirrors what Casein's preview-router (scripts/preview-router.sh) returns
     # when a stopped workspace's subdomain falls through Caddy.
@@ -1734,7 +1734,7 @@ defmodule Casein.Agents.PreviewToolsTest do
     workspace = Path.join(root, "demo")
     File.mkdir_p!(workspace)
     on_exit(fn -> File.rm_rf(root) end)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     assert {:ok, %{workspace_id: "folder:" <> _encoded, path: ^workspace}} =
              PreviewTools.invoke("preview_resolve_workspace", %{}, %{
@@ -2029,10 +2029,10 @@ defmodule Casein.Agents.PreviewToolsTest do
   end
 
   defp restore_preview_loopback_port(nil),
-    do: Application.delete_env(:dev_ide, :preview_loopback_port)
+    do: Application.delete_env(:casein, :preview_loopback_port)
 
   defp restore_preview_loopback_port(value),
-    do: Application.put_env(:dev_ide, :preview_loopback_port, value)
+    do: Application.put_env(:casein, :preview_loopback_port, value)
 
   defp detected_port_metadata(port) do
     %{
@@ -2045,8 +2045,8 @@ defmodule Casein.Agents.PreviewToolsTest do
 
   defp restore_env(key, value) do
     if is_nil(value),
-      do: Application.delete_env(:dev_ide, key),
-      else: Application.put_env(:dev_ide, key, value)
+      do: Application.delete_env(:casein, key),
+      else: Application.put_env(:casein, key, value)
   end
 
   defp restore_fake_state(key, nil), do: FakeState.delete(key)

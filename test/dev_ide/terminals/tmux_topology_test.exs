@@ -4,14 +4,14 @@ defmodule Casein.Terminals.TmuxTopologyTest do
   alias Casein.Terminals.TmuxTopology
 
   setup do
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_alive_sessions = TmuxCtl.Test.FakeState.get(:fake_tmux_alive_sessions)
-    prev_refresh_ms = Application.get_env(:dev_ide, :tmux_topology_refresh_ms)
+    prev_refresh_ms = Application.get_env(:casein, :tmux_topology_refresh_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :tmux_topology_refresh_ms, 60_000)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_topology_refresh_ms, 60_000)
     Casein.Audit.MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -349,14 +349,14 @@ defmodule Casein.Terminals.TmuxTopologyTest do
     end
   end
 
-  defp restore_env(:tmux_adapter, nil), do: Application.delete_env(:dev_ide, :tmux_adapter)
-  defp restore_env(:tmux_adapter, value), do: Application.put_env(:dev_ide, :tmux_adapter, value)
+  defp restore_env(:tmux_adapter, nil), do: Application.delete_env(:casein, :tmux_adapter)
+  defp restore_env(:tmux_adapter, value), do: Application.put_env(:casein, :tmux_adapter, value)
 
   defp restore_env(:tmux_topology_refresh_ms, nil),
-    do: Application.delete_env(:dev_ide, :tmux_topology_refresh_ms)
+    do: Application.delete_env(:casein, :tmux_topology_refresh_ms)
 
   defp restore_env(:tmux_topology_refresh_ms, value),
-    do: Application.put_env(:dev_ide, :tmux_topology_refresh_ms, value)
+    do: Application.put_env(:casein, :tmux_topology_refresh_ms, value)
 
   defp restore_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
 end

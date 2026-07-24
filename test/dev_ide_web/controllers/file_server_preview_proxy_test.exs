@@ -18,15 +18,15 @@ defmodule CaseinWeb.FileServerPreviewProxyTest do
   alias Casein.Workspaces
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
-    prev_idle = Application.get_env(:dev_ide, :file_server_idle_ms)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_forward_auth = Application.get_env(:casein, :forward_auth)
+    prev_idle = Application.get_env(:casein, :file_server_idle_ms)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
 
     PreviewPanes.clear()
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
-    Application.put_env(:dev_ide, :file_server_idle_ms, 60_000)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, false)
+    Application.put_env(:casein, :file_server_idle_ms, 60_000)
 
     on_exit(fn ->
       PreviewPanes.clear()
@@ -40,17 +40,17 @@ defmodule CaseinWeb.FileServerPreviewProxyTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "fs-proxy-#{System.unique_integer([:positive])}")
     # owner_from_path → first segment under workspaces_root → "dev"
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :forward_auth, true)
 
     {:ok, workspace} = Workspaces.attach_folder(path)
     {root, path, workspace}

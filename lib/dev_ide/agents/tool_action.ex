@@ -104,7 +104,7 @@ defmodule Casein.Agents.ToolAction do
     duration = System.monotonic_time(:millisecond) - started_at
 
     :telemetry.execute(
-      [:dev_ide, :agents, :tool, :stop],
+      [:casein, :agents, :tool, :stop],
       %{duration: duration},
       %{tool: action.name(), timed_out: timed_out?}
     )

@@ -13,7 +13,7 @@ defmodule Casein.Operator.SituationServerTest do
               runtimes_adapter agent_worktree_roots)a
 
   setup do
-    prev = Map.new(@app_env, &{&1, Application.get_env(:dev_ide, &1)})
+    prev = Map.new(@app_env, &{&1, Application.get_env(:casein, &1)})
 
     MemoryAdapter.clear()
     Casein.Runtimes.clear()
@@ -21,11 +21,11 @@ defmodule Casein.Operator.SituationServerTest do
     Activity.clear()
     AgentState.clear()
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
     # Point the WorktreeAlarm sweep (spawned by the detector engine) at an
     # empty root so tests never scan the box's real agent worktrees.
-    Application.put_env(:dev_ide, :agent_worktree_roots, [
+    Application.put_env(:casein, :agent_worktree_roots, [
       Path.join(System.tmp_dir!(), "devide-situation-test-empty")
     ])
 
@@ -37,8 +37,8 @@ defmodule Casein.Operator.SituationServerTest do
       AgentState.clear()
 
       Enum.each(prev, fn
-        {key, nil} -> Application.delete_env(:dev_ide, key)
-        {key, value} -> Application.put_env(:dev_ide, key, value)
+        {key, nil} -> Application.delete_env(:casein, key)
+        {key, value} -> Application.put_env(:casein, key, value)
       end)
     end)
 
@@ -98,7 +98,7 @@ defmodule Casein.Operator.SituationServerTest do
   end
 
   test "get_digest cold-builds when the flag is off and starts no server" do
-    Application.put_env(:dev_ide, :situation_server, false)
+    Application.put_env(:casein, :situation_server, false)
     seed_workspace("ws-sit-cold")
 
     assert {:ok, digest} = SituationServer.get_digest("ws-sit-cold")
@@ -107,7 +107,7 @@ defmodule Casein.Operator.SituationServerTest do
   end
 
   test "get_digest with the flag on starts the server once and serves the live digest" do
-    Application.put_env(:dev_ide, :situation_server, true)
+    Application.put_env(:casein, :situation_server, true)
     seed_workspace("ws-sit-live")
 
     assert {:ok, digest} = SituationServer.get_digest("ws-sit-live")

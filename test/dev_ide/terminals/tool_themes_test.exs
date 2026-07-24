@@ -8,15 +8,15 @@ defmodule Casein.Terminals.ToolThemesTest do
   @stale {{2020, 1, 1}, {0, 0, 0}}
 
   setup do
-    previous_home = Application.get_env(:dev_ide, :tool_theme_home)
-    previous_enabled = Application.get_env(:dev_ide, :tool_themes_enabled)
+    previous_home = Application.get_env(:casein, :tool_theme_home)
+    previous_enabled = Application.get_env(:casein, :tool_themes_enabled)
 
     home =
       Path.join(System.tmp_dir!(), "devide-tool-themes-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(home)
-    Application.put_env(:dev_ide, :tool_theme_home, home)
-    Application.put_env(:dev_ide, :tool_themes_enabled, true)
+    Application.put_env(:casein, :tool_theme_home, home)
+    Application.put_env(:casein, :tool_themes_enabled, true)
     ToolThemes.reset_memo!()
 
     on_exit(fn ->
@@ -225,7 +225,7 @@ defmodule Casein.Terminals.ToolThemesTest do
         File.rm_rf(locked)
       end)
 
-      Application.put_env(:dev_ide, :tool_theme_home, locked)
+      Application.put_env(:casein, :tool_theme_home, locked)
 
       log =
         capture_log(fn ->
@@ -236,7 +236,7 @@ defmodule Casein.Terminals.ToolThemesTest do
     end
 
     test "is a no-op when :tool_themes_enabled is false", %{home: home} do
-      Application.put_env(:dev_ide, :tool_themes_enabled, false)
+      Application.put_env(:casein, :tool_themes_enabled, false)
 
       assert :ok = ToolThemes.ensure_all(:dark)
       refute File.exists?(Path.join(home, ".config"))
@@ -252,7 +252,7 @@ defmodule Casein.Terminals.ToolThemesTest do
 
   defp elio_desired_content do
     template =
-      :dev_ide
+      :casein
       |> :code.priv_dir()
       |> Path.join("tool_themes/elio/theme.toml")
       |> File.read!()
@@ -261,6 +261,6 @@ defmodule Casein.Terminals.ToolThemesTest do
     template
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

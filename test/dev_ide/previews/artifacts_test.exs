@@ -5,12 +5,12 @@ defmodule Casein.Previews.ArtifactsTest do
 
   setup do
     root = Path.join(System.tmp_dir!(), "artifacts-test-#{System.unique_integer([:positive])}")
-    prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
-    prev_max = Application.get_env(:dev_ide, :preview_max_artifacts)
-    prev_diff_max = Application.get_env(:dev_ide, :preview_max_diff_artifacts)
+    prev_root = Application.get_env(:casein, :preview_artifacts_root)
+    prev_max = Application.get_env(:casein, :preview_max_artifacts)
+    prev_diff_max = Application.get_env(:casein, :preview_max_diff_artifacts)
 
     _ = Casein.Previews.ArtifactProtection.clear()
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
+    Application.put_env(:casein, :preview_artifacts_root, root)
 
     on_exit(fn ->
       _ = Casein.Previews.ArtifactProtection.clear()
@@ -37,7 +37,7 @@ defmodule Casein.Previews.ArtifactsTest do
   end
 
   test "store_png! prunes older artifacts down to the configured maximum", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 3)
+    Application.put_env(:casein, :preview_max_artifacts, 3)
 
     # Write more than the cap; set explicit increasing mtimes so ordering is
     # deterministic without sleeping. Convert posix seconds to the Erlang
@@ -66,8 +66,8 @@ defmodule Casein.Previews.ArtifactsTest do
   end
 
   test "diff overlays use a separate prune budget from screenshots", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
-    Application.put_env(:dev_ide, :preview_max_diff_artifacts, 2)
+    Application.put_env(:casein, :preview_max_artifacts, 1)
+    Application.put_env(:casein, :preview_max_diff_artifacts, 2)
 
     base_time = 1_700_000_000
 
@@ -100,7 +100,7 @@ defmodule Casein.Previews.ArtifactsTest do
   end
 
   test "protected displayed artifacts are not pruned", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+    Application.put_env(:casein, :preview_max_artifacts, 1)
 
     # Protect before the next store: with max_artifacts=1 each store prunes
     # everything older, so an unprotected 1.png would be legitimately gone by
@@ -118,7 +118,7 @@ defmodule Casein.Previews.ArtifactsTest do
   end
 
   test "a burst of same-second writes never prunes the just-written artifact", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+    Application.put_env(:casein, :preview_max_artifacts, 1)
 
     # All three writes land within one mtime tick (posix-second granularity),
     # so pruning cannot order them by timestamp alone. The just-written file
@@ -131,7 +131,7 @@ defmodule Casein.Previews.ArtifactsTest do
   end
 
   test "pruning is scoped per workspace", %{root: root} do
-    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+    Application.put_env(:casein, :preview_max_artifacts, 1)
 
     Artifacts.store_png!("ws-a", 1, "a")
     Artifacts.store_png!("ws-b", 1, "b")
@@ -140,6 +140,6 @@ defmodule Casein.Previews.ArtifactsTest do
     assert File.exists?(Path.join([root, "ws-b", "1.png"]))
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

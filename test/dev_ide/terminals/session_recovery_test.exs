@@ -13,8 +13,8 @@ defmodule Casein.Terminals.SessionRecoveryTest do
     pref_dir =
       Path.join(System.tmp_dir!(), "devide-recovery-prefs-#{System.unique_integer([:positive])}")
 
-    Application.put_env(:dev_ide, :tmux_scrollback_archive_dir, archive_dir)
-    Application.put_env(:dev_ide, :tmux_template_preference_dir, pref_dir)
+    Application.put_env(:casein, :tmux_scrollback_archive_dir, archive_dir)
+    Application.put_env(:casein, :tmux_template_preference_dir, pref_dir)
     ScrollbackArchive.ensure_table!()
     TemplatePreference.ensure_table!()
 

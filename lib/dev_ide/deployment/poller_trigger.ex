@@ -11,7 +11,7 @@ defmodule Casein.Deployment.PollerTrigger do
 
   @spec trigger(keyword()) :: :ok | {:error, term()}
   def trigger(opts \\ []) do
-    case Application.get_env(:dev_ide, :deploy_poller_trigger) do
+    case Application.get_env(:casein, :deploy_poller_trigger) do
       fun when is_function(fun, 1) -> fun.(opts)
       _ -> do_trigger(opts)
     end
@@ -48,7 +48,7 @@ defmodule Casein.Deployment.PollerTrigger do
   end
 
   defp config(key, default) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(key, default)
   end

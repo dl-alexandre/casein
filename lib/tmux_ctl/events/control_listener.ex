@@ -68,7 +68,7 @@ defmodule TmuxCtl.Events.ControlListener do
       tmux_bin: Keyword.get_lazy(opts, :tmux_bin, fn -> System.find_executable("tmux") end),
       anchor_session:
         Keyword.get(opts, :anchor_session) ||
-          Application.get_env(:dev_ide, :tmux_events_anchor_session, @default_anchor),
+          Application.get_env(:casein, :tmux_events_anchor_session, @default_anchor),
       backoff_ms: Keyword.get(opts, :backoff_ms, @default_backoff_ms),
       backoff_index: 0,
       state: :connecting,

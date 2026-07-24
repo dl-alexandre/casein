@@ -259,13 +259,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # ---------------------------------------------------------------------------
   describe "tmux_session_alive?/1" do
     setup do
-      prev = Application.get_env(:dev_ide, :tmux_adapter)
+      prev = Application.get_env(:casein, :tmux_adapter)
 
       on_exit(fn ->
         if prev do
-          Application.put_env(:dev_ide, :tmux_adapter, prev)
+          Application.put_env(:casein, :tmux_adapter, prev)
         else
-          Application.delete_env(:dev_ide, :tmux_adapter)
+          Application.delete_env(:casein, :tmux_adapter)
         end
       end)
 
@@ -278,22 +278,22 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
     end
 
     test "delegates to the adapter's session_alive?/1 when exported (true)" do
-      Application.put_env(:dev_ide, :tmux_adapter, __MODULE__.AliveAdapter)
+      Application.put_env(:casein, :tmux_adapter, __MODULE__.AliveAdapter)
       assert TerminalState.tmux_session_alive?("devide_x") == true
     end
 
     test "delegates to the adapter's session_alive?/1 when exported (false)" do
-      Application.put_env(:dev_ide, :tmux_adapter, __MODULE__.DeadAdapter)
+      Application.put_env(:casein, :tmux_adapter, __MODULE__.DeadAdapter)
       assert TerminalState.tmux_session_alive?("devide_x") == false
     end
 
     test "assumes alive when the adapter does not export session_alive?/1" do
-      Application.put_env(:dev_ide, :tmux_adapter, __MODULE__.NoAliveCheckAdapter)
+      Application.put_env(:casein, :tmux_adapter, __MODULE__.NoAliveCheckAdapter)
       assert TerminalState.tmux_session_alive?("devide_x") == true
     end
 
     test "a raising adapter is treated as not alive (rescue path)" do
-      Application.put_env(:dev_ide, :tmux_adapter, __MODULE__.RaisingAdapter)
+      Application.put_env(:casein, :tmux_adapter, __MODULE__.RaisingAdapter)
       assert TerminalState.tmux_session_alive?("devide_x") == false
     end
   end
@@ -303,13 +303,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # ---------------------------------------------------------------------------
   describe "tmux_adapter/0" do
     test "returns the configured adapter, defaulting to Tmux" do
-      prev = Application.get_env(:dev_ide, :tmux_adapter)
-      Application.delete_env(:dev_ide, :tmux_adapter)
+      prev = Application.get_env(:casein, :tmux_adapter)
+      Application.delete_env(:casein, :tmux_adapter)
 
       try do
         assert TerminalState.tmux_adapter() == Casein.Terminals.Tmux
       after
-        if prev, do: Application.put_env(:dev_ide, :tmux_adapter, prev)
+        if prev, do: Application.put_env(:casein, :tmux_adapter, prev)
       end
     end
   end

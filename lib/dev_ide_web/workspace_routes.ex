@@ -14,7 +14,7 @@ defmodule CaseinWeb.WorkspaceRoutes do
 
   @spec path_routes_trusted?() :: boolean()
   def path_routes_trusted? do
-    truthy?(Application.get_env(:dev_ide, :lan_mode)) and not ForwardAuth.enabled?()
+    truthy?(Application.get_env(:casein, :lan_mode)) and not ForwardAuth.enabled?()
   end
 
   @spec workspace_path(map() | String.t(), String.t() | nil) :: String.t()

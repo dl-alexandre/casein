@@ -301,8 +301,8 @@ defmodule Casein.ArtifactProjects do
   # Prefer a dedicated artifacts origin (stronger isolation) when configured,
   # falling back to the cockpit origin. nil when neither is set (local dev).
   defp artifact_public_origin do
-    case Application.get_env(:dev_ide, :artifact_public_url) ||
-           Application.get_env(:dev_ide, :preview_app_url) do
+    case Application.get_env(:casein, :artifact_public_url) ||
+           Application.get_env(:casein, :preview_app_url) do
       url when is_binary(url) and url != "" -> Casein.Previews.origin_of(url)
       _ -> nil
     end
@@ -708,7 +708,7 @@ defmodule Casein.ArtifactProjects do
 
   defp artifact_root_base do
     root =
-      Application.get_env(:dev_ide, :artifact_projects_root) ||
+      Application.get_env(:casein, :artifact_projects_root) ||
         Path.join([System.tmp_dir!(), "devide-agent-worktrees", "artifacts"])
 
     Path.expand(root)

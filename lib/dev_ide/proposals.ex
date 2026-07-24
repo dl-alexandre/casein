@@ -15,5 +15,5 @@ defmodule Casein.Proposals do
   def analyze(root, proposal), do: ConflictAnalyzer.analyze(root, proposal)
   def invalid_analysis, do: %Analysis{risk: :invalid}
 
-  defp impl, do: Application.get_env(:dev_ide, :proposals_adapter, Casein.Proposals.LocalAdapter)
+  defp impl, do: Application.get_env(:casein, :proposals_adapter, Casein.Proposals.LocalAdapter)
 end

@@ -10,7 +10,7 @@ defmodule Casein.Export.WorkspaceStatusTest do
   alias Casein.Workspaces.State.MemoryAdapter
 
   setup do
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_session_meta = TmuxCtl.Test.FakeState.get(:fake_tmux_session_meta)
@@ -18,7 +18,7 @@ defmodule Casein.Export.WorkspaceStatusTest do
     MemoryAdapter.clear()
     Audit.clear()
     Activity.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -392,8 +392,8 @@ defmodule Casein.Export.WorkspaceStatusTest do
     root
   end
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 
   defp restore_fake_state(key, nil), do: TmuxCtl.Test.FakeState.delete(key)
   defp restore_fake_state(key, value), do: TmuxCtl.Test.FakeState.put(key, value)

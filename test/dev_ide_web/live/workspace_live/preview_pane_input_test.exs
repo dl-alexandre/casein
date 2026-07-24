@@ -26,13 +26,13 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
     workspace_path = Path.join(workspace_root, @workspace_id)
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, true)
 
     MemoryAdapter.clear()
     PreviewPanes.clear()
@@ -110,8 +110,8 @@ defmodule CaseinWeb.WorkspaceLive.PreviewPaneInputTest do
       File.rm_rf(workspace_root)
 
       restore = fn
-        key, nil -> Application.delete_env(:dev_ide, key)
-        key, val -> Application.put_env(:dev_ide, key, val)
+        key, nil -> Application.delete_env(:casein, key)
+        key, val -> Application.put_env(:casein, key, val)
       end
 
       restore.(:workspaces_root, prev_root)

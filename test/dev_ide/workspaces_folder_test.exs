@@ -4,9 +4,9 @@ defmodule Casein.WorkspacesFolderTest do
   alias Casein.Workspaces
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
-    prev_home_workspace_path = Application.get_env(:dev_ide, :home_workspace_path)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_roots = Application.get_env(:casein, :workspaces_roots)
+    prev_home_workspace_path = Application.get_env(:casein, :home_workspace_path)
 
     on_exit(fn ->
       restore(:workspaces_root, prev_root)
@@ -37,7 +37,7 @@ defmodule Casein.WorkspacesFolderTest do
   end
 
   test "path_under_allowed_roots?/1 accepts paths under workspaces_root" do
-    root = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
+    root = Application.get_env(:casein, :workspaces_root) || "/workspaces"
     inside = Path.join(root, "ws-test")
     assert Workspaces.path_under_allowed_roots?(inside)
   end
@@ -45,7 +45,7 @@ defmodule Casein.WorkspacesFolderTest do
   test "path_under_allowed_roots?/1 accepts the configured home workspace path" do
     home = Path.join(System.tmp_dir!(), "devide-folder-home-#{System.unique_integer()}")
     File.mkdir_p!(home)
-    Application.put_env(:dev_ide, :home_workspace_path, home)
+    Application.put_env(:casein, :home_workspace_path, home)
 
     on_exit(fn -> File.rm_rf(home) end)
 
@@ -62,8 +62,8 @@ defmodule Casein.WorkspacesFolderTest do
     File.mkdir_p!(nested)
     File.write!(file, "nope")
 
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_roots, [])
 
     on_exit(fn -> File.rm_rf(root) end)
 
@@ -85,8 +85,8 @@ defmodule Casein.WorkspacesFolderTest do
     File.mkdir_p!(root)
     File.mkdir_p!(outside)
 
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_roots, [])
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -96,6 +96,6 @@ defmodule Casein.WorkspacesFolderTest do
     assert {:error, :outside_allowed_roots} = Workspaces.list_attachable_folders(outside)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

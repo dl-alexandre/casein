@@ -6,7 +6,7 @@ defmodule Casein.Agents.MCPUrls do
 
   @doc "Base URL intended for same-host MCP clients."
   def base_url do
-    Application.get_env(:dev_ide, :agent_mcp_base_url) ||
+    Application.get_env(:casein, :agent_mcp_base_url) ||
       non_empty_env("DEVIDE_AGENT_MCP_BASE_URL") ||
       non_empty_env("DEVIDE_API_BASE_URL") ||
       non_empty_env("DEVIDE_URL") ||
@@ -15,7 +15,7 @@ defmodule Casein.Agents.MCPUrls do
 
   @doc "Base URL for plain Casein API calls from pane-local shims."
   def api_base_url do
-    Application.get_env(:dev_ide, :api_base_url) ||
+    Application.get_env(:casein, :api_base_url) ||
       non_empty_env("DEVIDE_API_BASE_URL") ||
       base_url()
   end

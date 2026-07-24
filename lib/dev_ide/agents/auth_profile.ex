@@ -199,7 +199,7 @@ defmodule Casein.Agents.AuthProfile do
   defp env_key(:codex), do: "CODEX_HOME"
 
   defp auth_root do
-    Application.get_env(:dev_ide, :agent_auth_profile_root) ||
+    Application.get_env(:casein, :agent_auth_profile_root) ||
       System.get_env("DEVIDE_AGENT_AUTH_ROOT") ||
       Path.join([home_dir(), ".devide", "agent-auth"])
   end

@@ -18,8 +18,8 @@ defmodule Casein.Previews.VisualDiffWiringTest do
       Path.join(System.tmp_dir!(), "preview-diff-wiring-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
-    previous = Application.get_env(:dev_ide, :preview_artifacts_root)
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
+    previous = Application.get_env(:casein, :preview_artifacts_root)
+    Application.put_env(:casein, :preview_artifacts_root, root)
 
     _ = Registry.clear()
 
@@ -27,8 +27,8 @@ defmodule Casein.Previews.VisualDiffWiringTest do
       File.rm_rf(root)
 
       if previous,
-        do: Application.put_env(:dev_ide, :preview_artifacts_root, previous),
-        else: Application.delete_env(:dev_ide, :preview_artifacts_root)
+        do: Application.put_env(:casein, :preview_artifacts_root, previous),
+        else: Application.delete_env(:casein, :preview_artifacts_root)
     end)
 
     :ok

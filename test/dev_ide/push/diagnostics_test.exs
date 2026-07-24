@@ -4,10 +4,10 @@ defmodule Casein.Push.DiagnosticsTest do
   alias Casein.Push.{APNSProvider, Diagnostics, FCMProvider, FCMToken}
 
   setup do
-    prev_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_fcm = Application.get_env(:dev_ide, FCMProvider)
-    prev_fcm_token = Application.get_env(:dev_ide, FCMToken)
-    prev_apns = Application.get_env(:dev_ide, APNSProvider)
+    prev_provider = Application.get_env(:casein, :push_provider)
+    prev_fcm = Application.get_env(:casein, FCMProvider)
+    prev_fcm_token = Application.get_env(:casein, FCMToken)
+    prev_apns = Application.get_env(:casein, APNSProvider)
 
     on_exit(fn ->
       restore_env(:push_provider, prev_provider)
@@ -20,7 +20,7 @@ defmodule Casein.Push.DiagnosticsTest do
   end
 
   test "reports default log provider as not deliverable" do
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.LogProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.LogProvider)
 
     report = Diagnostics.report(["android"])
 
@@ -32,16 +32,16 @@ defmodule Casein.Push.DiagnosticsTest do
   end
 
   test "reports native provider ready when APNs and FCM are configured" do
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.NativeProvider)
 
-    Application.put_env(:dev_ide, FCMProvider,
+    Application.put_env(:casein, FCMProvider,
       project_id: "demo-project",
       access_token_fun: {FCMToken, :access_token, []}
     )
 
-    Application.put_env(:dev_ide, FCMToken, access_token: "ya29.test-token")
+    Application.put_env(:casein, FCMToken, access_token: "ya29.test-token")
 
-    Application.put_env(:dev_ide, APNSProvider,
+    Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
@@ -60,9 +60,9 @@ defmodule Casein.Push.DiagnosticsTest do
     :public_key.pem_encode([:public_key.pem_entry_encode(:PrivateKeyInfo, key)])
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
-  defp restore_module_env(module, nil), do: Application.delete_env(:dev_ide, module)
-  defp restore_module_env(module, value), do: Application.put_env(:dev_ide, module, value)
+  defp restore_module_env(module, nil), do: Application.delete_env(:casein, module)
+  defp restore_module_env(module, value), do: Application.put_env(:casein, module, value)
 end

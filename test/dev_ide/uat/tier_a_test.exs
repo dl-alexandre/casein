@@ -77,7 +77,7 @@ defmodule Casein.UAT.TierATest do
   end
 
   test "scenario_dirs discovers committed scenarios under priv/uat" do
-    root = Application.app_dir(:dev_ide, "priv/uat")
+    root = Application.app_dir(:casein, "priv/uat")
     dirs = TierA.scenario_dirs(root)
     assert Enum.any?(dirs, &(Path.basename(&1) == "checkout"))
   end

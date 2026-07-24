@@ -41,7 +41,7 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   # runtime surface behind), so listing probes each unique loopback port the
   # same way preview_open's preflight would connect. Public URLs stay unprobed.
   defp surface_liveness(surfaces) do
-    if Application.get_env(:dev_ide, :preview_surface_probe, true) do
+    if Application.get_env(:casein, :preview_surface_probe, true) do
       surfaces
       |> Enum.filter(&probeable_surface?/1)
       |> Enum.map(& &1.port)
@@ -56,7 +56,7 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   end
 
   defp surface_prober do
-    case Application.get_env(:dev_ide, :preview_surface_prober) do
+    case Application.get_env(:casein, :preview_surface_prober) do
       {mod, fun} -> &apply(mod, fun, [&1])
       fun when is_function(fun, 1) -> fun
       _ -> &PortProbe.probe/1
@@ -182,7 +182,7 @@ defmodule Casein.Agents.PreviewTools.SurfaceDiscovery do
   defp drop_nil(map), do: :maps.filter(fn _k, v -> not is_nil(v) end, map)
 
   defp scoped_local_server_preference_enabled? do
-    Application.get_env(:dev_ide, :preview_prefer_scoped_local_server, true)
+    Application.get_env(:casein, :preview_prefer_scoped_local_server, true)
   end
 
   # Only the implicit/explicit "app" open is eligible; a caller asking for a

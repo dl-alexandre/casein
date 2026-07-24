@@ -11,10 +11,10 @@ defmodule Casein.PushTest do
   alias Casein.Notifications
 
   setup do
-    prev_provider = Application.get_env(:dev_ide, :push_provider)
-    prev_apns = Application.get_env(:dev_ide, Casein.Push.APNSProvider)
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.TestProvider)
-    Application.put_env(:dev_ide, :push_test_pid, self())
+    prev_provider = Application.get_env(:casein, :push_provider)
+    prev_apns = Application.get_env(:casein, Casein.Push.APNSProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.TestProvider)
+    Application.put_env(:casein, :push_test_pid, self())
 
     Push.Registry.clear()
     Audit.clear()
@@ -22,24 +22,24 @@ defmodule Casein.PushTest do
     on_exit(fn ->
       Push.Registry.clear()
       Audit.clear()
-      Application.delete_env(:dev_ide, :push_test_pid)
-      Application.delete_env(:dev_ide, :push_test_response)
+      Application.delete_env(:casein, :push_test_pid)
+      Application.delete_env(:casein, :push_test_response)
 
       if prev_provider,
-        do: Application.put_env(:dev_ide, :push_provider, prev_provider),
-        else: Application.delete_env(:dev_ide, :push_provider)
+        do: Application.put_env(:casein, :push_provider, prev_provider),
+        else: Application.delete_env(:casein, :push_provider)
 
       if prev_apns,
-        do: Application.put_env(:dev_ide, Casein.Push.APNSProvider, prev_apns),
-        else: Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
+        do: Application.put_env(:casein, Casein.Push.APNSProvider, prev_apns),
+        else: Application.delete_env(:casein, Casein.Push.APNSProvider)
     end)
 
     :ok
   end
 
   test "native provider readiness loads platform provider before checking config" do
-    Application.put_env(:dev_ide, :push_provider, Casein.Push.NativeProvider)
-    Application.delete_env(:dev_ide, Casein.Push.APNSProvider)
+    Application.put_env(:casein, :push_provider, Casein.Push.NativeProvider)
+    Application.delete_env(:casein, Casein.Push.APNSProvider)
 
     assert {:error, :no_team_id} = Push.ready_for?("ios")
   end
@@ -199,7 +199,7 @@ defmodule Casein.PushTest do
   end
 
   test "invalid-token provider responses unregister the token" do
-    Application.put_env(:dev_ide, :push_test_response, {:error, :invalid_token})
+    Application.put_env(:casein, :push_test_response, {:error, :invalid_token})
 
     :ok = Push.register(%{workspace_id: "pw-1", token: "tok-bad", platform: "ios"})
 

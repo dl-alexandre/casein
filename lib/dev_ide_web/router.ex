@@ -20,8 +20,8 @@ defmodule CaseinWeb.Router do
   # - `connect-src ws: wss:` covers the LiveView socket and terminal channel.
   # - `img-src data: blob:` covers dropped/pasted terminal images.
   # - `frame-src` admits preview-pane iframes. Runtime deployments can override
-  #   this through `:dev_ide, :preview_frame_src`.
-  @script_src if Application.compile_env(:dev_ide, :dev_routes),
+  #   this through `:casein, :preview_frame_src`.
+  @script_src if Application.compile_env(:casein, :dev_routes),
                 do: "script-src 'self' 'unsafe-inline'",
                 else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
 
@@ -40,7 +40,7 @@ defmodule CaseinWeb.Router do
                                 |> Enum.join("; ")
 
   defp put_content_security_policy(conn, _opts) do
-    frame_src = Application.get_env(:dev_ide, :preview_frame_src, @default_frame_src)
+    frame_src = Application.get_env(:casein, :preview_frame_src, @default_frame_src)
 
     Plug.Conn.put_resp_header(
       conn,
@@ -310,7 +310,7 @@ defmodule CaseinWeb.Router do
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
-  if Application.compile_env(:dev_ide, :dev_routes) do
+  if Application.compile_env(:casein, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
     # it behind authentication and allow only admins to access it.
     # If your application does not have an admins-only section yet,

@@ -132,6 +132,6 @@ defmodule Casein.Terminals.CommandTracker do
   end
 
   defp output_limit do
-    Application.get_env(:dev_ide, :terminal_command_output_bytes, @default_output_limit)
+    Application.get_env(:casein, :terminal_command_output_bytes, @default_output_limit)
   end
 end

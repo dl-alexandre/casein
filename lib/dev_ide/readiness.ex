@@ -32,7 +32,7 @@ defmodule Casein.Readiness do
   end
 
   defp query_database do
-    timeout = Application.get_env(:dev_ide, :readiness_timeout_ms, @default_timeout)
+    timeout = Application.get_env(:casein, :readiness_timeout_ms, @default_timeout)
     Ecto.Adapters.SQL.query(Casein.Repo, "SELECT 1", [], timeout: timeout, log: false)
   end
 

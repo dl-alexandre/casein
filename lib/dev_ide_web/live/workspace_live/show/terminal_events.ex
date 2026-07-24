@@ -1027,6 +1027,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   # Config seam so tests can stub the (network-touching) embeddability probe.
   defp embeddability_checker do
-    Application.get_env(:dev_ide, :embeddability_checker, Casein.Previews)
+    Application.get_env(:casein, :embeddability_checker, Casein.Previews)
   end
 end

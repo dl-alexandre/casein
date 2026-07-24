@@ -14,14 +14,14 @@ defmodule Casein.Desktop.TerminalBackend do
 
   @spec current() :: t()
   def current do
-    Application.get_env(:dev_ide, :desktop_terminal_backend, default(:os.type()))
+    Application.get_env(:casein, :desktop_terminal_backend, default(:os.type()))
   end
 
   def powershell?, do: current() == :powershell
   def tmux?, do: current() == :tmux
 
   @doc "Whether the desktop-only native terminal session should replace tmux."
-  def native_session?(desktop_mode? \\ Application.get_env(:dev_ide, :desktop_mode, false)) do
+  def native_session?(desktop_mode? \\ Application.get_env(:casein, :desktop_mode, false)) do
     desktop_mode? and powershell?()
   end
 end

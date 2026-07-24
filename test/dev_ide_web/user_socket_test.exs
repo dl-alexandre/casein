@@ -10,8 +10,8 @@ defmodule CaseinWeb.UserSocketTest do
   end
 
   setup do
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
 
     on_exit(fn -> restore(:workspace_source, prev_source) end)
 
@@ -80,6 +80,6 @@ defmodule CaseinWeb.UserSocketTest do
     assert UserSocket.id(socket) == "users_socket:user-42"
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

@@ -83,7 +83,7 @@ defmodule Casein.Previews.EnvPorts do
   """
   @spec current_port() :: integer()
   def current_port do
-    Application.get_env(:dev_ide, :preview_loopback_port) ||
+    Application.get_env(:casein, :preview_loopback_port) ||
       parse_port(System.get_env("PORT")) ||
       4_000
   end
@@ -102,7 +102,7 @@ defmodule Casein.Previews.EnvPorts do
   defp parse_port(_), do: nil
 
   defp configured_range(key, default) do
-    case Application.get_env(:dev_ide, key, default) do
+    case Application.get_env(:casein, key, default) do
       {min, max}
       when is_integer(min) and is_integer(max) and valid_port?(min) and
              valid_port?(max) and min <= max ->
@@ -114,7 +114,7 @@ defmodule Casein.Previews.EnvPorts do
   end
 
   defp configured_port(key, default) do
-    case Application.get_env(:dev_ide, key, default) do
+    case Application.get_env(:casein, key, default) do
       port when is_integer(port) and valid_port?(port) -> port
       _ -> default
     end

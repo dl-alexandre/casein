@@ -118,7 +118,7 @@ defmodule CaseinWeb.TerminalRender do
 
   defp emit_frame_telemetry(payload, id, cells, full_frame?, changed_row_count, started) do
     :telemetry.execute(
-      [:dev_ide, :terminal, :render_frame],
+      [:casein, :terminal, :render_frame],
       %{
         count: 1,
         duration_us: TerminalTelemetry.duration_us(started),

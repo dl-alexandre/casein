@@ -27,7 +27,7 @@ defmodule Casein.PreviewPanes do
   alias Casein.Previews.WorkspaceContext
   alias Casein.Repo
 
-  @table :dev_ide_preview_panes
+  @table :casein_preview_panes
   # Topology PubSub tag; atom form avoids a compile-time core-module edge.
   @topology_tag Deps.topology_tag()
   # Register/deregister wait on offloaded I/O that can include a 15s browser
@@ -592,14 +592,14 @@ defmodule Casein.PreviewPanes do
   end
 
   defp maybe_test_browser_delay do
-    case Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms) do
+    case Application.get_env(:casein, :preview_panes_test_browser_delay_ms) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
     end
   end
 
   defp maybe_test_rehydrate_delay do
-    case Application.get_env(:dev_ide, :preview_panes_test_rehydrate_delay_ms) do
+    case Application.get_env(:casein, :preview_panes_test_rehydrate_delay_ms) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
     end
@@ -1213,7 +1213,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp preview_proxy_enabled? do
-    case Application.get_env(:dev_ide, :preview_proxy_enabled) do
+    case Application.get_env(:casein, :preview_proxy_enabled) do
       nil -> System.get_env("DEV_IDE_PREVIEW_PROXY", "true") not in ~w(0 false no)
       val -> !!val
     end
@@ -1235,7 +1235,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp hmr_tunnel_enabled? do
-    :dev_ide
+    :casein
     |> Application.get_env(:preview_proxy_hmr, [])
     |> Keyword.get(:enabled, false)
   end
@@ -1479,7 +1479,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp artifact_origin(registration) do
-    app_url = Application.get_env(:dev_ide, :preview_app_url)
+    app_url = Application.get_env(:casein, :preview_app_url)
 
     cond do
       is_binary(app_url) and app_url != "" ->
@@ -1969,7 +1969,7 @@ defmodule Casein.PreviewPanes do
   end
 
   defp preview_pane_persistence_enabled? do
-    Application.get_env(:dev_ide, :preview_pane_persistence_enabled, true)
+    Application.get_env(:casein, :preview_pane_persistence_enabled, true)
   end
 
   defp persisted_registration_to_map(%PreviewPaneRegistration{} = persisted) do
@@ -2181,7 +2181,7 @@ defmodule Casein.PreviewPanes do
   defp control_url_for(url) when is_binary(url) do
     with %URI{} = uri <- URI.parse(url),
          true <- devide_app_url?(uri),
-         port <- Application.get_env(:dev_ide, :preview_loopback_port, 4000) do
+         port <- Application.get_env(:casein, :preview_loopback_port, 4000) do
       %URI{uri | scheme: "http", host: "127.0.0.1", port: port}
       |> URI.to_string()
     else
@@ -2192,7 +2192,7 @@ defmodule Casein.PreviewPanes do
   defp control_url_for(url), do: url
 
   defp devide_loopback_url?(%URI{} = uri) do
-    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    port = Application.get_env(:casein, :preview_loopback_port, 4000)
 
     uri.scheme in ["http", "https"] and uri.host in ["localhost", "127.0.0.1", "0.0.0.0"] and
       case uri.port do
@@ -2210,8 +2210,8 @@ defmodule Casein.PreviewPanes do
 
   defp configured_devide_hosts do
     [
-      host_from_url(Application.get_env(:dev_ide, :preview_app_url)),
-      get_in(Application.get_env(:dev_ide, :deployment, []), [:default_host])
+      host_from_url(Application.get_env(:casein, :preview_app_url)),
+      get_in(Application.get_env(:casein, :deployment, []), [:default_host])
     ]
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
     |> Enum.uniq()

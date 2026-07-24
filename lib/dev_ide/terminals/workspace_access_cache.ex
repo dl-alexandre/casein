@@ -8,7 +8,7 @@ defmodule Casein.Terminals.WorkspaceAccessCache do
   ## ETS table access
 
   The underlying named ETS table is intentionally :public (controlled by
-  `config :dev_ide, :ets_table_access`). TerminalChannel and other connection
+  `config :casein, :ets_table_access`). TerminalChannel and other connection
   processes must be able to insert verified claims for fast reconnects. Only
   trusted application code paths ever write to it (after Phoenix.Token
   verification + claim enrichment + mode checks). The node is assumed to run
@@ -16,14 +16,14 @@ defmodule Casein.Terminals.WorkspaceAccessCache do
   execute in the main BEAM node if you need a stronger boundary.
   """
 
-  @table :dev_ide_workspace_access_cache
+  @table :casein_workspace_access_cache
   @ttl_ms 60_000
 
   @doc false
   def ensure_table! do
     case :ets.whereis(@table) do
       :undefined ->
-        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        access = Application.get_env(:casein, :ets_table_access, :protected)
 
         :ets.new(@table, [
           :named_table,

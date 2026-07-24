@@ -40,7 +40,7 @@ defmodule Casein.FilePanes.LinkResolver do
   alias Casein.FilePanes.SuffixIndex
   alias Casein.Files.PathSafety
 
-  @table :dev_ide_file_link_cache
+  @table :casein_file_link_cache
   @default_max_new_per_frame 16
   @cache_max_entries 5_000
 
@@ -120,9 +120,9 @@ defmodule Casein.FilePanes.LinkResolver do
 
   def resolve(_root, _path), do: {:error, :invalid}
 
-  @doc "Cache TTL in milliseconds (config: `:dev_ide, :file_link_cache_ttl_ms`)."
+  @doc "Cache TTL in milliseconds (config: `:casein, :file_link_cache_ttl_ms`)."
   @spec ttl_ms() :: pos_integer()
-  def ttl_ms, do: Application.get_env(:dev_ide, :file_link_cache_ttl_ms, 10_000)
+  def ttl_ms, do: Application.get_env(:casein, :file_link_cache_ttl_ms, 10_000)
 
   @doc false
   # Test helper: drop all cached results.

@@ -3,7 +3,7 @@ defmodule Casein.WorkspaceSource.Local do
   Workspace source that discovers workspaces as subdirectories of a
   configurable root.
 
-  Defaults to `:dev_ide, :workspaces_root` (or `/workspaces`), with the
+  Defaults to `:casein, :workspaces_root` (or `/workspaces`), with the
   workspace's directory name as both `id` and `name`. Status is always
   `:running` (a directory is either present or not — there is no remote
   lifecycle to query). Lifecycle operations (`start`, `stop`) are
@@ -11,7 +11,7 @@ defmodule Casein.WorkspaceSource.Local do
   refused unless `:allow_destructive` is set, to keep the default
   developer experience safe.
 
-  When `:dev_ide, :home_workspace_path` is configured, a synthetic `home`
+  When `:casein, :home_workspace_path` is configured, a synthetic `home`
   workspace points at that exact directory. LAN mode uses this to make the
   default workspace the service user's real home directory without making
   `/home` itself the workspace root.
@@ -280,20 +280,20 @@ defmodule Casein.WorkspaceSource.Local do
   defp nilify_empty(s), do: s
 
   defp root_path do
-    Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
+    Application.get_env(:casein, :workspaces_root, "/workspaces")
     |> Path.expand()
   end
 
   defp home_workspace_path do
-    case Application.get_env(:dev_ide, :home_workspace_path) do
+    case Application.get_env(:casein, :home_workspace_path) do
       path when is_binary(path) and path != "" -> Path.expand(path)
       _ -> nil
     end
   end
 
   defp allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots) || []
-    primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
+    config = Application.get_env(:casein, :workspaces_roots) || []
+    primary = Application.get_env(:casein, :workspaces_root, "/workspaces")
     home = home_workspace_path()
 
     [primary, home | config]

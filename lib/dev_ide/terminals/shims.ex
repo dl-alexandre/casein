@@ -119,7 +119,7 @@ defmodule Casein.Terminals.Shims do
   @doc "Directory where Casein materializes terminal shims."
   @spec dir() :: String.t()
   def dir do
-    :dev_ide
+    :casein
     |> Application.get_env(:terminal_shims_dir)
     |> non_empty_or(System.get_env("DEV_IDE_TERMINAL_SHIMS_DIR"))
     |> non_empty_or(@default_dir)
@@ -129,7 +129,7 @@ defmodule Casein.Terminals.Shims do
   @doc "Directory where Casein installs self-healed terminal tools."
   @spec tool_root() :: String.t()
   def tool_root do
-    :dev_ide
+    :casein
     |> Application.get_env(:terminal_tools_dir)
     |> non_empty_or(System.get_env("DEV_IDE_TERMINAL_TOOLS_DIR"))
     |> non_empty_or(@default_tool_root)
@@ -1148,14 +1148,14 @@ defmodule Casein.Terminals.Shims do
   defp trim_trailing_blank(value), do: String.trim_trailing(value) <> "\n\n"
 
   defp desktop_integration_enabled? do
-    case Application.get_env(:dev_ide, :terminal_desktop_integration_enabled) do
+    case Application.get_env(:casein, :terminal_desktop_integration_enabled) do
       nil -> System.get_env("DEV_IDE_TERMINAL_DESKTOP_INTEGRATION") not in ["0", "false", "no"]
       value -> !!value
     end
   end
 
   defp desktop_entries_dir do
-    Application.get_env(:dev_ide, :terminal_desktop_entries_dir) ||
+    Application.get_env(:casein, :terminal_desktop_entries_dir) ||
       case System.get_env("XDG_DATA_HOME") do
         value when is_binary(value) and value != "" -> Path.join(value, "applications")
         _ -> Path.join(home_dir(), ".local/share/applications")
@@ -1163,7 +1163,7 @@ defmodule Casein.Terminals.Shims do
   end
 
   defp mimeapps_path do
-    Application.get_env(:dev_ide, :terminal_mimeapps_path) ||
+    Application.get_env(:casein, :terminal_mimeapps_path) ||
       case System.get_env("XDG_CONFIG_HOME") do
         value when is_binary(value) and value != "" -> Path.join(value, "mimeapps.list")
         _ -> Path.join(home_dir(), ".config/mimeapps.list")

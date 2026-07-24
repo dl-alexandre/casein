@@ -21,7 +21,7 @@ defmodule CaseinWeb.TerminalChannel do
 
   require Logger
 
-  @fast_path_cache_table :dev_ide_terminal_fast_path_cache
+  @fast_path_cache_table :casein_terminal_fast_path_cache
   @fast_path_cache_ttl_ms 60_000
   @workspace_fast_path_sid :workspace
 
@@ -441,7 +441,7 @@ defmodule CaseinWeb.TerminalChannel do
       capability_host_id: claims[:workspace_host_id]
     }
 
-    :telemetry.execute([:dev_ide, :terminal_channel, :capability_mismatch], %{count: 1}, metadata)
+    :telemetry.execute([:casein, :terminal_channel, :capability_mismatch], %{count: 1}, metadata)
 
     Logger.warning("terminal capability mismatch", Map.to_list(metadata))
   end

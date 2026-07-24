@@ -1110,7 +1110,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # reload.
   def handle_info({:pty_data, pane_id, data}, socket) when is_binary(data) do
     :telemetry.span(
-      [:dev_ide, :workspace_live, :pty_data],
+      [:casein, :workspace_live, :pty_data],
       %{pane_id: pane_id, bytes: byte_size(data)},
       fn ->
         # OSC52: a program (or tmux with set-clipboard on) requesting that text
@@ -1647,7 +1647,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
 
   defp emit_terminal_push_telemetry(pane_id, payload) do
     :telemetry.execute(
-      [:dev_ide, :terminal, :live_view, :push_frame],
+      [:casein, :terminal, :live_view, :push_frame],
       %{
         count: 1,
         changed_rows: TerminalTelemetry.changed_row_count(payload)
@@ -2078,7 +2078,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     end
   end
 
-  defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
+  defp desktop_mode?, do: Application.get_env(:casein, :desktop_mode, false)
   defp desktop_powershell?, do: Casein.Desktop.TerminalBackend.native_session?(desktop_mode?())
 
   defp maybe_assign_hydrated_tmux_topology(socket, data) do
@@ -3410,7 +3410,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
 
     :telemetry.span(
-      [:dev_ide, :workspace_live, :start_ghostty_pane],
+      [:casein, :workspace_live, :start_ghostty_pane],
       %{pane_id: pane_id, workspace_id: ws_id},
       fn -> do_start_ghostty_for_pane(socket, pane_id) end
     )
@@ -3600,7 +3600,7 @@ defmodule CaseinWeb.WorkspaceLive.Show do
     loc = terminal_loc(socket, workspace_cwd(socket))
 
     :telemetry.span(
-      [:dev_ide, :workspace_live, :prewarm_raw_session],
+      [:casein, :workspace_live, :prewarm_raw_session],
       %{workspace_id: workspace_id, session_sid: session_sid},
       fn ->
         result =
@@ -3734,10 +3734,10 @@ defmodule CaseinWeb.WorkspaceLive.Show do
   # Production default: route raw Ghostty panes through SessionOwner so the UI,
   # raw channel joins, replay, and resize all share the canonical terminal
   # boundary. The legacy per-pane Ghostty.PTY backend remains available for
-  # targeted tests/rollback via `config :dev_ide, :ghostty_pane_backend,
+  # targeted tests/rollback via `config :casein, :ghostty_pane_backend,
   # :ghostty_pty`.
   defp ghostty_pane_backend do
-    Application.get_env(:dev_ide, :ghostty_pane_backend, :session_owner)
+    Application.get_env(:casein, :ghostty_pane_backend, :session_owner)
   end
 
   defp terminal_workspace_key(socket) do

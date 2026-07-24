@@ -262,7 +262,7 @@ defmodule Casein.Workspaces.State do
   """
   @spec mode_for(String.t()) :: {WorkspaceMode.t(), :config_override | :persisted | :default}
   def mode_for(external_id) do
-    overrides = Application.get_env(:dev_ide, :workspace_modes, %{})
+    overrides = Application.get_env(:casein, :workspace_modes, %{})
 
     cond do
       Map.has_key?(overrides, external_id) ->
@@ -374,7 +374,7 @@ defmodule Casein.Workspaces.State do
   defp impl,
     do:
       Application.get_env(
-        :dev_ide,
+        :casein,
         :workspace_state_adapter,
         Casein.Workspaces.State.MemoryAdapter
       )

@@ -7,9 +7,9 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
   @token "test-preview-mcp-token"
 
   setup do
-    prev = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    Application.put_env(:dev_ide, :api_token, @token)
+    prev = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    Application.put_env(:casein, :api_token, @token)
 
     on_exit(fn ->
       restore(:api_token, prev)
@@ -19,8 +19,8 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp post_mcp(conn, body, token \\ @token, path \\ "/api/preview/mcp") do
     conn
@@ -97,7 +97,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
   end
 
   test "workspace-scoped token injects its workspace when query is omitted", %{conn: conn} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
 
     conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, "ws-token")
 
@@ -108,7 +108,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
   end
 
   test "workspace-scoped token rejects query tmux_session outside token workspace", %{conn: conn} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
 
     conn =
       post_mcp(
@@ -126,7 +126,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
   end
 
   test "workspace-scoped token rejects another workspace query", %{conn: conn} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
 
     conn =
       post_mcp(
@@ -165,7 +165,7 @@ defmodule CaseinWeb.API.PreviewMCPControllerTest do
   end
 
   test "workspace-scoped token can call Preview MCP tools", %{conn: conn} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
 
     conn =
       post_mcp(

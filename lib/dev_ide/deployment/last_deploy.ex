@@ -278,7 +278,7 @@ defmodule Casein.Deployment.LastDeploy do
   defp stale_in_progress?(_), do: false
 
   defp stale_in_progress_ms(%{"phase" => phase}) when is_binary(phase) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(:phase_stale_in_progress_ms, @phase_stale_in_progress_ms)
     |> Map.get(phase, stale_in_progress_ms())
@@ -334,7 +334,7 @@ defmodule Casein.Deployment.LastDeploy do
   end
 
   defp config(key, default) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(key, default)
   end

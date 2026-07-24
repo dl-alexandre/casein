@@ -4,7 +4,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
   alias Casein.Agents.TidewaveMCP
 
   setup do
-    prev_home = Application.get_env(:dev_ide, :preview_env_home)
+    prev_home = Application.get_env(:casein, :preview_env_home)
     prev_env_url = System.get_env("DEVIDE_TIDEWAVE_MCP_URL")
     prev_preview_env_id = System.get_env("DEVIDE_PREVIEW_ENV_ID")
 
@@ -96,7 +96,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
       })
     )
 
-    Application.put_env(:dev_ide, :preview_env_home, home)
+    Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn -> File.rm_rf!(home) end)
 
@@ -119,7 +119,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
       Jason.encode!(%{"id" => "prev-abc", "port" => "41042", "status" => "running"})
     )
 
-    Application.put_env(:dev_ide, :preview_env_home, home)
+    Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn -> File.rm_rf!(home) end)
 
@@ -130,6 +130,6 @@ defmodule Casein.Agents.TidewaveMCPTest do
     assert TidewaveMCP.server_key(%{name: "Alice Feature"}) == "devide-tidewave-alice-feature"
   end
 
-  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
-  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
+  defp restore_preview_home(nil), do: Application.delete_env(:casein, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:casein, :preview_env_home, value)
 end

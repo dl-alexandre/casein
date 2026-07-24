@@ -33,10 +33,10 @@ defmodule Casein.Push.FCMToken do
   This module implements Google's JWT bearer flow without adding a credential
   dependency:
 
-      config :dev_ide, Casein.Push.FCMProvider,
+      config :casein, Casein.Push.FCMProvider,
         access_token_fun: {Casein.Push.FCMToken, :access_token, []}
 
-      config :dev_ide, Casein.Push.FCMToken,
+      config :casein, Casein.Push.FCMToken,
         service_account_path: "/run/secrets/firebase-service-account.json"
 
   Runtime config also supports:
@@ -306,5 +306,5 @@ defmodule Casein.Push.FCMToken do
     end
   end
 
-  defp config, do: Application.get_env(:dev_ide, __MODULE__, [])
+  defp config, do: Application.get_env(:casein, __MODULE__, [])
 end

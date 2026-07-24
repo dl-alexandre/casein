@@ -41,20 +41,20 @@ defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
   end
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
-    prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_forward_auth = Application.get_env(:casein, :forward_auth)
+    prev_hmr = Application.get_env(:casein, :preview_proxy_hmr)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
 
     root = Path.join(System.tmp_dir!(), "ws-e2e-#{System.unique_integer([:positive])}")
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :forward_auth, true)
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :forward_auth, true)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -97,8 +97,8 @@ defmodule CaseinWeb.PreviewProxy.WebSocketTunnelE2ETest do
     {:ok, devide_port: devide_port, upstream_port: upstream_port, workspace_id: workspace_id}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_session!(session, pane_id) do
     FakeState.put(:fake_tmux_windows, %{

@@ -10,24 +10,24 @@ defmodule Casein.Workspaces.HostPathIdentityTest do
 
   setup do
     MemoryAdapter.clear()
-    previous = Map.new(@config_keys, &{&1, Application.get_env(:dev_ide, &1)})
+    previous = Map.new(@config_keys, &{&1, Application.get_env(:casein, &1)})
 
     root =
       Path.join(System.tmp_dir!(), "devide-host-path-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.delete_env(:dev_ide, :lan_path_root)
-    Application.delete_env(:dev_ide, :home_workspace_path)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.delete_env(:casein, :lan_path_root)
+    Application.delete_env(:casein, :home_workspace_path)
 
     on_exit(fn ->
       MemoryAdapter.clear()
 
       Enum.each(previous, fn
-        {key, nil} -> Application.delete_env(:dev_ide, key)
-        {key, value} -> Application.put_env(:dev_ide, key, value)
+        {key, nil} -> Application.delete_env(:casein, key)
+        {key, value} -> Application.put_env(:casein, key, value)
       end)
 
       File.rm_rf(root)

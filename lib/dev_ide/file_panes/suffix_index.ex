@@ -14,7 +14,7 @@ defmodule Casein.FilePanes.SuffixIndex do
   GenServer and served from a public ETS table. Lookups before the first build
   completes return `{:error, :pending}` (LinkResolver drops those candidates
   uncached, so they linkify on a later frame). A completed index older than
-  `:dev_ide, :file_link_index_ttl_ms` (default 60s) keeps answering while a
+  `:casein, :file_link_index_ttl_ms` (default 60s) keeps answering while a
   rebuild runs in the background.
 
   Build cost controls: symlinks are never followed (file or directory), VCS
@@ -27,7 +27,7 @@ defmodule Casein.FilePanes.SuffixIndex do
 
   require Logger
 
-  @table :dev_ide_file_link_suffix_index
+  @table :casein_file_link_suffix_index
 
   @ignored_dirs MapSet.new(
                   ~w(.git .hg .svn _build deps node_modules cover .elixir_ls .lexical .hex)
@@ -97,9 +97,9 @@ defmodule Casein.FilePanes.SuffixIndex do
     GenServer.call(__MODULE__, {:rebuild, Path.expand(root)}, 30_000)
   end
 
-  @doc "Index TTL in milliseconds (config: `:dev_ide, :file_link_index_ttl_ms`)."
+  @doc "Index TTL in milliseconds (config: `:casein, :file_link_index_ttl_ms`)."
   @spec ttl_ms() :: pos_integer()
-  def ttl_ms, do: Application.get_env(:dev_ide, :file_link_index_ttl_ms, 60_000)
+  def ttl_ms, do: Application.get_env(:casein, :file_link_index_ttl_ms, 60_000)
 
   @doc false
   # Test helper: drop every root's index.

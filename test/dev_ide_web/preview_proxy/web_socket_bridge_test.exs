@@ -191,8 +191,8 @@ defmodule CaseinWeb.PreviewProxy.WebSocketBridgeTest do
   end
 
   test "init closes the browser hop when the upstream never completes the handshake" do
-    prev = Application.get_env(:dev_ide, :preview_proxy_hmr)
-    Application.put_env(:dev_ide, :preview_proxy_hmr, handshake_timeout_ms: 150)
+    prev = Application.get_env(:casein, :preview_proxy_hmr)
+    Application.put_env(:casein, :preview_proxy_hmr, handshake_timeout_ms: 150)
     on_exit(fn -> restore(:preview_proxy_hmr, prev) end)
 
     {:ok, listen} =
@@ -300,6 +300,6 @@ defmodule CaseinWeb.PreviewProxy.WebSocketBridgeTest do
     assert {:stop, :normal, _state} = WebSocketBridge.handle_in({"x", [opcode: :text]}, closed)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

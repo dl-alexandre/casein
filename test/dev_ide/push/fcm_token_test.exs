@@ -4,32 +4,32 @@ defmodule Casein.Push.FCMTokenTest do
   alias Casein.Push.FCMToken
 
   setup do
-    prev = Application.get_env(:dev_ide, FCMToken)
+    prev = Application.get_env(:casein, FCMToken)
     FCMToken.clear_cache()
-    Application.put_env(:dev_ide, :fcm_token_test_pid, self())
+    Application.put_env(:casein, :fcm_token_test_pid, self())
 
     on_exit(fn ->
       FCMToken.clear_cache()
-      Application.delete_env(:dev_ide, :fcm_token_test_pid)
-      Application.delete_env(:dev_ide, :fcm_token_stub_response)
+      Application.delete_env(:casein, :fcm_token_test_pid)
+      Application.delete_env(:casein, :fcm_token_stub_response)
 
       if prev,
-        do: Application.put_env(:dev_ide, FCMToken, prev),
-        else: Application.delete_env(:dev_ide, FCMToken)
+        do: Application.put_env(:casein, FCMToken, prev),
+        else: Application.delete_env(:casein, FCMToken)
     end)
 
     :ok
   end
 
   test "uses a directly configured access token" do
-    Application.put_env(:dev_ide, FCMToken, access_token: "direct-token")
+    Application.put_env(:casein, FCMToken, access_token: "direct-token")
 
     assert {:ok, "direct-token"} = FCMToken.access_token()
     refute_receive {:fcm_token_request, _, _, _}
   end
 
   test "mints and caches an OAuth token from service-account JSON" do
-    Application.put_env(:dev_ide, FCMToken,
+    Application.put_env(:casein, FCMToken,
       service_account_json: Jason.encode!(service_account()),
       http_client: Casein.Push.FCMToken.StubHTTP,
       now_fun: fn -> 1_800_000_000 end
@@ -65,14 +65,14 @@ defmodule Casein.Push.FCMTokenTest do
   end
 
   test "returns endpoint errors without caching" do
-    Application.put_env(:dev_ide, FCMToken,
+    Application.put_env(:casein, FCMToken,
       service_account_json: Jason.encode!(service_account()),
       http_client: Casein.Push.FCMToken.StubHTTP,
       cache: false
     )
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :fcm_token_stub_response,
       {:ok, %{status: 401, body: %{"error" => "invalid_grant"}}}
     )
@@ -82,7 +82,7 @@ defmodule Casein.Push.FCMTokenTest do
   end
 
   test "errors clearly when no credential source is configured" do
-    Application.put_env(:dev_ide, FCMToken, cache: false)
+    Application.put_env(:casein, FCMToken, cache: false)
 
     assert {:error, :no_service_account} = FCMToken.access_token()
   end

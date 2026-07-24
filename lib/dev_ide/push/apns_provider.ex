@@ -246,5 +246,5 @@ defmodule Casein.Push.APNSProvider do
   end
 
   defp http_client, do: config()[:http_client] || Casein.Push.APNS.ReqClient
-  defp config, do: Application.get_env(:dev_ide, __MODULE__, [])
+  defp config, do: Application.get_env(:casein, __MODULE__, [])
 end

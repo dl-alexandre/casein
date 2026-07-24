@@ -13,12 +13,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.BrowseTest do
     File.write!(Path.join(root, "not-a-dir.txt"), "x")
     File.mkdir_p!(Path.join(root, ".hidden"))
 
-    prev_root = Application.get_env(:dev_ide, :lan_path_root)
-    prev_workspaces_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_forward = Application.get_env(:dev_ide, :forward_auth)
+    prev_root = Application.get_env(:casein, :lan_path_root)
+    prev_workspaces_root = Application.get_env(:casein, :workspaces_root)
+    prev_forward = Application.get_env(:casein, :forward_auth)
 
-    Application.put_env(:dev_ide, :lan_path_root, root)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :lan_path_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -124,6 +124,6 @@ defmodule CaseinWeb.WorkspaceLive.Show.BrowseTest do
     assert Enum.map(node.children, & &1.label) == ["alice"]
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

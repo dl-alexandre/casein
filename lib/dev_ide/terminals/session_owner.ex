@@ -63,13 +63,13 @@ defmodule Casein.Terminals.SessionOwner do
   Returns the configured replay buffer byte limit for owner (used for
   reconnect UX). Defaults to 32 KiB. Override via:
 
-      config :dev_ide, :terminal_replay_buffer_bytes, 64 * 1024
+      config :casein, :terminal_replay_buffer_bytes, 64 * 1024
 
   (or runtime env). All behavior, truncation, and tests remain identical
   at the default.
   """
   def replay_buffer_limit do
-    Application.get_env(:dev_ide, :terminal_replay_buffer_bytes, @default_replay_buffer_bytes)
+    Application.get_env(:casein, :terminal_replay_buffer_bytes, @default_replay_buffer_bytes)
   end
 
   defstruct [
@@ -277,7 +277,7 @@ defmodule Casein.Terminals.SessionOwner do
       id: info.id
     )
 
-    :telemetry.execute([:dev_ide, :terminals, :owner, :started], %{count: 1}, %{kind: info.kind})
+    :telemetry.execute([:casein, :terminals, :owner, :started], %{count: 1}, %{kind: info.kind})
     Telemetry.owner_started(self(), info.kind, owner_key(info))
 
     {:ok,
@@ -310,7 +310,7 @@ defmodule Casein.Terminals.SessionOwner do
           kind: state.info.kind
         )
 
-        :telemetry.execute([:dev_ide, :terminals, :owner, :attach], %{count: 1}, %{
+        :telemetry.execute([:casein, :terminals, :owner, :attach], %{count: 1}, %{
           mode: mode,
           reuse: true,
           kind: state.info.kind
@@ -327,7 +327,7 @@ defmodule Casein.Terminals.SessionOwner do
           kind: state.info.kind
         )
 
-        :telemetry.execute([:dev_ide, :terminals, :owner, :attach], %{count: 1}, %{
+        :telemetry.execute([:casein, :terminals, :owner, :attach], %{count: 1}, %{
           mode: mode,
           reuse: false,
           kind: state.info.kind
@@ -365,7 +365,7 @@ defmodule Casein.Terminals.SessionOwner do
       {:error, reason} ->
         Logger.warning("terminal owner attach error", reason: inspect(reason), mode: mode)
 
-        :telemetry.execute([:dev_ide, :terminals, :owner, :attach_error], %{count: 1}, %{
+        :telemetry.execute([:casein, :terminals, :owner, :attach_error], %{count: 1}, %{
           reason: inspect(reason),
           mode: mode
         })
@@ -380,7 +380,7 @@ defmodule Casein.Terminals.SessionOwner do
   def handle_call({:detach, subscriber}, _from, state) do
     Logger.debug("terminal owner detach", subscriber: subscriber, kind: state.info.kind)
 
-    :telemetry.execute([:dev_ide, :terminals, :owner, :detach], %{count: 1}, %{
+    :telemetry.execute([:casein, :terminals, :owner, :detach], %{count: 1}, %{
       kind: state.info.kind
     })
 
@@ -784,7 +784,7 @@ defmodule Casein.Terminals.SessionOwner do
         Telemetry.owner_attachment_opened()
 
         :telemetry.execute(
-          [:dev_ide, :terminals, :owner, :backend_recovered],
+          [:casein, :terminals, :owner, :backend_recovered],
           %{count: 1},
           %{attempt: attempts, missing: missing?}
         )
@@ -967,7 +967,7 @@ defmodule Casein.Terminals.SessionOwner do
         )
 
         :telemetry.execute(
-          [:dev_ide, :terminals, :owner, :binding_conflict],
+          [:casein, :terminals, :owner, :binding_conflict],
           %{count: 1},
           %{key: key, kind: state.info.kind}
         )
@@ -1054,7 +1054,7 @@ defmodule Casein.Terminals.SessionOwner do
       )
 
       :telemetry.execute(
-        [:dev_ide, :terminals, :owner, :size_flap],
+        [:casein, :terminals, :owner, :size_flap],
         %{elapsed_ms: elapsed},
         %{kind: state.info.kind, from: prev, to: size}
       )
@@ -1120,7 +1120,7 @@ defmodule Casein.Terminals.SessionOwner do
   @size_debounce_defaults [leading_ms: 1_000, quiet_ms: 250, max_defer_ms: 1_500]
 
   defp size_debounce(key) do
-    :dev_ide
+    :casein
     |> Application.get_env(:terminal_owner_size_debounce, [])
     |> Keyword.get(key, @size_debounce_defaults[key])
   end
@@ -1235,7 +1235,7 @@ defmodule Casein.Terminals.SessionOwner do
     )
 
     :telemetry.execute(
-      [:dev_ide, :terminals, :owner, :size_changed],
+      [:casein, :terminals, :owner, :size_changed],
       %{cols: cols, rows: rows, viewers: viewers, active_viewers: active_count},
       %{kind: state.info.kind, reason: reason}
     )
@@ -1354,7 +1354,7 @@ defmodule Casein.Terminals.SessionOwner do
   # Seam for tests: point the "which socket is live" symlink at a temp file the
   # test controls. Defaults to the real path.
   defp current_socket_path do
-    Application.get_env(:dev_ide, :deployment_current_socket, @current_socket)
+    Application.get_env(:casein, :deployment_current_socket, @current_socket)
   end
 
   # Compare tmux's live window against `applied_size` and re-assert when an
@@ -1390,7 +1390,7 @@ defmodule Casein.Terminals.SessionOwner do
 
   defp tmux_window_size_timeout_ms do
     Application.get_env(
-      :dev_ide,
+      :casein,
       :tmux_window_size_timeout_ms,
       @default_tmux_window_size_timeout_ms
     )
@@ -1470,7 +1470,7 @@ defmodule Casein.Terminals.SessionOwner do
             )
 
             :telemetry.execute(
-              [:dev_ide, :terminals, :owner, :drift_fight],
+              [:casein, :terminals, :owner, :drift_fight],
               %{streak: streak},
               %{kind: state.info.kind, applied: size, actual: {actual_cols, actual_rows}}
             )
@@ -1601,7 +1601,7 @@ defmodule Casein.Terminals.SessionOwner do
       end
 
     :telemetry.execute(
-      [:dev_ide, :terminals, :owner, :query_response],
+      [:casein, :terminals, :owner, :query_response],
       %{count: 1},
       %{forwarded: forwarded?, class: class}
     )
@@ -2004,7 +2004,7 @@ defmodule Casein.Terminals.SessionOwner do
         )
 
         :telemetry.execute(
-          [:dev_ide, :terminals, :owner, :backpressure],
+          [:casein, :terminals, :owner, :backpressure],
           %{queue_len: len},
           %{kind: kind, subscriber_count: subs}
         )
@@ -2036,7 +2036,7 @@ defmodule Casein.Terminals.SessionOwner do
                 )
 
                 :telemetry.execute(
-                  [:dev_ide, :terminals, :owner, :slow_raw_viewer],
+                  [:casein, :terminals, :owner, :slow_raw_viewer],
                   %{subscriber_mbox: ql},
                   %{kind: (state.info && state.info.kind) || nil}
                 )

@@ -227,8 +227,8 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     workspace_path = Path.join(workspace_root, @workspace_id)
     File.mkdir_p!(workspace_path)
 
-    previous_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    previous_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -260,8 +260,8 @@ defmodule CaseinWeb.WorkspaceGrokPermissionTest do
     end)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
     with executable when is_binary(executable) <- System.find_executable("tmux"),

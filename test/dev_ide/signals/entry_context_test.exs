@@ -37,8 +37,8 @@ defmodule Casein.Signals.EntryContextTest do
   end
 
   setup do
-    prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
-    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    prev_adapter = Application.get_env(:casein, :audit_adapter)
+    Application.put_env(:casein, :audit_adapter, MemoryAdapter)
     MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -49,8 +49,8 @@ defmodule Casein.Signals.EntryContextTest do
     :ok
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
   describe "LiveView handle_event wrapping" do
     test "audit events emitted while handling carry the event's correlation id" do

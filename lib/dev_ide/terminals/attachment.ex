@@ -59,7 +59,7 @@ defmodule Casein.Terminals.Attachment do
   def open(%Info{kind: :agent}, _opts), do: {:error, :agent_backend_unavailable}
 
   defp resolve_shell_backend(workspace_key, sid, loc, subscriber) do
-    case Application.get_env(:dev_ide, :test_shell_attachment_pid) do
+    case Application.get_env(:casein, :test_shell_attachment_pid) do
       pid when is_pid(pid) ->
         {:ok, pid, 120, 40}
 

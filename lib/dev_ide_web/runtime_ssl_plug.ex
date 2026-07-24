@@ -15,7 +15,7 @@ defmodule CaseinWeb.RuntimeSSLPlug do
   def call(conn, _opts) do
     if enabled?() do
       @default_options
-      |> Keyword.merge(Application.get_env(:dev_ide, :runtime_force_ssl_options, []))
+      |> Keyword.merge(Application.get_env(:casein, :runtime_force_ssl_options, []))
       |> Plug.SSL.init()
       |> then(&Plug.SSL.call(conn, &1))
     else
@@ -24,7 +24,7 @@ defmodule CaseinWeb.RuntimeSSLPlug do
   end
 
   def enabled? do
-    Application.get_env(:dev_ide, :runtime_force_ssl, false) and
-      not Application.get_env(:dev_ide, :lan_insecure_http, false)
+    Application.get_env(:casein, :runtime_force_ssl, false) and
+      not Application.get_env(:casein, :lan_insecure_http, false)
   end
 end

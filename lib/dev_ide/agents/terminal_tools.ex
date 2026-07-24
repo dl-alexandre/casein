@@ -92,7 +92,7 @@ defmodule Casein.Agents.TerminalTools do
   # tools/list until enabled. Like the tool-search meta-tools, it stays callable
   # by name — the flag only changes what is advertised.
   defp hidden_action?(WorkspaceDigest),
-    do: not Application.get_env(:dev_ide, :workspace_digest, false)
+    do: not Application.get_env(:casein, :workspace_digest, false)
 
   defp hidden_action?(_action), do: false
 

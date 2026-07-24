@@ -19,6 +19,6 @@ defmodule Casein.SignalBus do
   end
 
   defp journal_adapter do
-    Application.get_env(:dev_ide, :signal_bus_journal_adapter, ETSJournal)
+    Application.get_env(:casein, :signal_bus_journal_adapter, ETSJournal)
   end
 end

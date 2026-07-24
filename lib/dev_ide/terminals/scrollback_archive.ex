@@ -17,13 +17,13 @@ defmodule Casein.Terminals.ScrollbackArchive do
   """
 
   @default_max_bytes 256 * 1024
-  @table :dev_ide_scrollback_archive
+  @table :casein_scrollback_archive
 
   @doc "Ensure the ETS spill table exists (idempotent)."
   def ensure_table! do
     case :ets.whereis(@table) do
       :undefined ->
-        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        access = Application.get_env(:casein, :ets_table_access, :protected)
         :ets.new(@table, [:named_table, access, :set])
         :ok
 
@@ -39,7 +39,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
   `$HOME/.devide/tmux-scrollback` → tmp fallback.
   """
   def archive_dir do
-    Application.get_env(:dev_ide, :tmux_scrollback_archive_dir) ||
+    Application.get_env(:casein, :tmux_scrollback_archive_dir) ||
       System.get_env("DEV_IDE_TMUX_SCROLLBACK_DIR") ||
       default_archive_dir()
   end
@@ -51,7 +51,7 @@ defmodule Casein.Terminals.ScrollbackArchive do
 
   @doc "Max bytes retained per session (default 256 KiB)."
   def max_bytes do
-    Application.get_env(:dev_ide, :tmux_scrollback_archive_bytes, @default_max_bytes)
+    Application.get_env(:casein, :tmux_scrollback_archive_bytes, @default_max_bytes)
   end
 
   @doc """

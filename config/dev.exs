@@ -16,7 +16,7 @@ sqlite_repo? =
   |> then(&(&1 in ["sqlite", "sqlite3"]))
 
 if sqlite_repo? do
-  config :dev_ide, Casein.Repo,
+  config :casein, Casein.Repo,
     database:
       System.get_env("DATABASE_PATH") ||
         Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
@@ -27,9 +27,9 @@ if sqlite_repo? do
     show_sensitive_data_on_connection_error: true
 else
   if System.get_env("DATABASE_URL") do
-    config :dev_ide, Casein.Repo, url: System.get_env("DATABASE_URL")
+    config :casein, Casein.Repo, url: System.get_env("DATABASE_URL")
   else
-    config :dev_ide, Casein.Repo,
+    config :casein, Casein.Repo,
       username: "postgres",
       password: "postgres",
       hostname: "localhost",
@@ -45,13 +45,13 @@ end
 # (config/test.exs). On the devbox the :4000 mix dev server and the release run
 # as the same user, so a shared label would collide on one socket. Resolved by
 # Casein.Terminals.TmuxServer.
-config :dev_ide, :tmux_server_label, "devide_dev"
+config :casein, :tmux_server_label, "devide_dev"
 
 # Slice 3 rollout ladder step 1: event-driven tmux topology ON in dev.
 # Canary soak + prod default stay operational (watch TmuxEventsFlapWatch
 # telemetry / flap alarm; flip via DEVIDE_TMUX_EVENTS). runtime.exs env
 # overrides both ways when set. Test env stays OFF for flag-off no-op proofs.
-config :dev_ide, :tmux_events, true
+config :casein, :tmux_events, true
 
 devide_lan_requested? = truthy?.(System.get_env("DEV_IDE_LAN"))
 devide_lan_insecure_http? = truthy?.(System.get_env("DEV_IDE_LAN_INSECURE_HTTP"))
@@ -104,8 +104,8 @@ devide_endpoint_config = [
   debug_errors: true,
   secret_key_base: "IG4EOlcBEwImKOlB6OwEc8r/O1dn4NjtGBJU7VV0w0iQv8v839fWk7PZLzP39/86",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:dev_ide, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:dev_ide, ~w(--watch)]}
+    esbuild: {Esbuild, :install_and_run, [:casein, ~w(--sourcemap=inline --watch)]},
+    tailwind: {Tailwind, :install_and_run, [:casein, ~w(--watch)]}
   ]
 ]
 
@@ -140,7 +140,7 @@ devide_endpoint_config =
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
-config :dev_ide, CaseinWeb.Endpoint, devide_endpoint_config
+config :casein, CaseinWeb.Endpoint, devide_endpoint_config
 
 # ## SSL Support
 #
@@ -166,30 +166,30 @@ config :dev_ide, CaseinWeb.Endpoint, devide_endpoint_config
 # different ports.
 
 if devide_lan? do
-  config :dev_ide, :lan_mode, true
+  config :casein, :lan_mode, true
 
   if devide_lan_insecure_http? do
-    config :dev_ide, :lan_insecure_http, true
-    config :dev_ide, :session_same_site, nil
+    config :casein, :lan_insecure_http, true
+    config :casein, :session_same_site, nil
   end
 
-  config :dev_ide, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+  config :casein, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
 else
   if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
-    config :dev_ide, :default_workspace, default_workspace
+    config :casein, :default_workspace, default_workspace
   end
 end
 
 case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
   path when is_binary(path) and path != "" ->
-    config :dev_ide, :lan_path_root, path
+    config :casein, :lan_path_root, path
 
   _ ->
     :ok
 end
 
 # Reload browser tabs when matching files change.
-config :dev_ide, CaseinWeb.Endpoint,
+config :casein, CaseinWeb.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
@@ -204,7 +204,7 @@ config :dev_ide, CaseinWeb.Endpoint,
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :dev_ide, dev_routes: true
+config :casein, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
@@ -229,7 +229,7 @@ config :swoosh, :api_client, false
 
 # Pin the seed workspaces into :manual mode so "Raw shell" is
 # selectable in the terminal tab (raw requires manual + local host).
-config :dev_ide, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
+config :casein, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 
 # Local workspace source root — `/tmp/...` is always writable by the
 # developer running `mix phx.server`, so the picker renders without
@@ -239,15 +239,15 @@ config :dev_ide, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 # Honors DEV_IDE_WORKSPACES_ROOT so an isolated preview instance
 # (scripts/dev-preview-instance.sh) can point at a persistent seed root.
 # The prod block in runtime.exs reads the same env var.
-config :dev_ide,
+config :casein,
        :workspaces_root,
        System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
 
 case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
   home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
-    config :dev_ide, :home_workspace_path, home_workspace_path
+    config :casein, :home_workspace_path, home_workspace_path
 
-    config :dev_ide,
+    config :casein,
            :lan_path_root,
            System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
 
@@ -255,7 +255,7 @@ case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
     :ok
 end
 
-config :dev_ide,
+config :casein,
   preview_control_adapter: :playwright,
   preview_playwright_script: "priv/scripts/preview_playwright.mjs",
   preview_artifacts_root: Path.expand("priv/preview_artifacts")

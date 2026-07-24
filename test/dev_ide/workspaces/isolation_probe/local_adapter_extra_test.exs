@@ -10,11 +10,11 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
     root = Path.join(System.tmp_dir!(), "iso-extra-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
 
-    prev_shared = Application.get_env(:dev_ide, :shared_db_patterns)
-    prev_unsafe = Application.get_env(:dev_ide, :unsafe_db_patterns)
+    prev_shared = Application.get_env(:casein, :shared_db_patterns)
+    prev_unsafe = Application.get_env(:casein, :unsafe_db_patterns)
 
-    Application.put_env(:dev_ide, :shared_db_patterns, ["stage.rds.amazonaws.com", "stage-db."])
-    Application.put_env(:dev_ide, :unsafe_db_patterns, ["prod-db.", ".prod.rds.amazonaws.com"])
+    Application.put_env(:casein, :shared_db_patterns, ["stage.rds.amazonaws.com", "stage-db."])
+    Application.put_env(:casein, :unsafe_db_patterns, ["prod-db.", ".prod.rds.amazonaws.com"])
 
     on_exit(fn ->
       File.rm_rf!(root)
@@ -25,8 +25,8 @@ defmodule Casein.Workspaces.IsolationProbe.LocalAdapterExtraTest do
     {:ok, root: root}
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   ## Manager-signal classification arms
 

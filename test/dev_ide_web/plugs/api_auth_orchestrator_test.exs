@@ -13,16 +13,16 @@ defmodule CaseinWeb.Plugs.ApiAuthOrchestratorTest do
   alias CaseinWeb.Plugs.ApiAuth
 
   setup do
-    prev_api_token = Application.get_env(:dev_ide, :api_token)
+    prev_api_token = Application.get_env(:casein, :api_token)
     # A configured global token keeps the plaintext path non-empty (realistic);
     # the orchestrator token below is a different secret resolved via the DB.
-    Application.put_env(:dev_ide, :api_token, "env-global-token")
+    Application.put_env(:casein, :api_token, "env-global-token")
     on_exit(fn -> restore(:api_token, prev_api_token) end)
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp user, do: %{id: "alice", username: "alice", email: "alice@example.com", role: :user}
 

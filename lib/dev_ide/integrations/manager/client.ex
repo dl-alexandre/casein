@@ -3,7 +3,7 @@ defmodule Casein.Integrations.Manager.Client do
   Thin HTTP client for the milc-devbox Node manager API.
 
   Source of truth lives in `milc-devbox/manager`. We do not duplicate state.
-  Configure base URL via `:dev_ide, :manager_url` or env `MILC_DEVBOX_MANAGER_URL`.
+  Configure base URL via `:casein, :manager_url` or env `MILC_DEVBOX_MANAGER_URL`.
 
   Errors are returned as typed tuples:
     {:error, {:http, status, body}}
@@ -97,7 +97,7 @@ defmodule Casein.Integrations.Manager.Client do
   end
 
   def base_url do
-    Application.get_env(:dev_ide, :manager_url) ||
+    Application.get_env(:casein, :manager_url) ||
       System.get_env("MILC_DEVBOX_MANAGER_URL") ||
       "http://localhost:9000"
   end
@@ -123,7 +123,7 @@ defmodule Casein.Integrations.Manager.Client do
   end
 
   defp manager_req_options do
-    Application.get_env(:dev_ide, :manager_req_options, [])
+    Application.get_env(:casein, :manager_req_options, [])
   end
 
   defp sse_into(pid, ref) do
@@ -139,7 +139,7 @@ defmodule Casein.Integrations.Manager.Client do
     do: [{"x-auth-request-email", email}]
 
   defp auth_headers(_) do
-    case Application.get_env(:dev_ide, :manager_user_email) ||
+    case Application.get_env(:casein, :manager_user_email) ||
            System.get_env("DEV_IDE_DEVBOX_USER_EMAIL") do
       nil -> []
       email -> [{"x-auth-request-email", email}]

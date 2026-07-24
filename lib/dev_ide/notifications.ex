@@ -345,7 +345,7 @@ defmodule Casein.Notifications do
 
   defp emit_delivery(%Notification{} = notification, operation) do
     :telemetry.execute(
-      [:dev_ide, :notifications, :deliver],
+      [:casein, :notifications, :deliver],
       %{count: 1},
       %{
         operation: operation,

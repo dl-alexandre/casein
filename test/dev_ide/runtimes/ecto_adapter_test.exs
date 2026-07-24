@@ -7,15 +7,15 @@ defmodule Casein.Runtimes.EctoAdapterTest do
   setup do
     Casein.Runtimes.EctoAdapter.clear()
 
-    prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.EctoAdapter)
+    prev_runtime = Application.get_env(:casein, :runtimes_adapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.EctoAdapter)
 
     on_exit(fn ->
       Casein.Runtimes.EctoAdapter.clear()
 
       if prev_runtime,
-        do: Application.put_env(:dev_ide, :runtimes_adapter, prev_runtime),
-        else: Application.delete_env(:dev_ide, :runtimes_adapter)
+        do: Application.put_env(:casein, :runtimes_adapter, prev_runtime),
+        else: Application.delete_env(:casein, :runtimes_adapter)
     end)
 
     :ok

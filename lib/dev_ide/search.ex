@@ -40,5 +40,5 @@ defmodule Casein.Search do
     do: [timeout_ms: @default_timeout_ms, result_cap: @result_cap]
 
   defp impl,
-    do: Application.get_env(:dev_ide, :search_adapter, Casein.Search.RipgrepAdapter)
+    do: Application.get_env(:casein, :search_adapter, Casein.Search.RipgrepAdapter)
 end

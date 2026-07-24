@@ -104,7 +104,7 @@ defmodule CaseinWeb.API.MCPToolSearch do
   @max_search_limit 25
 
   @spec enabled?() :: boolean()
-  def enabled?, do: Application.get_env(:dev_ide, :mcp_tool_search, false)
+  def enabled?, do: Application.get_env(:casein, :mcp_tool_search, false)
 
   @doc "True for the meta-tool names (`search_tools`, `invoke_tool`)."
   @spec meta_tool?(String.t()) :: boolean()

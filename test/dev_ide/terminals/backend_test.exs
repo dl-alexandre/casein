@@ -9,10 +9,10 @@ defmodule Casein.Terminals.BackendTest do
   end
 
   setup do
-    previous_backend = Application.get_env(:dev_ide, :terminal_backend)
-    previous_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.delete_env(:dev_ide, :terminal_backend)
-    Application.delete_env(:dev_ide, :tmux_adapter)
+    previous_backend = Application.get_env(:casein, :terminal_backend)
+    previous_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.delete_env(:casein, :terminal_backend)
+    Application.delete_env(:casein, :tmux_adapter)
 
     on_exit(fn ->
       restore(:terminal_backend, previous_backend)
@@ -36,13 +36,13 @@ defmodule Casein.Terminals.BackendTest do
   end
 
   test "keeps the historical tmux adapter override independent" do
-    Application.put_env(:dev_ide, :tmux_adapter, ConfiguredBackend)
+    Application.put_env(:casein, :tmux_adapter, ConfiguredBackend)
     assert Backend.module() == TmuxBackend
   end
 
   test "terminal backend can be configured without changing the compatibility key" do
-    Application.put_env(:dev_ide, :tmux_adapter, Tmux)
-    Application.put_env(:dev_ide, :terminal_backend, ConfiguredBackend)
+    Application.put_env(:casein, :tmux_adapter, Tmux)
+    Application.put_env(:casein, :terminal_backend, ConfiguredBackend)
     assert Backend.module() == ConfiguredBackend
   end
 
@@ -61,6 +61,6 @@ defmodule Casein.Terminals.BackendTest do
              TmuxBackend.spawn_spec(:native, "session-1")
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

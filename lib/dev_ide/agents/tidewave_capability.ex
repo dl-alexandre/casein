@@ -31,7 +31,7 @@ defmodule Casein.Agents.TidewaveCapability do
         %Capability{
           kind: :tidewave,
           status: :detected,
-          source: if(preview?, do: :preview_env, else: :dev_ide),
+          source: if(preview?, do: :preview_env, else: :casein),
           url: url <> "/tidewave",
           details: %{
             mcp_url: url <> "/tidewave/mcp",
@@ -47,7 +47,7 @@ defmodule Casein.Agents.TidewaveCapability do
 
   defp base_url do
     with true <- Code.ensure_loaded?(Tidewave),
-         {mod, fun, args} <- Application.get_env(:dev_ide, :tidewave_url_provider),
+         {mod, fun, args} <- Application.get_env(:casein, :tidewave_url_provider),
          true <- Code.ensure_loaded?(mod) do
       apply(mod, fun, args)
     else

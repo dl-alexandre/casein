@@ -123,7 +123,7 @@ defmodule Casein.Agents.PaneEnv do
     if File.regular?(Path.join(candidate, "devide")) do
       candidate
     else
-      Application.get_env(:dev_ide, :agent_scripts_path) ||
+      Application.get_env(:casein, :agent_scripts_path) ||
         non_empty_env("DEVIDE_SCRIPTS") ||
         candidate
     end
@@ -168,5 +168,5 @@ defmodule Casein.Agents.PaneEnv do
     end
   end
 
-  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Tmux)
 end

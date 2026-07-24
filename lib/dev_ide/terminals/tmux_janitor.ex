@@ -162,7 +162,7 @@ defmodule Casein.Terminals.TmuxJanitor do
   end
 
   defp idle_ms do
-    case Application.get_env(:dev_ide, :tmux_idle_seconds) do
+    case Application.get_env(:casein, :tmux_idle_seconds) do
       n when is_integer(n) and n > 0 -> n * 1000
       _ -> nil
     end

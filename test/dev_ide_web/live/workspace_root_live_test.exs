@@ -16,16 +16,16 @@ defmodule CaseinWeb.WorkspaceRootLiveTest do
     home = Path.join(System.tmp_dir!(), "devide-root-home-#{System.unique_integer([:positive])}")
     File.mkdir_p!(home)
 
-    prev_home = Application.get_env(:dev_ide, :home_workspace_path)
-    Application.put_env(:dev_ide, :home_workspace_path, home)
+    prev_home = Application.get_env(:casein, :home_workspace_path)
+    Application.put_env(:casein, :home_workspace_path, home)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       File.rm_rf(home)
 
       if is_nil(prev_home),
-        do: Application.delete_env(:dev_ide, :home_workspace_path),
-        else: Application.put_env(:dev_ide, :home_workspace_path, prev_home)
+        do: Application.delete_env(:casein, :home_workspace_path),
+        else: Application.put_env(:casein, :home_workspace_path, prev_home)
     end)
 
     {:ok, home: home}

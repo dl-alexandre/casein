@@ -121,7 +121,7 @@ defmodule Casein.Panes.Pane do
   @spec impl(pane_type()) :: module()
   def impl(type) when is_atom(type) do
     @impls
-    |> Map.merge(Application.get_env(:dev_ide, :pane_impls, %{}))
+    |> Map.merge(Application.get_env(:casein, :pane_impls, %{}))
     |> Map.fetch!(type)
   end
 

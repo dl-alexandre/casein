@@ -30,12 +30,12 @@ defmodule Casein.Workspaces.Scratch do
   @doc """
   Absolute filesystem root for the scratch PTY.
 
-  Prefers `:dev_ide, :home_workspace_path` when set; otherwise the process
+  Prefers `:casein, :home_workspace_path` when set; otherwise the process
   user's home directory.
   """
   @spec home_path() :: String.t()
   def home_path do
-    case Application.get_env(:dev_ide, :home_workspace_path) do
+    case Application.get_env(:casein, :home_workspace_path) do
       path when is_binary(path) and path != "" ->
         Path.expand(path)
 

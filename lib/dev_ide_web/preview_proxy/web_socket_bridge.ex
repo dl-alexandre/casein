@@ -240,7 +240,7 @@ defmodule CaseinWeb.PreviewProxy.WebSocketBridge do
   end
 
   defp handshake_timeout do
-    :dev_ide
+    :casein
     |> Application.get_env(:preview_proxy_hmr, [])
     |> Keyword.get(:handshake_timeout_ms, 5_000)
   end

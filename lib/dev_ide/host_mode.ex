@@ -13,11 +13,11 @@ defmodule Casein.HostMode do
 
   @doc """
   True when Casein runs colocated on the integration host. Set via
-  `:dev_ide, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
+  `:casein, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
   def on_host? do
-    case Application.get_env(:dev_ide, :on_devbox) do
+    case Application.get_env(:casein, :on_devbox) do
       nil -> System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes)
       val -> !!val
     end
@@ -25,12 +25,12 @@ defmodule Casein.HostMode do
 
   @doc """
   Compose service to exec into for command/terminal execution in on-host
-  mode. Set via `:dev_ide, :devbox_exec_service` or env
+  mode. Set via `:casein, :devbox_exec_service` or env
   `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
   """
   @spec exec_service() :: String.t()
   def exec_service do
-    Application.get_env(:dev_ide, :devbox_exec_service) ||
+    Application.get_env(:casein, :devbox_exec_service) ||
       System.get_env("DEV_IDE_DEVBOX_EXEC_SERVICE") ||
       "onebackend-v3"
   end
@@ -40,7 +40,7 @@ defmodule Casein.HostMode do
   """
   @spec exec_workdir() :: String.t()
   def exec_workdir do
-    Application.get_env(:dev_ide, :devbox_exec_workdir) ||
+    Application.get_env(:casein, :devbox_exec_workdir) ||
       System.get_env("DEV_IDE_DEVBOX_EXEC_WORKDIR") ||
       "/app"
   end

@@ -607,11 +607,11 @@ defmodule Casein.Terminals.SessionDirectory do
   end
 
   defp configured_poll_ms do
-    Application.get_env(:dev_ide, :session_directory_poll_ms, @poll_ms)
+    Application.get_env(:casein, :session_directory_poll_ms, @poll_ms)
   end
 
   defp configured_reconcile_ms do
-    Application.get_env(:dev_ide, :session_directory_reconcile_ms, @default_reconcile_ms)
+    Application.get_env(:casein, :session_directory_reconcile_ms, @default_reconcile_ms)
   end
 
   defp normalize_ms(value, _default) when is_integer(value) and value > 0, do: value
@@ -1061,5 +1061,5 @@ defmodule Casein.Terminals.SessionDirectory do
 
   defp truthy?(value), do: value in [true, 1, "1", "true", "yes", "on"]
 
-  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Tmux)
 end

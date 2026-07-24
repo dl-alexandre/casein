@@ -63,12 +63,12 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
 
   defp preview_preflight_enabled?(opts) do
     Keyword.get(opts, :preflight) ||
-      Application.get_env(:dev_ide, :preview_open_preflight, true)
+      Application.get_env(:casein, :preview_open_preflight, true)
   end
 
   defp do_preflight_preview_url(url, opts) when is_binary(url) do
     headers = Keyword.get(opts, :default_headers) || %{}
-    timeout = Application.get_env(:dev_ide, :preview_open_preflight_timeout_ms, 1_500)
+    timeout = Application.get_env(:casein, :preview_open_preflight_timeout_ms, 1_500)
 
     case Req.get(url,
            headers: headers,
@@ -164,7 +164,7 @@ defmodule Casein.Agents.PreviewTools.PortProbing do
 
   defp localhost_path(port, params) do
     path = Map.get(params, "path", Map.get(params, :path, "/"))
-    loopback_port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+    loopback_port = Application.get_env(:casein, :preview_loopback_port, 4000)
 
     if port == loopback_port and path in ["/", ""], do: "/workspaces", else: path
   end

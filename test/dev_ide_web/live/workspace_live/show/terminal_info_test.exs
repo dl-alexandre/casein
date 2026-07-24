@@ -35,13 +35,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalInfoTest do
 
   setup do
     previous = %{
-      tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
+      tmux_adapter: Application.get_env(:casein, :tmux_adapter),
       fake_tmux_windows: FakeState.get(:fake_tmux_windows),
       fake_tmux_panes: FakeState.get(:fake_tmux_panes),
       fake_tmux_test_pid: FakeState.get(:fake_tmux_test_pid)
     }
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     FakeState.put(:fake_tmux_test_pid, self())
     FakeState.put(:fake_tmux_windows, %{})
     FakeState.put(:fake_tmux_panes, %{})
@@ -52,8 +52,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalInfoTest do
       FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
 
       if previous.tmux_adapter,
-        do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),
-        else: Application.delete_env(:dev_ide, :tmux_adapter)
+        do: Application.put_env(:casein, :tmux_adapter, previous.tmux_adapter),
+        else: Application.delete_env(:casein, :tmux_adapter)
     end)
 
     session = Tmux.session_name("alpha", "main")

@@ -62,27 +62,27 @@ defmodule Casein.Agents.AgentCapabilityTokensTest do
   end
 
   test "uses a configurable TTL with a twelve-hour default" do
-    original = Application.get_env(:dev_ide, :grok_agent_capability_token_ttl_seconds)
+    original = Application.get_env(:casein, :grok_agent_capability_token_ttl_seconds)
 
     on_exit(fn ->
       if is_nil(original) do
-        Application.delete_env(:dev_ide, :grok_agent_capability_token_ttl_seconds)
+        Application.delete_env(:casein, :grok_agent_capability_token_ttl_seconds)
       else
-        Application.put_env(:dev_ide, :grok_agent_capability_token_ttl_seconds, original)
+        Application.put_env(:casein, :grok_agent_capability_token_ttl_seconds, original)
       end
     end)
 
-    Application.delete_env(:dev_ide, :grok_agent_capability_token_ttl_seconds)
+    Application.delete_env(:casein, :grok_agent_capability_token_ttl_seconds)
     assert AgentCapabilityTokens.ttl_seconds() == 12 * 60 * 60
 
-    Application.put_env(:dev_ide, :grok_agent_capability_token_ttl_seconds, 90)
+    Application.put_env(:casein, :grok_agent_capability_token_ttl_seconds, 90)
     assert AgentCapabilityTokens.ttl_seconds() == 90
 
     assert {:ok, _raw, record} = AgentCapabilityTokens.create_for_grok(attrs())
     remaining = DateTime.diff(record.expires_at, DateTime.utc_now(), :second)
     assert remaining in 89..90
 
-    Application.put_env(:dev_ide, :grok_agent_capability_token_ttl_seconds, 0)
+    Application.put_env(:casein, :grok_agent_capability_token_ttl_seconds, 0)
     assert AgentCapabilityTokens.ttl_seconds() == 12 * 60 * 60
   end
 

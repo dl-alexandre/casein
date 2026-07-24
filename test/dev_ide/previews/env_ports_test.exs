@@ -4,11 +4,11 @@ defmodule Casein.Previews.EnvPortsTest do
   alias Casein.Previews.EnvPorts
 
   setup do
-    prev_range = Application.get_env(:dev_ide, :preview_env_port_range)
-    prev_runtime_range = Application.get_env(:dev_ide, :runtime_preview_port_range)
-    prev_router_port = Application.get_env(:dev_ide, :preview_router_port)
-    prev_router_admin_port = Application.get_env(:dev_ide, :preview_router_admin_port)
-    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+    prev_range = Application.get_env(:casein, :preview_env_port_range)
+    prev_runtime_range = Application.get_env(:casein, :runtime_preview_port_range)
+    prev_router_port = Application.get_env(:casein, :preview_router_port)
+    prev_router_admin_port = Application.get_env(:casein, :preview_router_admin_port)
+    prev_loopback = Application.get_env(:casein, :preview_loopback_port)
     prev_port = System.get_env("PORT")
 
     on_exit(fn ->
@@ -27,12 +27,12 @@ defmodule Casein.Previews.EnvPortsTest do
   end
 
   test "port_range reads configured inclusive bounds" do
-    Application.put_env(:dev_ide, :preview_env_port_range, {41_010, 41_020})
+    Application.put_env(:casein, :preview_env_port_range, {41_010, 41_020})
     assert EnvPorts.port_range() == {41_010, 41_020}
   end
 
   test "port_range falls back when config is invalid" do
-    Application.put_env(:dev_ide, :preview_env_port_range, :invalid)
+    Application.put_env(:casein, :preview_env_port_range, :invalid)
     assert EnvPorts.port_range() == {41_000, 41_049}
   end
 
@@ -45,12 +45,12 @@ defmodule Casein.Previews.EnvPortsTest do
   end
 
   test "runtime_port_range reads configured inclusive bounds" do
-    Application.put_env(:dev_ide, :runtime_preview_port_range, {41_050, 41_079})
+    Application.put_env(:casein, :runtime_preview_port_range, {41_050, 41_079})
     assert EnvPorts.runtime_port_range() == {41_050, 41_079}
   end
 
   test "runtime_port_range falls back when config is invalid" do
-    Application.put_env(:dev_ide, :runtime_preview_port_range, :invalid)
+    Application.put_env(:casein, :runtime_preview_port_range, :invalid)
     assert EnvPorts.runtime_port_range() == {41_050, 41_079}
   end
 
@@ -66,30 +66,30 @@ defmodule Casein.Previews.EnvPortsTest do
     assert EnvPorts.router_port() == 41_080
     assert EnvPorts.router_admin_port() == 41_081
 
-    Application.put_env(:dev_ide, :preview_router_port, 41_090)
-    Application.put_env(:dev_ide, :preview_router_admin_port, 41_091)
+    Application.put_env(:casein, :preview_router_port, 41_090)
+    Application.put_env(:casein, :preview_router_admin_port, 41_091)
 
     assert EnvPorts.router_port() == 41_090
     assert EnvPorts.router_admin_port() == 41_091
   end
 
   test "current_port prefers preview_loopback_port then PORT env" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 41_055)
+    Application.put_env(:casein, :preview_loopback_port, 41_055)
     assert EnvPorts.current_port() == 41_055
 
-    Application.delete_env(:dev_ide, :preview_loopback_port)
+    Application.delete_env(:casein, :preview_loopback_port)
     System.put_env("PORT", "4123")
     assert EnvPorts.current_port() == 4123
   end
 
   test "preview_env_instance? reflects whether current port is ephemeral" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 41_042)
+    Application.put_env(:casein, :preview_loopback_port, 41_042)
     assert EnvPorts.preview_env_instance?()
 
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
     refute EnvPorts.preview_env_instance?()
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

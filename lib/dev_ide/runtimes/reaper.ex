@@ -291,22 +291,22 @@ defmodule Casein.Runtimes.Reaper do
   end
 
   defp enabled? do
-    Application.get_env(:dev_ide, :runtime_reaper_enabled, false)
+    Application.get_env(:casein, :runtime_reaper_enabled, false)
   end
 
   defp dry_run? do
-    Application.get_env(:dev_ide, :runtime_reaper_dry_run, true)
+    Application.get_env(:casein, :runtime_reaper_dry_run, true)
   end
 
   defp sweep_interval_ms do
     Application.get_env(
-      :dev_ide,
+      :casein,
       :runtime_reaper_sweep_interval_ms,
       @default_sweep_interval_ms
     )
   end
 
   defp ttl_seconds do
-    Application.get_env(:dev_ide, :runtime_reaper_ttl_seconds, 60 * 60 * 6)
+    Application.get_env(:casein, :runtime_reaper_ttl_seconds, 60 * 60 * 6)
   end
 end

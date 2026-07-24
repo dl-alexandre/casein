@@ -35,16 +35,16 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
         cd: workspace_path
       )
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
-    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_pane_backend = Application.get_env(:casein, :ghostty_pane_backend)
+    prev_raw_everywhere = Application.get_env(:casein, :raw_terminal_everywhere)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
-    Application.put_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
-    Application.delete_env(:dev_ide, :workspace_modes)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :default_workspace_mode, :review)
+    Application.put_env(:casein, :ghostty_pane_backend, :ghostty_pty)
+    Application.delete_env(:casein, :workspace_modes)
 
     MemoryAdapter.clear()
     Audit.clear()
@@ -175,6 +175,6 @@ defmodule CaseinWeb.TerminalBoundaryLiveTest do
     )
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 end

@@ -14,8 +14,8 @@ defmodule Casein.Policy.WorkspaceMode do
 
   Resolution order:
 
-    1. `:dev_ide, :workspace_modes` (map keyed by workspace id) override.
-    2. `:dev_ide, :default_workspace_mode` config value.
+    1. `:casein, :workspace_modes` (map keyed by workspace id) override.
+    2. `:casein, :default_workspace_mode` config value.
     3. `:manual` default.
   """
 
@@ -31,7 +31,7 @@ defmodule Casein.Policy.WorkspaceMode do
   def resolve(%{"id" => id}), do: resolve(id)
 
   def resolve(workspace_id) when is_binary(workspace_id) do
-    overrides = Application.get_env(:dev_ide, :workspace_modes, %{})
+    overrides = Application.get_env(:casein, :workspace_modes, %{})
 
     overrides
     |> Map.get(workspace_id)
@@ -42,7 +42,7 @@ defmodule Casein.Policy.WorkspaceMode do
   def resolve(_), do: default_mode()
 
   defp default_mode do
-    Application.get_env(:dev_ide, :default_workspace_mode, :manual)
+    Application.get_env(:casein, :default_workspace_mode, :manual)
     |> ensure_valid()
     |> Kernel.||(:manual)
   end

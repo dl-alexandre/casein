@@ -16,12 +16,12 @@ defmodule CaseinWeb.API.MCPContractTest do
   @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
 
   setup do
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    prev_mcp_max_body_bytes = Application.get_env(:dev_ide, :mcp_max_body_bytes)
+    prev_token = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    prev_mcp_max_body_bytes = Application.get_env(:casein, :mcp_max_body_bytes)
 
-    Application.put_env(:dev_ide, :api_token, @token)
-    Application.delete_env(:dev_ide, :workspace_api_tokens)
+    Application.put_env(:casein, :api_token, @token)
+    Application.delete_env(:casein, :workspace_api_tokens)
 
     on_exit(fn ->
       restore(:api_token, prev_token)
@@ -260,7 +260,7 @@ defmodule CaseinWeb.API.MCPContractTest do
   end
 
   test "oversized MCP request bodies are rejected before JSON-RPC handling", %{conn: conn} do
-    Application.put_env(:dev_ide, :mcp_max_body_bytes, 96)
+    Application.put_env(:casein, :mcp_max_body_bytes, 96)
 
     body =
       Jason.encode!(%{
@@ -296,7 +296,7 @@ defmodule CaseinWeb.API.MCPContractTest do
   end
 
   test "oversized MCP request bodies do not log request content", %{conn: conn} do
-    Application.put_env(:dev_ide, :mcp_max_body_bytes, 96)
+    Application.put_env(:casein, :mcp_max_body_bytes, 96)
 
     secret_prompt = "prompt includes #{@secret} at #{@workspace_path}"
 
@@ -348,6 +348,6 @@ defmodule CaseinWeb.API.MCPContractTest do
   defp request_unknown_session(conn, :get, path), do: get(conn, path)
   defp request_unknown_session(conn, :delete, path), do: delete(conn, path)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

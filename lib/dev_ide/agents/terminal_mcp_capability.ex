@@ -16,7 +16,7 @@ defmodule Casein.Agents.TerminalMCPCapability do
         %Capability{
           kind: :terminal_mcp,
           status: :detected,
-          source: :dev_ide,
+          source: :casein,
           url: url,
           details: %{
             transport: "http_json_rpc",

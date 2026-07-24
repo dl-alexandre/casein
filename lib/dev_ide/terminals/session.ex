@@ -481,7 +481,7 @@ defmodule Casein.Terminals.Session do
   end
 
   defp login_shell_command do
-    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+    Application.get_env(:casein, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
       Shims.shell_command()
   end

@@ -136,5 +136,5 @@ defmodule Casein.Audit do
     Map.get(attrs, :action) || Atom.to_string(action)
   end
 
-  defp impl, do: Application.get_env(:dev_ide, :audit_adapter, Casein.Audit.MemoryAdapter)
+  defp impl, do: Application.get_env(:casein, :audit_adapter, Casein.Audit.MemoryAdapter)
 end

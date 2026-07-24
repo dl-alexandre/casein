@@ -6,11 +6,11 @@ defmodule Casein.Push.APNS.StubHTTP do
 
   @impl true
   def post(url, headers, body) do
-    case Application.get_env(:dev_ide, :apns_test_pid) do
+    case Application.get_env(:casein, :apns_test_pid) do
       pid when is_pid(pid) -> send(pid, {:apns_request, url, headers, body})
       _ -> :ok
     end
 
-    Application.get_env(:dev_ide, :apns_stub_response, {:ok, %{status: 200, body: %{}}})
+    Application.get_env(:casein, :apns_stub_response, {:ok, %{status: 200, body: %{}}})
   end
 end

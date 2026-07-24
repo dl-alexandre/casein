@@ -43,7 +43,7 @@ defmodule CaseinWeb.Plugs.DeviceLinkRateLimit do
   end
 
   defp config(key, default) do
-    Application.get_env(:dev_ide, __MODULE__, [])
+    Application.get_env(:casein, __MODULE__, [])
     |> Keyword.get(key, default)
   end
 end

@@ -51,6 +51,6 @@ defmodule Casein.Terminals.PreviewDeps do
 
   @impl true
   def adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    Application.get_env(:casein, :tmux_adapter, Tmux)
   end
 end

@@ -10,13 +10,13 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = FakeState.get(:fake_tmux_windows)
     prev_panes = FakeState.get(:fake_tmux_panes)
-    prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
-    prev_reconcile = Application.get_env(:dev_ide, :session_directory_reconcile_ms)
+    prev_poll = Application.get_env(:casein, :session_directory_poll_ms)
+    prev_reconcile = Application.get_env(:casein, :session_directory_reconcile_ms)
 
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
     {:ok, fake} = start_supervised(FakeEventSource)
 
@@ -31,8 +31,8 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
     %{fake: fake}
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   test "event triggers recompute and sessions_updated broadcast", %{fake: fake} do
     ws = "sdevt-#{System.unique_integer([:positive])}"
@@ -463,7 +463,7 @@ defmodule Casein.Terminals.SessionDirectoryEventsTest do
 
   defp install_counting_adapter(counter) do
     :persistent_term.put({__MODULE__, :recompute_counter}, counter)
-    Application.put_env(:dev_ide, :tmux_adapter, __MODULE__.CountingAdapter)
+    Application.put_env(:casein, :tmux_adapter, __MODULE__.CountingAdapter)
   end
 end
 

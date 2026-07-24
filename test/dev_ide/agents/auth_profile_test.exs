@@ -4,9 +4,9 @@ defmodule Casein.Agents.AuthProfileTest do
   alias Casein.Agents.AuthProfile
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
+    prev_root = Application.get_env(:casein, :agent_auth_profile_root)
     tmp = Path.join(System.tmp_dir!(), "agent-auth-profile-#{System.unique_integer([:positive])}")
-    Application.put_env(:dev_ide, :agent_auth_profile_root, tmp)
+    Application.put_env(:casein, :agent_auth_profile_root, tmp)
 
     on_exit(fn ->
       restore_root(prev_root)
@@ -232,6 +232,6 @@ defmodule Casein.Agents.AuthProfileTest do
   defp sign_in!(dir, :claude), do: File.write!(Path.join(dir, ".credentials.json"), "{}")
   defp sign_in!(dir, :codex), do: File.write!(Path.join(dir, "auth.json"), "{}")
 
-  defp restore_root(nil), do: Application.delete_env(:dev_ide, :agent_auth_profile_root)
-  defp restore_root(value), do: Application.put_env(:dev_ide, :agent_auth_profile_root, value)
+  defp restore_root(nil), do: Application.delete_env(:casein, :agent_auth_profile_root)
+  defp restore_root(value), do: Application.put_env(:casein, :agent_auth_profile_root, value)
 end

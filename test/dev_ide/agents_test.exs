@@ -17,13 +17,13 @@ defmodule Casein.AgentsTest do
   end
 
   setup do
-    prev = Application.get_env(:dev_ide, :agents_adapter)
-    Application.put_env(:dev_ide, :agents_adapter, FakeAdapter)
+    prev = Application.get_env(:casein, :agents_adapter)
+    Application.put_env(:casein, :agents_adapter, FakeAdapter)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :agents_adapter)
-        value -> Application.put_env(:dev_ide, :agents_adapter, value)
+        nil -> Application.delete_env(:casein, :agents_adapter)
+        value -> Application.put_env(:casein, :agents_adapter, value)
       end
     end)
 

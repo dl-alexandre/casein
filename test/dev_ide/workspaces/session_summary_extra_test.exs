@@ -8,13 +8,13 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
   alias Casein.Workspaces.State.WorkspaceRecord
 
   setup do
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
-    prev_git_adapter = Application.get_env(:dev_ide, :git_adapter)
+    prev_git_adapter = Application.get_env(:casein, :git_adapter)
 
     Runtimes.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     # No git_adapter is set by default here; individual tests that care about
     # branch/dirty_count override it. Without a configured workspace path the
     # git helpers short-circuit to nil before any adapter call.
@@ -73,7 +73,7 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
 
     test "nil path yields nil path_label, dirty_count, and git branch" do
       # Set a git adapter to prove it is never consulted for a nil path.
-      Application.put_env(:dev_ide, :git_adapter, git_stub("should-not-be-used", 5))
+      Application.put_env(:casein, :git_adapter, git_stub("should-not-be-used", 5))
 
       summary =
         SessionSummary.build(%Workspace{
@@ -225,7 +225,7 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
     end
 
     test "git branch fallback is used when the manager provides none" do
-      Application.put_env(:dev_ide, :git_adapter, git_stub("git-derived", 3))
+      Application.put_env(:casein, :git_adapter, git_stub("git-derived", 3))
 
       summary =
         SessionSummary.build(%Workspace{
@@ -239,7 +239,7 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
     end
 
     test "empty git branch is treated as no branch" do
-      Application.put_env(:dev_ide, :git_adapter, git_stub("", 0))
+      Application.put_env(:casein, :git_adapter, git_stub("", 0))
 
       summary =
         SessionSummary.build(%Workspace{
@@ -253,7 +253,7 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
     end
 
     test "git adapter error yields nil branch and nil dirty_count" do
-      Application.put_env(:dev_ide, :git_adapter, git_error_stub())
+      Application.put_env(:casein, :git_adapter, git_error_stub())
 
       summary =
         SessionSummary.build(%Workspace{
@@ -481,6 +481,6 @@ defmodule Casein.Workspaces.SessionSummaryExtraTest do
   defp restore(key, value) when key in @fake_state_keys,
     do: TmuxCtl.Test.FakeState.restore(key, value)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

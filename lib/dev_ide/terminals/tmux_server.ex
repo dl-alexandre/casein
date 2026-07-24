@@ -23,7 +23,7 @@ defmodule Casein.Terminals.TmuxServer do
   (e.g. `workspace_pane_split_test.exs`), which create/kill/reconcile real
   sessions, so they can never see or touch prod sessions.
 
-  Set via `config :dev_ide, :tmux_server_label, "<label>"`. If left unset
+  Set via `config :casein, :tmux_server_label, "<label>"`. If left unset
   (`args/0` returns `[]`), Casein falls back to the host's default server and
   shares it with plain SSH tmux — avoid that on a shared host.
 
@@ -37,7 +37,7 @@ defmodule Casein.Terminals.TmuxServer do
   @doc "Configured tmux server label, or nil for the default server."
   @spec label() :: String.t() | nil
   def label do
-    case Application.get_env(:dev_ide, :tmux_server_label) do
+    case Application.get_env(:casein, :tmux_server_label) do
       label when is_binary(label) and label != "" -> label
       _ -> nil
     end

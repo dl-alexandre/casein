@@ -204,7 +204,7 @@ defmodule Casein.Agents.Run do
   end
 
   defp default_timeout_ms,
-    do: Application.get_env(:dev_ide, :agent_run_timeout_ms, @default_timeout_ms)
+    do: Application.get_env(:casein, :agent_run_timeout_ms, @default_timeout_ms)
 
   defp snapshot(state) do
     %{

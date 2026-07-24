@@ -2,10 +2,10 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
   use CaseinWeb.ConnCase, async: false
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
-    prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_forward_auth = Application.get_env(:casein, :forward_auth)
+    prev_hmr = Application.get_env(:casein, :preview_proxy_hmr)
     Casein.PreviewPanes.clear()
 
     on_exit(fn ->
@@ -19,8 +19,8 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   @ws_echo_ports [8080, 9000, 3000, 5173, 4173]
 
@@ -88,9 +88,9 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
     root = Path.join(System.tmp_dir!(), "preview-proxy-#{System.unique_integer([:positive])}")
     path = Path.join([root, "dev", "ws"])
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :workspaces_root, root)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :forward_auth, true)
 
     {root, "folder:" <> Base.url_encode64(path, padding: false)}
   end
@@ -466,7 +466,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
   test "accepts a websocket upgrade with 101 and writes no session cookie when HMR tunneling is enabled",
        %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     upstream_port = start_ws_echo_upstream!()
     on_exit(fn -> stop_ws_echo_upstream!(upstream_port) end)
@@ -484,7 +484,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "refuses a websocket upgrade when HMR tunneling is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: false)
     register_preview_port!(workspace_id, 5173)
 
     conn = ws_upgrade_conn(conn, workspace_id, 5173)
@@ -495,7 +495,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "rejects a websocket upgrade past the per-workspace cap", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true, max_per_workspace: 1)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true, max_per_workspace: 1)
     register_preview_port!(workspace_id, 5173)
 
     # Occupy the single slot with a live registration, mirroring an open tunnel.
@@ -520,7 +520,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "a websocket upgrade from an unauthenticated viewer is rejected", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     # No x-auth-request-email header => ForwardAuth blocks before the upgrade,
     # so the tunnel never reaches the WS branch.
@@ -536,7 +536,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "a websocket upgrade to a disallowed port is rejected", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     # 6000 is neither declared/detected nor a registered preview port.
     conn = ws_upgrade_conn(conn, workspace_id, 6000)
@@ -547,7 +547,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "injects HMR assets into proxied HTML when the tunnel is enabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: true)
 
     {listen, port, task} =
       listen_once!(fn socket, _request ->
@@ -577,7 +577,7 @@ defmodule CaseinWeb.PreviewProxyControllerTest do
 
   test "leaves proxied HTML free of HMR assets when the tunnel is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
-    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
+    Application.put_env(:casein, :preview_proxy_hmr, enabled: false)
 
     {listen, port, task} =
       listen_once!(fn socket, _request ->

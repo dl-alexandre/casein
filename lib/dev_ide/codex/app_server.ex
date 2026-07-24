@@ -668,7 +668,7 @@ defmodule Casein.Codex.AppServer do
   end
 
   defp app_version do
-    case Application.spec(:dev_ide, :vsn) do
+    case Application.spec(:casein, :vsn) do
       nil -> "dev"
       version -> to_string(version)
     end

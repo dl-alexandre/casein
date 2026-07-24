@@ -9,7 +9,7 @@ defmodule Casein.Terminals.CommandLog do
 
   alias Casein.Terminals.PaneCommand
 
-  @table :dev_ide_terminal_command_log
+  @table :casein_terminal_command_log
   @default_limit 200
 
   @spec ensure_table!() :: :ok
@@ -94,6 +94,6 @@ defmodule Casein.Terminals.CommandLog do
   defp clamp_last_n(_n), do: 20
 
   defp limit do
-    Application.get_env(:dev_ide, :terminal_command_log_limit, @default_limit)
+    Application.get_env(:casein, :terminal_command_log_limit, @default_limit)
   end
 end

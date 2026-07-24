@@ -13,7 +13,7 @@ defmodule Casein.Terminals.SessionRecovery do
   alias Casein.Terminals.{ScrollbackArchive, SessionEvents, TemplatePreference}
 
   @pubsub Casein.PubSub
-  @dedupe_table :dev_ide_session_recovery_dedupe
+  @dedupe_table :casein_session_recovery_dedupe
   # Collapse double notifies from drift + term_exit recover within this window.
   @dedupe_ms 5_000
 
@@ -21,7 +21,7 @@ defmodule Casein.Terminals.SessionRecovery do
   def ensure_table! do
     case :ets.whereis(@dedupe_table) do
       :undefined ->
-        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        access = Application.get_env(:casein, :ets_table_access, :protected)
         :ets.new(@dedupe_table, [:named_table, access, :set])
         :ok
 
@@ -111,7 +111,7 @@ defmodule Casein.Terminals.SessionRecovery do
     )
 
     :telemetry.execute(
-      [:dev_ide, :terminals, :session, :recreated],
+      [:casein, :terminals, :session, :recreated],
       %{count: 1},
       %{
         reason: reason,

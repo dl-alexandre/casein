@@ -9,8 +9,8 @@ defmodule Casein.WorkspacesTest do
 
   setup do
     keys = [:workspaces_root, :workspaces_roots, :workspace_source, :workspace_state_adapter]
-    prev = Map.new(keys, &{&1, Application.get_env(:dev_ide, &1)})
-    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
+    prev = Map.new(keys, &{&1, Application.get_env(:casein, &1)})
+    Application.put_env(:casein, :workspace_state_adapter, MemoryAdapter)
     MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -21,25 +21,25 @@ defmodule Casein.WorkspacesTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   test "safe_host_path accepts a path under the configured root" do
-    Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
+    Application.put_env(:casein, :workspaces_root, "/workspaces")
 
     ws = %Workspace{id: "x", name: "n", path: "/workspaces/alice"}
     assert {:ok, "/workspaces/alice"} = Workspaces.safe_host_path(ws)
   end
 
   test "safe_host_path rejects a path outside the allowed roots" do
-    Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
+    Application.put_env(:casein, :workspaces_root, "/workspaces")
 
     ws = %Workspace{id: "x", name: "n", path: "/etc/passwd"}
     assert {:error, :outside_root} = Workspaces.safe_host_path(ws)
   end
 
   test "safe_host_path rejects path traversal" do
-    Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
+    Application.put_env(:casein, :workspaces_root, "/workspaces")
 
     ws = %Workspace{id: "x", name: "n", path: "/workspaces/../etc"}
     assert {:error, :outside_root} = Workspaces.safe_host_path(ws)
@@ -80,7 +80,7 @@ defmodule Casein.WorkspacesTest do
   end
 
   test "forward_auth_email derives owner username plus configured domain" do
-    Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+    Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
 
     ws = %Workspace{id: "x", name: "alice-app", user: "Alice"}
 
@@ -92,8 +92,8 @@ defmodule Casein.WorkspacesTest do
   end
 
   test "extra roots from :workspaces_roots are honored" do
-    Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
-    Application.put_env(:dev_ide, :workspaces_roots, ["/srv/other"])
+    Application.put_env(:casein, :workspaces_root, "/workspaces")
+    Application.put_env(:casein, :workspaces_roots, ["/srv/other"])
 
     ws = %Workspace{id: "x", name: "n", path: "/srv/other/bob"}
     assert {:ok, "/srv/other/bob"} = Workspaces.safe_host_path(ws)
@@ -104,8 +104,8 @@ defmodule Casein.WorkspacesTest do
     alpha_path = Path.join(root, "alpha")
     File.mkdir_p!(alpha_path)
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :workspaces_root, root)
 
     assert {:ok, [%Workspace{id: "alpha", path: ^alpha_path}]} = Workspaces.list()
 
@@ -121,7 +121,7 @@ defmodule Casein.WorkspacesTest do
     folder = Path.join(root, "attached")
     File.mkdir_p!(folder)
 
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     assert {:ok, attached} = Workspaces.attach_folder(folder)
     assert String.starts_with?(attached.id, "folder:")
@@ -138,7 +138,7 @@ defmodule Casein.WorkspacesTest do
 
   test "path_under_allowed_roots? rejects sibling prefixes" do
     root = tmp_dir("devide-root")
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     assert Workspaces.path_under_allowed_roots?(root)
     assert Workspaces.path_under_allowed_roots?(Path.join(root, "child"))
@@ -147,8 +147,8 @@ defmodule Casein.WorkspacesTest do
 
   describe "safe_host_loc/1 — Local source" do
     setup do
-      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-      Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
+      Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+      Application.put_env(:casein, :workspaces_root, "/workspaces")
       :ok
     end
 
@@ -225,9 +225,9 @@ defmodule Casein.WorkspacesTest do
 
   describe "attached folder owner derivation" do
     test "attach_folder derives the owner from the /<root>/<user>/<project> segment" do
-      Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+      Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
       root = tmp_dir("devide-owner-root")
-      Application.put_env(:dev_ide, :workspaces_root, root)
+      Application.put_env(:casein, :workspaces_root, root)
       project = Path.join([root, "alice", "proj"])
       File.mkdir_p!(project)
 
@@ -242,9 +242,9 @@ defmodule Casein.WorkspacesTest do
     end
 
     test "attach_folder leaves owner nil when the path is the root itself" do
-      Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+      Application.put_env(:casein, :forward_auth_email_domain, "milcgroup.com")
       root = tmp_dir("devide-owner-root-only")
-      Application.put_env(:dev_ide, :workspaces_root, root)
+      Application.put_env(:casein, :workspaces_root, root)
 
       assert {:ok, ws} = Workspaces.attach_folder(root)
       assert %Workspace{user: nil, metadata: %{attached_folder: true}} = ws

@@ -74,6 +74,6 @@ defmodule Casein.Signals.AlertsRouter do
   defp route_alert?(_event, _watched), do: false
 
   defp signal_bus_enabled? do
-    Application.get_env(:dev_ide, :signal_bus_enabled, true)
+    Application.get_env(:casein, :signal_bus_enabled, true)
   end
 end

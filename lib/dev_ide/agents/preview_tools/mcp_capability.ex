@@ -16,7 +16,7 @@ defmodule Casein.Agents.PreviewTools.MCPCapability do
         %Capability{
           kind: :preview_mcp,
           status: :detected,
-          source: :dev_ide,
+          source: :casein,
           url: url,
           details: %{
             transport: "http_json_rpc",

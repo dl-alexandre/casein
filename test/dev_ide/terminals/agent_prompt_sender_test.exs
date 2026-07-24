@@ -22,7 +22,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
 
   setup do
     prev_test_pid = FakeState.get(:fake_tmux_test_pid)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = FakeState.get(:fake_tmux_windows)
     prev_panes = FakeState.get(:fake_tmux_panes)
     prev_session_meta = FakeState.get(:fake_tmux_session_meta)
@@ -35,7 +35,7 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
     Audit.clear()
     Activity.clear()
     Labels.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       Audit.clear()
@@ -646,6 +646,6 @@ defmodule Casein.Terminals.AgentPromptSenderTest do
   defp restore_fake_state(key, nil), do: FakeState.delete(key)
   defp restore_fake_state(key, value), do: FakeState.put(key, value)
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 end

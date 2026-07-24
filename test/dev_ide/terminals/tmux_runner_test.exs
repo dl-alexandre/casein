@@ -8,9 +8,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
   alias Casein.Terminals.TmuxServer
 
   setup do
-    workspace_source = Application.get_env(:dev_ide, :workspace_source)
-    tmux_host_shell = Application.get_env(:dev_ide, :tmux_host_shell)
-    tmux_config_file_dev = Application.get_env(:dev_ide, :tmux_config_file)
+    workspace_source = Application.get_env(:casein, :workspace_source)
+    tmux_host_shell = Application.get_env(:casein, :tmux_host_shell)
+    tmux_config_file_dev = Application.get_env(:casein, :tmux_config_file)
     tmux_config_file_ctl = Application.get_env(:tmux_ctl, :config_file)
     env_host_shell = System.get_env("DEV_IDE_TMUX_HOST_SHELL")
     env_config = System.get_env("DEV_IDE_TMUX_CONFIG")
@@ -20,9 +20,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       put_or_delete_env("DEV_IDE_TMUX_HOST_SHELL", env_host_shell)
       put_or_delete_env("DEV_IDE_TMUX_CONFIG", env_config)
       put_or_delete_env("PATH", path)
-      put_or_delete_app_env(:dev_ide, :workspace_source, workspace_source)
-      put_or_delete_app_env(:dev_ide, :tmux_host_shell, tmux_host_shell)
-      put_or_delete_app_env(:dev_ide, :tmux_config_file, tmux_config_file_dev)
+      put_or_delete_app_env(:casein, :workspace_source, workspace_source)
+      put_or_delete_app_env(:casein, :tmux_host_shell, tmux_host_shell)
+      put_or_delete_app_env(:casein, :tmux_config_file, tmux_config_file_dev)
       put_or_delete_app_env(:tmux_ctl, :config_file, tmux_config_file_ctl)
     end)
 
@@ -30,22 +30,22 @@ defmodule Casein.Terminals.TmuxRunnerTest do
   end
 
   describe "host_shell?/0" do
-    test "true when the :dev_ide app env flag is set" do
-      Application.put_env(:dev_ide, :tmux_host_shell, true)
+    test "true when the :casein app env flag is set" do
+      Application.put_env(:casein, :tmux_host_shell, true)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
 
       assert TmuxRunner.host_shell?()
     end
 
     test "true when the OS env var is an affirmative token" do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.put_env("DEV_IDE_TMUX_HOST_SHELL", "yes")
 
       assert TmuxRunner.host_shell?()
     end
 
     test "falsey when neither source opts in" do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.put_env("DEV_IDE_TMUX_HOST_SHELL", "0")
 
       refute TmuxRunner.host_shell?()
@@ -56,9 +56,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
     setup do
       # Force the host branch and avoid any has-session shellout from the
       # session-target heuristic by never passing a -t target in these cases.
-      Application.put_env(:dev_ide, :tmux_host_shell, true)
+      Application.put_env(:casein, :tmux_host_shell, true)
       System.delete_env("DEV_IDE_TMUX_CONFIG")
-      Application.delete_env(:dev_ide, :tmux_config_file)
+      Application.delete_env(:casein, :tmux_config_file)
       Application.delete_env(:tmux_ctl, :config_file)
       :ok
     end
@@ -99,7 +99,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
                TmuxRunner.argv(["kill-server"])
     end
 
-    test "prefers the :dev_ide config file and resolves it from the OS env too" do
+    test "prefers the :casein config file and resolves it from the OS env too" do
       dir = make_tmp_dir()
       config = Path.join(dir, "from_env.conf")
       File.write!(config, "set -g mouse on\n")
@@ -125,9 +125,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
   describe "argv/2 container-wrapping branch" do
     setup do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
       :ok
     end
 
@@ -148,9 +148,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
   describe "argv/2 direct local branch" do
     setup do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+      Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
       :ok
     end
 
@@ -179,9 +179,9 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       exit 1
       """)
 
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       # -t names an existing host session, so host_session_alive? returns true
       # and we get host tmux argv (not the wrapper's ["sh", ...]).
@@ -197,18 +197,18 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       exit 1
       """)
 
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert ["sh", "-c", _] =
                TmuxRunner.argv(["send-keys", "-t", "devide_alpha_u-dev", "echo hi"])
     end
 
     test "argv without a -t target never probes for a session and wraps" do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert ["sh", "-c", _] = TmuxRunner.argv(["list-windows", "-a"])
     end
@@ -219,18 +219,18 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       # WrappingWorkspaceSource resolves to a real, harmless `sh` invocation:
       #   sh -c 'printf wrapped >&2; exit 42'
       # so System.cmd runs for real with stderr folded into stdout.
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert {out, 42} = TmuxRunner.run(["list-sessions"])
       assert out =~ "wrapped"
     end
 
     test "passes :cd through to System.cmd opts" do
-      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      Application.put_env(:casein, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       dir = make_tmp_dir()
       assert {_out, 42} = TmuxRunner.run(["list-sessions"], cd: dir)
@@ -239,13 +239,13 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
   describe "local_argv_wrapped?/0" do
     test "returns false for direct local identity execution" do
-      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+      Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
 
       refute TmuxRunner.local_argv_wrapped?()
     end
 
     test "returns true when the workspace source wraps local argv" do
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
 
       assert TmuxRunner.local_argv_wrapped?()
     end
@@ -253,7 +253,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
 
   describe "container_has_tmux?/1" do
     test "returns true for direct local identity execution" do
-      Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+      Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
       cwd = unique_cwd()
 
       assert TmuxRunner.container_has_tmux?(cwd)
@@ -263,7 +263,7 @@ defmodule Casein.Terminals.TmuxRunnerTest do
       # Any source whose wrapper begins with "sh" short-circuits to true without
       # any System.cmd. Use a unique cwd so the :persistent_term cache key is
       # private to this test.
-      Application.put_env(:dev_ide, :workspace_source, Casein.Test.WrappingWorkspaceSource)
+      Application.put_env(:casein, :workspace_source, Casein.Test.WrappingWorkspaceSource)
       cwd = unique_cwd()
 
       assert TmuxRunner.container_has_tmux?(cwd)

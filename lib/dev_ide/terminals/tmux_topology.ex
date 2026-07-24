@@ -117,14 +117,14 @@ defmodule Casein.Terminals.TmuxTopology do
     |> Keyword.put_new_lazy(:on_session_terminated, &session_terminated_callback/0)
     |> Keyword.put_new(:topology_transform, &PaneState.enrich_topology/1)
     |> Keyword.put_new_lazy(:refresh_ms, fn ->
-      Application.get_env(:dev_ide, :tmux_topology_refresh_ms, 300)
+      Application.get_env(:casein, :tmux_topology_refresh_ms, 300)
     end)
     |> Keyword.put_new_lazy(:reconcile_ms, fn ->
-      Application.get_env(:dev_ide, :tmux_topology_reconcile_ms, 10_000)
+      Application.get_env(:casein, :tmux_topology_reconcile_ms, 10_000)
     end)
     |> Keyword.put_new_lazy(:event_source, &event_source_opt/0)
     |> Keyword.put_new_lazy(:idle_stop_ms, fn ->
-      Application.get_env(:dev_ide, :tmux_topology_idle_stop_ms, 60_000)
+      Application.get_env(:casein, :tmux_topology_idle_stop_ms, 60_000)
     end)
   end
 
@@ -139,7 +139,7 @@ defmodule Casein.Terminals.TmuxTopology do
   end
 
   defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    Application.get_env(:casein, :tmux_adapter, Tmux)
   end
 
   defp emit_session_terminated_audit(%{workspace_id: workspace_id} = state, reason)

@@ -80,11 +80,11 @@ defmodule Casein.Terminals.TelemetryTest do
 
   test "open attachment count does not go below zero on repeated close" do
     previous = Telemetry.count_open_attachments()
-    :ets.insert(:dev_ide_terminal_metrics, {:open_attachments, 0})
+    :ets.insert(:casein_terminal_metrics, {:open_attachments, 0})
 
     on_exit(fn ->
       Telemetry.ensure_table!()
-      :ets.insert(:dev_ide_terminal_metrics, {:open_attachments, previous})
+      :ets.insert(:casein_terminal_metrics, {:open_attachments, previous})
     end)
 
     Telemetry.owner_attachment_closed()

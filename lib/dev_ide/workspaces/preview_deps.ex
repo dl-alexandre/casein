@@ -3,7 +3,7 @@ defmodule Casein.Workspaces.PreviewDeps do
   Core-side impl of `Casein.Previews.Deps.Workspaces`.
 
   Thin pure delegation — no logic lives here. Preview resolves this module via
-  `config :dev_ide, :preview_deps`.
+  `config :casein, :preview_deps`.
   """
 
   @behaviour Casein.Previews.Deps.Workspaces

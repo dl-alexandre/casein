@@ -14,14 +14,14 @@ defmodule CaseinWeb.PreviewArtifactControllerTest do
     root =
       Path.join(System.tmp_dir!(), "preview-artifacts-test-#{System.unique_integer([:positive])}")
 
-    previous = Application.get_env(:dev_ide, :preview_artifacts_root)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_fa = Application.get_env(:dev_ide, :forward_auth)
+    previous = Application.get_env(:casein, :preview_artifacts_root)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_fa = Application.get_env(:casein, :forward_auth)
 
-    Application.put_env(:dev_ide, :preview_artifacts_root, root)
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
+    Application.put_env(:casein, :preview_artifacts_root, root)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
     # Enable forward-auth so identity comes from the X-Auth-Request-Email header.
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :forward_auth, true)
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -33,8 +33,8 @@ defmodule CaseinWeb.PreviewArtifactControllerTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp as(conn, email), do: put_req_header(conn, "x-auth-request-email", email)
 

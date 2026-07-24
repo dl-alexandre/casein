@@ -16,7 +16,7 @@ defmodule Casein.ArtifactProjectsTest do
     @impl true
     def start(spec) do
       send(
-        Application.fetch_env!(:dev_ide, :artifact_restore_preview_test_pid),
+        Application.fetch_env!(:casein, :artifact_restore_preview_test_pid),
         {:artifact_preview_start, spec["runtime_id"]}
       )
 
@@ -25,23 +25,23 @@ defmodule Casein.ArtifactProjectsTest do
   end
 
   setup do
-    prev_artifact_root = Application.get_env(:dev_ide, :artifact_projects_root)
-    prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
-    prev_launcher_enabled = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
-    prev_runner = Application.get_env(:dev_ide, :runtime_preview_runner)
-    prev_runner_pid = Application.get_env(:dev_ide, :artifact_restore_preview_test_pid)
-    prev_runtimes_adapter = Application.get_env(:dev_ide, :runtimes_adapter)
-    prev_workspace_state_adapter = Application.get_env(:dev_ide, :workspace_state_adapter)
+    prev_artifact_root = Application.get_env(:casein, :artifact_projects_root)
+    prev_agent_roots = Application.get_env(:casein, :agent_worktree_roots)
+    prev_launcher_enabled = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+    prev_runner = Application.get_env(:casein, :runtime_preview_runner)
+    prev_runner_pid = Application.get_env(:casein, :artifact_restore_preview_test_pid)
+    prev_runtimes_adapter = Application.get_env(:casein, :runtimes_adapter)
+    prev_workspace_state_adapter = Application.get_env(:casein, :workspace_state_adapter)
 
     base = tmp_dir!("artifact-projects")
     repo = Path.join(base, "repo")
     artifact_root = Path.join(base, "artifacts")
 
-    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
-    Application.put_env(:dev_ide, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
-    Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
-    Application.put_env(:dev_ide, :agent_worktree_roots, [])
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+    Application.put_env(:casein, :workspace_state_adapter, MemoryAdapter)
+    Application.put_env(:casein, :runtimes_adapter, Casein.Runtimes.MemoryAdapter)
+    Application.put_env(:casein, :artifact_projects_root, artifact_root)
+    Application.put_env(:casein, :agent_worktree_roots, [])
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, false)
 
     MemoryAdapter.clear()
     Runtimes.clear()
@@ -351,9 +351,9 @@ defmodule Casein.ArtifactProjectsTest do
     assert {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "One Launch"})
     assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
 
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
-    Application.put_env(:dev_ide, :runtime_preview_runner, PreviewRunner)
-    Application.put_env(:dev_ide, :artifact_restore_preview_test_pid, self())
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, PreviewRunner)
+    Application.put_env(:casein, :artifact_restore_preview_test_pid, self())
 
     results =
       1..4
@@ -403,9 +403,9 @@ defmodule Casein.ArtifactProjectsTest do
 
     assert {:ok, _expired} = Runtimes.expire_runtime(project.id)
 
-    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
-    Application.put_env(:dev_ide, :runtime_preview_runner, PreviewRunner)
-    Application.put_env(:dev_ide, :artifact_restore_preview_test_pid, self())
+    Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:casein, :runtime_preview_runner, PreviewRunner)
+    Application.put_env(:casein, :artifact_restore_preview_test_pid, self())
 
     assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
     assert restored.preview_server["port"] == server["port"]
@@ -500,11 +500,11 @@ defmodule Casein.ArtifactProjectsTest do
   test "public_url prefers the dedicated artifacts origin over the cockpit origin" do
     {:ok, project} = ArtifactProjects.create("ws-artifacts", %{name: "Shareable"})
 
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :preview_app_url)
-      Application.delete_env(:dev_ide, :artifact_public_url)
+      Application.delete_env(:casein, :preview_app_url)
+      Application.delete_env(:casein, :artifact_public_url)
     end)
 
     # Falls back to the cockpit origin when no dedicated origin is configured.
@@ -513,7 +513,7 @@ defmodule Casein.ArtifactProjectsTest do
     assert String.ends_with?(cockpit_url, "/artifact-projects/ws-artifacts/#{project.id}/")
 
     # The dedicated artifacts origin wins when set.
-    Application.put_env(:dev_ide, :artifact_public_url, "https://artifacts.example.com")
+    Application.put_env(:casein, :artifact_public_url, "https://artifacts.example.com")
 
     dedicated_url = ArtifactProjects.payload(project).public_url
     assert dedicated_url =~ "artifacts.example.com"
@@ -558,6 +558,6 @@ defmodule Casein.ArtifactProjectsTest do
     String.trim(output)
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

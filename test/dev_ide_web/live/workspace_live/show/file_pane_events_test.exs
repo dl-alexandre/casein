@@ -15,9 +15,9 @@ defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
     FilePanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -33,14 +33,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "file-pane-events-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
@@ -206,14 +206,14 @@ defmodule CaseinWeb.WorkspaceLive.Show.FilePaneEventsTest do
 
   describe "terminal:open_file_link surface routing" do
     setup do
-      prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-      prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
-      prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
+      prev_tmux = Application.get_env(:casein, :tmux_adapter)
+      prev_preflight = Application.get_env(:casein, :preview_open_preflight)
+      prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
       prev_fake_pid = FakeState.get(:fake_tmux_test_pid)
 
-      Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-      Application.put_env(:dev_ide, :preview_open_preflight, true)
-      Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
+      Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+      Application.put_env(:casein, :preview_open_preflight, true)
+      Application.put_env(:casein, :preview_pane_persistence_enabled, false)
       FakeState.put(:fake_tmux_test_pid, self())
       Casein.FilePanes.LinkResolver.clear_cache()
       Casein.PreviewPanes.clear()

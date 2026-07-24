@@ -34,8 +34,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.ArtifactEventsTest do
     }
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 
   describe "artifact:refresh" do
     test "loads artifact projects for the workspace" do
@@ -118,8 +118,8 @@ defmodule CaseinWeb.WorkspaceLive.Show.ArtifactEventsTest do
       ws_id = "ws-art-#{System.unique_integer([:positive])}"
       art_id = "art-#{System.unique_integer([:positive])}"
 
-      prev_launcher = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
-      Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+      prev_launcher = Application.get_env(:casein, :runtime_preview_launcher_enabled)
+      Application.put_env(:casein, :runtime_preview_launcher_enabled, true)
 
       on_exit(fn ->
         restore_env(:runtime_preview_launcher_enabled, prev_launcher)

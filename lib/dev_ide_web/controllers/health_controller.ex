@@ -4,7 +4,7 @@ defmodule CaseinWeb.HealthController do
   use CaseinWeb, :controller
 
   def show(conn, _params) do
-    opts = Application.get_env(:dev_ide, :readiness_opts, [])
+    opts = Application.get_env(:casein, :readiness_opts, [])
     status = Casein.Readiness.status(opts)
 
     conn

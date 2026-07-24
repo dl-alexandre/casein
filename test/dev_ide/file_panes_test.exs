@@ -24,9 +24,9 @@ defmodule Casein.FilePanesTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
     FilePanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -44,14 +44,14 @@ defmodule Casein.FilePanesTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "file-panes-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end
@@ -239,7 +239,7 @@ defmodule Casein.FilePanesTest do
                active_path: "existing.ex"
              })
 
-    Application.put_env(:dev_ide, :tmux_adapter, CountingTmuxAdapter)
+    Application.put_env(:casein, :tmux_adapter, CountingTmuxAdapter)
     FakeState.put(:topology_reads, 0)
 
     assert {:ok, %{reused: true}} =

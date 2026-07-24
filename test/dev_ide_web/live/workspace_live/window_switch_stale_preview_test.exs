@@ -34,8 +34,8 @@ defmodule CaseinWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   @preview_pane_id "%2"
 
   setup do
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
@@ -49,8 +49,8 @@ defmodule CaseinWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     MemoryAdapter.clear()
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     # Window @0 (shell, 1 pane: %0) inactive; window @1 (tests, 3 panes) active.
@@ -212,6 +212,6 @@ defmodule CaseinWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     :sys.get_state(view.pid).socket.assigns[key]
   end
 
-  defp restore_app(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app(key, value), do: Application.put_env(:casein, key, value)
 end

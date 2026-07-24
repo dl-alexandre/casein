@@ -27,19 +27,19 @@ defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
 
     previous = %{
       home: System.get_env("HOME"),
-      enabled: Application.get_env(:dev_ide, :grok_acp_auto_attach),
-      leader_root: Application.get_env(:dev_ide, :grok_leader_root),
-      transport: Application.get_env(:dev_ide, :grok_acp_transport),
-      transport_opts: Application.get_env(:dev_ide, :grok_acp_transport_opts),
-      validator: Application.get_env(:dev_ide, :grok_acp_bundle_validator)
+      enabled: Application.get_env(:casein, :grok_acp_auto_attach),
+      leader_root: Application.get_env(:casein, :grok_leader_root),
+      transport: Application.get_env(:casein, :grok_acp_transport),
+      transport_opts: Application.get_env(:casein, :grok_acp_transport_opts),
+      validator: Application.get_env(:casein, :grok_acp_bundle_validator)
     }
 
     System.put_env("HOME", home)
-    Application.put_env(:dev_ide, :grok_acp_auto_attach, true)
-    Application.put_env(:dev_ide, :grok_leader_root, leader_root)
-    Application.put_env(:dev_ide, :grok_acp_transport, GrokACPAttachmentFakeTransport)
-    Application.put_env(:dev_ide, :grok_acp_transport_opts, test_pid: self())
-    Application.put_env(:dev_ide, :grok_acp_bundle_validator, &File.dir?/1)
+    Application.put_env(:casein, :grok_acp_auto_attach, true)
+    Application.put_env(:casein, :grok_leader_root, leader_root)
+    Application.put_env(:casein, :grok_acp_transport, GrokACPAttachmentFakeTransport)
+    Application.put_env(:casein, :grok_acp_transport_opts, test_pid: self())
+    Application.put_env(:casein, :grok_acp_bundle_validator, &File.dir?/1)
     Attachments.clear()
 
     on_exit(fn ->
@@ -257,6 +257,6 @@ defmodule Casein.AgentSessions.GrokACP.AttachmentsTest do
   defp restore_env(key, nil), do: System.delete_env(key)
   defp restore_env(key, value), do: System.put_env(key, value)
 
-  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_app_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_app_env(key, value), do: Application.put_env(:casein, key, value)
 end

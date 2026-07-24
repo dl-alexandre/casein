@@ -32,7 +32,7 @@ defmodule CaseinWeb.API.PreviewMCPTest.Source do
     do: with({:ok, path} <- safe_host_path(workspace), do: {:ok, {:local, path}})
 
   defp workspace do
-    Application.get_env(:dev_ide, :preview_mcp_test_workspace, @workspace)
+    Application.get_env(:casein, :preview_mcp_test_workspace, @workspace)
   end
 end
 
@@ -69,16 +69,16 @@ defmodule CaseinWeb.API.PreviewMCPTest do
   }
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_test_workspace = Application.get_env(:dev_ide, :preview_mcp_test_workspace)
-    prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
-    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_test_workspace = Application.get_env(:casein, :preview_mcp_test_workspace)
+    prev_preflight = Application.get_env(:casein, :preview_open_preflight)
+    prev_app_url = Application.get_env(:casein, :preview_app_url)
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     MemoryAdapter.clear()
     Runtimes.clear()
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :workspace_source, CaseinWeb.API.PreviewMCPTest.Source)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :workspace_source, CaseinWeb.API.PreviewMCPTest.Source)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     PreviewPanes.clear()
@@ -97,24 +97,24 @@ defmodule CaseinWeb.API.PreviewMCPTest do
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_tmux),
-        do: Application.delete_env(:dev_ide, :tmux_adapter),
-        else: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux)
+        do: Application.delete_env(:casein, :tmux_adapter),
+        else: Application.put_env(:casein, :tmux_adapter, prev_tmux)
 
       if is_nil(prev_source),
-        do: Application.delete_env(:dev_ide, :workspace_source),
-        else: Application.put_env(:dev_ide, :workspace_source, prev_source)
+        do: Application.delete_env(:casein, :workspace_source),
+        else: Application.put_env(:casein, :workspace_source, prev_source)
 
       if is_nil(prev_test_workspace),
-        do: Application.delete_env(:dev_ide, :preview_mcp_test_workspace),
-        else: Application.put_env(:dev_ide, :preview_mcp_test_workspace, prev_test_workspace)
+        do: Application.delete_env(:casein, :preview_mcp_test_workspace),
+        else: Application.put_env(:casein, :preview_mcp_test_workspace, prev_test_workspace)
 
       if is_nil(prev_preflight),
-        do: Application.delete_env(:dev_ide, :preview_open_preflight),
-        else: Application.put_env(:dev_ide, :preview_open_preflight, prev_preflight)
+        do: Application.delete_env(:casein, :preview_open_preflight),
+        else: Application.put_env(:casein, :preview_open_preflight, prev_preflight)
 
       if is_nil(prev_app_url),
-        do: Application.delete_env(:dev_ide, :preview_app_url),
-        else: Application.put_env(:dev_ide, :preview_app_url, prev_app_url)
+        do: Application.delete_env(:casein, :preview_app_url),
+        else: Application.put_env(:casein, :preview_app_url, prev_app_url)
     end)
 
     :ok
@@ -136,7 +136,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
   defp seed_ambiguous_session_visibility!(workspace_id, sessions_with_panes)
        when is_binary(workspace_id) and is_list(sessions_with_panes) do
     workspace =
-      Application.get_env(:dev_ide, :preview_mcp_test_workspace, %Workspace{
+      Application.get_env(:casein, :preview_mcp_test_workspace, %Workspace{
         id: workspace_id,
         name: workspace_id,
         user: "alice",
@@ -427,7 +427,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
   end
 
   test "session-scoped endpoint opens recording playback beside the agent pane" do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test/workspaces")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.test/workspaces")
 
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-playback"
 
@@ -668,7 +668,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
 
     stub_preview_server(base_server, request_counts, :base)
     stub_preview_server(worktree_server, request_counts, :worktree)
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_open_preflight, true)
 
     workspace =
       %Workspace{
@@ -689,7 +689,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
           |> Map.put(:detected_ports, [base_server.port, worktree_server.port])
       }
 
-    Application.put_env(:dev_ide, :preview_mcp_test_workspace, workspace)
+    Application.put_env(:casein, :preview_mcp_test_workspace, workspace)
 
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     base_session = "#{prefix}default"
@@ -899,9 +899,9 @@ defmodule CaseinWeb.API.PreviewMCPTest do
   test "tools/call observe encodes redirect_blocked errors in structuredContent" do
     bypass = HTTPStub.open()
     port = bypass.port
-    previous_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
+    previous_adapter = Application.get_env(:casein, :preview_control_adapter)
 
-    Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
+    Application.put_env(:casein, :preview_control_adapter, :playwright)
     on_exit(fn -> restore_adapter(previous_adapter) end)
 
     HTTPStub.expect(bypass, "GET", "/", fn conn ->
@@ -999,7 +999,7 @@ defmodule CaseinWeb.API.PreviewMCPTest do
     |> length()
   end
 
-  defp restore_adapter(nil), do: Application.delete_env(:dev_ide, :preview_control_adapter)
+  defp restore_adapter(nil), do: Application.delete_env(:casein, :preview_control_adapter)
 
-  defp restore_adapter(value), do: Application.put_env(:dev_ide, :preview_control_adapter, value)
+  defp restore_adapter(value), do: Application.put_env(:casein, :preview_control_adapter, value)
 end

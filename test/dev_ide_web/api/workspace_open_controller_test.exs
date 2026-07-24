@@ -8,7 +8,7 @@ defmodule CaseinWeb.API.WorkspaceOpenControllerTest do
     alias Casein.Workspace
 
     def get(id, _auth) do
-      root = Application.fetch_env!(:dev_ide, :workspace_open_controller_root)
+      root = Application.fetch_env!(:casein, :workspace_open_controller_root)
 
       {:ok,
        %Workspace{
@@ -32,14 +32,14 @@ defmodule CaseinWeb.API.WorkspaceOpenControllerTest do
     File.write!(Path.join(root, "docs/readme.md"), "# Readme\n")
     File.write!(Path.join(root, "lib/foo.ex"), "defmodule Foo, do: :ok\n")
 
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_root = Application.get_env(:dev_ide, :workspace_open_controller_root)
+    prev_token = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_root = Application.get_env(:casein, :workspace_open_controller_root)
 
-    Application.put_env(:dev_ide, :api_token, @token)
-    Application.put_env(:dev_ide, :workspace_source, Source)
-    Application.put_env(:dev_ide, :workspace_open_controller_root, root)
+    Application.put_env(:casein, :api_token, @token)
+    Application.put_env(:casein, :workspace_source, Source)
+    Application.put_env(:casein, :workspace_open_controller_root, root)
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -53,7 +53,7 @@ defmodule CaseinWeb.API.WorkspaceOpenControllerTest do
   end
 
   test "workspace-scoped tokens cannot open another workspace", %{conn: conn} do
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"scoped-token" => "other-workspace"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"scoped-token" => "other-workspace"})
 
     body =
       conn
@@ -113,6 +113,6 @@ defmodule CaseinWeb.API.WorkspaceOpenControllerTest do
     |> post("/api/workspaces/#{workspace_id}/open", params)
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

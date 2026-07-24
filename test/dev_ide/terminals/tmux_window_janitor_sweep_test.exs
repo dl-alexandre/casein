@@ -86,9 +86,9 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
   setup do
     prev = %{
       runner: Application.get_env(:tmux_ctl, :runner),
-      window_idle: Application.get_env(:dev_ide, :tmux_window_idle_seconds),
-      session_idle: Application.get_env(:dev_ide, :tmux_session_idle_seconds),
-      sweep_ms: Application.get_env(:dev_ide, :tmux_window_sweep_ms),
+      window_idle: Application.get_env(:casein, :tmux_window_idle_seconds),
+      session_idle: Application.get_env(:casein, :tmux_session_idle_seconds),
+      sweep_ms: Application.get_env(:casein, :tmux_window_sweep_ms),
       sweep_windows: TmuxCtl.Test.FakeState.get(:sweep_windows),
       sweep_sessions: TmuxCtl.Test.FakeState.get(:sweep_sessions),
       sweep_panes: TmuxCtl.Test.FakeState.get(:sweep_panes),
@@ -97,16 +97,16 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
     }
 
     Application.put_env(:tmux_ctl, :runner, SweepRunner)
-    Application.put_env(:dev_ide, :tmux_window_idle_seconds, @idle)
-    Application.put_env(:dev_ide, :tmux_session_idle_seconds, @idle)
+    Application.put_env(:casein, :tmux_window_idle_seconds, @idle)
+    Application.put_env(:casein, :tmux_session_idle_seconds, @idle)
     TmuxCtl.Test.FakeState.put(:sweep_test_pid, self())
     TmuxCtl.Test.FakeState.put(:sweep_dead_sessions, MapSet.new())
 
     on_exit(fn ->
       restore(:tmux_ctl, :runner, prev.runner)
-      restore(:dev_ide, :tmux_window_idle_seconds, prev.window_idle)
-      restore(:dev_ide, :tmux_session_idle_seconds, prev.session_idle)
-      restore(:dev_ide, :tmux_window_sweep_ms, prev.sweep_ms)
+      restore(:casein, :tmux_window_idle_seconds, prev.window_idle)
+      restore(:casein, :tmux_session_idle_seconds, prev.session_idle)
+      restore(:casein, :tmux_window_sweep_ms, prev.sweep_ms)
       TmuxCtl.Test.FakeState.restore(:sweep_windows, prev.sweep_windows)
       TmuxCtl.Test.FakeState.restore(:sweep_sessions, prev.sweep_sessions)
       TmuxCtl.Test.FakeState.restore(:sweep_panes, prev.sweep_panes)
@@ -268,7 +268,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
       # reschedule arm of handle_info/2 runs. Supervise an unnamed instance via
       # ExUnit's supervisor (start_link/1 hardcodes the singleton name owned by
       # the app supervisor, so spec the GenServer.start_link MFA directly).
-      Application.put_env(:dev_ide, :tmux_window_sweep_ms, 60_000)
+      Application.put_env(:casein, :tmux_window_sweep_ms, 60_000)
       pid = start_supervised!(unnamed_janitor_spec(:sched))
 
       # The init schedule fires far in the future; trigger a sweep immediately.
@@ -284,7 +284,7 @@ defmodule Casein.Terminals.TmuxWindowJanitorSweepTest do
     end
 
     test "init/1 stays idle (interval_ms nil) when sweep_ms is unset/zero" do
-      Application.delete_env(:dev_ide, :tmux_window_sweep_ms)
+      Application.delete_env(:casein, :tmux_window_sweep_ms)
       seed(windows: [killable_window(%{session: "devide_ws_idle", window_id: "@4"})])
 
       pid = start_supervised!(unnamed_janitor_spec(:idle))

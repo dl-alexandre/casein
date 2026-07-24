@@ -359,7 +359,7 @@ defmodule TmuxCtl.ClientTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :tmux, :inject],
+      [:casein, :tmux, :inject],
       fn event, measurements, metadata, pid ->
         send(pid, {:tmux_inject_telemetry, event, measurements, metadata})
       end,
@@ -370,7 +370,7 @@ defmodule TmuxCtl.ClientTest do
 
     assert :ok = Client.inject("%7", "hello")
 
-    assert_receive {:tmux_inject_telemetry, [:dev_ide, :tmux, :inject], %{count: 1},
+    assert_receive {:tmux_inject_telemetry, [:casein, :tmux, :inject], %{count: 1},
                     %{target: "%7"}}
   end
 
@@ -379,7 +379,7 @@ defmodule TmuxCtl.ClientTest do
 
     :telemetry.attach(
       handler_id,
-      [:dev_ide, :tmux, :inject, :error],
+      [:casein, :tmux, :inject, :error],
       fn event, measurements, metadata, pid ->
         send(pid, {:tmux_inject_error_telemetry, event, measurements, metadata})
       end,
@@ -396,7 +396,7 @@ defmodule TmuxCtl.ClientTest do
     assert ["tmux", "set-buffer", "-b", _buffer, "--", "[REDACTED]"] = command
     refute inspect(reason) =~ "super secret prompt"
 
-    assert_receive {:tmux_inject_error_telemetry, [:dev_ide, :tmux, :inject, :error], %{count: 1},
+    assert_receive {:tmux_inject_error_telemetry, [:casein, :tmux, :inject, :error], %{count: 1},
                     %{reason: telemetry_reason, target: "%7"}}
 
     refute inspect(telemetry_reason) =~ "super secret prompt"

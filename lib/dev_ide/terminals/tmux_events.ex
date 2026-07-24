@@ -2,7 +2,7 @@ defmodule Casein.Terminals.TmuxEvents do
   @moduledoc """
   Casein facade for the host-tmux control-mode event source.
 
-  Flag-gated by `config :dev_ide, :tmux_events` (env `DEVIDE_TMUX_EVENTS`).
+  Flag-gated by `config :casein, :tmux_events` (env `DEVIDE_TMUX_EVENTS`).
   When off, `child_spec/1` starts as `:ignore` and `subscribe/2` returns
   `{:error, :unavailable}` so watchers stay on pure polling.
   """
@@ -18,7 +18,7 @@ defmodule Casein.Terminals.TmuxEvents do
   @doc "Whether the event-driven tmux path is enabled."
   @spec enabled?() :: boolean()
   def enabled? do
-    case Application.get_env(:dev_ide, :tmux_events, false) do
+    case Application.get_env(:casein, :tmux_events, false) do
       true -> true
       "1" -> true
       "true" -> true
@@ -93,7 +93,7 @@ defmodule Casein.Terminals.TmuxEvents do
             pubsub: pubsub(),
             anchor_session:
               Application.get_env(
-                :dev_ide,
+                :casein,
                 :tmux_events_anchor_session,
                 "__devide_keepalive"
               ),
@@ -109,6 +109,6 @@ defmodule Casein.Terminals.TmuxEvents do
 
   defp pubsub do
     Application.get_env(:tmux_ctl, :pubsub) ||
-      Application.get_env(:dev_ide, :pubsub, Casein.PubSub)
+      Application.get_env(:casein, :pubsub, Casein.PubSub)
   end
 end

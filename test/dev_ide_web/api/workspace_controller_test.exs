@@ -14,19 +14,19 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
     MemoryAdapter.clear()
     Casein.Audit.MemoryAdapter.clear()
     Casein.Agents.Activity.clear()
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_token = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
-    prev_agent_mcp_base_url = Application.get_env(:dev_ide, :agent_mcp_base_url)
+    prev_agent_mcp_base_url = Application.get_env(:casein, :agent_mcp_base_url)
 
-    Application.put_env(:dev_ide, :api_token, @token)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :api_token, @token)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
-    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
+    Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -34,16 +34,16 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
       Casein.Agents.Activity.clear()
 
       if prev_token,
-        do: Application.put_env(:dev_ide, :api_token, prev_token),
-        else: Application.delete_env(:dev_ide, :api_token)
+        do: Application.put_env(:casein, :api_token, prev_token),
+        else: Application.delete_env(:casein, :api_token)
 
       if prev_workspace_tokens,
-        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_workspace_tokens),
-        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
+        do: Application.put_env(:casein, :workspace_api_tokens, prev_workspace_tokens),
+        else: Application.delete_env(:casein, :workspace_api_tokens)
 
       if prev_tmux_adapter,
-        do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux_adapter),
-        else: Application.delete_env(:dev_ide, :tmux_adapter)
+        do: Application.put_env(:casein, :tmux_adapter, prev_tmux_adapter),
+        else: Application.delete_env(:casein, :tmux_adapter)
 
       if prev_fake_tmux_pid,
         do: TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, prev_fake_tmux_pid),
@@ -62,8 +62,8 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
         else: TmuxCtl.Test.FakeState.delete(:fake_tmux_next_window)
 
       if prev_agent_mcp_base_url,
-        do: Application.put_env(:dev_ide, :agent_mcp_base_url, prev_agent_mcp_base_url),
-        else: Application.delete_env(:dev_ide, :agent_mcp_base_url)
+        do: Application.put_env(:casein, :agent_mcp_base_url, prev_agent_mcp_base_url),
+        else: Application.delete_env(:casein, :agent_mcp_base_url)
     end)
 
     {:ok, conn: conn}
@@ -112,7 +112,7 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
   test "503 when token is unset", %{conn: conn} do
     prev_env = System.get_env("DEV_IDE_API_TOKEN")
     prev_ws_env = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    prev_ws_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_ws_tokens = Application.get_env(:casein, :workspace_api_tokens)
 
     on_exit(fn ->
       if prev_env,
@@ -124,16 +124,16 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
         else: System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
       if prev_ws_tokens,
-        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_ws_tokens),
-        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
+        do: Application.put_env(:casein, :workspace_api_tokens, prev_ws_tokens),
+        else: Application.delete_env(:casein, :workspace_api_tokens)
     end)
 
-    Application.delete_env(:dev_ide, :api_token)
+    Application.delete_env(:casein, :api_token)
     System.delete_env("DEV_IDE_API_TOKEN")
 
     # Earlier tests may have minted workspace-scoped tokens into the registry
     # (Casein.Agents.WorkspaceTokens); 503 means NO token source is configured.
-    Application.delete_env(:dev_ide, :workspace_api_tokens)
+    Application.delete_env(:casein, :workspace_api_tokens)
     System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
     conn = get(conn, "/api/workspaces")
@@ -568,7 +568,7 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
 
   test "workspace-scoped token can search only its workspace history", %{conn: conn} do
     seed_workspace()
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-1"})
+    Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-1"})
 
     own =
       conn
@@ -1676,7 +1676,7 @@ defmodule CaseinWeb.API.WorkspaceControllerTest do
   end
 
   test "404 for unknown workspace", %{conn: conn} do
-    Application.put_env(:dev_ide, :api_token, @token)
+    Application.put_env(:casein, :api_token, @token)
     conn = conn |> authed() |> get("/api/workspaces/no-such/status")
     assert conn.status == 404
   end

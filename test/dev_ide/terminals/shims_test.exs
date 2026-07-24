@@ -4,14 +4,14 @@ defmodule Casein.Terminals.ShimsTest do
   alias Casein.Terminals.Shims
 
   setup do
-    previous_dir = Application.get_env(:dev_ide, :terminal_shims_dir)
-    previous_tool_root = Application.get_env(:dev_ide, :terminal_tools_dir)
+    previous_dir = Application.get_env(:casein, :terminal_shims_dir)
+    previous_tool_root = Application.get_env(:casein, :terminal_tools_dir)
 
     previous_desktop_enabled =
-      Application.get_env(:dev_ide, :terminal_desktop_integration_enabled)
+      Application.get_env(:casein, :terminal_desktop_integration_enabled)
 
-    previous_desktop_entries_dir = Application.get_env(:dev_ide, :terminal_desktop_entries_dir)
-    previous_mimeapps_path = Application.get_env(:dev_ide, :terminal_mimeapps_path)
+    previous_desktop_entries_dir = Application.get_env(:casein, :terminal_desktop_entries_dir)
+    previous_mimeapps_path = Application.get_env(:casein, :terminal_mimeapps_path)
     tmp = Path.join(System.tmp_dir!(), "devide-shims-test-#{System.unique_integer([:positive])}")
     shim_dir = Path.join(tmp, "shims")
     tool_root = Path.join(tmp, "tools")
@@ -20,11 +20,11 @@ defmodule Casein.Terminals.ShimsTest do
     desktop_dir = Path.join(tmp, "applications")
     mimeapps_path = Path.join(tmp, "mimeapps.list")
 
-    Application.put_env(:dev_ide, :terminal_shims_dir, shim_dir)
-    Application.put_env(:dev_ide, :terminal_tools_dir, tool_root)
-    Application.put_env(:dev_ide, :terminal_desktop_integration_enabled, false)
-    Application.put_env(:dev_ide, :terminal_desktop_entries_dir, desktop_dir)
-    Application.put_env(:dev_ide, :terminal_mimeapps_path, mimeapps_path)
+    Application.put_env(:casein, :terminal_shims_dir, shim_dir)
+    Application.put_env(:casein, :terminal_tools_dir, tool_root)
+    Application.put_env(:casein, :terminal_desktop_integration_enabled, false)
+    Application.put_env(:casein, :terminal_desktop_entries_dir, desktop_dir)
+    Application.put_env(:casein, :terminal_mimeapps_path, mimeapps_path)
     File.mkdir_p!(real_dir)
     write_clean_bin!(clean_bin)
 
@@ -860,6 +860,6 @@ defmodule Casein.Terminals.ShimsTest do
     "'" <> String.replace(to_string(value), "'", "'\"'\"'") <> "'"
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

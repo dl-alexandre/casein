@@ -13,7 +13,7 @@ defmodule Casein.Terminals.CommandRedactor do
   def redact(data, metadata) when is_binary(data) and is_map(metadata) do
     module =
       Application.get_env(
-        :dev_ide,
+        :casein,
         :terminal_command_redactor,
         Casein.Terminals.CommandRedactor.Default
       )

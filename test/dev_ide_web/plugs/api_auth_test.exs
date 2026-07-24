@@ -17,16 +17,16 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
   ]
 
   setup do
-    prev_api_token = Application.get_env(:dev_ide, :api_token)
-    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_api_token = Application.get_env(:casein, :api_token)
+    prev_workspace_tokens = Application.get_env(:casein, :workspace_api_tokens)
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
     prev_env_workspace_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
     System.delete_env("DEV_IDE_API_TOKEN")
     System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
-    Application.delete_env(:dev_ide, :api_token)
+    Application.delete_env(:casein, :api_token)
 
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{
+    Application.put_env(:casein, :workspace_api_tokens, %{
       @workspace_token => @workspace_id
     })
 
@@ -48,8 +48,8 @@ defmodule CaseinWeb.Plugs.ApiAuthTest do
     :ok
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, val), do: Application.put_env(:casein, key, val)
 
   defp call_mcp(path, query \\ nil) do
     url = if query, do: path <> "?" <> query, else: path

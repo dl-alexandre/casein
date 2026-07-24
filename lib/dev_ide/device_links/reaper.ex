@@ -64,12 +64,12 @@ defmodule Casein.DeviceLinks.Reaper do
   end
 
   defp enabled? do
-    Application.get_env(:dev_ide, :device_link_reaper_enabled, true)
+    Application.get_env(:casein, :device_link_reaper_enabled, true)
   end
 
   defp sweep_interval_ms do
     Application.get_env(
-      :dev_ide,
+      :casein,
       :device_link_reaper_sweep_interval_ms,
       @default_sweep_interval_ms
     )
@@ -77,7 +77,7 @@ defmodule Casein.DeviceLinks.Reaper do
 
   defp retention_seconds do
     Application.get_env(
-      :dev_ide,
+      :casein,
       :device_link_reaper_retention_seconds,
       @default_retention_seconds
     )

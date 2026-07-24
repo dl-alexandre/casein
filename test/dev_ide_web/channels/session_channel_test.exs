@@ -24,11 +24,11 @@ defmodule CaseinWeb.SessionChannelTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :default_workspace_mode, :review)
 
     MemoryAdapter.clear()
     Audit.clear()
@@ -286,6 +286,6 @@ defmodule CaseinWeb.SessionChannelTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

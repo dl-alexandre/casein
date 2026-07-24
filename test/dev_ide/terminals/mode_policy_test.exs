@@ -71,15 +71,15 @@ defmodule Casein.Terminals.ModePolicyTest do
   end
 
   defp with_raw_everywhere(value, fun) do
-    prev = Application.get_env(:dev_ide, :raw_terminal_everywhere)
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, value)
+    prev = Application.get_env(:casein, :raw_terminal_everywhere)
+    Application.put_env(:casein, :raw_terminal_everywhere, value)
 
     try do
       fun.()
     after
       case prev do
-        nil -> Application.delete_env(:dev_ide, :raw_terminal_everywhere)
-        _ -> Application.put_env(:dev_ide, :raw_terminal_everywhere, prev)
+        nil -> Application.delete_env(:casein, :raw_terminal_everywhere)
+        _ -> Application.put_env(:casein, :raw_terminal_everywhere, prev)
       end
     end
   end

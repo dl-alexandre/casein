@@ -29,6 +29,6 @@ defmodule Casein.Codex.Store do
   def clear, do: impl().clear()
 
   defp impl do
-    Application.get_env(:dev_ide, :codex_store_adapter, Casein.Codex.Store.EctoAdapter)
+    Application.get_env(:casein, :codex_store_adapter, Casein.Codex.Store.EctoAdapter)
   end
 end

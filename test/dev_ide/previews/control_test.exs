@@ -147,13 +147,13 @@ defmodule Casein.Previews.ControlTest do
   # Global Application env: this module must stay async: false while any test
   # uses this helper — the put is visible to every concurrently running test.
   defp put_preview_default_headers(headers) do
-    prev = Application.get_env(:dev_ide, :preview_default_headers)
-    Application.put_env(:dev_ide, :preview_default_headers, headers)
+    prev = Application.get_env(:casein, :preview_default_headers)
+    Application.put_env(:casein, :preview_default_headers, headers)
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, :preview_default_headers, prev),
-        else: Application.delete_env(:dev_ide, :preview_default_headers)
+        do: Application.put_env(:casein, :preview_default_headers, prev),
+        else: Application.delete_env(:casein, :preview_default_headers)
     end)
   end
 
@@ -216,13 +216,13 @@ defmodule Casein.Previews.ControlTest do
 
   test "workspace storage profile records a durable storage state path" do
     root = Path.join(System.tmp_dir!(), "devide-preview-storage-test")
-    prev_root = Application.get_env(:dev_ide, :preview_storage_root)
-    Application.put_env(:dev_ide, :preview_storage_root, root)
+    prev_root = Application.get_env(:casein, :preview_storage_root)
+    Application.put_env(:casein, :preview_storage_root, root)
 
     on_exit(fn ->
       if prev_root,
-        do: Application.put_env(:dev_ide, :preview_storage_root, prev_root),
-        else: Application.delete_env(:dev_ide, :preview_storage_root)
+        do: Application.put_env(:casein, :preview_storage_root, prev_root),
+        else: Application.delete_env(:casein, :preview_storage_root)
 
       File.rm_rf(root)
     end)

@@ -10,8 +10,8 @@ defmodule Casein.Push.FCMProvider do
 
   Enable with:
 
-      config :dev_ide, :push_provider, Casein.Push.FCMProvider
-      config :dev_ide, Casein.Push.FCMProvider,
+      config :casein, :push_provider, Casein.Push.FCMProvider
+      config :casein, Casein.Push.FCMProvider,
         project_id: "my-firebase-project",
         # 0-arity fun or {m, f, a} returning {:ok, oauth_access_token}. The
         # built-in service-account minter is:
@@ -177,5 +177,5 @@ defmodule Casein.Push.FCMProvider do
 
   defp http_client, do: config()[:http_client] || Casein.Push.FCM.ReqClient
 
-  defp config, do: Application.get_env(:dev_ide, __MODULE__, [])
+  defp config, do: Application.get_env(:casein, __MODULE__, [])
 end

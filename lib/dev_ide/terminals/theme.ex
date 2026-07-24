@@ -381,7 +381,7 @@ defmodule Casein.Terminals.Theme do
       end
 
     config =
-      Application.get_env(:dev_ide, :terminal_theme_paths, %{})
+      Application.get_env(:casein, :terminal_theme_paths, %{})
       |> Map.get(scheme, defaults)
 
     (List.wrap(config) ++ defaults)

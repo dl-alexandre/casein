@@ -147,17 +147,17 @@ defmodule Casein.Previews.Storage.LocalDisk do
   end
 
   defp max_screenshot_artifacts do
-    Application.get_env(:dev_ide, :preview_max_artifacts, @default_max_artifacts)
+    Application.get_env(:casein, :preview_max_artifacts, @default_max_artifacts)
   end
 
   defp max_diff_artifacts do
-    Application.get_env(:dev_ide, :preview_max_diff_artifacts, @default_max_diff_artifacts)
+    Application.get_env(:casein, :preview_max_diff_artifacts, @default_max_diff_artifacts)
   end
 
   @doc "Filesystem root for preview artifacts."
   @spec artifacts_root() :: Path.t()
   def artifacts_root do
-    Application.get_env(:dev_ide, :preview_artifacts_root) ||
+    Application.get_env(:casein, :preview_artifacts_root) ||
       Path.join([File.cwd!(), "priv", "preview_artifacts"])
   end
 end

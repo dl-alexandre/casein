@@ -107,7 +107,7 @@ defmodule Casein.Agents.TranscriptsTest do
 
     test "accepts jsonl under Casein auth profiles", %{home: home} do
       auth_root = Path.join([home, ".devide", "agent-auth"])
-      Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+      Application.put_env(:casein, :agent_auth_profile_root, auth_root)
 
       path =
         Path.join([

@@ -19,13 +19,13 @@ defmodule Casein.Config.FilterParametersTest do
   )
 
   setup do
-    prev = Application.get_env(:dev_ide, :api_token)
-    Application.put_env(:dev_ide, :api_token, @token)
+    prev = Application.get_env(:casein, :api_token)
+    Application.put_env(:casein, :api_token, @token)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :api_token)
-        val -> Application.put_env(:dev_ide, :api_token, val)
+        nil -> Application.delete_env(:casein, :api_token)
+        val -> Application.put_env(:casein, :api_token, val)
       end
     end)
 

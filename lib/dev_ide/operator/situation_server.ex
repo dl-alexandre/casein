@@ -109,7 +109,7 @@ defmodule Casein.Operator.SituationServer do
 
   @doc "Whether the live situation server is enabled (`DEV_IDE_SITUATION_SERVER`)."
   @spec enabled?() :: boolean()
-  def enabled?, do: Application.get_env(:dev_ide, :situation_server, false)
+  def enabled?, do: Application.get_env(:casein, :situation_server, false)
 
   @doc """
   The workspace's situation digest.
@@ -741,14 +741,14 @@ defmodule Casein.Operator.SituationServer do
   ## Config + small helpers
 
   defp blocked_threshold_s,
-    do: Application.get_env(:dev_ide, :situation_blocked_too_long_seconds, 600)
+    do: Application.get_env(:casein, :situation_blocked_too_long_seconds, 600)
 
   defp output_threshold_s,
-    do: Application.get_env(:dev_ide, :situation_working_no_output_seconds, 300)
+    do: Application.get_env(:casein, :situation_working_no_output_seconds, 300)
 
-  defp tick_ms, do: Application.get_env(:dev_ide, :situation_tick_ms, 60_000)
+  defp tick_ms, do: Application.get_env(:casein, :situation_tick_ms, 60_000)
 
-  defp sweep_interval_ms, do: Application.get_env(:dev_ide, :situation_worktree_sweep_ms, 60_000)
+  defp sweep_interval_ms, do: Application.get_env(:casein, :situation_worktree_sweep_ms, 60_000)
 
   defp sanitize(text) when is_binary(text), do: Sanitizer.redact_text(text)
   defp sanitize(_text), do: nil

@@ -4,7 +4,7 @@ defmodule Casein.Deployment.RegistryTest do
   alias Casein.Deployment.Registry
 
   setup do
-    prev_dir = Application.get_env(:dev_ide, :deployment_instance_dir)
+    prev_dir = Application.get_env(:casein, :deployment_instance_dir)
     on_exit(fn -> restore_instance_dir(prev_dir) end)
     :ok
   end
@@ -99,13 +99,13 @@ defmodule Casein.Deployment.RegistryTest do
   defp isolated_instance_dir! do
     dir = Path.join(System.tmp_dir!(), "devide-instances-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
-    Application.put_env(:dev_ide, :deployment_instance_dir, dir)
+    Application.put_env(:casein, :deployment_instance_dir, dir)
     on_exit(fn -> File.rm_rf!(dir) end)
     dir
   end
 
-  defp restore_instance_dir(nil), do: Application.delete_env(:dev_ide, :deployment_instance_dir)
-  defp restore_instance_dir(dir), do: Application.put_env(:dev_ide, :deployment_instance_dir, dir)
+  defp restore_instance_dir(nil), do: Application.delete_env(:casein, :deployment_instance_dir)
+  defp restore_instance_dir(dir), do: Application.put_env(:casein, :deployment_instance_dir, dir)
 
   defp restore_env(key, nil), do: System.delete_env(key)
   defp restore_env(key, value), do: System.put_env(key, value)
@@ -117,13 +117,13 @@ defmodule Casein.Deployment.RegistryTest do
   end
 
   defp stub_owner_liveness!(fun) do
-    prev = Application.get_env(:dev_ide, :deployment_owner_liveness)
-    Application.put_env(:dev_ide, :deployment_owner_liveness, fun)
+    prev = Application.get_env(:casein, :deployment_owner_liveness)
+    Application.put_env(:casein, :deployment_owner_liveness, fun)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :deployment_owner_liveness)
-        _ -> Application.put_env(:dev_ide, :deployment_owner_liveness, prev)
+        nil -> Application.delete_env(:casein, :deployment_owner_liveness)
+        _ -> Application.put_env(:casein, :deployment_owner_liveness, prev)
       end
     end)
   end

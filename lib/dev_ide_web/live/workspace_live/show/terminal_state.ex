@@ -1011,7 +1011,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalState do
 
   defp emit_quiet_agent_transition(socket, entry, workspace_id, workspace_name, decision) do
     :telemetry.execute(
-      [:dev_ide, :attention, :quiet_agent, :transition],
+      [:casein, :attention, :quiet_agent, :transition],
       %{count: 1},
       %{
         reaction: decision.reaction,

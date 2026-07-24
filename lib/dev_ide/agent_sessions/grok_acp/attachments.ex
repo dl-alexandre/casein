@@ -259,14 +259,14 @@ defmodule Casein.AgentSessions.GrokACP.Attachments do
   end
 
   defp maybe_put_transport(opts, state) do
-    case state.transport || Application.get_env(:dev_ide, :grok_acp_transport) do
+    case state.transport || Application.get_env(:casein, :grok_acp_transport) do
       nil -> opts
       transport -> Keyword.put(opts, :transport, transport)
     end
   end
 
   defp configured_transport_opts(state) do
-    Application.get_env(:dev_ide, :grok_acp_transport_opts, [])
+    Application.get_env(:casein, :grok_acp_transport_opts, [])
     |> Keyword.merge(state.transport_opts)
   end
 
@@ -492,7 +492,7 @@ defmodule Casein.AgentSessions.GrokACP.Attachments do
   defp valid_bundle_dir(path) when is_binary(path) do
     validator =
       Application.get_env(
-        :dev_ide,
+        :casein,
         :grok_acp_bundle_validator,
         &GrokCapabilityBundle.allowed_path?/1
       )
@@ -515,7 +515,7 @@ defmodule Casein.AgentSessions.GrokACP.Attachments do
 
   defp valid_bundle_digest(_digest, _bundle_dir), do: nil
 
-  defp enabled?, do: Application.get_env(:dev_ide, :grok_acp_auto_attach, true) == true
+  defp enabled?, do: Application.get_env(:casein, :grok_acp_auto_attach, true) == true
 
   defp value(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
 

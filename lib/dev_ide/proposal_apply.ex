@@ -168,5 +168,5 @@ defmodule Casein.ProposalApply do
   end
 
   defp adapter,
-    do: Application.get_env(:dev_ide, :proposal_apply_adapter, Casein.ProposalApply.GitAdapter)
+    do: Application.get_env(:casein, :proposal_apply_adapter, Casein.ProposalApply.GitAdapter)
 end

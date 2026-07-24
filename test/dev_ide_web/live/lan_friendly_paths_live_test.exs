@@ -21,7 +21,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
       :workspaces_roots
     ]
 
-    previous_env = Map.new(env_keys, &{&1, Application.get_env(:dev_ide, &1)})
+    previous_env = Map.new(env_keys, &{&1, Application.get_env(:casein, &1)})
     previous_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     previous_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
@@ -41,17 +41,17 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{})
 
-    Application.put_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_roots, [])
-    Application.put_env(:dev_ide, :home_workspace_path, root)
-    Application.put_env(:dev_ide, :lan_path_root, root)
-    Application.put_env(:dev_ide, :lan_mode, true)
-    Application.put_env(:dev_ide, :default_workspace, "home")
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
-    Application.put_env(:dev_ide, :workspace_modes, %{})
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+    Application.put_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspaces_root)
+    Application.put_env(:casein, :workspaces_roots, [])
+    Application.put_env(:casein, :home_workspace_path, root)
+    Application.put_env(:casein, :lan_path_root, root)
+    Application.put_env(:casein, :lan_mode, true)
+    Application.put_env(:casein, :default_workspace, "home")
+    Application.put_env(:casein, :default_workspace_mode, :review)
+    Application.put_env(:casein, :workspace_modes, %{})
+    Application.put_env(:casein, :raw_terminal_everywhere, false)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -156,7 +156,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
 
       File.mkdir_p!(outside)
       on_exit(fn -> File.rm_rf(outside) end)
-      Application.put_env(:dev_ide, :workspaces_roots, [outside])
+      Application.put_env(:casein, :workspaces_roots, [outside])
 
       alpha = Path.join(outside, "alpha")
       File.mkdir_p!(alpha)
@@ -171,11 +171,11 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
 
   describe "deployment-mode access control" do
     defp enable_forward_auth do
-      Application.put_env(:dev_ide, :forward_auth, true)
+      Application.put_env(:casein, :forward_auth, true)
 
       on_exit(fn ->
-        Application.delete_env(:dev_ide, :forward_auth)
-        Application.delete_env(:dev_ide, :admins)
+        Application.delete_env(:casein, :forward_auth)
+        Application.delete_env(:casein, :admins)
       end)
     end
 
@@ -217,7 +217,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
       aws: aws
     } do
       enable_forward_auth()
-      Application.put_env(:dev_ide, :admins, ["boss@local"])
+      Application.put_env(:casein, :admins, ["boss@local"])
       conn = as_forward_auth_user(conn, "boss@local")
 
       {:ok, view, _html} = live(conn, "/aws")
@@ -252,7 +252,7 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
       conn: conn,
       aws: aws
     } do
-      Application.put_env(:dev_ide, :lan_mode, false)
+      Application.put_env(:casein, :lan_mode, false)
 
       # Static dev fallback is an authenticated identity — flat peer access
       # allows the mount even when the folder is owned by someone else.
@@ -293,6 +293,6 @@ defmodule CaseinWeb.LanFriendlyPathsLiveTest do
     :sys.get_state(view.pid).socket.assigns[key]
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

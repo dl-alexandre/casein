@@ -6,7 +6,7 @@ defmodule Casein.WorkspaceSource do
   directories on disk. Production deployments select an integration-specific
   source via config:
 
-      config :dev_ide, :workspace_source, MySource
+      config :casein, :workspace_source, MySource
 
   Sources implement this behaviour and return `%Casein.Workspace{}` values.
   Source-specific extras belong in `Workspace.metadata`; `Casein.Workspaces`
@@ -96,7 +96,7 @@ defmodule Casein.WorkspaceSource do
   that the dev `mix phx.server` flow uses.
   """
   @spec impl() :: module()
-  def impl, do: Application.get_env(:dev_ide, :workspace_source, Casein.WorkspaceSource.Local)
+  def impl, do: Application.get_env(:casein, :workspace_source, Casein.WorkspaceSource.Local)
 
   @doc "Wrap a local-spawn argv via the configured source, or identity."
   @spec prepare_local_argv([String.t()]) :: [String.t()]

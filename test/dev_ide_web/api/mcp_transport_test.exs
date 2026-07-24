@@ -12,13 +12,13 @@ defmodule CaseinWeb.API.MCPTransportTest do
   @path "/api/terminals/mcp"
 
   setup do
-    prev = Application.get_env(:dev_ide, :api_token)
-    Application.put_env(:dev_ide, :api_token, @token)
+    prev = Application.get_env(:casein, :api_token)
+    Application.put_env(:casein, :api_token, @token)
 
     on_exit(fn ->
       if prev,
-        do: Application.put_env(:dev_ide, :api_token, prev),
-        else: Application.delete_env(:dev_ide, :api_token)
+        do: Application.put_env(:casein, :api_token, prev),
+        else: Application.delete_env(:casein, :api_token)
     end)
 
     :ok

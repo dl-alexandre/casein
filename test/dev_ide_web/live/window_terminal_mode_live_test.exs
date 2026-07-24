@@ -18,14 +18,14 @@ defmodule CaseinWeb.WindowTerminalModeLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
@@ -232,6 +232,6 @@ defmodule CaseinWeb.WindowTerminalModeLiveTest do
   @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_test_pid)a
 
   defp restore(k, v) when k in @fake_state_keys, do: TmuxCtl.Test.FakeState.restore(k, v)
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 end

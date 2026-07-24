@@ -6,7 +6,7 @@ defmodule CaseinCore.MixProject do
 
   def project do
     [
-      app: :dev_ide_core,
+      app: :casein_core,
       version: @version,
       elixir: "~> 1.15",
       compilers: [:boundary] ++ Mix.compilers(),

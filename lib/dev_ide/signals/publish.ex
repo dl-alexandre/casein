@@ -18,7 +18,7 @@ defmodule Casein.Signals.Publish do
       case Bus.publish(SignalBus.name(), [signal]) do
         {:ok, _count} ->
           :telemetry.execute(
-            [:dev_ide, :signals, :publish],
+            [:casein, :signals, :publish],
             %{count: 1},
             %{action: event.action, workspace_id: event.workspace_id}
           )
@@ -43,7 +43,7 @@ defmodule Casein.Signals.Publish do
       case Bus.publish(SignalBus.name(), [signal]) do
         {:ok, _count} ->
           :telemetry.execute(
-            [:dev_ide, :signals, :publish],
+            [:casein, :signals, :publish],
             %{count: 1},
             %{
               action: event.event_type,
@@ -89,7 +89,7 @@ defmodule Casein.Signals.Publish do
       case Bus.publish(SignalBus.name(), [signal]) do
         {:ok, _count} ->
           :telemetry.execute(
-            [:dev_ide, :signals, :publish],
+            [:casein, :signals, :publish],
             %{count: 1},
             %{action: event, workspace_id: Keyword.get(opts, :workspace_id), domain: true}
           )
@@ -107,6 +107,6 @@ defmodule Casein.Signals.Publish do
   end
 
   defp enabled? do
-    Application.get_env(:dev_ide, :signal_bus_enabled, true)
+    Application.get_env(:casein, :signal_bus_enabled, true)
   end
 end

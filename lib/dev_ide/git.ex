@@ -11,5 +11,5 @@ defmodule Casein.Git do
 
   # Resolved through Casein.ProcessEnv so a test can swap the adapter for its
   # own process (and run async: true) instead of mutating global Application env.
-  defp impl, do: Casein.ProcessEnv.get(:dev_ide, :git_adapter, Casein.Git.LocalAdapter)
+  defp impl, do: Casein.ProcessEnv.get(:casein, :git_adapter, Casein.Git.LocalAdapter)
 end

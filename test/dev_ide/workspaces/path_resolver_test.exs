@@ -10,23 +10,23 @@ defmodule Casein.Workspaces.PathResolverTest do
 
   setup do
     MemoryAdapter.clear()
-    previous = Map.new(@config_keys, &{&1, Application.get_env(:dev_ide, &1)})
+    previous = Map.new(@config_keys, &{&1, Application.get_env(:casein, &1)})
 
     root =
       Path.join(System.tmp_dir!(), "devide-path-root-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
 
-    Application.put_env(:dev_ide, :lan_path_root, root)
-    Application.delete_env(:dev_ide, :workspaces_root)
-    Application.delete_env(:dev_ide, :home_workspace_path)
+    Application.put_env(:casein, :lan_path_root, root)
+    Application.delete_env(:casein, :workspaces_root)
+    Application.delete_env(:casein, :home_workspace_path)
 
     on_exit(fn ->
       MemoryAdapter.clear()
 
       Enum.each(previous, fn
-        {key, nil} -> Application.delete_env(:dev_ide, key)
-        {key, value} -> Application.put_env(:dev_ide, key, value)
+        {key, nil} -> Application.delete_env(:casein, key)
+        {key, value} -> Application.put_env(:casein, key, value)
       end)
 
       File.rm_rf(root)
@@ -93,7 +93,7 @@ defmodule Casein.Workspaces.PathResolverTest do
     end
 
     test "errors when no root is configured" do
-      Application.delete_env(:dev_ide, :lan_path_root)
+      Application.delete_env(:casein, :lan_path_root)
       assert {:error, :missing_root} = PathResolver.resolve(["anything"])
     end
 
@@ -161,7 +161,7 @@ defmodule Casein.Workspaces.PathResolverTest do
       # fall back to itself, not to the out-of-root ancestor.
       nested_root = mkdirs!(root, ["nested"])
       mark_git_dir!(root)
-      Application.put_env(:dev_ide, :lan_path_root, nested_root)
+      Application.put_env(:casein, :lan_path_root, nested_root)
       plain = mkdirs!(root, ["nested", "plain"])
 
       assert {:ok, %{workspace_path: ^plain}} = PathResolver.resolve(["plain"])
@@ -171,7 +171,7 @@ defmodule Casein.Workspaces.PathResolverTest do
       # Even when the root is a marker (a repo, or home == root), top-level
       # directories under it are independent workspaces, not inner segments.
       mark_git_dir!(root)
-      Application.put_env(:dev_ide, :home_workspace_path, root)
+      Application.put_env(:casein, :home_workspace_path, root)
       plain = mkdirs!(root, ["plain"])
 
       assert {:ok, %{workspace_path: ^plain, inner_segments: []}} =
@@ -181,7 +181,7 @@ defmodule Casein.Workspaces.PathResolverTest do
     test "the home workspace path is a workspace root marker", %{root: root} do
       homews = mkdirs!(root, ["homews"])
       mkdirs!(root, ["homews", "deep"])
-      Application.put_env(:dev_ide, :home_workspace_path, homews)
+      Application.put_env(:casein, :home_workspace_path, homews)
 
       assert {:ok, %{workspace_path: ^homews, inner_segments: ["deep"]}} =
                PathResolver.resolve(["homews", "deep"])
@@ -244,12 +244,12 @@ defmodule Casein.Workspaces.PathResolverTest do
          %{root: root} do
       assert PathResolver.root() == root
 
-      Application.delete_env(:dev_ide, :lan_path_root)
-      Application.put_env(:dev_ide, :workspaces_root, "/tmp/wsroot")
-      Application.put_env(:dev_ide, :home_workspace_path, "/tmp/home")
+      Application.delete_env(:casein, :lan_path_root)
+      Application.put_env(:casein, :workspaces_root, "/tmp/wsroot")
+      Application.put_env(:casein, :home_workspace_path, "/tmp/home")
       assert PathResolver.root() == "/tmp/wsroot"
 
-      Application.delete_env(:dev_ide, :workspaces_root)
+      Application.delete_env(:casein, :workspaces_root)
       assert PathResolver.root() == "/tmp/home"
     end
   end

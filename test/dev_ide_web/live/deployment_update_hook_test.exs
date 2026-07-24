@@ -35,10 +35,10 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
     # deploy may be in flight, and its in-progress signal suppresses the
     # update card this file asserts on. Tests that need a status file set
     # their own path on top of this.
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       (prev_deploy || [])
       |> Keyword.put(
@@ -49,8 +49,8 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
     end)
 
     # The dashboard mount fetches the workspace list from the manager over HTTP;
@@ -108,11 +108,11 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     File.write!(path, Jason.encode!(record) <> "\n")
 
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
     )
@@ -121,8 +121,8 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
 
       if prev_rev,
         do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),
@@ -172,11 +172,11 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     File.write!(path, Jason.encode!(record) <> "\n")
 
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
     prev_rev = System.get_env("DEVIDE_GIT_REVISION")
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
     )
@@ -185,8 +185,8 @@ defmodule CaseinWeb.DeploymentUpdateHookTest do
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
 
       if prev_rev,
         do: System.put_env("DEVIDE_GIT_REVISION", prev_rev),

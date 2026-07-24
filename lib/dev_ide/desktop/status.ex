@@ -148,7 +148,7 @@ defmodule Casein.Desktop.Status do
         {version, revision}
 
       _ ->
-        {to_string(Application.spec(:dev_ide, :vsn) || "0.0.0"), "unknown"}
+        {to_string(Application.spec(:casein, :vsn) || "0.0.0"), "unknown"}
     end
   end
 end

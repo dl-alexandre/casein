@@ -164,10 +164,10 @@ defmodule CaseinWeb.API.MCPEnvelope do
     payload |> Jason.encode!() |> Jason.decode!()
   end
 
-  @doc "The running `:dev_ide` application version, for `serverInfo.version`."
+  @doc "The running `:casein` application version, for `serverInfo.version`."
   @spec server_version() :: String.t()
   def server_version do
-    case Application.spec(:dev_ide, :vsn) do
+    case Application.spec(:casein, :vsn) do
       vsn when is_list(vsn) -> to_string(vsn)
       _ -> "0.0.0"
     end

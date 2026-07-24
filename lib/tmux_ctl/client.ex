@@ -95,7 +95,7 @@ defmodule TmuxCtl.Client do
 
     case result do
       :ok ->
-        :telemetry.execute([:dev_ide, :tmux, :inject], %{count: 1}, %{target: target})
+        :telemetry.execute([:casein, :tmux, :inject], %{count: 1}, %{target: target})
         :ok
 
       {:error, reason} = error ->
@@ -106,7 +106,7 @@ defmodule TmuxCtl.Client do
           reason: inspect(reason)
         )
 
-        :telemetry.execute([:dev_ide, :tmux, :inject, :error], %{count: 1}, %{
+        :telemetry.execute([:casein, :tmux, :inject, :error], %{count: 1}, %{
           target: target,
           reason: reason
         })

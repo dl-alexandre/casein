@@ -25,21 +25,21 @@ defmodule Casein.Agents.LocalAdapterTest do
 
     preview_mcp = Enum.find(caps, &(&1.kind == :preview_mcp))
     assert preview_mcp.status == :detected
-    assert preview_mcp.source == :dev_ide
+    assert preview_mcp.source == :casein
     assert preview_mcp.url =~ "/api/preview/mcp"
     assert "preview_open_app" in preview_mcp.details.tools
     assert "preview_close" in preview_mcp.details.tools
 
     artifact_mcp = Enum.find(caps, &(&1.kind == :artifact_mcp))
     assert artifact_mcp.status == :detected
-    assert artifact_mcp.source == :dev_ide
+    assert artifact_mcp.source == :casein
     assert artifact_mcp.url =~ "/api/artifacts/mcp"
     assert "artifact_create" in artifact_mcp.details.tools
     assert "artifact_update" in artifact_mcp.details.tools
 
     terminal_mcp = Enum.find(caps, &(&1.kind == :terminal_mcp))
     assert terminal_mcp.status == :detected
-    assert terminal_mcp.source == :dev_ide
+    assert terminal_mcp.source == :casein
     assert terminal_mcp.url =~ "/api/terminals/mcp"
     assert "terminal_list_sessions" in terminal_mcp.details.tools
     assert "terminal_capture" in terminal_mcp.details.tools

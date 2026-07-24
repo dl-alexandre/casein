@@ -25,5 +25,5 @@ defmodule Casein.Agents do
     PreviewTools.split_preview_pane(workspace, url, opts)
   end
 
-  defp impl, do: Application.get_env(:dev_ide, :agents_adapter, Casein.Agents.LocalAdapter)
+  defp impl, do: Application.get_env(:casein, :agents_adapter, Casein.Agents.LocalAdapter)
 end

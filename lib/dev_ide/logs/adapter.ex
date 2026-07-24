@@ -22,5 +22,5 @@ defmodule Casein.Logs.Adapter do
 
   def stop_stream(ref), do: impl().stop_stream(ref)
 
-  defp impl, do: Application.get_env(:dev_ide, :logs_adapter, @default_adapter)
+  defp impl, do: Application.get_env(:casein, :logs_adapter, @default_adapter)
 end

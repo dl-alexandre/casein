@@ -5,7 +5,7 @@ defmodule Casein.Workspaces do
   Returns `Casein.Workspace` values from the configured
   `Casein.WorkspaceSource` backend. The default source
   (`Casein.WorkspaceSource.Local`) discovers workspaces as directories
-  under `:dev_ide, :workspaces_root`; production deployments select a
+  under `:casein, :workspaces_root`; production deployments select a
   different source via config — see that module's docstring.
 
   All consumers (LiveViews, channels, plugs) should depend on this
@@ -266,7 +266,7 @@ defmodule Casein.Workspaces do
   end
 
   defp forward_auth_email_domain do
-    Application.get_env(:dev_ide, :forward_auth_email_domain) ||
+    Application.get_env(:casein, :forward_auth_email_domain) ||
       System.get_env("DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN")
   end
 
@@ -496,7 +496,7 @@ defmodule Casein.Workspaces do
   end
 
   defp home_workspace_for_path(expanded_path) do
-    case Application.get_env(:dev_ide, :home_workspace_path) do
+    case Application.get_env(:casein, :home_workspace_path) do
       home when is_binary(home) and home != "" ->
         if Path.expand(home) == expanded_path do
           get("home")
@@ -539,7 +539,7 @@ defmodule Casein.Workspaces do
 
   @doc """
   Filesystem roots a workspace path may live under. Generic across sources.
-  Configure with `:dev_ide, :workspaces_root`, the additive
+  Configure with `:casein, :workspaces_root`, the additive
   `:workspaces_roots` list, and optional `:home_workspace_path`.
 
   Includes `:lan_path_root` when set, so any path that resolves through
@@ -548,10 +548,10 @@ defmodule Casein.Workspaces do
   """
   @spec allowed_roots() :: [String.t()]
   def allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots) || []
-    primary = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
-    home = Application.get_env(:dev_ide, :home_workspace_path)
-    path_root = Application.get_env(:dev_ide, :lan_path_root)
+    config = Application.get_env(:casein, :workspaces_roots) || []
+    primary = Application.get_env(:casein, :workspaces_root) || "/workspaces"
+    home = Application.get_env(:casein, :home_workspace_path)
+    path_root = Application.get_env(:casein, :lan_path_root)
 
     [primary, home, path_root | config]
     |> Enum.filter(&(is_binary(&1) and &1 != ""))

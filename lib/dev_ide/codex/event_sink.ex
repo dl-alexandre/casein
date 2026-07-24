@@ -101,7 +101,7 @@ defmodule Casein.Codex.EventSink do
       end
 
     :telemetry.execute(
-      [:dev_ide, :codex, :event],
+      [:casein, :codex, :event],
       measurements,
       %{
         type: event.type,

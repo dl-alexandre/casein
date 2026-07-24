@@ -8,16 +8,16 @@ defmodule CaseinWeb.Plugs.ForwardAuthRouterSafetyTest do
   alias CaseinWeb.Plugs.ForwardAuth
 
   setup %{conn: conn} = context do
-    prev = Application.get_env(:dev_ide, :forward_auth)
+    prev = Application.get_env(:casein, :forward_auth)
 
     on_exit(fn ->
       case prev do
-        nil -> Application.delete_env(:dev_ide, :forward_auth)
-        val -> Application.put_env(:dev_ide, :forward_auth, val)
+        nil -> Application.delete_env(:casein, :forward_auth)
+        val -> Application.put_env(:casein, :forward_auth, val)
       end
     end)
 
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :forward_auth, true)
     Map.put(context, :conn, conn)
   end
 

@@ -4,7 +4,7 @@ defmodule CaseinWeb.API.DeployStatusController do
   use CaseinWeb, :controller
 
   def show(conn, _params) do
-    opts = Application.get_env(:dev_ide, :deployment_health_opts, [])
+    opts = Application.get_env(:casein, :deployment_health_opts, [])
     status = Casein.Deployment.Health.status(opts)
 
     conn

@@ -205,7 +205,7 @@ defmodule Casein.Deployment.Drain do
   # drain test fires mid-suite and System.stop(0) shuts ExUnit down silently
   # (truncated runs, exit 0). test_helper.exs injects a no-op.
   defp stop_system(status) do
-    case Application.get_env(:dev_ide, :drain_stop_system) do
+    case Application.get_env(:casein, :drain_stop_system) do
       fun when is_function(fun, 1) -> fun.(status)
       nil -> System.stop(status)
     end

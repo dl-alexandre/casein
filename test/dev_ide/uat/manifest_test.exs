@@ -66,7 +66,7 @@ defmodule Casein.UAT.ManifestTest do
   end
 
   test "loads and validates the committed checkout reference manifest" do
-    path = Application.app_dir(:dev_ide, "priv/uat/checkout/manifest.json")
+    path = Application.app_dir(:casein, "priv/uat/checkout/manifest.json")
     assert {:ok, m} = Manifest.load(path)
     assert m.scenario_id == "checkout"
     assert :tier_a in m.tiers

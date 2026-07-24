@@ -8,11 +8,11 @@ defmodule Casein.Workspaces.Isolation.Patterns do
 
   @spec shared?(String.t()) :: boolean()
   def shared?(host) when is_binary(host),
-    do: matches_any?(host, Application.get_env(:dev_ide, :shared_db_patterns, []))
+    do: matches_any?(host, Application.get_env(:casein, :shared_db_patterns, []))
 
   @spec unsafe?(String.t()) :: boolean()
   def unsafe?(host) when is_binary(host),
-    do: matches_any?(host, Application.get_env(:dev_ide, :unsafe_db_patterns, []))
+    do: matches_any?(host, Application.get_env(:casein, :unsafe_db_patterns, []))
 
   defp matches_any?(host, patterns) do
     h = String.downcase(host)

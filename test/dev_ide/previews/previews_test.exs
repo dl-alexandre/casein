@@ -7,8 +7,8 @@ defmodule Casein.PreviewsTest do
   @workspace %{id: "ws-1"}
 
   setup do
-    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+    prev_app_url = Application.get_env(:casein, :preview_app_url)
+    prev_loopback = Application.get_env(:casein, :preview_loopback_port)
 
     on_exit(fn ->
       restore_env(:preview_app_url, prev_app_url)
@@ -18,8 +18,8 @@ defmodule Casein.PreviewsTest do
     :ok
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, val), do: Application.put_env(:casein, key, val)
 
   test "open/1 persists workspace string ids and http preview URLs" do
     assert {:ok, %Preview{} = preview} =
@@ -121,8 +121,8 @@ defmodule Casein.PreviewsTest do
   end
 
   test "update_url self-includes only control and app origins, not every navigated target" do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
-    Application.put_env(:dev_ide, :preview_loopback_port, 4100)
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_loopback_port, 4100)
 
     workspace = %{id: "ws-1", metadata: %{detected_ports: [5999]}}
     {:ok, preview} = Previews.open(workspace, %{url: "http://localhost:4000"})
@@ -139,7 +139,7 @@ defmodule Casein.PreviewsTest do
   end
 
   test "repeated update_url calls do not grow allowed_origins unboundedly" do
-    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:casein, :preview_app_url, "https://devide.example.com")
 
     {:ok, preview} = Previews.open(@workspace, %{url: "http://localhost:4000"})
     initial_origins = preview.metadata["allowed_origins"]

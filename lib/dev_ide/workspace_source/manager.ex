@@ -166,14 +166,14 @@ defmodule Casein.WorkspaceSource.Manager do
 
   @doc """
   True when Casein runs colocated on the integration host. Set via
-  `:dev_ide, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
+  `:casein, :on_devbox` or env `DEV_IDE_ON_DEVBOX`.
   """
   @spec on_host?() :: boolean()
   defdelegate on_host?(), to: Casein.HostMode
 
   @doc """
   Compose service to exec into for command/terminal execution in on-host
-  mode. Set via `:dev_ide, :devbox_exec_service` or env
+  mode. Set via `:casein, :devbox_exec_service` or env
   `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
   """
   @spec exec_service() :: String.t()
@@ -193,7 +193,7 @@ defmodule Casein.WorkspaceSource.Manager do
   @doc "SSH host for remote integration workspaces, or nil for local-only mode."
   @spec remote_ssh_host() :: String.t() | nil
   def remote_ssh_host do
-    Application.get_env(:dev_ide, :remote_ssh_host) ||
+    Application.get_env(:casein, :remote_ssh_host) ||
       System.get_env("MILC_DEVBOX_SSH_HOST")
   end
 
@@ -283,8 +283,8 @@ defmodule Casein.WorkspaceSource.Manager do
   end
 
   defp allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots) || []
-    primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
+    config = Application.get_env(:casein, :workspaces_roots) || []
+    primary = Application.get_env(:casein, :workspaces_root, "/workspaces")
 
     [primary | config]
     |> Enum.filter(&is_binary/1)

@@ -9,11 +9,11 @@ defmodule CaseinWeb.PairingControllerTest do
   end
 
   setup do
-    prev_source = Application.get_env(:dev_ide, :workspace_source)
-    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
+    prev_source = Application.get_env(:casein, :workspace_source)
+    prev_forward_auth = Application.get_env(:casein, :forward_auth)
 
-    Application.put_env(:dev_ide, :workspace_source, OwnedSource)
-    Application.put_env(:dev_ide, :forward_auth, true)
+    Application.put_env(:casein, :workspace_source, OwnedSource)
+    Application.put_env(:casein, :forward_auth, true)
 
     on_exit(fn ->
       restore(:workspace_source, prev_source)
@@ -61,6 +61,6 @@ defmodule CaseinWeb.PairingControllerTest do
 
   defp as(conn, email), do: put_req_header(conn, "x-auth-request-email", email)
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

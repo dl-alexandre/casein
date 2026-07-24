@@ -10,7 +10,7 @@ defmodule Casein.Application do
 
   use Application
 
-  @fast_path_cache_table :dev_ide_terminal_fast_path_cache
+  @fast_path_cache_table :casein_terminal_fast_path_cache
 
   @impl true
   def start(_type, _args) do
@@ -34,7 +34,7 @@ defmodule Casein.Application do
       [
         CaseinWeb.Telemetry,
         Casein.Repo,
-        {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
+        {DNSCluster, query: Application.get_env(:casein, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Casein.PubSub},
         Casein.Desktop.LaunchReplayStore,
         Casein.Supervision.PlatformServices,
@@ -107,7 +107,7 @@ defmodule Casein.Application do
         # :public because TerminalChannel (and other non-app processes) must insert
         # verified fast-path claims on joins/reconnects. See ChannelAuth, TerminalChannel
         # moduledoc comments, and WorkspaceAccessCache for the trust model.
-        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        access = Application.get_env(:casein, :ets_table_access, :protected)
         :ets.new(@fast_path_cache_table, [:named_table, access, :set])
 
       _ ->
@@ -116,7 +116,7 @@ defmodule Casein.Application do
   end
 
   defp configure_tmux_ctl! do
-    for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
+    for {key, value} <- Application.get_env(:casein, :tmux_ctl, []) do
       Application.put_env(:tmux_ctl, key, value)
     end
 
@@ -153,21 +153,21 @@ defmodule Casein.Application do
     end
   end
 
-  defp desktop_mode?, do: Application.get_env(:dev_ide, :desktop_mode, false)
+  defp desktop_mode?, do: Application.get_env(:casein, :desktop_mode, false)
 
   defp native_windows?, do: match?({:win32, _}, :os.type())
 
   defp terminal_shell_command do
-    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+    Application.get_env(:casein, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
       Casein.Terminals.Shims.shell_command()
   end
 
   defp configure_git_ctl! do
-    base = Application.get_env(:dev_ide, :git_ctl, [])
+    base = Application.get_env(:casein, :git_ctl, [])
 
     merged =
-      case Application.get_env(:dev_ide, :git_inspector_cache_ttl_ms) do
+      case Application.get_env(:casein, :git_inspector_cache_ttl_ms) do
         nil -> base
         ttl -> Keyword.put(base, :cache_ttl_ms, ttl)
       end
@@ -178,7 +178,7 @@ defmodule Casein.Application do
   end
 
   defp configure_preview_ctl! do
-    base = Application.get_env(:dev_ide, :preview_ctl, [])
+    base = Application.get_env(:casein, :preview_ctl, [])
 
     merged =
       base
@@ -191,14 +191,14 @@ defmodule Casein.Application do
   end
 
   defp preview_ctl_adapter do
-    case Application.get_env(:dev_ide, :preview_control_adapter, :memory) do
+    case Application.get_env(:casein, :preview_control_adapter, :memory) do
       :playwright -> PreviewCtl.Playwright.Adapter
       _ -> PreviewCtl.Test.FakeAdapter
     end
   end
 
   defp maybe_put_preview_env(keyword, preview_key, dev_ide_key) do
-    case Application.get_env(:dev_ide, dev_ide_key) do
+    case Application.get_env(:casein, dev_ide_key) do
       nil -> keyword
       value -> Keyword.put(keyword, preview_key, value)
     end

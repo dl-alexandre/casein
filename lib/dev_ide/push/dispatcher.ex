@@ -193,7 +193,7 @@ defmodule Casein.Push.Dispatcher do
 
   defp emit_push(operation, platform, notification, reason \\ nil) do
     :telemetry.execute(
-      [:dev_ide, :push, :delivery],
+      [:casein, :push, :delivery],
       %{count: 1},
       %{
         operation: operation,

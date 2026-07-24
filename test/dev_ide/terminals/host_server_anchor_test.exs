@@ -1,5 +1,5 @@
 defmodule Casein.Terminals.HostServerAnchorTest do
-  # async: false — toggles :dev_ide app env (tmux_host_anchor / tmux_server_label).
+  # async: false — toggles :casein app env (tmux_host_anchor / tmux_server_label).
   use ExUnit.Case, async: false
 
   alias Casein.Terminals.HostServerAnchor
@@ -34,8 +34,8 @@ defmodule Casein.Terminals.HostServerAnchorTest do
 
   describe "enabled?/0" do
     setup do
-      prev_flag = Application.get_env(:dev_ide, :tmux_host_anchor)
-      prev_label = Application.get_env(:dev_ide, :tmux_server_label)
+      prev_flag = Application.get_env(:casein, :tmux_host_anchor)
+      prev_label = Application.get_env(:casein, :tmux_server_label)
 
       on_exit(fn ->
         restore(:tmux_host_anchor, prev_flag)
@@ -46,20 +46,20 @@ defmodule Casein.Terminals.HostServerAnchorTest do
     end
 
     test "false when the flag is disabled even if a label is set" do
-      Application.put_env(:dev_ide, :tmux_host_anchor, false)
-      Application.put_env(:dev_ide, :tmux_server_label, "devide_test")
+      Application.put_env(:casein, :tmux_host_anchor, false)
+      Application.put_env(:casein, :tmux_server_label, "devide_test")
       refute HostServerAnchor.enabled?()
     end
 
     test "false when no host server label is configured" do
-      Application.put_env(:dev_ide, :tmux_host_anchor, true)
-      Application.delete_env(:dev_ide, :tmux_server_label)
+      Application.put_env(:casein, :tmux_host_anchor, true)
+      Application.delete_env(:casein, :tmux_server_label)
       refute HostServerAnchor.enabled?()
     end
 
     test "true when enabled and a host label is configured" do
-      Application.put_env(:dev_ide, :tmux_host_anchor, true)
-      Application.put_env(:dev_ide, :tmux_server_label, "devide")
+      Application.put_env(:casein, :tmux_host_anchor, true)
+      Application.put_env(:casein, :tmux_server_label, "devide")
       assert HostServerAnchor.enabled?()
     end
   end
@@ -72,6 +72,6 @@ defmodule Casein.Terminals.HostServerAnchorTest do
     end
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 end

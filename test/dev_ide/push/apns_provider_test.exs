@@ -15,9 +15,9 @@ defmodule Casein.Push.APNSProviderTest do
   }
 
   setup do
-    prev = Application.get_env(:dev_ide, APNSProvider)
+    prev = Application.get_env(:casein, APNSProvider)
 
-    Application.put_env(:dev_ide, APNSProvider,
+    Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
@@ -26,15 +26,15 @@ defmodule Casein.Push.APNSProviderTest do
       now_fun: fn -> 1_800_000_000 end
     )
 
-    Application.put_env(:dev_ide, :apns_test_pid, self())
+    Application.put_env(:casein, :apns_test_pid, self())
 
     on_exit(fn ->
-      Application.delete_env(:dev_ide, :apns_test_pid)
-      Application.delete_env(:dev_ide, :apns_stub_response)
+      Application.delete_env(:casein, :apns_test_pid)
+      Application.delete_env(:casein, :apns_stub_response)
 
       if prev,
-        do: Application.put_env(:dev_ide, APNSProvider, prev),
-        else: Application.delete_env(:dev_ide, APNSProvider)
+        do: Application.put_env(:casein, APNSProvider, prev),
+        else: Application.delete_env(:casein, APNSProvider)
     end)
 
     :ok
@@ -80,7 +80,7 @@ defmodule Casein.Push.APNSProviderTest do
   end
 
   test "uses production APNs endpoint when configured" do
-    Application.put_env(:dev_ide, APNSProvider,
+    Application.put_env(:casein, APNSProvider,
       team_id: "TEAM123456",
       key_id: "KEY1234567",
       topic: "com.example.devide_mob",
@@ -96,7 +96,7 @@ defmodule Casein.Push.APNSProviderTest do
 
   test "returns invalid token errors for APNs bad token responses" do
     Application.put_env(
-      :dev_ide,
+      :casein,
       :apns_stub_response,
       {:ok, %{status: 400, body: %{"reason" => "BadDeviceToken"}}}
     )
@@ -111,7 +111,7 @@ defmodule Casein.Push.APNSProviderTest do
   end
 
   test "errors clearly when APNs config is incomplete" do
-    Application.put_env(:dev_ide, APNSProvider, key_id: "KEY1234567")
+    Application.put_env(:casein, APNSProvider, key_id: "KEY1234567")
 
     assert {:error, :no_team_id} = APNSProvider.push("token", "ios", @notification)
     assert {:error, :no_team_id} = APNSProvider.configured?()

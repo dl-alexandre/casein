@@ -218,18 +218,18 @@ defmodule Casein.Deployment.HealthTest do
 
     File.write!(path, Jason.encode!(record) <> "\n")
 
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :deployment,
       (prev_deploy || []) |> Keyword.put(:last_deploy_path, path)
     )
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
     end)
 
     assert %{ok: false, checks: checks, last_deploy: %{pipeline: :failed}} =

@@ -171,11 +171,11 @@ defmodule Casein.Runtimes.PreviewLauncher do
 
   defp port_reachable?(_), do: false
 
-  defp enabled?, do: Application.get_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+  defp enabled?, do: Application.get_env(:casein, :runtime_preview_launcher_enabled, true)
 
   defp runner do
     Application.get_env(
-      :dev_ide,
+      :casein,
       :runtime_preview_runner,
       Casein.Runtimes.PreviewLauncher.SystemRunner
     )

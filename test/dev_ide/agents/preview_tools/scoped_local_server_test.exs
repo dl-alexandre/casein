@@ -25,9 +25,9 @@ defmodule Casein.Agents.PreviewTools.ScopedLocalServerTest do
   }
 
   setup do
-    previous_flag = Application.get_env(:dev_ide, :preview_prefer_scoped_local_server)
-    previous_prober = Application.get_env(:dev_ide, :preview_surface_prober)
-    Application.put_env(:dev_ide, :preview_prefer_scoped_local_server, true)
+    previous_flag = Application.get_env(:casein, :preview_prefer_scoped_local_server)
+    previous_prober = Application.get_env(:casein, :preview_surface_prober)
+    Application.put_env(:casein, :preview_prefer_scoped_local_server, true)
 
     on_exit(fn ->
       restore(:preview_prefer_scoped_local_server, previous_flag)
@@ -37,13 +37,13 @@ defmodule Casein.Agents.PreviewTools.ScopedLocalServerTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 
   # Stub the liveness probe: only `live` ports accept connections.
   defp stub_prober(live) do
     Application.put_env(
-      :dev_ide,
+      :casein,
       :preview_surface_prober,
       fn ports -> Map.new(ports, fn port -> {port, port in live} end) end
     )
@@ -95,7 +95,7 @@ defmodule Casein.Agents.PreviewTools.ScopedLocalServerTest do
   end
 
   test "is a no-op when the preference flag is disabled" do
-    Application.put_env(:dev_ide, :preview_prefer_scoped_local_server, false)
+    Application.put_env(:casein, :preview_prefer_scoped_local_server, false)
     stub_prober([41_042])
     workspace = workspace_with_detected([41_042])
 
@@ -170,7 +170,7 @@ defmodule Casein.Agents.PreviewTools.ScopedLocalServerTest do
     test "selects a genuinely listening non-advertised port and rejects it once closed" do
       # No prober stub: exercise the real Casein.Previews.PortProbe against an
       # actual loopback listener, the same connect preview_open's preflight makes.
-      Application.delete_env(:dev_ide, :preview_surface_prober)
+      Application.delete_env(:casein, :preview_surface_prober)
 
       {:ok, listen} =
         :gen_tcp.listen(0, [:binary, ip: {127, 0, 0, 1}, active: false, reuseaddr: true])

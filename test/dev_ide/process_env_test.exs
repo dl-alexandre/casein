@@ -11,35 +11,35 @@ defmodule Casein.ProcessEnvTest do
 
   describe "get/3 fallback" do
     test "returns the default when no override and no Application env" do
-      assert ProcessEnv.get(:dev_ide, unique_key(), :fallback) == :fallback
+      assert ProcessEnv.get(:casein, unique_key(), :fallback) == :fallback
     end
 
     test "reads Application env when no process override is set" do
       key = unique_key()
-      Application.put_env(:dev_ide, key, :from_app)
-      on_exit(fn -> Application.delete_env(:dev_ide, key) end)
+      Application.put_env(:casein, key, :from_app)
+      on_exit(fn -> Application.delete_env(:casein, key) end)
 
-      assert ProcessEnv.get(:dev_ide, key, :fallback) == :from_app
+      assert ProcessEnv.get(:casein, key, :fallback) == :from_app
     end
   end
 
   describe "process-scoped override" do
     test "shadows Application env for the current process" do
       key = unique_key()
-      Application.put_env(:dev_ide, key, :from_app)
-      on_exit(fn -> Application.delete_env(:dev_ide, key) end)
+      Application.put_env(:casein, key, :from_app)
+      on_exit(fn -> Application.delete_env(:casein, key) end)
 
       ProcessEnv.put(key, :from_process)
-      assert ProcessEnv.get(:dev_ide, key, :fallback) == :from_process
+      assert ProcessEnv.get(:casein, key, :fallback) == :from_process
     end
 
     test "delete/1 restores fallback resolution" do
       key = unique_key()
       ProcessEnv.put(key, :x)
-      assert ProcessEnv.get(:dev_ide, key, :fallback) == :x
+      assert ProcessEnv.get(:casein, key, :fallback) == :x
 
       ProcessEnv.delete(key)
-      assert ProcessEnv.get(:dev_ide, key, :fallback) == :fallback
+      assert ProcessEnv.get(:casein, key, :fallback) == :fallback
     end
   end
 
@@ -48,7 +48,7 @@ defmodule Casein.ProcessEnvTest do
       key = unique_key()
       ProcessEnv.put(key, :mine)
 
-      task = Task.async(fn -> ProcessEnv.get(:dev_ide, key, :fallback) end)
+      task = Task.async(fn -> ProcessEnv.get(:casein, key, :fallback) end)
       assert Task.await(task) == :mine
     end
 
@@ -58,7 +58,7 @@ defmodule Casein.ProcessEnvTest do
 
       parent = self()
       # bare spawn/1 does not carry a $callers chain back to us
-      spawn(fn -> send(parent, {:seen, ProcessEnv.get(:dev_ide, key, :fallback)}) end)
+      spawn(fn -> send(parent, {:seen, ProcessEnv.get(:casein, key, :fallback)}) end)
 
       assert_receive {:seen, :fallback}
     end
@@ -71,7 +71,7 @@ defmodule Casein.ProcessEnvTest do
         |> Enum.map(fn v ->
           Task.async(fn ->
             ProcessEnv.put(key, v)
-            ProcessEnv.get(:dev_ide, key, :fallback)
+            ProcessEnv.get(:casein, key, :fallback)
           end)
         end)
         |> Task.await_many()

@@ -12,18 +12,18 @@ defmodule Casein.Agents.TerminalToolsOpenFileInPaneTest do
 
   setup do
     prev = %{
-      tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
-      workspaces_root: Application.get_env(:dev_ide, :workspaces_root),
-      preview_open_preflight: Application.get_env(:dev_ide, :preview_open_preflight),
-      preview_pane_persistence: Application.get_env(:dev_ide, :preview_pane_persistence_enabled),
-      file_pane_persistence: Application.get_env(:dev_ide, :file_pane_persistence),
+      tmux_adapter: Application.get_env(:casein, :tmux_adapter),
+      workspaces_root: Application.get_env(:casein, :workspaces_root),
+      preview_open_preflight: Application.get_env(:casein, :preview_open_preflight),
+      preview_pane_persistence: Application.get_env(:casein, :preview_pane_persistence_enabled),
+      file_pane_persistence: Application.get_env(:casein, :file_pane_persistence),
       fake_tmux_test_pid: FakeState.get(:fake_tmux_test_pid)
     }
 
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :preview_open_preflight, true)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
-    Application.put_env(:dev_ide, :file_pane_persistence, false)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :preview_open_preflight, true)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, false)
+    Application.put_env(:casein, :file_pane_persistence, false)
     FakeState.put(:fake_tmux_test_pid, self())
     FilePanes.clear()
     PreviewPanes.clear()
@@ -50,14 +50,14 @@ defmodule Casein.Agents.TerminalToolsOpenFileInPaneTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "mcp-open-file-#{System.unique_integer([:positive])}")
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {:ok, workspace} = Casein.Workspaces.attach_folder(path)
     {path, workspace}
   end

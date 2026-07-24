@@ -17,8 +17,8 @@ defmodule Casein.Agents.TerminalCommandPolicy do
   The default is a conservative denylist for high-risk host-level commands.
   Configure via application env:
 
-      config :dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
-      config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
+      config :casein, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
+      config :casein, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
 
   Or, for releases, the `DEV_IDE_TERMINAL_COMMAND_POLICY` env var as JSON:
 
@@ -104,7 +104,7 @@ defmodule Casein.Agents.TerminalCommandPolicy do
   @doc "The resolved policy: application env first, then the release env var."
   @spec policy() :: policy()
   def policy do
-    case Application.get_env(:dev_ide, :terminal_command_policy) do
+    case Application.get_env(:casein, :terminal_command_policy) do
       nil ->
         policy_from_env()
 

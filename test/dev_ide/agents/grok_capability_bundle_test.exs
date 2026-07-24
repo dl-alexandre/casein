@@ -34,10 +34,10 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     File.chmod!(hook_script, 0o755)
     File.write!(Path.join([skills, "verify", "SKILL.md"]), "# Verify\n")
 
-    previous_bundle_root = Application.get_env(:dev_ide, :grok_capability_bundle_root)
-    previous_leader_root = Application.get_env(:dev_ide, :grok_leader_root)
-    Application.put_env(:dev_ide, :grok_capability_bundle_root, bundle_root)
-    Application.put_env(:dev_ide, :grok_leader_root, leader_root)
+    previous_bundle_root = Application.get_env(:casein, :grok_capability_bundle_root)
+    previous_leader_root = Application.get_env(:casein, :grok_leader_root)
+    Application.put_env(:casein, :grok_capability_bundle_root, bundle_root)
+    Application.put_env(:casein, :grok_leader_root, leader_root)
 
     on_exit(fn ->
       restore_env(:grok_capability_bundle_root, previous_bundle_root)
@@ -183,8 +183,8 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
 
   test "uses the same private per-leader layout under the short fallback root", context do
     long_root = Path.join(context.tmp, String.duplicate("long-leader-root-", 8))
-    previous_leader_root = Application.get_env(:dev_ide, :grok_leader_root)
-    Application.put_env(:dev_ide, :grok_leader_root, long_root)
+    previous_leader_root = Application.get_env(:casein, :grok_leader_root)
+    Application.put_env(:casein, :grok_leader_root, long_root)
 
     on_exit(fn -> restore_env(:grok_leader_root, previous_leader_root) end)
 
@@ -229,6 +229,6 @@ defmodule Casein.Agents.GrokCapabilityBundleTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(key, nil), do: Application.delete_env(:casein, key)
+  defp restore_env(key, value), do: Application.put_env(:casein, key, value)
 end

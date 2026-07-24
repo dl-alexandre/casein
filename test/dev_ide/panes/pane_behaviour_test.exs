@@ -16,9 +16,9 @@ defmodule Casein.Panes.PaneBehaviourTest do
 
     @impl true
     def attach(node, ctx) do
-      send(Application.get_env(:dev_ide, :stub_test_pid), {:stub_attach, ctx, node})
+      send(Application.get_env(:casein, :stub_test_pid), {:stub_attach, ctx, node})
 
-      case Application.get_env(:dev_ide, :stub_attach_result, :ok) do
+      case Application.get_env(:casein, :stub_attach_result, :ok) do
         :ok -> {:ok, ctx.pane_id}
         {:error, _} = err -> err
       end
@@ -38,8 +38,8 @@ defmodule Casein.Panes.PaneBehaviourTest do
     end
 
     test "impl/1 honors :pane_impls override" do
-      Application.put_env(:dev_ide, :pane_impls, %{preview: StubPreview})
-      on_exit(fn -> Application.delete_env(:dev_ide, :pane_impls) end)
+      Application.put_env(:casein, :pane_impls, %{preview: StubPreview})
+      on_exit(fn -> Application.delete_env(:casein, :pane_impls) end)
 
       assert PaneBehaviour.impl(:preview) == StubPreview
       # Non-overridden types still resolve to defaults.
@@ -99,13 +99,13 @@ defmodule Casein.Panes.PaneBehaviourTest do
 
   describe "reconcile execution wiring" do
     setup do
-      Application.put_env(:dev_ide, :stub_test_pid, self())
-      Application.put_env(:dev_ide, :pane_impls, %{preview: StubPreview})
+      Application.put_env(:casein, :stub_test_pid, self())
+      Application.put_env(:casein, :pane_impls, %{preview: StubPreview})
 
       on_exit(fn ->
-        Application.delete_env(:dev_ide, :pane_impls)
-        Application.delete_env(:dev_ide, :stub_test_pid)
-        Application.delete_env(:dev_ide, :stub_attach_result)
+        Application.delete_env(:casein, :pane_impls)
+        Application.delete_env(:casein, :stub_test_pid)
+        Application.delete_env(:casein, :stub_attach_result)
       end)
 
       :ok
@@ -133,7 +133,7 @@ defmodule Casein.Panes.PaneBehaviourTest do
     end
 
     test "attach failure degrades to a recorded error instead of crashing the reconcile" do
-      Application.put_env(:dev_ide, :stub_attach_result, {:error, :boom})
+      Application.put_env(:casein, :stub_attach_result, {:error, :boom})
 
       {:ok, diff} =
         Reconciler.diff(empty_topology(), saved_preview_only_template(), workspace_root: "/ws")

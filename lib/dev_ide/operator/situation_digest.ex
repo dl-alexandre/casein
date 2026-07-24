@@ -257,7 +257,7 @@ defmodule Casein.Operator.SituationDigest do
   end
 
   defp freeze_sentinel_globs do
-    case Application.get_env(:dev_ide, :freeze_sentinel_globs, @default_freeze_sentinel_globs) do
+    case Application.get_env(:casein, :freeze_sentinel_globs, @default_freeze_sentinel_globs) do
       globs when is_list(globs) -> Enum.filter(globs, &is_binary/1)
       _ -> @default_freeze_sentinel_globs
     end
@@ -469,5 +469,5 @@ defmodule Casein.Operator.SituationDigest do
   defp present(value) when is_binary(value) and value != "", do: value
   defp present(_value), do: nil
 
-  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
+  defp tmux_adapter, do: Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
 end

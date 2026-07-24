@@ -5,9 +5,9 @@ defmodule Casein.Audit.EctoAdapterTest do
   alias Casein.Audit.{Event, EctoAdapter}
 
   setup do
-    prev = Application.get_env(:dev_ide, :audit_adapter)
-    Application.put_env(:dev_ide, :audit_adapter, EctoAdapter)
-    on_exit(fn -> Application.put_env(:dev_ide, :audit_adapter, prev) end)
+    prev = Application.get_env(:casein, :audit_adapter)
+    Application.put_env(:casein, :audit_adapter, EctoAdapter)
+    on_exit(fn -> Application.put_env(:casein, :audit_adapter, prev) end)
     :ok
   end
 

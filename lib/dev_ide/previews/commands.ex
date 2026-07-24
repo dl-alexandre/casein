@@ -217,7 +217,7 @@ defmodule Casein.Previews.Commands do
   end
 
   defp configured_adapter do
-    Application.get_env(:dev_ide, :preview_control_adapter, :memory)
+    Application.get_env(:casein, :preview_control_adapter, :memory)
   end
 
   defp ok(line, argv, output, exit_code \\ 0) do

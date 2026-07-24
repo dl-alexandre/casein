@@ -39,8 +39,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     alice_project = Path.join([root, "alice", "proj"])
     File.mkdir_p!(alice_project)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, root)
 
     on_exit(fn ->
       File.rm_rf(root)
@@ -57,15 +57,15 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
@@ -588,14 +588,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "leader-#{System.unique_integer([:positive])}"
@@ -736,16 +736,16 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     File.mkdir_p!(owned_path)
     File.mkdir_p!(teammate_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_user = Application.get_env(:dev_ide, :current_user)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_user = Application.get_env(:casein, :current_user)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
 
-    Application.put_env(:dev_ide, :current_user, %{
+    Application.put_env(:casein, :current_user, %{
       id: "alice",
       username: "alice",
       email: "alice@example.com",
@@ -852,14 +852,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha"
@@ -1011,14 +1011,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "stale-#{System.unique_integer([:positive])}"
@@ -1103,14 +1103,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "dead-link-#{System.unique_integer([:positive])}"
@@ -1191,14 +1191,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "pane-link-#{System.unique_integer([:positive])}"
@@ -1262,14 +1262,14 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
@@ -1353,11 +1353,11 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
@@ -1392,11 +1392,11 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
@@ -1444,8 +1444,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
@@ -1492,8 +1492,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1589,15 +1589,15 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
@@ -1734,15 +1734,15 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:casein, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
@@ -2003,10 +2003,10 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :forward_auth, true)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_forward_auth = Application.get_env(:casein, :forward_auth)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :forward_auth, true)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2039,8 +2039,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2080,8 +2080,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2119,8 +2119,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2182,10 +2182,10 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     tmux_session = "devide_alpha_u-dev"
     window = tmux_window(System.system_time(:second))
@@ -2281,8 +2281,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2310,12 +2310,12 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_mode = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :manual)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_mode = Application.get_env(:casein, :default_workspace_mode)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :default_workspace_mode, :manual)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2374,12 +2374,12 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_mode = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :default_workspace_mode, :manual)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_mode = Application.get_env(:casein, :default_workspace_mode)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :default_workspace_mode, :manual)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2498,8 +2498,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     File.mkdir_p!(workspace_path)
     _ = Casein.PreviewControl.Registry.clear()
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2540,8 +2540,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2593,10 +2593,10 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
@@ -2670,8 +2670,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2704,11 +2704,11 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     File.mkdir_p!(workspace_path)
     init_git_repo!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_artifact_root = Application.get_env(:dev_ide, :artifact_projects_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_artifact_root = Application.get_env(:casein, :artifact_projects_root)
 
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :artifact_projects_root, artifact_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
+    Application.put_env(:casein, :artifact_projects_root, artifact_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2755,8 +2755,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2786,8 +2786,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    Application.put_env(:casein, :workspaces_root, workspace_root)
     {:ok, _} = Casein.Workspaces.State.set_mode("ws-1", :manual)
 
     on_exit(fn ->
@@ -2918,7 +2918,7 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   end
 
   defp sync_fake_tmux_topology_state(session, window, panes) do
-    case Application.get_env(:dev_ide, :tmux_adapter) do
+    case Application.get_env(:casein, :tmux_adapter) do
       adapter when adapter in [TmuxCtl.Test.FakeAdapter, Casein.Test.FakeTmuxAdapter] ->
         TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => [window]})
         TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{session => panes})
@@ -3024,8 +3024,8 @@ defmodule CaseinWeb.WorkspaceLiveTest do
   @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_next_window fake_tmux_scrollback fake_tmux_test_pid)a
 
   defp restore(k, v) when k in @fake_state_keys, do: TmuxCtl.Test.FakeState.restore(k, v)
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
     with executable when is_binary(executable) <- System.find_executable("tmux"),

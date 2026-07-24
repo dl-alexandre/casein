@@ -10,8 +10,8 @@ defmodule CaseinWeb.DesktopHealthControllerTest do
 
   describe "desktop profile" do
     setup do
-      Application.put_env(:dev_ide, :desktop_mode, true)
-      on_exit(fn -> Application.delete_env(:dev_ide, :desktop_mode) end)
+      Application.put_env(:casein, :desktop_mode, true)
+      on_exit(fn -> Application.delete_env(:casein, :desktop_mode) end)
       :ok
     end
 

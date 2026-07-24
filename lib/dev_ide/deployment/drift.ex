@@ -220,7 +220,7 @@ defmodule Casein.Deployment.Drift do
   defp remote, do: System.get_env("DEV_IDE_GIT_REMOTE") || config(:git_remote, @default_remote)
 
   defp config(key, default) do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(key, default)
   end

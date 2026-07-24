@@ -35,7 +35,7 @@ defmodule Casein.FilePanes do
   alias Casein.Workspaces.FileAccess
   alias Casein.Repo
 
-  @table :dev_ide_file_panes
+  @table :casein_file_panes
   @topology_tag Casein.Terminals.TmuxTopology
   @pane_type :file
   # Register/deregister/clear wait on offloaded Repo/tmux I/O.
@@ -581,14 +581,14 @@ defmodule Casein.FilePanes do
   end
 
   defp maybe_test_io_delay do
-    case Application.get_env(:dev_ide, :file_panes_test_io_delay_ms) do
+    case Application.get_env(:casein, :file_panes_test_io_delay_ms) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
     end
   end
 
   defp maybe_test_rehydrate_delay do
-    case Application.get_env(:dev_ide, :file_panes_test_rehydrate_delay_ms) do
+    case Application.get_env(:casein, :file_panes_test_rehydrate_delay_ms) do
       delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
       _ -> :ok
     end
@@ -1435,7 +1435,7 @@ defmodule Casein.FilePanes do
   # --- persistence --------------------------------------------------------------
 
   defp persistence_enabled? do
-    Application.get_env(:dev_ide, :file_pane_persistence, true)
+    Application.get_env(:casein, :file_pane_persistence, true)
   end
 
   defp persist_registration(reg) do
@@ -1661,7 +1661,7 @@ defmodule Casein.FilePanes do
   defp loc_root({:remote, _host, root}), do: root
 
   defp holder_command do
-    Application.app_dir(:dev_ide, "priv/scripts/devide-file-pane")
+    Application.app_dir(:casein, "priv/scripts/devide-file-pane")
   end
 
   defp kill_pane(%{tmux_session: session, pane_id: pane_id})
@@ -1696,6 +1696,6 @@ defmodule Casein.FilePanes do
   defp require_binary(_value, error), do: {:error, error}
 
   defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
+    Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
   end
 end

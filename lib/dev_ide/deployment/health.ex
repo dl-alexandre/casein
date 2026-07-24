@@ -149,7 +149,7 @@ defmodule Casein.Deployment.Health do
   end
 
   defp fetch_caddy_config do
-    if Application.get_env(:dev_ide, :caddy_admin_probe, true) do
+    if Application.get_env(:casein, :caddy_admin_probe, true) do
       # retry: false so a slow/unreachable Caddy admin fails fast (≤1s) instead
       # of Req's default exponential retry (~7s). Disabled entirely in test
       # (config/test.exs) so status calls never make a real network request.
@@ -182,7 +182,7 @@ defmodule Casein.Deployment.Health do
   end
 
   defp default_host do
-    :dev_ide
+    :casein
     |> Application.get_env(:deployment, [])
     |> Keyword.get(:default_host, "devide.devbox.milcgroup.com")
   end

@@ -8,15 +8,15 @@ defmodule Casein.Terminals.GhosttySnapshotTest do
       Path.join(System.tmp_dir!(), "ghostty-snap-#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(tmp)
-    prev = Application.get_env(:dev_ide, :ghostty_snapshot_dir)
-    Application.put_env(:dev_ide, :ghostty_snapshot_dir, tmp)
+    prev = Application.get_env(:casein, :ghostty_snapshot_dir)
+    Application.put_env(:casein, :ghostty_snapshot_dir, tmp)
 
     on_exit(fn ->
       File.rm_rf(tmp)
 
       if prev,
-        do: Application.put_env(:dev_ide, :ghostty_snapshot_dir, prev),
-        else: Application.delete_env(:dev_ide, :ghostty_snapshot_dir)
+        do: Application.put_env(:casein, :ghostty_snapshot_dir, prev),
+        else: Application.delete_env(:casein, :ghostty_snapshot_dir)
     end)
 
     {:ok, term: start_supervised!({Ghostty.Terminal, cols: 40, rows: 6}), dir: tmp}

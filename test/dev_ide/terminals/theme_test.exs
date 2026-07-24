@@ -126,11 +126,11 @@ defmodule Casein.Terminals.ThemeTest do
       palette = 2 = #00ff00
       """
 
-      prev = Application.get_env(:dev_ide, :terminal_theme_paths)
+      prev = Application.get_env(:casein, :terminal_theme_paths)
 
       try do
         File.write!(path, content)
-        Application.put_env(:dev_ide, :terminal_theme_paths, %{dark: [path], light: [path]})
+        Application.put_env(:casein, :terminal_theme_paths, %{dark: [path], light: [path]})
 
         theme = Theme.load_for_scheme(:dark, "system")
 
@@ -139,8 +139,8 @@ defmodule Casein.Terminals.ThemeTest do
         assert Enum.at(theme.palette, 2) == {0, 255, 0}
       after
         case prev do
-          nil -> Application.delete_env(:dev_ide, :terminal_theme_paths)
-          value -> Application.put_env(:dev_ide, :terminal_theme_paths, value)
+          nil -> Application.delete_env(:casein, :terminal_theme_paths)
+          value -> Application.put_env(:casein, :terminal_theme_paths, value)
         end
 
         File.rm(path)

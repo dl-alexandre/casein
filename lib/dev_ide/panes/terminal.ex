@@ -63,7 +63,7 @@ defmodule Casein.Panes.Terminal do
   # --- internals ---------------------------------------------------------------
 
   defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Casein.Terminals.Tmux)
+    Application.get_env(:casein, :tmux_adapter, Casein.Terminals.Tmux)
   end
 
   defp field(node, key), do: Map.get(node, key, Map.get(node, to_string(key)))

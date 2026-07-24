@@ -249,7 +249,7 @@ defmodule Casein.Previews.Control do
     end
   end
 
-  defp differ, do: Application.get_env(:dev_ide, :preview_differ, PreviewCtl.Playwright.Adapter)
+  defp differ, do: Application.get_env(:casein, :preview_differ, PreviewCtl.Playwright.Adapter)
 
   defp compare_opts(opts) do
     opts |> Keyword.take([:threshold, :cell, :cellHits, :minArea]) |> Map.new()
@@ -378,7 +378,7 @@ defmodule Casein.Previews.Control do
 
   defp recording_dir(recording_id) do
     base =
-      Application.get_env(:dev_ide, :preview_recordings_root) ||
+      Application.get_env(:casein, :preview_recordings_root) ||
         Path.join([System.tmp_dir!(), "devide_recordings"])
 
     Path.join(base, recording_id)
@@ -865,8 +865,8 @@ defmodule Casein.Previews.Control do
 
   defp preview_private_storage_root do
     root =
-      Application.get_env(:dev_ide, :preview_storage_root) ||
-        Application.get_env(:dev_ide, :preview_artifacts_root) ||
+      Application.get_env(:casein, :preview_storage_root) ||
+        Application.get_env(:casein, :preview_artifacts_root) ||
         Path.join([File.cwd!(), "priv", "preview_artifacts"])
 
     Path.join(root, ".storage")
@@ -1138,7 +1138,7 @@ defmodule Casein.Previews.Control do
   defp persist_diff_artifact(_session, diff) when is_map(diff), do: diff
 
   defp configured_adapter do
-    Application.get_env(:dev_ide, :preview_control_adapter, :memory)
+    Application.get_env(:casein, :preview_control_adapter, :memory)
   end
 
   defp broadcast_preview_opened(preview, session) do

@@ -7,11 +7,11 @@ defmodule Casein.PolicyTest do
   alias Casein.Workspaces
 
   setup do
-    prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
-    prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
-    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
+    prev_default = Application.get_env(:casein, :default_workspace_mode)
+    prev_overrides = Application.get_env(:casein, :workspace_modes)
+    prev_raw_everywhere = Application.get_env(:casein, :raw_terminal_everywhere)
 
-    Application.delete_env(:dev_ide, :workspace_modes)
+    Application.delete_env(:casein, :workspace_modes)
     Casein.Workspaces.State.MemoryAdapter.clear()
 
     on_exit(fn ->
@@ -24,23 +24,23 @@ defmodule Casein.PolicyTest do
     :ok
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore(k, nil), do: Application.delete_env(:casein, k)
+  defp restore(k, v), do: Application.put_env(:casein, k, v)
 
   test "default mode is :manual" do
-    Application.delete_env(:dev_ide, :default_workspace_mode)
+    Application.delete_env(:casein, :default_workspace_mode)
     assert WorkspaceMode.resolve(nil) == :manual
   end
 
   test "per-workspace overrides win over default" do
-    Application.put_env(:dev_ide, :default_workspace_mode, :review)
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-1" => :shared_stage_guarded})
+    Application.put_env(:casein, :default_workspace_mode, :review)
+    Application.put_env(:casein, :workspace_modes, %{"ws-1" => :shared_stage_guarded})
     assert WorkspaceMode.resolve("ws-1") == :shared_stage_guarded
     assert WorkspaceMode.resolve("ws-2") == :review
   end
 
   test "invalid mode in config falls back to :manual" do
-    Application.put_env(:dev_ide, :default_workspace_mode, :nonsense)
+    Application.put_env(:casein, :default_workspace_mode, :nonsense)
     assert WorkspaceMode.resolve(nil) == :manual
   end
 
@@ -50,7 +50,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_apply_proposal? requires :manual mode for an operator" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+    Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
 
     assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
              Policy.can_apply_proposal?(%{
@@ -61,7 +61,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_apply_proposal? allows an operator in :manual mode" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+    Application.put_env(:casein, :workspace_modes, %{"ws-manual" => :manual})
 
     assert %Decision{verdict: :allow} =
              Policy.can_apply_proposal?(%{
@@ -72,7 +72,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_apply_proposal? denies shared-stage-guarded and unsafe-db workspaces even for an operator in :manual mode" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+    Application.put_env(:casein, :workspace_modes, %{"ws-manual" => :manual})
 
     ctx = %{
       workspace_id: "ws-manual",
@@ -93,14 +93,14 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_enable_agent_write? denies with :shared_stage_guarded for that mode" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-shared" => :shared_stage_guarded})
+    Application.put_env(:casein, :workspace_modes, %{"ws-shared" => :shared_stage_guarded})
 
     assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
              Policy.can_enable_agent_write?(%{workspace_id: "ws-shared"})
   end
 
   test "can_enable_agent_write? requires :manual mode even with an active unlock" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+    Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
     until = DateTime.add(DateTime.utc_now(), 3600, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-review", until, "alice")
 
@@ -109,7 +109,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_enable_agent_write? allows in :manual mode with an active unlock" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-unlocked" => :manual})
+    Application.put_env(:casein, :workspace_modes, %{"ws-unlocked" => :manual})
     until = DateTime.add(DateTime.utc_now(), 3600, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unlocked", until, "alice")
 
@@ -118,7 +118,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_enable_agent_write? denies :agent_write_unlock_expired for a past unlock" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-expired" => :manual})
+    Application.put_env(:casein, :workspace_modes, %{"ws-expired" => :manual})
     past = DateTime.add(DateTime.utc_now(), -60, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-expired", past, "alice")
 
@@ -127,7 +127,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_enable_agent_write? denies :shared_stage_guarded even with an active unlock" do
-    Application.put_env(:dev_ide, :workspace_modes, %{
+    Application.put_env(:casein, :workspace_modes, %{
       "ws-shared-unlocked" => :shared_stage_guarded
     })
 
@@ -139,7 +139,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_enable_agent_write? denies :unsafe_db even with an active unlock" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-unsafe" => :manual})
+    Application.put_env(:casein, :workspace_modes, %{"ws-unsafe" => :manual})
     until = DateTime.add(DateTime.utc_now(), 3600, :second)
     {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unsafe", until, "alice")
 
@@ -148,7 +148,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_grant_agent_write_unlock? requires operator + :manual mode" do
-    Application.put_env(:dev_ide, :workspace_modes, %{
+    Application.put_env(:casein, :workspace_modes, %{
       "ws-manual" => :manual,
       "ws-review" => :review
     })
@@ -172,7 +172,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_revoke_agent_write_unlock? is the kill switch: operator-only, no mode/isolation gate" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+    Application.put_env(:casein, :workspace_modes, %{"ws-review" => :review})
 
     assert %Decision{verdict: :deny, reason: :forbidden} =
              Policy.can_revoke_agent_write_unlock?(%{workspace_id: "ws-review"})
@@ -222,7 +222,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_use_raw_terminal? defaults to local manual workspace access only" do
-    Application.put_env(:dev_ide, :workspace_modes, %{
+    Application.put_env(:casein, :workspace_modes, %{
       "ws-manual" => :manual,
       "ws-review" => :review
     })
@@ -238,7 +238,7 @@ defmodule Casein.PolicyTest do
   end
 
   test "can_use_raw_terminal? honors explicit raw everywhere opt-in" do
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, true)
+    Application.put_env(:casein, :raw_terminal_everywhere, true)
 
     assert %Decision{verdict: :allow} =
              Policy.can_use_raw_terminal?(%{workspace_id: "ws-review", host_id: "remote"})
@@ -348,7 +348,7 @@ defmodule Casein.PolicyTest do
     empty_ctx = %{workspace_id: "ws", workspace_user: "alice"}
 
     for mode <- WorkspaceMode.valid_modes() do
-      Application.put_env(:dev_ide, :workspace_modes, %{"ws" => mode})
+      Application.put_env(:casein, :workspace_modes, %{"ws" => mode})
       assert %Decision{verdict: :allow} = Policy.can_edit_file?(owner_ctx)
       assert %Decision{verdict: :allow} = Policy.can_edit_file?(peer_ctx)
       assert %Decision{verdict: :deny, reason: :forbidden} = Policy.can_edit_file?(empty_ctx)

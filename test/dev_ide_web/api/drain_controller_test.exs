@@ -8,15 +8,15 @@ defmodule CaseinWeb.API.DrainControllerTest do
   setup %{conn: conn} do
     Drain.reset_for_test!()
 
-    prev_token = Application.get_env(:dev_ide, :api_token)
-    Application.put_env(:dev_ide, :api_token, @token)
+    prev_token = Application.get_env(:casein, :api_token)
+    Application.put_env(:casein, :api_token, @token)
 
     on_exit(fn ->
       Drain.reset_for_test!()
 
       if prev_token,
-        do: Application.put_env(:dev_ide, :api_token, prev_token),
-        else: Application.delete_env(:dev_ide, :api_token)
+        do: Application.put_env(:casein, :api_token, prev_token),
+        else: Application.delete_env(:casein, :api_token)
     end)
 
     {:ok, conn: conn}

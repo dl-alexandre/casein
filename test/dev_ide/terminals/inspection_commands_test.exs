@@ -60,8 +60,8 @@ defmodule Casein.Terminals.InspectionCommandsTest do
       })
     )
 
-    prev_home = Application.get_env(:dev_ide, :preview_env_home)
-    Application.put_env(:dev_ide, :preview_env_home, home)
+    prev_home = Application.get_env(:casein, :preview_env_home)
+    Application.put_env(:casein, :preview_env_home, home)
 
     on_exit(fn ->
       File.rm_rf!(home)
@@ -100,6 +100,6 @@ defmodule Casein.Terminals.InspectionCommandsTest do
     assert {:error, :no_root} = InspectionCommands.run(root, "pwd")
   end
 
-  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
-  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
+  defp restore_preview_home(nil), do: Application.delete_env(:casein, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:casein, :preview_env_home, value)
 end

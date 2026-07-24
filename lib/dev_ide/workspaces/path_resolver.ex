@@ -100,9 +100,9 @@ defmodule Casein.Workspaces.PathResolver do
 
   @spec root() :: String.t() | nil
   def root do
-    Application.get_env(:dev_ide, :lan_path_root) ||
-      Application.get_env(:dev_ide, :workspaces_root) ||
-      Application.get_env(:dev_ide, :home_workspace_path)
+    Application.get_env(:casein, :lan_path_root) ||
+      Application.get_env(:casein, :workspaces_root) ||
+      Application.get_env(:casein, :home_workspace_path)
   end
 
   @spec reserved_prefix?(String.t()) :: boolean()
@@ -173,7 +173,7 @@ defmodule Casein.Workspaces.PathResolver do
   end
 
   defp expanded_home do
-    case Application.get_env(:dev_ide, :home_workspace_path) do
+    case Application.get_env(:casein, :home_workspace_path) do
       home when is_binary(home) and home != "" -> Path.expand(home)
       _ -> nil
     end

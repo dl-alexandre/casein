@@ -8,7 +8,7 @@ defmodule Casein.Terminals.Telemetry do
 
   require Logger
 
-  @table_name :dev_ide_terminal_metrics
+  @table_name :casein_terminal_metrics
 
   @doc "Initializes the metrics table when used."
   def ensure_table! do
@@ -83,8 +83,8 @@ defmodule Casein.Terminals.Telemetry do
     active = count_active_owners()
     open_att = count_open_attachments()
 
-    :telemetry.execute([:dev_ide, :terminals, :owners, :active], %{count: active}, %{})
-    :telemetry.execute([:dev_ide, :terminals, :attachments, :open], %{count: open_att}, %{})
+    :telemetry.execute([:casein, :terminals, :owners, :active], %{count: active}, %{})
+    :telemetry.execute([:casein, :terminals, :attachments, :open], %{count: open_att}, %{})
 
     if rem(System.unique_integer([:positive]), 20) == 0 do
       Logger.debug("terminals telemetry snapshot",
@@ -104,7 +104,7 @@ defmodule Casein.Terminals.Telemetry do
     :ets.insert(@table_name, {{:owner_key, pid}, owner_key})
     :ets.insert(@table_name, {{:owner_subscribers, pid}, 0, owner_key})
 
-    :telemetry.execute([:dev_ide, :terminals, :owner, :started], %{count: 1}, %{kind: kind})
+    :telemetry.execute([:casein, :terminals, :owner, :started], %{count: 1}, %{kind: kind})
     :ok
   end
 

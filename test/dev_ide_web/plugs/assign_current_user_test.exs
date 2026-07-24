@@ -8,13 +8,13 @@ defmodule CaseinWeb.Plugs.AssignCurrentUserTest do
   @default_user %{id: "dev", username: "dev", email: "dev@local", role: :user}
 
   setup do
-    previous_user = Application.get_env(:dev_ide, :current_user)
-    Application.delete_env(:dev_ide, :current_user)
+    previous_user = Application.get_env(:casein, :current_user)
+    Application.delete_env(:casein, :current_user)
 
     on_exit(fn ->
       case previous_user do
-        nil -> Application.delete_env(:dev_ide, :current_user)
-        user -> Application.put_env(:dev_ide, :current_user, user)
+        nil -> Application.delete_env(:casein, :current_user)
+        user -> Application.put_env(:casein, :current_user, user)
       end
     end)
 
@@ -38,7 +38,7 @@ defmodule CaseinWeb.Plugs.AssignCurrentUserTest do
 
   test "current_user/0 returns the application environment override" do
     override = %{id: "test-user", email: "test@example.com", role: :admin}
-    Application.put_env(:dev_ide, :current_user, override)
+    Application.put_env(:casein, :current_user, override)
 
     assert AssignCurrentUser.current_user() == override
   end
@@ -56,7 +56,7 @@ defmodule CaseinWeb.Plugs.AssignCurrentUserTest do
   test "call/2 uses current_user/0 rather than the identity stored in the session" do
     session_user = %{"id" => "session-user", "email" => "session@example.com"}
     override = %{id: "configured-user", email: "configured@example.com", role: :user}
-    Application.put_env(:dev_ide, :current_user, override)
+    Application.put_env(:casein, :current_user, override)
 
     conn =
       :get

@@ -11,7 +11,7 @@ defmodule Casein.Deployment.Capabilities do
 
   @spec configured() :: [atom()]
   def configured do
-    Application.get_env(:dev_ide, :deployment_capabilities, @legacy_defaults)
+    Application.get_env(:casein, :deployment_capabilities, @legacy_defaults)
   end
 
   @spec enabled?(atom()) :: boolean()

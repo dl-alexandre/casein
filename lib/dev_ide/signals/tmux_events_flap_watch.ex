@@ -14,12 +14,12 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
   * audit row `tmux.events_listener_degraded` / `tmux.events_listener_recovered`
     (box-global workspace `"_ops"`, same sentinel pattern as `PgProbe`)
-  * telemetry `[:dev_ide, :signals, :tmux_events_flap]` with `%{kind: :raised|:cleared}`
+  * telemetry `[:casein, :signals, :tmux_events_flap]` with `%{kind: :raised|:cleared}`
   * `{:ops_health, :tmux_events_listener, :raised|:cleared, risk}` on `"ops:health"`
 
   Thresholds are config opts (also accepted on `start_link/1` for tests):
 
-      config :dev_ide, :tmux_events_flap_watch,
+      config :casein, :tmux_events_flap_watch,
         threshold: 3,
         window_ms: 300_000,
         sustained_ms: 60_000,
@@ -63,7 +63,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
       DEVIDE_TMUX_EVENTS=0
 
       # Dev (compile-time default after this PR):
-      # config/dev.exs → config :dev_ide, :tmux_events, true
+      # config/dev.exs → config :casein, :tmux_events, true
       # Override: DEVIDE_TMUX_EVENTS=0 in the shell before mix phx.server
 
   **Do not flip prod default** until soak shows zero flap alarms, no
@@ -126,7 +126,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
 
   @impl true
   def init(opts) do
-    cfg = Application.get_env(:dev_ide, :tmux_events_flap_watch, [])
+    cfg = Application.get_env(:casein, :tmux_events_flap_watch, [])
 
     state = %{
       threshold: Keyword.get(opts, :threshold, cfg[:threshold] || @default_threshold),
@@ -348,7 +348,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
     reason = Map.get(extra, :reason, :flapping)
 
     :telemetry.execute(
-      [:dev_ide, :signals, :tmux_events_flap],
+      [:casein, :signals, :tmux_events_flap],
       %{count: count},
       %{
         kind: kind,
@@ -422,7 +422,7 @@ defmodule Casein.Signals.TmuxEventsFlapWatch do
   end
 
   defp tmux_events_enabled? do
-    case Application.get_env(:dev_ide, :tmux_events, false) do
+    case Application.get_env(:casein, :tmux_events, false) do
       true -> true
       "1" -> true
       "true" -> true

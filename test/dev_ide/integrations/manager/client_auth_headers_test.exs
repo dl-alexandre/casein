@@ -10,9 +10,9 @@ defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
   end
 
   test "nil auth with no static config sends no auth header" do
-    prev = Application.get_env(:dev_ide, :manager_user_email)
+    prev = Application.get_env(:casein, :manager_user_email)
     env_prev = System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
-    Application.delete_env(:dev_ide, :manager_user_email)
+    Application.delete_env(:casein, :manager_user_email)
     System.delete_env("DEV_IDE_DEVBOX_USER_EMAIL")
 
     Req.Test.stub(Client, fn conn ->
@@ -29,8 +29,8 @@ defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
   end
 
   test "nil auth falls back to the static :manager_user_email config" do
-    prev = Application.get_env(:dev_ide, :manager_user_email)
-    Application.put_env(:dev_ide, :manager_user_email, "static@example.com")
+    prev = Application.get_env(:casein, :manager_user_email)
+    Application.put_env(:casein, :manager_user_email, "static@example.com")
 
     Req.Test.stub(Client, fn conn ->
       assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["static@example.com"]
@@ -44,6 +44,6 @@ defmodule Casein.Integrations.Manager.ClientAuthHeadersTest do
     end
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
 end

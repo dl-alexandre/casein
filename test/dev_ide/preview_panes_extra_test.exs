@@ -8,14 +8,14 @@ defmodule Casein.PreviewPanesExtraTest do
   alias TmuxCtl.Test.FakeState
 
   setup do
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
-    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
-    prev_proxy = Application.get_env(:dev_ide, :preview_proxy_enabled)
-    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
-    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
-    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
+    prev_tmux = Application.get_env(:casein, :tmux_adapter)
+    prev_root = Application.get_env(:casein, :workspaces_root)
+    prev_app_url = Application.get_env(:casein, :preview_app_url)
+    prev_loopback = Application.get_env(:casein, :preview_loopback_port)
+    prev_proxy = Application.get_env(:casein, :preview_proxy_enabled)
+    prev_persistence = Application.get_env(:casein, :preview_pane_persistence_enabled)
+    Application.put_env(:casein, :tmux_adapter, FakeAdapter)
+    Application.put_env(:casein, :preview_pane_persistence_enabled, true)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -35,8 +35,8 @@ defmodule Casein.PreviewPanesExtraTest do
     :ok
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, val), do: Application.put_env(:casein, key, val)
 
   defp wait_until(fun, attempts \\ 50)
 
@@ -62,7 +62,7 @@ defmodule Casein.PreviewPanesExtraTest do
 
     path = Path.join(root, "ws")
     File.mkdir_p!(path)
-    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:casein, :workspaces_root, root)
     {root, path}
   end
 
@@ -412,7 +412,7 @@ defmodule Casein.PreviewPanesExtraTest do
     session = "devide_ws_extra_sync_same"
     pane_id = "%43"
     seed_session!(session, pane_id)
-    Application.put_env(:dev_ide, :preview_proxy_enabled, false)
+    Application.put_env(:casein, :preview_proxy_enabled, false)
     registration = register_pane!(session, pane_id, path)
 
     # Feeding back the same current_url the pane already displays resolves to the
@@ -454,14 +454,14 @@ defmodule Casein.PreviewPanesExtraTest do
   # ---- public browser_display_url/1 and /2 ------------------------------------
 
   test "browser_display_url/1 rewrites a loopback url to a same-origin path" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
 
     url = "http://localhost:4000/workspaces?tab=agents#preview"
     assert PreviewPanes.browser_display_url(url) == "/workspaces?tab=agents#preview"
   end
 
   test "browser_display_url/1 leaves a non-loopback url unchanged" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
 
     assert PreviewPanes.browser_display_url("https://example.com/page") ==
              "https://example.com/page"
@@ -472,7 +472,7 @@ defmodule Casein.PreviewPanesExtraTest do
   end
 
   test "browser_display_url/2 with a workspace rewrites loopback urls to paths" do
-    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:casein, :preview_loopback_port, 4000)
     workspace = %{id: "folder:extra-bdu"}
 
     assert PreviewPanes.browser_display_url(workspace, "http://localhost:4000/settings") ==
@@ -516,13 +516,13 @@ defmodule Casein.PreviewPanesExtraTest do
     seed_session!(session, pane_id)
     registration = register_pane!(session, pane_id, path)
 
-    prev_delay = Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms)
-    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 400)
+    prev_delay = Application.get_env(:casein, :preview_panes_test_browser_delay_ms)
+    Application.put_env(:casein, :preview_panes_test_browser_delay_ms, 400)
 
     on_exit(fn ->
       if prev_delay,
-        do: Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, prev_delay),
-        else: Application.delete_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+        do: Application.put_env(:casein, :preview_panes_test_browser_delay_ms, prev_delay),
+        else: Application.delete_env(:casein, :preview_panes_test_browser_delay_ms)
     end)
 
     parent = self()

@@ -239,13 +239,13 @@ defmodule Casein.Terminals.ToolThemes do
   defp expand_path(path), do: Path.expand(path)
 
   defp theme_home do
-    Application.get_env(:dev_ide, :tool_theme_home) ||
+    Application.get_env(:casein, :tool_theme_home) ||
       System.get_env("HOME") ||
       raise "cannot expand tool theme path: no :tool_theme_home config and no $HOME"
   end
 
   defp enabled? do
-    Application.get_env(:dev_ide, :tool_themes_enabled, true)
+    Application.get_env(:casein, :tool_themes_enabled, true)
   end
 
   defp safe_ensure(name, theme_spec, scheme) do

@@ -3,7 +3,7 @@ defmodule Casein.Terminals.WorkspaceAccessCacheTest do
 
   alias Casein.Terminals.WorkspaceAccessCache, as: Cache
 
-  @table :dev_ide_workspace_access_cache
+  @table :casein_workspace_access_cache
   @ttl_ms 60_000
 
   setup do

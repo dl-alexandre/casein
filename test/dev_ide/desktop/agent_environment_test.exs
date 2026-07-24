@@ -4,9 +4,9 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
   alias Casein.Desktop.AgentEnvironment
 
   setup do
-    previous_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
-    previous_store = Application.get_env(:dev_ide, :workspace_tokens_store)
-    previous_base = Application.get_env(:dev_ide, :agent_mcp_base_url)
+    previous_tokens = Application.get_env(:casein, :workspace_api_tokens)
+    previous_store = Application.get_env(:casein, :workspace_tokens_store)
+    previous_base = Application.get_env(:casein, :agent_mcp_base_url)
     previous_home = System.get_env("HOME")
     root = Path.join(System.tmp_dir!(), "desktop-agent-env-#{System.unique_integer([:positive])}")
     home = Path.join(root, "home")
@@ -16,9 +16,9 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
     File.mkdir_p!(checkout)
 
     System.put_env("HOME", home)
-    Application.put_env(:dev_ide, :workspace_api_tokens, %{})
-    Application.put_env(:dev_ide, :workspace_tokens_store, store)
-    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:58068")
+    Application.put_env(:casein, :workspace_api_tokens, %{})
+    Application.put_env(:casein, :workspace_tokens_store, store)
+    Application.put_env(:casein, :agent_mcp_base_url, "http://127.0.0.1:58068")
 
     on_exit(fn ->
       restore(:workspace_api_tokens, previous_tokens)
@@ -59,8 +59,8 @@ defmodule Casein.Desktop.AgentEnvironmentTest do
     assert staged_env =~ "DEVIDE_GROK_LEADER_SOCKET="
   end
 
-  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore(key, nil), do: Application.delete_env(:casein, key)
+  defp restore(key, value), do: Application.put_env(:casein, key, value)
   defp restore_system_env(key, nil), do: System.delete_env(key)
   defp restore_system_env(key, value), do: System.put_env(key, value)
 

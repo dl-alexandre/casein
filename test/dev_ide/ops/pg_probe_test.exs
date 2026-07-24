@@ -12,15 +12,15 @@ defmodule Casein.Ops.PgProbeTest do
   @sep <<0x1F>>
 
   setup do
-    prev = Map.new(@app_env, &{&1, Application.get_env(:dev_ide, &1)})
+    prev = Map.new(@app_env, &{&1, Application.get_env(:casein, &1)})
     Audit.clear()
 
     on_exit(fn ->
       Audit.clear()
 
       Enum.each(prev, fn
-        {key, nil} -> Application.delete_env(:dev_ide, key)
-        {key, value} -> Application.put_env(:dev_ide, key, value)
+        {key, nil} -> Application.delete_env(:casein, key)
+        {key, value} -> Application.put_env(:casein, key, value)
       end)
     end)
 
@@ -51,8 +51,8 @@ defmodule Casein.Ops.PgProbeTest do
   # Starts a probe server with no real targets and a dormant interval, so
   # tests inject {:pg_samples, ...} passes deterministically.
   defp start_probe do
-    Application.put_env(:dev_ide, :pg_probe_targets, [])
-    Application.put_env(:dev_ide, :pg_probe_interval_ms, 3_600_000)
+    Application.put_env(:casein, :pg_probe_targets, [])
+    Application.put_env(:casein, :pg_probe_interval_ms, 3_600_000)
     start_supervised!(PgProbe)
   end
 
@@ -165,7 +165,7 @@ defmodule Casein.Ops.PgProbeTest do
       printf '400\\n'
       """)
 
-    Application.put_env(:dev_ide, :pg_probe_psql, stub)
+    Application.put_env(:casein, :pg_probe_psql, stub)
 
     assert %{status: :ok} = pg_sample = PgProbe.probe_target(target())
     assert pg_sample.total == 15
@@ -180,7 +180,7 @@ defmodule Casein.Ops.PgProbeTest do
       exit 1
       """)
 
-    Application.put_env(:dev_ide, :pg_probe_psql, stub)
+    Application.put_env(:casein, :pg_probe_psql, stub)
 
     assert %{status: :unreachable} = pg_sample = PgProbe.probe_target(target())
     assert pg_sample.exhausted
@@ -190,7 +190,7 @@ defmodule Casein.Ops.PgProbeTest do
   end
 
   test "a missing psql binary is an unreachable sample, not a crash" do
-    Application.put_env(:dev_ide, :pg_probe_psql, "/nonexistent/psql")
+    Application.put_env(:casein, :pg_probe_psql, "/nonexistent/psql")
 
     assert %{status: :unreachable} = PgProbe.probe_target(target())
   end
@@ -198,18 +198,18 @@ defmodule Casein.Ops.PgProbeTest do
   ## Target configuration
 
   test "targets default to host and release Postgres" do
-    Application.delete_env(:dev_ide, :pg_probe_targets)
-    Application.delete_env(:dev_ide, :pg_probe_targets_json)
+    Application.delete_env(:casein, :pg_probe_targets)
+    Application.delete_env(:casein, :pg_probe_targets_json)
 
     assert [%{host: "127.0.0.1", port: 5432}, %{host: "127.0.0.1", port: 15_432}] =
              PgProbe.targets()
   end
 
   test "targets parse from JSON with per-target credentials" do
-    Application.delete_env(:dev_ide, :pg_probe_targets)
+    Application.delete_env(:casein, :pg_probe_targets)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :pg_probe_targets_json,
       ~s([{"host":"10.0.0.9","port":"6432","user":"dev_ide","dbname":"dev_ide_prod"}])
     )
@@ -219,17 +219,17 @@ defmodule Casein.Ops.PgProbeTest do
   end
 
   test "invalid JSON falls back to the defaults" do
-    Application.delete_env(:dev_ide, :pg_probe_targets)
-    Application.put_env(:dev_ide, :pg_probe_targets_json, "{nope")
+    Application.delete_env(:casein, :pg_probe_targets)
+    Application.put_env(:casein, :pg_probe_targets_json, "{nope")
 
     assert [%{port: 5432}, %{port: 15_432}] = PgProbe.targets()
   end
 
   test "a non-numeric port falls back instead of crash-looping the probe" do
-    Application.delete_env(:dev_ide, :pg_probe_targets)
+    Application.delete_env(:casein, :pg_probe_targets)
 
     Application.put_env(
-      :dev_ide,
+      :casein,
       :pg_probe_targets_json,
       ~s([{"host":"127.0.0.1","port":"54O2"}])
     )

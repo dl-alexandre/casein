@@ -353,7 +353,7 @@ defmodule Casein.Push.Registry do
 
   defp emit(operation, metadata) do
     :telemetry.execute(
-      [:dev_ide, :push, :registry],
+      [:casein, :push, :registry],
       %{count: 1},
       Map.put(metadata, :operation, operation)
     )

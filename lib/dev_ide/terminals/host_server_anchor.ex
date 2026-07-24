@@ -63,7 +63,7 @@ defmodule Casein.Terminals.HostServerAnchor do
   @doc false
   @spec enabled?() :: boolean()
   def enabled? do
-    Application.get_env(:dev_ide, :tmux_host_anchor, true) and is_binary(TmuxServer.label())
+    Application.get_env(:casein, :tmux_host_anchor, true) and is_binary(TmuxServer.label())
   end
 
   # Pure: first existing directory among the candidates, then $HOME, then "/".

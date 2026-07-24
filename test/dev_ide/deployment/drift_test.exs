@@ -194,9 +194,9 @@ defmodule Casein.Deployment.DriftTest do
   end
 
   test "remote_head returns timeout when ls-remote exceeds the configured budget" do
-    prev_deploy = Application.get_env(:dev_ide, :deployment)
+    prev_deploy = Application.get_env(:casein, :deployment)
 
-    Application.put_env(:dev_ide, :deployment,
+    Application.put_env(:casein, :deployment,
       git_remote: "https://github.com/dl-alexandre/dev_ide.git",
       git_branch: "master",
       ls_remote_timeout_ms: 1,
@@ -205,8 +205,8 @@ defmodule Casein.Deployment.DriftTest do
 
     on_exit(fn ->
       if prev_deploy,
-        do: Application.put_env(:dev_ide, :deployment, prev_deploy),
-        else: Application.delete_env(:dev_ide, :deployment)
+        do: Application.put_env(:casein, :deployment, prev_deploy),
+        else: Application.delete_env(:casein, :deployment)
     end)
 
     assert {:error, :ls_remote_timeout} = Drift.remote_head(cache_ttl_ms: 0)

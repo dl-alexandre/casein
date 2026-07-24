@@ -17,7 +17,7 @@ defmodule Casein.Terminals.TmuxRunner do
   """
   @spec host_shell?() :: boolean()
   def host_shell? do
-    Application.get_env(:dev_ide, :tmux_host_shell) ||
+    Application.get_env(:casein, :tmux_host_shell) ||
       System.get_env("DEV_IDE_TMUX_HOST_SHELL") in ~w(1 true yes)
   end
 
@@ -119,7 +119,7 @@ defmodule Casein.Terminals.TmuxRunner do
   defp host_tmux_config_file do
     [
       Application.get_env(:tmux_ctl, :config_file),
-      Application.get_env(:dev_ide, :tmux_config_file),
+      Application.get_env(:casein, :tmux_config_file),
       System.get_env("DEV_IDE_TMUX_CONFIG"),
       default_host_tmux_config_file()
     ]
@@ -127,7 +127,7 @@ defmodule Casein.Terminals.TmuxRunner do
   end
 
   defp default_host_tmux_config_file do
-    case :code.priv_dir(:dev_ide) do
+    case :code.priv_dir(:casein) do
       priv when is_list(priv) -> Path.join(to_string(priv), "tmux/devide.conf")
       _ -> nil
     end

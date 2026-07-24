@@ -9,7 +9,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   `:current_user`, and stashes it in the session so LiveView mounts
   (`AssignCurrentUser.from_session/1`) see the same identity.
 
-  Enabled via `:dev_ide, :forward_auth` (or env `DEV_IDE_FORWARD_AUTH`).
+  Enabled via `:casein, :forward_auth` (or env `DEV_IDE_FORWARD_AUTH`).
   When enabled, a request missing the header is rejected with 401 — the
   proxy should have caught unauthenticated requests already. When
   disabled, falls back to the static `AssignCurrentUser` identity so
@@ -110,7 +110,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   """
   @spec admins() :: [String.t()]
   def admins do
-    case Application.get_env(:dev_ide, :admins) do
+    case Application.get_env(:casein, :admins) do
       list when is_list(list) ->
         Enum.map(list, &String.downcase/1)
 
@@ -147,7 +147,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   @doc "True when forward-auth header trust is enabled."
   @spec enabled?() :: boolean()
   def enabled? do
-    case Application.get_env(:dev_ide, :forward_auth) do
+    case Application.get_env(:casein, :forward_auth) do
       nil -> System.get_env("DEV_IDE_FORWARD_AUTH") in ~w(1 true yes)
       val -> !!val
     end
@@ -187,7 +187,7 @@ defmodule CaseinWeb.Plugs.ForwardAuth do
   defp loopback_or_socket_ip?(_), do: false
 
   defp endpoint_bind_ip do
-    Application.get_env(:dev_ide, CaseinWeb.Endpoint, [])
+    Application.get_env(:casein, CaseinWeb.Endpoint, [])
     |> Keyword.get(:http, [])
     |> Keyword.get(:ip)
   end

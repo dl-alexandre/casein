@@ -19,7 +19,7 @@ defmodule CaseinWeb.Plugs.DesktopAuth do
   def init(opts), do: opts
 
   @spec enabled?() :: boolean()
-  def enabled?, do: Application.get_env(:dev_ide, :desktop_mode, false)
+  def enabled?, do: Application.get_env(:casein, :desktop_mode, false)
 
   def call(conn, _opts) do
     if enabled?() do
@@ -67,7 +67,7 @@ defmodule CaseinWeb.Plugs.DesktopAuth do
   defp exchange_launch_token(conn), do: reject(conn)
 
   defp verify_launch_claim(conn) do
-    expected = Application.get_env(:dev_ide, :desktop_launch_token)
+    expected = Application.get_env(:casein, :desktop_launch_token)
 
     case Casein.Desktop.LaunchClaim.verify_and_consume(conn.query_params, expected) do
       :ok -> :ok
