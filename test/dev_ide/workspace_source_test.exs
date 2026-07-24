@@ -193,6 +193,30 @@ defmodule DevIDE.WorkspaceSourceTest do
     end
   end
 
+  defmodule StubDetector do
+    @moduledoc false
+    def detect_filesystem_only(_root), do: [:stub_cap]
+  end
+
+  describe "capability_detector/0" do
+    test "defaults to the configured LocalAdapter" do
+      assert WorkspaceSource.capability_detector() == DevIDE.Agents.LocalAdapter
+    end
+
+    test "config override drives the detect_capabilities/2 fallback" do
+      prev = Application.fetch_env!(:dev_ide, :capability_detector)
+      on_exit(fn -> Application.put_env(:dev_ide, :capability_detector, prev) end)
+      Application.put_env(:dev_ide, :capability_detector, StubDetector)
+      put_source(EmptySource)
+
+      # The fallback resolves the detector via config — this is the seam that
+      # keeps DevIDE.Agents.LocalAdapter out of WorkspaceSource's compile graph
+      # (core xref cycle 75 -> 24). Falsifiable: reverting to a hardcoded
+      # LocalAdapter call makes this return real caps, not [:stub_cap].
+      assert WorkspaceSource.detect_capabilities(%{}, "/root") == [:stub_cap]
+    end
+  end
+
   describe "create_form_fields/0" do
     test "delegates when source exports it" do
       put_source(FullSource)

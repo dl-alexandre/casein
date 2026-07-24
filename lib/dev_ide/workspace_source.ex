@@ -13,7 +13,6 @@ defmodule DevIDE.WorkspaceSource do
   is the stable consumer-facing facade.
   """
 
-  alias DevIDE.Agents.LocalAdapter
   alias DevIDE.Workspace
 
   @type auth :: String.t() | nil
@@ -97,6 +96,10 @@ defmodule DevIDE.WorkspaceSource do
   """
   @spec impl() :: module()
   def impl, do: Application.get_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+
+  @doc false
+  def capability_detector,
+    do: Application.fetch_env!(:dev_ide, :capability_detector)
 
   @doc "Wrap a local-spawn argv via the configured source, or identity."
   @spec prepare_local_argv([String.t()]) :: [String.t()]
@@ -190,7 +193,7 @@ defmodule DevIDE.WorkspaceSource do
     else
       # Direct filesystem detection (avoid calling back into LocalAdapter.detect
       # to prevent recursion during transition)
-      LocalAdapter.detect_filesystem_only(root)
+      capability_detector().detect_filesystem_only(root)
     end
   end
 
