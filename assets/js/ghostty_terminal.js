@@ -70,7 +70,6 @@ import {
   isMobileTerminalLayout,
   latchMobileAuthority,
   rowPinAnchorRow,
-  strandedFitReheal,
   viewportActiveForClient
 } from "./terminal_display_layout.mjs"
 import {webLinkAt, updateWebLinkStore} from "./terminal_web_links.mjs"
@@ -329,7 +328,7 @@ const LONGPRESS_MS = 400
 // How long a mobile viewer keeps size authority after its last active signal,
 // absorbing iOS's rapid hasFocus/soft-keyboard flapping. See reportViewportActive.
 const AUTHORITY_LATCH_GRACE_MS = 1200
-// Cadence of the stranded-fit self-heal (see maybeRehealStrandedFit). Low
+// Cadence of the level-triggered layout backstop (see reconcilePeriodically). Low
 // frequency: one cheap measurement per visible authoritative terminal, only
 // acting when the grid is stuck small, so a stranded fit recovers within a
 // couple seconds without any per-frame cost.
@@ -1293,9 +1292,9 @@ function paintAcceptedPayload(hook, payload, upstreamRender) {
     const shapeKey = `${p.cells?.[0]?.length || 0}x${p.cells?.length || 0}`
     if (shapeKey !== hook.__lastPaintShapeKey) {
       hook.__lastPaintShapeKey = shapeKey
-      hook.__scheduleTerminalLayout?.()
+      reconcileLayout(hook, "grid_shape_changed")
     } else if (rowPinNeedsFollow(hook)) {
-      hook.__scheduleTerminalLayout?.()
+      reconcileLayout(hook, "row_pin_follow")
     }
   }
 
@@ -2221,50 +2220,65 @@ function applyTerminalLayout(hook, trigger = "event") {
   applyLayoutResult(hook, computeTerminalLayout(input))
 }
 
-// Level-triggered self-heal for a stranded authoritative fit. The fit path is
-// otherwise purely edge-triggered (ResizeObserver / window resize / refit
-// event) and early-returns silently when metrics are unavailable or the
-// container is momentarily tiny; a fit that "took" while the pane was narrow
-// mid-transition then reports a too-small grid that nothing re-corrects, since
-// the client's local view is already self-consistent. This periodic check
-// re-runs the fit only when the container can now hold a materially LARGER grid
-// than we last reported (strandedFitReheal) — growth-only, so it can never
-// shrink the shared grid or start a size-fight. Steady state (grid matches the
-// container) measures and does nothing.
-function maybeRehealStrandedFit(hook) {
+/**
+ * The single way to ask for a layout.
+ *
+ * Every trigger funnels through here — the ResizeObserver, a window resize, the
+ * soft keyboard opening, an authority flip, a paint that changed the grid shape
+ * or scrolled the cursor out of the row-pin window, a zoom step, and the
+ * periodic backstop. Previously each of those reached the layout by its own
+ * route (some debounced, some direct, one only via an authority-change
+ * early-return that could swallow it), which is how "the keyboard opened" ended
+ * up depending on a CSS padding change reaching a ResizeObserver.
+ *
+ * Coalesced by default: bursts collapse into one pass 75ms later. `immediate`
+ * is for triggers that are already rate-limited (the periodic tick) or that
+ * must not be deferred behind a pending burst.
+ *
+ * `reason` is carried into the layout so a size change can be traced — the
+ * client half of the server's "terminal owner size -> WxH (reason)" breadcrumb.
+ */
+function reconcileLayout(hook, reason, {trigger = "event", immediate = false} = {}) {
   if (!hook.fitEnabled) return
-  if (typeof document !== "undefined" && document.visibilityState !== "visible") return
-  // Observers scale-to-fit and re-converge on every render; only the
-  // authoritative viewer can strand the shared grid at a too-small size.
-  if (!isSizeAuthoritative(hook)) return
 
-  const m = terminalCellMetrics(hook)
-  const viewport = terminalViewportMetrics(hook)
-  if (!m || !viewport) return
+  hook.__layoutReason = reason
 
-  if (
-    !strandedFitReheal({
-      availableW: viewport.availableW,
-      availableH: viewport.availableH,
-      cellW: m.width,
-      cellH: m.height,
-      ...preContentPadding(m),
-      lastFitCols: hook.__lastFitCols,
-      lastFitRows: hook.__lastFitRows
-    })
-  ) {
+  if (immediate) {
+    if (hook.__layoutTimer !== null) {
+      clearTimeout(hook.__layoutTimer)
+      hook.__layoutTimer = null
+    }
+    applyTerminalLayout(hook, trigger)
     return
   }
 
-  terminalFrameEvent(hook, "fit_reheal", {
-    from: `${hook.__lastFitCols}x${hook.__lastFitRows}`,
-    availableW: Math.round(viewport.availableW),
-    availableH: Math.round(viewport.availableH)
-  })
-  // "periodic" tells the model this is the level-triggered backstop, which may
-  // only ever grow the grid. Belt-and-braces with strandedFitReheal's own
-  // growth-only gate above; phase 4 retires the gate and keeps the model's.
-  applyTerminalLayout(hook, "periodic")
+  if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
+  hook.__layoutTimer = setTimeout(() => {
+    hook.__layoutTimer = null
+    applyTerminalLayout(hook, trigger)
+  }, 75)
+}
+
+// Level-triggered backstop. Every other trigger is edge-driven (ResizeObserver,
+// window resize, a paint, an authority flip) and each one can silently miss:
+// metrics unavailable, the container momentarily tiny, a pane mounting
+// mid-transition, a growth that fires no event at all. A fit that "took" while
+// the pane was narrow then reports a too-small grid that nothing re-corrects,
+// because the client's own view is self-consistent — the recurring
+// "narrow column in the corner" class.
+//
+// This used to need its own growth-only heuristic (strandedFitReheal) to decide
+// whether re-running the fit was safe. It no longer does: the model is a fixed
+// point (contract I4), so reconciling when nothing changed is a no-op, and the
+// model itself refuses to propose a shrink on a "periodic" trigger. So the tick
+// just reconciles.
+function reconcilePeriodically(hook) {
+  if (typeof document !== "undefined" && document.visibilityState !== "visible") return
+  // Observers re-converge on every render; only the authoritative viewer can
+  // strand the SHARED grid at a too-small size.
+  if (!isSizeAuthoritative(hook)) return
+
+  reconcileLayout(hook, "periodic_reconcile", {trigger: "periodic", immediate: true})
 }
 
 function syncDisplayZoomBadge(hook) {
@@ -2324,7 +2338,7 @@ function installTerminalDisplayZoom(hook) {
     if (!detail.hookId && !detail.surfaceId && !activeTerminal(hook)) return
 
     adjustUserDisplayZoom(hook, detail)
-    applyTerminalLayout(hook)
+    reconcileLayout(hook, "display_zoom", {immediate: true})
   }
 
   window.addEventListener("devide:terminal-display-zoom", hook.__onDisplayZoom)
@@ -2354,20 +2368,11 @@ function installScaleFitLayout(hook) {
     hook.pendingFitTimer = null
   }
 
-  const scheduleLayout = () => {
-    if (hook.__layoutTimer !== null) clearTimeout(hook.__layoutTimer)
-    hook.__layoutTimer = setTimeout(() => {
-      hook.__layoutTimer = null
-      applyTerminalLayout(hook)
-    }, 75)
-  }
-
-  hook.__scheduleTerminalLayout = scheduleLayout
   hook.__layoutTimer = null
-  hook.onWindowResize = scheduleLayout
+  hook.onWindowResize = () => reconcileLayout(hook, "window_resize")
 
   if (typeof ResizeObserver !== "undefined") {
-    hook.resizeObserver = new ResizeObserver(scheduleLayout)
+    hook.resizeObserver = new ResizeObserver(() => reconcileLayout(hook, "container_resize"))
     hook.resizeObserver.observe(hook.el)
   }
 
@@ -2375,7 +2380,7 @@ function installScaleFitLayout(hook) {
   // stranded small when no resize/refit event landed after the container grew.
   if (hook.fitEnabled && typeof setInterval === "function") {
     if (hook.__fitRehealTimer) clearInterval(hook.__fitRehealTimer)
-    hook.__fitRehealTimer = setInterval(() => maybeRehealStrandedFit(hook), FIT_REHEAL_INTERVAL_MS)
+    hook.__fitRehealTimer = setInterval(() => reconcilePeriodically(hook), FIT_REHEAL_INTERVAL_MS)
   }
 }
 
@@ -2383,7 +2388,7 @@ function onViewportAuthorityChanged(hook, wasActive) {
   const nowActive = hook.__lastViewportActive === true
   if (wasActive === nowActive) return
 
-  applyTerminalLayout(hook)
+  reconcileLayout(hook, nowActive ? "became_authority" : "became_observer", {immediate: true})
 
   if (nowActive) {
     requestTerminalResync(hook, "became_size_authority")
@@ -2649,10 +2654,16 @@ const GhosttyTerminal = {
     window.addEventListener("focus", this.__onViewportActive)
     window.addEventListener("blur", this.__onViewportActive)
     window.addEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+    // ...and straight to the layout. Routing it only through the authority
+    // handler meant an unchanged-authority keyboard toggle never reached the
+    // layout on its own, leaving row-pin engagement to depend on the keybar's
+    // inset commit changing CSS padding and that reaching the ResizeObserver.
+    this.__onKeyboardToggle = () => reconcileLayout(this, "keyboard_toggle", {immediate: true})
+    window.addEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
     document.addEventListener("focusin", this.__onViewportActive)
     document.addEventListener("focusout", this.__onViewportActive)
     reportViewportActive(this, true)
-    applyTerminalLayout(this)
+    reconcileLayout(this, "mount", {immediate: true})
 
     // Registered before the selection mousedown below so the capture-phase
     // Cmd/Ctrl+Click link handler sees the event first.
@@ -2841,7 +2852,7 @@ const GhosttyTerminal = {
         e.preventDefault()
         const delta = e.deltaY < 0 ? DISPLAY_ZOOM_STEP : -DISPLAY_ZOOM_STEP
         adjustUserDisplayZoom(this, {delta})
-        applyTerminalLayout(this)
+        reconcileLayout(this, "wheel_zoom", {immediate: true})
         return
       }
 
@@ -3080,7 +3091,7 @@ const GhosttyTerminal = {
             this.__lastTapXY = null
             this.__suppressFocusUntil = Date.now() + 500
             adjustUserDisplayZoom(this, {reset: true})
-            applyTerminalLayout(this)
+            reconcileLayout(this, "zoom_reset", {immediate: true})
             hud("touchend(double-tap → fit)")
           } else {
             this.__lastTapAt = nowT
@@ -3250,6 +3261,7 @@ const GhosttyTerminal = {
       window.removeEventListener("focus", this.__onViewportActive)
       window.removeEventListener("blur", this.__onViewportActive)
       window.removeEventListener("devide:keyboard-open-changed", this.__onViewportActive)
+      window.removeEventListener("devide:keyboard-open-changed", this.__onKeyboardToggle)
       document.removeEventListener("focusin", this.__onViewportActive)
       document.removeEventListener("focusout", this.__onViewportActive)
       this.__onViewportActive = null

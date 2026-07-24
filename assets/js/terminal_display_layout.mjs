@@ -217,64 +217,6 @@ export function fitGridForViewport({
   }
 }
 
-/**
- * Growth-biased self-heal decision for a stranded authoritative fit.
- *
- * The authoritative viewer sizes the shared tmux grid from its measured
- * container (authoritativeFitToContainer). That path is edge-triggered
- * (ResizeObserver / window resize / refit event) and silently early-returns
- * when cell metrics are unavailable or the container is momentarily tiny — a
- * pane mounted mid-transition, a hidden background tab, a split collapsing to
- * one pane. If the one fit that "took" measured a narrow container and the
- * container later reaches full size through a path that fires no usable event,
- * the too-small grid is reported once and never corrected: the client's local
- * view is self-consistent (grid == last fit, no overflow, fitUnchanged), so
- * nothing re-pushes, and every viewer inherits the condensed "narrow column in
- * the corner" grid until an unrelated resize. This is the recurring bug class
- * (see git history: 80x24-corner condense, untagged-viewer condense, …).
- *
- * A periodic reconcile calls this to decide whether to re-run the fit. It only
- * fires on GROWTH beyond a hysteresis margin: the container can now hold
- * materially more than we last reported, so we are stranded small. Shrinks are
- * left to the event-driven path — healing only ever grows the grid, so the
- * reconcile can never start or amplify a size-fight (the failure mode every
- * prior fix guarded against).
- *
- * @param {{
- *   availableW: number, availableH: number,   // measured content box, px
- *   cellW: number, cellH: number,             // reference cell metrics, px
- *   lastFitCols: number, lastFitRows: number, // cols/rows this viewer last reported
- *   minColDelta?: number, minRowDelta?: number
- * }} input
- * @returns {boolean} true when the fit should be recomputed to grow the grid.
- */
-export function strandedFitReheal({
-  availableW,
-  availableH,
-  cellW,
-  cellH,
-  padX = 0,
-  padY = 0,
-  lastFitCols,
-  lastFitRows,
-  minColDelta = 2,
-  minRowDelta = 2
-} = {}) {
-  if (!(cellW > 0) || !(cellH > 0)) return false
-  if (!(availableW > 0) || !(availableH > 0)) return false
-  // No prior fit on record: the normal fit path reports the first size itself.
-  if (!Number.isFinite(lastFitCols) || !Number.isFinite(lastFitRows)) return false
-
-  // Same padding-aware measure the fit path uses, so a steady state can't read
-  // as "we could grow by 2" forever and re-fire the reheal on every tick.
-  const measuredCols = Math.floor(Math.max(0, availableW - padX) / cellW)
-  const measuredRows = Math.floor(Math.max(0, availableH - padY) / cellH)
-
-  return (
-    measuredCols >= lastFitCols + minColDelta || measuredRows >= lastFitRows + minRowDelta
-  )
-}
-
 export function fitBaseScale(availableW, availableH, contentW, contentH) {
   if (!(contentW > 0) || !(contentH > 0) || !(availableW > 0) || !(availableH > 0)) {
     return 1

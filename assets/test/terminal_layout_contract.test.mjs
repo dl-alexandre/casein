@@ -36,6 +36,7 @@ import {
   openKeyboard,
   render,
   renderSettled,
+  setViewport,
   sizeReports,
   translateYOf,
   wait,
@@ -394,4 +395,48 @@ test("screen mode: a pane that has not painted yet behaves as before", () => {
   const alt = computeTerminalLayout({...input, screenMode: "alternate"})
   assert.notEqual(alt.mode, DisplayMode.ROWPIN)
   assert.deepEqual(alt.requestedGrid, {cols: 37, rows: 15})
+})
+
+// ---------------------------------------------------------------------------
+// Triggers — every route into the layout goes through one entry point
+// ---------------------------------------------------------------------------
+
+// The soft keyboard used to reach the layout only via reportViewportActive ->
+// onViewportAuthorityChanged, which early-returns when authority did not flip.
+// Row-pin engagement therefore depended on a chain of side effects: the key
+// bar's inset commit clearing its hysteresis gate, changing a CSS custom
+// property, that changing the shell's padding-bottom, and THAT reaching the
+// ResizeObserver. Any link failing left the keyboard silently ignored.
+test("triggers: the keyboard event alone engages row-pinning", async (t) => {
+  const { hook, el } = await mountTerminal({ t, mobile: true })
+  const { cols, rows } = expectedFit(390, 800)
+
+  render(hook, gridPayload({ cols, rows, painted: 16, cursorRow: 15 }))
+  await wait(150)
+  assert.equal(displayMode(hook), DisplayMode.FIT)
+
+  // Shrink the container and mark the keyboard open, but do NOT call
+  // onWindowResize — no ResizeObserver, no window resize. Only the event.
+  document.documentElement.classList.add("devide-keyboard-open")
+  setViewport(el, { width: 390, height: 280 })
+  window.dispatchEvent(new window.CustomEvent("devide:keyboard-open-changed", {
+    detail: { open: true },
+  }))
+  await wait(150)
+
+  assert.equal(displayMode(hook), DisplayMode.ROWPIN, "the keyboard event alone must reach the layout")
+})
+
+test("triggers: a burst of resizes collapses into one layout pass", async (t) => {
+  const { hook } = await mountTerminal({ t, width: 1600, height: 900 })
+  const before = sizeReports(hook).length
+
+  // Ten events inside the coalescing window must not cost ten tmux resizes.
+  for (let i = 0; i < 10; i += 1) hook.onWindowResize()
+  await wait(200)
+
+  assert.ok(
+    sizeReports(hook).length - before <= 1,
+    `a resize burst pushed ${sizeReports(hook).length - before} sizes`
+  )
 })
