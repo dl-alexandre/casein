@@ -234,7 +234,7 @@ function Get-CaseinEnvironment {
         'PHX_HOST' = 'localhost'
         'PHX_IP' = '127.0.0.1'
         'PORT' = [string]$Port
-        'RELEASE_NODE' = 'dev_ide_desktop'
+        'RELEASE_NODE' = 'casein_desktop'
         # The desktop host owns lifecycle locally. Never publish a BEAM node or
         # reuse the build-time COOKIE across machines.
         'RELEASE_DISTRIBUTION' = 'none'

@@ -2,7 +2,7 @@
 
 ## Release requirement
 
-Published DevIDE desktop releases are native, self-contained artifacts for their
+Published Casein desktop releases are native, self-contained artifacts for their
 target operating system. WSL, containers, and remote Linux hosts may be used for
 development, but a Windows release must function when WSL is unavailable.
 
@@ -24,7 +24,7 @@ internal Git remote.
 
 ## Platform boundary
 
-DevIDE currently models terminal topology in tmux terms. Cross-platform releases
+Casein currently models terminal topology in tmux terms. Cross-platform releases
 must instead expose product-level session, window, pane, process, and terminal
 operations through behaviours whose implementations are selected for the host.
 
@@ -101,7 +101,7 @@ The first Windows milestone is intentionally narrow:
 4. Stream bytes through the existing terminal transport and browser renderer.
 5. Support input, resize, replay, reconnect, and complete process-tree shutdown.
 6. Persist the selected workspace and runtime state under LocalAppData.
-7. Start, use, reconnect to, and stop DevIDE with WSL disabled.
+7. Start, use, reconnect to, and stop Casein with WSL disabled.
 
 That foundation is now reliable. The next parity slices are tracked in
 [`windows_prod_parity.md`](windows_prod_parity.md), beginning with intrinsic
@@ -111,7 +111,7 @@ sessions, agent lifecycle, and signed updates.
 ## macOS desktop host: menu bar extra first
 
 The first native macOS surface is a menu bar extra (status item), not a
-windowed application. DevIDE's desktop shape — a long-running loopback daemon
+windowed application. Casein's desktop shape — a long-running loopback daemon
 with a browser cockpit — matches the Docker Desktop/OrbStack model, and the
 status item directly fixes the release's current UX gaps: manual
 `bin/migrate && bin/casein daemon` startup, an undiscoverable ephemeral port
@@ -183,18 +183,18 @@ desktop-profile boot): `CASEIN_PROFILE=desktop`, a generated-and-persisted
 `SECRET_KEY_BASE` and `CASEIN_API_TOKEN` (boot refuses to start without the
 token), and optionally `CASEIN_DESKTOP_DATA_DIR`. It should also set a
 distinct `RELEASE_NODE` if anything else on the machine may register a
-`dev_ide` node with epmd — a stale node holds the default name and start
+`casein` node with epmd — a stale node holds the default name and start
 fails with "name in use".
 
 ### Host responsibilities (v1 menu)
 
 - Status header: running/starting/stopped/unhealthy, version, bound port.
   Icon state mirrors it (template image so it renders in light/dark menubars).
-- Open DevIDE: opens `base_url` in the default browser. A recent-workspaces
+- Open Casein: opens `base_url` in the default browser. A recent-workspaces
   submenu reuses the existing deep-link scheme (`docs/deep_links.md`).
 - Start / Stop / Restart: the host owns the release process tree. Restart is
   explicitly: graceful stop, wait for the process tree to exit, wait for epmd
-  to drop the `dev_ide` name (poll with timeout — this is the documented
+  to drop the `casein` name (poll with timeout — this is the documented
   "name in use" failure), run `bin/migrate`, start fresh. Crash restarts use
   bounded backoff.
 - Copy MCP endpoint / agent pairing info.
@@ -253,12 +253,12 @@ window, and keeps the Phoenix cockpit on a loopback-only port. Its menu exposes
 open, restart, logs, launch-at-sign-in, and quit actions. Double-clicking the icon
 opens the cockpit in the user's default browser.
 For the first Windows vertical slice, the launch target is `/`; the Windows host
-uses the same `WorkspaceLive` cockpit as every other DevIDE deployment. Native
+uses the same `WorkspaceLive` cockpit as every other Casein deployment. Native
 PowerShell is a terminal backend concern and must not introduce a parallel UI.
 The remaining platform work is limited to replacing tmux-dependent terminal
 seams behind that shared cockpit.
 
-The host persists only local runtime state under `%LOCALAPPDATA%\DevIDE`:
+The host persists only local runtime state under `%LOCALAPPDATA%\Casein`:
 
 - `devide.sqlite3` — desktop SQLite database;
 - `desktop-host.json` — retained port and launch-at-sign-in preference;
@@ -272,7 +272,7 @@ Create a Windows payload from a native Windows checkout with:
 powershell -File scripts/package-windows-desktop.ps1
 ```
 
-Then launch `dist\DevIDE-windows-x64\windows\Start-Casein.cmd`. The packaging
+Then launch `dist\Casein-windows-x64\windows\Start-Casein.cmd`. The packaging
 script deliberately produces an installer-ready directory rather than choosing
 an installer technology. Code signing, an MSI/MSIX wrapper, branded icon assets,
 and auto-update remain release-engineering follow-ups.
