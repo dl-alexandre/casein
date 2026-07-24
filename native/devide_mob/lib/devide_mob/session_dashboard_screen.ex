@@ -878,7 +878,7 @@ defmodule DevideMob.SessionDashboardScreen do
     body =
       case filtered_sorted_cards(assigns, active) do
         [] -> [filter_empty_state(active)]
-        cards -> Enum.map(cards, &observer_card(&1, assigns.host_name))
+        cards -> Enum.map(cards, &observer_card(&1, assigns))
       end
 
     [filter_segments(active) | body]
@@ -996,13 +996,17 @@ defmodule DevideMob.SessionDashboardScreen do
   defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
   defp humanize_reason(reason), do: inspect(reason)
 
-  defp observer_card(card, host_name) do
+  defp observer_card(card, assigns) do
     workspace_id = get(card, "workspace_id")
     card_id = get(card, "id")
     cached? = get(card, "_cached") == true
     tap_id = if(cached?, do: get(card, "qualified_id"), else: card_id)
-    origin_name = card_origin_name(card) || host_name
-    tappable? = is_binary(tap_id) and not is_nil(card_action_tap(card))
+    origin_name = card_origin_name(card) || assigns.host_name
+    authoritative? = status_state(assigns.mobile_cards_status) == :joined
+
+    tappable? =
+      is_binary(tap_id) and not is_nil(card_action_tap(card)) and
+        (cached? or authoritative?)
 
     %{
       type: :column,
@@ -1028,7 +1032,11 @@ defmodule DevideMob.SessionDashboardScreen do
             ]
           },
           card_body(card),
-          workspace_id && muted_line(card_context_line(origin_name, workspace_id, card)),
+          workspace_id &&
+            muted_line(
+              card_context_line(origin_name, workspace_id, card, authoritative?)
+            ),
+          evidence_summary_line(card),
           action_button(
             if(cached?, do: "Switch & refresh", else: action_label(card)),
             {:mobile_card_action, tap_id},
@@ -1064,6 +1072,28 @@ defmodule DevideMob.SessionDashboardScreen do
       _ ->
         nil
     end
+  end
+
+  defp evidence_summary_line(card) do
+    evidence = get(card, "evidence", %{})
+    changed = get(evidence, "changed_files", %{})
+    count = get(changed, "count", 0)
+    artifact = get(get(evidence, "artifact", %{}), "filename")
+    cached? = get(card, "_cached") == true
+
+    parts =
+      [
+        if(is_integer(count) and count > 0,
+          do: "#{count} changed #{if(count == 1, do: "file", else: "files")}"
+        ),
+        if(is_binary(artifact) and artifact != "", do: "artifact: #{artifact}"),
+        if(cached? and is_map(evidence) and map_size(evidence) > 0,
+          do: "cached evidence · read-only"
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: nil, else: muted_line(Enum.join(parts, " · "))
   end
 
   defp action_label(card) do
@@ -1493,13 +1523,18 @@ defmodule DevideMob.SessionDashboardScreen do
     card |> get("origin", %{}) |> get("display_name")
   end
 
-  defp card_context_line(origin_name, workspace_id, card) do
+  defp card_context_line(origin_name, workspace_id, card, authoritative?) do
     base = "#{origin_name || "Origin"} · Workspace #{display_workspace(workspace_id)}"
 
-    if get(card, "_cached") == true do
-      "#{base} · Cached #{get(card, "_cached_at", "earlier")} · Read-only"
-    else
-      "#{base} · Live"
+    cond do
+      get(card, "_cached") == true ->
+        "#{base} · Cached #{get(card, "_cached_at", "earlier")} · Read-only"
+
+      not authoritative? ->
+        "#{base} · Last known · Offline · Read-only"
+
+      true ->
+        "#{base} · Live"
     end
   end
 
@@ -1817,6 +1852,7 @@ defmodule DevideMob.SessionDashboardScreen do
     socket
     |> Mob.Socket.assign(:pending_origin_switch_observation?, false)
     |> Mob.Socket.assign(:pending_refresh_failure_reported?, false)
+    |> Mob.Socket.assign(:notice, nil)
   end
 
   defp observe_origin_switch_if_pending(socket, _origin_id), do: socket

@@ -243,6 +243,25 @@ defmodule DevideMob.SessionConfigTest do
             "recent_output" => "must-not-cache",
             "action" => %{"id" => "follow_up"}
           },
+          "evidence" => %{
+            "version" => 1,
+            "changed_files" => %{
+              "count" => 1,
+              "files" => ["lib/card_#{index}.ex"],
+              "truncated" => false
+            },
+            "diff" => %{"excerpt" => "must-not-cache", "truncated" => false},
+            "artifact" => %{
+              "kind" => "preview_artifact",
+              "filename" => "card-#{index}.png",
+              "media_type" => "image/png",
+              "byte_size" => 42,
+              "pwa_url" => "https://mac.test/credential-free-but-live-only"
+            },
+            "links" => [
+              %{"url" => "https://mac.test/workspaces/mac-ws?tab=diff"}
+            ]
+          },
           "token" => "must-not-cache",
           "resume" => %{
             "state" => "working",
@@ -276,6 +295,12 @@ defmodule DevideMob.SessionConfigTest do
     assert hd(cached)["resume"]["freshness"]["kind"] == "cached"
     refute Map.has_key?(hd(cached)["resume"], "actions")
     refute Map.has_key?(hd(cached)["resume"], "token")
+    assert hd(cached)["evidence"]["freshness"]["kind"] == "cached"
+    assert hd(cached)["evidence"]["changed_files"]["files"] == ["lib/card_1.ex"]
+    assert hd(cached)["evidence"]["artifact"]["filename"] == "card-1.png"
+    refute Map.has_key?(hd(cached)["evidence"], "diff")
+    refute Map.has_key?(hd(cached)["evidence"], "links")
+    refute Map.has_key?(hd(cached)["evidence"]["artifact"], "pwa_url")
 
     assert hd(cached)["resume"]["locator"] == %{
              "origin_id" => "origin-mac",
