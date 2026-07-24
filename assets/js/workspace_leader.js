@@ -2,9 +2,12 @@ import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
 import {swipeThresholdPx, swipeWindowProgress} from "./window_swipe.mjs"
 import {
+  leaderSecondKey,
+  leaderSecondKeyDecision,
+} from "./workspace_leader_election.mjs"
+import {
   pickerCloseEvent,
   pickerElementVisible,
-  pickerToggleDecision,
   visiblePickerSurfaces,
 } from "./workspace_picker_toggle.mjs"
 
@@ -35,50 +38,6 @@ function isInteractivelyFocused() {
   const el = document.activeElement
   if (!el || el === document.body || el === document.documentElement) return false
   return el.matches(INTERACTIVE_SELECTOR) || !!el.closest(INTERACTIVE_SELECTOR)
-}
-
-// Standard tmux C-b second-key → data-leader-action name.
-// The command palette shows these bindings as per-item `hint` strings
-// (lib/dev_ide/command_palette/actions.ex + palette_items.ex) — keep the
-// two in sync when rebinding keys.
-const LEADER_ACTIONS = {
-  s: "session-picker",
-  w: "window-picker",
-  "(": "prev-session",
-  ")": "next-session",
-  c: "new-window",
-  C: "new-window-tab",
-  n: "next-window",
-  p: "prev-window",
-  l: "last-window",
-  y: "copy-link",
-  d: "detach",
-  o: "pane-next",
-  "{": "pane-swap-previous",
-  "}": "pane-swap-next",
-  ";": "last-pane",
-  ":": "palette",
-  "?": "help",
-  "&": "kill-window",
-  "%": "split-right",
-  "|": "split-right",
-  '"': "split-down",
-  "-": "split-down",
-  z: "zoom",
-  x: "close-pane",
-  q: "pane-overlay",
-  ",": "rename-window",
-  $: "rename-session",
-  ArrowLeft: "pane-left",
-  ArrowRight: "pane-right",
-  ArrowUp: "pane-up",
-  ArrowDown: "pane-down",
-}
-
-// Arrow keys report as e.code on some platforms; normalize before lookup.
-function leaderSecondKey(e) {
-  if (typeof e.code === "string" && e.code.startsWith("Arrow")) return e.code
-  return e.key
 }
 
 function phxValuePayload(el) {
@@ -407,32 +366,47 @@ export const WorkspaceLeader = {
   },
 
   _handleLeaderSecondKey(key) {
-    if (!this._leaderActive || !key) return
+    const help = document.getElementById("leader-cheatsheet")
+    const canCycleHelpTab =
+      !!help && help.querySelectorAll("[data-cheat-tab]").length >= 2
+    const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
+    const windowSidebarEl = document.querySelector("[data-window-picker-sidebar]")
+    const sessionsSidebarEl = document.querySelector("[data-sessions-picker-sidebar]")
+
+    const decision = leaderSecondKeyDecision(key, {
+      leaderActive: this._leaderActive,
+      helpVisible: leaderHelpVisible(),
+      canCycleHelpTab,
+      mobileLayout: pickerElementVisible(mobileKeyBar),
+      ...visiblePickerSurfaces(document),
+      windowSidebarVisible: !!(windowSidebarEl && windowSidebarEl.offsetParent !== null),
+      sessionsSidebarVisible: !!(sessionsSidebarEl && sessionsSidebarEl.offsetParent !== null),
+    })
+
+    if (decision.type === "noop") return
 
     // `?` while the help overlay is open cycles its tabs instead of toggling
-    // the overlay closed (Escape still closes it). Falls through to the normal
-    // toggle when there are no tabs to cycle.
-    if (key === "?" && leaderHelpVisible() && cycleLeaderHelpTab()) {
+    // the overlay closed (Escape still closes it).
+    if (decision.type === "cycle-help-tab") {
+      cycleLeaderHelpTab()
       this._clearLeader()
       return
     }
 
     this._clearLeader()
 
-    // 0–9: select tmux window by index
-    if (/^[0-9]$/.test(key)) {
-      this._dispatchLeaderAction(document.querySelector(`[data-tmux-window-index="${key}"]`))
-      return
-    }
+    switch (decision.type) {
+      case "window-index":
+        this._dispatchLeaderAction(
+          document.querySelector(`[data-tmux-window-index="${decision.index}"]`)
+        )
+        return
 
-    const action = LEADER_ACTIONS[key]
-    if (action) {
-      if (action === "pane-overlay") {
+      case "pane-overlay":
         this._activatePaneOverlay()
         return
-      }
 
-      if (action === "copy-link") {
+      case "copy-link": {
         const url = document.querySelector('[data-leader-action="copy-link"]')?.dataset.copySessionLink
         const token = this._beginLeaderCommand()
         copyPickerLink(url, "view")
@@ -441,7 +415,7 @@ export const WorkspaceLeader = {
       }
 
       // rename-window: the active tab strip hosts the inline rename form.
-      if (action === "rename-window") {
+      case "rename-window": {
         const token = this._beginLeaderCommand()
         const rename = document.querySelector('[data-leader-action="rename-window"]')
 
@@ -450,7 +424,7 @@ export const WorkspaceLeader = {
         return
       }
 
-      if (action === "rename-session") {
+      case "rename-session": {
         const token = this._beginLeaderCommand()
         const rename = document.querySelector('[data-leader-action="rename-session"]')
 
@@ -461,94 +435,86 @@ export const WorkspaceLeader = {
         return
       }
 
-      const target = document.querySelector(`[data-leader-action="${action}"]`)
-      const mobileKeyBar = document.querySelector("[id^='mobile-key-bar-']")
-      const onMobileLayout = pickerElementVisible(mobileKeyBar)
+      case "close-mobile":
+        this._closePicker("mobile_nav:close")
+        return
 
-      // On touch/narrow layouts the desktop pickers are CSS-hidden (the mobile
-      // nav sheet takes over). A picker shortcut is a true toggle: repeating
-      // C-b s / C-b w for the currently visible picker closes it.
-      if (action === "session-picker" || action === "window-picker") {
-        const decision = pickerToggleDecision(action, {
-          mobileLayout: onMobileLayout,
-          ...visiblePickerSurfaces(document),
-        })
+      case "close-sidebar":
+        this._closePicker("sidebar:close")
+        return
 
-        if (decision === "close-mobile") {
-          this._closePicker("mobile_nav:close")
-          return
-        }
-
-        if (decision === "close-sidebar") {
-          this._closePicker("sidebar:close")
-          return
-        }
-
-        if (decision === "open-mobile") {
-          const token = this._beginLeaderCommand()
-          this.pushEvent(
-            "mobile_nav:open",
-            { focus: action === "window-picker" ? "windows" : "sessions" },
-            () => this._finishLeaderCommand(token)
-          )
-          this._setLeaderCommandFallback(token)
-          return
-        }
-
-        if (action === "window-picker") {
-          const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
-
-          if (sidebarEl && sidebarEl.offsetParent !== null) {
-            sidebarEl.dispatchEvent(
-              new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
-            )
-            this._startSidebarHoldWatch(key, sidebarEl)
-            return
-          }
-
-          const token = this._beginLeaderCommand()
-          this.pushEvent("sidebar:open", {mode: "windows"}, () => {
-            this._finishLeaderCommand(token)
-            requestAnimationFrame(() => {
-              const el = document.querySelector("[data-window-picker-sidebar]")
-              if (!el) return
-              el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
-              this._startSidebarHoldWatch(key, el)
-            })
-          })
-          this._setLeaderCommandFallback(token)
-          return
-        }
-
-        if (action === "session-picker") {
-          const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
-
-          if (sessionsEl && sessionsEl.offsetParent !== null) {
-            sessionsEl.dispatchEvent(
-              new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
-            )
-            this._startSessionsSidebarHoldWatch(key, sessionsEl)
-            return
-          }
-
-          const token = this._beginLeaderCommand()
-          this.pushEvent("sidebar:open", {mode: "both"}, () => {
-            this._finishLeaderCommand(token)
-            requestAnimationFrame(() => {
-              const el = document.querySelector("[data-sessions-picker-sidebar]")
-              if (!el) return
-              el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
-              this._startSessionsSidebarHoldWatch(key, el)
-            })
-          })
-          this._setLeaderCommandFallback(token)
-          return
-        }
-
+      case "open-mobile": {
+        const token = this._beginLeaderCommand()
+        this.pushEvent(
+          "mobile_nav:open",
+          {focus: decision.focus},
+          () => this._finishLeaderCommand(token)
+        )
+        this._setLeaderCommandFallback(token)
         return
       }
 
-      this._dispatchLeaderAction(target)
+      case "focus-window-sidebar": {
+        const sidebarEl = document.querySelector("[data-window-picker-sidebar]")
+        if (!sidebarEl) return
+        sidebarEl.dispatchEvent(
+          new CustomEvent("devide:window-sidebar:focus", {bubbles: true})
+        )
+        this._startSidebarHoldWatch(decision.holdKey, sidebarEl)
+        return
+      }
+
+      case "open-window-sidebar": {
+        const holdKey = decision.holdKey
+        const token = this._beginLeaderCommand()
+        this.pushEvent("sidebar:open", {mode: "windows"}, () => {
+          this._finishLeaderCommand(token)
+          requestAnimationFrame(() => {
+            const el = document.querySelector("[data-window-picker-sidebar]")
+            if (!el) return
+            el.dispatchEvent(new CustomEvent("devide:window-sidebar:focus", {bubbles: true}))
+            this._startSidebarHoldWatch(holdKey, el)
+          })
+        })
+        this._setLeaderCommandFallback(token)
+        return
+      }
+
+      case "focus-sessions-sidebar": {
+        const sessionsEl = document.querySelector("[data-sessions-picker-sidebar]")
+        if (!sessionsEl) return
+        sessionsEl.dispatchEvent(
+          new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true})
+        )
+        this._startSessionsSidebarHoldWatch(decision.holdKey, sessionsEl)
+        return
+      }
+
+      case "open-sessions-sidebar": {
+        const holdKey = decision.holdKey
+        const token = this._beginLeaderCommand()
+        this.pushEvent("sidebar:open", {mode: "both"}, () => {
+          this._finishLeaderCommand(token)
+          requestAnimationFrame(() => {
+            const el = document.querySelector("[data-sessions-picker-sidebar]")
+            if (!el) return
+            el.dispatchEvent(new CustomEvent("devide:sessions-sidebar:focus", {bubbles: true}))
+            this._startSessionsSidebarHoldWatch(holdKey, el)
+          })
+        })
+        this._setLeaderCommandFallback(token)
+        return
+      }
+
+      case "dispatch":
+        this._dispatchLeaderAction(
+          document.querySelector(`[data-leader-action="${decision.action}"]`)
+        )
+        return
+
+      case "unknown":
+      default:
+        return
     }
   },
 
