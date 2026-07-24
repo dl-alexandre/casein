@@ -66,6 +66,32 @@ defmodule DevideMob.SessionClientTest do
     assert_receive {:mobile_cards_status, :joined}
   end
 
+  test "a fresh transport rejoins subscribers despite stale local joined metadata" do
+    socket =
+      %{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      }
+      |> socket_with_subscribers()
+      |> Map.put(:channel_pid, self())
+      |> Socket.put_join_config("mobile:user:me", %{})
+      |> Socket.put_join_config("session:ws-1", %{})
+      |> put_in([Access.key(:joins), "mobile:user:me", Access.key(:status)], :joined)
+      |> put_in([Access.key(:joins), "session:ws-1", Access.key(:status)], :joined)
+
+    assert {:ok, socket} = SessionClient.handle_connect(socket)
+
+    # Slipstream retains the prior closed join config until its join reply, but
+    # both join commands must be emitted for the new transport.
+    assert Socket.join_status(socket, "mobile:user:me") == :closed
+    assert Socket.join_status(socket, "session:ws-1") == :closed
+    assert_receive {:__slipstream_command__,
+                    %Slipstream.Commands.JoinTopic{topic: "mobile:user:me"}}
+
+    assert_receive {:__slipstream_command__,
+                    %Slipstream.Commands.JoinTopic{topic: "session:ws-1"}}
+  end
+
   test "subscriber process exit removes mobile card watchers" do
     other = spawn(fn -> Process.sleep(:infinity) end)
     on_exit(fn -> Process.exit(other, :kill) end)

@@ -189,9 +189,16 @@ defmodule DevideMob.SessionClient do
 
   @impl Slipstream
   def handle_connect(socket) do
-    socket = assign(socket, :connecting?, false)
+    socket =
+      socket
+      |> assign(:connecting?, false)
+      |> reset_join_statuses()
 
-    # (Re)join every topic that still has subscribers.
+    # A new transport has no server-side channel processes. Slipstream normally
+    # closes its local join metadata with the old transport, but a fast native
+    # suspend/reconnect can deliver the new connection before that close event.
+    # Resetting the local statuses here prevents a stale `:joined` marker from
+    # suppressing the authoritative joins on the new connection.
     socket =
       socket.assigns.subscribers
       |> Map.keys()
@@ -490,6 +497,15 @@ defmodule DevideMob.SessionClient do
     url
     |> String.trim()
     |> String.trim_trailing("/")
+  end
+
+  defp reset_join_statuses(socket) do
+    joins =
+      Map.new(socket.joins, fn {topic, join} ->
+        {topic, %{join | status: :closed}}
+      end)
+
+    %{socket | joins: joins}
   end
 
   # iOS needs its native resolver for some public and VPN-provided hostnames.
