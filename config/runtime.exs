@@ -736,6 +736,35 @@ if config_env() == :prod and not release_cli? do
          :runtime_reaper_sweep_interval_ms,
          positive_integer_env.("DEVIDE_RUNTIME_REAPER_SWEEP_INTERVAL_MS") || 3_600_000
 
+  # Workspace reconciler — retires persisted workspace records the devbox
+  # manager has stopped listing (deleted workspaces otherwise linger in the
+  # sidebar forever). Only ever acts under the Manager source; see
+  # `Casein.Workspaces.Reconciler`. Off by default, and dry-run unless told
+  # otherwise, so a deploy starts by logging its plan. Env names keep the
+  # frozen DEVIDE_ operator prefix, matching the runtime reaper above.
+  config :casein,
+         :workspace_reconciler_enabled,
+         System.get_env("DEVIDE_WORKSPACE_RECONCILER_ENABLED") in ~w(1 true TRUE yes YES on ON)
+
+  config :casein,
+         :workspace_reconciler_dry_run,
+         System.get_env("DEVIDE_WORKSPACE_RECONCILER_DRY_RUN") not in ~w(0 false FALSE no NO off OFF)
+
+  config :casein,
+         :workspace_reconciler_grace_ms,
+         positive_integer_env.("DEVIDE_WORKSPACE_RECONCILER_GRACE_MS") || 30 * 60 * 1_000
+
+  config :casein,
+         :workspace_reconciler_sweep_interval_ms,
+         positive_integer_env.("DEVIDE_WORKSPACE_RECONCILER_SWEEP_INTERVAL_MS") || 3_600_000
+
+  # Identity the reconciler presents to the manager. An admin email widens its
+  # listing to every user's workspaces; without one it safely reconciles only
+  # the workspaces of whichever user the manager resolves it to.
+  if admin_email = System.get_env("DEVIDE_WORKSPACE_RECONCILER_ADMIN_EMAIL") do
+    config :casein, :workspace_reconciler_admin_email, admin_email
+  end
+
   deployment_config =
     :casein
     |> Application.get_env(:deployment, [])

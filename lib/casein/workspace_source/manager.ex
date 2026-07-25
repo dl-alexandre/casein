@@ -27,6 +27,43 @@ defmodule Casein.WorkspaceSource.Manager do
     end
   end
 
+  @doc """
+  How much of the box a `list/2` response actually covers.
+
+  The manager filters `GET /api/workspaces` to the caller's own user unless the
+  caller is an admin *and* asks for `all=true`; with manager auth disabled it
+  filters nothing. Anything that treats absence-from-the-list as authoritative
+  (`Casein.Workspaces.Reconciler`) has to know which of those it got, or it
+  would read "not mine" as "deleted" and retire every other user's workspaces.
+
+  Returns `{:ok, :global}` when the response covers every user, `{:ok, {:user,
+  user}}` when it covers only that one, or `{:error, reason}` when the identity
+  probe fails — never a guess.
+  """
+  @spec listing_scope(Client.auth()) :: {:ok, :global | {:user, String.t()}} | {:error, term()}
+  def listing_scope(auth \\ nil) do
+    with {:ok, identity} <- Client.whoami(auth) do
+      case {identity["isAdmin"], identity["user"]} do
+        # Admin: `list_all/1` passes all=true, so the response spans the box.
+        {true, _user} -> {:ok, :global}
+        # Auth disabled — the manager has no identity to filter by.
+        {_admin, nil} -> {:ok, :global}
+        {_admin, user} when is_binary(user) and user != "" -> {:ok, {:user, user}}
+        _ -> {:error, {:unexpected_identity, identity}}
+      end
+    end
+  end
+
+  @doc """
+  Lists workspaces across every user the caller is allowed to see.
+
+  `all=true` is only honoured for admins; for everyone else the manager ignores
+  it and filters to the caller. Pair with `listing_scope/1` to find out which
+  happened.
+  """
+  @spec list_all(Client.auth()) :: {:ok, [Workspace.t()]} | {:error, term()}
+  def list_all(auth \\ nil), do: list([all: true], auth)
+
   @impl true
   def get(id, auth \\ nil) do
     with {:ok, ws} <- Client.get(id, auth) do

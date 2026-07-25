@@ -24,6 +24,7 @@ defmodule Casein.Supervision.PlatformServices do
       Casein.DeviceLinks.Reaper,
       Casein.Agents.OrchestratorTokens.Reaper,
       Casein.Runtimes.Reaper,
+      Casein.Workspaces.Reconciler,
       Casein.SignalBus.child_spec(),
       Casein.Signals.AlertsRouter,
       Casein.Signals.DegradationWatch,

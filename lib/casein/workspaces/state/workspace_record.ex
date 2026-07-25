@@ -12,6 +12,7 @@ defmodule Casein.Workspaces.State.WorkspaceRecord do
           id: String.t() | nil,
           external_id: String.t(),
           name: String.t(),
+          user: String.t() | nil,
           host_path: String.t() | nil,
           status: String.t() | nil,
           mode: String.t() | nil,
@@ -32,6 +33,7 @@ defmodule Casein.Workspaces.State.WorkspaceRecord do
     :id,
     :external_id,
     :name,
+    :user,
     :host_path,
     :status,
     :mode,
@@ -47,6 +49,24 @@ defmodule Casein.Workspaces.State.WorkspaceRecord do
     :updated_at,
     manager_payload: %{}
   ]
+
+  @stale_status "stale"
+
+  @doc """
+  Status marking a record the workspace source no longer vouches for.
+
+  Written by `Casein.Workspaces.Reconciler` and filtered out of the sidebar by
+  `CaseinWeb.WorkspaceLive.Show.CockpitData`. A record retired this way is kept,
+  not deleted: it still carries the IDE-owned mode and isolation history, and a
+  workspace recreated under the same id resyncs back to a live status.
+  """
+  @spec stale_status() :: String.t()
+  def stale_status, do: @stale_status
+
+  @doc "True when the source has stopped vouching for this record."
+  @spec retired?(t()) :: boolean()
+  def retired?(%__MODULE__{status: @stale_status}), do: true
+  def retired?(%__MODULE__{}), do: false
 
   @doc """
   Picks the canonical record when several share a `host_path`: a manager
