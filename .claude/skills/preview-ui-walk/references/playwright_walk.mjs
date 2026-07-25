@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // preview-ui-walk driver — full body packed as pl0..plN beside this file (landlock-safe land).
 import {
+  countRuntimeErrors,
+  defaultAppFramePrefixes,
+  extractBounceReason,
   extractExceptionFromLogs,
+  isAuthBouncePath,
   isHardFailStatus,
   isPassingStatus,
   pageVerdict,
@@ -19,12 +23,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
-// Live static imports (greppable wire-up + ensure deps resolve).
 void pageVerdict;
 void isHardFailStatus;
 void isPassingStatus;
 void statusColor;
 void extractExceptionFromLogs;
+void extractBounceReason;
+void countRuntimeErrors;
+void defaultAppFramePrefixes;
+void isAuthBouncePath;
 void interactionsAllowed;
 void runPageSteps;
 void walkNeedsRequiredInteractions;
@@ -32,7 +39,6 @@ void beginRuntime;
 void pageRuntimeEvidence;
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Prefer single payload file; fall back to pl0..plN shards.
 let b64 = "";
 const single = join(here, "playwright_walk_payload.b64");
 if (existsSync(single)) {
@@ -41,7 +47,9 @@ if (existsSync(single)) {
   for (let i = 0; ; i++) {
     const p = join(here, `playwright_walk_payload.pl${i}`);
     if (!existsSync(p)) break;
-    b64 += readFileSync(p, "utf8").trim();
+    const chunk = readFileSync(p, "utf8").trim();
+    if (!chunk) break;
+    b64 += chunk;
   }
 }
 if (!b64) {
@@ -49,7 +57,6 @@ if (!b64) {
   process.exit(2);
 }
 let code = gunzipSync(Buffer.from(b64, "base64")).toString("utf8");
-// Rewrite relative ./foo.mjs imports to absolute skill-dir URLs so the tmp unpack resolves.
 const hereUrl = pathToFileURL(here.endsWith("/") ? here : here + "/").href;
 code = code.replace(
   /(from\s+|import\s*\()(["'])\.\/([^"']+\.mjs)\2/g,
