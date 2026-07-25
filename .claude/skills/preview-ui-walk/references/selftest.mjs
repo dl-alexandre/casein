@@ -2,7 +2,7 @@
 // Pure-helper + taxonomy fixture smoke for preview-ui-walk (no browser).
 //   node selftest.mjs
 
-import { classifyRisk } from "./runtime_evidence.mjs";
+import { classifyRisk } from "./classify_risk.mjs";
 import {
   expandEnvText,
   interactionsAllowed,
