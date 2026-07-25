@@ -61,6 +61,8 @@ if [ -z "${DEPLOY_SCRIPT_SELF_DIR}" ] || [ ! -r "${DEPLOY_SCRIPT_SELF_DIR}/lib/c
 fi
 # shellcheck source=scripts/lib/canary-drain.sh
 source "${DEPLOY_SCRIPT_SELF_DIR}/lib/canary-drain.sh"
+# shellcheck source=scripts/lib/caddy-upstream.sh
+source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh"
 
 cleanup_stale_instance_records() {
   for inst_file in "${INST_DIR}"/*.json; do
@@ -516,75 +518,12 @@ sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
 CURRENT_SYMLINK_SWAPPED=1
 
-# ── One-time Caddy migration: switch Casein host from 127.0.0.1:4000 to the symlink ─
-# Safe to re-run: if already pointing at the unix socket this is a no-op. Scope the
-# patch to PHX_HOST's app upstream; other devbox routes may legitimately dial 4000.
+# Reconcile the app route during activation. The periodic deploy poller also
+# repairs the exact legacy /run/devide/current.sock route because the external
+# manager may regenerate Caddy after a successful activation.
 CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
 CADDY_HOST="${CADDY_HOST:-devide.devbox.milcgroup.com}"
-CADDY_UPSTREAM_PATH="$(sudo curl -s http://localhost:2019/config/ 2>/dev/null | \
-  python3 -c "
-import json,sys
-host=${CADDY_HOST@Q}
-c=json.load(sys.stdin)
-
-def hosts_match(route):
-  for matcher in route.get('match') or []:
-    if host in (matcher.get('host') or []):
-      return True
-  return False
-
-def find_app_dial(o,path=''):
-  if isinstance(o,dict):
-    if o.get('handler') == 'reverse_proxy' and o.get('rewrite', {}).get('uri') != '/oauth2/auth':
-      for i, upstream in enumerate(o.get('upstreams') or []):
-        if 'dial' in upstream:
-          return f'{path}/upstreams/{i}/dial'
-    for k,v in o.items():
-      # The auth check also reverse-proxies to oauth2-proxy; never rewrite it.
-      if k == 'handle_response':
-        continue
-      r=find_app_dial(v,path+'/'+str(k))
-      if r:
-        return r
-  elif isinstance(o,list):
-    for i,v in enumerate(o):
-      r=find_app_dial(v,path+'/'+str(i))
-      if r:
-        return r
-  return None
-
-routes = c.get('apps', {}).get('http', {}).get('servers', {}).get('srv0', {}).get('routes') or []
-for i, route in enumerate(routes):
-  if hosts_match(route):
-    result = find_app_dial(route, f'/apps/http/servers/srv0/routes/{i}')
-    if result:
-      print(result)
-    break
-" 2>/dev/null || true)"
-
-if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
-  CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
-  case "${CADDY_PREVIOUS_DIAL}" in
-    unix//run/casein/current.sock)
-      log "Caddy upstream for ${CADDY_HOST} already points at current.sock — skipping migration"
-      ;;
-    127.0.0.1:4000)
-      log "Caddy upstream for ${CADDY_HOST} uses loopback proxy — skipping unix migration"
-      ;;
-    *)
-      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/casein/current.sock"
-      if sudo curl -fsS -X PATCH \
-        "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
-        -H "content-type: application/json" \
-        -d '"unix//run/casein/current.sock"' >/dev/null; then
-        CADDY_UPSTREAM_PATCHED=1
-        log "Caddy upstream patched (persists across Caddy restarts via autosave)"
-      else
-        log "warning: Caddy upstream PATCH failed — leaving ${CADDY_PREVIOUS_DIAL:-unknown} in place (manager may regenerate routes)"
-      fi
-      ;;
-  esac
-fi
+casein_reconcile_caddy_upstream "${CADDY_HOST}" migration || true
 
 log "verifying deploy handoff health"
 deploy_status_json="$(curl -sS --unix-socket "${CURRENT_SYMLINK}" \

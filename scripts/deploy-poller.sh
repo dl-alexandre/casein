@@ -144,19 +144,36 @@ self_update() {
   command -v git >/dev/null 2>&1 || return 0
   env -u GH_TOKEN -u GITHUB_TOKEN git -C "$ROOT" fetch --quiet origin "$BRANCH" 2>/dev/null || return 0
 
-  local canon
-  canon="$(mktemp "${TMPDIR:-/tmp}/deploy-poller-canon-XXXXXX.sh")" || return 0
+  local canon_dir canon canon_caddy_lib
+  canon_dir="$(mktemp -d "${TMPDIR:-/tmp}/deploy-poller-canon-XXXXXX")" || return 0
+  canon="${canon_dir}/deploy-poller.sh"
+  canon_caddy_lib="${canon_dir}/caddy-upstream.sh"
   if git -C "$ROOT" show "origin/${BRANCH}:scripts/deploy-poller.sh" >"$canon" 2>/dev/null &&
-    [ -s "$canon" ] && ! cmp -s "$canon" "$0"; then
+    git -C "$ROOT" show "origin/${BRANCH}:scripts/lib/caddy-upstream.sh" >"$canon_caddy_lib" 2>/dev/null &&
+    [ -s "$canon" ] && [ -s "$canon_caddy_lib" ] && ! cmp -s "$canon" "$0"; then
     log "self-update: re-exec origin/${BRANCH} copy of deploy-poller.sh"
-    exec env DEVIDE_POLLER_SELFUPDATED=1 DEVIDE_POLLER_CANON="$canon" DEVIDE_POLLER_ROOT="$ROOT" bash "$canon" "$@"
+    exec env \
+      DEVIDE_POLLER_SELFUPDATED=1 \
+      DEVIDE_POLLER_CANON="$canon" \
+      DEVIDE_POLLER_CANON_DIR="$canon_dir" \
+      DEVIDE_POLLER_CADDY_LIB="$canon_caddy_lib" \
+      DEVIDE_POLLER_ROOT="$ROOT" \
+      bash "$canon" "$@"
   fi
-  rm -f "$canon"
+  rm -rf "$canon_dir"
 }
 self_update "$@"
 # The re-exec'd run executes from a temp copy; unlink it on exit (the open inode
 # keeps it valid for the lifetime of the run).
-[ -n "${DEVIDE_POLLER_CANON:-}" ] && trap 'rm -f "${DEVIDE_POLLER_CANON}"' EXIT
+[ -n "${DEVIDE_POLLER_CANON_DIR:-}" ] && trap 'rm -rf "${DEVIDE_POLLER_CANON_DIR}"' EXIT
+
+CADDY_UPSTREAM_LIB="${DEVIDE_POLLER_CADDY_LIB:-${ROOT}/scripts/lib/caddy-upstream.sh}"
+if [ ! -r "$CADDY_UPSTREAM_LIB" ]; then
+  log "error: canonical Caddy helper is missing: ${CADDY_UPSTREAM_LIB}"
+  exit 1
+fi
+# shellcheck source=scripts/lib/caddy-upstream.sh
+source "$CADDY_UPSTREAM_LIB"
 
 # --- liveness self-heal ------------------------------------------------------
 # This box is multi-tenant: many concurrent agent sessions share one host and
@@ -250,6 +267,20 @@ ensure_agent_shims() {
   return 0
 }
 
+ensure_caddy_upstream() {
+  local host
+  host="$(
+    if [ -r "$ENV_FILE" ]; then
+      awk -F= '/^PHX_HOST=/{print $2}' "$ENV_FILE" | tail -n 1
+    elif sudo test -r "$ENV_FILE" 2>/dev/null; then
+      sudo awk -F= '/^PHX_HOST=/{print $2}' "$ENV_FILE" | tail -n 1
+    fi
+  )"
+  host="${host:-devide.devbox.milcgroup.com}"
+
+  casein_reconcile_caddy_upstream "$host" repair
+}
+
 # --- single-flight -----------------------------------------------------------
 # A release build can outlast the timer interval; never run two at once.
 exec 9>"$LOCK"
@@ -291,6 +322,15 @@ fi
 if [ "$deployed_full" = "$target" ]; then
   log "origin/${BRANCH} (${target_short}) already deployed — checking liveness"
   ensure_live_instance "${deployed:-$target}"
+  if ! ensure_caddy_upstream; then
+    write_deploy_status failed "$target" caddy \
+      "canonical Caddy upstream repair failed" "$deployed_full"
+    exit 1
+  fi
+  if [ "${CADDY_UPSTREAM_PATCHED:-0}" = "1" ] ||
+    grep -q '"phase":"caddy"' "$LAST_DEPLOY_FILE" 2>/dev/null; then
+    write_deploy_status success "$target" "" "" "$deployed_full"
+  fi
   # Incomplete shims are worth a non-zero tick so journal/timer health shows red.
   ensure_agent_shims "$target"
   exit 0
