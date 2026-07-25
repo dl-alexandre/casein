@@ -455,9 +455,13 @@ defmodule DevideMob.SessionConfig do
       "priority" => cache_priority(card),
       "updated_at" => cache_text(card, :updated_at),
       "resume" => cached_resume(map_value(card, :resume, %{}), origin_id, cached_at),
+      "evidence" =>
+        cached_evidence(map_value(card, :evidence), origin_id, display_name, cached_at),
       "_cached" => true,
       "_cached_at" => cached_at
     }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   defp cache_text(card, key), do: card |> map_value(key) |> present()
@@ -509,6 +513,70 @@ defmodule DevideMob.SessionConfig do
   end
 
   defp cached_locator(_locator, origin_id), do: %{"origin_id" => origin_id}
+
+  # Cache only bounded evidence metadata. Diff excerpts, artifact URLs/content,
+  # and live actions are intentionally excluded from inactive-origin storage.
+  defp cached_evidence(evidence, origin_id, display_name, cached_at)
+       when is_map(evidence) do
+    changed_files = cached_changed_files(map_value(evidence, :changed_files))
+    artifact = cached_artifact(map_value(evidence, :artifact))
+
+    if is_nil(changed_files) and is_nil(artifact) do
+      nil
+    else
+      %{
+        "version" => map_value(evidence, :version),
+        "origin" => %{"id" => origin_id, "display_name" => display_name},
+        "freshness" => %{"kind" => "cached", "observed_at" => cached_at},
+        "changed_files" => changed_files,
+        "artifact" => artifact
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+    end
+  end
+
+  defp cached_evidence(_evidence, _origin_id, _display_name, _cached_at), do: nil
+
+  defp cached_changed_files(changed_files) when is_map(changed_files) do
+    files =
+      changed_files
+      |> map_value(:files, [])
+      |> List.wrap()
+      |> Enum.filter(&(is_binary(&1) and byte_size(&1) <= 240))
+      |> Enum.take(8)
+
+    if files == [] do
+      nil
+    else
+      %{
+        "count" => length(files),
+        "files" => files,
+        "truncated" => map_value(changed_files, :truncated) == true
+      }
+    end
+  end
+
+  defp cached_changed_files(_changed_files), do: nil
+
+  defp cached_artifact(artifact) when is_map(artifact) do
+    case present(map_value(artifact, :filename)) do
+      filename when is_binary(filename) and byte_size(filename) <= 240 ->
+        %{
+          "kind" => present(map_value(artifact, :kind)),
+          "filename" => filename,
+          "media_type" => present(map_value(artifact, :media_type)),
+          "byte_size" => map_value(artifact, :byte_size)
+        }
+        |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+        |> Map.new()
+
+      _ ->
+        nil
+    end
+  end
+
+  defp cached_artifact(_artifact), do: nil
 
   defp find_profile(id_or_url) do
     normalized_url = normalize_url(id_or_url)

@@ -3,7 +3,10 @@ package com.example.devide_mob
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -37,6 +40,26 @@ class MainActivity : ComponentActivity() {
 
     external fun nativeSetActivity(activity: Activity)
     external fun nativeStartBeam()
+
+    private val notificationHandler = Handler(Looper.getMainLooper())
+
+    private val notificationDelivery by lazy {
+        NotificationDeliveryCoordinator(
+            currentPid = {
+                notificationDeliveryPid(
+                    registeredPid = io.mob.plugin.MobNotifyHub.notifyPid,
+                    pendingPermissionPid = MobBridge.pendingPermissionPid,
+                    pendingPermissionCapability = MobBridge.pendingPermissionCap,
+                )
+            },
+            storeLaunchPayload = { MobBridge.setLaunchNotification(it) },
+            requestRegistration = { wakeNotificationRegistrationIfAllowed() },
+            deliver = { pid, json -> MobBridge.nativeDeliverNotification(pid, json) },
+            schedule = { delayMs, task ->
+                notificationHandler.postDelayed({ task() }, delayMs)
+            },
+        )
+    }
 
     // ── File picker launcher ──────────────────────────────────────────────
     private val filePickerLauncher =
@@ -98,7 +121,8 @@ class MainActivity : ComponentActivity() {
         // bridge until nativeSetActivity has initialized that bridge below.
         // Writing it earlier is lost when bridge initialization resets the
         // launch-notification slot.
-        val launchNotificationJson = notificationJsonFromIntent(intent)
+        val launchNotificationJson =
+            notificationJsonFromIntent(intent) ?: PairingLaunchPayload.consume()
 
         setContent {
             val state by MobBridge.rootState
@@ -309,7 +333,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationJsonFromIntent(intent)?.let { json ->
+        (notificationJsonFromIntent(intent) ?: PairingLaunchPayload.consume())?.let { json ->
+            Log.i(TAG, "onNewIntent: notification routing payload received")
             deliverOrStoreNotification(json)
         }
     }
@@ -320,7 +345,6 @@ class MainActivity : ComponentActivity() {
             ?.let { return it }
 
         return notificationJsonFromReviewDeepLink(intent?.data)
-            ?: notificationJsonFromPairDeepLink(intent?.data)
     }
 
     private fun notificationJsonFromReviewDeepLink(uri: android.net.Uri?): String? {
@@ -347,31 +371,30 @@ class MainActivity : ComponentActivity() {
         }.toString()
     }
 
-    private fun notificationJsonFromPairDeepLink(uri: android.net.Uri?): String? {
-        if (uri?.scheme != "devide" || uri.host != "pair") return null
-
-        val code = uri.pathSegments.firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
-            ?: return null
-
-        return org.json.JSONObject().apply {
-            put("id", "pairing-deep-link")
-            put("title", "Pair Casein")
-            put("source", "deep_link")
-            put("data", org.json.JSONObject().apply {
-                put("action", "mobile.pair")
-                put("pairing_code", code)
-                put("deep_link", uri.toString())
-            })
-        }.toString()
-    }
-
     private fun deliverOrStoreNotification(json: String) {
         val pid = io.mob.plugin.MobNotifyHub.notifyPid
         if (pid != 0L) {
+            Log.i(TAG, "notification handoff: delivering to registered screen")
             MobBridge.nativeDeliverNotification(pid, json)
         } else {
-            MobBridge.setLaunchNotification(json)
+            Log.i(TAG, "notification handoff: deferring until screen registration")
+            notificationDelivery.accept(json)
+        }
+    }
+
+    private fun wakeNotificationRegistrationIfAllowed() {
+        val pid = MobBridge.pendingPermissionPid
+        if (pid == 0L || MobBridge.pendingPermissionCap != "notifications") return
+
+        val permissionGranted =
+            Build.VERSION.SDK_INT < 33 ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+
+        if (permissionGranted) {
+            MobBridge.nativeDeliverAtom3(pid, "permission", "notifications", "granted")
         }
     }
 

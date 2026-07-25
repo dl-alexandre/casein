@@ -62,6 +62,11 @@ defmodule DevideMob.ReviewDecisionScreen do
     end
   end
 
+  def handle_info({:tap, {:open_evidence, url}}, socket)
+      when is_binary(url) and url != "" do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.WebViewScreen, %{url: url})}
+  end
+
   def handle_info({:tap, :back}, socket) do
     {:noreply, Mob.Socket.pop_screen(socket)}
   end
@@ -86,6 +91,7 @@ defmodule DevideMob.ReviewDecisionScreen do
                   summary_card(assigns.card),
                   context_card(assigns.card),
                   recent_output_card(assigns.card),
+                  evidence_card(assigns.card),
                   decision_context_card(assigns.card),
                   note_card(assigns),
                   message(assigns.message),
@@ -106,6 +112,17 @@ defmodule DevideMob.ReviewDecisionScreen do
       props: %{fill_width: true, background: :primary, padding: :space_sm, gap: 8},
       children: [
         %{
+          type: :text,
+          props: %{
+            text: if(intervention?(card), do: "Agent needs you", else: "Review request"),
+            text_size: :lg,
+            text_color: :on_primary,
+            font_weight: "bold",
+            weight: 1
+          },
+          children: []
+        },
+        %{
           type: :button,
           props: %{
             text: "Back",
@@ -114,17 +131,6 @@ defmodule DevideMob.ReviewDecisionScreen do
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :back}
-          },
-          children: []
-        },
-        %{
-          type: :text,
-          props: %{
-            text: if(intervention?(card), do: "Agent needs you", else: "Review request"),
-            text_size: :lg,
-            text_color: :on_primary,
-            font_weight: "bold",
-            weight: 1
           },
           children: []
         }
@@ -197,11 +203,6 @@ defmodule DevideMob.ReviewDecisionScreen do
           "Why this needs review",
           first_meta(card, ["agent_reasoning", "reasoning", "summary"])
         ),
-        decision_context_section("Diff preview", meta(card, "diff_preview")),
-        decision_context_section(
-          "Files changed",
-          first_meta(card, ["files_changed", "changed_files"])
-        ),
         decision_context_section(
           "Recent decisions",
           first_meta(card, ["previous_decisions", "decision_history"])
@@ -267,6 +268,123 @@ defmodule DevideMob.ReviewDecisionScreen do
       _ ->
         nil
     end
+  end
+
+  defp evidence_card(card) do
+    evidence = get(card, "evidence", %{})
+    changed = get(evidence, "changed_files", %{})
+    files = get(changed, "files", []) |> List.wrap() |> Enum.filter(&is_binary/1)
+    diff = get(evidence, "diff", %{})
+    excerpt = get(diff, "excerpt")
+    artifact = get(evidence, "artifact", %{})
+    links = get(evidence, "links", []) |> List.wrap() |> Enum.filter(&is_map/1)
+
+    sections =
+      [
+        evidence_files(files, get(changed, "truncated") == true),
+        evidence_diff(excerpt, get(diff, "truncated") == true),
+        evidence_artifact(artifact),
+        evidence_provenance(evidence),
+        evidence_links(links)
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if sections == [] do
+      nil
+    else
+      %{
+        type: :column,
+        props: %{fill_width: true, background: :surface, padding: :space_md, gap: 8},
+        children: [
+          %{
+            type: :text,
+            props: %{
+              text: "Evidence handoff",
+              text_color: :on_surface,
+              font_weight: "bold"
+            },
+            children: []
+          }
+          | sections
+        ]
+      }
+    end
+  end
+
+  defp evidence_files([], _truncated?), do: nil
+
+  defp evidence_files(files, truncated?) do
+    suffix = if truncated?, do: "\n…more changed files in PWA", else: ""
+    decision_context_section("Changed files", Enum.join(files, "\n") <> suffix)
+  end
+
+  defp evidence_diff(excerpt, truncated?) when is_binary(excerpt) and excerpt != "" do
+    suffix = if truncated?, do: "\n…bounded excerpt; open full diff in PWA", else: ""
+    decision_context_section("Bounded diff excerpt", excerpt <> suffix)
+  end
+
+  defp evidence_diff(_excerpt, _truncated?), do: nil
+
+  defp evidence_artifact(artifact) when is_map(artifact) and map_size(artifact) > 0 do
+    filename = get(artifact, "filename")
+    media_type = get(artifact, "media_type")
+    size = get(artifact, "byte_size")
+
+    [filename, media_type, if(is_integer(size), do: "#{size} bytes")]
+    |> Enum.reject(&blank?/1)
+    |> Enum.join(" · ")
+    |> then(&decision_context_section("Preview / artifact", &1))
+  end
+
+  defp evidence_artifact(_artifact), do: nil
+
+  defp evidence_provenance(evidence) do
+    origin = get(evidence, "origin", %{})
+    freshness = get(evidence, "freshness", %{})
+    origin_name = get(origin, "display_name")
+    kind = get(freshness, "kind")
+    observed_at = get(freshness, "observed_at")
+
+    [origin_name, kind, observed_at]
+    |> Enum.reject(&blank?/1)
+    |> Enum.join(" · ")
+    |> case do
+      "" -> nil
+      text -> decision_context_section("Origin / freshness", text)
+    end
+  end
+
+  defp evidence_links([]), do: nil
+
+  defp evidence_links(links) do
+    %{
+      type: :column,
+      props: %{fill_width: true, gap: 8},
+      children:
+        Enum.flat_map(links, fn link ->
+          case {get(link, "label"), get(link, "url")} do
+            {label, url}
+            when is_binary(label) and label != "" and is_binary(url) and url != "" ->
+              [
+                %{
+                  type: :button,
+                  props: %{
+                    text: label,
+                    background: :surface_raised,
+                    text_color: :on_surface,
+                    fill_width: true,
+                    height: 44.0,
+                    on_tap: {self(), {:open_evidence, url}}
+                  },
+                  children: []
+                }
+              ]
+
+            _ ->
+              []
+          end
+        end)
+    }
   end
 
   defp decision_context_section(label, value) do
@@ -376,7 +494,7 @@ defmodule DevideMob.ReviewDecisionScreen do
         text: action_label(spec),
         background: style_background(get(spec, "style")),
         text_color: style_text_color(get(spec, "style")),
-        weight: 1,
+        fill_width: true,
         padding: :space_sm,
         height: 44.0,
         disabled: disabled?,

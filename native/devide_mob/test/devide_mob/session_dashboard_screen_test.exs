@@ -123,6 +123,18 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
     assert text(view) =~ "Switched origin; refreshing authoritative state"
     assert find(view, :button, text: "Connected · Local Mac")
+
+    view =
+      render_info(
+        view,
+        {:mobile_cards_snapshot,
+         %{
+           "origin" => %{"id" => mac_origin_id, "display_name" => "Local Mac"},
+           "cards" => []
+         }}
+      )
+
+    assert assigns(view).notice == nil
   end
 
   test "paired dashboard does not crash when native push APIs are unavailable on host" do
@@ -291,6 +303,20 @@ defmodule DevideMob.SessionDashboardScreenTest do
     view =
       SessionDashboardScreen
       |> mount_screen()
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "workspace_id" => "ws-1",
+               "title" => "Needs review offline"
+             }
+           ]
+         }}
+      )
       |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
 
     assert_renderable(view)
@@ -298,6 +324,8 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert text(view) =~ "Card stream offline"
     assert text(view) =~ "Network unavailable"
     assert text(view) =~ "latest mobile cards may be stale"
+    assert text(view) =~ "Workspace ws-1 · Last known · Offline · Read-only"
+    assert find(view, :button, text: "Review").props.disabled == true
   end
 
   test "mobile cards snapshot renders observer cards above workspace cards" do

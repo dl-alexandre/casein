@@ -34,11 +34,14 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert text(view) =~ "Decision context"
     assert text(view) =~ "Why this needs review"
     assert text(view) =~ "Agent wants to update the auth gate before continuing."
-    assert text(view) =~ "Diff preview"
+    assert text(view) =~ "Evidence handoff"
+    assert text(view) =~ "Bounded diff excerpt"
     assert text(view) =~ "+ require role"
-    assert text(view) =~ "Files changed"
+    assert text(view) =~ "Changed files"
     assert text(view) =~ "lib/auth.ex"
     assert text(view) =~ "test/auth_test.exs"
+    assert text(view) =~ "Local Mac · live · 2026-07-24T12:00:00Z"
+    assert find(view, :button, text: "Open full diff in PWA")
     assert text(view) =~ "Recent decisions"
     assert text(view) =~ "Needs narrower scope"
     assert find(view, :button, text: "Approve")
@@ -104,7 +107,9 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert text(view) =~ "Live excerpt · target role: agent"
     assert text(view) =~ "Short follow-up"
     assert find(view, :text_field).props.placeholder == "What should the agent do next?"
-    assert find(view, :button, text: "Send follow-up")
+    follow_up = find(view, :button, text: "Send follow-up")
+    assert follow_up.props.fill_width == true
+    refute Map.has_key?(follow_up.props, :weight)
     assert find(view, :button, text: "Open full terminal in PWA")
   end
 
@@ -140,6 +145,17 @@ defmodule DevideMob.ReviewDecisionScreenTest do
       ReviewDecisionScreen
       |> mount_screen(%{card: intervention_card()})
       |> render_info({:tap, :open_pwa})
+
+    assert navigated_to(view) == DevideMob.WebViewScreen
+  end
+
+  test "evidence handoff opens the exact server-issued PWA target" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: review_card()})
+      |> render_info(
+        {:tap, {:open_evidence, "https://devide.test/workspaces/ws-1?tab=diff&pane=%252"}}
+      )
 
     assert navigated_to(view) == DevideMob.WebViewScreen
   end
@@ -205,6 +221,28 @@ defmodule DevideMob.ReviewDecisionScreenTest do
           ]
         }
       ],
+      "evidence" => %{
+        "version" => 1,
+        "origin" => %{"id" => "origin-local", "display_name" => "Local Mac"},
+        "freshness" => %{"kind" => "live", "observed_at" => "2026-07-24T12:00:00Z"},
+        "changed_files" => %{
+          "count" => 2,
+          "files" => ["lib/auth.ex", "test/auth_test.exs"],
+          "truncated" => false
+        },
+        "diff" => %{
+          "excerpt" => "- allow all\n+ require role",
+          "truncated" => false
+        },
+        "artifact" => nil,
+        "links" => [
+          %{
+            "kind" => "diff",
+            "label" => "Open full diff in PWA",
+            "url" => "https://devide.test/workspaces/ws-1?tab=diff&pane=%252"
+          }
+        ]
+      },
       "meta" => %{
         "review_count" => 4,
         "command_id" => "mix test",
@@ -215,8 +253,6 @@ defmodule DevideMob.ReviewDecisionScreenTest do
         "target_ref" => "proposal-9",
         "last_activity_at" => "2026-06-27T20:12:00Z",
         "agent_reasoning" => "Agent wants to update the auth gate before continuing.",
-        "diff_preview" => "- allow all\n+ require role",
-        "files_changed" => ["lib/auth.ex", "test/auth_test.exs"],
         "previous_decisions" => [
           %{"action" => "request_changes", "note" => "Needs narrower scope"}
         ]
