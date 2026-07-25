@@ -596,6 +596,13 @@ grok_install_sandbox_profile() {
   local sensitive_env
   local -a sensitive_agent_envs=()
 
+  # /etc/casein is a compatibility symlink to /etc/devide on renamed hosts.
+  # bwrap cannot create a deny mountpoint through a symlinked parent, so the
+  # sandbox must receive the physical path; symlinked opens still resolve onto
+  # the same denied inode inside the sandbox.
+  local host_env_file
+  host_env_file="$(realpath -m "${CASEIN_ENV_FILE:-/etc/casein/devide.env}")"
+
   # Grok expands deny globs by walking from their static prefix. Broad globs
   # rooted at /data/workspaces can exceed its 200k-entry safety limit before
   # the leader creates its socket. Resolve the small set of real token files
@@ -647,7 +654,7 @@ grok_install_sandbox_profile() {
     "${HOME}/.grok/auth.json" \
     "${GROK_HOME}/auth.json" \
     "${HOME}/.grok/mcp_credentials.json" \
-    "/etc/casein/devide.env" \
+    "$host_env_file" \
     "$tmux_dir" \
     "/proc" \
     "${sensitive_agent_envs[@]}" >/dev/null
