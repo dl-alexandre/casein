@@ -1,0 +1,8 @@
+[Unit]
+Description=Casein orphaned Grok leader and stale bundle sweep
+
+[Service]
+Type=oneshot
+User=devbox
+EnvironmentFile=-/etc/casein/devide.env
+ExecStart=__CHECKOUT__/scripts/casein-grok-janitor-sweep.sh --apply

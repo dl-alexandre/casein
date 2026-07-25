@@ -297,6 +297,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected
 - `scripts/casein-worktree-alarm-sweep.sh` — daily stale-worktree alarm (release RPC; never deletes dirty trees)
 - `scripts/ensure-casein-worktree-alarm-sweep.sh` — install/enable/disable the worktree-alarm systemd timer
+- `scripts/casein-grok-janitor-sweep.sh` — daily reap of orphaned Grok leader processes (cwd deleted) + stale leader dirs/bundles across the casein and legacy devide roots; dry-run by default, `--apply` to act (systemd units alongside, installed pointing at `/opt/devide/deploy-build`)
 - `lib/casein/runtimes/worktree_alarm.ex` — alarm logic (`workspace.agent_worktree_stale` audit events)
 - `scripts/verify_agent_pairing.sh` — MCP smoke test
 - `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)
