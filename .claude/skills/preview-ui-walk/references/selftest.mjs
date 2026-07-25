@@ -24,7 +24,7 @@ function assert(cond, msg) {
   }
 }
 
-// classifyRisk: prod wins when both match (fail-closed)
+// ── classifyRisk: prod wins when both match (fail-closed) ──────────────────
 assert(classifyRisk("https://dev-one-api.onemilc.com") === "ok", "dev-one-api is ok");
 assert(classifyRisk("https://stage-one-api.onemilc.com") === "ok", "stage is ok");
 assert(classifyRisk("https://api.onemilc.com") === "prod_like", "bare onemilc prod_like");
@@ -45,7 +45,7 @@ assert(
   "production host is prod_like",
 );
 
-// env expand
+// ── env expand ─────────────────────────────────────────────────────────────
 process.env.WALK_LOGIN_EMAIL = "garlin@test.com";
 assert(expandEnvText("${WALK_LOGIN_EMAIL}") === "garlin@test.com", "env expand works");
 assert(expandEnvText("plain") === "plain", "plain text untouched");
@@ -83,7 +83,7 @@ assert(
   "assert-only walk no interactions",
 );
 
-// Taxonomy fixtures (mainStatus x URL x steps)
+// ── Taxonomy fixtures (mainStatus × URL × steps) ───────────────────────────
 assert(verdictFixture().status === "PASS", "clean page PASS");
 
 assert(
@@ -94,7 +94,7 @@ assert(
     bounceHit: "/login",
     navOutcome: "bounce",
   }).status === "CRASHED",
-  "5xx before bounce -> CRASHED (Tidewave not required)",
+  "5xx before bounce → CRASHED (Tidewave not required)",
 );
 
 assert(
@@ -117,7 +117,7 @@ assert(
     navOutcome: "bounce",
     loaded: false,
   }).status === "BOUNCED",
-  "access bounce -> BOUNCED",
+  "access bounce → BOUNCED",
 );
 
 assert(
@@ -126,7 +126,7 @@ assert(
     uok: true,
     stepsFailed: 1,
   }).status === "ASSERT_FAILED",
-  "2xx + step fail -> ASSERT_FAILED",
+  "2xx + step fail → ASSERT_FAILED",
 );
 
 assert(
@@ -138,7 +138,7 @@ assert(
     landed: "http://x/pending",
     wantPath: "/admin",
   }).status === "TIMEOUT",
-  "no land no bounce -> TIMEOUT",
+  "no land no bounce → TIMEOUT",
 );
 
 assert(
@@ -148,7 +148,7 @@ assert(
     mainStatus: null,
     uok: false,
   }).status === "SKIPPED",
-  "blocked interactions -> SKIPPED not FAIL",
+  "blocked interactions → SKIPPED not FAIL",
 );
 
 assert(
@@ -157,13 +157,13 @@ assert(
     uok: true,
     loaded: true,
   }).status === "PASS_SLOW",
-  "over budget but landed -> PASS_SLOW",
+  "over budget but landed → PASS_SLOW",
 );
 
 // Exception enrichment is optional — empty logs still leave CRASHED alone
 assert(
   extractExceptionFromLogs({ logs: { levels: { error: { samples: [] } } } }) === null,
-  "no logs -> null exception (status still CRASHED independently)",
+  "no logs → null exception (status still CRASHED independently)",
 );
 assert(
   extractExceptionFromLogs({
@@ -178,7 +178,7 @@ assert(
   "exception frame extracted when samples present",
 );
 
-// Exit semantics
+// ── Exit semantics ─────────────────────────────────────────────────────────
 assert(
   isHardFailStatus("CRASHED", {}) === true,
   "CRASHED hard-fails exit",
