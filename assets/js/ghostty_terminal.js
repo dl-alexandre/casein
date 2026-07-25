@@ -28,7 +28,8 @@ import {
 import {
   mouseReportPayload,
   mouseTrackingActive,
-  sgrWheelSequence
+  sgrWheelSequence,
+  terminalCellFromClientPoint
 } from "./terminal_mouse_sgr.mjs"
 import {
   BACKEND_KEYS_PAGE,
@@ -980,10 +981,6 @@ function preContentPadding(m) {
   }
 }
 
-function clampCell(value, max) {
-  return Math.max(0, Math.min(max, value))
-}
-
 function terminalCellPointFromEvent(hook, event) {
   const metrics = terminalCellMetrics(hook)
   if (!metrics || !hook.pre) return null
@@ -991,13 +988,23 @@ function terminalCellPointFromEvent(hook, event) {
   const rect = hook.pre.getBoundingClientRect()
   const cols = Math.max(1, hook.cols || 1)
   const rows = Math.max(1, hook.rows || 1)
-  const x = event.clientX - rect.left - metrics.paddingLeft
-  const y = event.clientY - rect.top - metrics.paddingTop
+  const rawScale = parseFloat(
+    window.getComputedStyle(hook.el).getPropertyValue("--casein-term-display-scale")
+  )
 
-  return {
-    col: clampCell(Math.floor(x / metrics.width), cols - 1),
-    row: clampCell(Math.floor(y / metrics.height), rows - 1)
-  }
+  return terminalCellFromClientPoint({
+    clientX: event.clientX,
+    clientY: event.clientY,
+    rectLeft: rect.left,
+    rectTop: rect.top,
+    cellWidth: metrics.width,
+    cellHeight: metrics.height,
+    paddingLeft: metrics.paddingLeft,
+    paddingTop: metrics.paddingTop,
+    scale: Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1,
+    cols,
+    rows
+  })
 }
 
 function renderCellSelection(hook) {

@@ -38,6 +38,44 @@ export function mouseTrackingActive(mouse) {
 }
 
 /**
+ * Map a browser point onto a terminal cell when the grid is CSS-scaled.
+ *
+ * `cellWidth` comes from a DOM measurement inside the transformed frame, so it
+ * is already scaled. Computed line-height and padding remain unscaled CSS
+ * values. Normalize both axes into the grid's coordinate space before deriving
+ * the cell; otherwise a half-scale pane sends a click on visible row 20 to row
+ * 10 in the foreground TUI.
+ */
+export function terminalCellFromClientPoint({
+  clientX,
+  clientY,
+  rectLeft,
+  rectTop,
+  cellWidth,
+  cellHeight,
+  paddingLeft = 0,
+  paddingTop = 0,
+  scale = 1,
+  cols = 1,
+  rows = 1
+}) {
+  const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1
+  const renderedCellWidth = Number.isFinite(cellWidth) && cellWidth > 0 ? cellWidth : 1
+  const unscaledCellHeight =
+    Number.isFinite(cellHeight) && cellHeight > 0 ? cellHeight : 1
+  const unscaledCellWidth = renderedCellWidth / safeScale
+  const x = (clientX - rectLeft) / safeScale - paddingLeft
+  const y = (clientY - rectTop) / safeScale - paddingTop
+  const maxCol = Math.max(0, Math.floor(cols) - 1)
+  const maxRow = Math.max(0, Math.floor(rows) - 1)
+
+  return {
+    col: Math.max(0, Math.min(maxCol, Math.floor(x / unscaledCellWidth))),
+    row: Math.max(0, Math.min(maxRow, Math.floor(y / unscaledCellHeight)))
+  }
+}
+
+/**
  * Payload for a structured "mouse" LiveView event at a given cell, matching the
  * vendor pushMouseEvent shape. x/y encode the cell as col*10+5 / row*20+10
  * (the vendor's pixel-in-cell convention); the server re-derives the cell and

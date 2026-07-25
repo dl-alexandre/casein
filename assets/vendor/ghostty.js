@@ -586,12 +586,17 @@ function doRenderSelection(hook) {
 function cellPointFromEvent(hook, e) {
 	const m = metrics(hook);
 	const rect = hook.pre.getBoundingClientRect();
-	const x = e.clientX - rect.left - m.paddingLeft;
-	const y = e.clientY - rect.top - m.paddingTop;
+	const rawScale = Number.parseFloat(getComputedStyle(hook.el).getPropertyValue("--casein-term-display-scale"));
+	const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
+	// The measure span's bounding width is already transformed, while computed
+	// line-height and padding remain in the unscaled grid coordinate space.
+	const cellWidth = m.width / scale;
+	const x = (e.clientX - rect.left) / scale - m.paddingLeft;
+	const y = (e.clientY - rect.top) / scale - m.paddingTop;
 	if (x < 0 || y < 0) {
 		return null;
 	}
-	const col = clamp(Math.floor(x / m.width), 0, hook.cols - 1);
+	const col = clamp(Math.floor(x / cellWidth), 0, hook.cols - 1);
 	const row = clamp(Math.floor(y / m.height), 0, hook.rows - 1);
 	return {
 		col,

@@ -6,7 +6,8 @@ import {
   SGR_WHEEL_UP,
   mouseReportPayload,
   mouseTrackingActive,
-  sgrWheelSequence
+  sgrWheelSequence,
+  terminalCellFromClientPoint
 } from "../js/terminal_mouse_sgr.mjs"
 
 test("sgrWheelSequence uses 1-based cell under the pointer", () => {
@@ -42,6 +43,41 @@ test("mouseTrackingActive mirrors Ghostty mouse payload", () => {
   assert.equal(mouseTrackingActive({}), false)
   assert.equal(mouseTrackingActive({tracking: false}), false)
   assert.equal(mouseTrackingActive({tracking: true}), true)
+})
+
+test("terminalCellFromClientPoint maps CSS-scaled clicks to the visible TUI cell", () => {
+  assert.deepEqual(
+    terminalCellFromClientPoint({
+      clientX: 84,
+      clientY: 210,
+      rectLeft: 20,
+      rectTop: 10,
+      cellWidth: 4,
+      cellHeight: 20,
+      paddingLeft: 8,
+      paddingTop: 8,
+      scale: 0.5,
+      cols: 80,
+      rows: 40
+    }),
+    {col: 15, row: 19}
+  )
+})
+
+test("terminalCellFromClientPoint preserves unscaled mapping and clamps to the grid", () => {
+  assert.deepEqual(
+    terminalCellFromClientPoint({
+      clientX: 999,
+      clientY: -50,
+      rectLeft: 0,
+      rectTop: 0,
+      cellWidth: 8,
+      cellHeight: 20,
+      cols: 80,
+      rows: 24
+    }),
+    {col: 79, row: 0}
+  )
 })
 
 test("mouseReportPayload encodes the cell like the vendor pushMouseEvent", () => {
