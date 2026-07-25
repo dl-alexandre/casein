@@ -48,10 +48,17 @@ defmodule CaseinWeb.PwaStaticTest do
     css = File.read!("assets/css/app.css")
 
     # black-translucent status bar paints over content; standalone shell must
-    # clear the notch/Dynamic Island (top) and the home indicator (bottom).
+    # clear the notch/Dynamic Island (top), the home indicator (bottom), and —
+    # in landscape on a coarse pointer — the sensor housing on the side edges.
     assert css =~ "safe-area-inset-top"
     assert css =~ "safe-area-inset-bottom"
+    assert css =~ "safe-area-inset-left"
+    assert css =~ "safe-area-inset-right"
     assert css =~ "display-mode: standalone"
+    assert css =~ "orientation: landscape"
+    # iOS re-inflates text after rotation unless autosizing is pinned; the
+    # terminal grid is measured in px so an autosized font mis-sizes it.
+    assert css =~ "text-size-adjust"
   end
 
   test "viewport meta pins Chromium interactive-widget to resizes-visual" do

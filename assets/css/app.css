@@ -115,6 +115,11 @@ body {
     /* black-translucent status bar paints over content; keep the shell under
        the notch / Dynamic Island instead of eating the first terminal row. */
     background: #0a0a0a;
+    /* iOS re-inflates text after an orientation change unless autosizing is
+       pinned. The terminal grid is measured in px and its cols/rows are derived
+       from that measurement, so an autosized font silently mis-sizes the grid. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   .workspace-shell {
@@ -123,6 +128,17 @@ body {
 
   .workspace-main-header {
     padding-top: 0.125rem;
+  }
+
+  /* Landscape moves the sensor housing / home indicator to a side edge, so the
+     shell has to clear left/right as well. Scoped to landscape + coarse pointer:
+     in portrait these insets are 0 anyway, and an unscoped rule would cost the
+     terminal columns on every desktop viewport. */
+  @media (orientation: landscape) and (pointer: coarse) {
+    .workspace-shell {
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+    }
   }
 }
 
