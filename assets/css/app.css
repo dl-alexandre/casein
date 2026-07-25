@@ -143,6 +143,17 @@ body {
 }
 
 @supports (-webkit-touch-callout: none) {
+  /* Safari zooms the visual viewport when focusing an input whose computed
+     font size is below 16px. The terminal textarea is invisible but inherits
+     the grid's 13px font, so raising the keyboard briefly zoomed the whole
+     workspace into a narrow column. Keep only the input at Safari's no-zoom
+     threshold; visible terminal metrics continue to use --casein-font-size. */
+  @media (pointer: coarse) {
+    textarea[data-ghostty-input="true"] {
+      font-size: 16px !important;
+    }
+  }
+
   @media (display-mode: standalone) {
     html,
     body {
