@@ -69,6 +69,15 @@ defmodule CaseinWeb.PwaStaticTest do
     assert offline =~ "interactive-widget=resizes-visual"
   end
 
+  test "iOS terminal input does not trigger focus zoom" do
+    css = File.read!("assets/css/app.css")
+
+    assert css =~ ~s(textarea[data-ghostty-input="true"])
+    assert css =~ "font-size: 16px !important"
+    assert css =~ "@supports (-webkit-touch-callout: none)"
+    assert css =~ "@media (pointer: coarse)"
+  end
+
   test "offline fallback is served as static HTML", %{conn: conn} do
     conn = get(conn, "/offline.html")
     body = response(conn, 200)
