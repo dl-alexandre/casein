@@ -23,6 +23,28 @@ fi
 
 [[ -n "$PAYLOAD" ]] || exit 0
 
+# Codex's native thread title can be absent early in a conversation. Give tmux
+# a deterministic task-oriented fallback as soon as the first prompt arrives.
+if [[ "$TRANSPORT" == "hook" && -n "$PANE" && "$PANE" =~ ^%[0-9]+$ ]]; then
+  TITLE="$(
+    CODEX_HOOK_PAYLOAD="$PAYLOAD" python3 - <<'PY' 2>/dev/null || true
+import json, os, re
+try:
+    event = json.loads(os.environ.get("CODEX_HOOK_PAYLOAD") or "{}")
+except Exception:
+    event = {}
+if event.get("hook_event_name") == "UserPromptSubmit":
+    prompt = event.get("prompt") or event.get("user_prompt") or event.get("message") or ""
+    prompt = re.sub(r"\s+", " ", str(prompt)).strip()
+    if prompt:
+        print(prompt[:80])
+PY
+  )"
+  if [[ -n "$TITLE" ]] && command -v tmux >/dev/null 2>&1; then
+    tmux select-pane -t "$PANE" -T "$TITLE" >/dev/null 2>&1 || true
+  fi
+fi
+
 HOOK_URL="${DEVIDE_CODEX_HOOK_URL:-}"
 if [[ -z "$HOOK_URL" && -n "${DEVIDE_API_BASE_URL:-}" ]]; then
   HOOK_URL="${DEVIDE_API_BASE_URL%/}/api/workspaces/${WORKSPACE_ID}/codex/hooks"

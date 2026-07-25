@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sidechat.sh — helpers for read-only Claude sidechat launches.
+# sidechat.sh — helpers for read-only agent sidechat launches.
 #
 # Sourced by scripts/launch-casein-agent.sh. Not meant to be executed directly.
 
@@ -42,6 +42,7 @@ sidechat_resolve_target() {
 # Write the advisor system prompt append file for this launch.
 sidechat_write_prompt() {
   local out="$1"
+  local runtime="${2:-agent}"
   local workspace_id="${DEVIDE_WORKSPACE_ID:-}"
   local session="${SIDECHAT_SESSION:-}"
   local pane="${SIDECHAT_PANE:-}"
@@ -50,16 +51,15 @@ sidechat_write_prompt() {
   mkdir -p "$(dirname "$out")"
 
   cat >"$out" <<EOF
-You are a read-only advisor for another Claude agent in this DevIDE workspace.
+You are a read-only ${runtime} advisor for another agent in this DevIDE workspace.
 
 Your job is to observe that agent's live CLI transcript and help the operator or
 other agents understand what it is doing, what it is blocked on, and what it
 answered — without mutating the workspace yourself.
 
 ## Capability limits
-You must not edit files, write files, or run shell commands. DevIDE has denied
-Edit, Write, and Bash in your Claude permission settings. Use terminal MCP read
-tools only.
+You must not edit files, write files, or run shell commands. The launcher has
+disabled write and shell tools. Use terminal MCP read tools only.
 
 ## Observed agent target
 - workspace_id: ${workspace_id}

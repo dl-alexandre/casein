@@ -263,10 +263,11 @@ product-repo worktrees (e.g. auditing OneBackend-v3) that do not carry them — 
 an orchestrator there could not invoke `delegate-to-grok` even though delegation
 is host infrastructure, not app code.
 
-On every Claude launch the launcher stages the allow-listed global skills into
+On every Claude and Codex launch the launcher stages the allow-listed global skills into
 the launch's resolved Claude config home (`$CLAUDE_CONFIG_DIR`, the per-owner auth
-profile when the workspace uses one, else `~/.claude`), so they are available in
-any repo. On every **OpenCode** launch it stages the same allowlist into
+profile when the workspace uses one, else `~/.claude`) or Codex home
+(`$CODEX_HOME`, else `~/.codex`), so they are available in any repo. On every
+**OpenCode** launch it stages the same allowlist into
 `~/.config/opencode/skills` and the project `.opencode/skills` (OpenCode also
 auto-loads `~/.claude/skills` as external skills). Staging is idempotent and
 refreshes when the canonical source changes (`scripts/lib/agent-skills.sh`). The

@@ -121,6 +121,8 @@ compile-time-fixed argv.
    `workspace-write + on-request`. Unrestricted mode is an explicit opt-in via
    `DEVIDE_CODEX_DEFAULT_YOLO=1`; bearer credentials are excluded from Codex's
    repo-command environment while remaining available to the MCP client.
+   The default is sandboxed `workspace-write + on-request`; unrestricted mode
+   is never enabled implicitly.
    Claude still defaults to `--dangerously-skip-permissions` unless the operator
    passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`

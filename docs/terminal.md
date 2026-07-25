@@ -100,7 +100,8 @@ Managed Codex launches also override Codex's default terminal title from
 `["spinner", "project"]` to `["spinner", "thread"]`. This keeps the browser
 window tabs task-oriented instead of repeating generated worktree names such as
 `agent-codex-adhoc-<timestamp>`. An explicit `-c tui.terminal_title=...` launch
-argument remains authoritative.
+argument remains authoritative. The lifecycle hook also applies a bounded
+first-prompt pane title as a fallback when Codex has not produced a thread title.
 
 ## Auth
 

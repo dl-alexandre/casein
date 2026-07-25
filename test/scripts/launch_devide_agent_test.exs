@@ -152,7 +152,7 @@ defmodule Scripts.LaunchDevideAgentTest do
   test "codex defaults to full access, preserves explicit policies, and scrubs bearer credentials" do
     text = File.read!(@script)
 
-    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
+    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-0)
     assert text =~ "codex_arg_sets_execution_policy"
     assert text =~ ~S(--dangerously-bypass-approvals-and-sandbox)
     assert text =~ "codex_workspace_mode"
@@ -178,6 +178,17 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ ~S(agent_skills_install "${ROOT}/.claude/skills")
     # Must target the owner profile's config dir when set, else host global ~/.claude.
     assert text =~ ~S(${CLAUDE_CONFIG_DIR:-${HOME}/.claude})
+  end
+
+  test "codex stages Casein skills and supports a read-only sidechat" do
+    text = File.read!(@script)
+
+    assert text =~
+             ~S(agent_skills_install "${ROOT}/.claude/skills" "${CODEX_HOME:-${HOME}/.codex}")
+
+    assert text =~ "codex-sidechat-prompt.txt"
+    assert text =~ "developer_instructions="
+    assert text =~ "--sandbox read-only --ask-for-approval never"
   end
 
   test "codex MCP overrides use unquoted server keys" do

@@ -28,7 +28,8 @@ docs/development-workflow.md). Set DEVIDE_AGENT_SKIP_WORKTREE=1 to opt out.
 
 Runtimes:
   grok      injects an immutable capability bundle into a private leader session
-  codex     injects per-workspace MCP via launch-time config overrides
+  codex     injects per-workspace MCP and host skills via launch-time config;
+            pass --sidechat <target> for a read-only advisor
   claude    injects per-workspace MCP via --mcp-config (keeps ~/.claude credentials)
             pass --sidechat <target> for a read-only advisor (target: %pane,
             session:pane, or agent)
@@ -959,7 +960,10 @@ codex_state_notify_args() {
   fi
 
   local script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
-  [[ -x "$script" ]] || return 0
+  if [[ ! -x "$script" ]]; then
+    warn_degraded_step "Codex notify integration" "missing executable: ${script}"
+    return 0
+  fi
 
   printf '%s\0' -c "notify=[\"${script}\"]"
 }
@@ -982,7 +986,10 @@ codex_state_hook_args() {
 
   local script quoted event config
   script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
-  [[ -x "$script" ]] || return 0
+  if [[ ! -x "$script" ]]; then
+    warn_degraded_step "Codex lifecycle hooks" "missing executable: ${script}"
+    return 0
+  fi
   quoted="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$script")"
 
   for event in SessionStart UserPromptSubmit PreToolUse PermissionRequest PostToolUse Stop SubagentStart SubagentStop; do
@@ -1059,10 +1066,9 @@ codex_default_args() {
     return 0
   fi
 
-  # Paired Codex sessions are operator-owned raw terminals, so match the
-  # interactive Full Access choice unless the caller supplies an execution
-  # policy or explicitly opts back into the workspace-mode defaults with 0.
-  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
+  # Keep paired sessions sandboxed by default. Operators can explicitly opt
+  # into Codex's unrestricted mode for a trusted manual workspace.
+  case "${DEVIDE_CODEX_DEFAULT_YOLO:-0}" in
     1 | true | TRUE | yes | YES | on | ON)
       printf '%s\0' --dangerously-bypass-approvals-and-sandbox
       return 0
@@ -1202,6 +1208,25 @@ case "$RUNTIME" in
       --leader-socket "$grok_socket" --no-subagents "${grok_user_args[@]}"
     ;;
   codex)
+    codex_sidechat_target=""
+    codex_user_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --sidechat)
+          codex_sidechat_target="${2:-}"
+          shift 2
+          ;;
+        *)
+          codex_user_args+=("$1")
+          shift
+          ;;
+      esac
+    done
+    set -- "${codex_user_args[@]}"
+
+    # Codex discovers reusable skills under CODEX_HOME/skills.
+    agent_skills_install "${ROOT}/.claude/skills" "${CODEX_HOME:-${HOME}/.codex}"
+
     codex_args=()
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
@@ -1218,9 +1243,18 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_state_notify_args "$@")
-    while IFS= read -r -d '' arg; do
-      codex_args+=("$arg")
-    done < <(codex_default_args "$@")
+    if [[ -n "$codex_sidechat_target" ]]; then
+      sidechat_resolve_target "$codex_sidechat_target"
+      sidechat_prompt="${DEVIDE_AGENT_MCP_HOME}/codex-sidechat-prompt.txt"
+      sidechat_write_prompt "$sidechat_prompt" "Codex"
+      codex_sidechat_instructions="$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$sidechat_prompt")"
+      codex_args+=(-c "developer_instructions=${codex_sidechat_instructions}")
+      codex_args+=(--sandbox read-only --ask-for-approval never)
+    else
+      while IFS= read -r -d '' arg; do
+        codex_args+=("$arg")
+      done < <(codex_default_args "$@")
+    fi
     exec "$(runtime_bin codex)" "${codex_args[@]}" "$@"
     ;;
   opencode)

@@ -63,8 +63,12 @@ defmodule Casein.Codex.HookReceiver do
       "PermissionRequest" ->
         :blocked
 
-      event when event in ["Stop", "SubagentStop", "agent-turn-complete"] ->
+      event when event in ["Stop", "agent-turn-complete"] ->
         :done
+
+      # A child finishing does not imply that its parent Codex turn is done.
+      "SubagentStop" ->
+        :working
 
       _other ->
         nil

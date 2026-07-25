@@ -145,6 +145,31 @@ defmodule Scripts.AgentStateScriptsTest do
     assert body =~ ~s("reason":"Network access")
   end
 
+  test "codex prompt hooks set a bounded task-oriented tmux pane title" do
+    {dir, capture} = stub_curl!()
+    tmux_capture = Path.join(dir, "tmux-args")
+    prompt = String.duplicate("Ship polished Codex parity ", 8)
+
+    env =
+      base_env(dir, capture) ++
+        [
+          {"HOOK_STDIN",
+           Jason.encode!(%{"hook_event_name" => "UserPromptSubmit", "prompt" => prompt})},
+          {"CODEX_SCRIPT", @codex_script},
+          {"TMUX_CAPTURE", tmux_capture}
+        ]
+
+    assert {"", 0} =
+             System.cmd("sh", ["-c", ~s(printf '%s' "$HOOK_STDIN" | bash "$CODEX_SCRIPT")],
+               env: env,
+               stderr_to_stdout: true
+             )
+
+    title_args = File.read!(tmux_capture)
+    assert title_args =~ "select-pane -t %9 -T Ship polished Codex parity"
+    assert byte_size(String.trim(title_args)) <= 110
+  end
+
   test "codex exits 0 without Casein env" do
     assert {"", 0} =
              System.cmd("bash", [@codex_script, "{}"],
@@ -234,6 +259,10 @@ defmodule Scripts.AgentStateScriptsTest do
     curl = Path.join(dir, "curl")
     File.write!(curl, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CURL_CAPTURE\"\n")
     File.chmod!(curl, 0o755)
+
+    tmux = Path.join(dir, "tmux")
+    File.write!(tmux, "#!/bin/sh\nprintf '%s ' \"$@\" > \"$TMUX_CAPTURE\"\n")
+    File.chmod!(tmux, 0o755)
 
     {dir, Path.join(dir, "curl-args")}
   end
