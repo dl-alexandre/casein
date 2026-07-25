@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // preview-ui-walk driver — full body packed as pl0..plN beside this file (landlock-safe land).
 import {
+  countRuntimeErrors,
+  defaultAppFramePrefixes,
+  extractBounceReason,
   extractExceptionFromLogs,
+  isAuthBouncePath,
   isHardFailStatus,
   isPassingStatus,
   pageVerdict,
@@ -25,6 +29,10 @@ void isHardFailStatus;
 void isPassingStatus;
 void statusColor;
 void extractExceptionFromLogs;
+void extractBounceReason;
+void countRuntimeErrors;
+void defaultAppFramePrefixes;
+void isAuthBouncePath;
 void interactionsAllowed;
 void runPageSteps;
 void walkNeedsRequiredInteractions;
