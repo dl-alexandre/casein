@@ -21,6 +21,25 @@ export function isMobileTerminalLayout(matchMedia = defaultMatchMedia) {
 }
 
 /**
+ * Whether mobile focus rails may request a real tmux pane zoom.
+ *
+ * This is deliberately stricter than isMobileTerminalLayout(): an installed
+ * desktop PWA can match display-mode: standalone, and a narrow desktop window
+ * can match the phone breakpoint. Neither should mutate shared tmux zoom state.
+ * any-pointer keeps touch tablets eligible when a trackpad is the primary
+ * pointer, while the width cap prevents touch-enabled desktop displays from
+ * opting in.
+ */
+export function allowsMobileFocusAutoZoom(matchMedia = defaultMatchMedia) {
+  if (typeof matchMedia !== "function") return false
+
+  return (
+    !!matchMedia("(any-pointer: coarse)")?.matches &&
+    !!matchMedia("(max-width: 1024px)")?.matches
+  )
+}
+
+/**
  * Size-authority signal for the focused-viewer contract.
  *
  * Desktop keeps the strict `document.hasFocus()` rule so a backgrounded tab

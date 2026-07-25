@@ -19,6 +19,7 @@ import {TmuxTransitionCoordinator} from "./tmux_transition_coordinator.mjs"
 import {animateSplitTransition} from "./tmux_split_transition.mjs"
 import {animateSwapTransition} from "./tmux_swap_transition.mjs"
 import {animateZoomTransition} from "./tmux_zoom_transition.mjs"
+import {allowsMobileFocusAutoZoom} from "./terminal_display_layout.mjs"
 
 function renderGeometries(geos, bounds) {
   for (const pane of geos.values()) {
@@ -216,17 +217,9 @@ export const TmuxPaneResize = {
   // data-window-zoomed guard keep this to one push per unzoomed->zoomed step, and
   // it never fires mid-resize-drag or on fine-pointer (desktop) clients.
   _maybeEnsureMobileFocusZoom() {
-    // Coarse pointer, installed PWA, or phone-narrow viewport — not just
-    // pointer:coarse. iPads with a trackpad report fine pointer while still
-    // needing the mobile one-pane zoom so CSS focus-rails don't letterbox.
-    const mobileClient =
-      window.matchMedia("(pointer: coarse)").matches ||
-      window.matchMedia("(display-mode: standalone)").matches ||
-      window.matchMedia("(max-width: 639px)").matches
-
     const wantZoom =
       !this._drag &&
-      mobileClient &&
+      allowsMobileFocusAutoZoom(window.matchMedia.bind(window)) &&
       this.el.dataset.mobileFocusLayout === "true" &&
       this.el.dataset.windowZoomed !== "true"
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  allowsMobileFocusAutoZoom,
   fitBaseScale,
   fitGridForViewport,
   isMobileTerminalLayout,
@@ -137,6 +138,21 @@ test("isMobileTerminalLayout matches coarse, standalone, or narrow media", () =>
     isMobileTerminalLayout((q) => ({ matches: q.includes("max-width: 639px") })),
     true
   )
+})
+
+test("allowsMobileFocusAutoZoom requires touch capability and tablet-sized viewport", () => {
+  const media = (matches) => (query) => ({matches: matches.includes(query)})
+
+  assert.equal(
+    allowsMobileFocusAutoZoom(media(["(any-pointer: coarse)", "(max-width: 1024px)"])),
+    true
+  )
+  assert.equal(
+    allowsMobileFocusAutoZoom(media(["(display-mode: standalone)", "(max-width: 1024px)"])),
+    false
+  )
+  assert.equal(allowsMobileFocusAutoZoom(media(["(any-pointer: coarse)"])), false)
+  assert.equal(allowsMobileFocusAutoZoom(media(["(max-width: 1024px)"])), false)
 })
 
 test("latchMobileAuthority: raw-active always wins upward", () => {
