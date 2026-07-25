@@ -47,7 +47,9 @@ if (existsSync(single)) {
   for (let i = 0; ; i++) {
     const p = join(here, `playwright_walk_payload.pl${i}`);
     if (!existsSync(p)) break;
-    b64 += readFileSync(p, "utf8").trim();
+    const chunk = readFileSync(p, "utf8").trim();
+    if (!chunk) break;
+    b64 += chunk;
   }
 }
 if (!b64) {
