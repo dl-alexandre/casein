@@ -67,16 +67,22 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
     end
   end
 
+  # Raw send tools may target any pane in the bound session when write unlock
+  # is active (so an agent can drive a verify/bash pane). All other terminal
+  # tools stay pinned to the claimed agent pane.
+  @session_any_pane_tools ~w(terminal_send_command terminal_send_keys)
+
   defp authorize_bound_session("terminal", name, args, claims) when is_map(args) do
     requested = Map.get(args, "session") || Map.get(args, :session)
     pane = Map.get(args, "pane") || Map.get(args, :pane)
     reported = Map.get(args, "tmux_session_id") || Map.get(args, :tmux_session_id)
+    any_pane? = name in @session_any_pane_tools and write_unlocked?(claims)
 
     cond do
       requested not in [nil, "", claims.tmux_session_id] ->
         {:error, :capability_session_mismatch}
 
-      pane not in [nil, "", claims.pane_id] ->
+      not any_pane? and pane not in [nil, "", claims.pane_id] ->
         {:error, :capability_pane_mismatch}
 
       name == "terminal_report_worktree" and
@@ -87,6 +93,12 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
         :ok
     end
   end
+
+  defp write_unlocked?(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
+    Casein.Agents.GrokCapabilityPolicy.write_unlocked?(workspace_id)
+  end
+
+  defp write_unlocked?(_claims), do: false
 
   defp authorize_bound_session(_surface, _name, _args, _claims), do: :ok
 

@@ -18,6 +18,10 @@ defmodule CaseinWeb.API.AgentCapabilityController do
          {:ok, bundle_digest} <- matching_string(params, "bundle_digest", @digest),
          {:ok, checkout_digest} <- optional_matching_string(params, "checkout_digest", @digest),
          snapshot <- GrokCapabilityPolicy.snapshot(workspace_id),
+         # Freeze the *write-capable* tool map as the ceiling. Live tools/list is
+         # still write-unlock-gated via effective_tools/1, so locking the workspace
+         # immediately hides mutations without re-minting the bearer.
+         ceiling <- GrokCapabilityPolicy.tool_ceiling(),
          true <- GrokCapabilityPolicy.classified?(),
          {:ok, raw_token, record} <-
            AgentCapabilityTokens.create_for_grok(%{
@@ -28,7 +32,7 @@ defmodule CaseinWeb.API.AgentCapabilityController do
              bundle_digest: bundle_digest,
              checkout_digest: checkout_digest,
              workspace_mode: snapshot.mode,
-             allowed_tools: snapshot.allowed_tools
+             allowed_tools: ceiling
            }) do
       _ =
         Audit.emit(%{
@@ -62,7 +66,9 @@ defmodule CaseinWeb.API.AgentCapabilityController do
         bundle_digest: bundle_digest,
         workspace_mode: snapshot.mode,
         policy_version: snapshot.policy_version,
-        allowed_tools: snapshot.allowed_tools
+        # Effective grant *now* (locked vs unlocked); ceiling is stored on the record.
+        allowed_tools: snapshot.allowed_tools,
+        tool_ceiling: ceiling
       })
     else
       false -> invalid(conn, "invalid_grok_capability_scope")

@@ -53,11 +53,15 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
     assert response["pane_id"] == @pane_id
     assert response["workspace_mode"] == "manual"
     assert "terminal_list_sessions" in response["allowed_tools"]["terminal"]
+    # Response shows *effective* tools (locked at issue); ceiling is separate.
     refute "terminal_send_command" in response["allowed_tools"]["terminal"]
+    assert "terminal_send_command" in response["tool_ceiling"]["terminal"]
 
     record = Repo.get!(AgentCapabilityToken, response["capability_id"])
     assert record.token_hash == AgentCapabilityTokens.token_hash(response["token"])
     refute record.token_hash == response["token"]
+    # Frozen ceiling includes write tools so a later unlock expands live grant.
+    assert "terminal_send_command" in record.allowed_tools["terminal"]
     refute Map.has_key?(Application.get_env(:casein, :workspace_api_tokens), response["token"])
   end
 
@@ -168,7 +172,9 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
 
     before_names = get_in(before, ["result", "tools"]) |> Enum.map(& &1["name"])
     assert "terminal_send_agent_command" in before_names
-    refute "terminal_send_command" in before_names
+    # Write unlock grants raw send for same-session pane targeting.
+    assert "terminal_send_command" in before_names
+    assert "terminal_send_keys" in before_names
 
     assert {:ok, _} = Workspaces.revoke_agent_write_unlock(@workspace_id)
 

@@ -48,6 +48,26 @@ defmodule CaseinWeb.API.MCPCapabilityScopeTest do
              )
   end
 
+  test "raw send tools refuse a non-claimed pane when write unlock is inactive" do
+    opts =
+      Keyword.put(opts(), :agent_capability_tools, %{
+        "terminal" => ["terminal_send_command"]
+      })
+
+    assert {:error, :capability_pane_mismatch} =
+             MCPCapabilityScope.authorize_call(
+               %{
+                 "name" => "terminal_send_command",
+                 "arguments" => %{
+                   "session" => @claims.tmux_session_id,
+                   "pane" => "%99",
+                   "command" => "echo hi"
+                 }
+               },
+               opts
+             )
+  end
+
   test "binds Grok state reports to the issued leader and bundle" do
     good = %{
       "name" => "terminal_report_agent_state",
