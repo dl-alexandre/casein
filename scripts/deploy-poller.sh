@@ -140,7 +140,13 @@ setup_build_cache() {
 # failure path falls through to the on-disk script (current behaviour), so a
 # fetch hiccup can never block a deploy or the self-heal below.
 self_update() {
-  [ -n "${DEVIDE_POLLER_SELFUPDATED:-}" ] && return 0  # already re-exec'd this tick
+  # Older installed pollers only staged this script before re-execing it. When
+  # that copy first picks up companion-file support, hydrate the missing helper
+  # once more instead of treating the legacy self-update flag as sufficient.
+  if [ -n "${DEVIDE_POLLER_SELFUPDATED:-}" ] &&
+    [ -r "${DEVIDE_POLLER_CADDY_LIB:-}" ]; then
+    return 0
+  fi
   command -v git >/dev/null 2>&1 || return 0
   env -u GH_TOKEN -u GITHUB_TOKEN git -C "$ROOT" fetch --quiet origin "$BRANCH" 2>/dev/null || return 0
 
@@ -150,7 +156,8 @@ self_update() {
   canon_caddy_lib="${canon_dir}/caddy-upstream.sh"
   if git -C "$ROOT" show "origin/${BRANCH}:scripts/deploy-poller.sh" >"$canon" 2>/dev/null &&
     git -C "$ROOT" show "origin/${BRANCH}:scripts/lib/caddy-upstream.sh" >"$canon_caddy_lib" 2>/dev/null &&
-    [ -s "$canon" ] && [ -s "$canon_caddy_lib" ] && ! cmp -s "$canon" "$0"; then
+    [ -s "$canon" ] && [ -s "$canon_caddy_lib" ] &&
+    { ! cmp -s "$canon" "$0" || [ ! -r "${DEVIDE_POLLER_CADDY_LIB:-}" ]; }; then
     log "self-update: re-exec origin/${BRANCH} copy of deploy-poller.sh"
     exec env \
       DEVIDE_POLLER_SELFUPDATED=1 \
