@@ -2,7 +2,7 @@
   "version": 1,
   "$schema": "./preview-walk.schema.json",
   "_driver": "playwright_walk.mjs — login.kind=click runs login.steps (fill/click) then walks pages",
-  "_note": "FICTIONAL migration shape for product login-only / click-auth manifests. Put fill/click in login.steps (not only pages[0]); set allow_interactions:true. Prefer redirect_cookie when a mock/bypass route exists. Also accepts login.form {email_selector, password_selector, submit_selector} which expands to steps.",
+  "_note": "FICTIONAL migration shape for product login-only / click-auth manifests. Put fill/click in login.steps (not only pages[0]); set allow_interactions:true. Prefer redirect_cookie when a mock/bypass route exists.",
   "login": {
     "kind": "click",
     "path": "/login",

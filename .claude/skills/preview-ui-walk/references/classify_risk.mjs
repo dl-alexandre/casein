@@ -3,7 +3,7 @@
 // but "prod-dev-api" is still prod_like.
 
 const PROD_HINT =
-  /(?:^|[.\/-])prod(?:uction)?(?:[.\/-]|$)|prod-api|api\.prod|amazonaws\.com\/prod/i;
+  /(?:^|[./-])prod(?:uction)?(?:[./-]|$)|prod-api|api\.prod|amazonaws\.com\/prod/i;
 const NONPROD_HINT =
   /stage|staging|sandbox|localhost|127\.0\.0\.1|\.dev\.|\bdev-|devbox|preview/i;
 
