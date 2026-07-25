@@ -367,7 +367,9 @@ trap 'if [ -n "${DEPLOY_IN_FLIGHT:-}" ]; then record_deploy_failure unexpected "
 mkdir -p "$(dirname "$WORKTREE")"
 if git worktree list --porcelain | grep -Fx "worktree ${WORKTREE}" >/dev/null; then
   log "reusing worktree ${WORKTREE}"
-  git -C "$WORKTREE" -c advice.detachedHead=false checkout --detach --quiet "$target"
+  # The build and activation steps may leave tracked or untracked runtime
+  # artifacts behind. Reset directly to the target so those leftovers cannot
+  # block a preliminary checkout before the cleanup gets a chance to run.
   git -C "$WORKTREE" reset --hard --quiet "$target"
   git -C "$WORKTREE" clean -fdq
 else
