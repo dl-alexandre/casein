@@ -9,8 +9,11 @@ import {
   walkNeedsRequiredInteractions,
 } from "./page_steps.mjs";
 import {
+  countRuntimeErrors,
+  extractBounceReason,
   extractExceptionFromLogs,
   isHardFailStatus,
+  isSignificantErrorLine,
   verdictFixture,
 } from "./walk_verdict.mjs";
 
@@ -132,6 +135,25 @@ assert(
 assert(
   verdictFixture({
     mainStatus: 200,
+    uok: true,
+    runtimeErrors: 1,
+  }).status === "RUNTIME_ERROR",
+  "server error logs → RUNTIME_ERROR (not ASSERT_FAILED)",
+);
+
+assert(
+  verdictFixture({
+    mainStatus: 200,
+    uok: true,
+    runtimeErrors: 2,
+    stepsFailed: 1,
+  }).status === "RUNTIME_ERROR",
+  "RUNTIME_ERROR wins over step ASSERT_FAILED (server bug first)",
+);
+
+assert(
+  verdictFixture({
+    mainStatus: 200,
     loaded: false,
     uok: false,
     navOutcome: "timeout",
@@ -178,10 +200,78 @@ assert(
   "exception frame extracted when samples present",
 );
 
+// Prefer app frame over framework static.ex
+{
+  const ex = extractExceptionFromLogs({
+    logs: {
+      levels: {
+        error: {
+          samples: [
+            "** (KeyError) key :timezone not found",
+            "(phoenix_live_view/lib/phoenix_live_view/static.ex:324)",
+            "(lib/one_web/live/scale_report_live.ex:57)",
+          ],
+        },
+      },
+    },
+  });
+  assert(
+    ex?.frame?.includes("scale_report_live.ex:57"),
+    "exception frame prefers app lib/one_web over static.ex",
+  );
+}
+
+// Significant vs benign error lines
+assert(
+  isSignificantErrorLine("** (KeyError) key :timezone not found") === true,
+  "KeyError is significant",
+);
+assert(
+  isSignificantErrorLine("auth falls to local DB") === false,
+  "benign auth fallback is not significant",
+);
+assert(
+  countRuntimeErrors({
+    logs: {
+      levels: {
+        error: {
+          count: 2,
+          samples: ["auth falls to local DB", "** (KeyError) key :x"],
+        },
+      },
+    },
+    error_log_count: 1,
+  }) >= 1,
+  "countRuntimeErrors counts significant samples",
+);
+
+// Bounce reason from LiveView flash fields
+assert(
+  extractBounceReason({
+    liveview: {
+      liveviews: [
+        {
+          fields: { flash: "unauthorized: missing :areas" },
+          assign_keys: ["flash", "current_user"],
+        },
+      ],
+    },
+  })?.includes("unauthorized"),
+  "bounce reason pulls flash",
+);
+
 // ── Exit semantics ─────────────────────────────────────────────────────────
 assert(
   isHardFailStatus("CRASHED", {}) === true,
   "CRASHED hard-fails exit",
+);
+assert(
+  isHardFailStatus("RUNTIME_ERROR", {}) === true,
+  "RUNTIME_ERROR hard-fails exit",
+);
+assert(
+  isHardFailStatus("ASSERT_FAILED", {}) === true,
+  "ASSERT_FAILED hard-fails exit",
 );
 assert(
   isHardFailStatus("BOUNCED", { bounce: "/dashboard", landed: "http://x/dashboard" }) === false,
