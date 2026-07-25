@@ -2,9 +2,15 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   @moduledoc """
   Computes the exact Casein MCP grant for a managed Grok leader.
 
-  A token's issued tool map is a ceiling. Every request intersects that ceiling
-  with the workspace's current mode, DB-isolation state, and time-boxed agent
-  write unlock, so revoking an unlock takes effect without waiting for expiry.
+  A token's issued tool map is a **ceiling** (always the full write-capable
+  set, minus meta-tools). Every request intersects that ceiling with the
+  workspace's current mode, DB-isolation state, and time-boxed agent write
+  unlock, so revoking an unlock takes effect without waiting for expiry and
+  without re-issuing the capability.
+
+  When write unlock is active, raw `terminal_send_command` /
+  `terminal_send_keys` are granted for the bound tmux session (any pane).
+  When locked, only reads and low-danger reporting tools remain.
   """
 
   alias Casein.Agents.{ArtifactTools, PreviewTools, TerminalTools}
@@ -13,18 +19,26 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   alias Casein.Workspaces
   alias McpCtl.Tool
 
-  @policy_version 1
+  @policy_version 2
   @reporting_tools ~w(
     annotation_propose
     terminal_report_agent_state
     terminal_report_worktree
     terminal_set_agent_label
   )
-  @never_grant_tools ~w(terminal_send_command terminal_send_keys)
 
   @type tool_map :: %{String.t() => [String.t()]}
 
-  @doc "Current policy snapshot used when a Grok capability is issued."
+  @doc """
+  Full write-capable tool ceiling stored on newly issued capabilities.
+
+  Always includes mutation tools so a later human write unlock can expand the
+  live grant without re-minting the bearer.
+  """
+  @spec tool_ceiling() :: tool_map()
+  def tool_ceiling, do: allowed_tools(true)
+
+  @doc "Current policy snapshot used when a Grok capability is issued or inspected."
   @spec snapshot(String.t()) :: %{
           mode: String.t(),
           mode_source: String.t(),
@@ -41,6 +55,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
       mode_source: Atom.to_string(source),
       policy_version: @policy_version,
       write_enabled: write_enabled,
+      # Effective tools *right now* (for UI / tools/list when inspecting current).
       allowed_tools: allowed_tools(write_enabled)
     }
   end
@@ -51,6 +66,7 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
       when is_binary(workspace_id) and is_map(issued) do
     current = snapshot(workspace_id)
 
+    # Filter the *current* unlock-aware set to names present in the issued ceiling.
     effective =
       Map.new(current.allowed_tools, fn {surface, current_names} ->
         issued_names = Map.get(issued, surface, [])
@@ -93,6 +109,11 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
 
   def valid_tmux_session?(_workspace_id, _session), do: false
 
+  @doc false
+  @spec write_unlocked?(String.t()) :: boolean()
+  def write_unlocked?(workspace_id) when is_binary(workspace_id), do: write_enabled?(workspace_id)
+  def write_unlocked?(_), do: false
+
   defp allowed_tools(write_enabled) do
     definitions()
     |> Enum.group_by(fn {surface, _tool} -> surface end, fn {_surface, tool} -> tool end)
@@ -108,14 +129,10 @@ defmodule Casein.Agents.GrokCapabilityPolicy do
   end
 
   defp allowed_tool?(tool, write_enabled) do
-    if tool.name in @never_grant_tools do
-      false
-    else
-      case Tool.public_metadata(tool) do
-        %{"mutation" => false} -> true
-        %{"mutation" => true} -> write_enabled or tool.name in @reporting_tools
-        _missing_or_invalid -> false
-      end
+    case Tool.public_metadata(tool) do
+      %{"mutation" => false} -> true
+      %{"mutation" => true} -> write_enabled or tool.name in @reporting_tools
+      _missing_or_invalid -> false
     end
   end
 
