@@ -23,7 +23,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 
-// Live static imports (greppable wire-up + ensure deps resolve).
 void pageVerdict;
 void isHardFailStatus;
 void isPassingStatus;
@@ -40,7 +39,6 @@ void beginRuntime;
 void pageRuntimeEvidence;
 
 const here = dirname(fileURLToPath(import.meta.url));
-// Prefer single payload file; fall back to pl0..plN shards.
 let b64 = "";
 const single = join(here, "playwright_walk_payload.b64");
 if (existsSync(single)) {
@@ -57,7 +55,6 @@ if (!b64) {
   process.exit(2);
 }
 let code = gunzipSync(Buffer.from(b64, "base64")).toString("utf8");
-// Rewrite relative ./foo.mjs imports to absolute skill-dir URLs so the tmp unpack resolves.
 const hereUrl = pathToFileURL(here.endsWith("/") ? here : here + "/").href;
 code = code.replace(
   /(from\s+|import\s*\()(["'])\.\/([^"']+\.mjs)\2/g,
