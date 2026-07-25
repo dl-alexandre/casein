@@ -80,7 +80,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
     home =
       Path.join(
         System.tmp_dir!(),
-        "devide-tidewave-mcp-#{System.unique_integer([:positive])}"
+        "casein-tidewave-mcp-#{System.unique_integer([:positive])}"
       )
 
     inst_dir = Path.join(home, "instances")
@@ -108,7 +108,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
     home =
       Path.join(
         System.tmp_dir!(),
-        "devide-tidewave-mcp-off-#{System.unique_integer([:positive])}"
+        "casein-tidewave-mcp-off-#{System.unique_integer([:positive])}"
       )
 
     inst_dir = Path.join(home, "instances")
@@ -127,7 +127,7 @@ defmodule Casein.Agents.TidewaveMCPTest do
   end
 
   test "server_key slugifies workspace name" do
-    assert TidewaveMCP.server_key(%{name: "Alice Feature"}) == "devide-tidewave-alice-feature"
+    assert TidewaveMCP.server_key(%{name: "Alice Feature"}) == "casein-tidewave-alice-feature"
   end
 
   defp restore_preview_home(nil), do: Application.delete_env(:casein, :preview_env_home)

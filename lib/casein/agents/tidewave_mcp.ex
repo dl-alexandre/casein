@@ -16,7 +16,7 @@ defmodule Casein.Agents.TidewaveMCP do
   @doc "MCP server key for agent client configs."
   @spec server_key(map() | nil) :: String.t()
   def server_key(workspace) do
-    "devide-tidewave-#{workspace_slug(workspace)}"
+    "casein-tidewave-#{workspace_slug(workspace)}"
   end
 
   @doc """

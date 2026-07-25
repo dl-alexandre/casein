@@ -433,7 +433,7 @@ defmodule Casein.Agents.MCPMaterializer do
       |> String.downcase()
 
     slug = if slug == "", do: "workspace", else: slug
-    {"casein-terminal-#{slug}", "casein-preview-#{slug}", "devide-artifact-#{slug}"}
+    {"casein-terminal-#{slug}", "casein-preview-#{slug}", "casein-artifact-#{slug}"}
   end
 
   # sobelow_skip ["Traversal.FileModule"]

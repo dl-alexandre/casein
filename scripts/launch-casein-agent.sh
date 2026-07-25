@@ -307,8 +307,8 @@ codex_mcp_config_args() {
   slug="$(workspace_slug)"
   terminal_key="casein-terminal-${slug}"
   preview_key="casein-preview-${slug}"
-  artifact_key="devide-artifact-${slug}"
-  tidewave_key="devide-tidewave-${slug}"
+  artifact_key="casein-artifact-${slug}"
+  tidewave_key="casein-tidewave-${slug}"
 
   printf '%s\0' \
     -c "mcp_servers.${terminal_key}.url=\"$(codex_terminal_mcp_url)\"" \

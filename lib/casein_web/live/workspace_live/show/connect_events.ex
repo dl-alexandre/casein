@@ -97,7 +97,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.ConnectEvents do
         "mcpServers" => %{
           "casein-terminal" => %{"url" => base <> "/api/terminals/mcp", "headers" => auth},
           "casein-preview" => %{"url" => base <> "/api/preview/mcp", "headers" => auth},
-          "devide-artifact" => %{"url" => base <> "/api/artifacts/mcp", "headers" => auth}
+          "casein-artifact" => %{"url" => base <> "/api/artifacts/mcp", "headers" => auth}
         }
       },
       pretty: true

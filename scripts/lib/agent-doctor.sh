@@ -580,7 +580,7 @@ print(slug or 'workspace')
     expected_servers=(
       "casein-terminal-${slug}"
       "casein-preview-${slug}"
-      "devide-artifact-${slug}"
+      "casein-artifact-${slug}"
     )
   else
     warn "Grok MCP scope diagnostics skipped because workspace pairing env is incomplete"

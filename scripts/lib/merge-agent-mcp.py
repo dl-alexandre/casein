@@ -21,8 +21,8 @@ def server_keys(workspace_name: str) -> tuple[str, str, str, str]:
     return (
         f"casein-terminal-{slug}",
         f"casein-preview-{slug}",
-        f"devide-artifact-{slug}",
-        f"devide-tidewave-{slug}",
+        f"casein-artifact-{slug}",
+        f"casein-tidewave-{slug}",
     )
 
 

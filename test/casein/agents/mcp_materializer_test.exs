@@ -60,13 +60,13 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
     assert grok =~ "casein-terminal"
-    assert grok =~ "devide-artifact"
+    assert grok =~ "casein-artifact"
     assert grok =~ "workspace_id=ws-abc"
     assert grok =~ "${CASEIN_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
     assert mcp_json =~ "casein-terminal-test-ws"
-    assert mcp_json =~ "devide-artifact-test-ws"
+    assert mcp_json =~ "casein-artifact-test-ws"
     assert mcp_json =~ "/api/artifacts/mcp?workspace_id=ws-abc"
     assert mcp_json =~ "Bearer ${CASEIN_API_TOKEN}"
     refute mcp_json =~ "secret-token"
@@ -81,7 +81,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "casein-terminal"
     refute codex =~ "casein-preview"
-    refute codex =~ "devide-artifact"
+    refute codex =~ "casein-artifact"
     refute codex =~ "CASEIN_API_TOKEN"
 
     hooks = Jason.decode!(File.read!(Path.join(staging, "claude-hooks-settings.json")))
@@ -191,15 +191,15 @@ defmodule Casein.Agents.MCPMaterializerTest do
              )
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
-    assert grok =~ "devide-tidewave-test-ws"
+    assert grok =~ "casein-tidewave-test-ws"
     assert grok =~ "http://127.0.0.1:41042/tidewave/mcp"
-    refute grok =~ "devide-tidewave-test-ws.headers"
+    refute grok =~ "casein-tidewave-test-ws.headers"
 
     mcp_json = Jason.decode!(File.read!(Path.join(staging, ".mcp.json")))
-    assert Map.has_key?(mcp_json["mcpServers"], "devide-tidewave-test-ws")
+    assert Map.has_key?(mcp_json["mcpServers"], "casein-tidewave-test-ws")
 
     grok_mcp_json = Jason.decode!(File.read!(Path.join(staging, "grok/.mcp.json")))
-    refute Map.has_key?(grok_mcp_json["mcpServers"], "devide-tidewave-test-ws")
+    refute Map.has_key?(grok_mcp_json["mcpServers"], "casein-tidewave-test-ws")
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "DEVIDE_TIDEWAVE_MCP_URL='http://127.0.0.1:41042/tidewave/mcp'"
@@ -263,7 +263,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
 
     mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
     assert mcp_json =~ "casein-terminal-test-ws"
-    assert mcp_json =~ "devide-artifact-test-ws"
+    assert mcp_json =~ "casein-artifact-test-ws"
   end
 
   test "desktop materialization preserves project MCP servers and uses a Grok bundle", %{
@@ -292,7 +292,7 @@ defmodule Casein.Agents.MCPMaterializerTest do
     assert merged["mcpServers"]["user-server"]["url"] == "http://example.test/mcp"
     refute merged["mcpServers"]["casein-terminal-test-ws"]
     refute merged["mcpServers"]["casein-preview-test-ws"]
-    refute merged["mcpServers"]["devide-artifact-test-ws"]
+    refute merged["mcpServers"]["casein-artifact-test-ws"]
 
     contents = File.read!(Path.join(checkout, ".mcp.json"))
     refute contents =~ "Bearer ${CASEIN_API_TOKEN}"

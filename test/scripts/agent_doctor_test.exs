@@ -73,7 +73,7 @@ defmodule Scripts.AgentDoctorTest do
     server_names = [
       "casein-terminal-demo-workspace",
       "casein-preview-demo-workspace",
-      "devide-artifact-demo-workspace"
+      "casein-artifact-demo-workspace"
     ]
 
     inspect_json =

@@ -73,7 +73,7 @@ defmodule Scripts.MergeAgentMcpTest do
              )
 
     data = path |> File.read!() |> Jason.decode!()
-    assert data["mcpServers"]["devide-artifact-alpha-workspace"]["url"] =~ "/api/artifacts/mcp"
+    assert data["mcpServers"]["casein-artifact-alpha-workspace"]["url"] =~ "/api/artifacts/mcp"
   end
 
   defp write_config(body) do
