@@ -94,13 +94,13 @@ defmodule CaseinWeb.API.MCPCapabilityScope do
     end
   end
 
+  defp authorize_bound_session(_surface, _name, _args, _claims), do: :ok
+
   defp write_unlocked?(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
     Casein.Agents.GrokCapabilityPolicy.write_unlocked?(workspace_id)
   end
 
   defp write_unlocked?(_claims), do: false
-
-  defp authorize_bound_session(_surface, _name, _args, _claims), do: :ok
 
   defp authorize_bound_report("terminal_report_agent_state", args, claims) when is_map(args) do
     leader = Map.get(args, "grok_leader_socket") || Map.get(args, :grok_leader_socket)
