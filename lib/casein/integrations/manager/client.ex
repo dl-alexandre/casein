@@ -27,6 +27,29 @@ defmodule Casein.Integrations.Manager.Client do
   """
   @type auth :: String.t() | nil
 
+  @typedoc """
+  The manager's view of the calling identity, from `GET /api/auth/me`:
+  `%{"email" => .., "user" => .., "isAdmin" => bool}`. All three are `null` /
+  `false` when the manager runs with auth disabled.
+  """
+  @type identity :: map()
+
+  @doc """
+  Who the manager thinks we are.
+
+  Needed to interpret the *scope* of a `list/2` response: the manager filters
+  `GET /api/workspaces` down to the caller's own user unless the caller is an
+  admin passing `all=true`. See `Casein.WorkspaceSource.Manager.listing_scope/1`.
+  """
+  @spec whoami(auth()) :: {:ok, identity()} | {:error, error()}
+  def whoami(auth \\ nil) do
+    case req(auth) |> Req.get(url: "/api/auth/me") |> unwrap() do
+      {:ok, map} when is_map(map) -> {:ok, map}
+      {:ok, other} -> {:error, {:unexpected, other}}
+      err -> err
+    end
+  end
+
   @spec list(keyword(), auth()) :: {:ok, [Workspace.t()]} | {:error, error()}
   def list(opts \\ [], auth \\ nil) do
     case req(auth) |> Req.get(url: "/api/workspaces", params: opts) |> unwrap() do

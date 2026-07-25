@@ -176,7 +176,10 @@ defmodule CaseinWeb.WorkspaceLive.Show.CockpitData do
   defp format_lan_path_error(reason), do: inspect(reason)
 
   defp list_sidebar_workspace_records do
-    Workspaces.list_records(exclude_status: "stale", limit: 200)
+    Workspaces.list_records(
+      exclude_status: Casein.Workspaces.State.WorkspaceRecord.stale_status(),
+      limit: 200
+    )
   end
 
   defp ensure_current_workspace_record(records, workspace) do

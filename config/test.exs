@@ -160,6 +160,8 @@ config :casein,
   device_link_reaper_enabled: false,
   runtime_reaper_enabled: false,
   runtime_reaper_dry_run: true,
+  workspace_reconciler_enabled: false,
+  workspace_reconciler_dry_run: true,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via HTTPStub servers.
   # Tests that want the Local source override this.

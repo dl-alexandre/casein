@@ -15,6 +15,7 @@ defmodule Casein.Workspaces.State.EctoAdapter do
     schema "workspace_records" do
       field :external_id, :string
       field :name, :string
+      field :user, :string
       field :host_path, :string
       field :status, :string
       field :mode, :string
@@ -139,6 +140,7 @@ defmodule Casein.Workspaces.State.EctoAdapter do
       id: r.id,
       external_id: r.external_id,
       name: r.name,
+      user: r.user,
       host_path: r.host_path,
       status: r.status,
       mode: r.mode,

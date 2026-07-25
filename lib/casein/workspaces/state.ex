@@ -47,6 +47,7 @@ defmodule Casein.Workspaces.State do
     %WorkspaceRecord{
       external_id: external_id(ws),
       name: ws.name || ws.id,
+      user: ws.user,
       host_path: ws.path,
       status: ws.status && Atom.to_string(ws.status),
       manager_payload: sanitize_manager_payload(ws.metadata),
@@ -237,6 +238,20 @@ defmodule Casein.Workspaces.State do
   def delete(external_id), do: impl().delete(external_id)
 
   @doc """
+  Marks a record as no longer vouched for by the workspace source.
+
+  Deliberately not a delete: the record carries IDE-owned state (mode, DB
+  isolation history, agent-write grants) that outlives the workspace and is
+  wanted again if it is recreated under the same id. Callers must have
+  established that absence from the source is authoritative — see
+  `Casein.Workspaces.Reconciler`.
+  """
+  @spec retire(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def retire(external_id) when is_binary(external_id) do
+    impl().upsert(%{existing_or_new(external_id) | status: WorkspaceRecord.stale_status()})
+  end
+
+  @doc """
   Batch lookup of persisted records by host path (one adapter round trip).
 
   Inputs are `Path.expand`-normalized and nil/empty entries dropped; result
@@ -358,6 +373,7 @@ defmodule Casein.Workspaces.State do
     %{
       existing
       | name: incoming.name,
+        user: incoming.user || existing.user,
         host_path: incoming.host_path || existing.host_path,
         status: incoming.status || existing.status,
         manager_payload: incoming.manager_payload,
