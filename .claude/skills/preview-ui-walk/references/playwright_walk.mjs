@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// preview-ui-walk driver — full body packed beside this file for landlock-safe land.
+// preview-ui-walk driver — full body packed as pl0..plN beside this file (landlock-safe land).
 import {
   extractExceptionFromLogs,
   isHardFailStatus,
@@ -14,7 +14,7 @@ import {
 } from "./page_steps.mjs";
 import { beginRuntime, pageRuntimeEvidence } from "./runtime_evidence.mjs";
 import { gunzipSync } from "node:zlib";
-import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
@@ -32,7 +32,22 @@ void beginRuntime;
 void pageRuntimeEvidence;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const b64 = readFileSync(join(here, "playwright_walk_payload.b64"), "utf8").trim();
+// Prefer single payload file; fall back to pl0..plN shards.
+let b64 = "";
+const single = join(here, "playwright_walk_payload.b64");
+if (existsSync(single)) {
+  b64 = readFileSync(single, "utf8").trim();
+} else {
+  for (let i = 0; ; i++) {
+    const p = join(here, `playwright_walk_payload.pl${i}`);
+    if (!existsSync(p)) break;
+    b64 += readFileSync(p, "utf8").trim();
+  }
+}
+if (!b64) {
+  console.error("[preview-ui-walk] ERROR: missing playwright_walk_payload.b64 (or pl* shards)");
+  process.exit(2);
+}
 let code = gunzipSync(Buffer.from(b64, "base64")).toString("utf8");
 // Rewrite relative ./foo.mjs imports to absolute skill-dir URLs so the tmp unpack resolves.
 const hereUrl = pathToFileURL(here.endsWith("/") ? here : here + "/").href;
