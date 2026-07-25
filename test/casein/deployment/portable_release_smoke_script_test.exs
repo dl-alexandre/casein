@@ -5,6 +5,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
   @compose Path.expand("../../../docker-compose.yml", __DIR__)
   @dockerfile Path.expand("../../../Dockerfile", __DIR__)
   @deploy_script Path.expand("../../../scripts/deploy-devbox-release.sh", __DIR__)
+  @caddy_helper Path.expand("../../../scripts/lib/caddy-upstream.sh", __DIR__)
 
   test "portable smoke script has valid shell syntax" do
     assert {_, 0} = System.cmd("bash", ["-n", @script])
@@ -37,6 +38,7 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
 
   test "devbox activation uses the renamed release entrypoint and socket cleaner" do
     text = File.read!(@deploy_script)
+    caddy_helper = File.read!(@caddy_helper)
 
     assert text =~ ~s("${STAGING}/bin/casein")
     assert text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_casein_socket)
@@ -46,7 +48,9 @@ defmodule Casein.Deployment.PortableReleaseSmokeScriptTest do
     assert text =~ "casein-agent-state.sh casein-codex-notify.sh"
     assert text =~ ~s(RUN_ROOT="${DEVIDE_RUN_ROOT:-/run/casein}")
     assert text =~ ~s(CURRENT_SYMLINK="${DEVIDE_CURRENT_SOCK:-${RUN_ROOT}/current.sock}")
-    assert text =~ "unix//run/casein/current.sock"
+    assert text =~ ~s(source "${DEPLOY_SCRIPT_SELF_DIR}/lib/caddy-upstream.sh")
+    assert caddy_helper =~ "unix//run/casein/current.sock"
+    assert caddy_helper =~ "unix//run/devide/current.sock"
     refute text =~ ~s("${STAGING}/bin/dev_ide")
     refute text =~ ~s(ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket)
     refute text =~ ~s("${ACTIVE_RELEASE}/bin/dev_ide" start)

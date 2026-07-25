@@ -98,7 +98,9 @@ git diff --check
 
 log "checking deploy script syntax"
 bash -n scripts/deploy-devbox-release.sh
+bash -n scripts/deploy-poller.sh
 bash -n scripts/lib/canary-drain.sh
+bash -n scripts/lib/caddy-upstream.sh
 
 log "running hermetic shell unit tests (scoped-token validation/durability)"
 bash scripts/test-scoped-token-durability.sh
@@ -109,6 +111,9 @@ bash scripts/test-agent-shims.sh
 log "running hermetic shell unit tests (canary drain/stop decisions)"
 bash scripts/test-canary-drain.sh
 
+log "running hermetic shell unit tests (canonical Caddy upstream repair)"
+bash scripts/test-caddy-upstream.sh
+
 log "shellcheck (warning+) on agent shim/launch scripts"
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --severity=warning -x \
@@ -118,7 +123,9 @@ if command -v shellcheck >/dev/null 2>&1; then
     scripts/lib/real-agent-bin.sh \
     scripts/lib/agent-doctor.sh \
     scripts/lib/canary-drain.sh \
+    scripts/lib/caddy-upstream.sh \
     scripts/test-canary-drain.sh \
+    scripts/test-caddy-upstream.sh \
     scripts/test-agent-shims.sh
 else
   log "shellcheck not installed — skipping (GitHub-hosted CI runners have it)"
