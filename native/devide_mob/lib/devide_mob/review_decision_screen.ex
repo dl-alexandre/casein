@@ -24,6 +24,7 @@ defmodule DevideMob.ReviewDecisionScreen do
       |> Mob.Socket.assign(:card, card)
       |> Mob.Socket.assign(:note, "")
       |> Mob.Socket.assign(:submitted_action, nil)
+      |> Mob.Socket.assign(:card_expired, false)
       |> Mob.Socket.assign(:message, nil)
 
     {:ok, socket}
@@ -44,7 +45,7 @@ defmodule DevideMob.ReviewDecisionScreen do
       socket =
         socket
         |> Mob.Socket.assign(:message, result_message(result))
-        |> maybe_allow_retry(result)
+        |> handle_action_result(result)
 
       {:noreply, socket}
     else
@@ -469,11 +470,31 @@ defmodule DevideMob.ReviewDecisionScreen do
     invalid_card? = blank?(get(assigns.card, "id"))
 
     children =
-      case actions do
-        [] ->
+      case {assigns.card_expired, actions} do
+        {true, _actions} ->
+          [
+            body_text(
+              "This request is no longer live. Refresh the Action Center before acting again."
+            ),
+            %{
+              type: :button,
+              props: %{
+                text: "Return to Action Center",
+                background: :surface_raised,
+                text_color: :on_surface,
+                fill_width: true,
+                padding: :space_sm,
+                height: 44.0,
+                on_tap: {self(), :back}
+              },
+              children: []
+            }
+          ]
+
+        {false, []} ->
           [body_text("No actions available for this card.")]
 
-        specs ->
+        {false, specs} ->
           Enum.map(specs, fn spec ->
             disabled? = submitted? or invalid_card? or action_disabled?(spec, assigns.note)
             action_button(spec, disabled?)
@@ -505,16 +526,20 @@ defmodule DevideMob.ReviewDecisionScreen do
   end
 
   defp submit_action(socket, action_id) do
-    case find_action(socket.assigns.card, action_id) do
-      nil ->
-        Mob.Socket.assign(socket, :message, "Action unavailable")
+    if socket.assigns.card_expired do
+      Mob.Socket.assign(socket, :message, "Refresh the Action Center before acting again.")
+    else
+      case find_action(socket.assigns.card, action_id) do
+        nil ->
+          Mob.Socket.assign(socket, :message, "Action unavailable")
 
-      spec ->
-        if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
-          Mob.Socket.assign(socket, :message, "Add a short note first")
-        else
-          submit(socket, spec)
-        end
+        spec ->
+          if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
+            Mob.Socket.assign(socket, :message, "Add a short note first")
+          else
+            submit(socket, spec)
+          end
+      end
     end
   end
 
@@ -614,10 +639,18 @@ defmodule DevideMob.ReviewDecisionScreen do
     get(get(card, "intervention", %{}), "pwa_url") || get(card, "pwa_url")
   end
 
-  defp maybe_allow_retry(socket, {:error, _reason}),
-    do: Mob.Socket.assign(socket, :submitted_action, nil)
+  defp handle_action_result(socket, {:error, reason}) do
+    socket
+    |> Mob.Socket.assign(:submitted_action, nil)
+    |> maybe_expire_card(reason)
+  end
 
-  defp maybe_allow_retry(socket, _result), do: socket
+  defp handle_action_result(socket, _result), do: socket
+
+  defp maybe_expire_card(socket, reason) when reason in ["card_not_found", :card_not_found],
+    do: Mob.Socket.assign(socket, :card_expired, true)
+
+  defp maybe_expire_card(socket, _reason), do: socket
 
   defp observe_intervention(socket, result) do
     if socket.assigns.submitted_action == "follow_up" do
@@ -637,6 +670,10 @@ defmodule DevideMob.ReviewDecisionScreen do
   defp style_text_color(_style), do: :on_surface
 
   defp result_message({:ok, _result}), do: "Action accepted"
+
+  defp result_message({:error, reason}) when reason in ["card_not_found", :card_not_found],
+    do: "This request expired or was removed. Refresh the Action Center to continue."
+
   defp result_message({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
 
   defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
