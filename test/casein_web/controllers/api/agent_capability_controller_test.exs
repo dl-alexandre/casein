@@ -32,8 +32,8 @@ defmodule CaseinWeb.API.AgentCapabilityControllerTest do
 
     on_exit(fn ->
       restore(:api_token, previous.api_token)
-      restore(:workspace_tokens, previous.workspace_tokens)
-      restore(:tool_search, previous.tool_search)
+      restore(:workspace_api_tokens, previous.workspace_tokens)
+      restore(:mcp_tool_search, previous.tool_search)
     end)
 
     tmux_session = Casein.Terminals.tmux_workspace_session_prefix(@workspace_id) <> "agent"
