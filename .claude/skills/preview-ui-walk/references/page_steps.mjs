@@ -47,24 +47,66 @@ export function isMutatingStep(step) {
 
 /**
  * Decide whether interactions may run for this walk.
- * Returns { allowed: boolean, reason?: string }
+ * Returns { allowed: boolean, reason?: string, code?: string }
+ *
+ * code is a stable machine tag for loud walk-level verdicts:
+ *   read_only | allow_interactions_off | prod_like_env_check
  */
 export function interactionsAllowed(manifest, runtimeBag) {
   const safety = manifest?.safety || {};
   if (safety.read_only === true && safety.allow_interactions !== true) {
-    return { allowed: false, reason: "safety.read_only (set allow_interactions:true to opt in)" };
+    return {
+      allowed: false,
+      code: "read_only",
+      reason: "safety.read_only (set allow_interactions:true to opt in)",
+    };
   }
   if (safety.allow_interactions !== true) {
-    return { allowed: false, reason: "safety.allow_interactions is not true" };
+    return {
+      allowed: false,
+      code: "allow_interactions_off",
+      reason: "safety.allow_interactions is not true",
+    };
   }
   const prod = (runtimeBag?.env_check?.items || []).filter((i) => i.risk === "prod_like");
   if (prod.length) {
     return {
       allowed: false,
+      code: "prod_like_env_check",
       reason: `env_check prod_like: ${prod.map((p) => p.key).join(", ")}`,
     };
   }
   return { allowed: true };
+}
+
+/** True when a page (or the walk) declares required mutating steps. */
+export function pageNeedsRequiredInteractions(pageSpec) {
+  const steps = Array.isArray(pageSpec?.steps) ? pageSpec.steps : [];
+  return steps.some((s) => isMutatingStep(s) && s.required !== false);
+}
+
+export function walkNeedsRequiredInteractions(manifest) {
+  // Top-level click-login steps count too (login.kind=click + login.steps).
+  if (pageNeedsRequiredInteractions(manifest?.login)) return true;
+  return (manifest?.pages || []).some((p) => pageNeedsRequiredInteractions(p));
+}
+
+/**
+ * Expand `${ENV_VAR}` placeholders in step fill/type text (and similar).
+ * Unresolved refs throw so a missing WALK_LOGIN_EMAIL is loud, not a wrong login.
+ */
+export function expandEnvText(value) {
+  if (value == null) return value;
+  const s = String(value);
+  if (!s.includes("${")) return s;
+  return s.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (full, name) => {
+    if (process.env[name] == null || process.env[name] === "") {
+      throw new Error(
+        `unresolved env placeholder ${full} — set ${name} or hardcode step text`,
+      );
+    }
+    return process.env[name];
+  });
 }
 
 function denyEventHit(step, denyList) {
@@ -77,17 +119,31 @@ function denyEventHit(step, denyList) {
 
 /**
  * Run pages[].steps against a Playwright page.
- * Returns { status: "PASS"|"FAIL"|"SKIPPED", steps: [...] }
+ * Returns { status: "PASS"|"FAIL"|"SKIPPED", steps: [...], blocked?: {...} }
+ *
+ * When required mutating steps are blocked by the interactions gate, those steps
+ * stay SKIPPED (not FAIL) and the page status is SKIPPED with a loud reason —
+ * so a prod_like env_check never masquerades as a wrong password.
  */
 export async function runPageSteps(page, pageSpec, { manifest, runtimeBag, base } = {}) {
   const steps = Array.isArray(pageSpec.steps) ? pageSpec.steps : [];
-  if (!steps.length) return { status: "PASS", steps: [], ran: 0, failed: 0, skipped: 0 };
+  if (!steps.length) {
+    return {
+      status: "PASS",
+      steps: [],
+      ran: 0,
+      failed: 0,
+      skipped: 0,
+      blocked_only: false,
+    };
+  }
 
   const gate = interactionsAllowed(manifest, runtimeBag);
   const deny = manifest?.safety?.deny_events || [];
   const results = [];
   let failed = 0;
   let skipped = 0;
+  let blockedRequired = 0;
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i] || {};
@@ -103,18 +159,16 @@ export async function runPageSteps(page, pageSpec, { manifest, runtimeBag, base 
 
     if (isMutatingStep(step)) {
       if (!gate.allowed) {
+        const required = step.required !== false;
         results.push({
           name: label,
           action: kind,
           status: "SKIPPED",
           error: `mutating_step_blocked: ${gate.reason}`,
+          blocked_code: gate.code || "interactions_blocked",
         });
         skipped++;
-        if (step.required !== false) {
-          results[results.length - 1].status = "FAIL";
-          failed++;
-          skipped--;
-        }
+        if (required) blockedRequired++;
         continue;
       }
       const hit = denyEventHit(step, deny);
@@ -146,12 +200,27 @@ export async function runPageSteps(page, pageSpec, { manifest, runtimeBag, base 
     }
   }
 
+  const blockedOnly = blockedRequired > 0 && failed === 0;
+  let status = "PASS";
+  if (failed) status = "FAIL";
+  else if (blockedOnly) status = "SKIPPED";
+
   return {
-    status: failed ? "FAIL" : "PASS",
+    status,
     steps: results,
     ran: results.filter((r) => r.status === "PASS").length,
     failed,
     skipped,
+    blocked_only: blockedOnly,
+    blocked_required: blockedRequired,
+    blocked:
+      blockedRequired > 0
+        ? {
+            code: gate.code || "interactions_blocked",
+            reason: gate.reason,
+            message: `SKIPPED: interactions blocked by ${gate.code || "gate"} (${gate.reason})`,
+          }
+        : null,
   };
 }
 
@@ -176,7 +245,9 @@ function resolveScope(page, step) {
 async function executeStep(page, step, { timeout, base }) {
   const kind = stepKind(step);
   const sel = step.selector || step.css || step.locator;
-  const text = step.text ?? step.value ?? step.contains;
+  // Credential env-substitution works in pages[].steps fill/type text, not only
+  // the top-level login block: "text": "${WALK_LOGIN_EMAIL}".
+  const text = expandEnvText(step.text ?? step.value ?? step.contains);
 
   switch (kind) {
     case "settle": {
