@@ -21,7 +21,7 @@ defmodule Casein.ArtifactProjects do
   @supported_kinds ~w(static html)
   @max_files 64
   @max_file_bytes 2 * 1024 * 1024
-  @static_preview_command "python3 -m http.server \"$PORT\" --bind 127.0.0.1"
+  @static_preview_command "python3 -m http.server \"$PORT\" --bind 127.0.0.1 --directory .casein/public"
 
   @type attrs :: map() | keyword()
 
@@ -143,6 +143,28 @@ defmodule Casein.ArtifactProjects do
   end
 
   def serve(_project_id), do: {:error, :invalid_project_id}
+
+  @doc """
+  Retire an artifact while retaining its Git branch for an explicit restore.
+
+  The runtime is expired, its generated worktree is removed, and the runtime is
+  marked cleaned so neither the raw preview server nor durable route can serve it.
+  """
+  @spec retire(String.t()) :: {:ok, Project.t()} | {:error, term()}
+  def retire(project_id) when is_binary(project_id) do
+    Runtimes.with_runtime_lock(project_id, fn ->
+      with {:ok, %Runtime{} = runtime} <- runtime_project(project_id),
+           {:ok, %WorkspaceRecord{} = record} <- workspace_record(runtime.workspace_id),
+           {:ok, _expired} <-
+             Runtimes.expire_runtime(project_id, %{"reason" => "artifact_retired"}),
+           :ok <- remove_artifact_worktree(record, runtime.worktree_path),
+           {:ok, %Runtime{} = cleaned} <- Runtimes.cleanup_runtime(project_id) do
+        {:ok, project_from_runtime(cleaned)}
+      end
+    end)
+  end
+
+  def retire(_project_id), do: {:error, :invalid_project_id}
 
   @doc "Create a Git snapshot commit without changing project files."
   @spec snapshot(String.t(), attrs()) :: {:ok, map()} | {:error, term()}
@@ -870,11 +892,20 @@ defmodule Casein.ArtifactProjects do
 
   defp write_files(worktree_path, files) when is_binary(worktree_path) and is_map(files) do
     Enum.reduce_while(files, :ok, fn {path, content}, :ok ->
-      case write_file(worktree_path, path, content) do
-        :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
+      case write_generated_file(worktree_path, path, content) do
+        :ok ->
+          {:cont, :ok}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp write_generated_file(worktree_path, path, content) do
+    with :ok <- write_file(worktree_path, path, content) do
+      write_file(worktree_path, Path.join(".casein/public", path), content)
+    end
   end
 
   defp write_manifest(worktree_path, metadata) do
@@ -901,6 +932,19 @@ defmodule Casein.ArtifactProjects do
       do: :ok,
       else: {:error, :invalid_artifact_path}
   end
+
+  defp remove_artifact_worktree(%WorkspaceRecord{} = record, path) when is_binary(path) do
+    if File.exists?(path) do
+      case git(record.host_path, ["worktree", "remove", "--force", path]) do
+        {:ok, _output} -> :ok
+        {:error, reason} -> {:error, {:artifact_retire_failed, reason}}
+      end
+    else
+      :ok
+    end
+  end
+
+  defp remove_artifact_worktree(_record, _path), do: {:error, :invalid_artifact_worktree_path}
 
   defp default_static_files(name, prompt) do
     %{

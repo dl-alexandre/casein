@@ -71,6 +71,7 @@ defmodule CaseinWeb.API.ArtifactMCPControllerTest do
     assert Enum.any?(tools, &(&1["name"] == "artifact_create"))
     assert Enum.any?(tools, &(&1["name"] == "artifact_update"))
     assert Enum.any?(tools, &(&1["name"] == "artifact_snapshot"))
+    assert Enum.any?(tools, &(&1["name"] == "artifact_retire"))
   end
 
   test "workspace-scoped token scopes artifact tool schema", %{conn: conn} do
@@ -251,6 +252,40 @@ defmodule CaseinWeb.API.ArtifactMCPControllerTest do
                }
              }
            } = json_response(conn, 200)
+  end
+
+  test "workspace-scoped token retires its artifact project", %{conn: conn} do
+    assert {:ok, project} =
+             Casein.ArtifactProjects.create(@workspace_id, %{
+               name: "Retire Through MCP",
+               files: %{"index.html" => "<h1>Retire</h1>\n"}
+             })
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 8,
+          method: "tools/call",
+          params: %{name: "artifact_retire", arguments: %{artifact_id: project.id}}
+        },
+        @workspace_token
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{
+                 "id" => artifact_id,
+                 "status" => "cleaned",
+                 "retired" => true,
+                 "restorable" => true
+               }
+             }
+           } = json_response(conn, 200)
+
+    assert artifact_id == project.id
+    refute File.exists?(project.worktree_path)
   end
 
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do

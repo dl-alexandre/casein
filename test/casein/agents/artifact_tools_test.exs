@@ -151,14 +151,15 @@ defmodule Casein.Agents.ArtifactToolsTest do
              }
     end
 
-    test "exposes all six tools in stable order" do
+    test "exposes all seven tools in stable order" do
       assert Enum.map(ArtifactTools.definitions(), & &1.name) == [
                "artifact_create",
                "artifact_update",
                "artifact_list",
                "artifact_get",
                "artifact_serve",
-               "artifact_snapshot"
+               "artifact_snapshot",
+               "artifact_retire"
              ]
     end
   end

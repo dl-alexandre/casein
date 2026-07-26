@@ -82,6 +82,11 @@ defmodule Casein.ArtifactProjectsTest do
     assert File.read!(Path.join(project.worktree_path, "index.html")) =~ "Milk Dashboard"
     assert File.read!(Path.join(project.worktree_path, "README.md")) =~ "daily protein"
 
+    assert File.read!(Path.join(project.worktree_path, ".casein/public/index.html")) =~
+             "Milk Dashboard"
+
+    refute File.exists?(Path.join(project.worktree_path, ".casein/public/mix.exs"))
+
     manifest =
       project.worktree_path
       |> Path.join(".casein/artifact.json")
@@ -96,6 +101,7 @@ defmodule Casein.ArtifactProjectsTest do
     assert url == project.preview_url
     assert String.starts_with?(url, "http://localhost:")
     assert env["DEVIDE_RUNTIME_PREVIEW_COMMAND"] =~ "python3 -m http.server"
+    assert env["DEVIDE_RUNTIME_PREVIEW_COMMAND"] =~ "--directory .casein/public"
 
     assert [listed] = ArtifactProjects.list("ws-artifacts")
     assert listed.id == project.id
@@ -262,6 +268,26 @@ defmodule Casein.ArtifactProjectsTest do
     assert {:ok, served} = ArtifactProjects.serve(project.id)
     assert served.id == project.id
     assert served.preview_url == project.preview_url
+  end
+
+  test "retire removes the worktree and retains a restorable branch", %{repo: repo} do
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Retirable Artifact",
+               files: %{"index.html" => "<h1>Retire me</h1>\n"}
+             })
+
+    branch = project.branch
+    assert File.dir?(project.worktree_path)
+
+    assert {:ok, retired} = ArtifactProjects.retire(project.id)
+    assert retired.status == "cleaned"
+    assert ArtifactProjects.retired?(retired)
+    refute File.exists?(project.worktree_path)
+    assert git!(repo, ["show-ref", "--verify", "--quiet", "refs/heads/#{branch}"]) == ""
+
+    assert {:ok, restored} = ArtifactProjects.restore("ws-artifacts", project.id)
+    assert File.read!(Path.join(restored.worktree_path, "index.html")) =~ "Retire me"
   end
 
   test "restore revives an expired artifact whose worktree still exists" do
