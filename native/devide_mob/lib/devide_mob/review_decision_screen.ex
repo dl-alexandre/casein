@@ -526,21 +526,21 @@ defmodule DevideMob.ReviewDecisionScreen do
     }
   end
 
-  defp submit_action(socket, action_id) do
-    if socket.assigns.card_expired do
-      Mob.Socket.assign(socket, :message, "Refresh the Action Center before acting again.")
-    else
-      case find_action(socket.assigns.card, action_id) do
-        nil ->
-          Mob.Socket.assign(socket, :message, "Action unavailable")
+  defp submit_action(%{assigns: %{card_expired: true}} = socket, _action_id) do
+    Mob.Socket.assign(socket, :message, "Refresh the Action Center before acting again.")
+  end
 
-        spec ->
-          if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
-            Mob.Socket.assign(socket, :message, "Add a short note first")
-          else
-            submit(socket, spec)
-          end
-      end
+  defp submit_action(socket, action_id) do
+    case find_action(socket.assigns.card, action_id) do
+      nil ->
+        Mob.Socket.assign(socket, :message, "Action unavailable")
+
+      spec ->
+        if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
+          Mob.Socket.assign(socket, :message, "Add a short note first")
+        else
+          submit(socket, spec)
+        end
     end
   end
 
