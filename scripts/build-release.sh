@@ -100,7 +100,13 @@ if [ ! -x "${OUTPUT_DIR}/bin/clean_casein_socket" ]; then
   echo "error: extracted tree missing bin/clean_casein_socket — required by casein.service ExecStartPre" >&2
   exit 1
 fi
-STATIC_DIR="$(find "${OUTPUT_DIR}/lib" -path '*/priv/static' -type d | grep '/casein-' | head -n 1 || true)"
+STATIC_DIR=""
+for candidate in "${OUTPUT_DIR}"/lib/casein-*/priv/static; do
+  if [ -d "${candidate}" ]; then
+    STATIC_DIR="${candidate}"
+    break
+  fi
+done
 if [ "${STATIC_DIR}" = "" ]; then
   echo "error: extracted tree missing Casein priv/static directory" >&2
   exit 1
