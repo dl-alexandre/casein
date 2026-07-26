@@ -18,8 +18,9 @@ log() { printf '>>> %s\n' "$*"; }
 
 loopback_reachable() {
   local code
-  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${LOOPBACK_URL}/" 2>/dev/null || echo 000)"
-  [[ "${code}" != "000" && -n "${code}" ]]
+  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${LOOPBACK_URL}/" 2>/dev/null)" ||
+    return 1
+  [[ "${code}" =~ ^[0-9]{3}$ && "${code}" != "000" ]]
 }
 
 if loopback_reachable; then
