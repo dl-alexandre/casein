@@ -1090,7 +1090,8 @@ defmodule Casein.ArtifactProjects do
           "user.name=Casein Artifact",
           "-c",
           "user.email=devide-artifacts@localhost",
-          "commit"
+          "commit",
+          "--no-verify"
         ] ++ allow_empty_args ++ ["-m", message]
 
       case git(worktree_path, args) do

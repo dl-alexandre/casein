@@ -101,6 +101,23 @@ defmodule Casein.ArtifactProjectsTest do
     assert listed.id == project.id
   end
 
+  test "artifact snapshots do not run product repository commit hooks", %{repo: repo} do
+    hooks = Path.join(repo, ".test-hooks")
+    File.mkdir_p!(hooks)
+    hook = Path.join(hooks, "pre-commit")
+    File.write!(hook, "#!/bin/sh\nexit 99\n")
+    File.chmod!(hook, 0o755)
+    git!(repo, ["config", "core.hooksPath", hooks])
+
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Hook Isolated",
+               files: %{"index.html" => "<h1>Hook isolated</h1>\n"}
+             })
+
+    assert File.read!(Path.join(project.worktree_path, "index.html")) =~ "Hook isolated"
+  end
+
   test "configured artifact root is used and trusted as a runtime worktree root", %{
     artifact_root: artifact_root
   } do
