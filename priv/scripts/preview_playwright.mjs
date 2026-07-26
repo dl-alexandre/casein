@@ -178,6 +178,35 @@ async function handlePayload(payload) {
       }
     }
 
+    case "set_cookies": {
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
+
+      try {
+        if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
+          throw new Error("cookies must be a non-empty array");
+        }
+
+        const origin = new URL(page.url()).origin;
+        const cookies = payload.cookies.map((cookie) => {
+          if (!cookie || typeof cookie.name !== "string" || typeof cookie.value !== "string") {
+            throw new Error("each cookie requires string name and value");
+          }
+
+          return cookie.url || cookie.domain ? cookie : { ...cookie, url: origin };
+        });
+
+        await page.context().addCookies(cookies);
+        await persistStorageState(entry);
+        return ok({
+          url: page.url(),
+          cookie_count: cookies.length,
+          cookie_names: cookies.map((cookie) => cookie.name),
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
     case "go_back":
     case "go_forward":
     case "reload": {

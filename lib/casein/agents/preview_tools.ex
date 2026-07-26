@@ -40,6 +40,7 @@ defmodule Casein.Agents.PreviewTools do
     ReportErrors,
     ResolveWorkspace,
     Screenshot,
+    SetCookies,
     Surfaces,
     Type
   }
@@ -74,6 +75,7 @@ defmodule Casein.Agents.PreviewTools do
     PlaybackOpen,
     Close,
     GetStorage,
+    SetCookies,
     ClearStorage,
     ReportErrors,
     ReloadIframe,
@@ -146,6 +148,7 @@ defmodule Casein.Agents.PreviewTools do
   defdelegate playback_open(workspace, params), to: Impl
   defdelegate close(params), to: Impl
   defdelegate get_storage(params), to: Impl
+  defdelegate set_cookies(params), to: Impl
   defdelegate clear_storage(params), to: Impl
   defdelegate report_errors(params), to: Impl
   defdelegate reload_iframe(workspace, params), to: Impl

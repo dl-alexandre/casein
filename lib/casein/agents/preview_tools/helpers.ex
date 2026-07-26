@@ -269,6 +269,16 @@ defmodule Casein.Agents.PreviewTools.Helpers do
     }
   end
 
+  def metadata("preview_set_cookies") do
+    %{
+      mutation?: true,
+      danger_level: :high,
+      capabilities: [:preview_storage],
+      policy_tags: [:storage_mutation],
+      recovery_hints: ["Use preview_clear_storage to remove injected authentication state."]
+    }
+  end
+
   def metadata("preview_compare_snapshots") do
     %{
       mutation?: true,

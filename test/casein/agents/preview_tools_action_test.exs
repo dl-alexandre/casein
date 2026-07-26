@@ -7,8 +7,8 @@ defmodule Casein.Agents.PreviewToolsActionTest do
   alias Casein.Agents.PreviewTools
 
   describe "definitions/0" do
-    test "exposes 28 preview tools" do
-      assert length(PreviewTools.definitions()) == 28
+    test "exposes 29 preview tools" do
+      assert length(PreviewTools.definitions()) == 29
     end
 
     test "preview_open pins mode on the wire" do

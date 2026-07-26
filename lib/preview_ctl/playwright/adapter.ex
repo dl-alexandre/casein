@@ -191,6 +191,18 @@ defmodule PreviewCtl.Playwright.Adapter do
   end
 
   @impl true
+  def set_cookies(state, cookies) when is_list(cookies) do
+    case playwright_raw_command(state, "set_cookies", %{"cookies" => cookies}) do
+      {:ok, result} ->
+        new_state = %{state | current_url: Map.get(result, "url", state.current_url)}
+        {:ok, new_state, Map.take(result, ["url", "cookie_count", "cookie_names"])}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl true
   def clear_storage(state) do
     case playwright_raw_command(state, "clear_storage", %{}) do
       {:ok, result} ->

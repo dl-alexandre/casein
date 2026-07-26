@@ -184,6 +184,17 @@ defmodule PreviewCtl.Session do
   end
 
   @doc false
+  @spec set_cookies(session_id(), [map()]) :: {:ok, entry(), map()} | {:error, term()}
+  def set_cookies(session_id, cookies) when is_list(cookies) do
+    with {:ok, entry} <- fetch(session_id),
+         {:ok, adapter_state, result} <-
+           entry.adapter_module.set_cookies(entry.adapter_state, cookies),
+         {:ok, entry} <- commit_state(session_id, entry, adapter_state, result) do
+      {:ok, entry, result}
+    end
+  end
+
+  @doc false
   @spec clear_storage(session_id()) :: {:ok, entry(), map()} | {:error, term()}
   def clear_storage(session_id) do
     with {:ok, entry} <- fetch(session_id),

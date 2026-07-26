@@ -114,6 +114,10 @@ defmodule CaseinPreviewBrowser.Adapter do
   @spec get_storage(state()) :: {:error, term()}
   def get_storage(_state), do: unsupported(:get_storage)
 
+  @doc "Cookie injection is not part of the first browser backend slice."
+  @spec set_cookies(state(), [map()]) :: {:error, term()}
+  def set_cookies(_state, _cookies), do: unsupported(:set_cookies)
+
   @doc "Storage mutation is not part of the first browser backend slice."
   @spec clear_storage(state()) :: {:error, term()}
   def clear_storage(_state), do: unsupported(:clear_storage)

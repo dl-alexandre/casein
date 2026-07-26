@@ -99,6 +99,17 @@ defmodule Casein.Previews.Control do
     end
   end
 
+  @doc "Inject cookies into the persistent browser context without returning their values."
+  @spec set_cookies(session_id(), [map()]) :: {:ok, map()} | {:error, term()}
+  def set_cookies(session_id, cookies) when is_list(cookies) do
+    with {:ok, entry, result} <- Session.set_cookies(session_id, cookies),
+         {:ok, _} <- sync_session_url(entry, result) do
+      audit = Map.take(result, [:cookie_count, :cookie_names, "cookie_count", "cookie_names"])
+      _ = record_action_and_observation(entry.session, "set_cookies", audit, result)
+      {:ok, result}
+    end
+  end
+
   @doc "Clear cookies, localStorage, and sessionStorage for the current preview origin."
   @spec clear_storage(session_id()) :: {:ok, map()} | {:error, term()}
   def clear_storage(session_id) do

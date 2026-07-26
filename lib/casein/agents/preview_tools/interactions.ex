@@ -64,6 +64,12 @@ defmodule Casein.Agents.PreviewTools.Interactions do
 
   def get_storage(id) when is_integer(id), do: PreviewControl.get_storage(id)
 
+  def set_cookies(params) when is_map(params) do
+    id = Map.get(params, "session_id", Map.get(params, :session_id))
+    cookies = Map.get(params, "cookies", Map.get(params, :cookies))
+    with {:ok, id} <- parse_id(id), do: PreviewControl.set_cookies(id, cookies)
+  end
+
   def clear_storage(%{"session_id" => id}),
     do: with({:ok, id} <- parse_id(id), do: PreviewControl.clear_storage(id))
 

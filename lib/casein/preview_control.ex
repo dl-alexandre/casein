@@ -14,6 +14,7 @@ defmodule Casein.PreviewControl do
   defdelegate observe(session_id), to: Control
   defdelegate observe_live(session_id), to: Control
   defdelegate get_storage(session_id), to: Control
+  defdelegate set_cookies(session_id, cookies), to: Control
   defdelegate clear_storage(session_id), to: Control
   defdelegate click(session_id, target), to: Control
   defdelegate type(session_id, selector, text, opts \\ %{}), to: Control

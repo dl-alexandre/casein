@@ -44,6 +44,7 @@ defmodule Casein.Agents.PreviewTools.Impl do
   defdelegate record_stop(params), to: Interactions
   defdelegate close(params), to: Interactions
   defdelegate get_storage(params), to: Interactions
+  defdelegate set_cookies(params), to: Interactions
   defdelegate clear_storage(params), to: Interactions
   defdelegate report_errors(params), to: Interactions
   defdelegate reload_iframe(workspace, params), to: Interactions

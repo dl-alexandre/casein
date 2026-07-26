@@ -140,6 +140,13 @@ defmodule PreviewCtl.Test.FakeAdapter do
   end
 
   @impl true
+  def set_cookies(state, cookies) when is_list(cookies) do
+    names = Enum.map(cookies, &Map.get(&1, "name", Map.get(&1, :name)))
+    state = put_in(state, [:dom, :cookies], cookies)
+    {:ok, state, %{url: state.current_url, cookie_count: length(cookies), cookie_names: names}}
+  end
+
+  @impl true
   def clear_storage(state) do
     state =
       state
