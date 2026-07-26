@@ -19,6 +19,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UNIT_DIR="/etc/systemd/system"
 SERVICE="casein-deploy.service"
 TIMER="casein-deploy.timer"
+LEGACY_SERVICE="devide-deploy.service"
+LEGACY_TIMER="devide-deploy.timer"
 
 START=1
 DISABLE=0
@@ -34,6 +36,16 @@ done
 log() { printf '>>> %s\n' "$*"; }
 
 SUDOERS_FILE="/etc/sudoers.d/casein-deploy-trigger"
+
+remove_legacy_units() {
+  if systemctl list-unit-files "$LEGACY_TIMER" "$LEGACY_SERVICE" --no-legend 2>/dev/null |
+      grep -q "^devide-deploy\\."; then
+    log "removing legacy ${LEGACY_TIMER}/${LEGACY_SERVICE} units"
+    sudo systemctl disable --now "$LEGACY_TIMER" >/dev/null 2>&1 || true
+    sudo systemctl stop "$LEGACY_SERVICE" >/dev/null 2>&1 || true
+    sudo rm -f "${UNIT_DIR}/${LEGACY_SERVICE}" "${UNIT_DIR}/${LEGACY_TIMER}"
+  fi
+}
 
 install_poller_trigger_sudoers() {
   log "installing sudoers drop-in for webhook poller trigger (${SUDOERS_FILE})"
@@ -59,6 +71,7 @@ if [[ "$DISABLE" -eq 1 ]]; then
   log "stopping and disabling ${TIMER}"
   sudo systemctl disable --now "$TIMER" >/dev/null 2>&1 || true
   sudo systemctl stop "$SERVICE" >/dev/null 2>&1 || true
+  remove_legacy_units
   sudo rm -f "${UNIT_DIR}/${SERVICE}" "${UNIT_DIR}/${TIMER}" "${SUDOERS_FILE}"
   sudo systemctl daemon-reload
   log "removed deploy poller units and webhook sudoers drop-in"
@@ -73,6 +86,7 @@ for f in "$SERVICE" "$TIMER"; do
   sed "s#__CHECKOUT__#${ROOT}#g" "$src" | sudo tee "${UNIT_DIR}/${f}" >/dev/null
 done
 
+remove_legacy_units
 sudo systemctl daemon-reload
 install_poller_trigger_sudoers
 ensure_last_deploy_status_file
