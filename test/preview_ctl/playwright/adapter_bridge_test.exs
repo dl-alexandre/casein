@@ -281,6 +281,14 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
   end
 
   describe "result url threading" do
+    test "navigate uses the persistent Playwright context", %{state: state} do
+      assert {:ok, new_state, obs} =
+               Adapter.navigate(state, "http://example.test/nav-me")
+
+      assert new_state.current_url == "http://example.test/nav-me#pw"
+      assert obs.url == "http://example.test/nav-me#pw"
+    end
+
     test "navigates state to the url returned by the helper", %{state: state} do
       # The fake transforms a url containing "nav-me"; the adapter must thread
       # the returned result["url"] into both state.current_url and observation.url.

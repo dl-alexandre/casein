@@ -40,6 +40,9 @@ defmodule PreviewCtl.Playwright.AdapterTest do
   end
 
   test "navigate and observe summarize HTML over HTTP", %{bypass: bypass, base_url: base_url} do
+    Application.delete_env(:preview_ctl, :playwright_script)
+    restart_bridge!()
+
     HTTPStub.stub(bypass, "GET", "/page", fn conn ->
       conn
       |> Plug.Conn.put_resp_header("x-frame-options", "DENY")
@@ -66,6 +69,9 @@ defmodule PreviewCtl.Playwright.AdapterTest do
   end
 
   test "navigate reports redirect and HTTP errors", %{bypass: bypass, base_url: base_url} do
+    Application.delete_env(:preview_ctl, :playwright_script)
+    restart_bridge!()
+
     HTTPStub.expect_once(bypass, "GET", "/redirect", fn conn ->
       Plug.Conn.resp(conn, 302, "") |> Plug.Conn.put_resp_header("location", "/elsewhere")
     end)

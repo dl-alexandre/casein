@@ -30,10 +30,18 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def navigate(state, url) do
+    state = %{state | current_url: url}
+
+    case playwright_command(state, "navigate", %{}) do
+      {:ok, new_state, obs, _} -> {:ok, new_state, obs}
+      {:error, :playwright_unavailable} -> navigate_over_http(state, url)
+      other -> other
+    end
+  end
+
+  defp navigate_over_http(state, url) do
     with {:ok, body, headers} <- fetch(url, state),
          {:ok, summary} <- summarize_html(body, url) do
-      state = %{state | current_url: url}
-
       observation =
         state
         |> observation(summary)

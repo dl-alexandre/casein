@@ -127,6 +127,23 @@ async function handlePayload(payload) {
       }
     }
 
+    case "navigate": {
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
+
+      try {
+        await waitForNetworkIdle(page);
+        await persistStorageState(entry);
+        const observation = await pageObservation(page, entry);
+
+        return ok({
+          url: page.url(),
+          observation,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
     case "get_storage": {
       const { entry, page } = await pageFor(id, url, headers, storagePath);
 
