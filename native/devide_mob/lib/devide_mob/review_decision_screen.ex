@@ -414,6 +414,8 @@ defmodule DevideMob.ReviewDecisionScreen do
     end
   end
 
+  defp note_card(%{card_expired: true}), do: nil
+
   defp note_card(assigns) do
     if any_note_input?(card_actions(assigns.card)), do: note_field(assigns)
   end

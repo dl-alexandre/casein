@@ -111,6 +111,7 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert text(view) =~ "This request expired or was removed."
     assert text(view) =~ "Refresh the Action Center"
     refute find(view, :button, text: "Send follow-up")
+    refute find(view, :text_field)
     assert find(view, :button, text: "Return to Action Center")
 
     view = render_info(view, {:tap, {:action, "follow_up"}})
