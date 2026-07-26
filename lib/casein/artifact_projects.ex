@@ -34,7 +34,8 @@ defmodule Casein.ArtifactProjects do
     * `:kind` / `"kind"` - currently `"static"` or `"html"`
     * `:prompt` / `"prompt"` - stored in prompt history and scaffold copy
     * `:files` / `"files"` - map of relative path to text content, or a list of
-      `%{"path" => ..., "content" => ...}` entries
+      file entries containing `path` and either `content` (optionally base64
+      encoded) or a workspace-confined server-local `source_path`
     * `:base_ref` / `"base_ref"` - Git ref for the new worktree, defaults to `HEAD`
     * `:branch` / `"branch"` - explicit branch name; otherwise generated
   """
@@ -47,7 +48,7 @@ defmodule Casein.ArtifactProjects do
 
     with {:ok, %WorkspaceRecord{} = record} <- State.get(workspace_id),
          :ok <- ensure_workspace_git_checkout(record),
-         {:ok, spec} <- create_spec(project_id, attrs),
+         {:ok, spec} <- create_spec(project_id, attrs, record.host_path),
          {:ok, worktree_path, branch} <- create_worktree(record, spec),
          {:ok, project_metadata} <- write_initial_project(worktree_path, spec, branch),
          {:ok, _sha} <- commit_all(worktree_path, "Create artifact project #{spec.name}"),
@@ -107,7 +108,9 @@ defmodule Casein.ArtifactProjects do
     attrs = Map.new(attrs)
 
     with {:ok, %Runtime{} = runtime} <- runtime_project(project_id),
-         {:ok, files} <- files_from_attrs(attrs, allow_empty?: true),
+         {:ok, %WorkspaceRecord{} = record} <- State.get(runtime.workspace_id),
+         {:ok, files} <-
+           files_from_attrs(attrs, allow_empty?: true, source_root: record.host_path),
          {:ok, metadata} <- updated_metadata(runtime, attrs),
          :ok <- write_files(runtime.worktree_path, files),
          :ok <- write_manifest(runtime.worktree_path, metadata),
@@ -571,12 +574,13 @@ defmodule Casein.ArtifactProjects do
     end
   end
 
-  defp create_spec(project_id, attrs) do
+  defp create_spec(project_id, attrs, source_root) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     kind = string_attr(attrs, "kind") || @default_kind
 
     with :ok <- validate_kind(kind),
-         {:ok, files} <- files_from_attrs(attrs, allow_empty?: true) do
+         {:ok, files} <-
+           files_from_attrs(attrs, allow_empty?: true, source_root: source_root) do
       name = string_attr(attrs, "name") || "Artifact #{String.slice(project_id, 4, 8)}"
       prompt = string_attr(attrs, "prompt")
       slug = slugify(name)
@@ -630,6 +634,7 @@ defmodule Casein.ArtifactProjects do
       "kind" => spec.kind,
       "branch" => branch,
       "status" => "draft",
+      "files" => Map.keys(spec.files) |> Enum.sort(),
       "prompt_history" => spec.prompt_history,
       "created_at" => DateTime.to_iso8601(spec.created_at),
       "updated_at" => DateTime.to_iso8601(spec.updated_at)
@@ -655,6 +660,7 @@ defmodule Casein.ArtifactProjects do
       |> Map.put_new("name", runtime.id)
       |> Map.put_new("kind", @default_kind)
       |> Map.put_new("version", @artifact_version)
+      |> Map.put("files", merged_file_paths(current, attrs))
       |> Map.put("status", "draft")
 
     {:ok, metadata}
@@ -737,11 +743,11 @@ defmodule Casein.ArtifactProjects do
         files
         |> Enum.reduce_while({:ok, %{}}, fn entry, {:ok, acc} ->
           with path when is_binary(path) <- Casein.PayloadAttrs.get(entry, "path"),
-               content when is_binary(content) <- Casein.PayloadAttrs.get(entry, "content"),
                {:ok, path} <- normalize_file_path(path),
-               {:ok, content} <- normalize_file_content(content) do
+               {:ok, content} <- file_entry_content(entry, opts) do
             {:cont, {:ok, Map.put(acc, path, content)}}
           else
+            {:error, reason} -> {:halt, {:error, reason}}
             _ -> {:halt, {:error, :invalid_artifact_file}}
           end
         end)
@@ -787,6 +793,78 @@ defmodule Casein.ArtifactProjects do
   end
 
   defp normalize_file_content(_), do: {:error, :invalid_artifact_file}
+
+  defp file_entry_content(entry, opts) when is_map(entry) do
+    content = Casein.PayloadAttrs.get(entry, "content")
+    source_path = Casein.PayloadAttrs.get(entry, "source_path")
+    encoding = Casein.PayloadAttrs.get(entry, "encoding") || "utf8"
+
+    cond do
+      is_binary(content) and is_nil(source_path) ->
+        decode_file_content(content, encoding)
+
+      is_binary(source_path) and is_nil(content) ->
+        read_source_file(source_path, Keyword.get(opts, :source_root))
+
+      true ->
+        {:error, :invalid_artifact_file}
+    end
+  end
+
+  defp decode_file_content(content, "utf8"), do: normalize_file_content(content)
+
+  defp decode_file_content(content, "base64") do
+    case Base.decode64(content) do
+      {:ok, decoded} -> normalize_file_content(decoded)
+      :error -> {:error, :invalid_artifact_base64}
+    end
+  end
+
+  defp decode_file_content(_content, _encoding), do: {:error, :invalid_artifact_encoding}
+
+  # PathSafety.resolve/2 confines source_path to the workspace root and rejects symlink escapes.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp read_source_file(source_path, source_root)
+       when is_binary(source_path) and is_binary(source_root) do
+    with {:ok, resolved} <- PathSafety.resolve(source_root, source_path),
+         true <- File.regular?(resolved),
+         {:ok, stat} <- File.stat(resolved) do
+      if stat.size <= @max_file_bytes do
+        File.read(resolved)
+      else
+        {:error, :artifact_file_too_large}
+      end
+    else
+      false -> {:error, :invalid_artifact_source_path}
+      {:error, _reason} -> {:error, :invalid_artifact_source_path}
+    end
+  end
+
+  defp read_source_file(_source_path, _source_root),
+    do: {:error, :invalid_artifact_source_path}
+
+  defp merged_file_paths(current, attrs) do
+    existing = Map.get(current, "files", [])
+
+    incoming =
+      case Casein.PayloadAttrs.get(attrs, "files") do
+        files when is_map(files) -> Map.keys(files)
+        files when is_list(files) -> Enum.map(files, &Casein.PayloadAttrs.get(&1, "path"))
+        _ -> []
+      end
+
+    (existing ++ incoming)
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(fn path ->
+      case normalize_file_path(path) do
+        {:ok, normalized} -> normalized
+        _ -> nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
 
   defp write_files(_worktree_path, files) when files == %{}, do: :ok
 

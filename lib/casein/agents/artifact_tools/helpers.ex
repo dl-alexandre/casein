@@ -46,7 +46,9 @@ defmodule Casein.Agents.ArtifactTools.Helpers do
     %{
       description:
         "Generated files. Either an object of relative path to string content, " <>
-          "or an array of {path, content} objects. Paths must stay inside the worktree.",
+          "or an array of file objects. File objects accept UTF-8 content, base64 content " <>
+          "with encoding=\"base64\", or a server-local source_path confined to the workspace checkout. " <>
+          "Destination paths must stay inside the artifact.",
       oneOf: [
         %{type: "object", additionalProperties: %{type: "string"}},
         %{
@@ -55,9 +57,15 @@ defmodule Casein.Agents.ArtifactTools.Helpers do
             Tool.object(
               %{
                 path: %{type: "string"},
-                content: %{type: "string"}
+                content: %{type: "string"},
+                encoding: %{type: "string", enum: ["utf8", "base64"], default: "utf8"},
+                source_path: %{
+                  type: "string",
+                  description:
+                    "Server-local file inside the workspace checkout. Mutually exclusive with content."
+                }
               },
-              [:path, :content]
+              [:path]
             )
         }
       ]

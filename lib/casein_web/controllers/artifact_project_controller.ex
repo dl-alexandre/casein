@@ -65,7 +65,7 @@ defmodule CaseinWeb.ArtifactProjectController do
   # below are mitigated at resolve_file/2.
   # sobelow_skip ["Traversal.SendFile", "XSS.ContentType"]
   defp serve_or_landing(conn, project, segments) do
-    case resolve_file(project.worktree_path, segments) do
+    case resolve_file(project, segments) do
       {:ok, file} ->
         audit(conn, project, :served, %{"path" => Enum.join(segments, "/")})
 
@@ -117,14 +117,23 @@ defmodule CaseinWeb.ArtifactProjectController do
     end
   end
 
-  defp resolve_file(root, segments) do
+  defp resolve_file(project, segments) do
+    root = project.worktree_path
+    relative = relative_path(segments)
+
     cond do
       not is_binary(root) -> :error
       # PathSafety guards traversal + symlink escape but NOT dotfiles; refuse them
       # so `.git/` (full history) and `.casein/artifact.json` are never served.
       Enum.any?(segments, &dotfile?/1) -> :error
-      true -> do_resolve(root, relative_path(segments))
+      not generated_file?(project, relative) -> :error
+      true -> do_resolve(root, relative)
     end
+  end
+
+  defp generated_file?(project, relative) do
+    files = Map.get(project.metadata || %{}, "files", [])
+    relative in files or Path.join(relative, "index.html") in files
   end
 
   defp do_resolve(root, relative) do

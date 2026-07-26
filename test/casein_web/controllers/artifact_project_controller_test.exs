@@ -73,6 +73,17 @@ defmodule CaseinWeb.ArtifactProjectControllerTest do
     assert response(conn, 200) =~ "Smoke Report"
   end
 
+  test "does not serve files inherited from the product worktree", ctx do
+    File.write!(Path.join(ctx.worktree, "product-source.ex"), "defmodule ProductSource do\nend\n")
+
+    conn =
+      ctx.conn
+      |> as("owner@example.com")
+      |> get(artifact_path(ctx.project_id, "product-source.ex"))
+
+    assert text_response(conn, 404) == "not found"
+  end
+
   test "serves the artifact to any authenticated peer (flat peer model)", ctx do
     conn = ctx.conn |> as("peer@example.com") |> get(artifact_path(ctx.project_id))
 

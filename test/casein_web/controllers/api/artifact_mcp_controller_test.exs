@@ -150,6 +150,74 @@ defmodule CaseinWeb.API.ArtifactMCPControllerTest do
              Activity.recent(@workspace_id)
   end
 
+  test "artifact_create decodes base64 files and imports workspace-local source files", %{
+    conn: conn,
+    repo: repo
+  } do
+    png = <<137, 80, 78, 71, 13, 10, 26, 10, 0, 255>>
+    File.write!(Path.join(repo, "source.bin"), <<0, 1, 2, 3>>)
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: %{
+            name: "artifact_create",
+            arguments: %{
+              name: "Binary Artifact",
+              files: [
+                %{path: "shot.png", content: Base.encode64(png), encoding: "base64"},
+                %{path: "assets/source.bin", source_path: "source.bin"}
+              ]
+            }
+          }
+        },
+        @workspace_token
+      )
+
+    assert %{
+             "result" => %{
+               "structuredContent" => %{"worktree_path" => worktree_path}
+             }
+           } = json_response(conn, 200)
+
+    assert File.read!(Path.join(worktree_path, "shot.png")) == png
+    assert File.read!(Path.join(worktree_path, "assets/source.bin")) == <<0, 1, 2, 3>>
+  end
+
+  test "artifact_create rejects invalid base64 and source paths outside the workspace", %{
+    conn: conn,
+    base: base
+  } do
+    outside = Path.join(base, "outside.bin")
+    File.write!(outside, "secret")
+
+    for file <- [
+          %{path: "shot.png", content: "not-base64!", encoding: "base64"},
+          %{path: "outside.bin", source_path: outside}
+        ] do
+      conn =
+        post_mcp(
+          recycle(conn),
+          %{
+            jsonrpc: "2.0",
+            id: 3,
+            method: "tools/call",
+            params: %{
+              name: "artifact_create",
+              arguments: %{name: "Rejected Import", files: [file]}
+            }
+          },
+          @workspace_token
+        )
+
+      assert %{"result" => %{"isError" => true}} = json_response(conn, 200)
+    end
+  end
+
   test "artifact_get rejects an artifact from another workspace", %{conn: conn, base: base} do
     other_repo = Path.join(base, "other-repo")
     init_repo!(other_repo)
