@@ -35,6 +35,15 @@ defmodule Casein.Agents.PreviewToolsActionTest do
                PreviewTools.invoke("preview_open_localhost", workspace, %{})
     end
 
+    test "accepts JSON string-keyed default headers" do
+      workspace = %{id: "ws-preview-action", path: "/tmp/ws"}
+
+      assert {:error, :invalid_port} =
+               PreviewTools.invoke("preview_open_localhost", workspace, %{
+                 "default_headers" => %{"Cookie" => "session=value"}
+               })
+    end
+
     test "unknown tools return :unknown_tool" do
       assert {:error, :unknown_tool} =
                PreviewTools.invoke("preview_not_real", %{id: "ws"}, %{})

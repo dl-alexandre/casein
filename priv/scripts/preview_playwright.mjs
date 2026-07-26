@@ -182,12 +182,12 @@ async function handlePayload(payload) {
       const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
-        if (!Array.isArray(payload.cookies) || payload.cookies.length === 0) {
+        if (!Array.isArray(params.cookies) || params.cookies.length === 0) {
           throw new Error("cookies must be a non-empty array");
         }
 
         const origin = new URL(page.url()).origin;
-        const cookies = payload.cookies.map((cookie) => {
+        const cookies = params.cookies.map((cookie) => {
           if (!cookie || typeof cookie.name !== "string" || typeof cookie.value !== "string") {
             throw new Error("each cookie requires string name and value");
           }

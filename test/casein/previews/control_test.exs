@@ -285,6 +285,35 @@ defmodule Casein.Previews.ControlTest do
              |> Enum.filter(&(&1.action == "clear_storage"))
   end
 
+  test "set_cookies injects cookies and audits names only, never values" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    cookies = [
+      %{"name" => "_one_session", "value" => "super-secret"},
+      %{"name" => "preview_auth", "value" => "also-secret"}
+    ]
+
+    assert {:ok, result} = PreviewControl.set_cookies(session.id, cookies)
+
+    assert result[:cookie_count] == 2 or result["cookie_count"] == 2
+
+    names = result[:cookie_names] || result["cookie_names"]
+    assert names == ["_one_session", "preview_auth"]
+    refute inspect(result) =~ "super-secret"
+    refute inspect(result) =~ "also-secret"
+
+    assert [%ControlAction{action: "set_cookies", params: params}] =
+             session.id
+             |> actions_for()
+             |> Enum.filter(&(&1.action == "set_cookies"))
+
+    # Audit payload must not leak cookie values.
+    assert params["cookie_count"] == 2 or params[:cookie_count] == 2
+    audited_names = params["cookie_names"] || params[:cookie_names]
+    assert audited_names == ["_one_session", "preview_auth"]
+    refute inspect(params) =~ "super-secret"
+  end
+
   test "open_localhost_session rejects disallowed ports" do
     assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewControl.open_localhost_session(@v3_workspace, 9999)

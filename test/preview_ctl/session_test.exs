@@ -127,6 +127,29 @@ defmodule PreviewCtl.SessionTest do
     assert {:error, :origin_not_allowed} = Session.screenshot(entry.session.id)
   end
 
+  test "set_cookies injects cookies into the adapter context without returning values" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+
+    cookies = [
+      %{"name" => "session", "value" => "secret-token"},
+      %{"name" => "theme", "value" => "dark"}
+    ]
+
+    assert {:ok, updated_entry, result} = Session.set_cookies(entry.session.id, cookies)
+    assert updated_entry.session == entry.session
+
+    # Control plane reports counts/names only — never cookie values.
+    assert result.cookie_count == 2
+    assert result.cookie_names == ["session", "theme"]
+    refute Map.has_key?(result, :cookies)
+    refute Map.has_key?(result, "cookies")
+    refute inspect(result) =~ "secret-token"
+
+    stored = Registry.get(entry.session.id).adapter_state.dom.cookies
+    assert length(stored) == 2
+    assert Enum.any?(stored, &(Map.get(&1, "name") == "session"))
+  end
+
   defp put_runtime!(url) do
     session = %{id: System.unique_integer([:positive]), current_url: url}
     preview = %{url: url}

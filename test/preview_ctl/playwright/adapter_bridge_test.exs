@@ -36,6 +36,7 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
     // can prove the adapter threads result["url"] (and observation.url) back
     // into state. Every other url is echoed unchanged.
     const url = req.url.indexOf("nav-me") !== -1 ? req.url + "#pw" : req.url;
+    const cookies = Array.isArray(params.cookies) ? params.cookies : [];
     const resp = {
       ok: true,
       // Echo identifying fields so the test can prove the adapter sent them.
@@ -64,7 +65,10 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
       local_storage: { "k": "v" },
       session_storage: { "s": "1" },
       console_errors: ["cerr"],
-      network_errors: ["nerr"]
+      network_errors: ["nerr"],
+      // set_cookies response shape (names/count only — never values)
+      cookie_count: cookies.length,
+      cookie_names: cookies.map((c) => c && c.name).filter(Boolean)
     };
     process.stdout.write(JSON.stringify(resp) + "\\n");
   });
@@ -245,6 +249,24 @@ defmodule PreviewCtl.Playwright.AdapterBridgeTest do
       assert {:ok, _new_state, storage} = Adapter.clear_storage(state)
       assert storage.local_storage == %{"k" => "v"}
       assert storage.session_storage == %{"s" => "1"}
+    end
+  end
+
+  describe "set_cookies/2 via bridge" do
+    test "threads cookies to playwright and returns names/count only", %{state: state} do
+      cookies = [
+        %{"name" => "auth", "value" => "should-not-echo-back"},
+        %{"name" => "sid", "value" => "also-secret"}
+      ]
+
+      assert {:ok, new_state, result} = Adapter.set_cookies(state, cookies)
+
+      assert new_state.current_url == state.current_url
+      assert result["cookie_count"] == 2 or result[:cookie_count] == 2
+      names = result["cookie_names"] || result[:cookie_names]
+      assert names == ["auth", "sid"]
+      # Adapter surface must not re-expose raw values from the helper echo.
+      refute inspect(result) =~ "should-not-echo-back"
     end
   end
 

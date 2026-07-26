@@ -31,7 +31,7 @@ defmodule Casein.Agents.PreviewTools.PlaybackOpen do
       runtime_id: [type: :string],
       runtime_required: [type: :boolean],
       cwd: [type: :string],
-      default_headers: [type: :map],
+      default_headers: [type: {:map, :string, :string}],
       loop: [type: :boolean],
       workspace_id: [type: :string, required: true],
       artifact_path: [type: :string, required: true]
