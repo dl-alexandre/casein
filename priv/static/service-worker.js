@@ -83,7 +83,7 @@ self.addEventListener("push", (event) => {
     data = {};
   }
 
-  const title = data.title || "DevIDE";
+  const title = data.title || "Casein";
   const options = {
     body: data.body || "",
     icon: "/images/pwa-icon-192.png",

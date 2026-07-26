@@ -2,14 +2,14 @@
 name: delegate-to-grok
 description: >
   Delegate a scoped coding task to a Grok worker in an isolated git worktree via
-  DevIDE terminal MCP. Use when the user says delegate, grok worker, offload to
+  Casein terminal MCP. Use when the user says delegate, grok worker, offload to
   grok, spawn a grok agent, or wants parallel implementation in a separate
   worktree without sharing the orchestrator's checkout.
 ---
 
 # Delegate to Grok
 
-Orchestrate a Grok worker through DevIDE terminal MCP. No `agent_pair` marker
+Orchestrate a Grok worker through Casein terminal MCP. No `agent_pair` marker
 required — always pass an explicit `pane` id from topology or the spawn helper.
 
 ## Prerequisites

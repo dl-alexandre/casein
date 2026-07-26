@@ -5,7 +5,7 @@
 # Install / enable via: bash scripts/ensure-casein-deploy-poller.sh
 
 [Unit]
-Description=Poll origin/master and auto-deploy DevIDE (self-hosted CI deploy)
+Description=Poll origin/master and auto-deploy Casein (self-hosted CI deploy)
 
 [Timer]
 OnBootSec=2min

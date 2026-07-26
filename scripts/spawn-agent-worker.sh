@@ -119,7 +119,7 @@ if [[ -z "$SESSION" ]]; then
 fi
 
 if [[ "$SESSION" != devide_* ]]; then
-  warn_degraded "session '${SESSION}' does not look like a DevIDE session (expected devide_* prefix)"
+  warn_degraded "session '${SESSION}' does not look like a Casein session (expected devide_* prefix)"
 fi
 
 CHECKOUT="${DEVIDE_CHECKOUT:-$ROOT}"

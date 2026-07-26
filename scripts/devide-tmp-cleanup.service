@@ -1,5 +1,5 @@
 [Unit]
-Description=DevIDE ephemeral /tmp cleanup (age-prune credo-diff, ghostty & test artifacts)
+Description=Casein ephemeral /tmp cleanup (age-prune credo-diff, ghostty & test artifacts)
 
 [Service]
 Type=oneshot

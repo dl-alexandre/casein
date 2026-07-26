@@ -50,7 +50,7 @@ defmodule Casein.Desktop.RuntimeTest do
     assert Runtime.data_dir({:unix, :linux}) == "/home/test/.local/share/devide"
 
     assert Runtime.data_dir({:unix, :darwin}) ==
-             Path.join(System.user_home!(), "Library/Application Support/DevIDE")
+             Path.join(System.user_home!(), "Library/Application Support/Casein")
   end
 
   test "honors database and status path overrides" do

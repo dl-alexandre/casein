@@ -1,5 +1,5 @@
-# DevIDE local stack — `docker compose up` to bring up Postgres +
-# DevIDE for a smoke test against the production Dockerfile.
+# Casein local stack — `docker compose up` to bring up Postgres +
+# Casein for a smoke test against the production Dockerfile.
 #
 #   cp .env.example .env  # fill in SECRET_KEY_BASE + CASEIN_API_TOKEN
 #   docker compose build
@@ -26,7 +26,7 @@ services:
       interval: 2s
       timeout: 3s
       retries: 20
-    # Not exposed by default — only DevIDE on the compose network
+    # Not exposed by default — only Casein on the compose network
     # needs to reach it. Uncomment to use psql from the host.
     # ports:
     #   - "5432:5432"

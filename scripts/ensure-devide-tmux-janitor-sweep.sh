@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install + enable the weekly DevIDE tmux blank session/window janitor.
+# Install + enable the weekly Casein tmux blank session/window janitor.
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Usage:

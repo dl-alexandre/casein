@@ -140,7 +140,7 @@ defmodule Casein.Agents.MCPMaterializer do
 
     [mcp_servers.#{terminal_key}.headers]
     Authorization = "Bearer ${CASEIN_API_TOKEN}"
-    X-DevIDE-Caller-Pane = "${DEVIDE_CALLER_PANE}"
+    X-Casein-Caller-Pane = "${DEVIDE_CALLER_PANE}"
 
     [mcp_servers.#{preview_key}]
     url = "#{urls.preview}"
@@ -184,7 +184,7 @@ defmodule Casein.Agents.MCPMaterializer do
           "oauth" => false,
           "headers" => %{
             "Authorization" => "Bearer {env:CASEIN_API_TOKEN}",
-            "X-DevIDE-Caller-Pane" => "{env:DEVIDE_CALLER_PANE}"
+            "X-Casein-Caller-Pane" => "{env:DEVIDE_CALLER_PANE}"
           }
         },
         preview_key => %{
@@ -226,7 +226,7 @@ defmodule Casein.Agents.MCPMaterializer do
             # Anchors terminal MCP pane resolution to the calling agent's own
             # pane; expanded per process from launch-casein-agent.sh's export.
             # The server ignores empty/unexpanded values.
-            "X-DevIDE-Caller-Pane" => "${DEVIDE_CALLER_PANE}"
+            "X-Casein-Caller-Pane" => "${DEVIDE_CALLER_PANE}"
           }
         },
         preview_key => %{

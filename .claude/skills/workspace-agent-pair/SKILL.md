@@ -2,18 +2,18 @@
 name: workspace-agent-pair
 description: >
   Ensure a product workspace agent runtime (OpenCode, Claude, Grok, Codex) has
-  DevIDE terminal/preview/artifact MCP plus host infrastructure skills
+  Casein terminal/preview/artifact MCP plus host infrastructure skills
   (preview-ui-walk, delegate-to-grok, this skill). Use when the user says pair
   opencode, share MCP/skills with a workspace agent, "tools missing", "skill not
   found outside dev_ide", run preview-ui-walk from another workspace, or
-  OpenCode/Claude cannot see DevIDE MCP on a product checkout.
+  OpenCode/Claude cannot see Casein MCP on a product checkout.
 ---
 
 # Workspace agent pair
 
-Host infrastructure for **product-repo** agents. DevIDE skills and MCP live with
-the DevIDE host, not with OneBackend / milc-devbox / etc. This skill makes a
-target workspace agent able to drive DevIDE the same way a dalexandre-devide
+Host infrastructure for **product-repo** agents. Casein skills and MCP live with
+the Casein host, not with OneBackend / milc-devbox / etc. This skill makes a
+target workspace agent able to drive Casein the same way a dalexandre-devide
 agent does.
 
 **Do not** hand-copy tokens into chat. **Do not** write bearer tokens into
@@ -134,7 +134,7 @@ Wrong-workspace check: MCP server names / URLs must include **this**
 | App UI smoke (any surface) | `preview-ui-walk` — product workflows under `.casein/preview-walk.json` and/or `.casein/preview-walks/<id>.json` |
 | Author/improve a walk | Edit/add product manifests; do not fork the skill |
 | Parallel Grok implementation | `delegate-to-grok` |
-| DevIDE-itself UI check | `verify` (only inside dev_ide checkout) |
+| Casein-itself UI check | `verify` (only inside dev_ide checkout) |
 
 **Restart OpenCode** after pairing — config and skills are load-time, not hot-reload.
 

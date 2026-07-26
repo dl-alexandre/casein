@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# DevIDE-owned runtime preview launcher.
+# Casein-owned runtime preview launcher.
 #
 # Runs from a recorded runtime cwd and starts that repo's normal dev server on
-# $PORT. The target repo does not need to vendor DevIDE's preview-env scripts.
+# $PORT. The target repo does not need to vendor Casein's preview-env scripts.
 set -euo pipefail
 
 port="${PORT:-}"

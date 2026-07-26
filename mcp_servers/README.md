@@ -1,12 +1,12 @@
-# DevIDE MCP Servers
+# Casein MCP Servers
 
-This directory contains MCP (Model Context Protocol) servers that let AI agents and tools interact with a running DevIDE instance in a **governed, auditable way**.
+This directory contains MCP (Model Context Protocol) servers that let AI agents and tools interact with a running Casein instance in a **governed, auditable way**.
 
 ## casein_server.py
 
 The primary integration point for autonomous agents (especially Odysseus, but also Claude Desktop, Cursor, Windsurf, opencode-based agents, etc.).
 
-It turns DevIDE's public API + allowlist into first-class tools an agent can call:
+It turns Casein's public API + allowlist into first-class tools an agent can call:
 
 - `casein_list_workspaces`
 - `casein_get_status` (rich snapshot including detected agent capabilities like opencode / fff / tidewave)
@@ -17,7 +17,7 @@ It turns DevIDE's public API + allowlist into first-class tools an agent can cal
 
 ### Why this exists
 
-DevIDE's whole reason for being is to be a **safe execution authority** that agents (and humans) can be clients of, without giving them unrestricted power.
+Casein's whole reason for being is to be a **safe execution authority** that agents (and humans) can be clients of, without giving them unrestricted power.
 
 By exposing it via MCP, a powerful agent like the one inside Odysseus can:
 - Do real development work (`mix test`, `mix compile`, launch `opencode`, `claude`, etc.)
@@ -67,7 +67,7 @@ You can also run it under the same Python env as Odysseus if you want the agent 
 ### Safety notes
 
 - The MCP server itself does **not** decide what may run — it only forwards to Casein.
-- DevIDE's allowlist, `Policy`, workspace `mode`, and audit system are still fully in control.
+- Casein's allowlist, `Policy`, workspace `mode`, and audit system are still fully in control.
 - `casein_run_command` will fail (with a clear audited denial) for anything not on the allowlist or disallowed by current policy.
 - Prefer `opencode`, `claude`, `grok`, etc. command_ids when you want the agent to continue working *inside* the workspace terminal/session.
 

@@ -1,4 +1,4 @@
-name: Deploy DevIDE to devbox
+name: Deploy Casein to devbox
 
 on:
   # Auto-deploy on master push is DISABLED while GitHub Actions billing is

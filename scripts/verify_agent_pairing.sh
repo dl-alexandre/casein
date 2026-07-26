@@ -52,7 +52,7 @@ note() {
   echo "NOTE: $*" >&2
 }
 
-echo "==> DevIDE agent pairing verification"
+echo "==> Casein agent pairing verification"
 echo "    URL:         $DEVIDE_URL"
 echo "    workspace:   $WORKSPACE_ID"
 

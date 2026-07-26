@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Shared DevIDE agent env resolution — sourced by devide CLI and launch scripts.
+# Shared Casein agent env resolution — sourced by devide CLI and launch scripts.
 # Resolution order (first match wins):
 #   1. CASEIN_API_TOKEN + DEVIDE_WORKSPACE_ID already exported
 #   2. DEVIDE_AGENT_ENV_FILE (explicit env.sh path)
 #   3. Walk up from cwd for .devbox-agent.env
-#   4. tmux show-environment (DevIDE pane injection)
+#   4. tmux show-environment (Casein pane injection)
 #   5. tmux session name → ~/.casein/agent-mcp/<workspace>/env.sh
 #   6. Host /etc/casein/devide.env + workspace API lookup from tmux session name
 
@@ -265,7 +265,7 @@ agent_env_resolve() {
     return 0
   fi
 
-  echo "error: could not resolve DevIDE agent env (run inside a DevIDE tmux pane or source .devbox-agent.env)" >&2
+  echo "error: could not resolve Casein agent env (run inside a Casein tmux pane or source .devbox-agent.env)" >&2
   return 1
 }
 

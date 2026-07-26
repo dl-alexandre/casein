@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build and package a profile-specific DevIDE release for LAN distribution.
+# Build and package a profile-specific Casein release for LAN distribution.
 #
 # Usage:
 #   ./scripts/package-release.sh --profile lan --target linux-x86_64

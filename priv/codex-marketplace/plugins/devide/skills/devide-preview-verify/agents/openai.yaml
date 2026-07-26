@@ -1,4 +1,4 @@
 interface:
-  display_name: "DevIDE Preview Verify"
+  display_name: "Casein Preview Verify"
   short_description: "Verify UI changes in the visible preview"
-  default_prompt: "Use $casein-preview-verify to validate this UI change in the operator-visible DevIDE preview."
+  default_prompt: "Use $casein-preview-verify to validate this UI change in the operator-visible Casein preview."

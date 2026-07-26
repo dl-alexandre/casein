@@ -8,7 +8,7 @@
 ## Thesis
 
 Buzz validates the server-authority model, peer human/agent clients, additive
-contracts, and a durable evidence plane. Casein/DevIDE adopts a **universal
+contracts, and a durable evidence plane. Casein/Casein adopts a **universal
 evidence envelope** — not a universal run ledger — and keeps **tmux as the
 authority for live execution**. Events explain and audit the workspace; they do
 not reconstruct or replace it.

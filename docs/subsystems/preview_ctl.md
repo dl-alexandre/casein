@@ -21,7 +21,7 @@ The host application (`Casein.PreviewControl`, in `lib/casein/previews` and
   (`Casein.Previews.Url`).
 - Human-facing tmux preview panes and iframe-overlay broadcasts.
 
-The DevIDE host drives `PreviewCtl.*` from the `Casein.PreviewControl`
+The Casein host drives `PreviewCtl.*` from the `Casein.PreviewControl`
 (`lib/casein/preview_control.ex`) facade, which selects an adapter via the
 `:preview_control_adapter` config — `:memory` → `PreviewCtl.Test.FakeAdapter`,
 `:playwright` → `PreviewCtl.Playwright.Adapter` (resolved by
@@ -52,7 +52,7 @@ integration; this is the reusable control core.
    under `config :preview_ctl, :adapter`. The Playwright script path maps from
    `:casein :preview_playwright_script` to `:preview_ctl :playwright_script`.
    `PreviewCtl.Registry` and `PreviewCtl.Playwright.Bridge` are started in the
-   DevIDE supervision tree (`lib/casein/application.ex`).
+   Casein supervision tree (`lib/casein/application.ex`).
 
 2. **Start a session.** The host calls `PreviewCtl.Runtime.start/4` (or
    `ensure_registered/4`) with an integer `session_id`, an opaque `session`
@@ -148,7 +148,7 @@ Functions/processes the host application calls:
 - **`source_url` provenance.** Static observation reports the page's real origin
   from `<base href>` or a canonical `<link>` so a served snapshot can report the
   true site URL rather than the path it is served from.
-- **`@moduledoc false` on facades.** The DevIDE-side facades in
+- **`@moduledoc false` on facades.** The Casein-side facades in
   `lib/casein/preview_control*` are out of this subsystem; do not edit them
   from here.
 
@@ -158,5 +158,5 @@ Functions/processes the host application calls:
   (`PreviewTools`) and the `Casein.PreviewControl` host layer that sits on top
   of this library, including adapter config keys, storage profiles, and
   default-headers env vars.
-- [`../architecture.md`](../architecture.md) — overall DevIDE subsystem map and
+- [`../architecture.md`](../architecture.md) — overall Casein subsystem map and
   first principles.

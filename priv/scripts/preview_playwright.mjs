@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Playwright helper for DevIDE preview control.
+ * Playwright helper for Casein preview control.
  *
  * One-shot:  node preview_playwright.mjs '<json>'
  * Daemon:     node preview_playwright.mjs --daemon   (newline-delimited JSON on stdin)
@@ -576,9 +576,9 @@ function scopedHeaderOrigin(url) {
   try {
     const parsed = new URL(url);
 
-    // Direct app previews on arbitrary localhost ports must not receive DevIDE
+    // Direct app previews on arbitrary localhost ports must not receive Casein
     // auth headers; those headers leak into third-party sub-resource requests
-    // and trigger CORS preflights. DevIDE/proxy pages still need the headers.
+    // and trigger CORS preflights. Casein/proxy pages still need the headers.
     if (isLoopbackHost(parsed.hostname) && !isDevideLoopbackPort(parsed.port)) {
       return null;
     }

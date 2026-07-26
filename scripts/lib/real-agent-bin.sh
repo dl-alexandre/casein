@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resolve the real agent binary, skipping DevIDE launcher shims.
+# Resolve the real agent binary, skipping Casein launcher shims.
 
 devide_npm_prefix() {
   printf '%s\n' "${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"

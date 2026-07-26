@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="DevIDE">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Casein">
   <rect width="64" height="64" rx="14" fill="#101114" />
   <rect x="5" y="5" width="54" height="54" rx="11" fill="#18191d" stroke="#2b2d33" stroke-width="2" />
   <path d="M19 22 9 32l10 10" fill="none" stroke="#FD4F00" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />

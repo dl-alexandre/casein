@@ -25,7 +25,7 @@ to a workspace. It does four distinct jobs:
 3. **Wiring agents in** (`MCPUrls`, `MCPMaterializer`, `PaneEnv`, `TidewaveMCP`)
    — build the MCP endpoint URLs, materialize per-workspace client config files
    for each agent CLI, and push the `DEVIDE_*` env into a tmux session so a bare
-   `claude` / `grok` / `codex` command picks up the DevIDE MCP servers
+   `claude` / `grok` / `codex` command picks up the Casein MCP servers
    automatically.
 4. **Operational replay** (`AgentEvents`, `AgentEvent`, `Activity`) — append
    metadata-only MCP, ACP, semantic-state, transcript identity, permission, and
@@ -86,9 +86,9 @@ compile-time-fixed argv.
    OpenCode, Claude/Cursor staging configs point at the terminal + preview MCP URLs
    (from `MCPUrls`) with a `Bearer ${CASEIN_API_TOKEN}` header, plus an
    optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Managed Grok has
-   a separate `grok/.mcp.json` containing only the three DevIDE-authenticated
+   a separate `grok/.mcp.json` containing only the three Casein-authenticated
    servers; Tidewave is excluded because it is outside `ApiAuth`. Codex staging is
-   intentionally free of DevIDE MCP entries; the launcher injects them at
+   intentionally free of Casein MCP entries; the launcher injects them at
    runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
 3. `PaneEnv.ensure_for_session/3` (and app boot via
    `Terminals.Shims.sync_tmux_terminal_env!/0`) self-heals missing agent
@@ -105,7 +105,7 @@ compile-time-fixed argv.
    `Terminals.Shims.path_with_shims/1`; shell-integration force-fronts them
    after user rc files run, so session create is not bashrc-dependent and
    installer-prepended dirs cannot shadow the launchers). The shim dir is
-   never on PATH outside DevIDE contexts — plain terminals resolve agent
+   never on PATH outside Casein contexts — plain terminals resolve agent
    names to the real binaries. `PaneEnv` also injects
    `CLAUDE_CONFIG_DIR` and `CODEX_HOME` under
    `~/.casein/agent-auth/profiles/<owner>/<runtime>` when that owner profile is
@@ -115,7 +115,7 @@ compile-time-fixed argv.
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    managed Grok receives the immutable bundle through leader ACP metadata,
    OpenCode reads project
-   `.opencode/opencode.json`, and Codex receives DevIDE MCP through launch-time
+   `.opencode/opencode.json`, and Codex receives Casein MCP through launch-time
    `-c mcp_servers...` overrides. Codex defaults are workspace-mode aware:
    review/observe/locked use `read-only + never`, while manual workspaces use
    `workspace-write + on-request`. Unrestricted mode is an explicit opt-in via
@@ -127,7 +127,7 @@ compile-time-fixed argv.
    passes an explicit permission option or sets `DEVIDE_CLAUDE_DEFAULT_YOLO=0`.
    Palette id `clauded` maps to bare `claude`
    (`PaneEnv.launch_command/3` / allowlist) — do not rely on the host bash alias.
-   Plain agent starts do not depend on `CASEIN_API_TOKEN` because DevIDE MCP is
+   Plain agent starts do not depend on `CASEIN_API_TOKEN` because Casein MCP is
    not persisted in global agent configs. Version/help probes
    (`--version`/`--help`/`-h` for any runtime, plus `codex update|doctor` and
    `claude update`) bypass the launcher entirely and exec the real binary —
@@ -214,7 +214,7 @@ capability.
    attachment so the visible digest cannot drift from the active plugin.
 4. The stdio transport starts (or adopts) a Grok leader on the configured Unix
    socket with leader auto-update disabled, then attaches an official
-   `grok agent --leader stdio` bridge. DevIDE does not implement Grok's private
+   `grok agent --leader stdio` bridge. Casein does not implement Grok's private
    socket framing.
 5. The client sends ACP `initialize`, uses the authentication method advertised
    by that response, and calls `session/load` for a known Grok session ID or
@@ -233,7 +233,7 @@ capability.
    `grok_acp_attachments:<workspace_id>` for an operator UI without exposing
    socket, cwd, or bundle paths.
    Requests are never auto-denied because Grok broadcasts a shared request to
-   the TUI and DevIDE, with the first response winning.
+   the TUI and Casein, with the first response winning.
 
 **Durable AgentEvent projection:**
 
@@ -264,7 +264,7 @@ available. The list is surfaced through agent UI and `GET
 - `Casein.Agents.detect/2`, `transcripts/1`, `review_commands/1` — read-only
   capability queries (delegate to the configured adapter).
 - `Casein.Agents.AgentShims.ensure/0`, `missing/0`, `complete?/0` — self-heal
-  DevIDE launcher shims under `~/.casein/agent-shims`.
+  Casein launcher shims under `~/.casein/agent-shims`.
 - `Casein.Agents.PaneEnv.vars_for_workspace/2`, `ensure_for_session/3`,
   `launch_command/3` — build/install the agent env for a tmux session.
 - `Casein.Agents.MCPMaterializer.materialize/2` — write agent client config
@@ -328,7 +328,7 @@ available. The list is surfaced through agent UI and `GET
   Claude, `auth.json` for Codex) are missing. This fallback is intended only for
   trusted single-operator environments; multi-user deployments should set
   `DEVIDE_AGENT_AUTH_FALLBACK=none` so a workspace fails closed until its owner
-  signs in. Run `devide agent auth signin <runtime>` from a DevIDE workspace
+  signs in. Run `devide agent auth signin <runtime>` from a Casein workspace
   once per provider, or `devide agent auth signin <owner> <runtime>` outside a
   workspace. Workspaces named `<owner>-...` use that owner's profile after
   sign-in. Use `devide agent auth status [workspace] [runtime]` or `devide agent

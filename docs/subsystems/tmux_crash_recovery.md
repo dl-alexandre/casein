@@ -1,6 +1,6 @@
 # tmux crash / session-wipe recovery
 
-DevIDE treats the host tmux server (`-L devide`) as the durable boundary for
+Casein treats the host tmux server (`-L devide`) as the durable boundary for
 live sessions. When that server dies (segfault, OOM, `kill-server`, host
 reboot), every pane, layout, and in-tmux scrollback is gone. This doc
 describes the mitigations that keep the cockpit usable.

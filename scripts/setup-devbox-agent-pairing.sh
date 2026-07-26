@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One-shot local devbox setup for human+agent side-by-side DevIDE work.
+# One-shot local devbox setup for human+agent side-by-side Casein work.
 # Builds the current checkout, deploys to the local systemd release, pins
 # workspace mode, ensures Playwright, and writes .devbox-agent.env.
 #
@@ -120,7 +120,7 @@ if [[ -z "$TIDEWAVE_MCP_URL" ]] && [[ -x "${ROOT}/scripts/preview-env.sh" ]]; th
 fi
 
 cat >"$AGENT_ENV" <<EOF
-# DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Casein devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
 # CASEIN_API_TOKEN is workspace-scoped. The global admin token stays only in
 # /etc/casein/devide.env; never copy it into an agent-readable checkout.
@@ -143,14 +143,14 @@ export CASEIN_AGENT_BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shi
 case ":\${PATH:-}:" in *":\${HOME}/.local/bin:"*) ;; *) export PATH="\${HOME}/.local/bin:\${PATH:-}" ;; esac
 case ":\${PATH:-}:" in *":\${CASEIN_NPM_PREFIX}/bin:"*) ;; *) export PATH="\${CASEIN_NPM_PREFIX}/bin:\${PATH:-}" ;; esac
 # Launcher shims last so they land frontmost: bare agent names in this shell
-# must hit DevIDE MCP injection once this file is sourced.
+# must hit Casein MCP injection once this file is sourced.
 case ":\${PATH:-}:" in *":\${CASEIN_AGENT_BIN_DIR}:"*) ;; *) export PATH="\${CASEIN_AGENT_BIN_DIR}:\${PATH:-}" ;; esac
 EOF
 chmod 600 "$AGENT_ENV"
 
 log "wrote ${AGENT_ENV}"
 
-log "ensuring npm global prefix is user-writable and separate from DevIDE shims"
+log "ensuring npm global prefix is user-writable and separate from Casein shims"
 bash scripts/ensure-devbox-npm-prefix.sh
 
 log "ensuring Codex bubblewrap sandbox can create user namespaces"

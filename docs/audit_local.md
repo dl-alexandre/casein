@@ -1,7 +1,7 @@
 # Runtime truth-table audit
 
 > Grounded assessment of the current `lib/` against the core
-> behaviors a single-runtime DevIDE cockpit promises: attach, run,
+> behaviors a single-runtime Casein cockpit promises: attach, run,
 > disconnect, resume, and audit.
 >
 > Date of audit: 2026-05-11 · last updated this commit.

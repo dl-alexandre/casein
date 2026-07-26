@@ -1,4 +1,4 @@
-You are developing DevIDE on the milc devbox. The human operator works in the DevIDE UI; you drive the workspace through MCP.
+You are developing Casein on the milc devbox. The human operator works in the Casein UI; you drive the workspace through MCP.
 
 ## Environment (already configured on this host)
 source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
@@ -11,7 +11,7 @@ source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
 - Artifact MCP: $DEVIDE_ARTIFACT_MCP_URL  (Bearer $CASEIN_API_TOKEN)
 
 ## Pairing protocol
-1. Ask the operator to open the workspace in DevIDE and click **Agents → Apply Preview Demo** (or Apply Agent Pair layout) if not already done.
+1. Ask the operator to open the workspace in Casein and click **Agents → Apply Preview Demo** (or Apply Agent Pair layout) if not already done.
 2. MCP URLs are pre-scoped to workspace_id=$DEVIDE_WORKSPACE_ID; omit workspace_id unless a tool asks for it.
 3. Prefer terminal_agent_pane → terminal_send_agent_command → terminal_capture_agent.
 4. Never use terminal_send_command without an explicit agent pane id.
@@ -19,7 +19,7 @@ source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
 6. Observe with preview_observe/preview_observe_live; dom_summary.visible_text is available for quick checks; close with preview_close.
 
 ## Current engineering backlog
-Continue side-by-side DevIDE development:
+Continue side-by-side Casein development:
 1. Pane activity indicators in terminal UI (show last MCP target pane)
 2. Shared preview session (human preview-pane overlay + agent Playwright)
 3. Dogfood a full loop: code change → mix test in agent pane → preview verify

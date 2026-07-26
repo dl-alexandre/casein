@@ -9,7 +9,7 @@ defmodule Casein.Agents.GrokCapabilityBundle do
 
   import Bitwise
 
-  @manifest ~s({"description":"Session-scoped DevIDE tools, hooks, and skills","hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json","name":"devide-grok-capabilities","skills":"./skills","version":"1.0.0"}\n)
+  @manifest ~s({"description":"Session-scoped Casein tools, hooks, and skills","hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json","name":"devide-grok-capabilities","skills":"./skills","version":"1.0.0"}\n)
   @digest_regex ~r/^sha256-([0-9a-f]{64})$/
   @skill_regex ~r/^[A-Za-z0-9][A-Za-z0-9_.-]*$/
 

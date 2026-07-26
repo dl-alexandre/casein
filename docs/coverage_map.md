@@ -11,7 +11,7 @@
 Each `lib/` subsystem directory and its authoritative doc. The "Cross-link"
 column names the pre-existing doc the subsystem doc threads back into.
 
-### `lib/casein/*` (the DevIDE app)
+### `lib/casein/*` (the Casein app)
 
 | Directory | Owning doc | Cross-link |
 |-----------|------------|------------|
@@ -53,7 +53,7 @@ column names the pre-existing doc the subsystem doc threads back into.
 
 ### `dev_ide_core/lib/*` (path-dependency package)
 
-These generic, dependency-free BEAM primitives back DevIDE-app facades and are
+These generic, dependency-free BEAM primitives back Casein-app facades and are
 now owned by [`subsystems/dev_ide_core.md`](subsystems/dev_ide_core.md).
 
 | Directory | Owning doc | Cross-link |
@@ -115,14 +115,14 @@ against the **code** (docs win).
    exists (`channel_auth.ex:59`) and is already called (`show.ex:1812`). Stale
    note; drop it.
 7. **ref-mcp** — `docs/preview_mcp.md` (lines 148-149) treats `tidewave` as a
-   preview surface/origin alongside `app`/`api`, but DevIDE does not implement,
+   preview surface/origin alongside `app`/`api`, but Casein does not implement,
    proxy, or serve any Tidewave MCP tools; `TidewaveMCP`/`TidewaveCapability`
    only resolve a URL to the external dev-only `:tidewave` dep (compiled only in
    `MIX_ENV=dev`). New reference documents the distinction; `preview_mcp.md`
    unchanged.
 8. **tmux-ctl** — `docs/tmux_control_plane.md:185` lists
    `workspace_root_unavailable` and `outside_root` among common errors, but
-   those are emitted by the DevIDE/API facade (template/cwd validation), not by
+   those are emitted by the Casein/API facade (template/cwd validation), not by
    any `TmuxCtl.Client` function. Expected (the doc spans the product layer);
    noted because those atoms are not code-derivable from `lib/tmux_ctl/`.
 9. **ref-cli** — `docs/leader_keys.md` "Adopting" tables omit the `C` /

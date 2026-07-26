@@ -64,7 +64,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 0} = run_cli(fixture, ["lan", "install"])
 
-    assert out =~ "Installed DevIDE managed LAN units."
+    assert out =~ "Installed Casein managed LAN units."
     assert out =~ "release:    #{fixture.install_release_dir}"
     assert out =~ "status env: #{fixture.public_env_file}"
 
@@ -154,7 +154,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 0} = run_cli(fixture, ["lan", "up"])
 
-    assert out =~ "DevIDE Managed LAN status"
+    assert out =~ "Casein Managed LAN status"
     assert out =~ "READY     http://r630.local/"
     assert out =~ "OK        casein-lan.service is active"
     assert out =~ "OK        http://r630.local/assets/css/app.css returned HTTP 200"
@@ -186,7 +186,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
              )
 
     assert out =~ "error: failed to start casein-lan-http-edge.socket"
-    assert out =~ "DevIDE Managed LAN status"
+    assert out =~ "Casein Managed LAN status"
     assert out =~ "NOT READY http://r630.local/"
     assert out =~ "WARN      casein-lan-http-edge.socket is inactive"
     assert out =~ "Recent backend logs:"
@@ -243,7 +243,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
     fixture = release_fixture()
 
     assert {out, 0} = run_cli(fixture, ["lan", "down"])
-    assert out =~ "Stopped DevIDE managed LAN."
+    assert out =~ "Stopped Casein managed LAN."
 
     log = File.read!(fixture.systemctl_log)
 
@@ -262,8 +262,8 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 0} = run_cli(fixture, ["update", "install"])
 
-    assert out =~ "Installing DevIDE LAN release 67f393a"
-    assert out =~ "Installed DevIDE LAN release 67f393a."
+    assert out =~ "Installing Casein LAN release 67f393a"
+    assert out =~ "Installed Casein LAN release 67f393a."
     assert out =~ "READY     http://r630.local/"
 
     assert File.read_link(fixture.install_release_dir) == {:ok, fixture.current_link}
@@ -290,7 +290,7 @@ defmodule Casein.Setup.ReleaseLanCliTest do
 
     assert {out, 0} = run_cli(fixture, ["update", "rollback"])
 
-    assert out =~ "Rolled back DevIDE LAN release."
+    assert out =~ "Rolled back Casein LAN release."
     assert File.read_link(fixture.current_link) == {:ok, "releases/#{fixture.current_revision}"}
     assert File.read_link(fixture.previous_link) == {:ok, "releases/#{fixture.update_revision}"}
     assert File.read_link(fixture.install_release_dir) == {:ok, fixture.current_link}

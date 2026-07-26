@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily DevIDE stale agent worktree alarm sweep
+Description=Daily Casein stale agent worktree alarm sweep
 
 [Timer]
 OnCalendar=*-*-* 04:15:00

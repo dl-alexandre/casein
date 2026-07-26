@@ -1,16 +1,16 @@
 """
 casein_server.py
 
-MCP server that exposes a DevIDE instance as safe, governed tools for
+MCP server that exposes a Casein instance as safe, governed tools for
 autonomous agents (Odysseus, Claude Desktop, Cursor, opencode, etc.).
 
 This lets an agent use durable, policy-checked workspace execution
 without getting raw unrestricted shell or filesystem power on the host.
 
-All actions flow through DevIDE's allowlist, Policy, audit trail,
+All actions flow through Casein's allowlist, Policy, audit trail,
 and (when in fleet mode) the runner lease/claim protocol.
 
-Quick start (with a running DevIDE at localhost:4000):
+Quick start (with a running Casein at localhost:4000):
     CASEIN_BASE_URL=http://localhost:4000 \
     CASEIN_API_TOKEN=your-secure-token \
     python mcp_servers/casein_server.py
@@ -89,7 +89,7 @@ server = Server("casein")
 
 
 # ---------------------------------------------------------------------------
-# HTTP helpers (always go through the governed DevIDE API)
+# HTTP helpers (always go through the governed Casein API)
 # ---------------------------------------------------------------------------
 
 async def _get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | list[Any] | str:
@@ -118,8 +118,8 @@ def _fmt_error(e: Exception) -> str:
             detail = e.response.json()
         except Exception:
             detail = e.response.text[:500]
-        return f"DevIDE error {e.response.status_code}: {detail}"
-    return f"Error talking to DevIDE: {e}"
+        return f"Casein error {e.response.status_code}: {detail}"
+    return f"Error talking to Casein: {e}"
 
 
 def _truncate(text: str, limit: int = 8000) -> str:
@@ -139,7 +139,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="casein_list_workspaces",
-            description="List all workspaces known to this DevIDE instance, with basic mode and capability info. Use this first to discover valid workspace_ids.",
+            description="List all workspaces known to this Casein instance, with basic mode and capability info. Use this first to discover valid workspace_ids.",
             inputSchema={"type": "object", "properties": {}},
         ),
         Tool(
@@ -166,7 +166,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Request execution of a safe allowlisted command in a workspace. "
                 "This is the primary way for an agent to *do work*. "
-                "The command is validated against DevIDE's allowlist and policy before anything runs. "
+                "The command is validated against Casein's allowlist and policy before anything runs. "
                 "Returns the immediate run record (or assignment info in fleet mode). "
                 "Use casein_get_status or casein_get_recent_runs afterwards to observe progress/output."
             ),

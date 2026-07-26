@@ -1,24 +1,24 @@
 {
   "name": "devide",
   "version": "0.1.0",
-  "description": "Operate DevIDE workspaces, previews, handoffs, and lifecycle telemetry from Codex.",
+  "description": "Operate Casein workspaces, previews, handoffs, and lifecycle telemetry from Codex.",
   "author": {
-    "name": "DevIDE"
+    "name": "Casein"
   },
   "repository": "https://github.com/dl-alexandre/casein",
   "homepage": "https://github.com/dl-alexandre/casein",
   "keywords": ["devide", "phoenix", "workspace", "preview", "agents"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "DevIDE",
+    "displayName": "Casein",
     "shortDescription": "Operate paired workspaces safely",
-    "longDescription": "Connect Codex to DevIDE terminal, preview, and artifact tools; report lifecycle hooks; and use durable workspace workflows.",
-    "developerName": "DevIDE",
+    "longDescription": "Connect Codex to Casein terminal, preview, and artifact tools; report lifecycle hooks; and use durable workspace workflows.",
+    "developerName": "Casein",
     "category": "Developer Tools",
     "capabilities": ["Read", "Write", "Interactive"],
     "defaultPrompt": [
-      "Inspect my DevIDE workspace and continue in the agent pane.",
-      "Verify this UI change in the visible DevIDE preview.",
+      "Inspect my Casein workspace and continue in the agent pane.",
+      "Verify this UI change in the visible Casein preview.",
       "Finish this session with a durable worktree handoff."
     ]
   },

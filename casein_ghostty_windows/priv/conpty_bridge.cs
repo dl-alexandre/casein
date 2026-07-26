@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 
-namespace DevIDE
+namespace Casein
 {
     public static class ConPtyBridge
     {

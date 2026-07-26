@@ -1,7 +1,7 @@
 ---
 name: preview-ui-walk
 description: >
-  Drive automated UI smoke walks of any DevIDE workspace app via product-owned
+  Drive automated UI smoke walks of any Casein workspace app via product-owned
   workflow manifests (default read-only; optional gated interactions). Log in,
   walk pages with screenshot + console/network errors + timing + Tidewave
   evidence (logs, probes, SQL, LiveView keys) + assert/click steps, publish one
@@ -96,21 +96,21 @@ is throwaway**. The app's own walk manifest documents that risk under `safety`. 
 ## Prerequisites
 
 - **Agent pairing** on the product workspace (MCP + this skill). If OpenCode/Claude
-  cannot see DevIDE tools or this skill, run **`workspace-agent-pair`** first
+  cannot see Casein tools or this skill, run **`workspace-agent-pair`** first
   (`ensure-workspace-agent-pair.sh --workspace <name> --runtime … --verify`).
 - **Target app running + preview reachable.** A stopped manager workspace often
   404s through the preview-router. Ensure it's `running` (manager
   `POST /api/workspaces/:id/start`, wait for loopback `:{ports.http}/health` → 200).
 - **At least one workflow manifest** in the **target product repo** (see catalog
   above; schema in `references/manifest-schema.md` +
-  `references/preview-walk.schema.json`). DevIDE only ships the generic engine
+  `references/preview-walk.schema.json`). Casein only ships the generic engine
   (`walk.py` / `playwright_walk.mjs`) plus a fictional example
   (`references/authed-admin-example.json`). **Never** add product-specific
   manifests under this skill.
 
 ## 1. Resolve the target's scoped preview MCP
 
-The DevIDE MCP tools are workspace-scoped, so to drive a *non-dev_ide* app you use
+The Casein MCP tools are workspace-scoped, so to drive a *non-dev_ide* app you use
 that workspace's own credentials. From the box:
 
 ```bash
@@ -139,7 +139,7 @@ login use `references/playwright_walk.mjs` instead (see Auth reality).
 ## Auth reality — the preview MCP cannot do redirect/cookie logins
 
 Learned the hard way on real admin apps. **`preview_navigate` blocks 302
-redirects** (an origin-safety guard in DevIDE's nav layer), so a redirect-based
+redirects** (an origin-safety guard in Casein's nav layer), so a redirect-based
 login (`/auth/…/mock` → 302 that sets the session cookie → 302 to the panel) never
 persists: the browser drops the cookie, every gated page 302s to `/login`, and the
 screenshot silently stays on the previous page — **a false green**. `default_headers`
@@ -163,7 +163,7 @@ Cookie injection also did *not* carry the session through the block, and in-page
   match the page's `lands_on`/`path` — a gated page bounced to `/login` never PASSes
   on a 200 + screenshot alone. Do not weaken this; it is what kills the false green.
 
-A durable follow-up would be teaching DevIDE preview to carry an injected
+A durable follow-up would be teaching Casein preview to carry an injected
 cookie/storage-state so the MCP path works for authed apps too.
 
 ## 2. Reuse the running preview (do not open fresh)

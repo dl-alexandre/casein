@@ -224,7 +224,7 @@ function jitteredBackoff(steps, capMs) {
 }
 
 const liveSocket = new LiveSocket("/live", Socket, {
-  // DevIDE runs behind OAuth/Caddy on a shared host. A short fallback window
+  // Casein runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: devideLongPollFallbackMs(),
@@ -637,7 +637,7 @@ const requestAndRenderNotificationPermission = () => {
   requestNotificationPermission().then(renderNotificationPermission)
 }
 
-window.DevIDE = Object.assign(window.DevIDE || {}, {
+window.Casein = Object.assign(window.Casein || {}, {
   requestNotificationPermission
 })
 

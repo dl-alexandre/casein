@@ -93,10 +93,10 @@ ok
 # ── running_canary_uuids: parse systemctl output to bare 16-hex uuids ────────
 systemctl() {
   cat <<'UNITS'
-devide-aaaaaaaaaaaaaaaa.service loaded active running DevIDE canary a
-devide-bbbbbbbbbbbbbbbb.service loaded active running DevIDE canary b
-casein-loopback.service         loaded active running DevIDE loopback
-casein-preview-router.service   loaded active running DevIDE preview
+devide-aaaaaaaaaaaaaaaa.service loaded active running Casein canary a
+devide-bbbbbbbbbbbbbbbb.service loaded active running Casein canary b
+casein-loopback.service         loaded active running Casein loopback
+casein-preview-router.service   loaded active running Casein preview
 UNITS
 }
 mapfile -t uuids < <(running_canary_uuids)

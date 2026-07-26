@@ -143,10 +143,10 @@ agent_auth_profile_seed_readme() {
 
   if [[ ! -f "$readme" ]]; then
     {
-      printf 'DevIDE %s owner auth profile\n\n' "$runtime"
-      printf 'This directory is a DevIDE owner auth home. Matching workspaces\n'
+      printf 'Casein %s owner auth profile\n\n' "$runtime"
+      printf 'This directory is a Casein owner auth home. Matching workspaces\n'
       printf 'launch %s with this directory as the provider auth/config root.\n' "$runtime"
-      printf 'If the directory is deleted, DevIDE recreates an empty isolated\n'
+      printf 'If the directory is deleted, Casein recreates an empty isolated\n'
       printf 'home and %s requires sign-in again.\n\n' "$runtime"
       printf 'This isolates provider auth from the host global login, but every\n'
       printf 'workspace using this profile shares provider-local config, logs,\n'

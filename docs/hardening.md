@@ -1,7 +1,7 @@
-# DevIDE Hardening Checklist
+# Casein Hardening Checklist
 
 This checklist keeps shared development moving while protecting users brought
-onto the same DevIDE deployment.
+onto the same Casein deployment.
 
 ## Boundaries
 

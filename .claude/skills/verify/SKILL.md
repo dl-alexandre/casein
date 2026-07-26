@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Verify DevIDE changes end-to-end by running a dev server from the current checkout and driving the real viewer headlessly. Use before committing nontrivial runtime changes (terminal rendering/sizing, LiveView surfaces, viewer UI).
+description: Verify Casein changes end-to-end by running a dev server from the current checkout and driving the real viewer headlessly. Use before committing nontrivial runtime changes (terminal rendering/sizing, LiveView surfaces, viewer UI).
 ---
 
-# Verify DevIDE changes end-to-end
+# Verify Casein changes end-to-end
 
 Never verify against the deployed release at `:4000` for local changes — it runs
 `origin/master`, not your diff. Run a dev server from the checkout instead.
@@ -29,7 +29,7 @@ Gotchas:
 playwright-core lives at `/home/devbox/.npm/_npx/*/node_modules/playwright-core`,
 chromium at `~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome`.
 
-1. Scratch terminal session named to DevIDE's pattern
+1. Scratch terminal session named to Casein's pattern
    (`devide_<workspace-name>_<sid>`, see `TmuxPolicy.session_name/2`):
    `tmux -L devide_dev new-session -d -s devide_devbox-smoke_u-<slug> -x 80 -y 24`
 2. Navigation is **path-based**: the viewer URL is the workspace filesystem

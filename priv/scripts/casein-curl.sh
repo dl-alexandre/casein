@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# curl wrapper for the on-devbox DevIDE API.
+# curl wrapper for the on-devbox Casein API.
 # Prefers http://127.0.0.1:4000; falls back to /run/casein/current.sock.
 #
 # Usage:
@@ -57,7 +57,7 @@ devide_curl() {
     return
   fi
 
-  echo "error: DevIDE API unreachable (${DEVIDE_LOOPBACK_URL} down, ${CURRENT_SOCK} missing)" >&2
+  echo "error: Casein API unreachable (${DEVIDE_LOOPBACK_URL} down, ${CURRENT_SOCK} missing)" >&2
   return 1
 }
 

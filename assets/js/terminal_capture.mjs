@@ -1,6 +1,6 @@
 // Renderer-aware frozen-frame capture for tmux pane transitions.
 //
-// DevIDE currently paints one full-window Ghostty surface beneath the tmux
+// Casein currently paints one full-window Ghostty surface beneath the tmux
 // pane sections. Each frozen pane is therefore a clipping wrapper containing
 // a copy of that full surface offset back to the pane's original rectangle.
 // Canvas pixels are copied explicitly (cloneNode does not copy a canvas bitmap);

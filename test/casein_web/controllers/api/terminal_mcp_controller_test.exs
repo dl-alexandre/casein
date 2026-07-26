@@ -292,7 +292,7 @@ defmodule CaseinWeb.API.TerminalMCPControllerTest do
     assert_receive {:fake_tmux_send_command, "%1", "%1", "echo scoped", []}
   end
 
-  test "X-DevIDE-Caller-Pane header anchors caller-pane terminal tools", %{conn: conn} do
+  test "X-Casein-Caller-Pane header anchors caller-pane terminal tools", %{conn: conn} do
     Application.put_env(:casein, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
     Application.put_env(:casein, :tmux_adapter, Casein.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())

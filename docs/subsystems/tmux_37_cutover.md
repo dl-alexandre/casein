@@ -3,7 +3,7 @@
 The devbox runs tmux **3.4** (Ubuntu apt package) until this cutover. tmux
 **≥ 3.5** queries the attached client for foreground/background colours and
 answers in-pane `\e]10;?` / `\e]11;?` queries itself; tmux **≥ 3.6** adds
-explicit CSI `?997` dark/light theme reports (mode 2031). DevIDE gates those
+explicit CSI `?997` dark/light theme reports (mode 2031). Casein gates those
 features on `TmuxCtl.Client.server_version/0` and is a no-op on 3.4. This
 runbook installs **3.7** on the devbox and restarts so the gates open.
 
@@ -24,10 +24,10 @@ not automated, so the disruptive step is never triggered by a deploy.
 
 ## Why 3.7 (not 3.6b)
 
-3.7 keeps every DevIDE-targeted 3.6 capability (theme `997`, literal tabs in
+3.7 keeps every Casein-targeted 3.6 capability (theme `997`, literal tabs in
 `capture-pane`, `pane-border-lines single`, extended-keys send-keys) while
 picking up upstream paste/escape-timing fixes, name sanitization, and stability
-fixes on paths DevIDE already uses (`load-buffer` / `paste-buffer`, forwarded
+fixes on paths Casein already uses (`load-buffer` / `paste-buffer`, forwarded
 OSC/CSI queries on the attach PTY). Floating panes and other 3.7 UI features are
 not enabled in `priv/tmux/devide.conf`.
 
@@ -39,22 +39,22 @@ not enabled in `priv/tmux/devide.conf`.
    sudo TMUX_PREFIX=/usr/local bash /data/workspaces/dalexandre/dev_ide/scripts/install-tmux.sh
    tmux -V   # expect: tmux 3.7   (resolves via PATH to /usr/local/bin)
    ```
-3. **Cut over the DevIDE tmux servers** (mixed client/server on one socket is
+3. **Cut over the Casein tmux servers** (mixed client/server on one socket is
    unsupported, so the servers must be killed and recreated):
    ```sh
    tmux -L devide kill-server 2>/dev/null || true
    tmux -L devide_dev kill-server 2>/dev/null || true
    ```
-4. **Restart DevIDE** so it re-execs against the new binary and clears the
+4. **Restart Casein** so it re-execs against the new binary and clears the
    cached server version (`persistent_term`):
    ```sh
    sudo systemctl restart devide      # or the deploy poller's restart path
    ```
-5. **Verify the server version** DevIDE will see:
+5. **Verify the server version** Casein will see:
    ```sh
    tmux -L devide display-message -p '#{version}'   # expect: 3.7
    ```
-6. **Smoke-check in-pane detection** — open a DevIDE terminal with **two**
+6. **Smoke-check in-pane detection** — open a Casein terminal with **two**
    browser viewers on the same session, then in the pane:
    ```sh
    bash -c 'printf "\e]11;?\a" > /dev/tty; IFS= read -rs -t 2 -d $'"'"'\a'"'"' ans < /dev/tty; printf "%q\n" "$ans"'

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Verify the production DevIDE socket and ephemeral preview sockets stay in
+# Verify the production Casein socket and ephemeral preview sockets stay in
 # separate ownership lanes.
 #
 # Main app:

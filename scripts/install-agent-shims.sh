@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Install DevIDE agent launcher shims into ~/.casein/agent-shims.
-# The dir is only put on PATH inside DevIDE contexts (pane env, shell
+# Install Casein agent launcher shims into ~/.casein/agent-shims.
+# The dir is only put on PATH inside Casein contexts (pane env, shell
 # integration, agent env files) — plain terminals resolve grok/claude/codex/
-# opencode/agent straight to the real binaries with zero DevIDE footprint.
-# Inside DevIDE, typing an agent name injects Terminal + Preview MCP.
+# opencode/agent straight to the real binaries with zero Casein footprint.
+# Inside Casein, typing an agent name injects Terminal + Preview MCP.
 # clauded stays a shell alias (see ~/.bashrc); palette/MCP launches map
 # clauded → claude (see PaneEnv.launch_command/3).
 #
@@ -21,7 +21,7 @@ source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
 BIN_DIR="${CASEIN_AGENT_BIN_DIR:-${HOME}/.casein/agent-shims}"
 # Pre-migration shim home; runtime shims found here get cleaned up so plain
-# terminals stop resolving agent names to DevIDE launchers.
+# terminals stop resolving agent names to Casein launchers.
 LEGACY_BIN_DIR="${HOME}/.local/bin"
 REAL_DIR="${HOME}/.casein/real-bins"
 export CASEIN_NPM_PREFIX="${CASEIN_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
@@ -103,14 +103,14 @@ fi
 ln -sf "$DEVIDE_CLI" "${BIN_DIR}/devide"
 # The devide CLI itself is a plain command, not an interceptor — keep a
 # convenience symlink in ~/.local/bin so `devide agent doctor` etc. work from
-# any terminal. This is the only thing DevIDE still places there.
+# any terminal. This is the only thing Casein still places there.
 if [[ -d "$LEGACY_BIN_DIR" ]]; then
   ln -sf "$DEVIDE_CLI" "${LEGACY_BIN_DIR}/devide"
 fi
 
 # Repointing the npm global prefix redirects ALL of the user's `npm -g`
 # installs — a boundary violation on personal machines. Auto-on only for
-# DevIDE-managed hosts (marked by /etc/casein/devide.env);
+# Casein-managed hosts (marked by /etc/casein/devide.env);
 # CASEIN_MANAGE_NPM_PREFIX=1/0 overrides in either direction.
 manage_npm_prefix() {
   case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
@@ -177,7 +177,7 @@ record_real_bin() {
   return 1
 }
 
-# DevIDE contexts (pane env, shell integration, agent env files) put BIN_DIR
+# Casein contexts (pane env, shell integration, agent env files) put BIN_DIR
 # at the FRONT of PATH. Verify resolution with that layout so a broken shim
 # (unreadable, wrong target, PATH parse surprise) fails loudly at install time
 # rather than as a silent unpaired launch later.
@@ -192,20 +192,20 @@ verify_shim_precedence() {
     resolved_target="$(readlink -f "$resolved" 2>/dev/null || printf '%s' "$resolved")"
     shim_target="$(readlink -f "${BIN_DIR}/${name}" 2>/dev/null || printf '%s' "${BIN_DIR}/${name}")"
     if [[ -z "$resolved" || "$resolved_target" != "$shim_target" ]]; then
-      echo "error: '${name}' resolves to '${resolved:-nothing}' instead of the DevIDE shim ${BIN_DIR}/${name}" >&2
+      echo "error: '${name}' resolves to '${resolved:-nothing}' instead of the Casein shim ${BIN_DIR}/${name}" >&2
       shadowed=1
     fi
   done
 
   if [[ "$shadowed" == "1" ]]; then
-    echo "error: shim resolution broken — agents launched by name inside DevIDE will skip MCP injection." >&2
+    echo "error: shim resolution broken — agents launched by name inside Casein will skip MCP injection." >&2
     echo "error: inspect ${BIN_DIR}, then re-run this installer." >&2
     return 1
   fi
 }
 
 # Migration: earlier installs put runtime shims directly in ~/.local/bin,
-# which made agent names resolve to DevIDE launchers in every terminal on the
+# which made agent names resolve to Casein launchers in every terminal on the
 # box. Remove ours (marker-checked — never a user's real binary) so plain
 # terminals go back to the real agents.
 cleanup_legacy_shims() {
@@ -217,7 +217,7 @@ cleanup_legacy_shims() {
     fi
   done
   if [[ -n "$removed" ]]; then
-    echo "Removed legacy DevIDE shims from ${LEGACY_BIN_DIR}:${removed}"
+    echo "Removed legacy Casein shims from ${LEGACY_BIN_DIR}:${removed}"
   fi
 }
 
@@ -258,7 +258,7 @@ fi
 
 verify_shim_precedence
 
-echo "Installed DevIDE agent shims in ${BIN_DIR}: ${RUNTIMES[*]}"
+echo "Installed Casein agent shims in ${BIN_DIR}: ${RUNTIMES[*]}"
 echo "npm global prefix: ${NPM_PREFIX}"
 echo "Real binaries recorded under ${REAL_DIR}:"
 ls -la "${REAL_DIR}" 2>/dev/null || true

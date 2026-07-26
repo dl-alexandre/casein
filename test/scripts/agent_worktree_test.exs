@@ -279,7 +279,7 @@ defmodule Scripts.AgentWorktreeTest do
         stderr_to_stdout: true
       )
 
-    assert output =~ "Installed DevIDE agent shims"
+    assert output =~ "Installed Casein agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
     assert File.read_link!(Path.join(home, ".casein/real-bins/codex")) == user_codex
 
@@ -347,7 +347,7 @@ defmodule Scripts.AgentWorktreeTest do
       )
 
     assert output =~ "fake codex <update>\n"
-    assert output =~ "Installed DevIDE agent shims"
+    assert output =~ "Installed Casein agent shims"
     assert File.read!(npm_set) == npm_prefix <> "\n"
 
     assert File.read!(Path.join(home, ".casein/agent-shims/codex")) =~

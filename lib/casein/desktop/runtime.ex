@@ -53,7 +53,7 @@ defmodule Casein.Desktop.Runtime do
   end
 
   defp default_data_dir({:unix, :darwin}) do
-    Path.join(user_home!(), "Library/Application Support/DevIDE")
+    Path.join(user_home!(), "Library/Application Support/Casein")
   end
 
   defp default_data_dir(_os_type) do

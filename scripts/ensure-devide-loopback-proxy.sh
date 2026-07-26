@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Ensure http://127.0.0.1:4000 reaches the active DevIDE instance.
+# Ensure http://127.0.0.1:4000 reaches the active Casein instance.
 #
 # Canary deploys listen on a Unix socket; legacy deploys bind :4000 directly.
 # This script starts casein-loopback (socat) only when the socket exists and

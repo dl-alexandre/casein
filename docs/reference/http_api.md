@@ -1,6 +1,6 @@
 # HTTP & channel external surface
 
-> The complete inventory of DevIDE's externally reachable HTTP routes and
+> The complete inventory of Casein's externally reachable HTTP routes and
 > Phoenix channel topics: what each one is, which controller/action serves it,
 > which pipeline authorizes it, and what it does.
 
@@ -11,7 +11,7 @@ for the deep-link URL grammar used by the cockpit UI see
 
 ## Responsibility
 
-Translate browser, operator-tool, and external-agent traffic into DevIDE
+Translate browser, operator-tool, and external-agent traffic into Casein
 context calls and back. Everything here is a thin transport layer:
 controllers map domain results (`Casein.Export`, `Casein.Workspaces`,
 `Casein.PreviewPanes`, `Casein.Deployment.*`, MCP tool modules) onto HTTP
@@ -296,7 +296,7 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
   work on their own `/api/workspaces/:id/*` path or an MCP endpoint scoped to a
   compatible `?workspace_id=`.
 - **`ForwardAuth` trust depends on the reverse proxy** overwriting
-  `X-Auth-Request-Email` on every authenticated request. DevIDE must bind to
+  `X-Auth-Request-Email` on every authenticated request. Casein must bind to
   localhost/the internal bridge; the router defines **no OPTIONS routes**, which
   is load-bearing for the Caddy matcher exclusions (see the `ForwardAuth`
   moduledoc).

@@ -1,4 +1,4 @@
-// Shared CodeMirror wiring for every DevIDE editor surface: the single files-tab
+// Shared CodeMirror wiring for every Casein editor surface: the single files-tab
 // viewer (`file_viewer_hook.js`) and the per-pane file-pane overlays
 // (`file_pane_overlay.js`). Keeps one source of truth for language selection,
 // the base extension set (now including a `Mod-s` save binding), clipboard

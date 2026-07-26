@@ -530,7 +530,7 @@ defmodule Casein.Terminals.Shims do
 
     real_cmd="$(resolve_real_cmd)"
     if [[ -z "$real_cmd" ]]; then
-      echo "DevIDE: #{name} not found. Installing into ${tool_root}..." >&2
+      echo "Casein: #{name} not found. Installing into ${tool_root}..." >&2
 
       installed=0
       if PATH="$clean_path" command -v devide >/dev/null 2>&1; then
@@ -558,7 +558,7 @@ defmodule Casein.Terminals.Shims do
         exit 127
       fi
 
-      echo "DevIDE: #{name} installed. Launching..." >&2
+      echo "Casein: #{name} installed. Launching..." >&2
     fi
 
     if [[ -z "${COLORFGBG+x}" ]]; then
@@ -957,7 +957,7 @@ defmodule Casein.Terminals.Shims do
     mkdir -p "$tool_bin"
 
     if [[ -x "${tool_bin}/#{bin}" ]]; then
-      echo "DevIDE: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
+      echo "Casein: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
       exit 0
     fi
 
@@ -971,24 +971,24 @@ defmodule Casein.Terminals.Shims do
       elif command -v mise >/dev/null 2>&1; then
         cargo_cmd=(mise exec -y rust@stable -- cargo)
       else
-        echo "DevIDE: cannot install #{name}; cargo is not installed and mise is unavailable." >&2
+        echo "Casein: cannot install #{name}; cargo is not installed and mise is unavailable." >&2
         return 127
       fi
 
       tmp_root="$(mktemp -d "${tool_root}/.install-#{name}.XXXXXX")"
       tmp_bin="${tool_bin}/.#{bin}.$$"
 
-      echo "DevIDE: provisioning terminal tool '#{name}' via cargo package '#{package}'." >&2
-      echo "DevIDE: cargo output follows; first install can take a few minutes." >&2
+      echo "Casein: provisioning terminal tool '#{name}' via cargo package '#{package}'." >&2
+      echo "Casein: cargo output follows; first install can take a few minutes." >&2
       if ! "${cargo_cmd[@]}" install --root "$tmp_root" #{shell_quote(package)}; then
         rm -rf "$tmp_root"
         rm -f "$tmp_bin"
-        echo "DevIDE: failed to provision terminal tool '#{name}'." >&2
+        echo "Casein: failed to provision terminal tool '#{name}'." >&2
         return 1
       fi
 
       if [[ ! -x "${tmp_root}/bin/#{bin}" ]]; then
-        echo "DevIDE: cargo install finished, but ${tmp_root}/bin/#{bin} is missing or not executable." >&2
+        echo "Casein: cargo install finished, but ${tmp_root}/bin/#{bin} is missing or not executable." >&2
         rm -rf "$tmp_root"
         rm -f "$tmp_bin"
         return 127
@@ -997,13 +997,13 @@ defmodule Casein.Terminals.Shims do
       if ! cp "${tmp_root}/bin/#{bin}" "$tmp_bin" || ! chmod +x "$tmp_bin" || ! mv -f "$tmp_bin" "${tool_bin}/#{bin}"; then
         rm -rf "$tmp_root"
         rm -f "$tmp_bin"
-        echo "DevIDE: failed to publish terminal tool '#{name}' into ${tool_bin}." >&2
+        echo "Casein: failed to publish terminal tool '#{name}' into ${tool_bin}." >&2
         return 1
       fi
 
       rm -rf "$tmp_root"
       rm -f "$tmp_bin"
-      echo "DevIDE: provisioned terminal tool '#{name}' at ${tool_bin}/#{bin}" >&2
+      echo "Casein: provisioned terminal tool '#{name}' at ${tool_bin}/#{bin}" >&2
     }
 
     lock_dir="${tool_root}/.#{name}-install.lock"
@@ -1012,7 +1012,7 @@ defmodule Casein.Terminals.Shims do
       trap 'rm -rf "${install_lock_dir:-}"' EXIT
 
       if [[ -x "${tool_bin}/#{bin}" ]]; then
-        echo "DevIDE: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
+        echo "Casein: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
         exit 0
       fi
 
@@ -1020,11 +1020,11 @@ defmodule Casein.Terminals.Shims do
       exit $?
     fi
 
-    echo "DevIDE: terminal tool '#{name}' is already being installed; waiting..." >&2
+    echo "Casein: terminal tool '#{name}' is already being installed; waiting..." >&2
     deadline=$((SECONDS + lock_timeout))
     while (( SECONDS < deadline )); do
       if [[ -x "${tool_bin}/#{bin}" ]]; then
-        echo "DevIDE: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
+        echo "Casein: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
         exit 0
       fi
 
@@ -1033,7 +1033,7 @@ defmodule Casein.Terminals.Shims do
         trap 'rm -rf "${install_lock_dir:-}"' EXIT
 
         if [[ -x "${tool_bin}/#{bin}" ]]; then
-          echo "DevIDE: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
+          echo "Casein: terminal tool '#{name}' already installed at ${tool_bin}/#{bin}" >&2
           exit 0
         fi
 
@@ -1044,7 +1044,7 @@ defmodule Casein.Terminals.Shims do
       sleep 1
     done
 
-    echo "DevIDE: timed out waiting for terminal tool '#{name}' install lock at ${lock_dir}" >&2
+    echo "Casein: timed out waiting for terminal tool '#{name}' install lock at ${lock_dir}" >&2
     exit 75
     """
   end

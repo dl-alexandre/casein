@@ -65,7 +65,7 @@ log "repository: ${GITHUB_REPO}"
 cat <<EOF
 
 Caddy must expose ${WEBHOOK_URL} without oauth2-proxy forward_auth.
-Add a handle block on the DevIDE site BEFORE the forward_auth import, e.g.:
+Add a handle block on the Casein site BEFORE the forward_auth import, e.g.:
 
   @casein_deploy_webhook path /api/deploy_webhook
   handle @casein_deploy_webhook {

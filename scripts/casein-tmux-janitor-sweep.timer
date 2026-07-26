@@ -1,5 +1,5 @@
 [Unit]
-Description=Weekly DevIDE tmux blank session/window janitor sweep
+Description=Weekly Casein tmux blank session/window janitor sweep
 
 [Timer]
 OnCalendar=Sun *-*-* 03:30:00

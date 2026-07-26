@@ -35,7 +35,7 @@ if [[ -n "$TOKEN" ]]; then
   auth_header=( -H "authorization: Bearer $TOKEN" )
 fi
 
-echo "==> DevIDE deploy handoff verification"
+echo "==> Casein deploy handoff verification"
 echo "    URL: $DEVIDE_URL/api/deploy_status"
 
 response="$(curl -fsS "${auth_header[@]}" "$DEVIDE_URL/api/deploy_status" || true)"

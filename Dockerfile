@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# DevIDE production image — audit_remote.md CC-1.
+# Casein production image — audit_remote.md CC-1.
 #
 # Two stages:
 #   builder — full Elixir/Erlang toolchain, compiles deps + assets +
@@ -23,7 +23,7 @@
 #     -v /path/to/workspaces:/workspaces \
 #     casein:latest
 #
-# By default DevIDE discovers workspaces as directories under
+# By default Casein discovers workspaces as directories under
 # CASEIN_WORKSPACES_ROOT. Optional integrations (see
 # docs/integrations/) supply alternative workspace sources via config.
 

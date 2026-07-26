@@ -6,12 +6,12 @@ A walk manifest is the **app-owned contract** for one UI smoke **workflow**
 | Layer | Owns | Lives in |
 |-------|------|----------|
 | **Product** | paths, login, safety, runtime probes, page steps | `.casein/preview-walk.json` **and/or** `.casein/preview-walks/<id>.json` |
-| **DevIDE** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
+| **Casein** | drivers, skill, this schema, fictional example | `.claude/skills/preview-ui-walk/` |
 
 Machine-readable schema: [`preview-walk.schema.json`](./preview-walk.schema.json) (JSON Schema draft-07).
 Shape example (fictional): [`authed-admin-example.json`](./authed-admin-example.json).
 
-**Do not** check product-specific manifests into the DevIDE skill tree.
+**Do not** check product-specific manifests into the Casein skill tree.
 
 ## Multi-workflow layout
 

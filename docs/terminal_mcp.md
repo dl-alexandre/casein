@@ -1,6 +1,6 @@
 # Terminal MCP
 
-DevIDE exposes tmux session control to coding agents through a narrow MCP
+Casein exposes tmux session control to coding agents through a narrow MCP
 JSON-RPC endpoint:
 
 ```text
@@ -48,12 +48,12 @@ grant, is bound to one workspace/private leader/tmux session/agent pane, and is
 intersected with current workspace mode and write-unlock policy on every request.
 It cannot call `search_tools` or `invoke_tool`, use a different MCP endpoint, or
 reuse another bearer's streamable session id. All terminal tools still touch only
-DevIDE-managed tmux sessions (`devide_*` prefix), never unrelated sessions.
+Casein-managed tmux sessions (`devide_*` prefix), never unrelated sessions.
 
 **Pass `workspace_id` on every call unless the MCP URL is pre-scoped.** Generated
 same-host agent configs include `?workspace_id=<manager UUID>` on the MCP URL,
 and the transport injects that value into tool calls when the agent omits it.
-When set, discovery and mutation are scoped to that workspace's sessions. DevIDE
+When set, discovery and mutation are scoped to that workspace's sessions. Casein
 resolves both the manager UUID and the workspace **name** to tmux prefixes —
 sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
 Cross-workspace session access is rejected with `workspace_mismatch`.
@@ -67,7 +67,7 @@ MCP. Prefer always scoping in production and dogfood setups.
 ## Command Policy
 
 `terminal_send_command` / `terminal_send_agent_command` run arbitrary shell, so
-DevIDE runs an allow/deny gate in front of them
+Casein runs an allow/deny gate in front of them
 (`Casein.Agents.TerminalCommandPolicy`). The default is a small denylist for
 high-risk host commands such as recursive root deletes, pipe-to-shell downloads,
 and `sudo`. Configure it with an allowlist or denylist of regexes matched
@@ -110,12 +110,12 @@ never changes tmux topology or MCP behaviour.
 
 ## Agent pairing quickstart (human + external agent)
 
-Side-by-side DevIDE development uses a built-in tmux template and explicit pane
+Side-by-side Casein development uses a built-in tmux template and explicit pane
 targeting so operator keystrokes do not collide with agent MCP writes.
 
 ### Operator (human)
 
-1. Open the workspace in DevIDE LiveView.
+1. Open the workspace in Casein LiveView.
 2. Set workspace mode to **manual** (raw multi-pane terminal).
 3. **Agents → Apply Agent Pair layout** once per session.
    - Operator pane stays **focused** (human types here).
@@ -156,7 +156,7 @@ targeting so operator keystrokes do not collide with agent MCP writes.
 
 ### Agent-created worktrees
 
-When an agent creates a Git worktree, it should report it back to DevIDE instead
+When an agent creates a Git worktree, it should report it back to Casein instead
 of expecting it to appear as a new devbox workspace:
 
 ```text
@@ -173,7 +173,7 @@ terminal_report_worktree(
 )
 ```
 
-DevIDE records the worktree as a child runtime context under the parent
+Casein records the worktree as a child runtime context under the parent
 workspace. The Agents panel then shows it in **Agent Worktrees** with an explicit
 Attach shell action. Worktrees remain out of the main workspace picker.
 
@@ -184,7 +184,7 @@ base checkout.
 
 ### Semantic agent state
 
-DevIDE tracks a semantic state per agent pane — `working`, `blocked` (waiting for
+Casein tracks a semantic state per agent pane — `working`, `blocked` (waiting for
 input/permission), `done` (turn complete), or `idle` — surfaced as loud/calm
 badges in the session bar and the workspace picker. State comes from two sources,
 reconciled by staleness rules (a live title spinner always wins over a stale
@@ -204,7 +204,7 @@ report; `blocked`/`done` are never inferred from the title):
     script on the equivalent Grok events; `stop_failure` (turn died on an API
     error) also maps to blocked. Grok's camelCase `sessionId` and
     `transcriptPath` hook fields are retained as pane metadata. The hook command
-    is env-guarded, so grok sessions outside DevIDE pairing no-op silently.
+    is env-guarded, so grok sessions outside Casein pairing no-op silently.
   - **Codex**: the launcher injects lifecycle hooks for SessionStart,
     UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, and
     SubagentStart/Stop. `casein-codex-notify.sh` sends their JSON to the
@@ -257,7 +257,7 @@ call to keep long-polling.
 
 ### Agent skills (cross-repo)
 
-DevIDE-infrastructure skills live in the dev_ide repo under `.claude/skills`, so
+Casein-infrastructure skills live in the dev_ide repo under `.claude/skills`, so
 they only travel with dev_ide checkouts. But agents routinely run in **other**
 product-repo worktrees (e.g. auditing OneBackend-v3) that do not carry them — so
 an orchestrator there could not invoke `delegate-to-grok` even though delegation

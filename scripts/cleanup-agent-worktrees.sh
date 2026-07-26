@@ -39,7 +39,7 @@ mapfile -t _worktrees < <(git worktree list --porcelain 2>/dev/null | awk '/^wor
 primary="${_worktrees[0]:-}"
 self="$(pwd -P)"
 
-# current_path of every pane in the DevIDE tmux server = "something is running
+# current_path of every pane in the Casein tmux server = "something is running
 # here". This is the safety probe: if we CANNOT reach tmux we must not delete,
 # because every worktree would look idle and a live one could be removed.
 tmux_ok=0

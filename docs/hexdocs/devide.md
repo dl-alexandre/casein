@@ -1,6 +1,6 @@
-# DevIDE
+# Casein
 
-DevIDE is a single-runtime workspace cockpit: a durable terminal over a
+Casein is a single-runtime workspace cockpit: a durable terminal over a
 server-side runtime, with MCP as the interface coding agents use to drive it.
 
 The runtime is the engine: it owns durable sessions and survives disconnects.

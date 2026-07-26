@@ -1,6 +1,6 @@
 # CLI & Keys — external surface reference
 
-> The operator-facing entrypoints into DevIDE: the `devide` operator CLI, the
+> The operator-facing entrypoints into Casein: the `devide` operator CLI, the
 > mix tasks, the static command allowlist that gates palette/agent runs, and
 > the `C-b` leader-key bindings the cockpit hands to the keyboard.
 
@@ -13,7 +13,7 @@ cross-links it.
 
 ## Responsibility
 
-Expose and gate the small set of named, argv-style entrypoints DevIDE offers to
+Expose and gate the small set of named, argv-style entrypoints Casein offers to
 operators and agents — and nothing more. Three concerns live here:
 
 1. **Operator CLI** — the `devide` bash launcher (`agent` / `mcp` / `tools`
@@ -73,7 +73,7 @@ Functions and entrypoints other code (or operators) call:
   come from a resolved allowlist id.
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
 - **`scripts/devide tools ensure <tool>` / `ensure-installed <tool>`** —
-  non-interactively ensure a supported DevIDE terminal tool is installed.
+  non-interactively ensure a supported Casein terminal tool is installed.
   Current tool: `elio`, installed into `~/.casein/tools/` via Cargo when no real
   binary is already available. `scripts/ensure-terminal-tool.sh --check <tool>`
   reports availability without installing, and `--yes` is accepted as a no-op
@@ -84,11 +84,11 @@ Functions and entrypoints other code (or operators) call:
   `~/.casein/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
   flow there. Profiles without a completed sign-in keep workspaces on the host
   global provider login; after sign-in, workspaces named `<owner>-...`
-  automatically use this profile. Outside a DevIDE workspace, use
+  automatically use this profile. Outside a Casein workspace, use
   `scripts/devide agent auth signin <owner> <claude|codex>`.
 - **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
   whether a workspace currently uses global auth or a signed-in owner profile.
-  Without a workspace arg, it reports the current DevIDE agent environment when
+  Without a workspace arg, it reports the current Casein agent environment when
   one is resolvable.
 - **`scripts/devide agent auth list`** — list owner profiles configured under
   the auth-profile root.
