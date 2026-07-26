@@ -498,6 +498,7 @@ defmodule DevideMob.PairingScreen do
           type: :button,
           props: %{
             text: "Back",
+            fill_width: false,
             background: :surface_raised,
             text_color: :on_surface,
             padding: :space_sm,

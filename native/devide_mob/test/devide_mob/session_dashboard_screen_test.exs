@@ -21,7 +21,8 @@ defmodule DevideMob.SessionDashboardScreenTest do
 
     assert_renderable(view)
     assert text(view) =~ "Action Center"
-    assert find(view, :button, text: "+ Pair")
+    assert find(view, :button, text: "+ Pair").props.fill_width == false
+    assert find(view, :button, text: "...").props.fill_width == false
     assert find(view, :button, text: "...")
     refute find(view, :button, text: "Back")
     refute find(view, :button, text: "Home")

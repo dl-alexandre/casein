@@ -16,7 +16,7 @@ defmodule DevideMob.SessionDetailScreenTest do
       |> render_info({:session_status, "ws-1", :disconnected})
 
     assert_renderable(view)
-    assert find(view, :button, text: "Back")
+    assert find(view, :button, text: "Back").props.fill_width == false
     assert length(find_all(view, :button, text: "Back")) == 1
     assert text(view) =~ "Session offline"
     assert text(view) =~ "Offline"

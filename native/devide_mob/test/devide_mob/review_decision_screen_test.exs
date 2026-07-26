@@ -47,6 +47,7 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Approve")
     assert find(view, :button, text: "Deny")
     assert find(view, :button, text: "Request changes")
+    assert find(view, :button, text: "Back").props.fill_width == false
   end
 
   test "approve and deny submit the card-declared actions" do
@@ -94,6 +95,26 @@ defmodule DevideMob.ReviewDecisionScreenTest do
       )
 
     assert text(view) =~ "Action failed: card already resolved"
+    assert assigns(view).submitted_action == nil
+  end
+
+  test "a missing authoritative card expires the screen instead of enabling stale retry" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: intervention_card()})
+      |> render_info({:change, :note, "Continue."})
+      |> render_info({:tap, {:action, "follow_up"}})
+      |> render_info({:card_action_result, "in_progress:ws-1:run-1", {:error, "card_not_found"}})
+
+    assert assigns(view).submitted_action == nil
+    assert assigns(view).card_expired == true
+    assert text(view) =~ "This request expired or was removed."
+    assert text(view) =~ "Refresh the Action Center"
+    refute find(view, :button, text: "Send follow-up")
+    refute find(view, :text_field)
+    assert find(view, :button, text: "Return to Action Center")
+
+    view = render_info(view, {:tap, {:action, "follow_up"}})
     assert assigns(view).submitted_action == nil
   end
 
