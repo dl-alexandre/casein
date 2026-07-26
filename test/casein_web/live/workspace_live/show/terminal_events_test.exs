@@ -103,7 +103,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
         assigns: %{
           __changed__: %{},
           flash: %{},
-          tmux_session: "devide_ws_test",
+          tmux_session: "casein_ws_test",
           tmux_mutations_enabled?: false
         }
       }
