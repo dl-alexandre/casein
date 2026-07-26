@@ -47,6 +47,7 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Approve")
     assert find(view, :button, text: "Deny")
     assert find(view, :button, text: "Request changes")
+    assert find(view, :button, text: "Back").props.fill_width == false
   end
 
   test "approve and deny submit the card-declared actions" do

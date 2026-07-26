@@ -228,6 +228,7 @@ defmodule DevideMob.SessionDetailScreen do
             text: "Back",
             background: :surface_raised,
             text_color: :on_surface,
+            fill_width: false,
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :back}

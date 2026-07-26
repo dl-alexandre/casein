@@ -21,7 +21,7 @@ defmodule DevideMob.PairingScreenTest do
 
     assert_renderable(view)
     assert text(view) =~ "Pair workspace"
-    assert find(view, :button, text: "Back")
+    assert find(view, :button, text: "Back").props.fill_width == false
     refute find(view, :button, text: "← Back")
   end
 

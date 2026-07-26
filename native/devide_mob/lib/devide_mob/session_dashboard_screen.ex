@@ -365,6 +365,7 @@ defmodule DevideMob.SessionDashboardScreen do
             text: "+ Pair",
             background: :surface_raised,
             text_color: :on_surface,
+            fill_width: false,
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :pair_device}
@@ -377,6 +378,7 @@ defmodule DevideMob.SessionDashboardScreen do
             text: "...",
             background: :surface_raised,
             text_color: :on_surface,
+            fill_width: false,
             padding: :space_sm,
             height: 44.0,
             on_tap: {self(), :root_menu}
@@ -1033,9 +1035,7 @@ defmodule DevideMob.SessionDashboardScreen do
           },
           card_body(card),
           workspace_id &&
-            muted_line(
-              card_context_line(origin_name, workspace_id, card, authoritative?)
-            ),
+            muted_line(card_context_line(origin_name, workspace_id, card, authoritative?)),
           evidence_summary_line(card),
           action_button(
             if(cached?, do: "Switch & refresh", else: action_label(card)),
