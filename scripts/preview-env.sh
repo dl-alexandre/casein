@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# preview-env.sh — ephemeral DevIDE preview environments, one per git ref.
+# preview-env.sh — ephemeral Casein preview environments, one per git ref.
 #
 # Each environment is fully isolated from the shared checkout and from every
 # other environment:
@@ -187,7 +187,7 @@ seed_sandbox() {
   local dir="$1/$SANDBOX"
   [ -d "$dir/.git" ] && return 0
   mkdir -p "$dir/lib"
-  printf '# Preview Sandbox\n\nThrowaway workspace for an ephemeral DevIDE preview env.\n' > "$dir/README.md"
+  printf '# Preview Sandbox\n\nThrowaway workspace for an ephemeral Casein preview env.\n' > "$dir/README.md"
   printf 'defmodule Sandbox do\n  def hello, do: :world\nend\n' > "$dir/lib/sandbox.ex"
   ( cd "$dir" && git init -q \
       && git -c user.email=dev@local -c user.name=dev add -A \
@@ -320,7 +320,7 @@ cmd_dirty() {
   if [ "$foreground" = 1 ]; then
     write_registry "$id" "working-tree" "$sha" "$port" "$$" "$db" "" "$ws" "$logf" "dirty" "$ROOT" "running"
     router_sync
-    echo ">>> DevIDE dirty preview up:"
+    echo ">>> Casein dirty preview up:"
     echo ">>>   socket: $sock  (router dials this)"
     echo ">>>   http://127.0.0.1:${port}/workspaces/${SANDBOX}?host=local"
     echo ">>>   tidewave: $(tidewave_url_for "$port")"

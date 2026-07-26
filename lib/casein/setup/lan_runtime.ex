@@ -208,7 +208,7 @@ defmodule Casein.Setup.LanRuntime do
 
   def status_lines(%{} = status) do
     [
-      "DevIDE Managed LAN status",
+      "Casein Managed LAN status",
       "",
       readiness_line(status),
       "  INFO      backend #{status.backend_url}",

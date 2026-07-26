@@ -1,7 +1,7 @@
 # Remote-deployment truth-table audit
 
 > Grounded assessment of the current `lib/` and `config/` against the
-> core cockpit behaviors when DevIDE runs on a remote host instead of
+> core cockpit behaviors when Casein runs on a remote host instead of
 > the operator's machine.
 >
 > Date of audit: 2026-05-11 · last updated this commit (CC-1 + CC-4 closed; CC-3 prior).
@@ -10,8 +10,8 @@
 > Status legend: `works` · `partial` · `stub` · `missing` · `uncertain`.
 >
 > **What "remote deployment" means here:**
-> `browser → DevIDE@<remote-host> → persistent remote tmux`.
-> The operator's browser hits a DevIDE instance running on another
+> `browser → Casein@<remote-host> → persistent remote tmux`.
+> The operator's browser hits a Casein instance running on another
 > machine. The cockpit served is the same cockpit. The runtime
 > authority, sessions, audit, and gate all live on the remote.
 
@@ -22,7 +22,7 @@ exercised on this machine and proven to work. The remote-deployment
 audit cannot. Verifying any remote claim requires:
 
 - a second machine reachable over HTTPS
-- DevIDE deployed there with its workspace source and Postgres
+- Casein deployed there with its workspace source and Postgres
 - the operator's browser hitting that deployment
 
 So this audit reports two things per row: **(a) is the code ready**
@@ -57,7 +57,7 @@ remote host). CC-2 (TLS) is documented as three turnkey options in
 
 The cockpit serves the picker at `/workspaces` and the workspace
 LiveView at `/workspaces/:id`. Both work identically regardless of
-where DevIDE is running. If DevIDE were deployed at
+where Casein is running. If Casein were deployed at
 `https://cloud-1.dev/`, an operator pointing a browser at it would get
 the same picker — same workspace registry, same audit API, same
 terminal channel.
@@ -80,7 +80,7 @@ terminal channel.
 ### 2. allowed run — *ready* (code ready, deployment missing)
 
 End-to-end allow path (channel → Session → policy gate → erlexec →
-output stream) is identical to a local run. Once DevIDE runs on the
+output stream) is identical to a local run. Once Casein runs on the
 remote host with tmux installed and a workspace on disk, this works the
 same way it does locally.
 
@@ -89,7 +89,7 @@ Same deployment gap as row 1.
 ### 3. denied run — *ready* (code ready, deployment missing)
 
 Policy gate enforcement and audit emission are local to whichever
-DevIDE serves the request. The Ecto audit adapter is the prod default
+Casein serves the request. The Ecto audit adapter is the prod default
 ([`config/config.exs`](../config/config.exs)), so deny events survive
 server restart.
 
@@ -182,7 +182,7 @@ operator action) is the canonical validation.
 ### CC-2. Turnkey HTTPS
 
 Runtime HTTP-to-HTTPS redirect is installed by `CaseinWeb.RuntimeSSLPlug`,
-but `runtime.exs` TLS config is commented out. An operator deploying DevIDE
+but `runtime.exs` TLS config is commented out. An operator deploying Casein
 must hand-roll `:keyfile` / `:certfile` paths or front the release with a TLS
 proxy. Acceptable for a custom deploy; insufficient for a one-line public
 install. A Fly / Render / Caddy / Nginx fronting story would close this.
@@ -200,7 +200,7 @@ real (laptop sleep can pause the BEAM in ways that look like a restart).
 
 ### CC-4. Workspace source pluggability — ✅ decided
 
-**DevIDE ships as its own image** and discovers workspaces through the
+**Casein ships as its own image** and discovers workspaces through the
 `Casein.WorkspaceSource` behaviour. The default source reads directories
 under `CASEIN_WORKSPACES_ROOT`; integrations supply alternatives. The
 Dockerfile stays single-responsibility.
@@ -222,12 +222,12 @@ runbook; not a code change.
 `ChannelAuth.sign_user_token/1` uses the session cookie's signing
 secret. Works for same-origin browsers hitting the deployed cockpit
 directly. If a cockpit ever needs to be served from a different origin
-than its DevIDE (e.g. a CDN front-end), the auth token flow needs a
+than its Casein (e.g. a CDN front-end), the auth token flow needs a
 different shape (probably a bearer token issued from a separate `/auth`
 endpoint).
 
 Not needed for the standard remote deployment (browser →
-`https://cloud-1.dev/` → same DevIDE). Documented for awareness.
+`https://cloud-1.dev/` → same Casein). Documented for awareness.
 
 ## Punch list (ordered by leverage)
 
@@ -237,7 +237,7 @@ Not needed for the standard remote deployment (browser →
    (single-responsibility image; workspace source via behaviour).
 4. **CC-2: TLS turnkey story.** Documented as three options in
    `deploy.md` (platform-managed, reverse proxy with TLS,
-   DevIDE-terminated). No code change pending; revisit if a self-managed
+   Casein-terminated). No code change pending; revisit if a self-managed
    prod deploy reveals friction.
 5. **CC-6: cross-origin auth.** Defer until a real cross-origin deploy is
    proposed.

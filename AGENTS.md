@@ -15,7 +15,7 @@ This is a web application written using the Phoenix web framework.
 
 ## Devbox agent pairing (human + external agent)
 
-On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `casein-loopback` socat proxy (`scripts/ensure-casein-loopback-proxy.sh`).
+On the milc devbox, Casein runs as a **systemd release** (`devide` service → `/opt/casein/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/casein/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `casein-loopback` socat proxy (`scripts/ensure-casein-loopback-proxy.sh`).
 
 ### Required pre-push gate
 
@@ -82,7 +82,7 @@ before packaging the release, so a `--no-verify` push that lands on `master` sti
 cannot activate until that worktree gate passes. `bash scripts/deploy-local.sh`
 remains the manual override for an immediate deploy of the current checkout.
 
-The running release also performs a deploy-drift check at boot. If `/etc/casein/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
+The running release also performs a deploy-drift check at boot. If `/etc/casein/devide.env` has a manual revision label or a SHA that differs from `origin/master`, Casein logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)
 
@@ -178,8 +178,8 @@ global admin is `CASEIN_ADMIN_API_TOKEN`). Host tokens live in `/etc/casein/devi
 
 ### Operator + agent model
 
-- **Human** works in the DevIDE LiveView (terminal tab + preview side panel).
-- **External agent** (Cursor, Grok CLI, etc.) is an MCP client — DevIDE does not host the agent loop.
+- **Human** works in the Casein LiveView (terminal tab + preview side panel).
+- **External agent** (Cursor, Grok CLI, etc.) is an MCP client — Casein does not host the agent loop.
 - Apply the built-in **`agent_pair`** tmux template once per session: **Agents tab → Apply Agent Pair layout**.
   - Operator pane stays **focused** (human types here).
   - **Agent pane** is for MCP `terminal_send_command` / `terminal_send_keys`.
@@ -211,7 +211,7 @@ Starter prompt for external agents: `.devbox-agent-prompt.txt` (expand vars afte
 
 ### MCP client injection (Grok, Claude, Codex, OpenCode)
 
-DevIDE **hosts** the MCP servers; each agent runtime must **register** them as a
+Casein **hosts** the MCP servers; each agent runtime must **register** them as a
 client. Do not rely on repo `.grok/config.toml` alone — discovery walks up from
 **cwd**, so agents started outside the checkout will miss project-scoped config.
 
@@ -226,21 +226,21 @@ bash scripts/launch-casein-agent.sh grok # or codex | claude | opencode
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
 | **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
-| **Grok** | injected by `scripts/launch-casein-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
-| **Codex** | injected by `scripts/launch-casein-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
-| **OpenCode** | injected by `scripts/launch-casein-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
+| **Grok** | injected by `scripts/launch-casein-agent.sh grok` into project-local `.mcp.json` (`${CASEIN_API_TOKEN}` in headers); Casein entries are not persisted in `~/.grok/config.toml` | Yes |
+| **Codex** | injected by `scripts/launch-casein-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`CASEIN_API_TOKEN` exported by the launcher); Casein entries are not persisted in `~/.codex/config.toml` | Yes |
+| **OpenCode** | injected by `scripts/launch-casein-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:CASEIN_API_TOKEN}`); Casein entries are not persisted in global OpenCode config | Yes |
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
 `.devbox-agent.env`. Staging lives under `~/.casein/agent-mcp/<workspace_name>/`
-(one tree per DevIDE workspace, not one global agent config).
+(one tree per Casein workspace, not one global agent config).
 
 **Why two strategies.** Claude takes its MCP from the per-workspace staging
 file via `--mcp-config` (additive, fully isolated). Grok/Codex/OpenCode keep
 their **auth in stateful global homes** (`~/.grok`, `~/.codex`,
 `~/.local/share/opencode`) that can't be redirected without losing sessions and
 credentials — `agent-doctor.sh`/`repair-tmux-env.sh` deliberately keep
-`GROK_HOME`/`CODEX_HOME`/`OPENCODE_CONFIG` **unset**. DevIDE MCP is injected only
+`GROK_HOME`/`CODEX_HOME`/`OPENCODE_CONFIG` **unset**. Casein MCP is injected only
 at launch, after the workspace token has been resolved: Claude gets
 `--mcp-config`, Codex gets `-c mcp_servers...` overrides, Grok gets project
 `.mcp.json`, and OpenCode gets project `.opencode/opencode.json`. The helper
@@ -269,7 +269,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | Poller not deploying after a push | `systemctl status casein-deploy.timer`; `journalctl -u casein-deploy.service`; ensure the timer is installed (`bash scripts/ensure-casein-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
-| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; DevIDE shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside DevIDE contexts — in a plain terminal, agent names run the real binaries (unpaired). |
+| `claude: command not found` after template / `clauded` fails | Usually a missing `~/.casein/agent-shims/claude` launcher shim (siblings can still be present) or a pane that started before agent PATH was pushed. Boot + `PaneEnv` + shell-integration now self-heal shims and force `~/.casein/agent-shims` to the front of pane PATH; if it still happens, run `bash scripts/install-agent-shims.sh` or `devide agent doctor`, then open a new window. Prefer bare `claude` — palette `clauded` maps to it; Casein shim already defaults to skip-permissions. Note: the shim dir is only on PATH inside Casein contexts — in a plain terminal, agent names run the real binaries (unpaired). |
 | Tab closed, tmux session vanished | Check `CASEIN_TMUX_IDLE_SECONDS` in `/etc/casein/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | All terminal sessions empty at once (tmux server died) | See `docs/subsystems/tmux_crash_recovery.md`. ScrollbackArchive reseeds tails; SessionOwner recovers attachments; install keepalive with `bash scripts/ensure-casein-tmux.sh`. Pin binary: `bash scripts/ensure-casein-tmux.sh --reinstall-binary` (3.6b) |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
@@ -279,7 +279,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `mix: command not found` in agent shell | Use `mise exec -- mix ...` from inside the checkout — `.tool-versions` pins the toolchain; mise shims may not be on `PATH` |
 | `mix test` binds :4000 / wrong DB | Shell inherited `PHX_SERVER`/`PORT` from the live release env. `config/runtime.exs` now ignores both under `MIX_ENV=test`; if you still see it, the checkout predates that guard — unset them |
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
-| `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the DevIDE `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
+| `codex update` EACCES on `/usr/lib/node_modules`, or update replacing the Casein `codex` shim | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets a user-writable prefix under `~/.local/share/npm-global`, separate from the `~/.casein/agent-shims` launchers |
 | Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 
 ### Key files
@@ -291,7 +291,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/deploy-local.sh` — fast local build+deploy wrapper / manual override
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
-- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from DevIDE shims in `~/.casein/agent-shims`
+- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local/share/npm-global`) for `codex update`, separate from Casein shims in `~/.casein/agent-shims`
 - `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-casein-agent.sh` — start an agent runtime with MCP injected

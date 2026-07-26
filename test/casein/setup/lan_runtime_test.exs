@@ -87,7 +87,7 @@ defmodule Casein.Setup.LanRuntimeTest do
         ready?: false
       })
 
-    assert "DevIDE Managed LAN status" in lines
+    assert "Casein Managed LAN status" in lines
     assert "  MANAGED NOT READY http://r630.local/" in lines
 
     assert "  INFO      manual backend detected; URL works but casein-lan.service is inactive" in lines

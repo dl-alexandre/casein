@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# DevIDE file-pane holder.
+# Casein file-pane holder.
 #
 # A file pane rides a real tmux pane (tmux stays the geometry allocator), but the
 # content is a native CodeMirror overlay rendered by the web layer — so nothing
 # interactive should run under it. This script just occupies the pane: it prints a
 # banner and sleeps, forwarding signals so tmux can reap it cleanly. If it exits or
-# is killed, tmux closes the pane and `DevIDE.FilePanes` topology-expiry
+# is killed, tmux closes the pane and `Casein.FilePanes` topology-expiry
 # deregisters the binding (the same self-healing loop preview panes use).
 
 set -euo pipefail
 
-printf '\033[2m DevIDE file pane — managed editor overlay \033[0m\n'
+printf '\033[2m Casein file pane — managed editor overlay \033[0m\n'
 
 term() {
   exit 0

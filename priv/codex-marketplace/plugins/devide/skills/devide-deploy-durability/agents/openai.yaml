@@ -1,4 +1,4 @@
 interface:
-  display_name: "DevIDE Deploy Durability"
+  display_name: "Casein Deploy Durability"
   short_description: "Land deployable changes through Git first"
-  default_prompt: "Use $casein-deploy-durability to make this DevIDE deployment durable and verify its release gate."
+  default_prompt: "Use $casein-deploy-durability to make this Casein deployment durable and verify its release gate."

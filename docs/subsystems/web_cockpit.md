@@ -8,7 +8,7 @@ This is a companion to the authoritative [`../architecture.md`](../architecture.
 ## Responsibility
 
 `lib/casein_web/{live,components,channels,plugs}` own the **viewer surface** of
-DevIDE: how a workspace's durable terminal, tmux topology, files, runs, audit,
+Casein: how a workspace's durable terminal, tmux topology, files, runs, audit,
 and previews are presented to a browser, and how browser input is admitted and
 relayed to server-side state. It owns no execution authority — input flows into
 a server-side Ghostty/tmux PTY (FP-1), and capabilities/history are rendered from
@@ -141,7 +141,7 @@ fail closed until registered.
   process let a noisy pane block the channel and trigger a client reload, so they
   run in the per-pane worker. Only finished frames cross to the LV.
 - **ForwardAuth trust depends on the proxy.** The header is only trustworthy
-  because the reverse proxy strips client copies and re-sets it; DevIDE must bind
+  because the reverse proxy strips client copies and re-sets it; Casein must bind
   to localhost / the internal bridge. The `:browser` pipeline must not gain
   OPTIONS-routable endpoints (the Caddy matcher excludes OPTIONS +
   `/site.webmanifest`) — see the plug's SECURITY note.

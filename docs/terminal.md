@@ -76,7 +76,7 @@ successful send it stores that redacted title as the tmux session alias when the
 alias is blank, and renames the containing generic agent window (`work`,
 `agent`, `shell`, etc.) when the target pane is role-marked `agent`. Existing
 aliases and human-named windows are kept. When `workspace_id:` is supplied, the
-same title is also proposed as the pane's DevIDE chrome label unless a frozen
+same title is also proposed as the pane's Casein chrome label unless a frozen
 manual label already exists. Results include `:running` /
 `:done` / `:attention` / `:noop` status values plus naming metadata and the line/byte
 chunk caps used for the send. Workspace session summaries prefer the alias as

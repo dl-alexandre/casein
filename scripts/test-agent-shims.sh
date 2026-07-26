@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Regression coverage for DevIDE agent shim installation/resolution.
+# Regression coverage for Casein agent shim installation/resolution.
 #
 set -euo pipefail
 
@@ -59,7 +59,7 @@ echo package-claude"
 )
 
 run_resolver_rejects_recorded_devide_shim() (
-  echo "== real-agent-bin rejects recorded DevIDE shims =="
+  echo "== real-agent-bin rejects recorded Casein shims =="
 
   local home real_dir real_codex resolved
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -102,7 +102,7 @@ run_installer_generated_shims_carry_marker() (
   # live in different files; this pins their coupling.
   for name in grok claude codex opencode agent; do
     if ! is_devide_shim "${HOME}/.casein/agent-shims/${name}"; then
-      echo "FAIL: installed shim not detected as a DevIDE shim: ${name}" >&2
+      echo "FAIL: installed shim not detected as a Casein shim: ${name}" >&2
       exit 1
     fi
   done
@@ -115,7 +115,7 @@ run_installer_generated_shims_carry_marker() (
 )
 
 run_installer_cleans_legacy_shims() (
-  echo "== installer removes legacy DevIDE shims from ~/.local/bin, keeps user files =="
+  echo "== installer removes legacy Casein shims from ~/.local/bin, keeps user files =="
 
   local home
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -193,7 +193,7 @@ echo \"real-opencode \$*\""
   ln -sf "${HOME}/real-bin-dir/opencode" "${HOME}/.casein/real-bins/opencode"
 
   # Version/help probes must not resolve env, create a worktree, or inject
-  # MCP — with no DevIDE env in this HOME, anything but a clean passthrough
+  # MCP — with no Casein env in this HOME, anything but a clean passthrough
   # would fail or hang rather than print the real binary's output.
   out="$(cd "$home" && bash "${ROOT}/scripts/devide" agent launch claude --version)"
   assert_eq "claude --version passthrough" "real-claude --version" "$out"
@@ -206,7 +206,7 @@ echo \"real-opencode \$*\""
 )
 
 run_launch_falls_back_unpaired_without_env() (
-  echo "== agent launch falls back to the real binary when no DevIDE env resolves =="
+  echo "== agent launch falls back to the real binary when no Casein env resolves =="
 
   local home out err status
   home="$(cd "$(mktemp -d)" && pwd -P)"
@@ -220,7 +220,7 @@ echo \"real-grok \$*\""
   mkdir -p "${HOME}/.casein/real-bins"
   ln -sf "${HOME}/real-bin-dir/grok" "${HOME}/.casein/real-bins/grok"
 
-  # A plain terminal outside DevIDE: no pane env, no .devbox-agent.env in
+  # A plain terminal outside Casein: no pane env, no .devbox-agent.env in
   # cwd ancestry. The shimmed name must launch the real binary with ZERO
   # added output — the shim never adds noise to the command it wraps.
   err="${home}/stderr.log"
@@ -251,7 +251,7 @@ echo \"real-grok \$*\""
     echo "FAIL: DEVIDE_AGENT_LAUNCH_STRICT=1 should hard-fail without env" >&2
     exit 1
   fi
-  if ! grep -q 'could not resolve DevIDE agent env' "$err"; then
+  if ! grep -q 'could not resolve Casein agent env' "$err"; then
     echo "FAIL: strict mode should surface the resolver error, got:" >&2
     cat "$err" >&2
     exit 1

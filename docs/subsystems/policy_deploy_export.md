@@ -1,6 +1,6 @@
 # Policy, Deploy & Export
 
-> Server-side admission decisions (FP-1), devbox deploy/drain coordination, and the redacted API export surface — the three subsystems that gate, ship, and emit DevIDE state.
+> Server-side admission decisions (FP-1), devbox deploy/drain coordination, and the redacted API export surface — the three subsystems that gate, ship, and emit Casein state.
 
 This is a companion reference. The authoritative operator runbook is
 [`../deploy.md`](../deploy.md) and the security posture is

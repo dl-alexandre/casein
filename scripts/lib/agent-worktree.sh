@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared git worktree helpers for DevIDE agent launch.
+# Shared git worktree helpers for Casein agent launch.
 # Sourced by launch-casein-agent.sh — not executed directly.
 
 agent_worktree_root() {
@@ -143,7 +143,7 @@ print(json.dumps({
     return 0
   fi
 
-  echo "reported worktree ${worktree_path} to DevIDE" >&2
+  echo "reported worktree ${worktree_path} to Casein" >&2
 }
 
 # Watch the launcher PID (which becomes the agent PID after exec) from a

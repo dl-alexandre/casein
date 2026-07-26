@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# devide-tmp-cleanup.sh — age-prune DevIDE ephemeral entries in the temp dir so
+# devide-tmp-cleanup.sh — age-prune Casein ephemeral entries in the temp dir so
 # they cannot fill the (small) root filesystem. `/tmp` on the devbox is NOT a
 # separate mount, so every leaked temp dir counts against `/`.
 #

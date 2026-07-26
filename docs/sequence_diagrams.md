@@ -40,7 +40,7 @@ Browser     TerminalChannel/LiveView   Ghostty.PTY        tmux
 ## Diagram 2: Raw-terminal admission
 
 ```text
-Operator    DevIDE LiveView/Channel   Policy            Runs.Ledger
+Operator    Casein LiveView/Channel   Policy            Runs.Ledger
 │                  │                     │                  │
 │ request raw input│                     │                  │
 │─────────────────>│ can_use_raw_terminal?                 │
@@ -79,7 +79,7 @@ calls reflected in the live agent-activity feed.
 ## Diagram 4: Review-agent run
 
 ```text
-Operator    DevIDE              Policy        Agents.Run       Commands       Runs.Ledger
+Operator    Casein              Policy        Agents.Run       Commands       Runs.Ledger
 │                  │                │             │                │             │
 │ start review run │ can_start_review_agent?      │                │             │
 │─────────────────>│───────────────>│             │                │             │
@@ -99,7 +99,7 @@ Operator    DevIDE              Policy        Agents.Run       Commands       Ru
 ## Diagram 5: Workspace status read
 
 ```text
-Browser     DevIDE LiveView     Export.WorkspaceStatus    State       Runs.Ledger
+Browser     Casein LiveView     Export.WorkspaceStatus    State       Runs.Ledger
 │                  │                  │                     │             │
 │ GET /workspaces/:id               │                     │             │
 │─────────────────>│                  │                     │             │

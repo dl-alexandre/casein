@@ -1,8 +1,8 @@
-# DevIDE Architecture
+# Casein Architecture
 
 > Version: v2.1 (raw + MCP reality; authority and evidence freeze)
 >
-> This document is the authoritative narrative for the DevIDE workspace
+> This document is the authoritative narrative for the Casein workspace
 > cockpit. When implementation and docs diverge, the docs win: fix the code.
 >
 > **History:** earlier versions described a delegated-execution stack —
@@ -127,7 +127,7 @@ Implementation order and slice definitions:
 
 ## System purpose
 
-DevIDE is a **single-runtime workspace cockpit**. It owns durable terminal
+Casein is a **single-runtime workspace cockpit**. It owns durable terminal
 sessions for a workspace, exposes those sessions (and a preview surface) to
 external agents over MCP, and records what happened in an audit log and a run
 ledger.
@@ -142,7 +142,7 @@ execution paths that exist are deliberately narrow:
   through it to run an arbitrary command or apply a patch.
 
 ```text
-Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
+Browser / MCP agent --attach/input--> Casein --PTY--> tmux session
                                          │
                                          └--reads--> workspace source
 ```
@@ -177,7 +177,7 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 ┌────────────────────────────────────────────────────────────────────────┐
 │                         Trust Boundary Map                               │
 ├────────────────────────────────────────────────────────────────────────┤
-│  Boundary 1: MCP agent → DevIDE MCP endpoints                            │
+│  Boundary 1: MCP agent → Casein MCP endpoints                            │
 │    • Authenticated via bearer token (ApiAuth plug)                       │
 │    • Principal must be resolved server-side; audit must not accept       │
 │      caller-forged actor attribution                                     │
@@ -191,16 +191,16 @@ Browser / MCP agent --attach/input--> DevIDE --PTY--> tmux session
 │    • Raw input/resize write into the server-side PTY                     │
 │    • Raw-terminal admission is gated by Policy.can_use_raw_terminal?/1   │
 │                                                                          │
-│  Boundary 3: DevIDE → Workspace source                                   │
+│  Boundary 3: Casein → Workspace source                                   │
 │    • Pluggable via `Casein.WorkspaceSource` behaviour                    │
 │    • Source is the truth for workspace existence and lifecycle           │
-│    • DevIDE persists only redacted summaries                             │
+│    • Casein persists only redacted summaries                             │
 │                                                                          │
-│  Boundary 4: DevIDE → Host filesystem                                    │
+│  Boundary 4: Casein → Host filesystem                                    │
 │    • PathSafety validates all paths are under allowed roots              │
 │    • No traversal or symlink-escape allowed                              │
 │                                                                          │
-│  Boundary 5: DevIDE → Audit / projections                                │
+│  Boundary 5: Casein → Audit / projections                                │
 │    • Audit.Event is the canonical evidence record                        │
 │    • Run ledger (Runs.Ledger) and AgentEvents are projections            │
 │    • Audit adapter is swappable: MemoryAdapter → EctoAdapter             │
@@ -224,17 +224,17 @@ New sources should document any additional keys they populate.
 |---|---|---|---|
 | Create workspace | Manager | Manager API | — |
 | Start/stop/delete workspace | Manager | Manager API | — |
-| Attach raw terminal | DevIDE | `Policy.can_use_raw_terminal?/1` | `run.session_attached` ledger event |
-| Refuse raw terminal | DevIDE | `Policy.can_use_raw_terminal?/1` deny | `run.session_denied` ledger event |
-| Start review-agent run | DevIDE | `Policy.can_start_review_agent?/1` + allowlisted `ReviewCommand` | `run.started` / terminal run event |
-| MCP terminal tool call | DevIDE | Bearer auth + `devide_`-prefixed session guard | `Audit.Event` + activity feed |
-| MCP preview tool call | DevIDE | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
-| Apply proposal | DevIDE | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `Casein.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
-| Enable agent write (auto-apply) | DevIDE | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
-| Grant/revoke agent write unlock | DevIDE | `Policy.can_grant_agent_write_unlock?/1` (operator + `:manual` mode) / `Policy.can_revoke_agent_write_unlock?/1` (operator only, no mode gate — the kill switch) | `Audit.Event` (`workspace.agent_write_unlock_granted`/`_revoked`/`_expired`) |
-| Set workspace mode | DevIDE | `Policy.can_set_workspace_mode?/1` (operator/owner; not config-pinned) | `Audit.Event` |
-| Read workspace status | DevIDE | Auth | `WorkspaceRecord` snapshot |
-| Read audit log | DevIDE | Auth | `Audit.Event` |
+| Attach raw terminal | Casein | `Policy.can_use_raw_terminal?/1` | `run.session_attached` ledger event |
+| Refuse raw terminal | Casein | `Policy.can_use_raw_terminal?/1` deny | `run.session_denied` ledger event |
+| Start review-agent run | Casein | `Policy.can_start_review_agent?/1` + allowlisted `ReviewCommand` | `run.started` / terminal run event |
+| MCP terminal tool call | Casein | Bearer auth + `devide_`-prefixed session guard | `Audit.Event` + activity feed |
+| MCP preview tool call | Casein | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
+| Apply proposal | Casein | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `Casein.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
+| Enable agent write (auto-apply) | Casein | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `Casein.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
+| Grant/revoke agent write unlock | Casein | `Policy.can_grant_agent_write_unlock?/1` (operator + `:manual` mode) / `Policy.can_revoke_agent_write_unlock?/1` (operator only, no mode gate — the kill switch) | `Audit.Event` (`workspace.agent_write_unlock_granted`/`_revoked`/`_expired`) |
+| Set workspace mode | Casein | `Policy.can_set_workspace_mode?/1` (operator/owner; not config-pinned) | `Audit.Event` |
+| Read workspace status | Casein | Auth | `WorkspaceRecord` snapshot |
+| Read audit log | Casein | Auth | `Audit.Event` |
 
 ## Adapter pattern
 
@@ -290,7 +290,7 @@ Application.get_env(:casein, :isolation_probe, Casein.Workspaces.IsolationProbe.
 
 ## Event plane
 
-DevIDE operates on three time scales:
+Casein operates on three time scales:
 
 | Timescale | Mechanism | Consumers |
 |---|---|---|
@@ -321,7 +321,7 @@ threat model before any product claim.
 
 | Document | Purpose |
 |---|---|
-| [`docs/product.md`](product.md) | What DevIDE is, server/client boundary, decision rules |
+| [`docs/product.md`](product.md) | What Casein is, server/client boundary, decision rules |
 | [`docs/glossary.md`](glossary.md) | Operational terminology and event taxonomy |
 | [`docs/design/authority-evidence-freeze.md`](design/authority-evidence-freeze.md) | Authority/evidence freeze and vertical-slice order |
 | [`docs/terminal.md`](terminal.md) | Terminal subsystem architecture (Ghostty, tmux, multi-pane) |

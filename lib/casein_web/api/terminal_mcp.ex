@@ -55,7 +55,7 @@ defmodule CaseinWeb.API.TerminalMCP do
         "the session active pane follows the operator across windows, so resolve " <>
         "\"the pane beside me\" from the caller.adjacent_panes block that " <>
         "terminal_context/terminal_topology return when the caller pane is known " <>
-        "(sent automatically via X-DevIDE-Caller-Pane for Casein-launched agents), " <>
+        "(sent automatically via X-Casein-Caller-Pane for Casein-launched agents), " <>
         "and pass explicit pane ids on capture/send calls.",
       MCPWorkspaceScope.default_workspace_id(opts)
     )

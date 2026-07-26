@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Log a provider CLI into a DevIDE auth profile.
+# Log a provider CLI into a Casein auth profile.
 #
 # Usage:
 #   scripts/devide agent auth signin <claude|codex>

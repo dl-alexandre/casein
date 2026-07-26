@@ -1,4 +1,4 @@
-# DevIDE on-box auto-deploy poller — self-hosted replacement for the GitHub
+# Casein on-box auto-deploy poller — self-hosted replacement for the GitHub
 # Actions deploy job while Actions is billing-blocked.
 #
 # Oneshot unit fired by casein-deploy.timer (~every 2 min). It fetches

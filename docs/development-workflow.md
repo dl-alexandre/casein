@@ -37,7 +37,7 @@
    Drift between deployed SHA and `origin/master` surfaces in the UI banner.
 
 6. **Meta-dogfooding is mandatory.**
-   DevIDE tracks agent worktrees in `Runtimes`. Launch scripts must create and
+   Casein tracks agent worktrees in `Runtimes`. Launch scripts must create and
    report them — if the tool cannot enforce its own rules, the rules are not real.
 
 ---

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Codex lifecycle/notify receiver. Command hooks send JSON on stdin; the legacy
-# notify program sends JSON as its final argv value. Both paths post to DevIDE's
+# notify program sends JSON as its final argv value. Both paths post to Casein's
 # authenticated, workspace-scoped Codex event endpoint and never block Codex.
 
 set -u

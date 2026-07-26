@@ -1,6 +1,6 @@
 # tmux-ctl / terminal-ctl
 
-> The in-repo, app-agnostic control plane that turns tmux into DevIDE's durable session engine and conditions PTY byte streams for replay.
+> The in-repo, app-agnostic control plane that turns tmux into Casein's durable session engine and conditions PTY byte streams for replay.
 
 This is a companion to the authoritative [`tmux_control_plane.md`](../tmux_control_plane.md),
 which owns the operator/API/audit narrative (topology shape, HTTP routes, mutation
@@ -13,7 +13,7 @@ surface; read the authoritative doc for that.
 
 `TmuxCtl.*` is a self-contained tmux control plane: it reads session topology,
 mutates windows/panes, and watches sessions for change — with **no** references to
-`DevIDE`, `Audit`, or `WorkspaceSource`. The product layer
+`Casein`, `Audit`, or `WorkspaceSource`. The product layer
 (`Casein.Terminals.Tmux`, `Casein.Terminals.TmuxTopology`, outside these paths)
 is a thin facade that injects config and adds audit on top.
 
@@ -59,7 +59,7 @@ Consumers `watch/2` (monitored, cancels idle-stop) and `subscribe/2` (PubSub top
 `topic_prefix <> session`). When the last watcher drops, an idle-stop timer
 (`:topology_idle_stop_ms`, default 60s) terminates the watcher.
 
-**Mutation:** call sites (the DevIDE facade / API) invoke adapter mutation callbacks
+**Mutation:** call sites (the Casein facade / API) invoke adapter mutation callbacks
 (`new_window`, `split_pane`, `resize_pane`, `kill_pane`, …) directly on `TmuxCtl.Client`,
 then refresh topology so the UI/audit converge on tmux truth.
 
@@ -94,7 +94,7 @@ Other code (primarily the `Casein.Terminals.*` facade) calls:
 
 ## Invariants & gotchas
 
-- **No DevIDE references.** `TmuxCtl.*` must not reference `DevIDE`/`Audit`/`WorkspaceSource`.
+- **No Casein references.** `TmuxCtl.*` must not reference `Casein`/`Audit`/`WorkspaceSource`.
   All app coupling (audit, config injection) lives in the facade outside these paths.
 - **Two adapter config keys.** `TmuxCtl` reads `config :tmux_ctl, :adapter` (default
   `TmuxCtl.Client`); the product reads `:casein, :tmux_adapter`. Adapter selection is

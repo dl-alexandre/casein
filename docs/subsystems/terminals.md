@@ -4,7 +4,7 @@
 > `(workspace, sid)`, the PTY behind it, output fan-out to every viewer, and
 > the session/window/template control plane over tmux.
 
-This is the largest DevIDE subsystem. It is the server half of FP-1 (execution
+This is the largest Casein subsystem. It is the server half of FP-1 (execution
 authority lives server-side), FP-2/FP-8 (durable sessions over tmux), and
 FP-9 (reattach replays scrollback). It does **not** own the browser renderer or
 the LiveView wiring — those live in `lib/casein_web/live/workspace_live/`
@@ -62,7 +62,7 @@ site into it.
 | `Casein.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `devide_<ws>_<sid>`, `workspace_session_prefix/1`. |
 | `Casein.Terminals.TmuxRunner` | `tmux_runner.ex` | `@behaviour TmuxCtl.Runner`; host-vs-container argv wrapping via `WorkspaceSource.prepare_local_argv/2`, container-tmux probe cached in `:persistent_term`. |
 | `Casein.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
-| `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so DevIDE never shares a socket with another env or with plain SSH tmux. |
+| `Casein.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so Casein never shares a socket with another env or with plain SSH tmux. |
 | `Casein.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
 | `Casein.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
 
@@ -89,7 +89,7 @@ site into it.
 | `Casein.Terminals.ModePolicy` | `mode_policy.ex` | Pure mode resolver; everything is `:raw`; `tmux_mutations_enabled?/1` true only for `:shell`. |
 | `Casein.Terminals.Theme` / `.Builtins` | `theme.ex`, `theme/builtins.ex` | Renderer-first themes (Catppuccin presets + `ghostty.conf` loading) and OSC 10/11/12/4 rewrite helpers for pane query responses. |
 | `Casein.Terminals.ClipboardPaste` | `clipboard_paste.ex` | Saves pasted/dropped images/files into `.casein/clipboard/` and pastes the path; git-exclude maintenance. |
-| `Casein.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.casein/terminal-shims/`, self-healing installers under `~/.casein/terminal-shims/install/`, managed tool binaries under `~/.casein/tools/bin/`, and pane capability env (`CASEIN_TERMINAL=1`, `CASEIN_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
+| `Casein.Terminals.Shims` | `shims.ex` | Materializes Casein-scoped terminal command shims under `~/.casein/terminal-shims/`, self-healing installers under `~/.casein/terminal-shims/install/`, managed tool binaries under `~/.casein/tools/bin/`, and pane capability env (`CASEIN_TERMINAL=1`, `CASEIN_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
 | `Casein.Terminals.GhosttySnapshot` | `ghostty_snapshot.ex` | Writes `Ghostty.Terminal` HTML/plain/VT grid dumps to `:ghostty_snapshot_dir` (kept out of the LiveView for the no-apply boundary guard). |
 | `Casein.Terminals.InspectionCommands` | `inspection_commands.ex` | Read-only governed argv registry (`pwd`/`ls`/`git status`/`rg`/`tidewave`/`preview …`) run in the workspace root with bounded output. |
 | `Casein.Terminals.Workflows` | `workflows.ex` | Repo-scoped Warp-subset workflow launchers; renders+revalidates argv, encodes a `workflow:` command id (never persists executable argv). |
@@ -214,15 +214,15 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
     programmatically via `TmuxCtl.Client.apply_defaults/1`. tmux reads `-f` only
     when it *starts* a server, so config is **per-server, not per-client**: one
     server = one config. A different config means a different `-L` label.
-  - **SSH coexistence.** Because DevIDE owns a labeled server, an operator's
+  - **SSH coexistence.** Because Casein owns a labeled server, an operator's
     plain `tmux` (default server, their `~/.tmux.conf`) is untouched. To attach
-    to DevIDE's sessions from a shell: `tmux -L devide attach` (or `devide_dev`
+    to Casein's sessions from a shell: `tmux -L devide attach` (or `devide_dev`
     / `devide_test`). The `-f` on such an attach is ignored — the server is
     already running with its own conf.
-  - **Operator cutover ⚠️.** Introducing or changing a label points DevIDE at a
+  - **Operator cutover ⚠️.** Introducing or changing a label points Casein at a
     *fresh, empty* server. Sessions on the previously-used server (e.g. the
     default server before this change) stay alive but become invisible to
-    DevIDE — it won't list, attach, or reconcile them, and creates new sessions
+    Casein — it won't list, attach, or reconcile them, and creates new sessions
     on the new server as workspaces reopen. Expect a one-time "terminals reset"
     for active users at the first deploy that sets the label. To preserve a
     live session, `tmux move-session`/relaunch it onto the new `-L` server, or
@@ -239,7 +239,7 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
 - **`Boundary` is the only admission call site.** Raw admission policy itself
   lives in `Casein.Policy` (outside this subsystem); the verdict is recorded as
   `run.session_attached` / `run.session_denied` in `Runs.Ledger`.
-- **Clipboard copy-out is OSC52.** DevIDE terminal panes advertise
+- **Clipboard copy-out is OSC52.** Casein terminal panes advertise
   `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; terminal apps should emit
   OSC52 for copy/yank operations so the browser-side clipboard bridge can write
   to the human's clipboard. Server desktop helpers (`wl-copy`, `xclip`, `xsel`,
@@ -263,13 +263,13 @@ directory), `Casein.Terminals.Supervisor` (DynamicSupervisor),
 - **Terminal shims are scoped, lazy, and self-healing for known tools.**
   `Casein.Terminals.Shims` materializes wrappers under
   `~/.casein/terminal-shims/`, installer backends under
-  `~/.casein/terminal-shims/install/`, and DevIDE-managed binaries under
-  `~/.casein/tools/bin/`. DevIDE prepends the shim dir and tool bin dir only for
+  `~/.casein/terminal-shims/install/`, and Casein-managed binaries under
+  `~/.casein/tools/bin/`. Casein prepends the shim dir and tool bin dir only for
   terminal panes. A shim removes only its own directory from `PATH`, resolves the
   real command, and `exec`s it with app-specific compatibility env. If a
   registry-backed command is missing, the shim calls `devide ensure-installed
   <tool>` when available, falls back to its materialized installer, re-resolves,
-  then launches. Installers are non-interactive, print a short DevIDE-prefixed
+  then launches. Installers are non-interactive, print a short Casein-prefixed
   provisioning message before streaming Cargo output, use a per-tool lock
   directory (`~/.casein/tools/.<tool>-install.lock`) so two panes do not race,
   build into a temporary Cargo root, and publish the final binary into

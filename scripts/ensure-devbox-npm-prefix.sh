@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Point npm global installs at a user-writable prefix that is separate from
-# the DevIDE agent shim dir (~/.casein/agent-shims) and ~/.local/bin; npm
+# the Casein agent shim dir (~/.casein/agent-shims) and ~/.local/bin; npm
 # package updates (notably `codex update`) must not clobber launcher shims
 # or user binaries with package symlinks.
 #
@@ -12,7 +12,7 @@ set -euo pipefail
 
 # Same boundary rule as install-agent-shims.sh: repointing the npm global
 # prefix affects all of the user's `npm -g` installs, so only do it on
-# DevIDE-managed hosts (or with an explicit CASEIN_MANAGE_NPM_PREFIX=1).
+# Casein-managed hosts (or with an explicit CASEIN_MANAGE_NPM_PREFIX=1).
 case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
   1) ;;
   0)
@@ -21,7 +21,7 @@ case "${CASEIN_MANAGE_NPM_PREFIX:-}" in
     ;;
   *)
     if [[ ! -f /etc/casein/devide.env ]]; then
-      echo "npm global prefix left alone (not a DevIDE-managed host; set CASEIN_MANAGE_NPM_PREFIX=1 to opt in)"
+      echo "npm global prefix left alone (not a Casein-managed host; set CASEIN_MANAGE_NPM_PREFIX=1 to opt in)"
       exit 0
     fi
     ;;

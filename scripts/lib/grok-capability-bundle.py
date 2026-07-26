@@ -16,7 +16,7 @@ import tempfile
 
 
 MANIFEST = (
-    '{"description":"Session-scoped DevIDE tools, hooks, and skills",'
+    '{"description":"Session-scoped Casein tools, hooks, and skills",'
     '"hooks":"./hooks/hooks.json","mcpServers":"./.mcp.json",'
     '"name":"devide-grok-capabilities","skills":"./skills",'
     '"version":"1.0.0"}\n'

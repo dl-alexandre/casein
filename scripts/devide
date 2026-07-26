@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DevIDE agent CLI — cwd-independent MCP discovery and agent launch.
+# Casein agent CLI — cwd-independent MCP discovery and agent launch.
 #
 set -euo pipefail
 
@@ -130,7 +130,7 @@ agent_auth() {
           shift || true
 
           if ! agent_env_resolve >/dev/null 2>&1; then
-            echo "error: could not detect owner; run inside a DevIDE workspace or use: devide agent auth signin <owner> <claude|codex>" >&2
+            echo "error: could not detect owner; run inside a Casein workspace or use: devide agent auth signin <owner> <claude|codex>" >&2
             exit 64
           fi
 
@@ -145,13 +145,13 @@ agent_auth() {
           echo "signing ${runtime} into owner profile: ${owner} (${workspace})" >&2
           ;;
         "")
-          echo "usage: devide agent auth signin <claude|codex>  # inside a DevIDE workspace" >&2
+          echo "usage: devide agent auth signin <claude|codex>  # inside a Casein workspace" >&2
           echo "   or: devide agent auth signin <owner> <claude|codex>" >&2
           exit 64
           ;;
         *)
           if [[ -z "${2:-}" ]]; then
-            echo "usage: devide agent auth signin <claude|codex>  # inside a DevIDE workspace" >&2
+            echo "usage: devide agent auth signin <claude|codex>  # inside a Casein workspace" >&2
             echo "   or: devide agent auth signin <owner> <claude|codex>" >&2
             exit 64
           fi
@@ -174,7 +174,7 @@ agent_auth() {
         shift || true
       else
         if ! agent_env_resolve >/dev/null 2>&1; then
-          echo "error: missing workspace (or run inside a DevIDE agent environment)" >&2
+          echo "error: missing workspace (or run inside a Casein agent environment)" >&2
           exit 64
         fi
         workspace="${DEVIDE_WORKSPACE_NAME:-${DEVIDE_WORKSPACE_ID:-}}"
@@ -301,7 +301,7 @@ run_codex_update() {
 
   if [[ "${DEVIDE_REINSTALL_SHIMS_AFTER_CODEX_UPDATE:-1}" != "0" ]]; then
     if ! bash "${DEVIDE_ROOT}/scripts/install-agent-shims.sh" >&2; then
-      echo "warn: codex update completed but DevIDE shim reinstall failed" >&2
+      echo "warn: codex update completed but Casein shim reinstall failed" >&2
     fi
   fi
 
@@ -326,7 +326,7 @@ launch_agent() {
   fi
 
   if ! agent_env_resolve 2>/dev/null; then
-    # No agent env (plain terminal, or a DevIDE pane whose pairing is
+    # No agent env (plain terminal, or a Casein pane whose pairing is
     # missing): launch the real binary unpaired, silently — operator call:
     # the shim must never add noise to the command it wraps.
     # DEVIDE_AGENT_LAUNCH_VERBOSE=1 explains the fallback on stderr;
@@ -337,7 +337,7 @@ launch_agent() {
       exit 1
     fi
     if [[ "${DEVIDE_AGENT_LAUNCH_VERBOSE:-0}" == "1" ]]; then
-      echo "devide: no agent env — launching ${runtime} unpaired (no DevIDE MCP)." >&2
+      echo "devide: no agent env — launching ${runtime} unpaired (no Casein MCP)." >&2
     fi
     agent_env_stamp_pane_pairing 0 "no agent env"
     exec_real_runtime "$runtime" "$@"

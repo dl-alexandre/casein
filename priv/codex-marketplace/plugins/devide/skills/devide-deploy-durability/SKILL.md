@@ -1,9 +1,9 @@
 ---
 name: casein-deploy-durability
-description: Make DevIDE changes durable through source control and the release gate. Use before deploying, after a manual dogfood deploy, when a drift banner appears, or whenever work must survive the next origin/master poller release.
+description: Make Casein changes durable through source control and the release gate. Use before deploying, after a manual dogfood deploy, when a drift banner appears, or whenever work must survive the next origin/master poller release.
 ---
 
-# DevIDE deploy durability
+# Casein deploy durability
 
 1. Work in a linked agent worktree; treat the primary checkout as deploy infrastructure.
 2. Check `docs/in-progress.md` and current `origin/master` before touching an active subsystem.

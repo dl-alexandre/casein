@@ -27,7 +27,7 @@ attached to a preview (`Casein.Previews.ControlSession`). The subsystem:
 
 Origin/port enforcement lives in `Casein.Previews.Url` and
 `Casein.Previews.WorkspaceContext`; the generic browser primitives live in the
-sibling `PreviewCtl.*` boundary (out of these paths), reached through DevIDE
+sibling `PreviewCtl.*` boundary (out of these paths), reached through Casein
 facades.
 
 ## Module map

@@ -1,6 +1,6 @@
 # LAN Access
 
-DevIDE's normal development server is loopback-only. DevIDE LAN is the
+Casein's normal development server is loopback-only. Casein LAN is the
 product-like local-network mode for a single trusted machine on a trusted LAN.
 
 For the simple dogfood path, use plain HTTP on the LAN:
@@ -116,7 +116,7 @@ casein-lan-http-edge.service  -> proxies :80 to the loopback backend
 ```
 
 The edge service requires the backend service, so port-80 traffic is not
-considered healthy unless DevIDE itself is running. The backend service uses the
+considered healthy unless Casein itself is running. The backend service uses the
 LAN profile internally:
 
 ```text
@@ -140,7 +140,7 @@ workspace is the service user's home directory:
 
 ## Requirements
 
-DevIDE LAN expects:
+Casein LAN expects:
 
 - Linux with systemd and `systemd-socket-proxyd`.
 - `mise` available only for the checkout/Mix workflow. A built release does
@@ -259,7 +259,7 @@ https://<hostname>.local/
 ```
 
 Client devices must trust the same mkcert root CA before browsers will treat
-the HTTPS URL as secure. Export or copy this file from the DevIDE host:
+the HTTPS URL as secure. Export or copy this file from the Casein host:
 
 ```bash
 mkcert -CAROOT
@@ -276,7 +276,7 @@ The default LAN URL uses the host's mDNS name:
 <hostname>.local
 ```
 
-DevIDE also supports a same-host hosts-file domain:
+Casein also supports a same-host hosts-file domain:
 
 ```text
 devide.test
@@ -360,7 +360,7 @@ using `lan up` if it occupies the same backend port.
 
 ## Trust Boundary
 
-DevIDE LAN exposes the cockpit to other devices on the local network. Use it
+Casein LAN exposes the cockpit to other devices on the local network. Use it
 only on networks you trust. API and MCP endpoints keep their bearer-token
 checks, but the browser cockpit remains the same local-dev operator surface.
 

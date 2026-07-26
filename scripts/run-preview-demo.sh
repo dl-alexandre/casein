@@ -14,7 +14,7 @@ DEMO_PORT="${DEVIDE_PREVIEW_DEMO_PORT:-5173}"
 SRC="${ROOT}/priv/preview_demo"
 
 if [[ ! -d "${SRC}" ]]; then
-  echo "error: ${SRC} not found — run from the DevIDE checkout" >&2
+  echo "error: ${SRC} not found — run from the Casein checkout" >&2
   exit 1
 fi
 
@@ -26,7 +26,7 @@ cd "${DEMO_DIR}"
 cat <<EOF
 
 ╔══════════════════════════════════════════════════════════════╗
-║  DevIDE Preview Demo                                         ║
+║  Casein Preview Demo                                         ║
 ║  http://127.0.0.1:${DEMO_PORT}/                               ║
 ╠══════════════════════════════════════════════════════════════╣
 ║  Human: preview panel should open automatically after apply. ║

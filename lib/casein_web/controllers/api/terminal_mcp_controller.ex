@@ -59,7 +59,7 @@ defmodule CaseinWeb.API.TerminalMCPController do
   end
 
   # The calling agent's own tmux pane. Casein-launched agents send it via the
-  # X-DevIDE-Caller-Pane header (env-expanded per pane at client startup);
+  # X-Casein-Caller-Pane header (env-expanded per pane at client startup);
   # hand-built URLs may use a caller_pane query param. Values that are not a
   # tmux pane id (unset/unexpanded env placeholders) are ignored.
   defp default_caller_pane(conn) do

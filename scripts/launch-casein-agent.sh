@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Launch an external agent with DevIDE Terminal + Preview MCP injected at runtime.
+# Launch an external agent with Casein Terminal + Preview MCP injected at runtime.
 #
 set -euo pipefail
 umask 077
@@ -50,7 +50,7 @@ RUNTIME="$1"
 shift
 
 # Child processes spawned by the managed agent can use this to distinguish a
-# real DevIDE launch from an ordinary shell that merely sourced pairing env.
+# real Casein launch from an ordinary shell that merely sourced pairing env.
 export DEVIDE_AGENT_LAUNCH_CONTEXT="$RUNTIME"
 
 agent_env_resolve
@@ -73,7 +73,7 @@ mkdir -p "$DEVIDE_LAUNCHER_SECRET_DIR"
 chmod 700 "$DEVIDE_LAUNCHER_SECRET_DIR"
 
 # Anchor MCP calls to this pane: tmux sets TMUX_PANE per pane, and the
-# materialized MCP configs send it as the X-DevIDE-Caller-Pane header
+# materialized MCP configs send it as the X-Casein-Caller-Pane header
 # (env-expanded by each runtime at startup). The terminal MCP server uses it
 # to resolve "the agent pane" / "the pane beside me" relative to the caller
 # instead of the operator-focused active pane. Always exported (possibly
@@ -164,7 +164,7 @@ agent_env_export_runtime_paths
 run_repair_tmux_env
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
-# Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
+# Never redirect agent homes to MCP staging. Preserve only explicit Casein
 # owner auth profiles under ~/.casein/agent-auth: signed-in profiles, plus
 # empty profiles of registered owners (those fail closed — the provider CLI
 # runs its own sign-in inside the profile instead of using the host global
@@ -243,7 +243,7 @@ sync_project_mcp_config() {
   esac
 }
 
-# Stage DevIDE-infra skills for OpenCode. OpenCode also auto-loads
+# Stage Casein-infra skills for OpenCode. OpenCode also auto-loads
 # ~/.claude/skills, but project .opencode/skills and ~/.config/opencode/skills
 # are the first-class paths (and project skills are often gitignored).
 opencode_install_skills() {
@@ -350,7 +350,7 @@ codex_arg_sets_execution_policy() {
 
 # --- Semantic agent-state reporting (Grok bootstrap + Codex lifecycle hooks) -
 # Claude gets its state hooks via a materialized --settings file below. Grok
-# loads a global SessionStart bootstrap hook so DevIDE learns the session ID and
+# loads a global SessionStart bootstrap hook so Casein learns the session ID and
 # can attach ACP with the session-scoped capability bundle. The bundle owns the
 # remaining lifecycle hooks. Codex receives per-launch hook tables plus the
 # legacy completion-only notify fallback. Both honor the same opt-out as
@@ -1277,7 +1277,7 @@ case "$RUNTIME" in
     done
     set -- "${claude_user_args[@]}"
 
-    # Stage DevIDE-infra skills (e.g. delegate-to-grok) into this launch's Claude
+    # Stage Casein-infra skills (e.g. delegate-to-grok) into this launch's Claude
     # config home so agents in non-dev_ide workspaces still have them. enforce_owner_auth
     # above sets CLAUDE_CONFIG_DIR when the workspace uses an owner profile; otherwise
     # Claude reads the host global ~/.claude. Opt out with DEVIDE_AGENT_SKILLS=0.

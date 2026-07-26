@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tiny stub of the milc-devbox manager — just enough to make DevIDE's
+Tiny stub of the milc-devbox manager — just enough to make Casein's
 picker render a real workspace and let the show LiveView mount.
 
 NOT a faithful implementation. NOT for use beyond the local
@@ -14,7 +14,7 @@ Routes served:
 
 Anything else → 404.
 
-DevIDE consumes the response shapes defined by
+Casein consumes the response shapes defined by
 lib/casein/devbox/workspace.ex (from_payload/1). Field names match
 the manager's actual contract: id, name, user, branch, type, status,
 path.

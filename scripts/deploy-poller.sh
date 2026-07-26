@@ -184,7 +184,7 @@ source "$CADDY_UPSTREAM_LIB"
 
 # --- liveness self-heal ------------------------------------------------------
 # This box is multi-tenant: many concurrent agent sessions share one host and
-# one systemd. The DevIDE release node gets terminated as collateral — by a
+# one systemd. The Casein release node gets terminated as collateral — by a
 # neighbour's broad `pkill beam.smp`, a stray `systemctl stop devide-<uuid>`,
 # or any signal that hits the BEAM. When that happens, the on-disk release at
 # ${ACTIVE_RELEASE} is still valid and the deployed revision still matches

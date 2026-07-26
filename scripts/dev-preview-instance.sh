@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# dev-preview-instance.sh — boot an isolated DevIDE dev server from the working
+# dev-preview-instance.sh — boot an isolated Casein dev server from the working
 # tree, for previewing UI changes with ZERO impact on the live release/session.
 #
 # Thin wrapper around scripts/preview-env.sh dirty --foreground.

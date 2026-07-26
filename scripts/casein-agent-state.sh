@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # casein-agent-state.sh — agent-runtime hook that reports the agent's semantic
-# state to DevIDE's terminal MCP endpoint.
+# state to Casein's terminal MCP endpoint.
 #
 # Two runtimes wire it in:
 #   - Claude Code: via a materialized --settings file (UserPromptSubmit,

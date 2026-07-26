@@ -1,6 +1,6 @@
 # Preview MCP
 
-DevIDE exposes preview control to coding agents through a narrow MCP
+Casein exposes preview control to coding agents through a narrow MCP
 JSON-RPC endpoint:
 
 ```text
@@ -83,8 +83,8 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
    `preview_playback_open` to split a fresh preview pane that loops the saved
    recording. Inspect that pane with `preview_observe_pane`.
 8. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
-   already embedded preview pane and update connected DevIDE viewers.
-9. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
+   already embedded preview pane and update connected Casein viewers.
+9. Use `preview_reload_iframe` to ask connected Casein workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
    `casein_reload_page` to ask them to reload the whole workspace page.
 10. Call `preview_close` with the `session_id` when the agent is done. This
@@ -92,18 +92,18 @@ Use generated workspace-scoped MCP URLs in production and dogfood setups.
 
 `casein-preview` is shipped in release `priv/scripts/`. Humans can also run
 `casein-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
-registers the pane via `POST /api/preview/panes` and DevIDE paints an
+registers the pane via `POST /api/preview/panes` and Casein paints an
 iframe overlay at the pane rectangle.
 
 Preview actions are scoped to workspace/localhost origins through
 `Casein.PreviewControl`; agents do not get arbitrary browser access.
-For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
-while the control session uses the configured loopback DevIDE URL. This lets
+For Casein-hosted preview pane URLs, the iframe keeps the public display URL,
+while the control session uses the configured loopback Casein URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
 
 ## Agent Bug-Fix Loop
 
-DevIDE now exposes the primitives needed for an external agent to work a bug
+Casein now exposes the primitives needed for an external agent to work a bug
 with visible feedback:
 
 - Use Terminal MCP to inspect files, edit, run the dev server/tests, and capture
@@ -112,14 +112,14 @@ with visible feedback:
   type, press keys, read storage, collect console/network errors, and capture
   screenshots.
 - Use Tidewave MCP directly against the resolved external Tidewave URL when a
-  dev/preview-env instance exposes it. DevIDE only resolves/materializes the URL;
+  dev/preview-env instance exposes it. Casein only resolves/materializes the URL;
   it does not proxy Tidewave tools.
 - Use `preview_record_start` / `preview_record_stop` to capture the Playwright
   browser flow, then `preview_playback_open` to keep the saved `.webm` / `.mp4`
   looping in a fresh preview pane while the agent or human reviews it.
 
 The remaining gap is orchestration, not the individual controls: there is no
-single DevIDE tool that bundles terminal output, Tidewave output, preview
+single Casein tool that bundles terminal output, Tidewave output, preview
 observations, and the recording into one bug-work evidence packet. Agents should
 coordinate those surfaces explicitly and cite the returned `session_id`,
 `pane_id`, terminal capture, Tidewave results, and recording `artifact_path`.
@@ -128,7 +128,7 @@ screen activity.
 
 ## Socket Boundary Smoke Check
 
-Production DevIDE traffic and ephemeral preview traffic use separate socket
+Production Casein traffic and ephemeral preview traffic use separate socket
 lanes:
 
 - Main app: `/run/casein/current.sock`
@@ -171,7 +171,7 @@ FakeAdapter  Playwright.Adapter (+ Bridge GenServer)
 
 `PreviewCtl` is an in-repo boundary (like `TmuxCtl`): generic URL primitives,
 ETS session registry, adapter behaviour, and optional Node Playwright bridge.
-DevIDE keeps workspace allowlists (`Casein.Previews.Url`), persistence, and
+Casein keeps workspace allowlists (`Casein.Previews.Url`), persistence, and
 human-iframe broadcasts.
 
 ### Adapter configuration (two keys)
@@ -184,18 +184,18 @@ human-iframe broadcasts.
 `Casein.Application.configure_preview_ctl!/0` copies `config :casein, :preview_ctl`
 and maps `:preview_control_adapter` → `:preview_ctl :adapter`. Playwright script
 path uses `:casein :preview_playwright_script` → `:preview_ctl :playwright_script`.
-DevIDE facades (`Casein.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
+Casein facades (`Casein.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
 `PlaywrightBridge`, `Registry`) defdelegate to `PreviewCtl.*` for backward
 compatibility.
 Opening a preview session registers a tmux preview pane and broadcasts to
-connected DevIDE workspace viewers. Each registered pane gets an iframe overlay
+connected Casein workspace viewers. Each registered pane gets an iframe overlay
 in the terminal layout at the pane's geometry. Same-origin navigations update
 the control session URL; unrelated screenshot/artifact URLs do not become
 iframe sources.
 Generated same-host agent configs use a pre-scoped MCP URL, so the transport
 injects that workspace id into workspace-scoped tools when the agent omits it.
 Browser refresh tools are best-effort workspace broadcasts: they return once the
-request is queued for connected DevIDE viewers, not when every browser tab has
+request is queued for connected Casein viewers, not when every browser tab has
 executed the reload.
 
 Folder-attached workspaces use ids shaped as

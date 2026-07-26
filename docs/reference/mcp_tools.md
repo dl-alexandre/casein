@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against DevIDE: terminal control, preview control, artifact projects, workspace annotations, and the resolved-but-external Tidewave bridge.
+> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against Casein: terminal control, preview control, artifact projects, workspace annotations, and the resolved-but-external Tidewave bridge.
 
 This is a flat reference catalog. For narrative flow, scoping rules, and smoke
 tests see [`../terminal_mcp.md`](../terminal_mcp.md) and
@@ -13,7 +13,7 @@ For the preview control plane internals
 ## Responsibility
 
 Expose a narrow, auditable, workspace-scoped tool surface so external agents
-(Grok, Claude, Codex, opencode) can drive DevIDE the way a human would — tmux
+(Grok, Claude, Codex, opencode) can drive Casein the way a human would — tmux
 panes, browser previews, and review annotations — over JSON-RPC 2.0, without
 arbitrary shell or browser access. Each surface is one HTTP POST endpoint behind
 the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
@@ -38,7 +38,7 @@ the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
 | `Casein.Agents.TerminalMCPCapability` | `lib/casein/agents/terminal_mcp_capability.ex` | Advertises terminal MCP URL + tool names in capability detection |
 | `Casein.Agents.PreviewTools.MCPCapability` | `lib/casein/agents/preview_tools/mcp_capability.ex` | Advertises preview MCP URL + tool names |
 | `Casein.Agents.ArtifactMCPCapability` | `lib/casein/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
-| `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
+| `Casein.Agents.TidewaveCapability` | `lib/casein/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — Casein does not implement tidewave tools) |
 | `Casein.Agents.TidewaveMCP` | `lib/casein/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
 | `Casein.Agents.PreviewTools.BrowserControl` | `lib/casein/agents/preview_tools/browser_control.ex` | Backs `preview_reload_iframe` / `casein_reload_page` viewer broadcasts |
 | `McpCtl.Tool` / `McpCtl.Params` | (in-repo `mcp_ctl` boundary) | `Tool.define/3`, `Tool.object/1,2`, shared param schemas used by every definition |
@@ -57,7 +57,7 @@ the same bearer-token gate (`CaseinWeb.Plugs.ApiAuth`).
 | Artifact MCP stream | `GET /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Artifact MCP session end | `DELETE /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `casein-preview` CLI, not an MCP tool |
-| Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by DevIDE; URL resolved by `TidewaveMCP` |
+| Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by Casein; URL resolved by `TidewaveMCP` |
 
 Routes defined in `lib/casein_web/router.ex` (`scope "/api", CaseinWeb.API`).
 JSON-RPC: `protocolVersion` `2025-03-26`; `initialize` returns an
@@ -73,7 +73,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 
 | Tool | Does | Key params (required\*) | Implementing fn |
 |------|------|--------------------------|-----------------|
-| `terminal_list_sessions` | List live DevIDE tmux sessions (name, attached, activity) | `workspace_id`, `contains` | `list_sessions/1` |
+| `terminal_list_sessions` | List live Casein tmux sessions (name, attached, activity) | `workspace_id`, `contains` | `list_sessions/1` |
 | `terminal_context` | Recommended session, agent pane safety, and exact next tool/arguments | `workspace_id`, `session` | `context/1` |
 | `terminal_topology` | Windows/panes with geometry, running command, active marker | `session`\* , `workspace_id` | `topology/1` |
 | `terminal_capture` | Capture a pane's scrollback (defaults active pane, full history) | `session`\*, `pane`, `lines`, `ansi` | `capture/1` |
@@ -84,7 +84,7 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | `terminal_paste_agent_text` | Paste literal/multiline text into the agent pane via tmux paste buffer | `text`\*, `submit`, `session` | `paste_agent_text/1` |
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names) | `session`\*, `keys`\*, `pane` | `send_keys/1` |
 | `terminal_send_command` | Type command + Enter into a targeted pane | `session`\*, `command`\*, `pane` | `send_command/1` |
-| `terminal_set_agent_label` | Set a DevIDE chrome label for an agent pane (`freeze` to pin) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |
+| `terminal_set_agent_label` | Set a Casein chrome label for an agent pane (`freeze` to pin) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |
 | `terminal_report_worktree` | Register an agent-created Git worktree under the workspace; re-call at session end with `exit_status`/`handoff` | `workspace_id`\*, `worktree_path`\*, `branch`, `agent`, `runner_id`, `session_id`, `tmux_session_id`, `exit_status`, `handoff` | `report_worktree/1` |
 
 ### Annotation tools (folded into the terminal surface)
@@ -163,9 +163,9 @@ the required schema. Project payloads include `preview_open_arguments` plus
 
 ## Tool catalog — Tidewave (dev only, external)
 
-DevIDE does **not** implement or proxy Tidewave's tools. The Tidewave MCP server
+Casein does **not** implement or proxy Tidewave's tools. The Tidewave MCP server
 is the third-party `:tidewave` dependency, compiled only in `MIX_ENV=dev`
-(including ephemeral preview-env instances on ports 41000–41049). DevIDE's role
+(including ephemeral preview-env instances on ports 41000–41049). Casein's role
 is discovery and client-config materialization:
 
 - `Casein.Agents.TidewaveCapability.detect/0` reports the endpoint
@@ -225,7 +225,7 @@ are mapped to HTTP status by the controllers.
   return `:unscoped_session`, cross-workspace returns `:workspace_mismatch`.
 - **Agent-pane shortcuts refuse the operator pane.** `terminal_send_agent_*` use
   `find_agent_pane/2` with `allow_process_fallback: false` — they require the
-  `agent_pair` marker ("DevIDE agent pane" in scrollback) and never fall back to
+  `agent_pair` marker ("Casein agent pane" in scrollback) and never fall back to
   process detection, unlike `terminal_agent_pane` / `terminal_capture_agent`.
 - **Pre-scoped endpoints inject `workspace_id`** and reject a *different* explicit
   value (`MCPWorkspaceScope.scoped_call_params/2`), but tolerate manager-UUID ↔
@@ -249,7 +249,7 @@ are mapped to HTTP status by the controllers.
   return `unknown_mcp_session`, and both surfaces keep POST usable for stateless
   JSON-RPC clients.
 - **Tidewave is dev-only and external** — never shipped in the prod release;
-  DevIDE only resolves its URL.
+  Casein only resolves its URL.
 
 ## See also
 

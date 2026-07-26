@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install + enable the daily DevIDE stale worktree alarm sweep.
+# Install + enable the daily Casein stale worktree alarm sweep.
 # Idempotent; installs units from this checkout so the timer is repo-owned.
 #
 # Usage:

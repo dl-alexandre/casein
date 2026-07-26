@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install + enable the daily DevIDE agent-worktree cleanup timer, which runs
+# Install + enable the daily Casein agent-worktree cleanup timer, which runs
 # scripts/cleanup-agent-worktrees.sh to remove leftover worktrees that are
 # idle + clean + fully pushed (dirty/live/unpushed/current are always kept).
 # Idempotent; installs units from this checkout so the timer is repo-owned.

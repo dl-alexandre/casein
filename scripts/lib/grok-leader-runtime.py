@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Own and probe one DevIDE-managed Grok leader process."""
+"""Own and probe one Casein-managed Grok leader process."""
 
 from __future__ import annotations
 

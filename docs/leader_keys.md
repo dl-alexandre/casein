@@ -1,6 +1,6 @@
-# Leader Keys (tmux conventions in DevIDE)
+# Leader Keys (tmux conventions in Casein)
 
-DevIDE adopts tmux's `C-b` prefix conventions for workspace chrome: session and
+Casein adopts tmux's `C-b` prefix conventions for workspace chrome: session and
 window switching, pane management, and picker navigation. The goal is that tmux
 muscle memory works in the cockpit without relearning, and that every binding
 remains a thin alias for UI the mouse can already reach.
@@ -89,11 +89,11 @@ All of these require the `C-b` prefix first (except where noted).
 
 ### Sessions and windows
 
-| Keys      | tmux meaning      | DevIDE action (`data-leader-action`) |
+| Keys      | tmux meaning      | Casein action (`data-leader-action`) |
 | --------- | ----------------- | ------------------------------------ |
 | `s`       | choose session    | `session-picker` — toggles the sessions sidebar |
 | `w`       | choose window     | `window-picker` — toggles the transient window sidebar |
-| `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
+| `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's Casein terminal sessions |
 | `c`       | new window        | `new-window`                         |
 | `C`       | (custom)          | `new-window-tab` — new window in a new browser tab |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
@@ -107,7 +107,7 @@ All of these require the `C-b` prefix first (except where noted).
 
 ### Panes
 
-| Keys           | tmux meaning        | DevIDE action                          |
+| Keys           | tmux meaning        | Casein action                          |
 | -------------- | ------------------- | -------------------------------------- |
 | `%` or `\|`    | split horizontally  | `split-right`                          |
 | `"` or `-`     | split vertically    | `split-down`                           |
@@ -133,11 +133,11 @@ All of these require the `C-b` prefix first (except where noted).
 
 - **Double `C-b` cancels instead of passing a literal `C-b` through.** In tmux,
   `C-b C-b` sends the prefix to the inner application (nested tmux, vim's
-  page-back). DevIDE intercepts `C-b` in the capture phase, so it can never
-  reach the terminal. We evaluated pass-through and decided against it: DevIDE
-  terminals attach to DevIDE-managed tmux sessions, and in-terminal tmux
+  page-back). Casein intercepts `C-b` in the capture phase, so it can never
+  reach the terminal. We evaluated pass-through and decided against it: Casein
+  terminals attach to Casein-managed tmux sessions, and in-terminal tmux
   control belongs to the governed control plane, not raw prefix forwarding.
-- **`Space` → focus terminal** is a DevIDE addition with no tmux equivalent
+- **`Space` → focus terminal** is a Casein addition with no tmux equivalent
   (tmux `Space` cycles layouts; we don't bind that).
 
 ## Adding a binding
@@ -200,10 +200,10 @@ in LiveView event handlers.
   3. For prefixes that bypass the browser entirely (agents sending keys over
      the terminal MCP, direct SSH attaches), `apply_defaults` rebinds
      `prefix w` / `prefix s` to a `display-message` hint pointing at the
-     DevIDE pickers. State-mutating bindings (`c`, `n`, `p`, splits, `z`,
+     Casein pickers. State-mutating bindings (`c`, `n`, `p`, splits, `z`,
      `x`) stay native — topology polling reflects them; only the in-terminal
      picker UI is replaced. Key tables are server-wide; on a devbox every
-     session is DevIDE-managed.
+     session is Casein-managed.
 
 ### Bigger lifts (planned, in rough priority order)
 

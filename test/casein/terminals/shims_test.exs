@@ -301,8 +301,8 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert out =~ "DevIDE: elio not found. Installing"
-    assert out =~ "DevIDE: elio installed. Launching"
+    assert out =~ "Casein: elio not found. Installing"
+    assert out =~ "Casein: elio installed. Launching"
     assert out =~ "ELIO_CLIPBOARD_OSC52=1"
     assert out =~ "ARGV=--from-test"
   end
@@ -700,8 +700,8 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert out =~ "DevIDE: provisioning terminal tool 'elio'"
-    assert out =~ "DevIDE: provisioned terminal tool 'elio'"
+    assert out =~ "Casein: provisioning terminal tool 'elio'"
+    assert out =~ "Casein: provisioned terminal tool 'elio'"
     refute File.exists?(Path.join(tool_root, ".elio-install.lock"))
 
     managed_elio = Path.join([tool_root, "bin", "elio"])
@@ -725,7 +725,7 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert out =~ "DevIDE: elio is not installed"
+    assert out =~ "Casein: elio is not installed"
     refute File.exists?(Path.join([tool_root, "bin", "elio"]))
   end
 
@@ -745,8 +745,8 @@ defmodule Casein.Terminals.ShimsTest do
         stderr_to_stdout: true
       )
 
-    assert out =~ "DevIDE: provisioning terminal tool 'elio'"
-    assert out =~ "DevIDE: provisioned terminal tool 'elio'"
+    assert out =~ "Casein: provisioning terminal tool 'elio'"
+    assert out =~ "Casein: provisioned terminal tool 'elio'"
     refute File.exists?(Path.join(tool_root, ".elio-install.lock"))
 
     managed_elio = Path.join([tool_root, "bin", "elio"])

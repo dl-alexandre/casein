@@ -1,4 +1,4 @@
-# DevIDE loopback HTTP bridge for canary (Unix socket) deploys.
+# Casein loopback HTTP bridge for canary (Unix socket) deploys.
 #
 # Canary releases listen on /run/casein/instances/<uuid>.sock; Caddy uses
 # /run/casein/current.sock. On-box agents and scripts still expect

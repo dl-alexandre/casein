@@ -30,8 +30,12 @@ legal clearance, and the collision evidence is not a legal conclusion.
 >   identity, the MCP server, frontend event/CSS namespaces, and DB + private
 >   package names.
 > - **Frozen by design:** the `DEVIDE_*` env namespace (a separate namespace
->   that now coexists with `CASEIN_*`), the `X-DevIDE-Caller-Pane` wire header,
->   and the `:ghostty` app atom.
+>   that now coexists with `CASEIN_*`) and the `:ghostty` app atom. (The
+>   `X-DevIDE-Caller-Pane` caller-pane header and the remaining user-facing
+>   DevIDE copy were later renamed too — the header as a coordinated wire cutover
+>   where running agents send the old name until restarted. The only DevIDE names
+>   that remain are the `native/` Apple/OS-registered ids pending registration,
+>   and the former-name references in this record.)
 > - **N4 updated:** the canonical repository was renamed
 >   `dl-alexandre/dev_ide` → **`dl-alexandre/casein`** (still private). GitHub
 >   redirects the former URL.

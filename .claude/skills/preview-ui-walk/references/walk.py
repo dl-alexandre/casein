@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 preview-ui-walk driver: a READ-ONLY, manifest-driven UI smoke walk of a workspace
-app via the DevIDE preview MCP, producing a self-contained HTML report + a
+app via the Casein preview MCP, producing a self-contained HTML report + a
 recording.
 
 Structurally read-only: it ONLY calls navigate / screenshot / report_errors —

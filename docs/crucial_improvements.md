@@ -1,4 +1,4 @@
-# DevIDE — Crucial Improvements
+# Casein — Crucial Improvements
 
 > Prioritized list of improvements that directly threaten core user promises
 > (durable sessions, server-authoritative admission/policy/audit, MCP scoping
@@ -68,7 +68,7 @@ risks (poller trust model, coordination), not a current red build.
 
 > **This doc was committed as a pre-implementation snapshot.** The commit that
 > added it (`f24f78d`, 2026-06-24) post-dates `9b75d9c` *"Implement top-five
-> crucial improvements for DevIDE trust"* (2026-06-23), which **already shipped
+> crucial improvements for Casein trust"* (2026-06-23), which **already shipped
 > four of the five P1-class items below**. Verdicts here were produced by reading
 > current `lib/`, `scripts/`, and `config/` plus `git log`, not by re-running the
 > suite. **Only the P1 items were re-verified**; every item without a
@@ -237,7 +237,7 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | Field | Detail |
 |-------|--------|
 | **Source** | `AGENTS.md` §MCP client injection (project-local and launch-time injection) |
-| **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject DevIDE MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
+| **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject Casein MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
 | **Invariant** | Operational safety on multi-user host |
 | **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-casein-agent.sh` |
 | **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `CASEIN_API_TOKEN`. |

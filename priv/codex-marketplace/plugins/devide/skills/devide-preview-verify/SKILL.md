@@ -1,9 +1,9 @@
 ---
 name: casein-preview-verify
-description: Verify web UI behavior through DevIDE's operator-visible Preview MCP surface. Use after changing Phoenix LiveView, HTML, CSS, JavaScript, navigation, forms, responsive layout, or other browser-visible behavior.
+description: Verify web UI behavior through Casein's operator-visible Preview MCP surface. Use after changing Phoenix LiveView, HTML, CSS, JavaScript, navigation, forms, responsive layout, or other browser-visible behavior.
 ---
 
-# DevIDE preview verification
+# Casein preview verification
 
 1. Resolve the workspace and call `preview_surfaces` before opening when the target is unclear.
 2. Open the app with `preview_open_app` or the appropriate `preview_open` mode.

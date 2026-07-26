@@ -82,7 +82,7 @@ defmodule CaseinWeb.PwaStaticTest do
     conn = get(conn, "/offline.html")
     body = response(conn, 200)
 
-    assert body =~ "DevIDE is offline"
+    assert body =~ "Casein is offline"
     assert body =~ "Terminal sessions, previews, and agent updates need a live connection"
   end
 end

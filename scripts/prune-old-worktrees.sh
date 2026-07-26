@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Remove stale DevIDE agent worktrees under the configured worktree root.
+# Remove stale Casein agent worktrees under the configured worktree root.
 # Safe to run from cron or a systemd timer (nightly).
 #
 # Usage:

@@ -1,6 +1,6 @@
-# Connecting an external agent to DevIDE MCP
+# Connecting an external agent to Casein MCP
 
-Ready-to-go connection bundles for reaching DevIDE's agent-control MCP from **outside**
+Ready-to-go connection bundles for reaching Casein's agent-control MCP from **outside**
 the devbox. Two transports ("doors"); the tool surface and semantics are identical — only
 how you reach the endpoints and authenticate differ. See the host-side `devide-remote`
 skill for the full map.
@@ -248,7 +248,7 @@ stale ones with no re-wiring.
 ### Durable (workspace-agnostic, global token)
 
 ```text
-You are connected to a remote DevIDE dev box over MCP with a workspace-agnostic (durable)
+You are connected to a remote Casein dev box over MCP with a workspace-agnostic (durable)
 config — no workspace is pinned. Three JSON-RPC 2.0 servers are wired as MCP clients:
 
   • devide-terminal  — tmux/agent control (list/topology/capture/send/wait)
@@ -287,7 +287,7 @@ The two **pinned** variants below are identical except the transport line; both 
 ### Door 1 (SSH tunnel)
 
 ```text
-You are connected to a remote DevIDE dev box over MCP (SSH tunnel → http://127.0.0.1:4000).
+You are connected to a remote Casein dev box over MCP (SSH tunnel → http://127.0.0.1:4000).
 Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-devide
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 
@@ -315,7 +315,7 @@ windows, and any agent panes you find. Then wait for my instructions.
 ### Door 2 (public HTTPS)
 
 ```text
-You are connected to a remote DevIDE dev box over MCP (public HTTPS → https://devide.devbox.milcgroup.com).
+You are connected to a remote Casein dev box over MCP (public HTTPS → https://devide.devbox.milcgroup.com).
 Three JSON-RPC 2.0 servers are wired as MCP clients, all scoped to the dalexandre-devide
 workspace (workspace_id e7c18b93-688b-4bb0-904d-ac93d61e9372):
 

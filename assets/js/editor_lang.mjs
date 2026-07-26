@@ -1,4 +1,4 @@
-// Path → CodeMirror language extensions for every DevIDE editor surface.
+// Path → CodeMirror language extensions for every Casein editor surface.
 // Kept as ESM (.mjs) so node --test can import it under assets/"type":"commonjs".
 
 import { StreamLanguage } from "@codemirror/language"

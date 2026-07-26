@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Ensure a DevIDE-supported terminal tool is available without prompting.
+# Ensure a Casein-supported terminal tool is available without prompting.
 #
 # Usage:
 #   bash scripts/ensure-terminal-tool.sh elio
@@ -16,8 +16,8 @@ Supported tools:
   elio    Install the crates.io package with cargo into ~/.casein/tools
 
 Environment:
-  CASEIN_TERMINAL_TOOLS_DIR   Override the DevIDE tool root
-  CASEIN_TERMINAL_SHIMS_DIR   Override the DevIDE terminal shim dir
+  CASEIN_TERMINAL_TOOLS_DIR   Override the Casein tool root
+  CASEIN_TERMINAL_SHIMS_DIR   Override the Casein terminal shim dir
   CASEIN_TERMINAL_INSTALL_LOCK_TIMEOUT_SECONDS
                                Seconds to wait for another install; default 600
 EOF
@@ -99,13 +99,13 @@ already_available() {
   local existing
 
   if existing="$(managed_bin "$bin")"; then
-    echo "DevIDE: terminal tool '${tool}' already installed at ${existing}" >&2
+    echo "Casein: terminal tool '${tool}' already installed at ${existing}" >&2
     return 0
   fi
 
   existing="$(real_tool_bin "$tool")"
   if [[ -n "$existing" ]]; then
-    echo "DevIDE: terminal tool '${tool}' already available at ${existing}" >&2
+    echo "Casein: terminal tool '${tool}' already available at ${existing}" >&2
     return 0
   fi
 
@@ -119,7 +119,7 @@ resolve_cargo() {
   elif command -v mise >/dev/null 2>&1; then
     cargo_cmd=(mise exec -y rust@stable -- cargo)
   else
-    echo "DevIDE: cannot install ${TOOL}; cargo is not installed and mise is unavailable." >&2
+    echo "Casein: cannot install ${TOOL}; cargo is not installed and mise is unavailable." >&2
     exit 127
   fi
 }
@@ -147,7 +147,7 @@ with_install_lock() {
     fi
   fi
 
-  echo "DevIDE: terminal tool '${tool}' is already being installed; waiting..." >&2
+  echo "Casein: terminal tool '${tool}' is already being installed; waiting..." >&2
   local deadline=$((SECONDS + LOCK_TIMEOUT_SECONDS))
   while (( SECONDS < deadline )); do
     if already_available "$tool" "$bin"; then
@@ -174,7 +174,7 @@ with_install_lock() {
     sleep 1
   done
 
-  echo "DevIDE: timed out waiting for terminal tool '${tool}' install lock at ${lock_dir}" >&2
+  echo "Casein: timed out waiting for terminal tool '${tool}' install lock at ${lock_dir}" >&2
   return 75
 }
 
@@ -190,17 +190,17 @@ install_cargo_package() {
   tmp_root="$(mktemp -d "${TOOL_ROOT}/.install-${tool}.XXXXXX")"
   tmp_bin="${TOOL_BIN}/.${bin}.$$"
 
-  echo "DevIDE: provisioning terminal tool '${tool}' via cargo package '${package}'." >&2
-  echo "DevIDE: cargo output follows; first install can take a few minutes." >&2
+  echo "Casein: provisioning terminal tool '${tool}' via cargo package '${package}'." >&2
+  echo "Casein: cargo output follows; first install can take a few minutes." >&2
   if ! "${cargo_cmd[@]}" install --root "$tmp_root" "$package"; then
     rm -rf "$tmp_root"
     rm -f "$tmp_bin"
-    echo "DevIDE: failed to provision terminal tool '${tool}'." >&2
+    echo "Casein: failed to provision terminal tool '${tool}'." >&2
     return 1
   fi
 
   if [[ ! -x "${tmp_root}/bin/${bin}" ]]; then
-    echo "DevIDE: cargo install finished, but ${tmp_root}/bin/${bin} is missing or not executable." >&2
+    echo "Casein: cargo install finished, but ${tmp_root}/bin/${bin} is missing or not executable." >&2
     rm -rf "$tmp_root"
     rm -f "$tmp_bin"
     return 127
@@ -209,13 +209,13 @@ install_cargo_package() {
   if ! cp "${tmp_root}/bin/${bin}" "$tmp_bin" || ! chmod +x "$tmp_bin" || ! mv -f "$tmp_bin" "${TOOL_BIN}/${bin}"; then
     rm -rf "$tmp_root"
     rm -f "$tmp_bin"
-    echo "DevIDE: failed to publish terminal tool '${tool}' into ${TOOL_BIN}." >&2
+    echo "Casein: failed to publish terminal tool '${tool}' into ${TOOL_BIN}." >&2
     return 1
   fi
 
   rm -rf "$tmp_root"
   rm -f "$tmp_bin"
-  echo "DevIDE: provisioned terminal tool '${tool}' at ${TOOL_BIN}/${bin}" >&2
+  echo "Casein: provisioned terminal tool '${tool}' at ${TOOL_BIN}/${bin}" >&2
 }
 
 ensure_cargo_package() {
@@ -230,14 +230,14 @@ ensure_cargo_package() {
   fi
 
   if [[ "$CHECK_ONLY" == "1" ]]; then
-    echo "DevIDE: ${tool} is not installed" >&2
+    echo "Casein: ${tool} is not installed" >&2
     exit 1
   fi
 
   with_install_lock "$tool" "$bin" install_cargo_package "$tool" "$package" "$bin"
 
   if [[ ! -x "${TOOL_BIN}/${bin}" ]]; then
-    echo "DevIDE: cargo install finished, but ${TOOL_BIN}/${bin} is missing or not executable." >&2
+    echo "Casein: cargo install finished, but ${TOOL_BIN}/${bin} is missing or not executable." >&2
     exit 127
   fi
 }
@@ -247,7 +247,7 @@ case "$TOOL" in
     ensure_cargo_package "elio" "elio" "elio"
     ;;
   *)
-    echo "error: unsupported DevIDE terminal tool: ${TOOL}" >&2
+    echo "error: unsupported Casein terminal tool: ${TOOL}" >&2
     usage >&2
     exit 64
     ;;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge DevIDE MCP entries into real agent homes without replacing auth state."""
+"""Merge Casein MCP entries into real agent homes without replacing auth state."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def claude_mcp_payload(
                 # Anchors terminal MCP pane resolution to the calling agent's
                 # own pane; expanded per process from launch-casein-agent.sh's
                 # export. The server ignores empty/unexpanded values.
-                "X-DevIDE-Caller-Pane": "${DEVIDE_CALLER_PANE}",
+                "X-Casein-Caller-Pane": "${DEVIDE_CALLER_PANE}",
             },
         },
         preview_key: {
@@ -116,7 +116,7 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
 def write_grok_config(path: Path) -> None:
     # The `[ui].theme` line is owned by Casein.Terminals.ToolThemes now, which
     # stamps groknight (dark) / tokyonight (light) — grokday is banned as
-    # illegible in the DevIDE viewer. This helper only
+    # illegible in the Casein viewer. This helper only
     # strips stale devide-* MCP blocks and preserves everything else, theme
     # included.
     existing = path.read_text() if path.exists() else ""
@@ -183,12 +183,12 @@ def main() -> int:
         return 1
     artifact = artifact or preview.replace("/api/preview/mcp", "/api/artifacts/mcp")
 
-    # DevIDE MCP is injected at launch time instead of persisted into shared
+    # Casein MCP is injected at launch time instead of persisted into shared
     # global agent homes. Aggregating every discovered workspace previously
     # bloated shared configs with all workspaces across all users, and Codex/
     # OpenCode can fail when a persisted server references a missing token.
     # Keep this helper as an idempotent cleanup pass for old global devide-* MCP
-    # entries while preserving non-DevIDE auth/config state.
+    # entries while preserving non-Casein auth/config state.
     write_grok_config(home / ".grok" / "config.toml")
     merge_toml(home / ".codex" / "config.toml", [])
     remove_devide_mcp_json(home / ".cursor" / "mcp.json")
@@ -251,7 +251,7 @@ if __name__ == "__main__":
             )
             raise SystemExit(2)
         active_workspace = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
-        # Managed Grok is confined by a DevIDE capability bearer. Tidewave is
+        # Managed Grok is confined by a Casein capability bearer. Tidewave is
         # a third-party endpoint outside that authorization boundary, so it is
         # deliberately absent from the session bundle.
         write_claude_mcp_json(

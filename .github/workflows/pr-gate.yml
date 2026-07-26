@@ -58,7 +58,7 @@ jobs:
           echo "Changed files:"; echo "$changed"
           # Conservative: docs-only means EVERY changed path matches docs/** or
           # *.md. An empty/failed diff or any other path => full gate.
-          # docs-only OR skill-only (DevIDE agent skills under .claude/skills — not
+          # docs-only OR skill-only (Casein agent skills under .claude/skills — not
           # part of the mix/npm app surface; full suite is wasted queue time).
           # pr-gate.yml itself is allowed so this detector can land with skill PRs.
           if [ -n "$changed" ] && ! echo "$changed" | grep -qvE '^(docs/.*|.*\.md|\.claude/skills/.*|\.github/workflows/pr-gate\.yml)$'; then

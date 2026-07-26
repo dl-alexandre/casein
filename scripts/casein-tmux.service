@@ -1,4 +1,4 @@
-# Keepalive for the host DevIDE tmux server (`-L casein`).
+# Keepalive for the host Casein tmux server (`-L casein`).
 #
 # Install (once per box):
 #   bash scripts/ensure-casein-tmux.sh
@@ -7,7 +7,7 @@
 # process exists even before the first LiveView attach. Combined with
 # `exit-empty off` in priv/tmux/casein.conf, the server survives idle
 # session reaping. It does NOT restore sessions after a hard segfault —
-# DevIDE's ScrollbackArchive + SessionOwner recover path handle that.
+# Casein's ScrollbackArchive + SessionOwner recover path handle that.
 
 [Unit]
 Description=Casein host tmux server (-L casein) keepalive

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DevIDE agent pairing health check.
+# Casein agent pairing health check.
 #
 set -euo pipefail
 
@@ -30,7 +30,7 @@ devide_shims_expected() {
 
   # A plain shell may source the workspace env file while intentionally keeping
   # launcher shims off PATH. Only classify tmux as paired when the live session
-  # itself is a DevIDE session.
+  # itself is a Casein session.
   if [[ -n "${TMUX:-}" ]]; then
     local session
     session="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
@@ -78,12 +78,12 @@ check_shims() {
 
     # An installed shim that loses PATH resolution is worse than a missing
     # one: agents launch fine but silently skip MCP injection. The shim dir
-    # is only injected inside DevIDE contexts — outside them, real binaries
+    # is only injected inside Casein contexts — outside them, real binaries
     # winning is the intended zero-footprint behavior.
     resolved="$(command -v "$runtime" 2>/dev/null || true)"
     if [[ -z "$resolved" ]]; then
       if [[ "$shims_expected" == "1" ]]; then
-        fail "shim unreachable in paired context: ${runtime} not on PATH (run repair-tmux-env.sh or open a fresh DevIDE pane)"
+        fail "shim unreachable in paired context: ${runtime} not on PATH (run repair-tmux-env.sh or open a fresh Casein pane)"
       else
         pass "plain-shell isolation: ${runtime} launcher shim is not on PATH"
       fi
@@ -94,7 +94,7 @@ check_shims() {
     if [[ "$resolved_target" == "$bin_target" ]]; then
       pass "shim wins PATH resolution: ${runtime}"
     elif [[ "$shims_expected" == "0" ]]; then
-      pass "plain-shell isolation: ${runtime} resolves outside DevIDE shims (${resolved})"
+      pass "plain-shell isolation: ${runtime} resolves outside Casein shims (${resolved})"
     else
       fail "shim shadowed: ${runtime} resolves to ${resolved} — MCP injection will not run (put ${shim_dir} first on PATH; repair-tmux-env.sh does this)"
     fi
@@ -222,16 +222,16 @@ check_provider_home() {
   fi
 
   if [[ -n "$expected" && "$value" == "$expected" ]]; then
-    pass "${runtime} uses DevIDE owner auth profile"
+    pass "${runtime} uses Casein owner auth profile"
     if [[ -n "$credential" && -f "$credential" ]]; then
       pass "${runtime} profile credentials present"
     else
       warn "${runtime} profile is active but not signed in — next launch falls back to global auth (run devide agent auth signin ${runtime})"
     fi
   elif agent_auth_profile_under_root "$value"; then
-    fail "${var} points at the wrong DevIDE auth profile (${value}; expected ${expected:-unknown})"
+    fail "${var} points at the wrong Casein auth profile (${value}; expected ${expected:-unknown})"
   else
-    fail "${var} points at a non-DevIDE provider home (${value}) — repair or relaunch before using this pane"
+    fail "${var} points at a non-Casein provider home (${value}) — repair or relaunch before using this pane"
   fi
 }
 
@@ -557,7 +557,7 @@ check_grok_runtime() {
         pass "Grok managed provider auth is isolated refreshable OAuth (in-memory renewal)"
         ;;
       *)
-        warn "Grok managed provider auth mode is unknown; relaunch through the DevIDE Grok shim"
+        warn "Grok managed provider auth mode is unknown; relaunch through the Casein Grok shim"
         ;;
     esac
   fi
@@ -622,7 +622,7 @@ print(slug or 'workspace')
   done <<<"$inspect_rows"
 
   if [[ "$missing_count" -gt 0 ]]; then
-    warn "standalone Grok inspect does not expose ${missing_count} session-scoped DevIDE MCP server(s); ACP pluginDirs and the verified bundle are authoritative"
+    warn "standalone Grok inspect does not expose ${missing_count} session-scoped Casein MCP server(s); ACP pluginDirs and the verified bundle are authoritative"
   fi
 
   [[ "${#expected_servers[@]}" -gt 0 ]] || return 0
@@ -721,9 +721,9 @@ check_codex_capabilities() {
 
   hook_script="${DEVIDE_AGENT_MCP_HOME:-${DEVIDE_SCRIPTS:-${ROOT}/scripts}}/casein-codex-notify.sh"
   if [[ -x "$hook_script" ]]; then
-    pass "DevIDE Codex hook receiver staged"
+    pass "Casein Codex hook receiver staged"
   else
-    warn "DevIDE Codex hook receiver missing (${hook_script})"
+    warn "Casein Codex hook receiver missing (${hook_script})"
   fi
 
   if command -v bwrap >/dev/null 2>&1 && bwrap --dev-bind / / --unshare-net true >/dev/null 2>&1; then
@@ -737,7 +737,7 @@ check_codex_capabilities() {
 
 main() {
   local target="${1:-all}"
-  echo "==> DevIDE agent doctor${target:+ (${target})}"
+  echo "==> Casein agent doctor${target:+ (${target})}"
 
   if agent_env_resolve 2>/dev/null; then
     pass "agent env resolved"

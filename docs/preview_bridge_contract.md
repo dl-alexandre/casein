@@ -3,13 +3,13 @@
 Status: draft v0.1
 
 This contract defines the centralized LiveView-aware preview bridge. The goal is
-to make DevIDE's preview host understand Phoenix LiveView pages without adding
+to make Casein's preview host understand Phoenix LiveView pages without adding
 preview-specific code to each LiveView.
 
 ## Principles
 
 - LiveViews remain normal application views. They do not branch on preview mode.
-- Preview-specific behavior is centralized in DevIDE's preview host, browser
+- Preview-specific behavior is centralized in Casein's preview host, browser
   boundary, and a single dev-only client signaling layer.
 - The controlled browser path is preferred for LiveView previews because native
   browser networking handles websocket upgrades and long-lived channels.
@@ -25,7 +25,7 @@ The signaling layer is passive unless a page is clearly in preview context:
 - the URL contains the legacy `preview_superadmin=1` marker during migration.
 
 Production-style bundles require an explicit preview marker. This prevents
-ordinary embedded production pages from emitting DevIDE-specific signals by
+ordinary embedded production pages from emitting Casein-specific signals by
 accident.
 
 Activation must never require changes inside individual LiveViews.
@@ -114,7 +114,7 @@ failure, or missing heartbeat after the configured grace period.
 The long-term preview auth path should not rely on `preview_superadmin=1`.
 Instead:
 
-1. DevIDE creates a short-lived dev-only preview token for a workspace/session.
+1. Casein creates a short-lived dev-only preview token for a workspace/session.
 2. The controlled browser supplies that token as a header or exchanges it for a
    short-lived same-site cookie before navigation.
 3. One central plug validates the token/cookie and establishes the desired dev
@@ -127,7 +127,7 @@ be introduced without changing LiveViews.
 
 ## Browser Boundary Responsibilities
 
-`DevIDEPreviewBrowser` should eventually expose these observations:
+`CaseinPreviewBrowser` should eventually expose these observations:
 
 - lifecycle events from the browser runtime,
 - console messages,
@@ -163,5 +163,5 @@ Elixir normalizes that into:
  {:preview_signal, "devide:preview:live_socket_connected", payload, health}}
 ```
 
-where `health` is a `DevIDEPreviewBrowser.Health` snapshot. `observe/1` also
+where `health` is a `CaseinPreviewBrowser.Health` snapshot. `observe/1` also
 includes the latest health snapshot when the backend supplies one.

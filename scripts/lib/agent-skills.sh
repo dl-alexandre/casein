@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Stage DevIDE-infra agent skills into a provider config home.
+# Stage Casein-infra agent skills into a provider config home.
 #
 # The skill files live in the dev_ide repo under .claude/skills, so they only
-# travel with dev_ide checkouts. But DevIDE agents frequently run in OTHER
+# travel with dev_ide checkouts. But Casein agents frequently run in OTHER
 # product-repo worktrees (e.g. an audit of OneBackend-v3) that do not carry the
 # dev_ide skills — so an orchestrator there cannot invoke delegate-to-grok even
 # though the capability is host infrastructure, not app code.
@@ -15,14 +15,14 @@
 # Copies are idempotent, opt-out via DEVIDE_AGENT_SKILLS=0, best-effort
 # (never fail the launch).
 
-# Skills that are DevIDE host infrastructure (they drive DevIDE MCP / the
+# Skills that are Casein host infrastructure (they drive Casein MCP / the
 # spawn-agent-worker helper) and therefore belong in every agent's config home
 # regardless of the checked-out repo. Project-specific skills (e.g. `verify`,
 # which runs the dev_ide dev server from the current checkout) are intentionally
 # excluded: they only make sense inside the dev_ide checkout, where the project
 # .claude/skills copy already provides them. Space-separated; override to extend.
 # preview-ui-walk is host infrastructure for product-repo agents (OneBackend-v3
-# etc.): it drives DevIDE preview/artifact MCP, not the dev_ide checkout itself.
+# etc.): it drives Casein preview/artifact MCP, not the dev_ide checkout itself.
 : "${DEVIDE_GLOBAL_AGENT_SKILLS:=delegate-to-grok preview-ui-walk workspace-agent-pair}"
 
 # agent_skills_install <source-skills-dir> <dest-config-dir>

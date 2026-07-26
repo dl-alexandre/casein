@@ -2,7 +2,7 @@
 
 Artifact Projects are generated, previewable worktrees owned by Casein. They
 are the core storage and preview layer for an artifact skill: agents can create
-or update a self-contained project, DevIDE records it as a runtime, and the
+or update a self-contained project, Casein records it as a runtime, and the
 existing preview stack exposes a local HTTP URL. The agent-facing MCP endpoint
 is `POST /api/artifacts/mcp`.
 
@@ -12,7 +12,7 @@ is `POST /api/artifacts/mcp`.
 - Store artifact metadata in the runtime record under `metadata["artifact_project"]`.
 - Keep generated source files in the artifact worktree, not in the main checkout.
 - Build runtime preview server metadata so the existing preview launcher can
-  serve static artifacts with live DevIDE preview surfaces.
+  serve static artifacts with live Casein preview surfaces.
 - Preserve prompt history and write `.casein/artifact.json` alongside the
   generated files.
 
@@ -162,7 +162,7 @@ Successful project payloads also include:
   `.git`.
 - The generated Elixir code path is intentionally not implemented yet. LiveView
   artifacts need a stricter sandbox story before dynamically compiling code into
-  the running DevIDE VM.
+  the running Casein VM.
 - Cross-workspace artifact access is rejected before mutating operations; an
   artifact id from another workspace returns `workspace_scope_mismatch`.
 - The cockpit gallery is a runtime/worktree browser. It does not yet provide
@@ -197,13 +197,13 @@ surface. The controller's CSP `frame-ancestors` is computed per request — when
 dedicated origin is configured it also allows the cockpit origin, so the workspace
 viewer can still embed the artifact iframe.
 
-**Enabling the dedicated origin (infra, outside this repo).** The DevIDE side is a
+**Enabling the dedicated origin (infra, outside this repo).** The Casein side is a
 no-op until the manager routes a subdomain here:
 
 1. DNS: point `artifacts.devbox.milcgroup.com` at the devbox.
 2. TLS: a cert for that host (Caddy auto-cert or the existing wildcard).
 3. Manager/Caddy: route that host through the **same** oauth2-proxy `forward_auth`
-   block as `devide.devbox…`, upstreaming to the DevIDE port. A single shared
+   block as `devide.devbox…`, upstreaming to the Casein port. A single shared
    origin — **not** per-workspace subdomains (rejected: collide with legacy/v3
    wildcard routing, which is intentionally non-OAuth).
 4. Set `DEVIDE_ARTIFACT_URL=https://artifacts.devbox.milcgroup.com` in the release

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Ensure a product workspace's agent runtime(s) have DevIDE MCP + host skills.
+# Ensure a product workspace's agent runtime(s) have Casein MCP + host skills.
 #
 # This is the mechanical half of the workspace-agent-pair skill: safe to run
 # from any cwd on the milc devbox when the target workspace is already paired
@@ -34,7 +34,7 @@ usage() {
   cat <<'EOF'
 Usage: ensure-workspace-agent-pair.sh [options]
 
-Ensure DevIDE terminal/preview/artifact MCP + host infrastructure skills are
+Ensure Casein terminal/preview/artifact MCP + host infrastructure skills are
 installed for a product workspace agent runtime.
 
 Options:
@@ -195,7 +195,7 @@ install_for_opencode() {
   # Prefer not dirtied product git status when the repo gitignores this path.
   if [[ -f "${CHECKOUT}/.opencode/.gitignore" ]] &&
     ! grep -qx 'opencode.json' "${CHECKOUT}/.opencode/.gitignore" 2>/dev/null; then
-    printf '\n# DevIDE-injected workspace MCP (Bearer via env; do not commit)\nopencode.json\n' \
+    printf '\n# Casein-injected workspace MCP (Bearer via env; do not commit)\nopencode.json\n' \
       >>"${CHECKOUT}/.opencode/.gitignore" || true
   fi
   log "skills → ~/.config/opencode/skills + ${CHECKOUT}/.opencode/skills"
@@ -311,7 +311,7 @@ verify_opencode() {
   if [[ ! -x "$real_bin" ]]; then
     real_bin="$(command -v opencode 2>/dev/null || true)"
   fi
-  # Prefer the real binary over the DevIDE shim (shim re-enters launch + worktree).
+  # Prefer the real binary over the Casein shim (shim re-enters launch + worktree).
   if [[ -x "${HOME}/.opencode/bin/opencode" ]]; then
     real_bin="${HOME}/.opencode/bin/opencode"
   elif [[ -L "${HOME}/.casein/real-bins/opencode" ]]; then

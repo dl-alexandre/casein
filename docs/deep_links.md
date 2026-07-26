@@ -1,6 +1,6 @@
 # Workspace deep links
 
-DevIDE workspace URLs encode enough state to reopen the same terminal view another
+Casein workspace URLs encode enough state to reopen the same terminal view another
 operator (or another browser tab) was looking at.
 
 ## URL grammar
@@ -9,12 +9,12 @@ operator (or another browser tab) was looking at.
 /workspaces/{workspace_id}[?query]
 ```
 
-Query parameters (stable order when DevIDE writes them):
+Query parameters (stable order when Casein writes them):
 
 | Param | Example | Meaning |
 |-------|---------|---------|
 | `host` | `devbox-2` | Remote workspace host (omitted for local) |
-| `session` | `u-dalexandre-dnkouc4l` | DevIDE tab session id — always present in the address bar |
+| `session` | `u-dalexandre-dnkouc4l` | Casein tab session id — always present in the address bar |
 | `window` | `@1` | tmux window id — included whenever a session is active |
 | `pane` | `%2` | tmux pane id — included when the window has multiple panes, or when zoomed |
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
@@ -23,7 +23,7 @@ Query parameters (stable order when DevIDE writes them):
 | `drawer` | `notifications` | Overlay drawer to open (`notifications` is the only value); unknown values are ignored |
 
 `tab` is a one-shot open hint: it selects the tab (with that tab's lazy
-hydration) on the mount/patch that carries it, and DevIDE does not re-emit it
+hydration) on the mount/patch that carries it, and Casein does not re-emit it
 when patching the address bar afterwards. `tab=history` additionally seeds the
 History panel's search filters from the previous-sessions query params
 (`query`, `source`, `session`, `pane`, `since`, `until`, `limit`, and their
@@ -57,9 +57,9 @@ the unread badge count loads at mount.
 
 ## Restoration
 
-On `handle_params/3`, DevIDE applies params in order:
+On `handle_params/3`, Casein applies params in order:
 
-1. `session` — switch DevIDE tab session
+1. `session` — switch Casein tab session
 2. `window` — `select-window` in tmux
 3. Topology refresh when needed
 4. `pane` — `select-pane` (after topology hydrates; stashed as `:pending_url_pane`)

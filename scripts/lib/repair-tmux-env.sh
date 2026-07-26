@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Repair DevIDE tmux session environment for the current or named session.
+# Repair Casein tmux session environment for the current or named session.
 #
 # Fixes stale session env from earlier MCP work:
 #   - CASEIN_API_TOKEN stored with literal shell quotes

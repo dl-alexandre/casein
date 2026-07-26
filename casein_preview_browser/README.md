@@ -1,30 +1,30 @@
-# DevIDEPreviewBrowser
+# CaseinPreviewBrowser
 
-`DevIDEPreviewBrowser` is a standalone browser-runtime boundary for DevIDE preview
+`CaseinPreviewBrowser` is a standalone browser-runtime boundary for Casein preview
 work. It is intentionally kept separate from the Phoenix application so native
 browser experiments can evolve without coupling CEF, Rustler, or external-process
 lifecycle concerns to the main app.
 
 The first implementation is a fake backend that proves the Elixir API, lifecycle,
 event delivery, CDP command path, and screenshot contract. Real browser backends
-should implement `DevIDEPreviewBrowser.Backend` behind the same public facade.
-`DevIDEPreviewBrowser.ExternalBackend` provides the first process-isolated
+should implement `CaseinPreviewBrowser.Backend` behind the same public facade.
+`CaseinPreviewBrowser.ExternalBackend` provides the first process-isolated
 backend boundary using a small newline-delimited JSON protocol.
 
 ## Initial contract
 
 ```elixir
 {:ok, session} =
-  DevIDEPreviewBrowser.start_link(
-    backend: DevIDEPreviewBrowser.FakeBackend,
+  CaseinPreviewBrowser.start_link(
+    backend: CaseinPreviewBrowser.FakeBackend,
     event_owner: self()
   )
 
-{:ok, browser} = DevIDEPreviewBrowser.open_browser(session, url: "http://127.0.0.1:4000")
-{:ok, observation} = DevIDEPreviewBrowser.navigate(browser, "http://127.0.0.1:4000/page")
-{:ok, result} = DevIDEPreviewBrowser.cdp(browser, "Runtime.evaluate", %{"expression" => "1 + 1"})
-{:ok, screenshot} = DevIDEPreviewBrowser.screenshot(browser)
-:ok = DevIDEPreviewBrowser.close(browser)
+{:ok, browser} = CaseinPreviewBrowser.open_browser(session, url: "http://127.0.0.1:4000")
+{:ok, observation} = CaseinPreviewBrowser.navigate(browser, "http://127.0.0.1:4000/page")
+{:ok, result} = CaseinPreviewBrowser.cdp(browser, "Runtime.evaluate", %{"expression" => "1 + 1"})
+{:ok, screenshot} = CaseinPreviewBrowser.screenshot(browser)
+:ok = CaseinPreviewBrowser.close(browser)
 ```
 
 Events are delivered as BEAM messages to the configured `:event_owner`:
@@ -37,29 +37,29 @@ Events are delivered as BEAM messages to the configured `:event_owner`:
 ```
 
 External backends should send events to the session process. The session records
-the latest normalized `DevIDEPreviewBrowser.Health` snapshot per browser and then
+the latest normalized `CaseinPreviewBrowser.Health` snapshot per browser and then
 forwards the public event to `:event_owner`. When a backend observation does not
 include health directly, `observe/1` can still return the most recent health
 snapshot learned from asynchronous bridge events.
 
 ## PreviewCtl adapter boundary
 
-`DevIDEPreviewBrowser.Adapter` implements the same function-shaped surface as
+`CaseinPreviewBrowser.Adapter` implements the same function-shaped surface as
 `PreviewCtl.Adapter`, backed by this library's public API:
 
 ```elixir
 {:ok, state} =
-  DevIDEPreviewBrowser.Adapter.start_session(%{
+  CaseinPreviewBrowser.Adapter.start_session(%{
     current_url: "http://127.0.0.1:4000",
     event_owner: self()
   })
 
 {:ok, state, observation} =
-  DevIDEPreviewBrowser.Adapter.navigate(state, "http://127.0.0.1:4000/page")
+  CaseinPreviewBrowser.Adapter.navigate(state, "http://127.0.0.1:4000/page")
 ```
 
 The adapter intentionally does not declare `@behaviour PreviewCtl.Adapter`
-because this sibling package must compile independently from the host DevIDE app.
+because this sibling package must compile independently from the host Casein app.
 The host can wire it into `PreviewCtl.Session.adapter_for/1` later, after the
 currently frozen preview/MCP integration paths are clear.
 
@@ -83,7 +83,7 @@ backend. It is not wired into Mix, CI, or runtime startup.
 
 ## External process protocol
 
-`DevIDEPreviewBrowser.ExternalBackend` starts an executable and sends one JSON
+`CaseinPreviewBrowser.ExternalBackend` starts an executable and sends one JSON
 object per line on stdin:
 
 ```json
@@ -93,7 +93,7 @@ object per line on stdin:
 The process replies on stdout with either:
 
 ```json
-{"id":"1","ok":true,"result":{"url":"http://127.0.0.1:4000","title":"DevIDE","status":200}}
+{"id":"1","ok":true,"result":{"url":"http://127.0.0.1:4000","title":"Casein","status":200}}
 ```
 
 or:
@@ -110,7 +110,7 @@ It may also emit asynchronous events:
 
 Screenshots should return `mime_type` plus either `data_base64` or `bytes`.
 The Elixir side of this contract lives in
-`DevIDEPreviewBrowser.ExternalBackend.Protocol`.
+`CaseinPreviewBrowser.ExternalBackend.Protocol`.
 
 ## Playwright sidecar
 

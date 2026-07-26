@@ -1,6 +1,6 @@
 # Codex integration
 
-DevIDE consumes Codex as a structured agent runtime, not as an opaque terminal
+Casein consumes Codex as a structured agent runtime, not as an opaque terminal
 program. The tmux pane remains the operator console and fallback; lifecycle,
 approvals, history, subagents, and usage come from explicit protocol events.
 
@@ -120,7 +120,7 @@ devide agent doctor codex
 The doctor probes the actual binary instead of assuming a version. It checks
 version output, `exec --json`/structured output, App Server schema generation
 and hash, hook config parsing, plugin commands, staged hook availability,
-bubblewrap isolation, and all DevIDE MCP endpoints.
+bubblewrap isolation, and all Casein MCP endpoints.
 
 ## First-party plugin
 

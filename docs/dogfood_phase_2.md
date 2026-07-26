@@ -5,7 +5,7 @@
 > `Casein.Fleet`, `mix runner.start`) was retired. These scripts no longer exist
 > in the repo. The MCP side-by-side section (lower half) remains current.
 
-Purpose: validate whether DevIDE can be trusted for daily delegated engineering
+Purpose: validate whether Casein can be trusted for daily delegated engineering
 work. This phase is intentionally operational. Do not add speculative autonomy
 or broad architecture here; delegate real work, record friction, and fix only
 trust, visibility, recovery, lifecycle, and ergonomics pain.
@@ -57,7 +57,7 @@ Friction observed:
 Next validation targets:
 
 - Delegate `assets.build`.
-- Delegate a longer mixed sequence against a non-DevIDE repo.
+- Delegate a longer mixed sequence against a non-Casein repo.
 - Exercise attach/takeover while a long-running delegated task is still active.
 - Repeat with a runner on another host.
 
@@ -109,7 +109,7 @@ Next validation targets:
 
 - Add or use a single-command dogfood mode if repeated daily use proves the
   failure leg too noisy.
-- Delegate a longer mixed sequence against a non-DevIDE repo.
+- Delegate a longer mixed sequence against a non-Casein repo.
 - Exercise attach/takeover while a long-running delegated task is still active.
 - Repeat with a runner on another host.
 
@@ -160,7 +160,7 @@ Friction observed:
 
 - No new blocking friction in this run.
 
-### 2026-05-12 — Non-DevIDE Repo Test Loop
+### 2026-05-12 — Non-Casein Repo Test Loop
 
 Initial command:
 
@@ -181,7 +181,7 @@ state:
 | Initial assignment | `5d1044de-2b58-48f5-b2be-bcbf24d60584` |
 | Initial execution | `cb4a1092-1556-4f7b-a1be-9b017343b218` |
 | Failure mode | `terminal_state_not_observed` |
-| Root friction | default terminal wait was too short for a real non-DevIDE repo test loop |
+| Root friction | default terminal wait was too short for a real non-Casein repo test loop |
 
 Operational fix:
 
@@ -433,7 +433,7 @@ Operational result:
 
 ## MCP side-by-side (human + external agent)
 
-Purpose: validate whether DevIDE can support daily engineering with a human in
+Purpose: validate whether Casein can support daily engineering with a human in
 the LiveView and an external agent driving the workspace through Terminal +
 Preview MCP. This path is separate from fleet-runner delegation above; both
 share tmux adapters, so `mix precommit` protects both.
@@ -494,7 +494,7 @@ Fixes filed:
 
 ### 2026-06-23 — Crucial improvements MCP pre-flight + agent_pair flow
 
-Participants: human (LiveView) + Grok CLI (external agent via DevIDE Terminal MCP)
+Participants: human (LiveView) + Grok CLI (external agent via Casein Terminal MCP)
 
 Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
 

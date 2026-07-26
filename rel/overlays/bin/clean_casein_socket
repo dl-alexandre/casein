@@ -26,5 +26,5 @@ if ss -xlH | grep -F -- "${socket}" >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "removing stale DevIDE socket ${socket}" >&2
+echo "removing stale Casein socket ${socket}" >&2
 rm -f -- "${socket}"

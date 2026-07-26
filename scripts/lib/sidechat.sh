@@ -51,7 +51,7 @@ sidechat_write_prompt() {
   mkdir -p "$(dirname "$out")"
 
   cat >"$out" <<EOF
-You are a read-only ${runtime} advisor for another agent in this DevIDE workspace.
+You are a read-only ${runtime} advisor for another agent in this Casein workspace.
 
 Your job is to observe that agent's live CLI transcript and help the operator or
 other agents understand what it is doing, what it is blocked on, and what it

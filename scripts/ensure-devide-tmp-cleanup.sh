@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Install + enable the daily DevIDE ephemeral /tmp cleanup timer, which runs
+# Install + enable the daily Casein ephemeral /tmp cleanup timer, which runs
 # scripts/devide-tmp-cleanup.sh to age-prune credo-diff snapshots, ghostty
 # diagnostic dumps, and leaked ExUnit test-artifact roots. `/tmp` is not a
 # separate mount on the devbox, so this keeps ephemera off the small root disk.

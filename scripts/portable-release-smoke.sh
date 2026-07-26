@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build and exercise DevIDE's portable production profile in an isolated
+# Build and exercise Casein's portable production profile in an isolated
 # Docker Compose project. Only Docker, Docker Compose, and curl are required on
 # the host; the Phoenix Channel client runs from its own disposable image.
 
@@ -194,7 +194,7 @@ health = json.loads(os.environ["HEALTH_JSON"])
 assert health == {"ok": True, "checks": {"database": "ready"}}, health
 
 mcp = json.loads(os.environ["MCP_JSON"])
-assert mcp["result"]["serverInfo"]["name"] == "DevIDE Terminal MCP Server", mcp
+assert mcp["result"]["serverInfo"]["name"] == "Casein Terminal MCP Server", mcp
 
 terminal = json.loads(os.environ["TERMINAL_JSON"])
 assert terminal == {"ok": True}, terminal

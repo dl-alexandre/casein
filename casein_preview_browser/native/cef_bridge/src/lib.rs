@@ -1,7 +1,7 @@
 //! Dormant Rust-side shape for a possible future CEF bridge.
 //!
 //! This crate deliberately avoids Rustler and CEF dependencies for now. It
-//! records the minimal native surface area DevIDE would need if the project
+//! records the minimal native surface area Casein would need if the project
 //! later chooses an in-BEAM native backend after proving crash behavior,
 //! packaging, scheduler safety, and resource lifetime management.
 

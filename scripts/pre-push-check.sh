@@ -15,7 +15,7 @@ GATE_CURRENT_STEP=""
 log() { printf '>>> %s\n' "$*"; GATE_CURRENT_STEP="$*"; }
 
 # --- Gate-run recording (fail-open) -----------------------------------------
-# Report the verdict to DevIDE as a durable gate.passed / gate.failed audit
+# Report the verdict to Casein as a durable gate.passed / gate.failed audit
 # row via the terminal MCP gate_report tool (the agent_worktree_report_mcp
 # pattern in scripts/lib/agent-worktree.sh). Reporting must NEVER fail the
 # gate: it is skipped silently without the workspace env, curls with a short
@@ -133,7 +133,7 @@ fi
 
 log "boundary: agent launcher shims must never target ~/.local/bin again"
 # The shims moved to ~/.casein/agent-shims so plain terminals stay untouched
-# by DevIDE (operator call, 2026-07-13). Pin the installer's target dir and
+# by Casein (operator call, 2026-07-13). Pin the installer's target dir and
 # the Elixir default; a regression here silently re-hijacks agent names
 # machine-wide.
 if ! grep -q 'BIN_DIR="\${CASEIN_AGENT_BIN_DIR:-\${HOME}/.casein/agent-shims}"' scripts/install-agent-shims.sh; then

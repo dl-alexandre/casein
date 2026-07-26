@@ -13,7 +13,7 @@
 
 ## Responsibility
 
-This subsystem owns the **durable event plane** of DevIDE — the half of the
+This subsystem owns the **durable event plane** of Casein — the half of the
 event plane (`architecture.md` "Event plane") that must survive restart and
 be reconstructable for replay, review, and post-mortem.
 

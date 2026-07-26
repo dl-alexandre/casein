@@ -1,5 +1,5 @@
 #!/bin/sh
-# Release-side DevIDE operator helper.
+# Release-side Casein operator helper.
 #
 # The generated release entrypoint remains bin/casein. This wrapper owns the
 # small product surface that should not require Mix: `devide lan ...`.
@@ -517,11 +517,11 @@ update_install() {
   rm -f "${plan_file}"
 
   if [ "${PLAN_STATUS}" = "current" ]; then
-    echo "DevIDE LAN release $(short_revision "${CURRENT_REVISION}") is current for ${MANIFEST_CHANNEL}."
+    echo "Casein LAN release $(short_revision "${CURRENT_REVISION}") is current for ${MANIFEST_CHANNEL}."
     return 0
   fi
 
-  echo "Installing DevIDE LAN release $(short_revision "${ARTIFACT_REVISION}") from ${MANIFEST_CHANNEL}."
+  echo "Installing Casein LAN release $(short_revision "${ARTIFACT_REVISION}") from ${MANIFEST_CHANNEL}."
   echo "  current:  $(short_revision "${CURRENT_REVISION}") (${CURRENT_VERSION})"
   echo "  target:   $(short_revision "${ARTIFACT_REVISION}") (${ARTIFACT_VERSION})"
   echo "  manifest: ${MANIFEST_URL}"
@@ -541,7 +541,7 @@ update_install() {
 
   if restart_and_probe_backend; then
     echo
-    echo "Installed DevIDE LAN release $(short_revision "${ARTIFACT_REVISION}")."
+    echo "Installed Casein LAN release $(short_revision "${ARTIFACT_REVISION}")."
     echo
     lan_status
   else
@@ -571,7 +571,7 @@ update_rollback() {
   set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
 
   if restart_and_probe_backend; then
-    echo "Rolled back DevIDE LAN release."
+    echo "Rolled back Casein LAN release."
     echo
     lan_status
   else
@@ -925,7 +925,7 @@ lan_install() {
   ensure_env_file
   write_units
 
-  echo "Installed DevIDE managed LAN units."
+  echo "Installed Casein managed LAN units."
   echo
   echo "  release:    ${LAN_RELEASE_DIR}"
   echo "  env:        ${ENV_FILE}"
@@ -1056,7 +1056,7 @@ lan_status() {
     ready=true
   fi
 
-  echo "DevIDE Managed LAN status"
+  echo "Casein Managed LAN status"
   echo
 
   if [ "${ready}" = true ]; then
@@ -1136,7 +1136,7 @@ lan_down() {
   "${SYSTEMCTL}" disable --now "${BACKEND_SERVICE}" >/dev/null 2>&1 || true
   "${SYSTEMCTL}" daemon-reload
 
-  echo "Stopped DevIDE managed LAN."
+  echo "Stopped Casein managed LAN."
 }
 
 if [ "${1:-}" = "" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then

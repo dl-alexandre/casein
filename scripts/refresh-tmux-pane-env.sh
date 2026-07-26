@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Repair DevIDE tmux session environment for agent panes.
+# Repair Casein tmux session environment for agent panes.
 #
 # Usage:
 #   bash scripts/refresh-tmux-pane-env.sh                           # all devide_* sessions

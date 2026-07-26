@@ -1,6 +1,6 @@
 # Tmux control plane
 
-DevIDE uses tmux as the durable terminal engine and LiveView as the operator
+Casein uses tmux as the durable terminal engine and LiveView as the operator
 surface. tmux owns PTYs, process groups, scrollback, session/window/pane
 lifecycle, and reconnect behavior. LiveView and the API provide a safer,
 agent-friendly control plane over that engine.
@@ -26,7 +26,7 @@ TmuxCtl.Runner                  (subprocess argv)
 tmux server (host or container)
 ```
 
-`TmuxCtl` is in-repo only: no DevIDE/Audit/WorkspaceSource references.
+`TmuxCtl` is in-repo only: no Casein/Audit/WorkspaceSource references.
 Tests swap `Application.get_env(:casein, :tmux_adapter)` for
 `TmuxCtl.Test.FakeAdapter` (aliased as `Casein.Test.FakeTmuxAdapter`).
 
@@ -46,7 +46,7 @@ creation without putting Windows command construction into LiveView code.
 
 ## Adapter configuration (two keys)
 
-DevIDE and `TmuxCtl` read adapter config from **different** application
+Casein and `TmuxCtl` read adapter config from **different** application
 env keys on purpose:
 
 | Key | App | Used by | Purpose |
@@ -59,7 +59,7 @@ At boot, `Casein.Application.configure_tmux_ctl!/0` copies
 hint strings, etc.) into `config :tmux_ctl`. **Adapter selection is not
 copied** — each layer keeps its own key.
 
-**DevIDE watcher path:** `Casein.Terminals.TmuxTopology` injects
+**Casein watcher path:** `Casein.Terminals.TmuxTopology` injects
 `tmux_resolver: fn -> Application.get_env(:casein, :tmux_adapter, Tmux) end`
 into `TmuxCtl.Topology.Watcher`, so production and tests always resolve the
 facade/fake adapter from `:casein`.
@@ -75,11 +75,11 @@ defdelegates to `TmuxCtl.Test.FakeAdapter`.
 
 ## Server selection & config (`-L` / `-f`)
 
-DevIDE does **not** drive the host's default tmux server. Every invocation is
+Casein does **not** drive the host's default tmux server. Every invocation is
 prefixed with a per-env server label (`Casein.Terminals.TmuxServer.args/0` →
 `["-L", label]`): `devide` (prod), `devide_dev` (dev), `devide_test` (test).
 Each label is a fully independent server — its own socket, session list, and
-config — so DevIDE coexists with a plain SSH user's `tmux` (default server,
+config — so Casein coexists with a plain SSH user's `tmux` (default server,
 their `~/.tmux.conf`) and the three envs never collide on the shared devbox.
 
 On the **host** path, `TmuxRunner` also appends `-f <file>` (precedence:
@@ -91,7 +91,7 @@ per-server, not per-client: a different config means a different `-L` label.
 To attach from a shell: `tmux -L devide attach`.
 
 See `docs/subsystems/terminals.md` ("Server isolation & config") for the full
-table and the operator cutover note (changing a label points DevIDE at a fresh,
+table and the operator cutover note (changing a label points Casein at a fresh,
 empty server; existing sessions on the old server become invisible).
 
 ## Core concepts
@@ -140,14 +140,14 @@ and split creation are its first consumers. Future close and docking work should
 preserve the same capture → versioned commit → confirmed redraw → frozen-frame
 animation boundary.
 
-DevIDE configures `:tmux_ctl, :terminal_env` at boot from
+Casein configures `:tmux_ctl, :terminal_env` at boot from
 `Casein.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
 `new-session`, `new-window`, `split-window`, and `set-environment` defaults so
-new shells inherit the DevIDE terminal capability contract. The generic
+new shells inherit the Casein terminal capability contract. The generic
 contract is `CASEIN_TERMINAL=1` and `CASEIN_CLIPBOARD=osc52`; app-specific
 behavior stays lazy in command shims such as `~/.casein/terminal-shims/elio`.
 The pane `PATH` also includes `~/.casein/tools/bin/`, where known missing tools
-can be installed on first invocation. For example, typing `elio` in a DevIDE
+can be installed on first invocation. For example, typing `elio` in a Casein
 terminal resolves the real binary if present; otherwise the shim runs
 `devide ensure-installed elio` or its materialized fallback installer, then
 launches Elio with OSC52 clipboard env.
@@ -212,12 +212,12 @@ Response shape:
 }
 ```
 
-Pane activity fields are best-effort tmux alert metadata. DevIDE asks tmux for
+Pane activity fields are best-effort tmux alert metadata. Casein asks tmux for
 pane-level activity/bell formats when available and falls back to the window
 alert fields for the pane's window on tmux versions that do not expose
 pane-specific alert formats.
 
-`role` is DevIDE pane metadata persisted in tmux as the pane user option
+`role` is Casein pane metadata persisted in tmux as the pane user option
 `@devide_pane_role`. It is `null` for ordinary panes. The built-in
 `agent_pair` templates set `operator` on the root pane, `agent` on the MCP
 target pane, and `verify` on the verification pane so callers can identify
@@ -480,7 +480,7 @@ or mismatched panes, and restores startup focus. It does not delete or rename
 existing tmux resources. Exact replay remains the default when `reconcile` is
 omitted.
 
-Export the current tmux topology as a DevIDE template v2 map and YAML:
+Export the current tmux topology as a Casein template v2 map and YAML:
 
 ```bash
 curl -sS \
@@ -545,7 +545,7 @@ curl -sS -X POST \
   "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate"
 ```
 
-If `name` is omitted, DevIDE chooses the next available copy name, such as
+If `name` is omitted, Casein chooses the next available copy name, such as
 `daily_layout (copy)` or `daily_layout (copy 2)`. `dry_run: true` validates
 and returns the duplicate shape without inserting or emitting audit.
 
@@ -665,7 +665,7 @@ Pane audit metadata includes `session`, `pane_id`, `active_window_id`,
   replay escape hatch when the operator wants a fresh duplicate layout.
 - **Consolidate session** in the command palette moves the current workspace's
   other tmux sessions into the active session, appending their windows there.
-- **Focus mode** hides most DevIDE chrome for immersive terminal work.
+- **Focus mode** hides most Casein chrome for immersive terminal work.
 - **Escape hatch**: raw tmux keybindings and external tmux clients remain
   valid because tmux is still the engine.
 

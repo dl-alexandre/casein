@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Phoenix Channel keystroke-roundtrip smoke for DevIDE's terminal flow.
+Phoenix Channel keystroke-roundtrip smoke for Casein's terminal flow.
 
 Closes the only end-to-end gap left after the docker-compose stack
 verification: this script literally opens a websocket against a
-running DevIDE, joins the terminal channel for a workspace, sends
+running Casein, joins the terminal channel for a workspace, sends
 keystrokes as `input` events, and waits for matching bytes back as
 `data` push events. If the marker text round-trips, the full
 xterm.js ↔ Phoenix.Channel ↔ Session ↔ tmux flow is real on the
