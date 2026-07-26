@@ -909,17 +909,22 @@ function openPaneHistory(hook) {
   return false
 }
 
-// Coalesce trackpad wheel bursts into one PTY write per animation frame.
-function schedulePtyWheel(hook, deltaY, point) {
+// Coalesce trackpad wheel bursts into one PTY write and one terminal hit-test
+// per animation frame. terminalCellPointFromEvent performs several computed
+// style and layout reads; doing that in the wheel handler forced layout for
+// every high-frequency trackpad event even though only the final point in the
+// frame is used.
+function schedulePtyWheel(hook, deltaY, clientPoint) {
   hook.__ptyWheelAccum = (hook.__ptyWheelAccum || 0) + deltaY
-  hook.__ptyWheelPoint = point || hook.__ptyWheelPoint || null
+  hook.__ptyWheelClientPoint = clientPoint || hook.__ptyWheelClientPoint || null
   if (hook.__ptyWheelRaf != null) return
   hook.__ptyWheelRaf = requestAnimationFrame(() => {
     const delta = hook.__ptyWheelAccum
-    const pt = hook.__ptyWheelPoint
+    const client = hook.__ptyWheelClientPoint
     hook.__ptyWheelAccum = 0
-    hook.__ptyWheelPoint = null
+    hook.__ptyWheelClientPoint = null
     hook.__ptyWheelRaf = null
+    const pt = client ? terminalCellPointFromEvent(hook, client) : null
     if (delta) pushAgentWheel(hook, delta, pt)
   })
 }
@@ -2911,6 +2916,7 @@ const GhosttyTerminal = {
     this.__wheelRaf = null
     this.__ptyWheelAccum = 0
     this.__ptyWheelRaf = null
+    this.__ptyWheelClientPoint = null
     this.__onWheel = (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault()
@@ -2922,16 +2928,17 @@ const GhosttyTerminal = {
 
       e.preventDefault()
 
-      const point = terminalCellPointFromEvent(this, e)
       const ctx = currentScrollContext(this)
-      logScrollDebug(this, "wheel", {deltaY: e.deltaY, alt: e.altKey, point})
+      logScrollDebug(this, "wheel", {deltaY: e.deltaY, alt: e.altKey})
 
       if (e.altKey && openPaneHistory(this)) {
         return
       }
 
       if (wheelGoesToPty(ctx.policy, ctx.hasHistory)) {
-        schedulePtyWheel(this, e.deltaY, point)
+        // Copy the scalar coordinates: retaining a browser event until the next
+        // frame is unnecessary and some engines aggressively recycle them.
+        schedulePtyWheel(this, e.deltaY, {clientX: e.clientX, clientY: e.clientY})
         return
       }
 
@@ -3344,7 +3351,7 @@ const GhosttyTerminal = {
     }
 
     this.__ptyWheelAccum = 0
-    this.__ptyWheelPoint = null
+    this.__ptyWheelClientPoint = null
 
     if (this.__onWheel) {
       this.el.removeEventListener("wheel", this.__onWheel)
