@@ -235,6 +235,48 @@ test("I4: the periodic reheal is silent in steady state", async (t) => {
 
 })
 
+test("I4: overflow scaling cannot feed its transform back into cell measurement", async (t) => {
+  const { hook } = await mountTerminal({ t, mobile: true })
+
+  // A real browser includes the scale-frame transform in the measure span's
+  // bounding rect. Model that composition explicitly: the old measurement
+  // path interpreted the transformed width as a smaller cell, requested a
+  // different grid on every pass, and produced the mobile width flicker.
+  Object.defineProperty(hook.measure, "offsetWidth", {
+    configurable: true,
+    value: CELL_W * 10,
+  })
+  hook.measure.getBoundingClientRect = () => {
+    const raw = window
+      .getComputedStyle(hook.el)
+      .getPropertyValue("--casein-term-display-scale")
+    const scale = Number.parseFloat(raw)
+    return {width: CELL_W * 10 * (Number.isFinite(scale) && scale > 0 ? scale : 1)}
+  }
+
+  render(hook, gridPayload({cols: 80, rows: 50, painted: 16, cursorRow: 15}))
+  await wait(150)
+
+  const firstReportCount = sizeReports(hook).length
+  const firstFit = [hook.__lastFitCols, hook.__lastFitRows]
+
+  hook.onWindowResize()
+  await wait(150)
+  hook.onWindowResize()
+  await wait(150)
+
+  assert.equal(
+    sizeReports(hook).length,
+    firstReportCount,
+    "the scale-frame transform changed the fitted grid"
+  )
+  assert.deepEqual(
+    [hook.__lastFitCols, hook.__lastFitRows],
+    firstFit,
+    "the fitted grid drifted while only its display transform changed"
+  )
+})
+
 // ---------------------------------------------------------------------------
 // I5 — a non-authoritative viewer never pushes a size
 // ---------------------------------------------------------------------------

@@ -957,7 +957,25 @@ function terminalCellMetrics(hook) {
   const styles = window.getComputedStyle(hook.pre)
   const fontSize = parseFloat(styles.fontSize) || 16
   const lineHeight = parseFloat(styles.lineHeight) || fontSize * 1.2
-  const measureWidth = hook.measure?.getBoundingClientRect?.().width || 0
+  const measuredRectWidth = hook.measure?.getBoundingClientRect?.().width || 0
+  const measureLayoutWidth = hook.measure?.offsetWidth || 0
+  const displayScale = parseFloat(
+    window.getComputedStyle(hook.el).getPropertyValue("--casein-term-display-scale")
+  )
+  // getBoundingClientRect includes the scale-frame transform that this layout
+  // code applied on the previous pass. Feeding that transformed glyph width
+  // back into fitGridForViewport makes SCALE mode self-amplifying: a 0.7
+  // overflow guard reads cells as 30% narrower, requests more columns, scales
+  // again, and visibly oscillates the shared PTY. Undo only our own display
+  // transform here. An outer mobile-pane transform still applies equally to
+  // this measurement and the terminal viewport, so it correctly cancels.
+  const measureWidth =
+    measuredRectWidth > 0 &&
+    measureLayoutWidth > 0 &&
+    Number.isFinite(displayScale) &&
+    displayScale > 0
+      ? measuredRectWidth / displayScale
+      : measuredRectWidth
   const width = measureWidth > 0 ? measureWidth / 10 : fontSize * 0.6
 
   return {
