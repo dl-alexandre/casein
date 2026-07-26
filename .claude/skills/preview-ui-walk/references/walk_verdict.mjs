@@ -129,14 +129,24 @@ export function isPassingStatus(status) {
  * role sweeps — they must not collapse the richer taxonomy back to flat red.
  * Auth bounces (→ /login) always hard-fail. Opt into `--strict-access` to
  * hard-fail every BOUNCED.
+ *
+ * RUNTIME_ERROR hard-fails by default (a 200-but-server-errored page is a real
+ * bug). Opt out with `--soft-runtime-error` (`failRuntimeError:false`) to treat
+ * it as informational — e.g. sweeping a backend with known-noisy logs — while
+ * CRASHED and the rest still fail.
  */
-export function isHardFailStatus(status, row = {}, { strictAccess = false } = {}) {
+export function isHardFailStatus(
+  status,
+  row = {},
+  { strictAccess = false, failRuntimeError = true } = {},
+) {
   if (isPassingStatus(status)) return false;
   if (status === "BOUNCED") {
     if (strictAccess) return true;
     if (isAuthBounce(row)) return true;
     return false;
   }
+  if (status === "RUNTIME_ERROR" && !failRuntimeError) return false;
   // CRASHED, RUNTIME_ERROR, ASSERT_FAILED, TIMEOUT, FAIL, SKIPPED, unknown
   return true;
 }
@@ -182,25 +192,75 @@ export const BENIGN_ERROR_RE =
  * still count when count > 0 and we have no samples to filter (conservative
  * only when samples exist — if samples present, only significant ones count).
  */
-export function countRuntimeErrors(runtimePage = {}) {
-  let n = 0;
+/**
+ * Canonicalize an error-log line so repeated instances of the *same* bug collapse
+ * to one. Strips volatile request/correlation ids, timestamps, pids, durations,
+ * and hex addresses. Used to deduplicate the RUNTIME_ERROR evidence count so a
+ * KeyError that logs 70×/page reads as "1 unique (70 total)", not "70 errors".
+ */
+export function normalizeErrorLine(line) {
+  return String(line || "")
+    .replace(/\b(request_id|correlation_id|pid|conn|ref)=\S+/gi, "$1=·")
+    .replace(/\b\d{2}:\d{2}:\d{2}(\.\d+)?\b/g, "·") // timestamps
+    .replace(/#PID<[^>]+>|<0\.\d+\.\d+>/g, "#PID<·>") // erlang pids
+    .replace(/0x[0-9a-f]+/gi, "0x·") // hex addrs
+    .replace(/\b\d+(\.\d+)?(ms|µs|us|s)\b/g, "·") // durations
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Deduplicated RUNTIME_ERROR evidence: unique significant error signatures plus
+ * total occurrences and one concise sample. `count` (unique) is what the gate and
+ * report use; `total` is preserved for context.
+ */
+export function runtimeErrorEvidence(runtimePage = {}) {
   const errLevel = runtimePage?.logs?.levels?.error || {};
   const samples = errLevel.samples || [];
   const rawCount = errLevel.count ?? runtimePage.error_log_count ?? 0;
 
+  let unique = 0;
+  let total = 0;
+  let sample = null;
   if (samples.length) {
-    n += samples.filter(isSignificantErrorLine).length;
+    const significant = samples.filter(isSignificantErrorLine);
+    total = significant.length;
+    const seen = new Set();
+    for (const line of significant) {
+      const key = normalizeErrorLine(line);
+      if (!seen.has(key)) {
+        seen.add(key);
+        if (sample == null) sample = String(line).slice(0, 240);
+      }
+    }
+    unique = seen.size;
   } else if (rawCount > 0) {
-    // No samples to filter — treat non-zero error delta as signal (old behaviour
-    // was any error log). Prefer samples when Tidewave provides them.
-    n += rawCount > 0 ? 1 : 0;
+    // No samples to filter — a non-zero error delta is one signal (Tidewave
+    // didn't provide lines to dedup against).
+    unique = 1;
+    total = rawCount;
   }
 
-  n += runtimePage.probes_failed || 0;
-  if (runtimePage.sql?.status === "FAIL") n += 1;
-  // evidence_failed is probes+sql only in runtime_evidence; avoid double-count
-  // if caller already summed it without log significance.
-  return n;
+  const probes = runtimePage.probes_failed || 0;
+  const sqlFail = runtimePage.sql?.status === "FAIL" ? 1 : 0;
+  return {
+    count: unique + probes + sqlFail, // gate/verdict signal (deduped)
+    unique,
+    total,
+    probes_failed: probes,
+    sql_failed: sqlFail,
+    sample,
+  };
+}
+
+/**
+ * Count *significant, deduplicated* error signals for the RUNTIME_ERROR gate.
+ * Warning-level deltas never contribute (only `logs.levels.error`). Repeated
+ * identical entries collapse to one via `normalizeErrorLine`. Probe/SQL failures
+ * each add one.
+ */
+export function countRuntimeErrors(runtimePage = {}) {
+  return runtimeErrorEvidence(runtimePage).count;
 }
 
 export function isSignificantErrorLine(line) {
@@ -214,17 +274,32 @@ export function isSignificantErrorLine(line) {
 }
 
 /**
- * Default app-source prefixes for exception frame preference.
- * Override via runtime.app_frame_prefixes or WALK_APP_FRAME_PREFIXES (comma-sep).
+ * Normalize an app-frame-prefix config value to a non-empty string array.
+ * Accepts a bare string ("lib/one_web/"), a comma-separated string, or an
+ * ordered list (["lib/one_web/", "lib/one/"]). Returns [] for empty/absent.
+ */
+export function normalizeAppFramePrefixes(value) {
+  if (value == null) return [];
+  const list = Array.isArray(value)
+    ? value
+    : String(value).split(",");
+  return list.map((s) => String(s).trim()).filter(Boolean);
+}
+
+/**
+ * Default app-source prefixes for exception frame preference. Config precedence:
+ * manifest `runtime.app_frame_prefix` (string | ordered list) → the plural
+ * `app_frame_prefixes` alias → `WALK_APP_FRAME_PREFIXES` env (comma-sep) →
+ * built-in default. First matching frame wins; callers fall back to the existing
+ * frame heuristic when none match.
  */
 export function defaultAppFramePrefixes(runtimeCfg = {}) {
-  if (Array.isArray(runtimeCfg.app_frame_prefixes) && runtimeCfg.app_frame_prefixes.length) {
-    return runtimeCfg.app_frame_prefixes.map(String);
-  }
-  const env = process.env.WALK_APP_FRAME_PREFIXES;
-  if (env && env.trim()) {
-    return env.split(",").map((s) => s.trim()).filter(Boolean);
-  }
+  const fromCfg = normalizeAppFramePrefixes(
+    runtimeCfg.app_frame_prefix ?? runtimeCfg.app_frame_prefixes,
+  );
+  if (fromCfg.length) return fromCfg;
+  const fromEnv = normalizeAppFramePrefixes(process.env.WALK_APP_FRAME_PREFIXES);
+  if (fromEnv.length) return fromEnv;
   // Most-specific first. Do NOT include bare "lib/" — it matches
   // phoenix_live_view/lib/…/static.ex and hides the app frame.
   return ["lib/one_web/", "lib/one/"];

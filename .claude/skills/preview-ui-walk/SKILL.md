@@ -225,6 +225,26 @@ not the ephemeral walk pane.
 4. Close the live walk pane. The published artifact (its `public_url`) is the single
    conclusion surface.
 
+### Fallback — publishing when the artifact MCP is down
+
+The artifact MCP token can expire mid-session (`requires re-authorization`), which
+blocks `artifact_create`/`artifact_update`. You do **not** need the MCP to publish:
+an already-created artifact serves its files from a plain `http.server` on the
+artifact worktree, and that server keeps running independent of the MCP token. So:
+
+1. Find the artifact's worktree (returned as `worktree_path` when it was created,
+   e.g. `/tmp/devide-agent-worktrees/artifacts/<ws>/<name>-<id>`).
+2. Copy the report(s) into it and `git commit` — the running server picks up disk
+   files immediately. Verify against the local preview port (`curl :PORT/…` → 200).
+3. For a multi-surface sweep, write one `index.html` landing page that links each
+   `surface.html`; that consolidated page under the existing `public_url` is the
+   deliverable. (Reuse one already-published artifact's worktree rather than minting
+   a new URL.)
+
+The `public_url` stays valid because it proxies that same server. Caveat: this is
+the workspace's local preview server, so the link lives only while that server is
+up — re-register via the MCP once it's re-authed for a durable URL.
+
 ## 5. Parallelization (optional; default sequential)
 
 Sequential is right for a small read-only walk — it yields one clean, ordered

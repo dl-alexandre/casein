@@ -11,13 +11,11 @@
 import http from "node:http";
 import https from "node:https";
 import { URL } from "node:url";
-
-// Host/path patterns that look like production write targets.
-// Stage/sandbox/dev are intentionally NOT prod_like (still surfaced in preview).
-const PROD_HINT =
-  /(?:^|[./-])prod(?:uction)?(?:[./-]|$)|prod-api|api\.prod|amazonaws\.com\/prod/i;
-const NONPROD_HINT =
-  /stage|staging|sandbox|localhost|127\.0\.0\.1|\.dev\.|devbox|preview/i;
+// Single source of truth for host risk. The env_check strip below MUST use the
+// same classifier as the interactions gate (classify_risk.mjs) — a duplicate copy
+// here once drifted (missing the `dev-` prefix rule) and blocked login against
+// dev-* backends while classify_risk.mjs was already correct.
+import { classifyRisk } from "./classify_risk.mjs";
 
 const SQL_SELECT_RE = /^\s*select\b/i;
 const MAX_SQL_ROWS = 50;
@@ -318,16 +316,9 @@ export function redactEnvValue(v) {
   return `${s.slice(0, 6)}…${s.slice(-4)}`;
 }
 
-export function classifyRisk(value) {
-  if (value == null || value === "") return "unset";
-  const s = String(value);
-  // Explicit non-prod hostnames win (stage-one-api.onemilc.com is not prod).
-  if (NONPROD_HINT.test(s)) return "ok";
-  if (PROD_HINT.test(s)) return "prod_like";
-  // Bare onemilc.com without stage/dev still treated as prod-like.
-  if (/\.onemilc\.com\b/i.test(s)) return "prod_like";
-  return "ok";
-}
+// Re-export the shared classifier so existing `runtime_evidence` callers keep
+// working, but there is now exactly one implementation (classify_risk.mjs).
+export { classifyRisk };
 
 /**
  * Build env_check strip.
