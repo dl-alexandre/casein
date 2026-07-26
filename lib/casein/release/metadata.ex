@@ -95,7 +95,7 @@ defmodule Casein.Release.Metadata do
   Resolution order:
   1. `DEVIDE_RELEASE_ROOT` when set.
   2. `release-out/` under the current checkout when present.
-  3. `_build/prod/rel/dev_ide` when present.
+  3. `_build/prod/rel/casein` when present.
   4. Synthesized dev metadata from git + Mix version.
   """
   @spec load_current() :: {:ok, t(), Path.t()} | {:error, term()}
@@ -166,7 +166,7 @@ defmodule Casein.Release.Metadata do
       [
         System.get_env("DEVIDE_RELEASE_ROOT"),
         Path.join(File.cwd!(), "release-out"),
-        Path.join(File.cwd!(), "_build/prod/rel/dev_ide")
+        Path.join(File.cwd!(), "_build/prod/rel/casein")
       ]
       |> Enum.reject(&is_nil/1)
 
