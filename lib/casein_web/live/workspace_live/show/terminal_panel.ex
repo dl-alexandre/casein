@@ -6,6 +6,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
 
   alias Casein.Workspaces
   alias CaseinWeb.WorkspaceLive.Show.SessionBar
+  alias CaseinWeb.WorkspaceLive.Show.SessionBarVM
 
   def terminal_tab(assigns) do
     assigns =
@@ -246,7 +247,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
           }
           aria-expanded={@mobile_nav_open}
         >
-          <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-sky-300/90" />
+          <span
+            data-mobile-window-number
+            class="inline-flex min-w-3.5 shrink-0 justify-center font-mono text-[11px] font-semibold leading-none text-sky-300/90"
+            aria-hidden="true"
+          >
+            {mobile_active_window_index(assigns)}
+          </span>
           <span class="min-w-0 truncate text-[11px] font-medium leading-none tracking-tight">
             {mobile_active_session_label(assigns)}
           </span>
@@ -579,7 +586,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
         </div>
         <%!-- Dominant view: flat window list of the attached session. --%>
         <div :if={@mnav_view == "windows"} class="space-y-0.5">
-          <%= for window <- @mnav_active_tab.windows do %>
+          <%= for window <- mobile_sorted_windows(@mnav_active_tab.windows, assigns) do %>
             <div class="flex items-center gap-1">
               <button
                 type="button"
@@ -738,7 +745,7 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
               id={"mnav-windows-" <> tab.dom_id}
               class={["space-y-0.5 pl-3", !session_active? && "hidden"]}
             >
-              <%= for window <- tab.windows do %>
+              <%= for window <- mobile_sorted_windows(tab.windows, assigns) do %>
                 <div class="flex items-center gap-1">
                   <button
                     type="button"
@@ -999,6 +1006,19 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalPanel do
 
   defp active_tmux_window_name(assigns) do
     CaseinWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
+  end
+
+  defp mobile_active_window_index(assigns) do
+    active_window_id = assigns[:tmux_active_window_id]
+
+    case Enum.find(assigns[:tmux_windows] || [], &(Map.get(&1, :id) == active_window_id)) do
+      %{index: index} when is_integer(index) -> Integer.to_string(index)
+      _ -> "–"
+    end
+  end
+
+  defp mobile_sorted_windows(windows, assigns) do
+    SessionBarVM.sort_window_tree(windows, assigns[:windows_sidebar_sort] || :recency)
   end
 
   # Name of the currently attached session, used to label the mobile session

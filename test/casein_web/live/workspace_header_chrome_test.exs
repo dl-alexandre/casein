@@ -257,9 +257,11 @@ defmodule CaseinWeb.WorkspaceHeaderChromeTest do
     assert html =~ "phx-click=\"mobile_nav:toggle\""
     refute html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
 
-    # The chip must read as a session switcher (icon + "Switch session" label),
-    # not a bare mode badge — otherwise sessions are undiscoverable on touch.
-    assert html =~ "hero-rectangle-stack"
+    # The chip shows the active window number in place of the old window icon,
+    # while still reading as a session/window switcher rather than a mode badge.
+    chip_html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render()
+    assert chip_html =~ "data-mobile-window-number"
+    refute chip_html =~ "hero-rectangle-stack"
     assert html =~ "Switch session or window"
 
     html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
