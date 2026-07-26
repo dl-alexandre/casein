@@ -50,6 +50,7 @@ import {HeaderOverflow} from "./header_overflow"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import {installPreviewBridge} from "./preview_bridge"
+import {installAgentReferenceDragSources} from "./agent_reference_drag.mjs"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
 
@@ -235,6 +236,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
 })
 
 installPickerLinkCopy()
+installAgentReferenceDragSources()
 
 // Header window tabs are real links so middle/modified clicks and "open in
 // new tab" keep working, but a plain click must switch windows through the

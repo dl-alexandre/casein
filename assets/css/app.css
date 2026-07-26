@@ -766,6 +766,12 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   overflow-x: clip;
 }
 
+section[data-pane-role="agent"][data-agent-reference-drop-active] {
+  outline: 2px solid rgb(14 165 233 / 0.9);
+  outline-offset: -3px;
+  background: rgb(14 165 233 / 0.08);
+}
+
 /* The window-tab scroller: scrollbar hidden (the edge-fade masks are the
    affordance; WindowTabStrip keeps the active tab scrolled into view).
    position: relative makes the scroller the tabs' offsetParent so the hook's

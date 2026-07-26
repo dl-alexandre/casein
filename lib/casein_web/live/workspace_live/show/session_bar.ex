@@ -66,6 +66,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
               data-ctx-kind={Atom.to_string(tab.kind)}
               data-ctx-tmux-session={tab.tmux_session}
               data-ctx-href={session_href(@workspace_id, tab.id, @path_base)}
+              data-agent-reference-kind="session"
+              data-agent-reference-workspace-id={@workspace_id}
+              data-agent-reference-session-id={tab.id}
+              data-agent-reference-tmux-session={tab.tmux_session}
+              data-agent-reference-label={tab.label}
+              draggable="true"
               class={terminal_tab_class(@active_id == tab.id)}
               title={tab.title}
             >
@@ -318,6 +324,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
             data-window-name={window.display_name}
             data-window-activity={window.activity_state}
             data-window-attention={window.attention}
+            data-agent-reference-kind="window"
+            data-agent-reference-workspace-id={@workspace_id}
+            data-agent-reference-session-id={@terminal_sid}
+            data-agent-reference-window-id={window.id}
+            data-agent-reference-window-index={window.index}
+            data-agent-reference-label={window.display_name}
             class={[
               "group relative flex min-w-24 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
@@ -1281,6 +1293,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           data-picker-item
           data-picker-section="sessions"
           data-picker-parent={@parent_dom_id}
+          data-agent-reference-kind="session"
+          data-agent-reference-workspace-id={@workspace_id}
+          data-agent-reference-session-id={@session.id}
+          data-agent-reference-tmux-session={@session.tmux_session}
+          data-agent-reference-label={@session.label}
+          draggable="true"
           class={[sidebar_row_class(false), "min-w-0 flex-1"]}
           title={@session.title}
         >
@@ -1302,6 +1320,12 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
           phx-value-session-id={@session.id}
           phx-value-kind={Atom.to_string(@session.kind)}
           phx-value-tmux-session={@session.tmux_session}
+          data-agent-reference-kind="session"
+          data-agent-reference-workspace-id={@workspace_id}
+          data-agent-reference-session-id={@session.id}
+          data-agent-reference-tmux-session={@session.tmux_session}
+          data-agent-reference-label={@session.label}
+          draggable="true"
           class={[sidebar_row_class(@session_active?), "min-w-0 flex-1"]}
           title={@session.title}
         >
@@ -1470,6 +1494,13 @@ defmodule CaseinWeb.WorkspaceLive.Show.SessionBar do
       data-picker-branch-id={@node.dom_id}
       data-picker-active={@node.active? || nil}
       data-picker-parent={@parent_dom_id}
+      data-agent-reference-kind="window"
+      data-agent-reference-workspace-id={@workspace_id}
+      data-agent-reference-session-id={@terminal_sid}
+      data-agent-reference-window-id={@node.id}
+      data-agent-reference-window-index={@node.index}
+      data-agent-reference-label={@node.display_name}
+      draggable="true"
       phx-click="tmux:select_window"
       phx-value-window-id={@node.id}
       data-tmux-window-index={@node.index}

@@ -738,6 +738,37 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
+  def handle_event("terminal:send_agent_reference", %{"kind" => kind} = params, socket)
+      when kind in ["session", "window"] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      prompt = agent_reference_prompt(kind, params)
+
+      case Terminals.send_agent_prompt_to_agent_pane(socket.assigns.tmux_session, prompt,
+             submit: false
+           ) do
+        {:ok, _result} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :info,
+             "Pasted the reference into the agent pane — press Enter there to send."
+           )}
+
+        {:error, error} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not reach the agent pane: #{agent_error_message(error)}"
+           )}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("terminal:send_agent_reference", _params, socket), do: {:noreply, socket}
+
   def handle_event(
         "terminal:kill_session",
         %{"session-id" => sid, "tmux-session" => tmux_session},
@@ -1017,6 +1048,42 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEvents do
 
   defp agent_text_prompt("explain", _path, text), do: "Explain this code:\n\n" <> text
   defp agent_text_prompt(_intent, _path, text), do: text
+
+  defp agent_reference_prompt("session", params) do
+    """
+    Inspect and reference the terminal session #{reference_label(params)}.
+    Workspace: #{reference_value(params, "workspace_id")}
+    Session ID: #{reference_value(params, "session_id")}
+    tmux session: #{reference_value(params, "tmux_session")}
+    """
+    |> String.trim()
+  end
+
+  defp agent_reference_prompt("window", params) do
+    """
+    Inspect and reference the terminal window #{reference_label(params)}.
+    Workspace: #{reference_value(params, "workspace_id")}
+    Session ID: #{reference_value(params, "session_id")}
+    Window ID: #{reference_value(params, "window_id")}
+    Window index: #{reference_value(params, "window_index")}
+    """
+    |> String.trim()
+  end
+
+  defp reference_label(params), do: inspect(reference_value(params, "label"))
+
+  defp reference_value(params, key) do
+    case Map.get(params, key) do
+      value when is_binary(value) ->
+        value |> String.slice(0, 512) |> String.replace(~r/[\r\n]/, " ")
+
+      value when is_integer(value) ->
+        Integer.to_string(value)
+
+      _ ->
+        ""
+    end
+  end
 
   defp agent_error_message(%{message: message}) when is_binary(message), do: message
   defp agent_error_message(%{"message" => message}) when is_binary(message), do: message

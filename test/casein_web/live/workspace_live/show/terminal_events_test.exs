@@ -97,6 +97,41 @@ defmodule CaseinWeb.WorkspaceLive.Show.TerminalEventsTest do
     end
   end
 
+  describe "terminal:send_agent_reference" do
+    test "denied when tmux mutations are disabled" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          flash: %{},
+          tmux_session: "devide_ws_test",
+          tmux_mutations_enabled?: false
+        }
+      }
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:send_agent_reference",
+                 %{"kind" => "session", "session_id" => "u-dev"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "not allowed"
+    end
+
+    test "ignores unknown reference kinds" do
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{__changed__: %{}, flash: %{}, tmux_mutations_enabled?: true}
+      }
+
+      assert {:noreply, ^socket} =
+               TerminalEvents.handle_event(
+                 "terminal:send_agent_reference",
+                 %{"kind" => "pane"},
+                 socket
+               )
+    end
+  end
+
   describe "tmux:move_window" do
     defp move_socket(assigns) do
       %Phoenix.LiveView.Socket{

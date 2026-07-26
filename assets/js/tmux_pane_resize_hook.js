@@ -20,6 +20,10 @@ import {animateSplitTransition} from "./tmux_split_transition.mjs"
 import {animateSwapTransition} from "./tmux_swap_transition.mjs"
 import {animateZoomTransition} from "./tmux_zoom_transition.mjs"
 import {allowsMobileFocusAutoZoom} from "./terminal_display_layout.mjs"
+import {
+  AGENT_REFERENCE_MIME,
+  readAgentReference,
+} from "./agent_reference_drag.mjs"
 
 function renderGeometries(geos, bounds) {
   for (const pane of geos.values()) {
@@ -203,6 +207,54 @@ export const TmuxPaneResize = {
     this.el.addEventListener("pointerup", this._onPointerUp, true)
     this.el.addEventListener("pointercancel", this._onPointerCancel, true)
     this.el.addEventListener("click", this._onClick, true)
+
+    this._agentPaneAt = (clientX, clientY) =>
+      [...this.el.querySelectorAll('section[data-pane-role="agent"]')].find((pane) => {
+        const rect = pane.getBoundingClientRect()
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        )
+      })
+
+    this._clearAgentReferenceDrop = () => {
+      this._agentReferenceDropPane?.removeAttribute("data-agent-reference-drop-active")
+      this._agentReferenceDropPane = null
+    }
+
+    this._onAgentReferenceDragOver = (event) => {
+      if (!event.dataTransfer?.types?.includes?.(AGENT_REFERENCE_MIME)) return
+
+      const pane = this._agentPaneAt(event.clientX, event.clientY)
+      this._clearAgentReferenceDrop()
+      if (!pane) return
+
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "copy"
+      pane.setAttribute("data-agent-reference-drop-active", "true")
+      this._agentReferenceDropPane = pane
+    }
+
+    this._onAgentReferenceDrop = (event) => {
+      const pane = this._agentPaneAt(event.clientX, event.clientY)
+      const reference = pane && readAgentReference(event.dataTransfer)
+      this._clearAgentReferenceDrop()
+      if (!reference) return
+
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      this.pushEvent("terminal:send_agent_reference", reference)
+    }
+
+    this._onAgentReferenceDragLeave = (event) => {
+      if (!this.el.contains(event.relatedTarget)) this._clearAgentReferenceDrop()
+    }
+
+    this.el.addEventListener("dragover", this._onAgentReferenceDragOver)
+    this.el.addEventListener("drop", this._onAgentReferenceDrop, true)
+    this.el.addEventListener("dragleave", this._onAgentReferenceDragLeave)
 
     this._ensureZoomPending = false
     this._maybeEnsureMobileFocusZoom()
@@ -506,5 +558,9 @@ export const TmuxPaneResize = {
     this.el.removeEventListener("pointerup", this._onPointerUp, true)
     this.el.removeEventListener("pointercancel", this._onPointerCancel, true)
     this.el.removeEventListener("click", this._onClick, true)
+    this.el.removeEventListener("dragover", this._onAgentReferenceDragOver)
+    this.el.removeEventListener("drop", this._onAgentReferenceDrop, true)
+    this.el.removeEventListener("dragleave", this._onAgentReferenceDragLeave)
+    this._clearAgentReferenceDrop?.()
   },
 }
