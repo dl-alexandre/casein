@@ -193,6 +193,28 @@ defmodule Casein.ArtifactProjectsTest do
     assert log =~ "Create artifact project Landing Page"
   end
 
+  test "update backfills the public mirror from the complete generated file manifest" do
+    assert {:ok, project} =
+             ArtifactProjects.create("ws-artifacts", %{
+               name: "Legacy Mirror",
+               files: %{
+                 "index.html" => "<img src=\"shot.png\">\n",
+                 "shot.png" => "first"
+               }
+             })
+
+    public_index = Path.join(project.worktree_path, ".casein/public/index.html")
+    File.rm!(public_index)
+
+    assert {:ok, _updated} =
+             ArtifactProjects.update(project.id, %{
+               files: %{"shot.png" => "second"}
+             })
+
+    assert File.read!(public_index) == "<img src=\"shot.png\">\n"
+    assert File.read!(Path.join(project.worktree_path, ".casein/public/shot.png")) == "second"
+  end
+
   test "get and payload expose MCP-ready artifact metadata" do
     assert {:ok, project} =
              ArtifactProjects.create("ws-artifacts", %{

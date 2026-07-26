@@ -113,6 +113,7 @@ defmodule Casein.ArtifactProjects do
            files_from_attrs(attrs, allow_empty?: true, source_root: record.host_path),
          {:ok, metadata} <- updated_metadata(runtime, attrs),
          :ok <- write_files(runtime.worktree_path, files),
+         :ok <- sync_public_mirror(runtime.worktree_path, metadata["files"]),
          :ok <- write_manifest(runtime.worktree_path, metadata),
          {:ok, _sha} <- commit_all(runtime.worktree_path, update_commit_message(metadata)),
          {:ok, runtime} <-
@@ -907,6 +908,27 @@ defmodule Casein.ArtifactProjects do
       write_file(worktree_path, Path.join(".casein/public", path), content)
     end
   end
+
+  # Every manifest path is normalized and resolved beneath worktree_path before it is read.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp sync_public_mirror(worktree_path, paths)
+       when is_binary(worktree_path) and is_list(paths) do
+    Enum.reduce_while(paths, :ok, fn path, :ok ->
+      with {:ok, path} <- normalize_file_path(path),
+           {:ok, source} <- PathSafety.resolve(worktree_path, path),
+           true <- File.regular?(source),
+           {:ok, content} <- File.read(source),
+           :ok <- write_file(worktree_path, Path.join(".casein/public", path), content) do
+        {:cont, :ok}
+      else
+        false -> {:halt, {:error, :artifact_generated_file_missing}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp sync_public_mirror(_worktree_path, _paths),
+    do: {:error, :invalid_artifact_generated_files}
 
   defp write_manifest(worktree_path, metadata) do
     write_file(worktree_path, ".casein/artifact.json", Jason.encode!(metadata, pretty: true))
