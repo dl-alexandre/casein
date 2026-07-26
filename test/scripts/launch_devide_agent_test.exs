@@ -152,7 +152,7 @@ defmodule Scripts.LaunchDevideAgentTest do
   test "codex defaults to full access, preserves explicit policies, and scrubs bearer credentials" do
     text = File.read!(@script)
 
-    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-0)
+    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_YOLO:-1)
     assert text =~ "codex_arg_sets_execution_policy"
     assert text =~ ~S(--dangerously-bypass-approvals-and-sandbox)
     assert text =~ "codex_workspace_mode"
@@ -160,6 +160,16 @@ defmodule Scripts.LaunchDevideAgentTest do
     assert text =~ ~S(--sandbox workspace-write --ask-for-approval on-request)
     assert text =~ ~S(--sandbox read-only --ask-for-approval never)
     assert text =~ ~S(shell_environment_policy.exclude)
+  end
+
+  test "codex preserves the operator model across isolated owner auth profiles" do
+    text = File.read!(@script)
+
+    assert text =~ "codex_model_args"
+    assert text =~ "codex_arg_sets_model"
+    assert text =~ ~S(DEVIDE_CODEX_DEFAULT_MODEL)
+    assert text =~ ~S(${HOME}/.codex/config.toml)
+    assert text =~ ~S(printf '%s\0' --model "$model")
   end
 
   test "managed Codex tabs prefer the thread title while allowing an explicit override" do

@@ -1003,6 +1003,47 @@ codex_security_config_args() {
     'shell_environment_policy.exclude=["CASEIN_API_TOKEN","CASEIN_ADMIN_API_TOKEN","CASEIN_WORKSPACE_API_TOKENS"]'
 }
 
+codex_arg_sets_model() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --model | --model=* | -m | -m=* | -m?* | model=* | --config=model=* | -c=model=* | -cmodel=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+codex_model_args() {
+  codex_arg_sets_model "$@" && return 0
+
+  local model="${DEVIDE_CODEX_DEFAULT_MODEL:-}"
+
+  # Owner auth profiles deliberately isolate CODEX_HOME. Keep that isolation
+  # for credentials while inheriting the operator's normal model preference
+  # from the host-global Codex config.
+  if [[ -z "$model" && -f "${HOME}/.codex/config.toml" ]]; then
+    model="$(python3 - "${HOME}/.codex/config.toml" <<'PY' 2>/dev/null || true
+import sys, tomllib
+
+try:
+    with open(sys.argv[1], "rb") as config:
+        value = tomllib.load(config).get("model")
+    if isinstance(value, str) and value:
+        print(value)
+except Exception:
+    pass
+PY
+)"
+  fi
+
+  if [[ -n "$model" ]]; then
+    printf '%s\0' --model "$model"
+  fi
+}
+
 codex_arg_sets_terminal_title() {
   local arg
   for arg in "$@"; do
@@ -1066,9 +1107,10 @@ codex_default_args() {
     return 0
   fi
 
-  # Keep paired sessions sandboxed by default. Operators can explicitly opt
-  # into Codex's unrestricted mode for a trusted manual workspace.
-  case "${DEVIDE_CODEX_DEFAULT_YOLO:-0}" in
+  # Paired Codex sessions are operator-owned raw terminals, so match the
+  # interactive Full Access choice unless the caller supplies an execution
+  # policy or explicitly opts back into the workspace-mode defaults with 0.
+  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
     1 | true | TRUE | yes | YES | on | ON)
       printf '%s\0' --dangerously-bypass-approvals-and-sandbox
       return 0
@@ -1234,6 +1276,9 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_security_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_model_args "$@")
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_terminal_title_args "$@")
