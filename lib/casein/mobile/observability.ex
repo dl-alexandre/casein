@@ -38,7 +38,7 @@ defmodule Casein.Mobile.Observability do
         |> compact()
 
       :telemetry.execute(
-        [:dev_ide, :mobile, :observation],
+        [:casein, :mobile, :observation],
         %{count: 1},
         metadata
       )

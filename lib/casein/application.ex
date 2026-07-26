@@ -197,8 +197,8 @@ defmodule Casein.Application do
     end
   end
 
-  defp maybe_put_preview_env(keyword, preview_key, dev_ide_key) do
-    case Application.get_env(:casein, dev_ide_key) do
+  defp maybe_put_preview_env(keyword, preview_key, source_key) do
+    case Application.get_env(:casein, source_key) do
       nil -> keyword
       value -> Keyword.put(keyword, preview_key, value)
     end

@@ -53,23 +53,23 @@ defmodule CaseinWeb.Telemetry do
       ),
 
       # Database Metrics
-      summary("dev_ide.repo.query.total_time",
+      summary("casein.repo.query.total_time",
         unit: {:native, :millisecond},
         description: "The sum of the other measurements"
       ),
-      summary("dev_ide.repo.query.decode_time",
+      summary("casein.repo.query.decode_time",
         unit: {:native, :millisecond},
         description: "The time spent decoding the data received from the database"
       ),
-      summary("dev_ide.repo.query.query_time",
+      summary("casein.repo.query.query_time",
         unit: {:native, :millisecond},
         description: "The time spent executing the query"
       ),
-      summary("dev_ide.repo.query.queue_time",
+      summary("casein.repo.query.queue_time",
         unit: {:native, :millisecond},
         description: "The time spent waiting for a database connection"
       ),
-      summary("dev_ide.repo.query.idle_time",
+      summary("casein.repo.query.idle_time",
         unit: {:native, :millisecond},
         description:
           "The time the connection spent waiting before being checked out for the query"
@@ -83,42 +83,42 @@ defmodule CaseinWeb.Telemetry do
 
       # Terminal owner observability (attach/detach, reconnect UX,
       # migration bridge counters for dashboard). Gauges via poller.
-      last_value("dev_ide.terminals.owners.active.count"),
-      last_value("dev_ide.terminals.attachments.open.count"),
+      last_value("casein.terminals.owners.active.count"),
+      last_value("casein.terminals.attachments.open.count"),
       # :reuse tag values are atoms (:true/:false) to avoid boolean cardinality surprises in some metric stores/dashboards
-      counter("dev_ide.terminals.owner.attach.count", tags: [:mode, :reuse, :kind]),
-      counter("dev_ide.terminals.owner.detach.count"),
-      counter("dev_ide.terminals.owner.started.count"),
-      counter("dev_ide.terminals.owner.orphaned_detach.count"),
+      counter("casein.terminals.owner.attach.count", tags: [:mode, :reuse, :kind]),
+      counter("casein.terminals.owner.detach.count"),
+      counter("casein.terminals.owner.started.count"),
+      counter("casein.terminals.owner.orphaned_detach.count"),
       # Focused-viewer sizing: count shared-PTY resizes by WHY this size won
       # (:focused = a viewer is driving, :largest_fallback = nobody focused).
       # A :largest_fallback-dominated split after deploy means viewers aren't
       # reporting focus (e.g. stale client JS).
-      counter("dev_ide.terminals.owner.size_changed.count", tags: [:reason, :kind]),
-      last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason]),
+      counter("casein.terminals.owner.size_changed.count", tags: [:reason, :kind]),
+      last_value("casein.terminals.owner.size_changed.active_viewers", tags: [:reason]),
 
       # Raw terminal render pipeline. These separate the server-side cost
       # centers that contribute to perceived terminal latency.
-      counter("dev_ide.terminal.render_frame.count",
+      counter("casein.terminal.render_frame.count",
         tags: [:full_frame?, :sequenced?, :empty_incremental?]
       ),
-      summary("dev_ide.terminal.render_frame.duration_us", tags: [:full_frame?]),
-      summary("dev_ide.terminal.render_frame.payload_bytes", tags: [:full_frame?]),
-      summary("dev_ide.terminal.render_frame.changed_rows", tags: [:full_frame?]),
-      counter("dev_ide.terminal.pane_worker.frame.count", tags: [:status, :full_frame?]),
-      summary("dev_ide.terminal.pane_worker.frame.duration_us", tags: [:status]),
-      summary("dev_ide.terminal.pane_worker.frame.payload_bytes", tags: [:status]),
-      summary("dev_ide.terminal.pane_worker.frame.changed_rows", tags: [:status]),
-      counter("dev_ide.terminal.pane_worker.flush_schedule.count", tags: [:burst?]),
-      summary("dev_ide.terminal.pane_worker.flush_schedule.interval_ms", tags: [:burst?]),
-      summary("dev_ide.terminal.pane_worker.flush_schedule.pending_bytes", tags: [:burst?]),
-      counter("dev_ide.terminal.live_view.push_frame.count", tags: [:full_frame?]),
-      summary("dev_ide.terminal.live_view.push_frame.payload_bytes", tags: [:full_frame?]),
-      summary("dev_ide.terminal.live_view.push_frame.changed_rows", tags: [:full_frame?]),
+      summary("casein.terminal.render_frame.duration_us", tags: [:full_frame?]),
+      summary("casein.terminal.render_frame.payload_bytes", tags: [:full_frame?]),
+      summary("casein.terminal.render_frame.changed_rows", tags: [:full_frame?]),
+      counter("casein.terminal.pane_worker.frame.count", tags: [:status, :full_frame?]),
+      summary("casein.terminal.pane_worker.frame.duration_us", tags: [:status]),
+      summary("casein.terminal.pane_worker.frame.payload_bytes", tags: [:status]),
+      summary("casein.terminal.pane_worker.frame.changed_rows", tags: [:status]),
+      counter("casein.terminal.pane_worker.flush_schedule.count", tags: [:burst?]),
+      summary("casein.terminal.pane_worker.flush_schedule.interval_ms", tags: [:burst?]),
+      summary("casein.terminal.pane_worker.flush_schedule.pending_bytes", tags: [:burst?]),
+      counter("casein.terminal.live_view.push_frame.count", tags: [:full_frame?]),
+      summary("casein.terminal.live_view.push_frame.payload_bytes", tags: [:full_frame?]),
+      summary("casein.terminal.live_view.push_frame.changed_rows", tags: [:full_frame?]),
 
       # Operator attention routing: why a quiet-agent transition stayed silent,
       # rendered inline, or requested an OS notification.
-      counter("dev_ide.attention.quiet_agent.transition.count",
+      counter("casein.attention.quiet_agent.transition.count",
         tags: [:reaction, :reason, :surface_state, :target_state]
       ),
 
@@ -130,7 +130,7 @@ defmodule CaseinWeb.Telemetry do
       last_value("tmux_ctl.events.listener.reconnects_in_window", tags: [:event, :label]),
       counter("tmux_ctl.topology.watcher.refresh.count", tags: [:source]),
       summary("tmux_ctl.topology.watcher.refresh.events_absorbed", tags: [:source]),
-      counter("dev_ide.signals.tmux_events_flap.count", tags: [:kind])
+      counter("casein.signals.tmux_events_flap.count", tags: [:kind])
     ]
   end
 
