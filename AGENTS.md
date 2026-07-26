@@ -88,6 +88,12 @@ The running release also performs a deploy-drift check at boot. If `/etc/casein/
 
 **Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`casein-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/casein/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
 
+**Simple bug fixes are not complete until deployed.** Unless the user explicitly
+asks to stop earlier, carry a straightforward fix through targeted verification,
+the required pre-push gate, commit, push or merge to `master`, deployment, and a
+live health/version check. Do not hand off a validated simple fix as merely
+uncommitted or undeployed work.
+
 | Do | Don't |
 |----|-------|
 | Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/casein/release` |
