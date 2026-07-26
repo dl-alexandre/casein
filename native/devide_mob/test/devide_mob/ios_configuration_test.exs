@@ -36,6 +36,22 @@ defmodule DevideMob.IOSConfigurationTest do
     assert app_delegate =~ "return MobStoreDeepLinkURL(url);"
   end
 
+  test "links against Mob runtimes before direct notification callbacks were added" do
+    app_delegate = File.read!(@app_delegate)
+
+    assert app_delegate =~
+             "__attribute__((weak)) void mob_deliver_notification_json(const char* json)"
+
+    assert app_delegate =~ "NSClassFromString(@\"MobNotificationDelegate\")"
+    assert app_delegate =~ "enif_make_atom(env, \"mob_screen\")"
+    assert app_delegate =~ "enif_make_atom(env, \"mob_launch_notification\")"
+    assert app_delegate =~ "MOB_NOTIFICATION_JSON_MAX_BYTES"
+    assert app_delegate =~ "mob_set_launch_notification_json(json);"
+
+    assert app_delegate =~
+             "__attribute__((weak)) void mob_send_push_token_error(const char* reason)"
+  end
+
   test "review deep links preserve only origin-qualified resume locator fields" do
     app_delegate = File.read!(@app_delegate)
     android_main_activity = File.read!(@android_main_activity)
